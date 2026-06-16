@@ -5,15 +5,12 @@ export default function LoginPage() {
         <section className="relative flex min-h-[640px] overflow-hidden bg-[#1f6a58] px-6 py-8 text-white sm:px-10 lg:h-screen lg:min-h-0 lg:px-[70px] lg:py-10">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_16%,rgba(255,255,255,0.18)_0_1px,transparent_1px),linear-gradient(135deg,rgba(16,88,72,0.94),rgba(45,116,95,0.86))] bg-[length:48px_48px,auto]" />
           <div className="absolute inset-0 opacity-30">
-            <div className="absolute left-[8%] top-[8%] h-28 w-52 rounded bg-white/10" />
-            <div className="absolute left-[25%] top-[22%] h-72 w-[42rem] rounded-lg border border-white/15 bg-white/10" />
-            <div className="absolute bottom-[2%] left-[-4%] h-60 w-36 rounded-[28px] border-4 border-white/25 bg-white/10" />
-            <div className="absolute bottom-[2%] left-[16%] h-60 w-36 rounded-[28px] border-4 border-white/25 bg-white/10" />
-            <div className="absolute bottom-[2%] left-[36%] h-60 w-36 rounded-[28px] border-4 border-white/25 bg-white/10" />
-            <div className="absolute bottom-[2%] right-[18%] h-60 w-36 rounded-[28px] border-4 border-white/25 bg-white/10" />
-            <div className="absolute right-[7%] top-[7%] h-80 w-52 rounded-lg bg-[#0f5d4a]/70" />
-            <div className="absolute bottom-[34%] left-[12%] h-64 w-[26rem] rounded-xl border border-white/15 bg-white/10" />
-            <div className="absolute bottom-[34%] right-[8%] h-64 w-[26rem] rounded-xl border border-white/15 bg-white/10" />
+            <div className="absolute left-[-3%] top-[12%] h-80 w-60 -rotate-5 rounded-[28px] border border-white/10 bg-transparent" />
+            <div className="absolute left-[3%] top-[52%] h-64 w-28 rotate-3 rounded-[30px] border border-white/10 bg-transparent" />
+            <div className="absolute right-[7%] top-[11%] h-64 w-[28rem] rotate-3 rounded-2xl border border-white/10 bg-transparent" />
+            <div className="absolute right-[4%] top-[50%] h-64 w-28 -rotate-3 rounded-[30px] border border-white/10 bg-transparent" />
+            <div className="absolute left-[34%] bottom-[10%] h-40 w-72 rotate-[-4deg] rounded-[24px] border border-white/10 bg-transparent" />
+            <div className="absolute right-[-7%] bottom-[-8%] h-64 w-[31rem] rotate-3 rounded-2xl border border-white/10 bg-transparent" />
           </div>
 
           <div className="relative z-10 flex w-full max-w-[760px] flex-col lg:h-full">
@@ -182,7 +179,7 @@ export default function LoginPage() {
             <p className="mt-10 text-center text-xl text-[#4c7168] lg:mt-7 lg:text-lg">
               New enterprise?{" "}
               <a href="#" className="font-bold text-[#0b5b4e]">
-                Request access -&gt;
+                Request access &rarr;
               </a>
             </p>
           </div>
