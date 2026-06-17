@@ -35,7 +35,7 @@ function StepCircle({
           ? "border-[#1f6a58] bg-[#1f6a58] text-white"
           : isCompleted
             ? "border-[#2f8a66] bg-[#e9f4ee] text-[#1f6a58]"
-            : "border-[#d7e5df] bg-white text-[#8ca69e]"
+            : "border-[#d7e5df] bg-white text-[#8ca69e] dark:border-[rgba(167,195,186,0.16)] dark:bg-[#0b211b]"
       }`}
     >
       {isCompleted ? (
@@ -88,7 +88,7 @@ export default function CreateEnterprisePage() {
       </div>
 
       <section className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
-        <div className="flex items-start gap-0 overflow-x-auto pb-1">
+        <div className="flex flex-wrap items-start gap-x-8 gap-y-4 overflow-x-auto pb-1">
           {steps.map((step, index) => {
             const isCompleted = index < currentStep;
             const isCurrent = index === currentStep;
@@ -111,15 +111,6 @@ export default function CreateEnterprisePage() {
                     </p>
                   </div>
                 </button>
-                {index < steps.length - 1 ? (
-                  <div className="mx-3 h-px flex-1">
-                    <div
-                      className={`mt-[18px] h-px w-full ${
-                        isCompleted ? "bg-[#2f8a66]" : "bg-[#d7e5df]"
-                      }`}
-                    />
-                  </div>
-                ) : null}
               </div>
             );
           })}
@@ -363,9 +354,9 @@ export default function CreateEnterprisePage() {
               </div>
 
               <div className="rounded-2xl border border-[#e1ebe6] bg-white p-5">
-                <div className="rounded-2xl bg-[#e8f6ee] p-4 text-[#16825b]">
-                  <p className="text-sm font-bold">All required fields completed</p>
-                  <p className="mt-1 text-sm leading-5 text-[#14532d]">
+                <div className="rounded-2xl bg-[#e8f6ee] p-4 text-[#16825b] dark:!bg-[#103329] dark:border dark:border-[rgba(56,185,143,0.22)]">
+                  <p className="text-sm font-bold dark:!text-[#5ad2a8]">All required fields completed</p>
+                  <p className="mt-1 text-sm leading-5 text-[#14532d] dark:!text-[#bdd2cb]">
                     Review the details above, then click Submit to create this enterprise.
                   </p>
                 </div>

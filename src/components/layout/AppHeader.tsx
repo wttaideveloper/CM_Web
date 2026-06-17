@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { useTheme } from "./ThemeProvider";
 
 type OpenMenu = "notifications" | "settings" | "profile" | null;
 
@@ -67,6 +68,30 @@ function ChevronRightIcon() {
   );
 }
 
+function ThemeOption({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
+        active
+          ? "bg-[#e8f6ee] text-[#1f6a58] dark:bg-[#12352d] dark:text-[#f8fffc]"
+          : "text-[#52736a] hover:bg-[#f7fbf9] dark:text-[#bdd2cb] dark:hover:bg-[#103329]"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
 type AppHeaderProps = {
   onMenuClick: () => void;
 };
@@ -74,6 +99,7 @@ type AppHeaderProps = {
 export default function AppHeader({ onMenuClick }: AppHeaderProps) {
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const headerRef = useRef<HTMLElement | null>(null);
+  const { theme, setTheme } = useTheme();
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -106,13 +132,13 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
   return (
     <header
       ref={headerRef}
-      className="sticky top-0 z-30 flex h-[72px] items-center justify-between border-b border-[#e3eee9] bg-white/95 px-6 backdrop-blur lg:px-8"
+      className="sticky top-0 z-30 flex h-[72px] items-center justify-between border-b border-[#e3eee9] bg-white/95 px-6 backdrop-blur transition-colors lg:px-8 dark:border-[#21463c] dark:bg-[#071713]/95"
     >
       <div className="flex items-center gap-2">
         <button
           type="button"
           onClick={onMenuClick}
-          className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4] lg:hidden"
+          className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4] lg:hidden dark:text-[#bdd2cb] dark:hover:bg-[#103329]"
           aria-label="Open menu"
         >
           <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none">
@@ -144,7 +170,7 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
               />
             </svg>
           </div>
-          <h1 className="text-lg font-bold text-[#07352d]">Invigorate Health</h1>
+          <h1 className="text-lg font-bold text-[#07352d] dark:text-[#f8fffc]">Invigorate Health</h1>
         </Link>
       </div>
 
@@ -153,7 +179,7 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
           <button
             type="button"
             onClick={() => toggleMenu("notifications")}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4]"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4] dark:text-[#bdd2cb] dark:hover:bg-[#103329]"
             aria-label="Notifications"
             aria-expanded={openMenu === "notifications"}
           >
@@ -161,16 +187,16 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
           </button>
 
           <div
-            className={`fixed left-3 right-3 top-[76px] z-50 max-h-[70vh] w-auto max-w-none origin-top overflow-y-auto rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 sm:absolute sm:left-auto sm:right-0 sm:top-12 sm:w-[360px] sm:max-w-sm sm:origin-top-right sm:p-3 ${
+            className={`fixed left-3 right-3 top-[76px] z-50 max-h-[70vh] w-auto max-w-none origin-top overflow-y-auto rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 sm:absolute sm:left-auto sm:right-0 sm:top-12 sm:w-[360px] sm:max-w-sm sm:origin-top-right sm:p-3 dark:border-[#21463c] dark:bg-[#0b211b] ${
               openMenu === "notifications"
                 ? "pointer-events-auto scale-100 opacity-100"
                 : "pointer-events-none scale-95 opacity-0"
             }`}
           >
-            <div className="flex items-center justify-between border-b border-[#edf3f0] px-2 pb-3">
+            <div className="flex items-center justify-between border-b border-[#edf3f0] px-2 pb-3 dark:border-[#21463c]">
               <div>
-                <p className="text-sm font-bold text-[#06201c]">Notifications</p>
-                <p className="text-xs font-semibold text-[#7f9d94]">3 unread</p>
+                <p className="text-sm font-bold text-[#06201c] dark:text-[#f8fffc]">Notifications</p>
+                <p className="text-xs font-semibold text-[#7f9d94] dark:text-[#a7c3ba]">3 unread</p>
               </div>
               <span className="rounded-full bg-[#e8f6ee] px-2.5 py-1 text-[11px] font-bold text-[#16825b]">
                 3 unread
@@ -181,10 +207,10 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
               {notificationItems.map((item) => (
                 <div
                   key={item.title}
-                  className="rounded-xl px-2 py-2 transition hover:bg-[#f7fbf9]"
+                  className="rounded-xl px-2 py-2 transition hover:bg-[#f7fbf9] dark:hover:bg-[#103329]"
                 >
-                  <p className="text-sm font-bold text-[#06201c]">{item.title}</p>
-                  <p className="mt-0.5 text-xs leading-5 text-[#52736a]">{item.subtitle}</p>
+                  <p className="text-sm font-bold text-[#06201c] dark:text-[#f8fffc]">{item.title}</p>
+                  <p className="mt-0.5 text-xs leading-5 text-[#52736a] dark:text-[#a7c3ba]">{item.subtitle}</p>
                 </div>
               ))}
             </div>
@@ -192,7 +218,7 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
             <Link
               href="/notifications"
               onClick={closeMenu}
-              className="mt-1 flex items-center justify-between rounded-xl bg-[#f7fbf9] px-3 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#eef7f2]"
+              className="mt-1 flex items-center justify-between rounded-xl bg-[#f7fbf9] px-3 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#eef7f2] dark:bg-[#103329] dark:text-[#f8fffc] dark:hover:bg-[#12352d]"
             >
               <span>View all notifications</span>
               <ChevronRightIcon />
@@ -204,7 +230,7 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
           <button
             type="button"
             onClick={() => toggleMenu("settings")}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4]"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4] dark:text-[#bdd2cb] dark:hover:bg-[#103329]"
             aria-label="Settings"
             aria-expanded={openMenu === "settings"}
           >
@@ -212,7 +238,7 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
           </button>
 
           <div
-            className={`absolute right-0 top-[calc(100%+10px)] w-56 origin-top-right rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 ${
+            className={`absolute right-0 top-[calc(100%+10px)] w-64 origin-top-right rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 dark:border-[#21463c] dark:bg-[#0b211b] ${
               openMenu === "settings"
                 ? "pointer-events-auto scale-100 opacity-100"
                 : "pointer-events-none scale-95 opacity-0"
@@ -223,12 +249,29 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
                 key={item}
                 type="button"
                 onClick={closeMenu}
-                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]"
+                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9] dark:text-[#f8fffc] dark:hover:bg-[#103329]"
               >
                 <span>{item}</span>
                 <ChevronRightIcon />
               </button>
             ))}
+            <div className="mt-2 border-t border-[#edf3f0] px-1 pt-3 dark:border-[#21463c]">
+              <p className="px-2 text-[11px] font-bold uppercase tracking-[0.22em] text-[#8ca69e] dark:text-[#a7c3ba]">
+                Theme
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <ThemeOption
+                  active={theme === "light"}
+                  label="Light Mode"
+                  onClick={() => setTheme("light")}
+                />
+                <ThemeOption
+                  active={theme === "dark"}
+                  label="Dark Mode"
+                  onClick={() => setTheme("dark")}
+                />
+              </div>
+            </div>
           </div>
         </div>
 
@@ -244,15 +287,15 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
           </button>
 
           <div
-            className={`absolute right-0 top-[calc(100%+10px)] w-64 origin-top-right rounded-2xl border border-[#e1ebe6] bg-white p-3 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 ${
+            className={`absolute right-0 top-[calc(100%+10px)] w-64 origin-top-right rounded-2xl border border-[#e1ebe6] bg-white p-3 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 dark:border-[#21463c] dark:bg-[#0b211b] ${
               openMenu === "profile"
                 ? "pointer-events-auto scale-100 opacity-100"
                 : "pointer-events-none scale-95 opacity-0"
             }`}
           >
-            <div className="border-b border-[#edf3f0] px-2 pb-3">
-              <p className="text-sm font-bold text-[#06201c]">Sarah Johnson</p>
-              <p className="mt-0.5 text-xs text-[#52736a]">sarah@invigorate.com</p>
+            <div className="border-b border-[#edf3f0] px-2 pb-3 dark:border-[#21463c]">
+              <p className="text-sm font-bold text-[#06201c] dark:text-[#f8fffc]">Sarah Johnson</p>
+              <p className="mt-0.5 text-xs text-[#52736a] dark:text-[#a7c3ba]">sarah@invigorate.com</p>
             </div>
             <div className="py-2">
               {profileItems.map((item) => (
@@ -260,7 +303,7 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
                   key={item}
                   type="button"
                   onClick={closeMenu}
-                  className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]"
+                  className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9] dark:text-[#f8fffc] dark:hover:bg-[#103329]"
                 >
                   <span>{item}</span>
                   <ChevronRightIcon />

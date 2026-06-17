@@ -166,9 +166,9 @@ export default function ServicesPage() {
                 <th className="w-[8%] px-3 py-3 font-bold">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#edf3f0]">
+            <tbody className="divide-y divide-[#edf3f0] dark:divide-[rgba(167,195,186,0.10)]">
               {services.map((service, index) => (
-                <tr key={service.name} className="h-16 cursor-pointer text-xs transition-colors duration-150 hover:bg-emerald-50/60">
+                <tr key={service.name} className="h-16 cursor-pointer text-xs transition-colors duration-150 hover:bg-emerald-50/60 dark:hover:bg-[#103329]">
                   <td className="px-3">
                     <div className="flex min-w-0 items-center gap-2.5">
                       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e8f6ee] text-xs font-bold text-[#1f6a58]">
@@ -196,13 +196,13 @@ export default function ServicesPage() {
                   <td className="px-3">
                     <div className="flex gap-1.5 text-[#52736a]">
                       <button
-                        className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7]"
+                        className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7] dark:border-[#21463c] dark:hover:bg-[#103329]"
                         aria-label={`View ${service.name}`}
                       >
                         <EyeIcon />
                       </button>
                       <button
-                        className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7]"
+                        className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7] dark:border-[#21463c] dark:hover:bg-[#103329]"
                         aria-label={`Edit ${service.name}`}
                       >
                         <EditIcon />

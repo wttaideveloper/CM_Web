@@ -69,14 +69,14 @@ export default function NotificationsPage() {
       </div>
 
       <section className="mt-5 overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-[#edf3f0] px-5 py-4">
+        <div className="flex items-center justify-between border-b border-[#edf3f0] px-5 py-4 dark:border-[rgba(167,195,186,0.10)]">
           <h3 className="text-base font-bold text-[#06201c]">6 notifications</h3>
           <span className="text-sm text-[#52736a]">Updated just now</span>
         </div>
 
-        <div className="divide-y divide-[#edf3f0]">
+        <div className="divide-y divide-[#edf3f0] dark:divide-[rgba(167,195,186,0.10)]">
           {notifications.map((item) => (
-            <article key={item.title} className="flex gap-4 px-5 py-4">
+            <article key={item.title} className="flex gap-4 px-5 py-4 transition-colors duration-150 hover:bg-[#f4faf7] dark:hover:bg-[#103329]">
               <Dot tone={item.tone} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">

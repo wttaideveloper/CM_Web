@@ -56,7 +56,7 @@ function SidebarContent({
       <div className="space-y-6">
         {navGroups.map((group) => (
           <div key={group.title}>
-            <p className="mb-2 px-3 text-[11px] font-bold uppercase tracking-[0.22em] text-[#8ca69e]">
+            <p className="mb-2 px-3 text-[11px] font-bold uppercase tracking-[0.22em] text-[#8ca69e] dark:!text-[#effff9]">
               {group.title}
             </p>
 
@@ -73,11 +73,12 @@ function SidebarContent({
                       item.child ? "ml-5 px-3" : "px-3"
                     } ${
                       active
-                        ? "bg-[#e9f4ee] font-bold text-[#0f5d4a]"
-                        : "text-[#4f6f67] hover:bg-[#f4faf7] hover:text-[#0f5d4a]"
+
+  ? "bg-[#e9f4ee] font-bold text-[#0f5d4a] dark:!bg-[#124438] dark:!text-white dark:shadow-sm"
+  : "text-[#4f6f67] hover:bg-[#f4faf7] hover:text-[#0f5d4a] dark:!text-[#d8eee7] dark:hover:!bg-[#103329] dark:hover:!text-white"
                     }`}
                   >
-                    <span className="w-4 shrink-0 text-center text-base leading-none">
+                    <span className="w-4 shrink-0 text-center text-base leading-none dark:!text-current">
                       {item.icon}
                     </span>
                     <span>{item.label}</span>
@@ -105,7 +106,7 @@ export default function AppSidebar({ mobileOpen, onClose }: AppSidebarProps) {
 
   return (
     <>
-      <aside className="fixed left-0 top-[72px] hidden h-[calc(100vh-72px)] w-[240px] border-r border-[#e3eee9] bg-white lg:block">
+      <aside className="fixed left-0 top-[72px] hidden h-[calc(100vh-72px)] w-[240px] border-r border-[#e3eee9] bg-white transition-colors lg:block dark:border-[#21463c] dark:bg-[#071713]">
         <SidebarContent pathname={pathname} />
       </aside>
 
@@ -123,16 +124,16 @@ export default function AppSidebar({ mobileOpen, onClose }: AppSidebarProps) {
         />
 
         <aside
-          className={`absolute left-0 top-[72px] flex max-h-[calc(100vh-72px)] w-[280px] max-w-[86vw] flex-col overflow-y-auto border-r border-[#e3eee9] bg-white shadow-[0_20px_40px_rgba(7,53,45,0.18)] transition-transform duration-200 ${
+          className={`absolute left-0 top-[72px] flex max-h-[calc(100vh-72px)] w-[280px] max-w-[86vw] flex-col overflow-y-auto border-r border-[#e3eee9] bg-white shadow-[0_20px_40px_rgba(7,53,45,0.18)] transition-transform duration-200 dark:border-[#21463c] dark:bg-[#071713] ${
             mobileOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
-          <div className="flex items-center justify-between border-b border-[#edf3f0] px-4 py-4">
-            <p className="text-sm font-bold text-[#06201c]">Menu</p>
+          <div className="flex items-center justify-between border-b border-[#edf3f0] px-4 py-4 dark:border-[#21463c]">
+            <p className="text-sm font-bold text-[#06201c] dark:text-[#f8fffc]">Menu</p>
             <button
               type="button"
               onClick={onClose}
-              className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f4faf7]"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f4faf7] dark:text-[#bdd2cb] dark:hover:bg-[#103329]"
               aria-label="Close sidebar"
             >
               <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none">
