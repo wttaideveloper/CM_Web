@@ -178,6 +178,7 @@ export default function DashboardPage() {
   const router = useRouter();
   return (
     <AppShell>
+      <div className="w-full min-w-0 overflow-x-hidden">
       <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">
@@ -204,50 +205,58 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid w-full min-w-0 gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-4">
         {stats.map((item, index) => (
           <div
             key={item.label}
-            className="min-h-[142px] rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm"
+            className="group min-h-[142px] w-full min-w-0 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm transition-all duration-200 hover:bg-gradient-to-br hover:from-[#1f6a58] hover:to-[#8fc9a8] hover:shadow-md"
           >
             <div className="mb-4 flex items-center justify-between">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e8f6ee] text-[#1f6a58]">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e8f6ee] text-[#1f6a58] transition-all duration-200 group-hover:bg-white/20 group-hover:text-white">
                 {index === 0 ? <RevenueIcon /> : index === 1 ? <BuildingIcon /> : index === 2 ? <UsersIcon /> : <PackageIcon />}
               </div>
-              <span className="flex items-center gap-1 text-xs font-bold text-[#08a36b]">
+              <span className="flex items-center gap-1 text-xs font-bold text-[#08a36b] transition-all duration-200 group-hover:text-white">
                 <MiniArrow />
                 {item.change}
               </span>
             </div>
-            <h3 className="text-2xl font-extrabold text-[#06201c]">{item.value}</h3>
-            <p className="mt-1 text-sm text-[#52736a]">{item.label}</p>
+            <h3 className="text-2xl font-bold text-[#06201c] transition-colors duration-200 group-hover:text-white">
+              {item.value}
+            </h3>
+            <p className="mt-1 text-sm font-normal text-[#52736a] transition-colors duration-200 group-hover:text-white">
+              {item.label}
+            </p>
           </div>
         ))}
       </div>
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-[1.6fr_0.8fr]">
-        <section className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
+      <div className="mt-5 grid w-full min-w-0 gap-5 xl:grid-cols-[1.6fr_0.8fr]">
+        <section className="w-full min-w-0 rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm sm:p-5">
           <div className="mb-5 flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-bold">Revenue Overview</h3>
+              <h3 className="text-lg font-semibold">Revenue Overview</h3>
               <p className="text-sm text-[#52736a]">Monthly revenue for 2026</p>
             </div>
-            <button className="rounded-xl border border-[#d7e5df] px-3 py-1.5 text-sm text-[#52736a]">
-              2026
-            </button>
+            <select
+              defaultValue="2026"
+              className="h-9 rounded-full border border-[#d7e5df] bg-white px-3 text-sm text-[#52736a] outline-none transition hover:border-[#b9cfc7] focus:border-[#1f6a58]"
+            >
+              <option value="2026">2026</option>
+              <option value="2025">2025</option>
+            </select>
           </div>
 
-          <div className="flex h-48 items-end gap-3">
+          <div className="flex h-36 items-end gap-1.5 sm:h-48 sm:gap-3">
             {[42, 58, 49, 74, 65, 82, 76, 91, 84, 98, 93, 106].map(
               (height, index) => (
-                <div key={index} className="flex flex-1 flex-col items-center gap-2">
+                <div key={index} className="flex min-w-0 flex-1 flex-col items-center gap-1.5 sm:gap-2">
                   <div
-                    className={`w-full rounded-t-xl ${
+                    className={`w-full rounded-t-xl transition-colors duration-200 hover:bg-[#8fb0a8] ${
                       index === 11 ? "bg-[#1f6a58]" : "bg-[#c8d8d3]"
                     }`}
-                    style={{ height }}
+                    style={{ height: `${Math.max(24, Math.round(height * 0.7))}px` }}
                   />
-                  <span className="text-xs text-[#52736a]">
+                  <span className="text-[10px] leading-none text-[#52736a] sm:text-xs">
                     {
                       [
                         "Jan",
@@ -271,12 +280,28 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
+        <section className="w-full min-w-0 rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm sm:p-5">
           <h3 className="mb-4 text-lg font-bold">Quick Actions</h3>
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             {quickActions.map((item) => (
-              <div key={item} className="flex items-center gap-3">
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#eef8f2] text-[#1f6a58]">
+              <Link
+                key={item}
+                href={
+                  item === "Add Enterprise"
+                    ? "/enterprises/create"
+                    : item === "Create Product"
+                      ? "/products/create"
+                      : item === "Schedule Event"
+                        ? "/events"
+                        : item === "Add Training Course"
+                          ? "/trainings"
+                          : item === "View Analytics"
+                            ? "#"
+                            : "/integrations"
+                }
+                className="group flex min-w-0 cursor-pointer items-center gap-3 rounded-2xl px-3 py-2.5 transition-all duration-200 hover:bg-gradient-to-r hover:from-[#1f6a58] hover:to-[#8fc9a8] hover:shadow-sm"
+              >
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#eef8f2] text-[#1f6a58] transition-all duration-200 group-hover:bg-white/20 group-hover:text-white">
                   {item === "Add Enterprise" ? (
                     <BuildingIcon />
                   ) : item === "Create Product" ? (
@@ -291,41 +316,31 @@ export default function DashboardPage() {
                     <PlugIcon />
                   )}
                 </span>
-                <Link
-                  href={
-                    item === "Add Enterprise"
-                      ? "/enterprises/create"
-                      : item === "Create Product"
-                        ? "/products/create"
-                        : item === "Schedule Event"
-                          ? "/events"
-                          : item === "Add Training Course"
-                            ? "/trainings"
-                            : item === "View Analytics"
-                              ? "/dashboard"
-                              : "/integrations"
-                  }
-                  className="text-sm font-semibold text-[#06201c] hover:text-[#1f6a58]"
-                >
+                <span className="min-w-0 text-sm font-medium text-[#06201c] transition-colors duration-200 group-hover:text-white">
                   {item}
-                </Link>
-              </div>
+                </span>
+              </Link>
             ))}
           </div>
         </section>
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
-        <section className="rounded-2xl border border-[#e1ebe6] bg-white shadow-sm">
+        <section className="w-full min-w-0 rounded-2xl border border-[#e1ebe6] bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-[#edf3f0] p-5">
             <h3 className="text-lg font-bold">Recent Activity</h3>
-            <button className="text-sm font-semibold text-[#1f6a58]">View all</button>
+            <button
+              type="button"
+              className="text-sm font-semibold text-[#1f6a58] transition-colors duration-200 hover:text-[#185746] hover:underline"
+            >
+              View all
+            </button>
           </div>
           <div>
             {activities.map((item, index) => (
               <div
                 key={item}
-                className="flex gap-3 border-b border-[#edf3f0] p-4 last:border-0"
+                className="flex cursor-pointer gap-3 border-b border-[#edf3f0] p-4 transition-colors duration-200 hover:bg-[#f4faf7] last:border-0"
               >
                 <ActivityIcon
                   kind={
@@ -341,7 +356,7 @@ export default function DashboardPage() {
                   }
                 />
                 <div>
-                  <p className="text-sm font-semibold">{item}</p>
+                  <p className="text-sm font-medium">{item}</p>
                   <p className="text-xs text-[#52736a]">{index + 2} min ago</p>
                 </div>
               </div>
@@ -349,7 +364,7 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-[#e1ebe6] bg-white shadow-sm">
+        <section className="w-full min-w-0 rounded-2xl border border-[#e1ebe6] bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-[#edf3f0] p-5">
             <h3 className="text-lg font-bold">Notifications</h3>
             <span className="rounded-full bg-[#eef4ff] px-3 py-1 text-xs font-bold text-[#2563eb]">
@@ -360,7 +375,7 @@ export default function DashboardPage() {
             {notifications.map((item) => (
               <div
                 key={item}
-                className="flex items-start justify-between gap-4 border-b border-[#edf3f0] p-4 last:border-0"
+                className="flex cursor-pointer items-start justify-between gap-4 border-b border-[#edf3f0] p-4 transition-colors duration-200 hover:bg-[#f4faf7] last:border-0"
               >
                 <div className="flex items-start gap-3">
                   <span
@@ -375,7 +390,7 @@ export default function DashboardPage() {
                     }`}
                   />
                   <div>
-                  <p className="text-sm font-bold">{item}</p>
+                  <p className="text-sm font-semibold">{item}</p>
                   <p className="mt-1 text-xs text-[#52736a]">
                     {item === "Pending Approval"
                       ? "MindFlow Center is awaiting verification"
@@ -394,6 +409,7 @@ export default function DashboardPage() {
             ))}
           </div>
         </section>
+      </div>
       </div>
     </AppShell>
   );

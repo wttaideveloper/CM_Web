@@ -67,7 +67,11 @@ function ChevronRightIcon() {
   );
 }
 
-export default function AppHeader() {
+type AppHeaderProps = {
+  onMenuClick: () => void;
+};
+
+export default function AppHeader({ onMenuClick }: AppHeaderProps) {
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const headerRef = useRef<HTMLElement | null>(null);
 
@@ -104,31 +108,44 @@ export default function AppHeader() {
       ref={headerRef}
       className="sticky top-0 z-30 flex h-[72px] items-center justify-between border-b border-[#e3eee9] bg-white/95 px-6 backdrop-blur lg:px-8"
     >
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#1f6a58] text-white">
-          <svg
-            aria-hidden="true"
-            className="h-6 w-6"
-            viewBox="0 0 32 32"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              d="M25 7C15.2 7.9 8.3 13.6 7.6 23.7C15.7 24.2 23.1 18.8 25 7Z"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <path
-              d="M8.5 22.8C12 19.4 15.4 17.5 20 16.6"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onMenuClick}
+          className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4] lg:hidden"
+          aria-label="Open menu"
+        >
+          <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none">
+            <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
           </svg>
-        </div>
-        <h1 className="text-lg font-bold text-[#07352d]">Invigorate Health</h1>
+        </button>
+
+        <Link href="/dashboard" className="flex items-center gap-3 transition-opacity hover:opacity-90">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#1f6a58] text-white">
+            <svg
+              aria-hidden="true"
+              className="h-6 w-6"
+              viewBox="0 0 32 32"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M25 7C15.2 7.9 8.3 13.6 7.6 23.7C15.7 24.2 23.1 18.8 25 7Z"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M8.5 22.8C12 19.4 15.4 17.5 20 16.6"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+            </svg>
+          </div>
+          <h1 className="text-lg font-bold text-[#07352d]">Invigorate Health</h1>
+        </Link>
       </div>
 
       <div className="flex items-center gap-3">
@@ -144,7 +161,7 @@ export default function AppHeader() {
           </button>
 
           <div
-            className={`absolute right-0 top-[calc(100%+10px)] w-80 origin-top-right rounded-2xl border border-[#e1ebe6] bg-white p-3 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 ${
+            className={`fixed left-3 right-3 top-[76px] z-50 max-h-[70vh] w-auto max-w-none origin-top overflow-y-auto rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 sm:absolute sm:left-auto sm:right-0 sm:top-12 sm:w-[360px] sm:max-w-sm sm:origin-top-right sm:p-3 ${
               openMenu === "notifications"
                 ? "pointer-events-auto scale-100 opacity-100"
                 : "pointer-events-none scale-95 opacity-0"

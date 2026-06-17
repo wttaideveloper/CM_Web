@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 
 const enterprises = [
   {
+    id: 1,
     name: "Pinnacle Wellness Co.",
     category: "Wellness Center",
     location: "Austin, TX",
@@ -16,6 +17,7 @@ const enterprises = [
     status: "Active",
   },
   {
+    id: 2,
     name: "NutriCore Studio",
     category: "Nutrition",
     location: "Denver, CO",
@@ -25,6 +27,7 @@ const enterprises = [
     status: "Active",
   },
   {
+    id: 3,
     name: "MindFlow Center",
     category: "Mental Health",
     location: "Portland, OR",
@@ -34,6 +37,7 @@ const enterprises = [
     status: "Pending",
   },
   {
+    id: 4,
     name: "FlexFit Academy",
     category: "Fitness",
     location: "Chicago, IL",
@@ -43,6 +47,7 @@ const enterprises = [
     status: "Active",
   },
   {
+    id: 5,
     name: "CalmSpace Retreat",
     category: "Retreat",
     location: "Sedona, AZ",
@@ -52,6 +57,7 @@ const enterprises = [
     status: "Inactive",
   },
   {
+    id: 6,
     name: "Vital Sports Clinic",
     category: "Sports Therapy",
     location: "Miami, FL",
@@ -61,6 +67,7 @@ const enterprises = [
     status: "Active",
   },
   {
+    id: 7,
     name: "GreenRoot Organics",
     category: "Organic Products",
     location: "Boulder, CO",
@@ -107,9 +114,76 @@ function GridIcon() {
   );
 }
 
+function EyeIcon() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
+}
+
+function PencilIcon() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M4 20h4L18.5 9.5a2.8 2.8 0 0 0-4-4L4 16v4Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="m13.5 6.5 4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function MoreVerticalIcon() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M12 5v.01M12 12v.01M12 19v.01"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export default function EnterprisesPage() {
   const router = useRouter();
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
+  const [openActionsId, setOpenActionsId] = useState<number | null>(null);
+  const listSectionRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!listSectionRef.current?.contains(event.target as Node)) {
+        setOpenActionsId(null);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenActionsId(null);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
 
   return (
     <AppShell>
@@ -171,28 +245,29 @@ export default function EnterprisesPage() {
       </div>
 
       {viewMode === "list" ? (
-        <section className="mt-5 overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-sm">
+        <section ref={listSectionRef} className="mt-5 overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-[#edf3f0] px-5 py-4">
             <h3 className="text-base font-bold text-[#06201c]">7 enterprises found</h3>
             <span className="text-sm text-[#52736a]">Updated just now</span>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] table-fixed text-left">
+            <table className="w-full min-w-[1080px] table-fixed text-left">
               <thead className="bg-[#f8fbf9] text-[11px] uppercase tracking-[0.1em] text-[#7f9d94]">
                 <tr>
-                  <th className="w-[24%] px-3 py-3 font-bold">Enterprise</th>
-                  <th className="w-[16%] px-3 py-3 font-bold">Category</th>
-                  <th className="w-[16%] px-3 py-3 font-bold">Location</th>
-                  <th className="w-[10%] px-3 py-3 font-bold">Members</th>
-                  <th className="w-[12%] px-3 py-3 font-bold">Revenue</th>
-                  <th className="w-[12%] px-3 py-3 font-bold">Joined</th>
-                  <th className="w-[10%] px-3 py-3 font-bold">Status</th>
+                  <th className="w-[22%] px-3 py-3 font-bold">Enterprise</th>
+                  <th className="w-[14%] px-3 py-3 font-bold">Category</th>
+                  <th className="w-[14%] px-3 py-3 font-bold">Location</th>
+                  <th className="w-[9%] px-3 py-3 font-bold">Members</th>
+                  <th className="w-[10%] px-3 py-3 font-bold">Revenue</th>
+                  <th className="w-[10%] px-3 py-3 font-bold">Joined</th>
+                  <th className="w-[9%] px-3 py-3 font-bold">Status</th>
+                  <th className="w-[12%] px-3 py-3 text-right font-bold">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#edf3f0]">
                 {enterprises.map((enterprise) => (
-                  <tr key={enterprise.name} className="h-[64px] text-xs">
+                  <tr key={enterprise.id} className="h-[64px] text-xs">
                     <td className="px-3 font-semibold text-[#06201c]">
                       {enterprise.name}
                     </td>
@@ -213,6 +288,60 @@ export default function EnterprisesPage() {
                       >
                         {enterprise.status}
                       </span>
+                    </td>
+                    <td className="px-3">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/enterprises/${enterprise.id}`)}
+                          className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] transition-colors hover:bg-[#eef8f2] hover:text-[#1f6a58]"
+                          aria-label={`View ${enterprise.name}`}
+                        >
+                          <EyeIcon />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/enterprises/${enterprise.id}/edit`)}
+                          className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] transition-colors hover:bg-[#eef8f2] hover:text-[#1f6a58]"
+                          aria-label={`Edit ${enterprise.name}`}
+                        >
+                          <PencilIcon />
+                        </button>
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setOpenActionsId((current) =>
+                                current === enterprise.id ? null : enterprise.id,
+                              )
+                            }
+                            className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] transition-colors hover:bg-[#eef8f2] hover:text-[#1f6a58]"
+                            aria-label={`More actions for ${enterprise.name}`}
+                            aria-expanded={openActionsId === enterprise.id}
+                          >
+                            <MoreVerticalIcon />
+                          </button>
+
+                          <div
+                            className={`absolute right-0 top-[calc(100%+8px)] z-20 w-40 rounded-xl border border-[#e1ebe6] bg-white p-1 shadow-[0_12px_24px_rgba(7,53,45,0.12)] transition duration-150 ${
+                              openActionsId === enterprise.id
+                                ? "pointer-events-auto scale-100 opacity-100"
+                                : "pointer-events-none scale-95 opacity-0"
+                            }`}
+                          >
+                            {["View", "Edit", "Duplicate", "Archive", "Delete"].map((action) => (
+                              <button
+                                key={action}
+                                type="button"
+                                onClick={() => setOpenActionsId(null)}
+                                className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-[#06201c] transition-colors hover:bg-[#f4faf7]"
+                              >
+                                {action}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -318,7 +447,7 @@ export default function EnterprisesPage() {
                 </div>
 
                 <Link
-                  href="/enterprises/1"
+                  href={`/enterprises/${enterprise.id}`}
                   className="inline-flex items-center gap-1 pt-4 text-sm font-bold text-[#1f6a58] hover:text-[#185746]"
                 >
                   <span>View Details</span>
