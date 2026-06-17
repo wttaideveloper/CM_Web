@@ -6,7 +6,7 @@ import AppShell from "@/components/layout/AppShell";
 
 const tabs = ["Service Info", "Pricing", "Availability", "Review"];
 
-const weekdays = [
+const initialWeekdays = [
   { day: "Monday", enabled: true },
   { day: "Tuesday", enabled: true },
   { day: "Wednesday", enabled: true },
@@ -25,6 +25,20 @@ const summary = [
   ["Price", "$95.00"],
   ["Availability", "Monday-Friday, 09:00 AM - 06:00 PM"],
 ];
+
+function generateHourlyTimeOptions() {
+  const options: string[] = [];
+
+  for (let hour = 0; hour < 24; hour++) {
+    const period = hour >= 12 ? "PM" : "AM";
+    const displayHour = hour % 12 === 0 ? 12 : hour % 12;
+    options.push(`${displayHour.toString().padStart(2, "0")}:00 ${period}`);
+  }
+
+  return options;
+}
+
+const timeOptions = generateHourlyTimeOptions();
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return <span className="text-sm font-bold text-[#06201c]">{children}</span>;
@@ -48,6 +62,7 @@ function scheduleSelectClass() {
 
 export default function CreateServicePage() {
   const [activeTab, setActiveTab] = useState(tabs[0]);
+  const [weekdays, setWeekdays] = useState(initialWeekdays);
 
   return (
     <AppShell>
@@ -207,7 +222,7 @@ export default function CreateServicePage() {
               </p>
             </div>
             <div className="space-y-3">
-              {weekdays.map((day) => (
+              {weekdays.map((day, index) => (
                 <div
                   key={day.day}
                   className="grid gap-3 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] p-3 md:grid-cols-[1.1fr_1fr_1fr_1fr]"
@@ -215,7 +230,16 @@ export default function CreateServicePage() {
                   <label className="flex h-[46px] items-center gap-3 text-sm font-bold text-[#06201c]">
                     <input
                       type="checkbox"
-                      defaultChecked={day.enabled}
+                      checked={day.enabled}
+                      onChange={() =>
+                        setWeekdays((current) =>
+                          current.map((currentDay, currentIndex) =>
+                            currentIndex === index
+                              ? { ...currentDay, enabled: !currentDay.enabled }
+                              : currentDay,
+                          ),
+                        )
+                      }
                       className="h-4 w-4 accent-[#1f6a58]"
                     />
                     {day.day}
@@ -223,13 +247,17 @@ export default function CreateServicePage() {
                   {day.enabled ? (
                     <>
                       <select className={scheduleSelectClass()} defaultValue="09:00 AM">
-                        {["09:00 AM", "10:00 AM", "11:00 AM"].map((option) => (
-                          <option key={option}>{option}</option>
+                        {timeOptions.map((time) => (
+                          <option key={time} value={time}>
+                            {time}
+                          </option>
                         ))}
                       </select>
                       <select className={scheduleSelectClass()} defaultValue="06:00 PM">
-                        {["05:00 PM", "06:00 PM", "07:00 PM"].map((option) => (
-                          <option key={option}>{option}</option>
+                        {timeOptions.map((time) => (
+                          <option key={time} value={time}>
+                            {time}
+                          </option>
                         ))}
                       </select>
                       <select className={scheduleSelectClass()} defaultValue="60 min">

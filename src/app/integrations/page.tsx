@@ -71,7 +71,7 @@ export default function IntegrationsPage() {
         {integrations.map((integration) => (
           <article
             key={integration.name}
-            className="flex flex-col gap-4 rounded-2xl border border-[#e1ebe6] bg-white px-5 py-4 shadow-sm lg:flex-row lg:items-center lg:justify-between"
+            className="flex flex-col gap-4 rounded-2xl border border-[#e1ebe6] bg-white px-5 py-4 shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-emerald-50/60 hover:border-[#b9d8ce] hover:shadow-md lg:flex-row lg:items-center lg:justify-between"
           >
             <div className="flex gap-4">
               <div

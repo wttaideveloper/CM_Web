@@ -182,10 +182,10 @@ export default function EnterpriseDetailsPage() {
           {stats.map((item) => (
             <div
               key={item.label}
-              className="rounded-2xl border border-[#e1ebe6] bg-[#f9fcfa] p-5"
+              className="group rounded-2xl border border-[#e1ebe6] bg-[#f9fcfa] p-5 transition-all duration-200 hover:bg-gradient-to-br hover:from-[#1f6a58] hover:to-[#8fc9a8] hover:shadow-md"
             >
-              <p className="text-sm text-[#52736a]">{item.label}</p>
-              <p className="mt-2 text-2xl font-extrabold text-[#06201c]">
+              <p className="text-sm text-[#52736a] transition-colors duration-200 group-hover:text-white">{item.label}</p>
+              <p className="mt-2 text-2xl font-extrabold text-[#06201c] transition-colors duration-200 group-hover:text-white">
                 {item.value}
               </p>
             </div>

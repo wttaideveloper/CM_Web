@@ -199,7 +199,7 @@ className={`h-10 whitespace-nowrap rounded-xl px-4 text-sm font-bold transition 
             </thead>
             <tbody className="divide-y divide-[#edf3f0]">
               {attributes.map((attribute) => (
-                <tr key={attribute.name} className="h-[64px] text-sm">
+                <tr key={attribute.name} className="h-[64px] text-sm transition-colors duration-150 hover:bg-emerald-50/60">
                   <td className="px-5 font-semibold text-[#06201c]">
                     {attribute.name}
                   </td>

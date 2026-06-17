@@ -168,7 +168,7 @@ export default function ServicesPage() {
             </thead>
             <tbody className="divide-y divide-[#edf3f0]">
               {services.map((service, index) => (
-                <tr key={service.name} className="h-16 text-xs">
+                <tr key={service.name} className="h-16 cursor-pointer text-xs transition-colors duration-150 hover:bg-emerald-50/60">
                   <td className="px-3">
                     <div className="flex min-w-0 items-center gap-2.5">
                       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e8f6ee] text-xs font-bold text-[#1f6a58]">

@@ -98,7 +98,7 @@ export default function EventsPage() {
         {events.map((event) => (
           <article
             key={event.title}
-            className="overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-sm"
+            className="overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-sm transition-all duration-200 ease-out hover:-translate-y-1 hover:scale-[1.01] hover:shadow-lg"
           >
             <div
               className={`relative h-[180px] bg-gradient-to-br ${event.gradient} p-5 text-white`}

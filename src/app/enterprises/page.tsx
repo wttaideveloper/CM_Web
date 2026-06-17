@@ -267,7 +267,7 @@ export default function EnterprisesPage() {
               </thead>
               <tbody className="divide-y divide-[#edf3f0]">
                 {enterprises.map((enterprise) => (
-                  <tr key={enterprise.id} className="h-[64px] text-xs">
+                  <tr key={enterprise.id} className="h-[64px] cursor-pointer text-xs transition-colors duration-150 hover:bg-emerald-50/60">
                     <td className="px-3 font-semibold text-[#06201c]">
                       {enterprise.name}
                     </td>
@@ -367,7 +367,7 @@ export default function EnterprisesPage() {
             {enterprises.map((enterprise) => (
               <article
                 key={enterprise.name}
-                className="flex min-h-[260px] flex-col justify-between rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm"
+                className="flex min-h-[260px] flex-col justify-between rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm transition-colors duration-150 hover:bg-emerald-50/60"
               >
                 <div>
                   <div className="flex items-start justify-between gap-3">
