@@ -27,7 +27,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
       { label: "Dashboard", href: "/dashboard", icon: "▦" },
       { label: "Enterprises", href: "/enterprises", icon: "▤" },
       { label: "Create Enterprise", href: "/enterprises/create", icon: "+", child: true },
-      { label: "Enterprise Details", href: "/enterprises/1", icon: "◉", child: true },
+      { label: "Enterprise Details", href: "/enterprises", icon: "◉", child: true },
       { label: "Products", href: "/products", icon: "◇" },
       { label: "Create Product", href: "/products/create", icon: "+", child: true },
       { label: "Services", href: "/services", icon: "⚒" },
@@ -62,12 +62,14 @@ function SidebarContent({
 
             <div className="space-y-1">
               {group.items.map((item) => {
-                const active = isActive(pathname, item.href);
+                const resolvedHref =
+                  item.label === "Enterprise Details" ? "/enterprises" : item.href;
+                const active = isActive(pathname, resolvedHref);
 
                 return (
                   <Link
-                    key={item.href}
-                    href={item.href}
+                    key={`${item.label}-${resolvedHref}`}
+                    href={resolvedHref}
                     onClick={onNavigate}
                     className={`flex items-center gap-3 rounded-xl py-2 text-sm font-medium transition ${
                       item.child ? "ml-5 px-3" : "px-3"

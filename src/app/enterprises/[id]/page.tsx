@@ -1,24 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 
 import AppShell from "@/components/layout/AppShell";
+import { getEnterpriseById, getEnterprises } from "@/services/enterprise.service";
+import type { EnterpriseDto } from "@/types/enterprise.types";
 
 const tabs = ["Overview", "Products", "Services", "Events", "Trainings"];
 
 const stats = [
-  { label: "Members", value: "284" },
-  { label: "Products", value: "24" },
-  { label: "Services", value: "12" },
-  { label: "Revenue", value: "$12.4K" },
-];
-
-const contact = [
-  { label: "Email", value: "hello@pinnaclewellness.com" },
-  { label: "Phone", value: "+1 (512) 555-0184" },
-  { label: "Website", value: "pinnaclewellness.com" },
-  { label: "Address", value: "124 Wellness Ave, Austin, TX 78701" },
+  { label: "Members", value: "N/A" },
+  { label: "Products", value: "N/A" },
+  { label: "Services", value: "N/A" },
+  { label: "Revenue", value: "N/A" },
 ];
 
 const performance = [
@@ -29,126 +25,161 @@ const performance = [
   { label: "Retention Rate", value: "91%", tone: "text-[#14532d]" },
 ];
 
-const products = [
-  {
-    name: "Premium Yoga Mat",
-    category: "Fitness",
-    price: "$68.00",
-    status: "Active",
-    gradient: "from-[#1f6a58] via-[#5c9d7a] to-[#c8d8d3]",
-  },
-  {
-    name: "Whey Protein Blend",
-    category: "Supplements",
-    price: "$42.00",
-    status: "Active",
-    gradient: "from-[#245f54] via-[#6f9e6a] to-[#d7b56d]",
-  },
-  {
-    name: "Resistance Band Set",
-    category: "Recovery",
-    price: "$24.00",
-    status: "Out of Stock",
-    gradient: "from-[#173f3b] via-[#5c8878] to-[#adc7b9]",
-  },
-  {
-    name: "Foam Roller Pro",
-    category: "Recovery",
-    price: "$36.00",
-    status: "Active",
-    gradient: "from-[#204f49] via-[#6c9b86] to-[#d5caa7]",
-  },
-];
-
-const services = [
-  {
-    name: "Personal Training Session",
-    instructor: "Maya Chen",
-    duration: "60 min",
-    category: "Fitness",
-    bookings: "312 bookings",
-    price: "$85",
-  },
-  {
-    name: "Nutrition Coaching",
-    instructor: "Samira Patel",
-    duration: "75 min",
-    category: "Nutrition",
-    bookings: "184 bookings",
-    price: "$120",
-  },
-  {
-    name: "Group Yoga Class",
-    instructor: "Elena Park",
-    duration: "45 min",
-    category: "Yoga",
-    bookings: "529 bookings",
-    price: "$28",
-  },
-  {
-    name: "Sports Massage",
-    instructor: "Jordan Miles",
-    duration: "50 min",
-    category: "Recovery",
-    bookings: "146 bookings",
-    price: "$95",
-  },
-];
-
-const events = [
-  {
-    title: "Summer Wellness Summit",
-    date: "Jun 24",
-    location: "Austin Convention Center",
-    registered: "342 registered",
-    gradient: "from-[#1f6a58] via-[#37836c] to-[#8ac7a7]",
-  },
-  {
-    title: "Nutrition Workshop",
-    date: "Jul 02",
-    location: "Virtual",
-    registered: "128 registered",
-    gradient: "from-[#245f54] via-[#4f946f] to-[#d7b56d]",
-  },
-  {
-    title: "5K Wellness Run",
-    date: "Jul 13",
-    location: "Zilker Park",
-    registered: "491 registered",
-    gradient: "from-[#1f6a58] via-[#6aa86b] to-[#c8d8d3]",
-  },
-];
-
-const trainings = [
-  {
-    title: "Foundation Fitness Program",
-    level: "Beginner",
-    lessons: "18 lessons",
-    duration: "6 weeks",
-    enrolled: "428 enrolled",
-  },
-  {
-    title: "Advanced Strength Training",
-    level: "Advanced",
-    lessons: "24 lessons",
-    duration: "8 weeks",
-    enrolled: "219 enrolled",
-  },
-  {
-    title: "Mindful Movement Mastery",
-    level: "Intermediate",
-    lessons: "16 lessons",
-    duration: "5 weeks",
-    enrolled: "301 enrolled",
-  },
-];
-
 function SectionLabel({ children }: { children: string }) {
   return <p className="text-sm font-bold text-[#06201c]">{children}</p>;
 }
 
+function resolveEnterpriseName(enterprise: EnterpriseDto) {
+  return (
+    enterprise.business_legal_name ||
+    enterprise.business_short_name ||
+    enterprise.name ||
+    "Unnamed Enterprise"
+  );
+}
+
+function formatAddress(address: string | null | undefined) {
+  if (!address) {
+    return "N/A";
+  }
+
+  return address.trim() || "N/A";
+}
+
 export default function EnterpriseDetailsPage() {
+  const params = useParams<{ id: string }>();
   const [activeTab, setActiveTab] = useState(tabs[0]);
+  const [enterprise, setEnterprise] = useState<EnterpriseDto | null>(null);
+  const [enterpriseOptions, setEnterpriseOptions] = useState<EnterpriseDto[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showSelector, setShowSelector] = useState(false);
+
+  async function fetchEnterpriseOptions() {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const data = await getEnterprises();
+      setEnterpriseOptions(data);
+      setShowSelector(true);
+    } catch (fetchError) {
+      setError(fetchError instanceof Error ? fetchError.message : "Unable to load enterprise.");
+      setShowSelector(false);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function fetchEnterprise() {
+    if (!params.id) {
+      await fetchEnterpriseOptions();
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const data = await getEnterpriseById(params.id);
+      setEnterprise(data);
+      setShowSelector(false);
+    } catch {
+      try {
+        const data = await getEnterprises();
+        setEnterpriseOptions(data);
+        setShowSelector(true);
+        setError(null);
+      } catch (selectorError) {
+        setError(selectorError instanceof Error ? selectorError.message : "Unable to load enterprise.");
+        setShowSelector(false);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void fetchEnterprise();
+  }, [params.id]);
+
+  const enterpriseName = enterprise ? resolveEnterpriseName(enterprise) : "Unnamed Enterprise";
+  const enterpriseStatus = enterprise?.status === false ? "Inactive" : "Active";
+  const aboutText = enterprise?.business_description || enterprise?.description || "N/A";
+  const contactItems = [
+    { label: "Email", value: enterprise?.business_email || "N/A" },
+    { label: "Phone", value: enterprise?.business_phone || "N/A" },
+    { label: "Website", value: "N/A" },
+    {
+      label: "Address",
+      value: formatAddress(
+        enterprise?.registered_address ||
+          enterprise?.business_address ||
+          enterprise?.communication_address,
+      ),
+    },
+  ];
+
+  if (isLoading) {
+    return (
+      <AppShell>
+        <section className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
+          <p className="text-base font-bold text-[#06201c]">Loading enterprise...</p>
+          <p className="mt-2 text-sm text-[#52736a]">Please wait while we fetch the latest data.</p>
+        </section>
+      </AppShell>
+    );
+  }
+
+  if (error) {
+    return (
+      <AppShell>
+        <section className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
+          <p className="text-base font-bold text-[#06201c]">Unable to load enterprise.</p>
+          <p className="mt-2 text-sm text-[#52736a]">Please try again.</p>
+          <button
+            type="button"
+            onClick={() => void fetchEnterprise()}
+            className="mt-5 h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
+          >
+            Retry
+          </button>
+        </section>
+      </AppShell>
+    );
+  }
+
+  if (showSelector) {
+    return (
+      <AppShell>
+        <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
+          <h2 className="text-2xl font-bold text-[#06201c]">Select an enterprise</h2>
+          <p className="mt-2 text-sm text-[#52736a]">Choose an enterprise to view its details.</p>
+
+          {enterpriseOptions.length === 0 ? (
+            <div className="mt-6 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] px-5 py-16 text-center">
+              <p className="text-base font-bold text-[#06201c]">
+                No enterprises found. Create an enterprise to get started.
+              </p>
+            </div>
+          ) : (
+            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {enterpriseOptions.map((item) => (
+                <Link
+                  key={item.id}
+                  href={`/enterprises/${item.id}`}
+                  className="rounded-2xl border border-[#e1ebe6] bg-[#f9fcfa] p-5 transition-colors hover:bg-[#f4faf7]"
+                >
+                  <p className="text-base font-bold text-[#06201c]">{resolveEnterpriseName(item)}</p>
+                  <p className="mt-2 text-sm text-[#52736a]">{item.business_email || "N/A"}</p>
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>
@@ -158,18 +189,16 @@ export default function EnterpriseDetailsPage() {
           <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-4">
               <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/95 text-2xl font-extrabold text-[#1f6a58]">
-                P
+                {enterpriseName.charAt(0).toUpperCase()}
               </div>
               <div>
                 <div className="flex flex-wrap items-center gap-3">
-                  <h2 className="text-2xl font-bold">Pinnacle Wellness Co.</h2>
+                  <h2 className="text-2xl font-bold">{enterpriseName}</h2>
                   <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-bold">
-                    Active
+                    {enterpriseStatus}
                   </span>
                 </div>
-                <p className="mt-1 text-sm text-white/80">
-                  Wellness Center · Austin, TX
-                </p>
+                <p className="mt-1 text-sm text-white/80">Enterprise · {enterpriseStatus}</p>
               </div>
             </div>
             <button className="h-12 rounded-full bg-white px-5 text-sm font-bold text-[#1f6a58]">
@@ -216,15 +245,12 @@ export default function EnterpriseDetailsPage() {
             <div className="mt-5">
               <SectionLabel>About</SectionLabel>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-[#52736a]">
-                Pinnacle Wellness Co. blends coaching, recovery services, and
-                functional wellness products for modern teams and individuals. The
-                enterprise focuses on sustainable routines, measurable health
-                outcomes, and high-touch member support.
+                {aboutText}
               </p>
             </div>
 
             <div className="mt-6 grid gap-4 md:grid-cols-2">
-              {contact.map((item) => (
+              {contactItems.map((item) => (
                 <div
                   key={item.label}
                   className="rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] p-4"
@@ -255,8 +281,8 @@ export default function EnterpriseDetailsPage() {
                   <span className="text-sm font-semibold text-[#52736a]">
                     {item.label}
                   </span>
-                  <span className={`text-sm font-extrabold ${item.tone}`}>
-                    {item.value}
+                  <span className="text-sm font-extrabold text-[#52736a]">
+                    N/A
                   </span>
                 </div>
               ))}
@@ -281,39 +307,8 @@ export default function EnterpriseDetailsPage() {
             </Link>
           </div>
 
-          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {products.map((product) => (
-              <article
-                key={product.name}
-                className="overflow-hidden rounded-2xl border border-[#e1ebe6] bg-[#f9fcfa] shadow-sm"
-              >
-                <div
-                  className={`relative h-32 bg-gradient-to-br ${product.gradient}`}
-                />
-                <div className="p-4">
-                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
-                    {product.category}
-                  </p>
-                  <h4 className="mt-2 text-sm font-bold text-[#06201c]">
-                    {product.name}
-                  </h4>
-                  <div className="mt-3 flex items-center justify-between">
-                    <span className="text-sm font-bold text-[#06201c]">
-                      {product.price}
-                    </span>
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-bold ${
-                        product.status === "Active"
-                          ? "bg-[#e8f6ee] text-[#16825b]"
-                          : "bg-[#fff1f0] text-[#b42318]"
-                      }`}
-                    >
-                      {product.status}
-                    </span>
-                  </div>
-                </div>
-              </article>
-            ))}
+          <div className="mt-5 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] px-5 py-16 text-center">
+            <p className="text-base font-bold text-[#06201c]">No products available yet.</p>
           </div>
         </section>
       ) : null}
@@ -329,98 +324,21 @@ export default function EnterpriseDetailsPage() {
               + Add Service
             </Link>
           </div>
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-          {services.map((service) => (
-            <article
-              key={service.name}
-              className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex min-w-0 gap-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#e8f6ee] text-sm font-bold text-[#1f6a58]">
-                    S
-                  </div>
-                  <div className="min-w-0">
-                    <h4 className="truncate text-base font-bold text-[#06201c]">
-                      {service.name}
-                    </h4>
-                    <p className="mt-1 text-sm text-[#52736a]">
-                      {service.instructor} · {service.duration}
-                    </p>
-                  </div>
-                </div>
-                <span className="text-base font-bold text-[#06201c]">
-                  {service.price}
-                </span>
-              </div>
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-[#f1f4f3] px-3 py-1 text-xs font-bold text-[#52736a]">
-                  {service.category}
-                </span>
-                <span className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#16825b]">
-                  {service.bookings}
-                </span>
-              </div>
-            </article>
-          ))}
+          <div className="mt-4 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] px-5 py-16 text-center">
+            <p className="text-base font-bold text-[#06201c]">No services available yet.</p>
           </div>
         </section>
       ) : null}
 
       {activeTab === "Events" ? (
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {events.map((event) => (
-            <article
-              key={event.title}
-              className="overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-sm"
-            >
-              <div className={`h-40 bg-gradient-to-br ${event.gradient}`} />
-              <div className="p-5">
-                <p className="text-sm font-bold text-[#1f6a58]">{event.date}</p>
-                <h4 className="mt-2 text-base font-bold text-[#06201c]">
-                  {event.title}
-                </h4>
-                <p className="mt-2 text-sm text-[#52736a]">{event.location}</p>
-                <p className="mt-3 text-sm font-semibold text-[#06201c]">
-                  {event.registered}
-                </p>
-              </div>
-            </article>
-          ))}
+        <div className="mt-5 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] px-5 py-16 text-center">
+          <p className="text-base font-bold text-[#06201c]">No events available yet.</p>
         </div>
       ) : null}
 
       {activeTab === "Trainings" ? (
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {trainings.map((training) => (
-            <article
-              key={training.title}
-              className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex gap-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#e8f6ee] text-sm font-bold text-[#1f6a58]">
-                    T
-                  </div>
-                  <div>
-                    <span className="rounded-full bg-[#f1f4f3] px-3 py-1 text-xs font-bold text-[#52736a]">
-                      {training.level}
-                    </span>
-                    <h4 className="mt-3 text-base font-bold text-[#06201c]">
-                      {training.title}
-                    </h4>
-                  </div>
-                </div>
-              </div>
-              <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-[#52736a]">
-                <span>{training.lessons}</span>
-                <span>{training.duration}</span>
-              </div>
-              <p className="mt-3 text-sm font-semibold text-[#06201c]">
-                {training.enrolled}
-              </p>
-            </article>
-          ))}
+        <div className="mt-5 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] px-5 py-16 text-center">
+          <p className="text-base font-bold text-[#06201c]">No trainings available yet.</p>
         </div>
       ) : null}
     </AppShell>

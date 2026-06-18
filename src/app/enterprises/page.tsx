@@ -3,80 +3,10 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import AppShell from "@/components/layout/AppShell";
 
-const enterprises = [
-  {
-    id: 1,
-    name: "Pinnacle Wellness Co.",
-    category: "Wellness Center",
-    location: "Austin, TX",
-    members: "284",
-    revenue: "$12.4K",
-    joined: "Jun 4, 2026",
-    status: "Active",
-  },
-  {
-    id: 2,
-    name: "NutriCore Studio",
-    category: "Nutrition",
-    location: "Denver, CO",
-    members: "192",
-    revenue: "$8.7K",
-    joined: "May 22, 2026",
-    status: "Active",
-  },
-  {
-    id: 3,
-    name: "MindFlow Center",
-    category: "Mental Health",
-    location: "Portland, OR",
-    members: "118",
-    revenue: "$5.9K",
-    joined: "May 16, 2026",
-    status: "Pending",
-  },
-  {
-    id: 4,
-    name: "FlexFit Academy",
-    category: "Fitness",
-    location: "Chicago, IL",
-    members: "356",
-    revenue: "$16.8K",
-    joined: "Apr 28, 2026",
-    status: "Active",
-  },
-  {
-    id: 5,
-    name: "CalmSpace Retreat",
-    category: "Retreat",
-    location: "Sedona, AZ",
-    members: "76",
-    revenue: "$3.2K",
-    joined: "Apr 11, 2026",
-    status: "Inactive",
-  },
-  {
-    id: 6,
-    name: "Vital Sports Clinic",
-    category: "Sports Therapy",
-    location: "Miami, FL",
-    members: "219",
-    revenue: "$10.1K",
-    joined: "Mar 30, 2026",
-    status: "Active",
-  },
-  {
-    id: 7,
-    name: "GreenRoot Organics",
-    category: "Organic Products",
-    location: "Boulder, CO",
-    members: "143",
-    revenue: "$6.5K",
-    joined: "Mar 18, 2026",
-    status: "Pending",
-  },
-];
+import AppShell from "@/components/layout/AppShell";
+import { getEnterprises } from "@/services/enterprise.service";
+import type { EnterpriseDto, EnterpriseListItem } from "@/types/enterprise.types";
 
 const filters = ["Category", "Status", "Location"];
 
@@ -157,11 +87,51 @@ function MoreVerticalIcon() {
   );
 }
 
+function mapEnterpriseToListItem(enterprise: EnterpriseDto): EnterpriseListItem {
+  return {
+    id: enterprise.id,
+    name:
+      enterprise.business_legal_name ||
+      enterprise.business_short_name ||
+      enterprise.name ||
+      "Unnamed Enterprise",
+    description: enterprise.business_description || enterprise.description || "",
+    category: "Enterprise",
+    location:
+      enterprise.registered_address ||
+      enterprise.business_address ||
+      enterprise.communication_address ||
+      "N/A",
+    members: "\u2014",
+    revenue: "\u2014",
+    joined: "\u2014",
+    status: enterprise.status === false ? "Inactive" : "Active",
+  };
+}
+
 export default function EnterprisesPage() {
   const router = useRouter();
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
-  const [openActionsId, setOpenActionsId] = useState<number | null>(null);
+  const [openActionsId, setOpenActionsId] = useState<string | null>(null);
+  const [enterprises, setEnterprises] = useState<EnterpriseListItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const listSectionRef = useRef<HTMLElement | null>(null);
+
+  async function fetchEnterprises() {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const data = await getEnterprises();
+      setEnterprises(data.map(mapEnterpriseToListItem));
+    } catch (fetchError) {
+      setError(fetchError instanceof Error ? fetchError.message : "Unable to load enterprises.");
+      setEnterprises([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -185,6 +155,16 @@ export default function EnterprisesPage() {
     };
   }, []);
 
+  useEffect(() => {
+    void fetchEnterprises();
+  }, []);
+
+  const enterprisesCount = enterprises.length;
+  const paginationText =
+    enterprisesCount === 0
+      ? "Showing 0 of 0 enterprises"
+      : `Showing 1-${enterprisesCount} of ${enterprisesCount} enterprises`;
+
   return (
     <AppShell>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -195,11 +175,11 @@ export default function EnterprisesPage() {
           </p>
         </div>
         <button
-  onClick={() => router.push("/enterprises/create")}
-  className="h-12 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
->
-  + Add Enterprise
-</button>
+          onClick={() => router.push("/enterprises/create")}
+          className="h-12 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
+        >
+          + Add Enterprise
+        </button>
       </div>
 
       <div className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
@@ -247,110 +227,134 @@ export default function EnterprisesPage() {
       {viewMode === "list" ? (
         <section ref={listSectionRef} className="mt-5 overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-[#edf3f0] px-5 py-4 dark:border-[rgba(167,195,186,0.10)]">
-            <h3 className="text-base font-bold text-[#06201c]">7 enterprises found</h3>
+            <h3 className="text-base font-bold text-[#06201c]">{enterprisesCount} enterprises found</h3>
             <span className="text-sm text-[#52736a]">Updated just now</span>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1080px] table-fixed text-left">
-              <thead className="bg-[#f8fbf9] text-[11px] uppercase tracking-[0.1em] text-[#7f9d94]">
-                <tr>
-                  <th className="w-[22%] px-3 py-3 font-bold">Enterprise</th>
-                  <th className="w-[14%] px-3 py-3 font-bold">Category</th>
-                  <th className="w-[14%] px-3 py-3 font-bold">Location</th>
-                  <th className="w-[9%] px-3 py-3 font-bold">Members</th>
-                  <th className="w-[10%] px-3 py-3 font-bold">Revenue</th>
-                  <th className="w-[10%] px-3 py-3 font-bold">Joined</th>
-                  <th className="w-[9%] px-3 py-3 font-bold">Status</th>
-                  <th className="w-[12%] px-3 py-3 text-right font-bold">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#edf3f0] dark:divide-[rgba(167,195,186,0.10)]">
-                {enterprises.map((enterprise) => (
-                  <tr key={enterprise.id} className="h-[64px] cursor-pointer text-xs transition-colors duration-150 hover:bg-emerald-50/60 dark:hover:bg-[#103329]">
-                    <td className="px-3 font-semibold text-[#06201c]">
-                      {enterprise.name}
-                    </td>
-                    <td className="px-3 text-[#52736a]">{enterprise.category}</td>
-                    <td className="px-3 text-[#52736a]">{enterprise.location}</td>
-                    <td className="px-3 font-semibold text-[#06201c]">
-                      {enterprise.members}
-                    </td>
-                    <td className="px-3 font-semibold text-[#06201c]">
-                      {enterprise.revenue}
-                    </td>
-                    <td className="px-3 text-[#52736a]">{enterprise.joined}</td>
-                    <td className="px-3">
-                      <span
-                        className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold ${statusClass(
-                          enterprise.status,
-                        )}`}
-                      >
-                        {enterprise.status}
-                      </span>
-                    </td>
-                    <td className="px-3">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => router.push(`/enterprises/${enterprise.id}`)}
-                          className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] transition-colors hover:bg-[#eef8f2] hover:text-[#1f6a58]"
-                          aria-label={`View ${enterprise.name}`}
+          {isLoading ? (
+            <div className="px-5 py-16 text-center">
+              <p className="text-base font-bold text-[#06201c]">Loading enterprises...</p>
+              <p className="mt-2 text-sm text-[#52736a]">Please wait while we fetch the latest data.</p>
+            </div>
+          ) : error ? (
+            <div className="px-5 py-16 text-center">
+              <p className="text-base font-bold text-[#06201c]">Unable to load enterprises.</p>
+              <p className="mt-2 text-sm text-[#52736a]">Please try again.</p>
+              <button
+                type="button"
+                onClick={() => void fetchEnterprises()}
+                className="mt-5 h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
+              >
+                Retry
+              </button>
+            </div>
+          ) : enterprisesCount === 0 ? (
+            <div className="px-5 py-16 text-center">
+              <p className="text-base font-bold text-[#06201c]">No enterprises found.</p>
+              <p className="mt-2 text-sm text-[#52736a]">Create an enterprise to get started.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1080px] table-fixed text-left">
+                <thead className="bg-[#f8fbf9] text-[11px] uppercase tracking-[0.1em] text-[#7f9d94]">
+                  <tr>
+                    <th className="w-[22%] px-3 py-3 font-bold">Enterprise</th>
+                    <th className="w-[14%] px-3 py-3 font-bold">Category</th>
+                    <th className="w-[14%] px-3 py-3 font-bold">Location</th>
+                    <th className="w-[9%] px-3 py-3 font-bold">Members</th>
+                    <th className="w-[10%] px-3 py-3 font-bold">Revenue</th>
+                    <th className="w-[10%] px-3 py-3 font-bold">Joined</th>
+                    <th className="w-[9%] px-3 py-3 font-bold">Status</th>
+                    <th className="w-[12%] px-3 py-3 text-right font-bold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#edf3f0] dark:divide-[rgba(167,195,186,0.10)]">
+                  {enterprises.map((enterprise) => (
+                    <tr key={enterprise.id} className="h-[64px] cursor-pointer text-xs transition-colors duration-150 hover:bg-emerald-50/60 dark:hover:bg-[#103329]">
+                      <td className="px-3 font-semibold text-[#06201c]">
+                        {enterprise.name}
+                      </td>
+                      <td className="px-3 text-[#52736a]">{enterprise.category}</td>
+                      <td className="px-3 text-[#52736a]">{enterprise.location}</td>
+                      <td className="px-3 font-semibold text-[#06201c]">
+                        {enterprise.members}
+                      </td>
+                      <td className="px-3 font-semibold text-[#06201c]">
+                        {enterprise.revenue}
+                      </td>
+                      <td className="px-3 text-[#52736a]">{enterprise.joined}</td>
+                      <td className="px-3">
+                        <span
+                          className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold ${statusClass(
+                            enterprise.status,
+                          )}`}
                         >
-                          <EyeIcon />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => router.push(`/enterprises/${enterprise.id}/edit`)}
-                          className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] transition-colors hover:bg-[#eef8f2] hover:text-[#1f6a58]"
-                          aria-label={`Edit ${enterprise.name}`}
-                        >
-                          <PencilIcon />
-                        </button>
-                        <div className="relative">
+                          {enterprise.status}
+                        </span>
+                      </td>
+                      <td className="px-3">
+                        <div className="flex items-center justify-end gap-1.5">
                           <button
                             type="button"
-                            onClick={() =>
-                              setOpenActionsId((current) =>
-                                current === enterprise.id ? null : enterprise.id,
-                              )
-                            }
+                            onClick={() => router.push(`/enterprises/${enterprise.id}`)}
                             className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] transition-colors hover:bg-[#eef8f2] hover:text-[#1f6a58]"
-                            aria-label={`More actions for ${enterprise.name}`}
-                            aria-expanded={openActionsId === enterprise.id}
+                            aria-label={`View ${enterprise.name}`}
                           >
-                            <MoreVerticalIcon />
+                            <EyeIcon />
                           </button>
-
-                          <div
-                            className={`absolute right-0 top-[calc(100%+8px)] z-20 w-40 rounded-xl border border-[#e1ebe6] bg-white p-1 shadow-[0_12px_24px_rgba(7,53,45,0.12)] transition duration-150 ${
-                              openActionsId === enterprise.id
-                                ? "pointer-events-auto scale-100 opacity-100"
-                                : "pointer-events-none scale-95 opacity-0"
-                            }`}
+                          <button
+                            type="button"
+                            onClick={() => router.push(`/enterprises/${enterprise.id}/edit`)}
+                            className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] transition-colors hover:bg-[#eef8f2] hover:text-[#1f6a58]"
+                            aria-label={`Edit ${enterprise.name}`}
                           >
-                            {["View", "Edit", "Duplicate", "Archive", "Delete"].map((action) => (
-                              <button
-                                key={action}
-                                type="button"
-                                onClick={() => setOpenActionsId(null)}
-                                className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-[#06201c] transition-colors hover:bg-[#f4faf7]"
-                              >
-                                {action}
-                              </button>
-                            ))}
+                            <PencilIcon />
+                          </button>
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setOpenActionsId((current) =>
+                                  current === enterprise.id ? null : enterprise.id,
+                                )
+                              }
+                              className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] transition-colors hover:bg-[#eef8f2] hover:text-[#1f6a58]"
+                              aria-label={`More actions for ${enterprise.name}`}
+                              aria-expanded={openActionsId === enterprise.id}
+                            >
+                              <MoreVerticalIcon />
+                            </button>
+
+                            <div
+                              className={`absolute right-0 top-[calc(100%+8px)] z-20 w-40 rounded-xl border border-[#e1ebe6] bg-white p-1 shadow-[0_12px_24px_rgba(7,53,45,0.12)] transition duration-150 ${
+                                openActionsId === enterprise.id
+                                  ? "pointer-events-auto scale-100 opacity-100"
+                                  : "pointer-events-none scale-95 opacity-0"
+                              }`}
+                            >
+                              {["View", "Edit", "Duplicate", "Archive", "Delete"].map((action) => (
+                                <button
+                                  key={action}
+                                  type="button"
+                                  onClick={() => setOpenActionsId(null)}
+                                  className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-[#06201c] transition-colors hover:bg-[#f4faf7]"
+                                >
+                                  {action}
+                                </button>
+                              ))}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           <div className="flex flex-col gap-3 border-t border-[#edf3f0] px-5 py-4 text-sm text-[#52736a] dark:border-[rgba(167,195,186,0.10)] sm:flex-row sm:items-center sm:justify-between">
-            <p>Showing 1-7 of 142 enterprises</p>
+            <p>{paginationText}</p>
             <div className="flex gap-2">
               <button className="h-10 rounded-full border border-[#d7e5df] px-4 font-semibold">
                 Previous
@@ -363,99 +367,123 @@ export default function EnterprisesPage() {
         </section>
       ) : (
         <section className="mt-5">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-            {enterprises.map((enterprise) => (
-              <article
-                key={enterprise.name}
-                className="flex min-h-[260px] flex-col justify-between rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm transition-colors duration-150 hover:bg-emerald-50/60"
+          {isLoading ? (
+            <div className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
+              <p className="text-base font-bold text-[#06201c]">Loading enterprises...</p>
+              <p className="mt-2 text-sm text-[#52736a]">Please wait while we fetch the latest data.</p>
+            </div>
+          ) : error ? (
+            <div className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
+              <p className="text-base font-bold text-[#06201c]">Unable to load enterprises.</p>
+              <p className="mt-2 text-sm text-[#52736a]">Please try again.</p>
+              <button
+                type="button"
+                onClick={() => void fetchEnterprises()}
+                className="mt-5 h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
               >
-                <div>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 items-start gap-3">
-                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#e8f6ee] text-base font-extrabold text-[#1f6a58]">
-                        {enterprise.name
-                          .split(" ")
-                          .map((part) => part[0])
-                          .slice(0, 2)
-                          .join("")}
-                      </div>
-                      <div className="min-w-0">
-                        <h3 className="line-clamp-2 max-w-[15ch] text-sm font-bold leading-5 text-[#06201c]">
-                          {enterprise.name}
-                        </h3>
-                        <p className="mt-1 text-xs text-[#52736a]">{enterprise.category}</p>
-                      </div>
-                    </div>
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-bold ${statusClass(
-                        enterprise.status,
-                      )}`}
-                    >
-                      {enterprise.status}
-                    </span>
-                  </div>
-
-                  <div className="mt-4 flex items-center gap-2 text-sm text-[#52736a]">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#f1f7f4] text-[#1f6a58]">
-                      <svg
-                        aria-hidden="true"
-                        className="h-3.5 w-3.5"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                      >
-                        <path
-                          d="M12 21s6-5.2 6-10a6 6 0 1 0-12 0c0 4.8 6 10 6 10Z"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                        <circle cx="12" cy="11" r="2" stroke="currentColor" strokeWidth="2" />
-                      </svg>
-                    </span>
-                    <p className="truncate">{enterprise.location}</p>
-                  </div>
-
-                  <div className="mt-4 border-t border-[#edf3f0] pt-4 dark:border-[rgba(167,195,186,0.10)]">
-                    <div className="grid grid-cols-3 gap-3 text-sm">
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#7f9d94]">
-                          Members
-                        </p>
-                        <p className="mt-1 truncate font-semibold text-[#06201c]">
-                          {enterprise.members}
-                        </p>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#7f9d94]">
-                          Revenue
-                        </p>
-                        <p className="mt-1 truncate font-semibold text-[#06201c]">
-                          {enterprise.revenue}
-                        </p>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#7f9d94]">
-                          Joined
-                        </p>
-                        <p className="mt-1 break-words font-semibold leading-5 text-[#06201c]">
-                          {enterprise.joined}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <Link
-                  href={`/enterprises/${enterprise.id}`}
-                  className="inline-flex items-center gap-1 pt-4 text-sm font-bold text-[#1f6a58] hover:text-[#185746]"
+                Retry
+              </button>
+            </div>
+          ) : enterprisesCount === 0 ? (
+            <div className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
+              <p className="text-base font-bold text-[#06201c]">No enterprises found.</p>
+              <p className="mt-2 text-sm text-[#52736a]">Create an enterprise to get started.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {enterprises.map((enterprise) => (
+                <article
+                  key={enterprise.id}
+                  className="flex min-h-[260px] flex-col justify-between rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm transition-colors duration-150 hover:bg-emerald-50/60"
                 >
-                  <span>View Details</span>
-                  <span aria-hidden="true">→</span>
-                </Link>
-              </article>
-            ))}
-          </div>
+                  <div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#e8f6ee] text-base font-extrabold text-[#1f6a58]">
+                          {enterprise.name
+                            .split(" ")
+                            .map((part) => part[0])
+                            .slice(0, 2)
+                            .join("")}
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="line-clamp-2 max-w-[15ch] text-sm font-bold leading-5 text-[#06201c]">
+                            {enterprise.name}
+                          </h3>
+                          <p className="mt-1 text-xs text-[#52736a]">{enterprise.category}</p>
+                        </div>
+                      </div>
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-bold ${statusClass(
+                          enterprise.status,
+                        )}`}
+                      >
+                        {enterprise.status}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 flex items-center gap-2 text-sm text-[#52736a]">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#f1f7f4] text-[#1f6a58]">
+                        <svg
+                          aria-hidden="true"
+                          className="h-3.5 w-3.5"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                        >
+                          <path
+                            d="M12 21s6-5.2 6-10a6 6 0 1 0-12 0c0 4.8 6 10 6 10Z"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          <circle cx="12" cy="11" r="2" stroke="currentColor" strokeWidth="2" />
+                        </svg>
+                      </span>
+                      <p className="truncate">{enterprise.location}</p>
+                    </div>
+
+                    <div className="mt-4 border-t border-[#edf3f0] pt-4 dark:border-[rgba(167,195,186,0.10)]">
+                      <div className="grid grid-cols-3 gap-3 text-sm">
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#7f9d94]">
+                            Members
+                          </p>
+                          <p className="mt-1 truncate font-semibold text-[#06201c]">
+                            {enterprise.members}
+                          </p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#7f9d94]">
+                            Revenue
+                          </p>
+                          <p className="mt-1 truncate font-semibold text-[#06201c]">
+                            {enterprise.revenue}
+                          </p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#7f9d94]">
+                            Joined
+                          </p>
+                          <p className="mt-1 break-words font-semibold leading-5 text-[#06201c]">
+                            {enterprise.joined}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <Link
+                    href={`/enterprises/${enterprise.id}`}
+                    className="inline-flex items-center gap-1 pt-4 text-sm font-bold text-[#1f6a58] hover:text-[#185746]"
+                  >
+                    <span>View Details</span>
+                    <span aria-hidden="true">&rarr;</span>
+                  </Link>
+                </article>
+              ))}
+            </div>
+          )}
         </section>
       )}
     </AppShell>

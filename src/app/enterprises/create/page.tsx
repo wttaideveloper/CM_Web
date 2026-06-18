@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 import AppShell from "@/components/layout/AppShell";
+import { createEnterprise } from "@/services/enterprise.service";
 
 const steps = ["Business Info", "Contact", "Address", "Branding", "Review"];
 
@@ -62,9 +64,82 @@ function StepCircle({
 }
 
 export default function CreateEnterprisePage() {
+  const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
+  const [enterpriseName, setEnterpriseName] = useState("");
+  const [tradingName, setTradingName] = useState("");
+  const [businessEmail, setBusinessEmail] = useState("");
+  const [businessPhone, setBusinessPhone] = useState("");
+  const [description, setDescription] = useState("");
+  const [streetAddress, setStreetAddress] = useState("");
+  const [city, setCity] = useState("");
+  const [stateProvince, setStateProvince] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [country, setCountry] = useState("United States");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const isFirstStep = currentStep === 0;
   const isLastStep = currentStep === steps.length - 1;
+
+  async function handleSubmit() {
+    const trimmedName = enterpriseName.trim();
+    const trimmedTradingName = tradingName.trim();
+    const trimmedBusinessEmail = businessEmail.trim();
+    const trimmedBusinessPhone = businessPhone.trim();
+    const trimmedDescription = description.trim();
+    const trimmedStreetAddress = streetAddress.trim();
+    const trimmedCity = city.trim();
+    const trimmedStateProvince = stateProvince.trim();
+    const trimmedPostalCode = postalCode.trim();
+    const trimmedCountry = country.trim();
+
+    if (
+      !trimmedName ||
+      !trimmedTradingName ||
+      !trimmedDescription ||
+      !trimmedBusinessEmail ||
+      !trimmedBusinessPhone ||
+      !trimmedStreetAddress ||
+      !trimmedCity ||
+      !trimmedStateProvince ||
+      !trimmedPostalCode ||
+      !trimmedCountry
+    ) {
+      setError("Please complete all required enterprise fields.");
+      setCurrentStep(0);
+      return;
+    }
+
+    if (isSubmitting) {
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      setError(null);
+
+      await createEnterprise({
+        business_legal_name: trimmedName,
+        business_short_name: trimmedTradingName,
+        business_description: trimmedDescription,
+        business_email: trimmedBusinessEmail,
+        business_phone: trimmedBusinessPhone,
+        registered_address: `${trimmedStreetAddress}, ${trimmedCity}, ${trimmedStateProvince} ${trimmedPostalCode}, ${trimmedCountry}`,
+        business_address: `${trimmedStreetAddress}, ${trimmedCity}, ${trimmedStateProvince} ${trimmedPostalCode}, ${trimmedCountry}`,
+        communication_address: `${trimmedStreetAddress}, ${trimmedCity}, ${trimmedStateProvince} ${trimmedPostalCode}, ${trimmedCountry}`,
+        logo_url: "",
+        business_images: "",
+      });
+
+      router.push("/enterprises");
+    } catch (submitError) {
+      setError(
+        submitError instanceof Error ? submitError.message : "Unable to create enterprise.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
 
   return (
     <AppShell>
@@ -132,12 +207,20 @@ export default function CreateEnterprisePage() {
                 <input
                   type="text"
                   placeholder="Pinnacle Wellness Co."
+                  value={enterpriseName}
+                  onChange={(event) => setEnterpriseName(event.target.value)}
                   className={inputClass()}
                 />
               </label>
               <label className="block">
                 <FieldLabel>Trading / DBA Name</FieldLabel>
-                <input type="text" placeholder="Pinnacle Wellness" className={inputClass()} />
+                <input
+                  type="text"
+                  placeholder="Pinnacle Wellness"
+                  value={tradingName}
+                  onChange={(event) => setTradingName(event.target.value)}
+                  className={inputClass()}
+                />
               </label>
               <label className="block">
                 <FieldLabel>Registration Number*</FieldLabel>
@@ -180,6 +263,8 @@ export default function CreateEnterprisePage() {
                 <FieldLabel>Description*</FieldLabel>
                 <textarea
                   placeholder="Describe the enterprise, services, and wellness focus."
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
                   className="mt-1.5 min-h-28 w-full resize-none rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3.5 py-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
                 />
               </label>
@@ -209,12 +294,20 @@ export default function CreateEnterprisePage() {
                 <input
                   type="email"
                   placeholder="sarah@pinnacle.com"
+                  value={businessEmail}
+                  onChange={(event) => setBusinessEmail(event.target.value)}
                   className={inputClass()}
                 />
               </label>
               <label className="block">
                 <FieldLabel>Phone Number*</FieldLabel>
-                <input type="text" placeholder="+1 (415) 555-0192" className={inputClass()} />
+                <input
+                  type="text"
+                  placeholder="+1 (415) 555-0192"
+                  value={businessPhone}
+                  onChange={(event) => setBusinessPhone(event.target.value)}
+                  className={inputClass()}
+                />
               </label>
               <label className="block">
                 <FieldLabel>Secondary Email</FieldLabel>
@@ -242,6 +335,8 @@ export default function CreateEnterprisePage() {
                 <input
                   type="text"
                   placeholder="124 Wellness Ave"
+                  value={streetAddress}
+                  onChange={(event) => setStreetAddress(event.target.value)}
                   className={inputClass()}
                 />
               </label>
@@ -251,19 +346,41 @@ export default function CreateEnterprisePage() {
               </label>
               <label className="block">
                 <FieldLabel>City*</FieldLabel>
-                <input type="text" placeholder="San Francisco" className={inputClass()} />
+                <input
+                  type="text"
+                  placeholder="San Francisco"
+                  value={city}
+                  onChange={(event) => setCity(event.target.value)}
+                  className={inputClass()}
+                />
               </label>
               <label className="block">
                 <FieldLabel>State / Province*</FieldLabel>
-                <input type="text" placeholder="CA" className={inputClass()} />
+                <input
+                  type="text"
+                  placeholder="CA"
+                  value={stateProvince}
+                  onChange={(event) => setStateProvince(event.target.value)}
+                  className={inputClass()}
+                />
               </label>
               <label className="block">
                 <FieldLabel>Postal Code*</FieldLabel>
-                <input type="text" placeholder="94105" className={inputClass()} />
+                <input
+                  type="text"
+                  placeholder="94105"
+                  value={postalCode}
+                  onChange={(event) => setPostalCode(event.target.value)}
+                  className={inputClass()}
+                />
               </label>
               <label className="block md:col-span-2">
                 <FieldLabel>Country*</FieldLabel>
-                <select className={selectClass()} defaultValue="United States">
+                <select
+                  className={selectClass()}
+                  value={country}
+                  onChange={(event) => setCountry(event.target.value)}
+                >
                   {[
                     "United States",
                     "India",
@@ -334,12 +451,15 @@ export default function CreateEnterprisePage() {
               <div className="rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] p-5">
                 <div className="grid gap-4 md:grid-cols-2">
                   {[
-                    ["Enterprise Name", "Pinnacle Wellness Co."],
-                    ["Category", "Fitness & Wellness"],
-                    ["Contact", "Sarah Johnson"],
-                    ["Email", "sarah@pinnacle.com"],
-                    ["Phone", "+1 (415) 555-0192"],
-                    ["City", "San Francisco, CA"],
+                    ["Enterprise Name", enterpriseName.trim() || "N/A"],
+                    ["Trading / DBA Name", tradingName.trim() || "N/A"],
+                    ["Description", description.trim() || "N/A"],
+                    ["Email", businessEmail.trim() || "N/A"],
+                    ["Phone", businessPhone.trim() || "N/A"],
+                    [
+                      "Address",
+                      `${streetAddress.trim() || "N/A"}, ${city.trim() || "N/A"}, ${stateProvince.trim() || "N/A"} ${postalCode.trim() || "N/A"}, ${country.trim() || "N/A"}`,
+                    ],
                   ].map(([label, value]) => (
                     <div key={label}>
                       <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
@@ -365,6 +485,12 @@ export default function CreateEnterprisePage() {
           </>
         ) : null}
 
+        {error ? (
+          <div className="mt-5 rounded-2xl border border-[#f3d0cb] bg-[#fff6f5] px-4 py-3 text-sm text-[#b42318]">
+            {error}
+          </div>
+        ) : null}
+
         <div className="mt-6 flex flex-col gap-3 border-t border-[#edf3f0] pt-5 sm:flex-row sm:items-center sm:justify-between">
           <button className="h-12 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a]">
             Save as Draft
@@ -378,14 +504,16 @@ export default function CreateEnterprisePage() {
               Back
             </button>
             <button
+              type="button"
+              disabled={isSubmitting}
               onClick={() =>
                 isLastStep
-                  ? undefined
+                  ? void handleSubmit()
                   : setCurrentStep((step) => Math.min(step + 1, steps.length - 1))
               }
-              className="h-12 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
+              className="h-12 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-70"
             >
-              {isLastStep ? "Submit Enterprise" : "Continue →"}
+              {isLastStep ? (isSubmitting ? "Submitting..." : "Submit Enterprise") : "Continue →"}
             </button>
           </div>
         </div>
