@@ -1,62 +1,13 @@
-import Link from "next/link";
-import AppShell from "@/components/layout/AppShell";
+"use client";
 
-const services = [
-  {
-    name: "Personal Training Session",
-    enterprise: "FlexFit Academy",
-    category: "Fitness",
-    price: "$85",
-    duration: "60 min",
-    bookings: "312",
-    status: "Active",
-  },
-  {
-    name: "Nutrition Coaching",
-    enterprise: "NutriCore Studio",
-    category: "Nutrition",
-    price: "$120",
-    duration: "75 min",
-    bookings: "184",
-    status: "Active",
-  },
-  {
-    name: "Group Yoga Class",
-    enterprise: "Pinnacle Wellness Co.",
-    category: "Yoga",
-    price: "$28",
-    duration: "45 min",
-    bookings: "529",
-    status: "Active",
-  },
-  {
-    name: "Sports Massage",
-    enterprise: "Vital Sports Clinic",
-    category: "Recovery",
-    price: "$95",
-    duration: "50 min",
-    bookings: "146",
-    status: "Pending",
-  },
-  {
-    name: "Mental Health Consultation",
-    enterprise: "MindFlow Center",
-    category: "Mental Health",
-    price: "$140",
-    duration: "60 min",
-    bookings: "98",
-    status: "Active",
-  },
-  {
-    name: "Guided Meditation Session",
-    enterprise: "CalmSpace Retreat",
-    category: "Meditation",
-    price: "$36",
-    duration: "30 min",
-    bookings: "221",
-    status: "Pending",
-  },
-];
+import Link from "next/link";
+import { useEffect, useState } from "react";
+
+import AppShell from "@/components/layout/AppShell";
+import { getEnterprises } from "@/services/enterprise.service";
+import { getServices } from "@/services/service.service";
+import type { EnterpriseDto } from "@/types/enterprise.types";
+import type { ServiceDto, ServiceListItem } from "@/types/service.types";
 
 const filters = ["Category", "Enterprise", "Status"];
 
@@ -113,7 +64,63 @@ function EditIcon() {
   );
 }
 
+function resolveEnterpriseName(enterprise: EnterpriseDto) {
+  return (
+    enterprise.business_legal_name ||
+    enterprise.business_short_name ||
+    enterprise.name ||
+    "Unnamed Enterprise"
+  );
+}
+
+function mapServiceToListItem(
+  service: ServiceDto,
+  enterpriseNameMap: Record<string, string>,
+): ServiceListItem {
+  return {
+    id: service.id,
+    enterpriseId: service.enterprise_id,
+    name: service.service_name || "Unnamed Service",
+    description: service.service_description || "",
+    category: service.service_category || "N/A",
+    price: `₹${Number.isFinite(service.service_price) ? service.service_price.toFixed(2) : "0.00"}`,
+    duration: `${Number.isFinite(service.duration) ? service.duration : 0} min`,
+    availability: service.availability_status === false ? "Unavailable" : "Available",
+    status: service.service_status === false ? "Inactive" : "Active",
+    enterprise: enterpriseNameMap[service.enterprise_id] || "Unknown Enterprise",
+    bookings: "—",
+  };
+}
+
 export default function ServicesPage() {
+  const [services, setServices] = useState<ServiceListItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  async function fetchServices() {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const [serviceData, enterpriseData] = await Promise.all([getServices(), getEnterprises()]);
+      const nextEnterpriseNameMap = enterpriseData.reduce<Record<string, string>>((acc, enterprise) => {
+        acc[enterprise.id] = resolveEnterpriseName(enterprise);
+        return acc;
+      }, {});
+
+      setServices(serviceData.map((service) => mapServiceToListItem(service, nextEnterpriseNameMap)));
+    } catch (fetchError) {
+      setError(fetchError instanceof Error ? fetchError.message : "Unable to load services.");
+      setServices([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void fetchServices();
+  }, []);
+
   return (
     <AppShell>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -152,68 +159,97 @@ export default function ServicesPage() {
       </div>
 
       <section className="mt-5 overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] table-fixed text-left">
-            <thead className="bg-[#f8fbf9] text-[11px] uppercase tracking-[0.1em] text-[#7f9d94]">
-              <tr>
-                <th className="w-[22%] px-3 py-3 font-bold">Service</th>
-                <th className="w-[19%] px-3 py-3 font-bold">Enterprise</th>
-                <th className="w-[12%] px-3 py-3 font-bold">Category</th>
-                <th className="w-[9%] px-3 py-3 font-bold">Price</th>
-                <th className="w-[10%] px-3 py-3 font-bold">Duration</th>
-                <th className="w-[10%] px-3 py-3 font-bold">Bookings</th>
-                <th className="w-[10%] px-3 py-3 font-bold">Status</th>
-                <th className="w-[8%] px-3 py-3 font-bold">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#edf3f0] dark:divide-[rgba(167,195,186,0.10)]">
-              {services.map((service, index) => (
-                <tr key={service.name} className="h-16 cursor-pointer text-xs transition-colors duration-150 hover:bg-emerald-50/60 dark:hover:bg-[#103329]">
-                  <td className="px-3">
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e8f6ee] text-xs font-bold text-[#1f6a58]">
-                        S{index + 1}
-                      </span>
-                      <span className="truncate font-semibold text-[#06201c]">
-                        {service.name}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="truncate px-3 text-[#52736a]">{service.enterprise}</td>
-                  <td className="truncate px-3 text-[#52736a]">{service.category}</td>
-                  <td className="px-3 font-semibold text-[#06201c]">{service.price}</td>
-                  <td className="px-3 text-[#52736a]">{service.duration}</td>
-                  <td className="px-3 text-[#52736a]">{service.bookings}</td>
-                  <td className="px-3">
-                    <span
-                      className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold ${statusClass(
-                        service.status,
-                      )}`}
-                    >
-                      {service.status}
-                    </span>
-                  </td>
-                  <td className="px-3">
-                    <div className="flex gap-1.5 text-[#52736a]">
-                      <button
-                        className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7] dark:border-[#21463c] dark:hover:bg-[#103329]"
-                        aria-label={`View ${service.name}`}
-                      >
-                        <EyeIcon />
-                      </button>
-                      <button
-                        className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7] dark:border-[#21463c] dark:hover:bg-[#103329]"
-                        aria-label={`Edit ${service.name}`}
-                      >
-                        <EditIcon />
-                      </button>
-                    </div>
-                  </td>
+        {isLoading ? (
+          <div className="px-5 py-16 text-center">
+            <p className="text-base font-bold text-[#06201c]">Loading services...</p>
+            <p className="mt-2 text-sm text-[#52736a]">Please wait while we fetch the latest data.</p>
+          </div>
+        ) : error ? (
+          <div className="px-5 py-16 text-center">
+            <p className="text-base font-bold text-[#06201c]">Unable to load services.</p>
+            <p className="mt-2 text-sm text-[#52736a]">Please try again.</p>
+            <button
+              type="button"
+              onClick={() => void fetchServices()}
+              className="mt-5 h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
+            >
+              Retry
+            </button>
+          </div>
+        ) : services.length === 0 ? (
+          <div className="px-5 py-16 text-center">
+            <p className="text-base font-bold text-[#06201c]">No services found.</p>
+            <p className="mt-2 text-sm text-[#52736a]">Create a service to get started.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[900px] table-fixed text-left">
+              <thead className="bg-[#f8fbf9] text-[11px] uppercase tracking-[0.1em] text-[#7f9d94]">
+                <tr>
+                  <th className="w-[22%] px-3 py-3 font-bold">Service</th>
+                  <th className="w-[19%] px-3 py-3 font-bold">Enterprise</th>
+                  <th className="w-[12%] px-3 py-3 font-bold">Category</th>
+                  <th className="w-[9%] px-3 py-3 font-bold">Price</th>
+                  <th className="w-[10%] px-3 py-3 font-bold">Duration</th>
+                  <th className="w-[10%] px-3 py-3 font-bold">Bookings</th>
+                  <th className="w-[10%] px-3 py-3 font-bold">Status</th>
+                  <th className="w-[8%] px-3 py-3 font-bold">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-[#edf3f0] dark:divide-[rgba(167,195,186,0.10)]">
+                {services.map((service, index) => (
+                  <tr
+                    key={service.id}
+                    className="h-16 cursor-pointer text-xs transition-colors duration-150 hover:bg-emerald-50/60 dark:hover:bg-[#103329]"
+                  >
+                    <td className="px-3">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e8f6ee] text-xs font-bold text-[#1f6a58]">
+                          S{index + 1}
+                        </span>
+                        <span className="truncate font-semibold text-[#06201c]">
+                          {service.name}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="truncate px-3 text-[#52736a]">{service.enterprise}</td>
+                    <td className="truncate px-3 text-[#52736a]">{service.category}</td>
+                    <td className="px-3 font-semibold text-[#06201c]">{service.price}</td>
+                    <td className="px-3 text-[#52736a]">{service.duration}</td>
+                    <td className="px-3 text-[#52736a]">{service.bookings}</td>
+                    <td className="px-3">
+                      <span
+                        className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold ${statusClass(
+                          service.status,
+                        )}`}
+                      >
+                        {service.status}
+                      </span>
+                    </td>
+                    <td className="px-3">
+                      <div className="flex gap-1.5 text-[#52736a]">
+                        <Link
+                          href={`/services/${service.id}`}
+                          className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7] dark:border-[#21463c] dark:hover:bg-[#103329]"
+                          aria-label={`View ${service.name}`}
+                        >
+                          <EyeIcon />
+                        </Link>
+                        <Link
+                          href={`/services/${service.id}/edit`}
+                          className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7] dark:border-[#21463c] dark:hover:bg-[#103329]"
+                          aria-label={`Edit ${service.name}`}
+                        >
+                          <EditIcon />
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </AppShell>
   );

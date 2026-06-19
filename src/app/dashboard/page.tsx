@@ -1,14 +1,16 @@
 "use client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import AppShell from "@/components/layout/AppShell";
+import { useEffect, useState } from "react";
 
-const stats = [
-  { label: "Total Revenue", value: "$284,521", change: "+18.4%" },
-  { label: "Enterprises", value: "142", change: "+7" },
-  { label: "Active Members", value: "8,294", change: "+12.3%" },
-  { label: "Products Listed", value: "1,847", change: "+94" },
-];
+import AppShell from "@/components/layout/AppShell";
+import { getEnterprises } from "@/services/enterprise.service";
+import { getProducts } from "@/services/product.service";
+
+type KpiState = {
+  enterprises: number | null;
+  products: number | null;
+  loading: boolean;
+};
 
 const quickActions = [
   "Add Enterprise",
@@ -175,7 +177,51 @@ function ActivityIcon({ kind }: { kind: "package" | "video" | "building" | "tren
 }
 
 export default function DashboardPage() {
-  const router = useRouter();
+  const [kpis, setKpis] = useState<KpiState>({
+    enterprises: null,
+    products: null,
+    loading: true,
+  });
+
+  async function loadDashboardCounts() {
+    setKpis((current) => ({ ...current, loading: true }));
+
+    try {
+      const [enterpriseData, productData] = await Promise.all([getEnterprises(), getProducts()]);
+
+      setKpis({
+        enterprises: enterpriseData.length,
+        products: productData.length,
+        loading: false,
+      });
+    } catch {
+      setKpis({
+        enterprises: null,
+        products: null,
+        loading: false,
+      });
+    }
+  }
+
+  useEffect(() => {
+    void loadDashboardCounts();
+  }, []);
+
+  const stats = [
+    { label: "Total Revenue", value: kpis.loading ? "Loading" : "$0", change: "+18.4%" },
+    {
+      label: "Enterprises",
+      value: kpis.loading ? "Loading" : String(kpis.enterprises ?? 0),
+      change: "+7",
+    },
+    { label: "Active Members", value: kpis.loading ? "Loading" : "0", change: "+12.3%" },
+    {
+      label: "Products Listed",
+      value: kpis.loading ? "Loading" : String(kpis.products ?? 0),
+      change: "+94",
+    },
+  ];
+
   return (
     <AppShell>
       <div className="w-full min-w-0 overflow-x-hidden">
@@ -191,7 +237,7 @@ export default function DashboardPage() {
 
         <div className="flex items-center gap-3">
           <button
-  onClick={() => router.refresh()}
+  onClick={() => void loadDashboardCounts()}
   className="rounded-full border border-[#d7e5df] px-4 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#f5faf7]"
 >
   Refresh

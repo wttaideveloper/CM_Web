@@ -6,16 +6,13 @@ import { useParams } from "next/navigation";
 
 import AppShell from "@/components/layout/AppShell";
 import { getEnterpriseById, getEnterprises } from "@/services/enterprise.service";
+import { getProducts } from "@/services/product.service";
+import { getServices } from "@/services/service.service";
 import type { EnterpriseDto } from "@/types/enterprise.types";
+import type { ProductDto } from "@/types/product.types";
+import type { ServiceDto } from "@/types/service.types";
 
 const tabs = ["Overview", "Products", "Services", "Events", "Trainings"];
-
-const stats = [
-  { label: "Members", value: "N/A" },
-  { label: "Products", value: "N/A" },
-  { label: "Services", value: "N/A" },
-  { label: "Revenue", value: "N/A" },
-];
 
 const performance = [
   { label: "Member Growth", value: "↑ 18%", tone: "text-[#16825b]" },
@@ -46,12 +43,147 @@ function formatAddress(address: string | null | undefined) {
   return address.trim() || "N/A";
 }
 
+function formatPrice(price: number) {
+  return `₹${Number.isFinite(price) ? price.toFixed(2) : "0.00"}`;
+}
+
+function ProductCard({ product }: { product: ProductDto }) {
+  const [hasImageError, setHasImageError] = useState(false);
+  const imageSrc = product.product_images?.trim() || "";
+  const hasImage = Boolean(imageSrc) && !hasImageError;
+  const productName = product.product_name || "Unnamed Product";
+  const productCategory = product.product_category || "N/A";
+  const productStatus = product.product_status === false ? "Inactive" : "Active";
+
+  return (
+    <article className="overflow-hidden rounded-2xl border border-[#e6efea] bg-white shadow-sm">
+      <div
+        className="relative h-[160px] w-full overflow-hidden rounded-t-2xl border-b border-[#2a6f5c]"
+        style={{
+          backgroundColor: "#2f7d68",
+          backgroundImage:
+            "radial-gradient(rgba(255,255,255,0.22) 1px, transparent 1px), linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0))",
+          backgroundSize: "24px 24px, 100% 100%",
+        }}
+      >
+        {hasImage ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={imageSrc}
+            alt={productName}
+            className="h-full w-full object-cover"
+            onError={() => setHasImageError(true)}
+          />
+        ) : (
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.12)_0_1px,transparent_1px)] bg-[length:28px_28px]" />
+        )}
+      </div>
+
+      <div className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7f9d94]">
+              {productCategory}
+            </p>
+            <h4 className="mt-2 truncate text-base font-bold text-[#06201c]">
+              {productName}
+            </h4>
+          </div>
+          <span
+            className={`rounded-full px-2.5 py-1 text-[11px] font-bold whitespace-nowrap ${
+              productStatus === "Inactive"
+                ? "bg-[#fff1f0] text-[#b42318]"
+                : "bg-[#e8f6ee] text-[#16825b]"
+            }`}
+          >
+            {productStatus}
+          </span>
+        </div>
+
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <p className="text-sm font-semibold text-[#06201c]">{formatPrice(product.product_price)}</p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function ServiceCard({ service }: { service: ServiceDto }) {
+  const serviceStatus = service.service_status === false ? "Inactive" : "Active";
+  const availabilityStatus =
+    service.availability_status === false ? "Unavailable" : "Available";
+  const subtitle =
+    service.service_description?.trim().slice(0, 84) || `${service.duration || 0} min`;
+
+  return (
+    <article className="rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm">
+      <div className="flex items-start gap-3">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#e8f6ee] text-[#1f6a58]">
+          <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M7 7h10M7 12h10M7 17h7"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          </svg>
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h4 className="truncate text-base font-bold text-[#06201c]">
+                {service.service_name || "Unnamed Service"}
+              </h4>
+              <p className="mt-1 text-sm text-[#52736a]">
+                {subtitle || `${service.duration || 0} min`}
+              </p>
+            </div>
+            <p className="whitespace-nowrap text-sm font-bold text-[#06201c]">
+              {formatPrice(service.service_price)}
+            </p>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-[#f1f4f3] px-2.5 py-1 text-[11px] font-bold text-[#6b7f79]">
+              {service.service_category || "N/A"}
+            </span>
+            <span
+              className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                availabilityStatus === "Available"
+                  ? "bg-[#e8f6ee] text-[#16825b]"
+                  : "bg-[#fff7e5] text-[#b7791f]"
+              }`}
+            >
+              {availabilityStatus}
+            </span>
+            <span
+              className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                serviceStatus === "Active"
+                  ? "bg-[#e8f6ee] text-[#16825b]"
+                  : "bg-[#fff1f0] text-[#b42318]"
+              }`}
+            >
+              {serviceStatus}
+            </span>
+            <span className="text-xs text-[#52736a]">{`${service.duration || 0} min`}</span>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 export default function EnterpriseDetailsPage() {
   const params = useParams<{ id: string }>();
   const [activeTab, setActiveTab] = useState(tabs[0]);
   const [enterprise, setEnterprise] = useState<EnterpriseDto | null>(null);
   const [enterpriseOptions, setEnterpriseOptions] = useState<EnterpriseDto[]>([]);
+  const [products, setProducts] = useState<ProductDto[]>([]);
+  const [services, setServices] = useState<ServiceDto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+  const [isLoadingServices, setIsLoadingServices] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSelector, setShowSelector] = useState(false);
 
@@ -99,13 +231,54 @@ export default function EnterpriseDetailsPage() {
     }
   }
 
+  async function fetchEnterpriseProducts() {
+    try {
+      setIsLoadingProducts(true);
+      const data = await getProducts();
+      setProducts(data);
+    } catch {
+      setProducts([]);
+    } finally {
+      setIsLoadingProducts(false);
+    }
+  }
+
+  async function fetchEnterpriseServices() {
+    try {
+      setIsLoadingServices(true);
+      const data = await getServices();
+      setServices(data);
+    } catch {
+      setServices([]);
+    } finally {
+      setIsLoadingServices(false);
+    }
+  }
+
   useEffect(() => {
     void fetchEnterprise();
   }, [params.id]);
 
+  useEffect(() => {
+    void fetchEnterpriseProducts();
+  }, []);
+
+  useEffect(() => {
+    void fetchEnterpriseServices();
+  }, []);
+
+  const currentId = params.id;
   const enterpriseName = enterprise ? resolveEnterpriseName(enterprise) : "Unnamed Enterprise";
   const enterpriseStatus = enterprise?.status === false ? "Inactive" : "Active";
   const aboutText = enterprise?.business_description || enterprise?.description || "N/A";
+  const enterpriseProducts = products.filter((product) => product.enterprise_id === currentId);
+  const enterpriseServices = services.filter((service) => service.enterprise_id === currentId);
+  const stats = [
+    { label: "Members", value: "0" },
+    { label: "Products", value: String(enterpriseProducts.length) },
+    { label: "Services", value: String(enterpriseServices.length) },
+    { label: "Revenue", value: "$0" },
+  ];
   const contactItems = [
     { label: "Email", value: enterprise?.business_email || "N/A" },
     { label: "Phone", value: enterprise?.business_phone || "N/A" },
@@ -113,8 +286,8 @@ export default function EnterpriseDetailsPage() {
     {
       label: "Address",
       value: formatAddress(
-        enterprise?.registered_address ||
-          enterprise?.business_address ||
+        enterprise?.business_address ||
+          enterprise?.registered_address ||
           enterprise?.communication_address,
       ),
     },
@@ -201,9 +374,12 @@ export default function EnterpriseDetailsPage() {
                 <p className="mt-1 text-sm text-white/80">Enterprise · {enterpriseStatus}</p>
               </div>
             </div>
-            <button className="h-12 rounded-full bg-white px-5 text-sm font-bold text-[#1f6a58]">
+            <Link
+              href={`/enterprises/${currentId}/edit`}
+              className="inline-flex h-12 items-center rounded-full bg-white px-5 text-sm font-bold text-[#1f6a58]"
+            >
               Edit
-            </button>
+            </Link>
           </div>
         </div>
 
@@ -307,9 +483,21 @@ export default function EnterpriseDetailsPage() {
             </Link>
           </div>
 
-          <div className="mt-5 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] px-5 py-16 text-center">
-            <p className="text-base font-bold text-[#06201c]">No products available yet.</p>
-          </div>
+          {isLoadingProducts ? (
+            <div className="mt-5 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] px-5 py-16 text-center">
+              <p className="text-base font-bold text-[#06201c]">Loading products...</p>
+            </div>
+          ) : enterpriseProducts.length === 0 ? (
+            <div className="mt-5 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] px-5 py-16 text-center">
+              <p className="text-base font-bold text-[#06201c]">No products available yet.</p>
+            </div>
+          ) : (
+            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {enterpriseProducts.map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))}
+            </div>
+          )}
         </section>
       ) : null}
 
@@ -324,9 +512,21 @@ export default function EnterpriseDetailsPage() {
               + Add Service
             </Link>
           </div>
-          <div className="mt-4 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] px-5 py-16 text-center">
-            <p className="text-base font-bold text-[#06201c]">No services available yet.</p>
-          </div>
+          {isLoadingServices ? (
+            <div className="mt-4 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] px-5 py-16 text-center">
+              <p className="text-base font-bold text-[#06201c]">Loading services...</p>
+            </div>
+          ) : enterpriseServices.length === 0 ? (
+            <div className="mt-4 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] px-5 py-16 text-center">
+              <p className="text-base font-bold text-[#06201c]">No services available yet.</p>
+            </div>
+          ) : (
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              {enterpriseServices.map((service) => (
+                <ServiceCard key={service.id} service={service} />
+              ))}
+            </div>
+          )}
         </section>
       ) : null}
 

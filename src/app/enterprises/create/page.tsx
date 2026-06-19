@@ -76,6 +76,10 @@ export default function CreateEnterprisePage() {
   const [stateProvince, setStateProvince] = useState("");
   const [postalCode, setPostalCode] = useState("");
   const [country, setCountry] = useState("United States");
+  const [useRegisteredAddressForOtherAddresses, setUseRegisteredAddressForOtherAddresses] =
+    useState(true);
+  const [businessAddress, setBusinessAddress] = useState("");
+  const [communicationAddress, setCommunicationAddress] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isFirstStep = currentStep === 0;
@@ -92,6 +96,9 @@ export default function CreateEnterprisePage() {
     const trimmedStateProvince = stateProvince.trim();
     const trimmedPostalCode = postalCode.trim();
     const trimmedCountry = country.trim();
+    const registeredAddress = `${trimmedStreetAddress}, ${trimmedCity}, ${trimmedStateProvince} ${trimmedPostalCode}, ${trimmedCountry}`;
+    const trimmedBusinessAddress = businessAddress.trim();
+    const trimmedCommunicationAddress = communicationAddress.trim();
 
     if (
       !trimmedName ||
@@ -103,7 +110,9 @@ export default function CreateEnterprisePage() {
       !trimmedCity ||
       !trimmedStateProvince ||
       !trimmedPostalCode ||
-      !trimmedCountry
+      !trimmedCountry ||
+      (!useRegisteredAddressForOtherAddresses &&
+        (!trimmedBusinessAddress || !trimmedCommunicationAddress))
     ) {
       setError("Please complete all required enterprise fields.");
       setCurrentStep(0);
@@ -124,9 +133,13 @@ export default function CreateEnterprisePage() {
         business_description: trimmedDescription,
         business_email: trimmedBusinessEmail,
         business_phone: trimmedBusinessPhone,
-        registered_address: `${trimmedStreetAddress}, ${trimmedCity}, ${trimmedStateProvince} ${trimmedPostalCode}, ${trimmedCountry}`,
-        business_address: `${trimmedStreetAddress}, ${trimmedCity}, ${trimmedStateProvince} ${trimmedPostalCode}, ${trimmedCountry}`,
-        communication_address: `${trimmedStreetAddress}, ${trimmedCity}, ${trimmedStateProvince} ${trimmedPostalCode}, ${trimmedCountry}`,
+        registered_address: registeredAddress,
+        business_address: useRegisteredAddressForOtherAddresses
+          ? registeredAddress
+          : trimmedBusinessAddress,
+        communication_address: useRegisteredAddressForOtherAddresses
+          ? registeredAddress
+          : trimmedCommunicationAddress,
         logo_url: "",
         business_images: "",
       });
@@ -392,6 +405,41 @@ export default function CreateEnterprisePage() {
                   ))}
                 </select>
               </label>
+              <label className="flex items-center gap-3 md:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={useRegisteredAddressForOtherAddresses}
+                  onChange={(event) =>
+                    setUseRegisteredAddressForOtherAddresses(event.target.checked)
+                  }
+                  className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58] focus:ring-[#1f6a58]"
+                />
+                <span className="text-sm font-semibold text-[#06201c]">
+                  Use registered address for business and communication address
+                </span>
+              </label>
+              {!useRegisteredAddressForOtherAddresses ? (
+                <>
+                  <label className="block md:col-span-2">
+                    <FieldLabel>Business Address*</FieldLabel>
+                    <textarea
+                      placeholder="Enter business address"
+                      value={businessAddress}
+                      onChange={(event) => setBusinessAddress(event.target.value)}
+                      className="mt-1.5 min-h-28 w-full resize-none rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3.5 py-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
+                    />
+                  </label>
+                  <label className="block md:col-span-2">
+                    <FieldLabel>Communication Address*</FieldLabel>
+                    <textarea
+                      placeholder="Enter communication address"
+                      value={communicationAddress}
+                      onChange={(event) => setCommunicationAddress(event.target.value)}
+                      className="mt-1.5 min-h-28 w-full resize-none rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3.5 py-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
+                    />
+                  </label>
+                </>
+              ) : null}
             </div>
           </>
         ) : null}

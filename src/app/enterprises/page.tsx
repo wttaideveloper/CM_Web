@@ -5,7 +5,11 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import AppShell from "@/components/layout/AppShell";
-import { getEnterprises } from "@/services/enterprise.service";
+import {
+  activateEnterprise,
+  deactivateEnterprise,
+  getEnterprises,
+} from "@/services/enterprise.service";
 import type { EnterpriseDto, EnterpriseListItem } from "@/types/enterprise.types";
 
 const filters = ["Category", "Status", "Location"];
@@ -98,8 +102,8 @@ function mapEnterpriseToListItem(enterprise: EnterpriseDto): EnterpriseListItem 
     description: enterprise.business_description || enterprise.description || "",
     category: "Enterprise",
     location:
-      enterprise.registered_address ||
       enterprise.business_address ||
+      enterprise.registered_address ||
       enterprise.communication_address ||
       "N/A",
     members: "\u2014",
@@ -113,10 +117,12 @@ export default function EnterprisesPage() {
   const router = useRouter();
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [openActionsId, setOpenActionsId] = useState<string | null>(null);
+  const [openActionsPosition, setOpenActionsPosition] = useState<{ top: number; right: number } | null>(null);
   const [enterprises, setEnterprises] = useState<EnterpriseListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const listSectionRef = useRef<HTMLElement | null>(null);
+  const actionsMenuRef = useRef<HTMLDivElement | null>(null);
 
   async function fetchEnterprises() {
     try {
@@ -133,16 +139,81 @@ export default function EnterprisesPage() {
     }
   }
 
+  async function handleDeactivateEnterprise(id: string) {
+    const confirmed = window.confirm("Are you sure you want to deactivate this enterprise?");
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await deactivateEnterprise(id);
+      setEnterprises((current) => current.filter((enterprise) => enterprise.id !== id));
+      setOpenActionsId(null);
+    } catch (deactivateError) {
+      window.alert(
+        deactivateError instanceof Error
+          ? deactivateError.message
+          : "Unable to deactivate enterprise.",
+      );
+    }
+  }
+
+  async function handleActivateEnterprise(id: string) {
+    const confirmed = window.confirm("Are you sure you want to activate this enterprise?");
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await activateEnterprise(id);
+      setEnterprises((current) =>
+        current.map((enterprise) =>
+          enterprise.id === id ? { ...enterprise, status: "Active" } : enterprise,
+        ),
+      );
+      setOpenActionsId(null);
+    } catch (activateError) {
+      window.alert(
+        activateError instanceof Error ? activateError.message : "Unable to activate enterprise.",
+      );
+    }
+  }
+
+  function openActionsMenu(event: React.MouseEvent<HTMLButtonElement>, id: string) {
+    const buttonRect = event.currentTarget.getBoundingClientRect();
+    setOpenActionsId((current) => (current === id ? null : id));
+    setOpenActionsPosition(
+      openActionsId === id
+        ? null
+        : {
+            top: buttonRect.bottom + 8,
+            right: Math.max(window.innerWidth - buttonRect.right, 12),
+          },
+    );
+  }
+
+  function closeActionsMenu() {
+    setOpenActionsId(null);
+    setOpenActionsPosition(null);
+  }
+
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
-      if (!listSectionRef.current?.contains(event.target as Node)) {
-        setOpenActionsId(null);
+      const target = event.target as Node;
+
+      if (
+        !listSectionRef.current?.contains(target) &&
+        !actionsMenuRef.current?.contains(target)
+      ) {
+        closeActionsMenu();
       }
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setOpenActionsId(null);
+        closeActionsMenu();
       }
     };
 
@@ -154,6 +225,12 @@ export default function EnterprisesPage() {
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
+
+  useEffect(() => {
+    if (!openActionsId) {
+      setOpenActionsPosition(null);
+    }
+  }, [openActionsId]);
 
   useEffect(() => {
     void fetchEnterprises();
@@ -313,36 +390,13 @@ export default function EnterprisesPage() {
                           <div className="relative">
                             <button
                               type="button"
-                              onClick={() =>
-                                setOpenActionsId((current) =>
-                                  current === enterprise.id ? null : enterprise.id,
-                                )
-                              }
+                              onClick={(event) => openActionsMenu(event, enterprise.id)}
                               className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] transition-colors hover:bg-[#eef8f2] hover:text-[#1f6a58]"
                               aria-label={`More actions for ${enterprise.name}`}
                               aria-expanded={openActionsId === enterprise.id}
                             >
                               <MoreVerticalIcon />
                             </button>
-
-                            <div
-                              className={`absolute right-0 top-[calc(100%+8px)] z-20 w-40 rounded-xl border border-[#e1ebe6] bg-white p-1 shadow-[0_12px_24px_rgba(7,53,45,0.12)] transition duration-150 ${
-                                openActionsId === enterprise.id
-                                  ? "pointer-events-auto scale-100 opacity-100"
-                                  : "pointer-events-none scale-95 opacity-0"
-                              }`}
-                            >
-                              {["View", "Edit", "Duplicate", "Archive", "Delete"].map((action) => (
-                                <button
-                                  key={action}
-                                  type="button"
-                                  onClick={() => setOpenActionsId(null)}
-                                  className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-[#06201c] transition-colors hover:bg-[#f4faf7]"
-                                >
-                                  {action}
-                                </button>
-                              ))}
-                            </div>
                           </div>
                         </div>
                       </td>
@@ -364,6 +418,58 @@ export default function EnterprisesPage() {
               </button>
             </div>
           </div>
+
+          {openActionsId && openActionsPosition ? (
+            <div
+              ref={actionsMenuRef}
+              className="fixed z-[80] w-40 rounded-xl border border-[#e1ebe6] bg-white p-1 shadow-[0_12px_24px_rgba(7,53,45,0.18)]"
+              style={{ top: openActionsPosition.top, right: openActionsPosition.right }}
+            >
+              {enterprises
+                .filter((enterprise) => enterprise.id === openActionsId)
+                .flatMap((enterprise) => {
+                  const actions = ["View", "Edit"];
+
+                  if (enterprise.status === "Active") {
+                    actions.push("Deactivate");
+                  } else {
+                    actions.push("Activate");
+                  }
+
+                  return actions.map((action) => (
+                    <button
+                      key={`${enterprise.id}-${action}`}
+                      type="button"
+                      onClick={() => {
+                        if (action === "View") {
+                          router.push(`/enterprises/${enterprise.id}`);
+                          closeActionsMenu();
+                          return;
+                        }
+
+                        if (action === "Edit") {
+                          router.push(`/enterprises/${enterprise.id}/edit`);
+                          closeActionsMenu();
+                          return;
+                        }
+
+                        closeActionsMenu();
+
+                        if (action === "Deactivate") {
+                          void handleDeactivateEnterprise(enterprise.id);
+                          return;
+                        }
+
+                        void handleActivateEnterprise(enterprise.id);
+                      }}
+                      className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-[#06201c] transition-colors hover:bg-[#f4faf7]"
+                    >
+                      {action}
+                    </button>
+                  ));
+                })}
+            </div>
+          ) : null}
         </section>
       ) : (
         <section className="mt-5">

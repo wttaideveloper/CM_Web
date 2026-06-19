@@ -1,66 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import AppShell from "@/components/layout/AppShell";
-
-const products = [
-  {
-    name: "Premium Yoga Mat",
-    enterprise: "Pinnacle Wellness Co.",
-    category: "Fitness",
-    price: "$68.00",
-    stock: "124",
-    sales: "842",
-    status: "Active",
-  },
-  {
-    name: "Whey Protein Blend",
-    enterprise: "NutriCore Studio",
-    category: "Supplements",
-    price: "$42.00",
-    stock: "78",
-    sales: "621",
-    status: "Active",
-  },
-  {
-    name: "Resistance Band Set",
-    enterprise: "FlexFit Academy",
-    category: "Equipment",
-    price: "$24.00",
-    stock: "0",
-    sales: "438",
-    status: "Out of Stock",
-  },
-  {
-    name: "Foam Roller Pro",
-    enterprise: "Vital Sports Clinic",
-    category: "Recovery",
-    price: "$36.00",
-    stock: "56",
-    sales: "314",
-    status: "Active",
-  },
-  {
-    name: "Meditation App (Annual)",
-    enterprise: "MindFlow Center",
-    category: "Digital",
-    price: "$99.00",
-    stock: "Unlimited",
-    sales: "205",
-    status: "Draft",
-  },
-  {
-    name: "Wellness Journal",
-    enterprise: "GreenRoot Organics",
-    category: "Lifestyle",
-    price: "$18.00",
-    stock: "212",
-    sales: "156",
-    status: "Active",
-  },
-];
+import { getEnterprises } from "@/services/enterprise.service";
+import { getProducts } from "@/services/product.service";
+import type { EnterpriseDto } from "@/types/enterprise.types";
+import type { ProductDto, ProductListItem } from "@/types/product.types";
 
 const filters = ["Category", "Enterprise", "Status"];
 
@@ -145,8 +92,65 @@ function GridIcon() {
   );
 }
 
+function resolveEnterpriseName(enterprise: EnterpriseDto) {
+  return (
+    enterprise.business_legal_name ||
+    enterprise.business_short_name ||
+    enterprise.name ||
+    "Unnamed Enterprise"
+  );
+}
+
+function mapProductToListItem(
+  product: ProductDto,
+  enterpriseNameMap: Record<string, string>,
+): ProductListItem {
+  return {
+    id: product.id,
+    enterpriseId: product.enterprise_id,
+    name: product.product_name || "Unnamed Product",
+    description: product.product_description || "",
+    category: product.product_category || "N/A",
+    price: `₹${Number.isFinite(product.product_price) ? product.product_price.toFixed(2) : "0.00"}`,
+    image: product.product_images || "",
+    status: product.product_status === false ? "Inactive" : "Active",
+    enterprise: enterpriseNameMap[product.enterprise_id] || "N/A",
+    stock: "—",
+    sales: "—",
+  };
+}
+
 export default function ProductsPage() {
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
+  const [products, setProducts] = useState<ProductListItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  async function fetchProducts() {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const [productData, enterpriseData] = await Promise.all([getProducts(), getEnterprises()]);
+      const nextEnterpriseNameMap = enterpriseData.reduce<Record<string, string>>((acc, enterprise) => {
+        acc[enterprise.id] = resolveEnterpriseName(enterprise);
+        return acc;
+      }, {});
+
+      setProducts(
+        productData.map((product) => mapProductToListItem(product, nextEnterpriseNameMap)),
+      );
+    } catch (fetchError) {
+      setError(fetchError instanceof Error ? fetchError.message : "Unable to load products.");
+      setProducts([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void fetchProducts();
+  }, []);
 
   return (
     <AppShell>
@@ -209,8 +213,31 @@ export default function ProductsPage() {
 
       {viewMode === "list" ? (
         <section className="mt-5 overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] table-fixed text-left">
+          {isLoading ? (
+            <div className="px-5 py-16 text-center">
+              <p className="text-base font-bold text-[#06201c]">Loading products...</p>
+              <p className="mt-2 text-sm text-[#52736a]">Please wait while we fetch the latest data.</p>
+            </div>
+          ) : error ? (
+            <div className="px-5 py-16 text-center">
+              <p className="text-base font-bold text-[#06201c]">Unable to load products.</p>
+              <p className="mt-2 text-sm text-[#52736a]">Please try again.</p>
+              <button
+                type="button"
+                onClick={() => void fetchProducts()}
+                className="mt-5 h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
+              >
+                Retry
+              </button>
+            </div>
+          ) : products.length === 0 ? (
+            <div className="px-5 py-16 text-center">
+              <p className="text-base font-bold text-[#06201c]">No products found.</p>
+              <p className="mt-2 text-sm text-[#52736a]">Create a product to get started.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] table-fixed text-left">
               <thead className="bg-[#f8fbf9] text-[11px] uppercase tracking-[0.1em] text-[#7f9d94]">
                 <tr>
                   <th className="w-[24%] px-3 py-3 font-bold">Product</th>
@@ -225,7 +252,7 @@ export default function ProductsPage() {
               </thead>
               <tbody className="divide-y divide-[#edf3f0] dark:divide-[rgba(167,195,186,0.10)]">
                 {products.map((product, index) => (
-                  <tr key={product.name} className="h-16 cursor-pointer text-xs transition-colors duration-150 hover:bg-emerald-50/60 dark:hover:bg-[#103329]">
+                  <tr key={product.id} className="h-16 cursor-pointer text-xs transition-colors duration-150 hover:bg-emerald-50/60 dark:hover:bg-[#103329]">
                     <td className="px-3">
                       <div className="flex min-w-0 items-center gap-2.5">
                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e8f6ee] text-xs font-bold text-[#1f6a58]">
@@ -252,64 +279,89 @@ export default function ProductsPage() {
                     </td>
                     <td className="px-3">
                       <div className="flex gap-1.5 text-[#52736a]">
-                        <button
+                        <Link
+                          href={`/products/${product.id}`}
                           className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7] dark:border-[#21463c] dark:hover:bg-[#103329]"
                           aria-label={`View ${product.name}`}
                         >
                           <EyeIcon />
-                        </button>
-                        <button
+                        </Link>
+                        <Link
+                          href={`/products/${product.id}/edit`}
                           className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7] dark:border-[#21463c] dark:hover:bg-[#103329]"
                           aria-label={`Edit ${product.name}`}
                         >
                           <EditIcon />
-                        </button>
+                        </Link>
                       </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
-            </table>
-          </div>
+              </table>
+            </div>
+          )}
         </section>
       ) : (
         <section className="mt-5">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {products.map((product, index) => (
-              <article
-                key={product.name}
-                className="overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-sm"
+          {isLoading ? (
+            <div className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
+              <p className="text-base font-bold text-[#06201c]">Loading products...</p>
+              <p className="mt-2 text-sm text-[#52736a]">Please wait while we fetch the latest data.</p>
+            </div>
+          ) : error ? (
+            <div className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
+              <p className="text-base font-bold text-[#06201c]">Unable to load products.</p>
+              <p className="mt-2 text-sm text-[#52736a]">Please try again.</p>
+              <button
+                type="button"
+                onClick={() => void fetchProducts()}
+                className="mt-5 h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
               >
-                <div className="relative h-[160px] bg-gradient-to-br from-[#1f6a58] via-[#5a9a76] to-[#d5e2db]">
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_25%,rgba(255,255,255,0.22)_0_1px,transparent_1px)] bg-[length:28px_28px]" />
-                  <div className="absolute left-4 top-4 rounded-full bg-white/90 px-3 py-1 text-xs font-bold text-[#1f6a58]">
-                    {product.category}
+                Retry
+              </button>
+            </div>
+          ) : products.length === 0 ? (
+            <div className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
+              <p className="text-base font-bold text-[#06201c]">No products found.</p>
+              <p className="mt-2 text-sm text-[#52736a]">Create a product to get started.</p>
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {products.map((product, index) => (
+                <article
+                  key={product.id}
+                  className="overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-sm"
+                >
+                  <div className="relative h-[160px] bg-gradient-to-br from-[#1f6a58] via-[#5a9a76] to-[#d5e2db]">
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_25%,rgba(255,255,255,0.22)_0_1px,transparent_1px)] bg-[length:28px_28px]" />
+                    <div className="absolute left-4 top-4 rounded-full bg-white/90 px-3 py-1 text-xs font-bold text-[#1f6a58]">
+                      {product.category}
+                    </div>
+                    <div className="absolute bottom-4 left-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-sm font-bold text-[#1f6a58]">
+                      P{index + 1}
+                    </div>
                   </div>
-                  <div className="absolute bottom-4 left-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-sm font-bold text-[#1f6a58]">
-                    P{index + 1}
-                  </div>
-                </div>
-                <div className="p-4">
-                  <h3 className="text-sm font-bold text-[#06201c]">{product.name}</h3>
-                  <p className="mt-1 text-sm text-[#52736a]">{product.enterprise}</p>
-                  <div className="mt-3 flex items-center justify-between">
-                    <span className="text-sm font-bold text-[#06201c]">{product.price}</span>
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-bold ${
-                        product.status === "Active"
-                          ? "bg-[#e8f6ee] text-[#16825b]"
-                          : product.status === "Out of Stock"
-                            ? "bg-[#fff1f0] text-[#b42318]"
+                  <div className="p-4">
+                    <h3 className="text-sm font-bold text-[#06201c]">{product.name}</h3>
+                    <p className="mt-1 text-sm text-[#52736a]">{product.enterprise}</p>
+                    <div className="mt-3 flex items-center justify-between">
+                      <span className="text-sm font-bold text-[#06201c]">{product.price}</span>
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-bold ${
+                          product.status === "Active"
+                            ? "bg-[#e8f6ee] text-[#16825b]"
                             : "bg-[#f1f4f3] text-[#6b7f79]"
-                      }`}
-                    >
-                      {product.status}
-                    </span>
+                        }`}
+                      >
+                        {product.status}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              </article>
-            ))}
-          </div>
+                </article>
+              ))}
+            </div>
+          )}
         </section>
       )}
     </AppShell>
