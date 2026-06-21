@@ -115,7 +115,7 @@ function mapProductToListItem(
     image: product.product_images || "",
     status: product.product_status === false ? "Inactive" : "Active",
     enterprise: enterpriseNameMap[product.enterprise_id] || "N/A",
-    stock: "—",
+    stock: product.stock_quantity !== undefined ? String(product.stock_quantity) : "N/A",
     sales: "—",
   };
 }

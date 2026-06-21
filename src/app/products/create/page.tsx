@@ -35,6 +35,59 @@ function inputClass() {
   return `mt-1.5 ${controlClass()}`;
 }
 
+function optionalText(value: string) {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function optionalNumber(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+const taxClassOptions = [
+  { value: "standard", label: "Standard (8%)" },
+  { value: "reduced", label: "Reduced (4%)" },
+  { value: "zero_rate", label: "Zero Rate (0%)" },
+];
+
+const stockManagementOptions = [
+  { value: "track_inventory", label: "Track inventory" },
+  { value: "no_tracking", label: "No tracking (unlimited)" },
+  { value: "preorder", label: "Preorder" },
+];
+
+const currencyOptions = [
+  { value: "USD", label: "USD ($)" },
+  { value: "INR", label: "INR (₹)" },
+  { value: "EUR", label: "EUR (€)" },
+];
+
+const publishStatusOptions = [
+  { value: "published", label: "Publish immediately" },
+  { value: "draft", label: "Save as draft" },
+  { value: "scheduled", label: "Schedule for later" },
+];
+
+function resolveOptionValue(value: string, options: { value: string; label: string }[]) {
+  const normalized = value.trim().toLowerCase();
+  const match = options.find(
+    (option) =>
+      option.value.toLowerCase() === normalized || option.label.toLowerCase() === normalized,
+  );
+
+  return match?.value ?? "";
+}
+
+function resolveOptionLabel(value: string, options: { value: string; label: string }[]) {
+  return options.find((option) => option.value === value)?.label || value || "Not provided";
+}
+
 function createAttributeRow(): CustomAttributeRow {
   return {
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -53,6 +106,18 @@ export default function CreateProductPage() {
   const [productCategory, setProductCategory] = useState("Equipment");
   const [productPrice, setProductPrice] = useState("");
   const [productImages, setProductImages] = useState("");
+  const [sku, setSku] = useState("");
+  const [barcodeUpc, setBarcodeUpc] = useState("");
+  const [weight, setWeight] = useState("");
+  const [dimensions, setDimensions] = useState("");
+  const [salePrice, setSalePrice] = useState("");
+  const [costPrice, setCostPrice] = useState("");
+  const [taxClass, setTaxClass] = useState("");
+  const [stockQuantity, setStockQuantity] = useState("");
+  const [lowStockAlertThreshold, setLowStockAlertThreshold] = useState("");
+  const [stockManagement, setStockManagement] = useState("");
+  const [currency, setCurrency] = useState("");
+  const [publishStatus, setPublishStatus] = useState("");
   const [customAttributes, setCustomAttributes] = useState<CustomAttributeRow[]>([]);
   const [enterpriseOptions, setEnterpriseOptions] = useState<EnterpriseOption[]>([]);
   const [isLoadingEnterprises, setIsLoadingEnterprises] = useState(true);
@@ -63,6 +128,10 @@ export default function CreateProductPage() {
   const reviewCustomAttributes = customAttributes.filter(
     (attribute) => attribute.attribute_name.trim() && attribute.attribute_value.trim(),
   );
+  const reviewTaxClass = resolveOptionLabel(taxClass, taxClassOptions);
+  const reviewStockManagement = resolveOptionLabel(stockManagement, stockManagementOptions);
+  const reviewCurrency = resolveOptionLabel(currency, currencyOptions);
+  const reviewPublishStatus = resolveOptionLabel(publishStatus, publishStatusOptions);
   const isReviewComplete =
     Boolean(enterpriseId.trim()) &&
     Boolean(productName.trim()) &&
@@ -103,6 +172,18 @@ export default function CreateProductPage() {
     const trimmedProductDescription = productDescription.trim();
     const trimmedProductCategory = productCategory.trim();
     const parsedProductPrice = Number(productPrice);
+    const trimmedSku = optionalText(sku);
+    const trimmedBarcodeUpc = optionalText(barcodeUpc);
+    const parsedWeight = optionalNumber(weight);
+    const trimmedDimensions = optionalText(dimensions);
+    const parsedSalePrice = optionalNumber(salePrice);
+    const parsedCostPrice = optionalNumber(costPrice);
+    const trimmedTaxClass = optionalText(taxClass);
+    const parsedStockQuantity = optionalNumber(stockQuantity);
+    const parsedLowStockAlertThreshold = optionalNumber(lowStockAlertThreshold);
+    const trimmedStockManagement = optionalText(stockManagement);
+    const trimmedCurrency = optionalText(currency);
+    const trimmedPublishStatus = optionalText(publishStatus);
 
     if (
       !trimmedEnterpriseId ||
@@ -131,6 +212,20 @@ export default function CreateProductPage() {
         product_price: parsedProductPrice,
         product_images: productImages.trim(),
         product_status: true,
+        ...(trimmedSku ? { sku: trimmedSku } : {}),
+        ...(trimmedBarcodeUpc ? { barcode_upc: trimmedBarcodeUpc } : {}),
+        ...(parsedWeight !== undefined ? { weight: parsedWeight } : {}),
+        ...(trimmedDimensions ? { dimensions: trimmedDimensions } : {}),
+        ...(parsedSalePrice !== undefined ? { sale_price: parsedSalePrice } : {}),
+        ...(parsedCostPrice !== undefined ? { cost_price: parsedCostPrice } : {}),
+        ...(trimmedTaxClass ? { tax_class: trimmedTaxClass } : {}),
+        ...(parsedStockQuantity !== undefined ? { stock_quantity: parsedStockQuantity } : {}),
+        ...(parsedLowStockAlertThreshold !== undefined
+          ? { low_stock_alert_threshold: parsedLowStockAlertThreshold }
+          : {}),
+        ...(trimmedStockManagement ? { stock_management: trimmedStockManagement } : {}),
+        ...(trimmedCurrency ? { currency: trimmedCurrency } : {}),
+        ...(trimmedPublishStatus ? { publish_status: trimmedPublishStatus } : {}),
       });
 
       const attributesToSave = customAttributes
@@ -259,25 +354,41 @@ export default function CreateProductPage() {
               </label>
               <label className="block">
                 <FieldLabel>SKU</FieldLabel>
-                <input type="text" placeholder="PYM-001" className={inputClass()} />
+                <input
+                  type="text"
+                  placeholder="PYM-001"
+                  value={sku}
+                  onChange={(event) => setSku(event.target.value)}
+                  className={inputClass()}
+                />
               </label>
               <label className="block">
                 <FieldLabel>Barcode/UPC</FieldLabel>
                 <input
                   type="text"
                   placeholder="012345678905"
+                  value={barcodeUpc}
+                  onChange={(event) => setBarcodeUpc(event.target.value)}
                   className={inputClass()}
                 />
               </label>
               <label className="block">
                 <FieldLabel>Weight (kg)</FieldLabel>
-                <input type="text" placeholder="1.2" className={inputClass()} />
+                <input
+                  type="text"
+                  placeholder="1.2"
+                  value={weight}
+                  onChange={(event) => setWeight(event.target.value)}
+                  className={inputClass()}
+                />
               </label>
               <label className="block md:col-span-2">
                 <FieldLabel>Dimensions (L x W x H cm)</FieldLabel>
                 <input
                   type="text"
                   placeholder="183 x 61 x 0.6"
+                  value={dimensions}
+                  onChange={(event) => setDimensions(event.target.value)}
                   className={inputClass()}
                 />
               </label>
@@ -319,44 +430,89 @@ export default function CreateProductPage() {
                 <input
                   type="text"
                   placeholder="79.99 (optional)"
+                  value={salePrice}
+                  onChange={(event) => setSalePrice(event.target.value)}
                   className={inputClass()}
                 />
               </label>
               <label className="block">
                 <FieldLabel>Cost Price (internal)</FieldLabel>
-                <input type="text" placeholder="32.00" className={inputClass()} />
+                <input
+                  type="text"
+                  placeholder="32.00"
+                  value={costPrice}
+                  onChange={(event) => setCostPrice(event.target.value)}
+                  className={inputClass()}
+                />
               </label>
               <label className="block">
                 <FieldLabel>Tax Class</FieldLabel>
-                <select className={inputClass()} defaultValue="Standard (8%)">
-                  {["Standard (8%)", "Reduced (4%)", "Zero Rate (0%)"].map((option) => (
-                    <option key={option}>{option}</option>
+                <select
+                  className={inputClass()}
+                  value={taxClass}
+                  onChange={(event) =>
+                    setTaxClass(resolveOptionValue(event.target.value, taxClassOptions))
+                  }
+                >
+                  <option value="">Select tax class</option>
+                  {taxClassOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
                   ))}
                 </select>
               </label>
               <label className="block">
-                <FieldLabel>Stock Quantity*</FieldLabel>
-                <input type="text" placeholder="100" className={inputClass()} />
+                <FieldLabel>Stock Quantity</FieldLabel>
+                <input
+                  type="text"
+                  placeholder="100"
+                  value={stockQuantity}
+                  onChange={(event) => setStockQuantity(event.target.value)}
+                  className={inputClass()}
+                />
               </label>
               <label className="block">
                 <FieldLabel>Low Stock Alert Threshold</FieldLabel>
-                <input type="text" placeholder="10" className={inputClass()} />
+                <input
+                  type="text"
+                  placeholder="10"
+                  value={lowStockAlertThreshold}
+                  onChange={(event) => setLowStockAlertThreshold(event.target.value)}
+                  className={inputClass()}
+                />
               </label>
               <label className="block">
                 <FieldLabel>Stock Management</FieldLabel>
-                <select className={inputClass()} defaultValue="Track inventory">
-                  {["Track inventory", "No tracking (unlimited)", "Preorder"].map(
-                    (option) => (
-                      <option key={option}>{option}</option>
-                    ),
-                  )}
+                <select
+                  className={inputClass()}
+                  value={stockManagement}
+                  onChange={(event) =>
+                    setStockManagement(
+                      resolveOptionValue(event.target.value, stockManagementOptions),
+                    )
+                  }
+                >
+                  <option value="">Select stock management</option>
+                  {stockManagementOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label className="block">
                 <FieldLabel>Currency</FieldLabel>
-                <select className={inputClass()} defaultValue="USD ($)">
-                  {["USD ($)", "INR (₹)", "EUR (€)"].map((option) => (
-                    <option key={option}>{option}</option>
+                <select
+                  className={inputClass()}
+                  value={currency}
+                  onChange={(event) => setCurrency(resolveOptionValue(event.target.value, currencyOptions))}
+                >
+                  <option value="">Select currency</option>
+                  {currencyOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -496,6 +652,37 @@ export default function CreateProductPage() {
                     </div>
                   )}
                 </div>
+
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
+                      Tax Class
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-[#06201c]">{reviewTaxClass}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
+                      Stock Management
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-[#06201c]">
+                      {reviewStockManagement}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
+                      Currency
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-[#06201c]">{reviewCurrency}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
+                      Publish Status
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-[#06201c]">
+                      {reviewPublishStatus}
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <div className="rounded-2xl border border-[#edf3f0] bg-white p-5">
@@ -507,14 +694,21 @@ export default function CreateProductPage() {
                 </p>
                 <label className="mt-4 block">
                   <FieldLabel>Publish Status</FieldLabel>
-                  <select className={inputClass()} defaultValue="Publish immediately">
-                    {["Publish immediately", "Save as draft", "Schedule for later"].map(
-                      (option) => (
-                        <option key={option}>{option}</option>
-                      ),
-                    )}
-                  </select>
-                </label>
+                  <select
+                    className={inputClass()}
+                  value={publishStatus}
+                  onChange={(event) =>
+                    setPublishStatus(resolveOptionValue(event.target.value, publishStatusOptions))
+                  }
+                >
+                  <option value="">Select publish status</option>
+                  {publishStatusOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               </div>
             </div>
           </>

@@ -35,12 +35,30 @@ function resolveEnterpriseName(enterprise: EnterpriseDto) {
   );
 }
 
+function resolveEnterpriseCategory(enterprise: EnterpriseDto) {
+  const category = enterprise.business_category || (enterprise as EnterpriseDto & { category?: string }).category;
+
+  if (!category || !category.trim()) {
+    return "Enterprise";
+  }
+
+  return category.trim();
+}
+
 function formatAddress(address: string | null | undefined) {
   if (!address) {
     return "N/A";
   }
 
   return address.trim() || "N/A";
+}
+
+function formatImageUrl(value: string | null | undefined) {
+  if (!value) {
+    return "";
+  }
+
+  return value.trim();
 }
 
 function formatPrice(price: number) {
@@ -186,6 +204,8 @@ export default function EnterpriseDetailsPage() {
   const [isLoadingServices, setIsLoadingServices] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSelector, setShowSelector] = useState(false);
+  const [hasLogoImageError, setHasLogoImageError] = useState(false);
+  const [hasHeroImageError, setHasHeroImageError] = useState(false);
 
   async function fetchEnterpriseOptions() {
     try {
@@ -271,6 +291,16 @@ export default function EnterpriseDetailsPage() {
   const enterpriseName = enterprise ? resolveEnterpriseName(enterprise) : "Unnamed Enterprise";
   const enterpriseStatus = enterprise?.status === false ? "Inactive" : "Active";
   const aboutText = enterprise?.business_description || enterprise?.description || "N/A";
+  const enterpriseLogoSrc = formatImageUrl(enterprise?.logo_url);
+  const enterpriseHeroSrc = formatImageUrl(enterprise?.business_images);
+
+  useEffect(() => {
+    setHasLogoImageError(false);
+  }, [enterpriseLogoSrc]);
+
+  useEffect(() => {
+    setHasHeroImageError(false);
+  }, [enterpriseHeroSrc]);
   const enterpriseProducts = products.filter((product) => product.enterprise_id === currentId);
   const enterpriseServices = services.filter((service) => service.enterprise_id === currentId);
   const stats = [
@@ -282,7 +312,10 @@ export default function EnterpriseDetailsPage() {
   const contactItems = [
     { label: "Email", value: enterprise?.business_email || "N/A" },
     { label: "Phone", value: enterprise?.business_phone || "N/A" },
-    { label: "Website", value: "N/A" },
+    { label: "Registration Number", value: enterprise?.registration_number || "N/A" },
+    { label: "Business Category", value: enterprise?.business_category || "N/A" },
+    { label: "Website", value: enterprise?.website_url || "N/A" },
+    { label: "Year Founded", value: enterprise?.year_founded || "N/A" },
     {
       label: "Address",
       value: formatAddress(
@@ -357,12 +390,35 @@ export default function EnterpriseDetailsPage() {
   return (
     <AppShell>
       <section className="enterprise-hero-card overflow-hidden rounded-3xl border border-[#d9e8e1] bg-white shadow-sm dark:!bg-[#0b211b]">
-        <div className="relative bg-[#1f6a58] px-6 py-7 text-white">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.2)_0_1px,transparent_1px),linear-gradient(135deg,rgba(31,106,88,0.96),rgba(54,133,108,0.86))] bg-[length:36px_36px,auto]" />
-          <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative overflow-hidden bg-[#1f6a58] px-6 py-7 text-white">
+          {enterpriseHeroSrc && !hasHeroImageError ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={enterpriseHeroSrc}
+              alt={`${enterpriseName} banner`}
+              className="absolute inset-0 z-0 h-full w-full object-cover"
+              onError={() => setHasHeroImageError(true)}
+            />
+          ) : null}
+          {enterpriseHeroSrc && !hasHeroImageError ? (
+            <div className="absolute inset-0 z-10 bg-black/30" />
+          ) : (
+            <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.2)_0_1px,transparent_1px),linear-gradient(135deg,rgba(31,106,88,0.96),rgba(54,133,108,0.86))] bg-[length:36px_36px,auto]" />
+          )}
+          <div className="relative z-20 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/95 text-2xl font-extrabold text-[#1f6a58]">
-                {enterpriseName.charAt(0).toUpperCase()}
+              <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-white/95 text-2xl font-extrabold text-[#1f6a58]">
+                {enterpriseLogoSrc && !hasLogoImageError ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={enterpriseLogoSrc}
+                    alt={enterpriseName}
+                    className="h-full w-full object-cover"
+                    onError={() => setHasLogoImageError(true)}
+                  />
+                ) : (
+                  enterpriseName.charAt(0).toUpperCase()
+                )}
               </div>
               <div>
                 <div className="flex flex-wrap items-center gap-3">
@@ -371,7 +427,9 @@ export default function EnterpriseDetailsPage() {
                     {enterpriseStatus}
                   </span>
                 </div>
-                <p className="mt-1 text-sm text-white/80">Enterprise · {enterpriseStatus}</p>
+                <p className="mt-1 text-sm text-white/80">
+                  {resolveEnterpriseCategory(enterprise)} · {enterpriseStatus}
+                </p>
               </div>
             </div>
             <Link
@@ -429,7 +487,7 @@ export default function EnterpriseDetailsPage() {
               {contactItems.map((item) => (
                 <div
                   key={item.label}
-                  className="rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] p-4"
+                  className="rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-[#b9d8cc] hover:shadow-md"
                 >
                   <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
                     {item.label}

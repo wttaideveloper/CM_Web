@@ -11,6 +11,18 @@ export type EnterpriseDto = {
   logo_url: string;
   business_images: string;
   status: boolean;
+  registration_number?: string;
+  business_category?: string;
+  website_url?: string;
+  year_founded?: string;
+  primary_contact_name?: string;
+  primary_contact_title?: string;
+  secondary_email?: string;
+  secondary_phone?: string;
+  suite_unit?: string;
+  brand_color?: string;
+  tagline?: string;
+  created_at?: string;
   name?: string;
   description?: string;
 };
@@ -26,6 +38,17 @@ export type CreateEnterprisePayload = {
   communication_address: string;
   logo_url: string;
   business_images: string;
+  registration_number?: string;
+  business_category?: string;
+  website_url?: string;
+  year_founded?: number | string;
+  primary_contact_name?: string;
+  primary_contact_title?: string;
+  secondary_email?: string;
+  secondary_phone?: string;
+  suite_unit?: string;
+  brand_color?: string;
+  tagline?: string;
 };
 
 export type UpdateEnterprisePayload = Partial<{
@@ -39,6 +62,17 @@ export type UpdateEnterprisePayload = Partial<{
   communication_address: string;
   logo_url: string;
   business_images: string;
+  registration_number: string;
+  business_category: string;
+  website_url: string;
+  year_founded: string;
+  primary_contact_name: string;
+  primary_contact_title: string;
+  secondary_email: string;
+  secondary_phone: string;
+  suite_unit: string;
+  brand_color: string;
+  tagline: string;
   status: boolean;
 }>;
 

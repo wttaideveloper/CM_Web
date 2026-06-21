@@ -35,6 +35,69 @@ function inputClass() {
   return `mt-1.5 ${controlClass()}`;
 }
 
+function optionalText(value: string) {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function optionalNumber(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+const taxClassOptions = [
+  { value: "standard", label: "Standard (8%)" },
+  { value: "reduced", label: "Reduced (4%)" },
+  { value: "zero_rate", label: "Zero Rate (0%)" },
+];
+
+const stockManagementOptions = [
+  { value: "track_inventory", label: "Track inventory" },
+  { value: "no_tracking", label: "No tracking (unlimited)" },
+  { value: "preorder", label: "Preorder" },
+];
+
+const currencyOptions = [
+  { value: "USD", label: "USD ($)" },
+  { value: "INR", label: "INR (₹)" },
+  { value: "EUR", label: "EUR (€)" },
+];
+
+const publishStatusOptions = [
+  { value: "published", label: "Publish immediately" },
+  { value: "draft", label: "Save as draft" },
+  { value: "scheduled", label: "Schedule for later" },
+];
+
+const categoryOptions = ["Equipment", "Supplements", "Recovery", "Digital", "Accessories"];
+
+function normalizeOptionValue(value: string | undefined, options: { value: string; label: string }[]) {
+  if (!value) {
+    return "";
+  }
+
+  const normalized = value.trim().toLowerCase();
+  const match = options.find(
+    (option) =>
+      option.value.toLowerCase() === normalized || option.label.toLowerCase() === normalized,
+  );
+
+  return match?.value ?? value.trim();
+}
+
+  function resolveOptionLabel(value: string, options: { value: string; label: string }[]) {
+    return options.find((option) => option.value === value)?.label || value || "Select";
+  }
+
+function hasCategoryOption(value: string) {
+  return categoryOptions.includes(value);
+}
+
 function createAttributeRow(attribute?: DynamicAttributeDto): ProductAttributeRow {
   return {
     id: attribute?.id,
@@ -54,6 +117,18 @@ export default function EditProductPage() {
   const [productCategory, setProductCategory] = useState("");
   const [productPrice, setProductPrice] = useState("");
   const [productImages, setProductImages] = useState("");
+  const [sku, setSku] = useState("");
+  const [barcodeUpc, setBarcodeUpc] = useState("");
+  const [weight, setWeight] = useState("");
+  const [dimensions, setDimensions] = useState("");
+  const [salePrice, setSalePrice] = useState("");
+  const [costPrice, setCostPrice] = useState("");
+  const [taxClass, setTaxClass] = useState("");
+  const [stockQuantity, setStockQuantity] = useState("");
+  const [lowStockAlertThreshold, setLowStockAlertThreshold] = useState("");
+  const [stockManagement, setStockManagement] = useState("");
+  const [currency, setCurrency] = useState("");
+  const [publishStatus, setPublishStatus] = useState("");
   const [productStatus, setProductStatus] = useState(true);
   const [customAttributes, setCustomAttributes] = useState<ProductAttributeRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -78,6 +153,18 @@ export default function EditProductPage() {
       setProductCategory(data.product_category || "");
       setProductPrice(String(data.product_price ?? ""));
       setProductImages(data.product_images || "");
+      setSku(data.sku || "");
+      setBarcodeUpc(data.barcode_upc || "");
+      setWeight(String(data.weight ?? ""));
+      setDimensions(data.dimensions || "");
+      setSalePrice(String(data.sale_price ?? ""));
+      setCostPrice(String(data.cost_price ?? ""));
+      setTaxClass(normalizeOptionValue(data.tax_class, taxClassOptions));
+      setStockQuantity(String(data.stock_quantity ?? ""));
+      setLowStockAlertThreshold(String(data.low_stock_alert_threshold ?? ""));
+      setStockManagement(normalizeOptionValue(data.stock_management, stockManagementOptions));
+      setCurrency(normalizeOptionValue(data.currency, currencyOptions));
+      setPublishStatus(normalizeOptionValue(data.publish_status, publishStatusOptions));
       setProductStatus(data.product_status !== false);
 
       try {
@@ -103,6 +190,18 @@ export default function EditProductPage() {
     const trimmedDescription = productDescription.trim();
     const trimmedCategory = productCategory.trim();
     const parsedPrice = Number(productPrice);
+    const trimmedSku = optionalText(sku);
+    const trimmedBarcodeUpc = optionalText(barcodeUpc);
+    const parsedWeight = optionalNumber(weight);
+    const trimmedDimensions = optionalText(dimensions);
+    const parsedSalePrice = optionalNumber(salePrice);
+    const parsedCostPrice = optionalNumber(costPrice);
+    const trimmedTaxClass = optionalText(taxClass);
+    const parsedStockQuantity = optionalNumber(stockQuantity);
+    const parsedLowStockAlertThreshold = optionalNumber(lowStockAlertThreshold);
+    const trimmedStockManagement = optionalText(stockManagement);
+    const trimmedCurrency = optionalText(currency);
+    const trimmedPublishStatus = optionalText(publishStatus);
 
     if (!trimmedName || !trimmedDescription || !trimmedCategory || !Number.isFinite(parsedPrice)) {
       setError("Please complete all required product fields.");
@@ -124,6 +223,20 @@ export default function EditProductPage() {
         product_price: parsedPrice,
         product_images: productImages.trim(),
         product_status: productStatus,
+        ...(trimmedSku ? { sku: trimmedSku } : {}),
+        ...(trimmedBarcodeUpc ? { barcode_upc: trimmedBarcodeUpc } : {}),
+        ...(parsedWeight !== undefined ? { weight: parsedWeight } : {}),
+        ...(trimmedDimensions ? { dimensions: trimmedDimensions } : {}),
+        ...(parsedSalePrice !== undefined ? { sale_price: parsedSalePrice } : {}),
+        ...(parsedCostPrice !== undefined ? { cost_price: parsedCostPrice } : {}),
+        ...(trimmedTaxClass ? { tax_class: trimmedTaxClass } : {}),
+        ...(parsedStockQuantity !== undefined ? { stock_quantity: parsedStockQuantity } : {}),
+        ...(parsedLowStockAlertThreshold !== undefined
+          ? { low_stock_alert_threshold: parsedLowStockAlertThreshold }
+          : {}),
+        ...(trimmedStockManagement ? { stock_management: trimmedStockManagement } : {}),
+        ...(trimmedCurrency ? { currency: trimmedCurrency } : {}),
+        ...(trimmedPublishStatus ? { publish_status: trimmedPublishStatus } : {}),
       });
 
       const attributeOperations: Promise<unknown>[] = [];
@@ -257,12 +370,21 @@ export default function EditProductPage() {
 
           <label className="block">
             <FieldLabel>Category*</FieldLabel>
-            <input
-              type="text"
+            <select
               value={productCategory}
               onChange={(event) => setProductCategory(event.target.value)}
               className={inputClass()}
-            />
+            >
+              <option value="">Select category</option>
+              {!hasCategoryOption(productCategory) && productCategory ? (
+                <option value={productCategory}>{productCategory}</option>
+              ) : null}
+              {categoryOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label className="block md:col-span-2">
@@ -305,6 +427,142 @@ export default function EditProductPage() {
               onChange={(event) => setProductImages(event.target.value)}
               className={inputClass()}
             />
+          </label>
+          <label className="block">
+            <FieldLabel>SKU</FieldLabel>
+            <input
+              type="text"
+              value={sku}
+              onChange={(event) => setSku(event.target.value)}
+              className={inputClass()}
+            />
+          </label>
+          <label className="block">
+            <FieldLabel>Barcode/UPC</FieldLabel>
+            <input
+              type="text"
+              value={barcodeUpc}
+              onChange={(event) => setBarcodeUpc(event.target.value)}
+              className={inputClass()}
+            />
+          </label>
+          <label className="block">
+            <FieldLabel>Weight (kg)</FieldLabel>
+            <input
+              type="text"
+              value={weight}
+              onChange={(event) => setWeight(event.target.value)}
+              className={inputClass()}
+            />
+          </label>
+          <label className="block md:col-span-2">
+            <FieldLabel>Dimensions (L x W x H cm)</FieldLabel>
+            <input
+              type="text"
+              value={dimensions}
+              onChange={(event) => setDimensions(event.target.value)}
+              className={inputClass()}
+            />
+          </label>
+          <label className="block">
+            <FieldLabel>Sale / Promo Price</FieldLabel>
+            <input
+              type="text"
+              value={salePrice}
+              onChange={(event) => setSalePrice(event.target.value)}
+              className={inputClass()}
+            />
+          </label>
+          <label className="block">
+            <FieldLabel>Cost Price (internal)</FieldLabel>
+            <input
+              type="text"
+              value={costPrice}
+              onChange={(event) => setCostPrice(event.target.value)}
+              className={inputClass()}
+            />
+          </label>
+          <label className="block">
+            <FieldLabel>Tax Class</FieldLabel>
+            <select
+              value={taxClass}
+              onChange={(event) => setTaxClass(normalizeOptionValue(event.target.value, taxClassOptions))}
+              className={inputClass()}
+            >
+              <option value="">Select tax class</option>
+              {taxClassOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <FieldLabel>Stock Quantity</FieldLabel>
+            <input
+              type="text"
+              value={stockQuantity}
+              onChange={(event) => setStockQuantity(event.target.value)}
+              className={inputClass()}
+            />
+          </label>
+          <label className="block">
+            <FieldLabel>Low Stock Alert Threshold</FieldLabel>
+            <input
+              type="text"
+              value={lowStockAlertThreshold}
+              onChange={(event) => setLowStockAlertThreshold(event.target.value)}
+              className={inputClass()}
+            />
+          </label>
+          <label className="block">
+            <FieldLabel>Stock Management</FieldLabel>
+            <select
+              value={stockManagement}
+              onChange={(event) =>
+                setStockManagement(normalizeOptionValue(event.target.value, stockManagementOptions))
+              }
+              className={inputClass()}
+            >
+              <option value="">Select stock management</option>
+              {stockManagementOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <FieldLabel>Currency</FieldLabel>
+            <select
+              value={currency}
+              onChange={(event) => setCurrency(normalizeOptionValue(event.target.value, currencyOptions))}
+              className={inputClass()}
+            >
+              <option value="">Select currency</option>
+              {currencyOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <FieldLabel>Publish Status</FieldLabel>
+            <select
+              value={publishStatus}
+              onChange={(event) =>
+                setPublishStatus(normalizeOptionValue(event.target.value, publishStatusOptions))
+              }
+              className={inputClass()}
+            >
+              <option value="">Select publish status</option>
+              {publishStatusOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
 

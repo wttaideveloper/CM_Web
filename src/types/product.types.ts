@@ -7,6 +7,18 @@ export type ProductDto = {
   product_price: number;
   product_images: string;
   product_status: boolean;
+  sku?: string;
+  barcode_upc?: string;
+  weight?: number;
+  dimensions?: string;
+  sale_price?: number;
+  cost_price?: number;
+  tax_class?: string;
+  stock_quantity?: number;
+  low_stock_alert_threshold?: number;
+  stock_management?: string;
+  currency?: string;
+  publish_status?: string;
 };
 
 export type CreateProductPayload = {
@@ -17,6 +29,18 @@ export type CreateProductPayload = {
   product_price: number;
   product_images: string;
   product_status: boolean;
+  sku?: string;
+  barcode_upc?: string;
+  weight?: number;
+  dimensions?: string;
+  sale_price?: number;
+  cost_price?: number;
+  tax_class?: string;
+  stock_quantity?: number;
+  low_stock_alert_threshold?: number;
+  stock_management?: string;
+  currency?: string;
+  publish_status?: string;
 };
 
 export type UpdateProductPayload = Partial<{
@@ -26,6 +50,18 @@ export type UpdateProductPayload = Partial<{
   product_price: number;
   product_images: string;
   product_status: boolean;
+  sku: string;
+  barcode_upc: string;
+  weight: number;
+  dimensions: string;
+  sale_price: number;
+  cost_price: number;
+  tax_class: string;
+  stock_quantity: number;
+  low_stock_alert_threshold: number;
+  stock_management: string;
+  currency: string;
+  publish_status: string;
 }>;
 
 export type ProductListItem = {

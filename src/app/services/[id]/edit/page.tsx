@@ -13,7 +13,7 @@ import {
 } from "@/services/attribute.service";
 import { getServiceById, updateService } from "@/services/service.service";
 import type { DynamicAttributeDto } from "@/types/attribute.types";
-import type { ServiceDto } from "@/types/service.types";
+import type { AvailabilityScheduleItem, ServiceDto } from "@/types/service.types";
 
 type ServiceAttributeRow = {
   id?: string;
@@ -22,6 +22,18 @@ type ServiceAttributeRow = {
   attribute_type: string;
   isDeleted?: boolean;
 };
+
+type WeekdaySchedule = {
+  day: string;
+  enabled: boolean;
+  startTime: string;
+  endTime: string;
+  slotLength: string;
+};
+
+const categoryOptions = ["IT Services", "Training", "Coaching", "Classes", "Recovery", "Therapy", "Mindfulness"];
+
+const weekdayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return <span className="text-sm font-bold text-[#06201c]">{children}</span>;
@@ -33,6 +45,126 @@ function controlClass() {
 
 function inputClass() {
   return `mt-1.5 ${controlClass()}`;
+}
+
+function optionalText(value: string) {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function optionalNumber(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function generateHourlyTimeOptions() {
+  const options: { value: string; label: string }[] = [];
+
+  for (let hour = 0; hour < 24; hour += 1) {
+    const period = hour >= 12 ? "PM" : "AM";
+    const displayHour = hour % 12 === 0 ? 12 : hour % 12;
+
+    options.push({
+      value: `${hour.toString().padStart(2, "0")}:00`,
+      label: `${displayHour.toString().padStart(2, "0")}:00 ${period}`,
+    });
+  }
+
+  return options;
+}
+
+const deliveryFormatOptions = [
+  { value: "in_person", label: "In-person" },
+  { value: "virtual", label: "Virtual (Zoom)" },
+  { value: "hybrid", label: "Hybrid" },
+];
+
+const currencyOptions = [
+  { value: "USD", label: "USD ($)" },
+  { value: "INR", label: "INR (₹)" },
+  { value: "EUR", label: "EUR (€)" },
+];
+
+const cancellationPolicyOptions = [
+  { value: "24-hour cancellation required", label: "Flexible - full refund 24hrs before" },
+  { value: "Reschedule only", label: "Moderate - reschedule only" },
+  { value: "No refund", label: "Strict - no refund" },
+];
+
+const timeOptions = generateHourlyTimeOptions();
+
+function resolveOptionValue(value: string | undefined, options: { value: string; label: string }[]) {
+  if (!value) {
+    return "";
+  }
+
+  const normalized = value.trim().toLowerCase();
+  const match = options.find(
+    (option) =>
+      option.value.toLowerCase() === normalized || option.label.toLowerCase() === normalized,
+  );
+
+  return match?.value ?? value.trim();
+}
+
+function hasCategoryOption(value: string) {
+  return categoryOptions.includes(value);
+}
+
+function createInitialWeekdays(): WeekdaySchedule[] {
+  return weekdayNames.map((day) => ({
+    day,
+    enabled: false,
+    startTime: "09:00",
+    endTime: "18:00",
+    slotLength: "60",
+  }));
+}
+
+function buildWeekdayState(schedule?: AvailabilityScheduleItem[]) {
+  const initialWeekdays = createInitialWeekdays();
+
+  if (!schedule || schedule.length === 0) {
+    return initialWeekdays;
+  }
+
+  const scheduleMap = schedule.reduce<Record<string, AvailabilityScheduleItem>>((acc, item) => {
+    acc[item.day.trim().toLowerCase()] = item;
+    return acc;
+  }, {});
+
+  return initialWeekdays.map((day) => {
+    const matched = scheduleMap[day.day.toLowerCase()];
+
+    if (!matched) {
+      return day;
+    }
+
+    return {
+      ...day,
+      enabled: matched.is_available !== false,
+      startTime: matched.start_time?.trim() || day.startTime,
+      endTime: matched.end_time?.trim() || day.endTime,
+      slotLength: matched.slot_length?.trim() || day.slotLength,
+    };
+  });
+}
+
+function buildAvailabilitySchedule(days: WeekdaySchedule[]): AvailabilityScheduleItem[] {
+  return days
+    .filter((day) => day.enabled)
+    .map((day) => ({
+      day: day.day.toLowerCase(),
+      is_available: true,
+      start_time: day.startTime,
+      end_time: day.endTime,
+      slot_length: day.slotLength,
+    }));
 }
 
 function createAttributeRow(attribute?: DynamicAttributeDto): ServiceAttributeRow {
@@ -54,7 +186,13 @@ export default function EditServicePage() {
   const [serviceCategory, setServiceCategory] = useState("");
   const [servicePrice, setServicePrice] = useState("");
   const [duration, setDuration] = useState("");
-  const [availabilityStatus, setAvailabilityStatus] = useState(true);
+  const [maxParticipants, setMaxParticipants] = useState("");
+  const [providerName, setProviderName] = useState("");
+  const [deliveryFormat, setDeliveryFormat] = useState("");
+  const [packagePrice, setPackagePrice] = useState("");
+  const [currency, setCurrency] = useState("");
+  const [cancellationPolicy, setCancellationPolicy] = useState("");
+  const [weekdays, setWeekdays] = useState<WeekdaySchedule[]>(() => createInitialWeekdays());
   const [serviceStatus, setServiceStatus] = useState(true);
   const [customAttributes, setCustomAttributes] = useState<ServiceAttributeRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -79,7 +217,13 @@ export default function EditServicePage() {
       setServiceCategory(data.service_category || "");
       setServicePrice(String(data.service_price ?? ""));
       setDuration(String(data.duration ?? ""));
-      setAvailabilityStatus(data.availability_status !== false);
+      setMaxParticipants(String(data.max_participants ?? ""));
+      setProviderName(data.provider_name || "");
+      setDeliveryFormat(resolveOptionValue(data.delivery_format, deliveryFormatOptions));
+      setPackagePrice(String(data.package_price ?? ""));
+      setCurrency(resolveOptionValue(data.currency, currencyOptions));
+      setCancellationPolicy(resolveOptionValue(data.cancellation_policy, cancellationPolicyOptions));
+      setWeekdays(buildWeekdayState(data.availability_schedule));
       setServiceStatus(data.service_status !== false);
 
       try {
@@ -106,6 +250,18 @@ export default function EditServicePage() {
     const trimmedCategory = serviceCategory.trim();
     const parsedPrice = Number(servicePrice);
     const parsedDuration = Number(duration);
+    const parsedMaxParticipants = optionalNumber(maxParticipants);
+    const trimmedProviderName = optionalText(providerName);
+    const trimmedDeliveryFormat = optionalText(deliveryFormat);
+    const parsedPackagePrice = optionalNumber(packagePrice);
+    const trimmedCurrency = optionalText(currency);
+    const trimmedCancellationPolicy = optionalText(cancellationPolicy);
+    const availabilityStatus = weekdays.some((day) => day.enabled);
+    const hasIncompleteSchedule = weekdays.some(
+      (day) =>
+        day.enabled &&
+        (!day.startTime.trim() || !day.endTime.trim() || !day.slotLength.trim()),
+    );
 
     if (
       !trimmedName ||
@@ -115,6 +271,11 @@ export default function EditServicePage() {
       !Number.isFinite(parsedDuration)
     ) {
       setError("Please complete all required service fields.");
+      return;
+    }
+
+    if (hasIncompleteSchedule) {
+      setError("Please complete start time, end time, and slot length for each available day.");
       return;
     }
 
@@ -134,6 +295,13 @@ export default function EditServicePage() {
         duration: parsedDuration,
         availability_status: availabilityStatus,
         service_status: serviceStatus,
+        ...(parsedMaxParticipants !== undefined ? { max_participants: parsedMaxParticipants } : {}),
+        ...(trimmedProviderName ? { provider_name: trimmedProviderName } : {}),
+        ...(trimmedDeliveryFormat ? { delivery_format: trimmedDeliveryFormat } : {}),
+        ...(parsedPackagePrice !== undefined ? { package_price: parsedPackagePrice } : {}),
+        ...(trimmedCurrency ? { currency: trimmedCurrency } : {}),
+        ...(trimmedCancellationPolicy ? { cancellation_policy: trimmedCancellationPolicy } : {}),
+        availability_schedule: buildAvailabilitySchedule(weekdays),
       });
 
       const attributeOperations: Promise<unknown>[] = [];
@@ -190,6 +358,8 @@ export default function EditServicePage() {
       setIsSubmitting(false);
     }
   }
+
+  const availabilityStatus = weekdays.some((day) => day.enabled);
 
   if (isLoading) {
     return (
@@ -267,12 +437,21 @@ export default function EditServicePage() {
 
           <label className="block">
             <FieldLabel>Category*</FieldLabel>
-            <input
-              type="text"
+            <select
               value={serviceCategory}
               onChange={(event) => setServiceCategory(event.target.value)}
               className={inputClass()}
-            />
+            >
+              <option value="">Select category</option>
+              {categoryOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+              {serviceCategory && !hasCategoryOption(serviceCategory) ? (
+                <option value={serviceCategory}>{serviceCategory}</option>
+              ) : null}
+            </select>
           </label>
 
           <label className="block md:col-span-2">
@@ -306,10 +485,10 @@ export default function EditServicePage() {
           </label>
 
           <label className="block">
-            <FieldLabel>Availability Status*</FieldLabel>
+            <FieldLabel>Availability Status</FieldLabel>
             <select
               value={availabilityStatus ? "Available" : "Unavailable"}
-              onChange={(event) => setAvailabilityStatus(event.target.value === "Available")}
+              disabled
               className={inputClass()}
             >
               <option>Available</option>
@@ -328,6 +507,181 @@ export default function EditServicePage() {
               <option>Inactive</option>
             </select>
           </label>
+          <label className="block">
+            <FieldLabel>Max Participants</FieldLabel>
+            <input
+              type="text"
+              value={maxParticipants}
+              onChange={(event) => setMaxParticipants(event.target.value)}
+              className={inputClass()}
+            />
+          </label>
+          <label className="block">
+            <FieldLabel>Provider/Instructor</FieldLabel>
+            <input
+              type="text"
+              value={providerName}
+              onChange={(event) => setProviderName(event.target.value)}
+              className={inputClass()}
+            />
+          </label>
+          <label className="block">
+            <FieldLabel>Delivery Format</FieldLabel>
+            <select
+              value={deliveryFormat}
+              onChange={(event) => setDeliveryFormat(resolveOptionValue(event.target.value, deliveryFormatOptions))}
+              className={inputClass()}
+            >
+              <option value="">Select delivery format</option>
+              {deliveryFormatOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <FieldLabel>Package Price</FieldLabel>
+            <input
+              type="text"
+              value={packagePrice}
+              onChange={(event) => setPackagePrice(event.target.value)}
+              className={inputClass()}
+            />
+          </label>
+          <label className="block">
+            <FieldLabel>Currency</FieldLabel>
+            <select
+              value={currency}
+              onChange={(event) => setCurrency(resolveOptionValue(event.target.value, currencyOptions))}
+              className={inputClass()}
+            >
+              <option value="">Select currency</option>
+              {currencyOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <FieldLabel>Cancellation Policy</FieldLabel>
+            <select
+              value={cancellationPolicy}
+              onChange={(event) =>
+                setCancellationPolicy(resolveOptionValue(event.target.value, cancellationPolicyOptions))
+              }
+              className={inputClass()}
+            >
+              <option value="">Select cancellation policy</option>
+              {cancellationPolicyOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
+          <div className="mb-4">
+            <h3 className="text-lg font-bold text-[#06201c]">Weekly Schedule</h3>
+            <p className="mt-1 text-sm text-[#52736a]">
+              Set the days, hours, and slot length for this service.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            {weekdays.map((day, index) => (
+              <div
+                key={day.day}
+                className="grid gap-3 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] p-3 md:grid-cols-[1.1fr_1fr_1fr_1fr]"
+              >
+                <label className="flex h-[46px] items-center gap-3 text-sm font-bold text-[#06201c]">
+                  <input
+                    type="checkbox"
+                    checked={day.enabled}
+                    onChange={() =>
+                      setWeekdays((current) =>
+                        current.map((currentDay, currentIndex) =>
+                          currentIndex === index
+                            ? { ...currentDay, enabled: !currentDay.enabled }
+                            : currentDay,
+                        ),
+                      )
+                    }
+                    className="h-4 w-4 accent-[#1f6a58]"
+                  />
+                  {day.day}
+                </label>
+                {day.enabled ? (
+                  <>
+                    <select
+                      className={controlClass()}
+                      value={day.startTime}
+                      onChange={(event) =>
+                        setWeekdays((current) =>
+                          current.map((currentDay, currentIndex) =>
+                            currentIndex === index
+                              ? { ...currentDay, startTime: event.target.value }
+                              : currentDay,
+                          ),
+                        )
+                      }
+                    >
+                      {timeOptions.map((time) => (
+                        <option key={time.value} value={time.value}>
+                          {time.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className={controlClass()}
+                      value={day.endTime}
+                      onChange={(event) =>
+                        setWeekdays((current) =>
+                          current.map((currentDay, currentIndex) =>
+                            currentIndex === index
+                              ? { ...currentDay, endTime: event.target.value }
+                              : currentDay,
+                          ),
+                        )
+                      }
+                    >
+                      {timeOptions.map((time) => (
+                        <option key={time.value} value={time.value}>
+                          {time.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className={controlClass()}
+                      value={day.slotLength}
+                      onChange={(event) =>
+                        setWeekdays((current) =>
+                          current.map((currentDay, currentIndex) =>
+                            currentIndex === index
+                              ? { ...currentDay, slotLength: event.target.value }
+                              : currentDay,
+                          ),
+                        )
+                      }
+                    >
+                      {["30", "45", "60", "90"].map((option) => (
+                        <option key={option} value={option}>
+                          {option} min
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                ) : (
+                  <div className="flex h-[46px] items-center text-sm text-[#8ca69e] md:col-span-3">
+                    Not available
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">

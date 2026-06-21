@@ -1,3 +1,11 @@
+export type AvailabilityScheduleItem = {
+  day: string;
+  is_available: boolean;
+  start_time?: string;
+  end_time?: string;
+  slot_length?: string;
+};
+
 export type ServiceDto = {
   id: string;
   enterprise_id: string;
@@ -8,6 +16,14 @@ export type ServiceDto = {
   duration: number;
   availability_status: boolean;
   service_status: boolean;
+  max_participants?: number;
+  provider_name?: string;
+  instructor_name?: string;
+  delivery_format?: string;
+  package_price?: number;
+  currency?: string;
+  cancellation_policy?: string;
+  availability_schedule?: AvailabilityScheduleItem[];
 };
 
 export type CreateServicePayload = {
@@ -19,6 +35,14 @@ export type CreateServicePayload = {
   duration: number;
   availability_status: boolean;
   service_status: boolean;
+  max_participants?: number;
+  provider_name?: string;
+  instructor_name?: string;
+  delivery_format?: string;
+  package_price?: number;
+  currency?: string;
+  cancellation_policy?: string;
+  availability_schedule?: AvailabilityScheduleItem[];
 };
 
 export type UpdateServicePayload = Partial<{
@@ -29,6 +53,14 @@ export type UpdateServicePayload = Partial<{
   duration: number;
   availability_status: boolean;
   service_status: boolean;
+  max_participants: number;
+  provider_name: string;
+  instructor_name: string;
+  delivery_format: string;
+  package_price: number;
+  currency: string;
+  cancellation_policy: string;
+  availability_schedule: AvailabilityScheduleItem[];
 }>;
 
 export type ServiceListItem = {

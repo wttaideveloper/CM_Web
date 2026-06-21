@@ -20,6 +20,11 @@ function selectClass() {
   return inputClass();
 }
 
+function optionalText(value: string) {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 function StepCircle({
   index,
   currentStep,
@@ -68,8 +73,16 @@ export default function CreateEnterprisePage() {
   const [currentStep, setCurrentStep] = useState(0);
   const [enterpriseName, setEnterpriseName] = useState("");
   const [tradingName, setTradingName] = useState("");
+  const [registrationNumber, setRegistrationNumber] = useState("");
+  const [businessCategory, setBusinessCategory] = useState("");
+  const [websiteUrl, setWebsiteUrl] = useState("");
+  const [yearFounded, setYearFounded] = useState("");
   const [businessEmail, setBusinessEmail] = useState("");
   const [businessPhone, setBusinessPhone] = useState("");
+  const [primaryContactName, setPrimaryContactName] = useState("");
+  const [primaryContactTitle, setPrimaryContactTitle] = useState("");
+  const [secondaryEmail, setSecondaryEmail] = useState("");
+  const [secondaryPhone, setSecondaryPhone] = useState("");
   const [description, setDescription] = useState("");
   const [streetAddress, setStreetAddress] = useState("");
   const [city, setCity] = useState("");
@@ -78,8 +91,13 @@ export default function CreateEnterprisePage() {
   const [country, setCountry] = useState("United States");
   const [useRegisteredAddressForOtherAddresses, setUseRegisteredAddressForOtherAddresses] =
     useState(true);
+  const [suiteUnit, setSuiteUnit] = useState("");
   const [businessAddress, setBusinessAddress] = useState("");
   const [communicationAddress, setCommunicationAddress] = useState("");
+  const [brandColor, setBrandColor] = useState("");
+  const [tagline, setTagline] = useState("");
+  const [logoUrl, setLogoUrl] = useState("");
+  const [businessImages, setBusinessImages] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isFirstStep = currentStep === 0;
@@ -88,17 +106,28 @@ export default function CreateEnterprisePage() {
   async function handleSubmit() {
     const trimmedName = enterpriseName.trim();
     const trimmedTradingName = tradingName.trim();
+    const trimmedRegistrationNumber = optionalText(registrationNumber);
+    const trimmedBusinessCategory = optionalText(businessCategory);
+    const trimmedWebsiteUrl = optionalText(websiteUrl);
+    const trimmedYearFounded = optionalText(yearFounded);
     const trimmedBusinessEmail = businessEmail.trim();
     const trimmedBusinessPhone = businessPhone.trim();
+    const trimmedPrimaryContactName = optionalText(primaryContactName);
+    const trimmedPrimaryContactTitle = optionalText(primaryContactTitle);
+    const trimmedSecondaryEmail = optionalText(secondaryEmail);
+    const trimmedSecondaryPhone = optionalText(secondaryPhone);
     const trimmedDescription = description.trim();
     const trimmedStreetAddress = streetAddress.trim();
     const trimmedCity = city.trim();
     const trimmedStateProvince = stateProvince.trim();
     const trimmedPostalCode = postalCode.trim();
     const trimmedCountry = country.trim();
+    const trimmedSuiteUnit = optionalText(suiteUnit);
     const registeredAddress = `${trimmedStreetAddress}, ${trimmedCity}, ${trimmedStateProvince} ${trimmedPostalCode}, ${trimmedCountry}`;
     const trimmedBusinessAddress = businessAddress.trim();
     const trimmedCommunicationAddress = communicationAddress.trim();
+    const trimmedBrandColor = optionalText(brandColor);
+    const trimmedTagline = optionalText(tagline);
 
     if (
       !trimmedName ||
@@ -140,8 +169,19 @@ export default function CreateEnterprisePage() {
         communication_address: useRegisteredAddressForOtherAddresses
           ? registeredAddress
           : trimmedCommunicationAddress,
-        logo_url: "",
-        business_images: "",
+        logo_url: logoUrl.trim(),
+        business_images: businessImages.trim(),
+        ...(trimmedRegistrationNumber ? { registration_number: trimmedRegistrationNumber } : {}),
+        ...(trimmedBusinessCategory ? { business_category: trimmedBusinessCategory } : {}),
+        ...(trimmedWebsiteUrl ? { website_url: trimmedWebsiteUrl } : {}),
+        ...(trimmedYearFounded ? { year_founded: trimmedYearFounded } : {}),
+        ...(trimmedPrimaryContactName ? { primary_contact_name: trimmedPrimaryContactName } : {}),
+        ...(trimmedPrimaryContactTitle ? { primary_contact_title: trimmedPrimaryContactTitle } : {}),
+        ...(trimmedSecondaryEmail ? { secondary_email: trimmedSecondaryEmail } : {}),
+        ...(trimmedSecondaryPhone ? { secondary_phone: trimmedSecondaryPhone } : {}),
+        ...(trimmedSuiteUnit ? { suite_unit: trimmedSuiteUnit } : {}),
+        ...(trimmedBrandColor ? { brand_color: trimmedBrandColor } : {}),
+        ...(trimmedTagline ? { tagline: trimmedTagline } : {}),
       });
 
       router.push("/enterprises");
@@ -236,12 +276,23 @@ export default function CreateEnterprisePage() {
                 />
               </label>
               <label className="block">
-                <FieldLabel>Registration Number*</FieldLabel>
-                <input type="text" placeholder="REG-2026-0142" className={inputClass()} />
+                <FieldLabel>Registration Number</FieldLabel>
+                <input
+                  type="text"
+                  placeholder="REG-2026-0142"
+                  value={registrationNumber}
+                  onChange={(event) => setRegistrationNumber(event.target.value)}
+                  className={inputClass()}
+                />
               </label>
               <label className="block">
-                <FieldLabel>Business Category*</FieldLabel>
-                <select className={selectClass()} defaultValue="Fitness & Wellness">
+                <FieldLabel>Business Category</FieldLabel>
+                <select
+                  className={selectClass()}
+                  value={businessCategory}
+                  onChange={(event) => setBusinessCategory(event.target.value)}
+                >
+                  <option value="">Select business category</option>
                   {[
                     "Fitness & Wellness",
                     "Nutrition",
@@ -259,12 +310,19 @@ export default function CreateEnterprisePage() {
                 <input
                   type="text"
                   placeholder="https://pinnaclewellness.com"
+                  value={websiteUrl}
+                  onChange={(event) => setWebsiteUrl(event.target.value)}
                   className={inputClass()}
                 />
               </label>
               <label className="block">
                 <FieldLabel>Year Founded</FieldLabel>
-                <select className={selectClass()} defaultValue="2021">
+                <select
+                  className={selectClass()}
+                  value={yearFounded}
+                  onChange={(event) => setYearFounded(event.target.value)}
+                >
+                  <option value="">Select year founded</option>
                   {["2026", "2025", "2024", "2023", "2022", "2021", "2020", "2019", "2018"].map(
                     (option) => (
                       <option key={option}>{option}</option>
@@ -295,12 +353,24 @@ export default function CreateEnterprisePage() {
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <label className="block">
-                <FieldLabel>Primary Contact Name*</FieldLabel>
-                <input type="text" placeholder="Sarah Johnson" className={inputClass()} />
+                <FieldLabel>Primary Contact Name</FieldLabel>
+                <input
+                  type="text"
+                  placeholder="Sarah Johnson"
+                  value={primaryContactName}
+                  onChange={(event) => setPrimaryContactName(event.target.value)}
+                  className={inputClass()}
+                />
               </label>
               <label className="block">
                 <FieldLabel>Job Title</FieldLabel>
-                <input type="text" placeholder="Founder & CEO" className={inputClass()} />
+                <input
+                  type="text"
+                  placeholder="Founder & CEO"
+                  value={primaryContactTitle}
+                  onChange={(event) => setPrimaryContactTitle(event.target.value)}
+                  className={inputClass()}
+                />
               </label>
               <label className="block">
                 <FieldLabel>Email Address*</FieldLabel>
@@ -324,11 +394,23 @@ export default function CreateEnterprisePage() {
               </label>
               <label className="block">
                 <FieldLabel>Secondary Email</FieldLabel>
-                <input type="email" placeholder="ops@pinnacle.com" className={inputClass()} />
+                <input
+                  type="email"
+                  placeholder="ops@pinnacle.com"
+                  value={secondaryEmail}
+                  onChange={(event) => setSecondaryEmail(event.target.value)}
+                  className={inputClass()}
+                />
               </label>
               <label className="block">
                 <FieldLabel>Secondary Phone</FieldLabel>
-                <input type="text" placeholder="+1 (415) 555-0134" className={inputClass()} />
+                <input
+                  type="text"
+                  placeholder="+1 (415) 555-0134"
+                  value={secondaryPhone}
+                  onChange={(event) => setSecondaryPhone(event.target.value)}
+                  className={inputClass()}
+                />
               </label>
             </div>
           </>
@@ -355,7 +437,13 @@ export default function CreateEnterprisePage() {
               </label>
               <label className="block">
                 <FieldLabel>Suite / Unit</FieldLabel>
-                <input type="text" placeholder="Suite 400" className={inputClass()} />
+                <input
+                  type="text"
+                  placeholder="Suite 400"
+                  value={suiteUnit}
+                  onChange={(event) => setSuiteUnit(event.target.value)}
+                  className={inputClass()}
+                />
               </label>
               <label className="block">
                 <FieldLabel>City*</FieldLabel>
@@ -461,6 +549,16 @@ export default function CreateEnterprisePage() {
                 <div className="mt-4 flex h-28 items-center justify-center rounded-2xl border border-[#d7e5df] bg-white text-sm text-[#8ca69e]">
                   Upload logo
                 </div>
+                <label className="mt-4 block">
+                  <FieldLabel>Logo URL</FieldLabel>
+                  <input
+                    type="text"
+                    placeholder="https://example.com/logo.png"
+                    value={logoUrl}
+                    onChange={(event) => setLogoUrl(event.target.value)}
+                    className={inputClass()}
+                  />
+                </label>
               </div>
               <div className="rounded-2xl border border-dashed border-[#b8d1c7] bg-[#f9fcfa] p-5">
                 <p className="text-sm font-bold text-[#06201c]">Cover / Banner Image</p>
@@ -470,16 +568,34 @@ export default function CreateEnterprisePage() {
                 <div className="mt-4 flex h-28 items-center justify-center rounded-2xl border border-[#d7e5df] bg-white text-sm text-[#8ca69e]">
                   Upload banner
                 </div>
+                <label className="mt-4 block">
+                  <FieldLabel>Banner Image URL</FieldLabel>
+                  <input
+                    type="text"
+                    placeholder="https://example.com/banner.png"
+                    value={businessImages}
+                    onChange={(event) => setBusinessImages(event.target.value)}
+                    className={inputClass()}
+                  />
+                </label>
               </div>
               <label className="block">
                 <FieldLabel>Brand Color</FieldLabel>
-                <input type="text" placeholder="#1F5D4E" className={inputClass()} />
+                <input
+                  type="text"
+                  placeholder="#1F5D4E"
+                  value={brandColor}
+                  onChange={(event) => setBrandColor(event.target.value)}
+                  className={inputClass()}
+                />
               </label>
               <label className="block">
                 <FieldLabel>Tagline</FieldLabel>
                 <input
                   type="text"
                   placeholder="Your wellness, our mission"
+                  value={tagline}
+                  onChange={(event) => setTagline(event.target.value)}
                   className={inputClass()}
                 />
               </label>

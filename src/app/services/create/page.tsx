@@ -8,32 +8,88 @@ import { createDynamicAttribute } from "@/services/attribute.service";
 import { getEnterprises } from "@/services/enterprise.service";
 import { createService } from "@/services/service.service";
 import type { EnterpriseDto } from "@/types/enterprise.types";
+import type { AvailabilityScheduleItem } from "@/types/service.types";
 
 const tabs = ["Service Info", "Pricing", "Availability", "Review"];
 
-const initialWeekdays = [
-  { day: "Monday", enabled: true },
-  { day: "Tuesday", enabled: true },
-  { day: "Wednesday", enabled: true },
-  { day: "Thursday", enabled: true },
-  { day: "Friday", enabled: true },
-  { day: "Saturday", enabled: false },
-  { day: "Sunday", enabled: false },
+type WeekdaySchedule = {
+  day: string;
+  enabled: boolean;
+  startTime: string;
+  endTime: string;
+  slotLength: string;
+};
+
+const initialWeekdays: WeekdaySchedule[] = [
+  { day: "Monday", enabled: true, startTime: "09:00", endTime: "18:00", slotLength: "60" },
+  { day: "Tuesday", enabled: true, startTime: "09:00", endTime: "18:00", slotLength: "60" },
+  { day: "Wednesday", enabled: true, startTime: "09:00", endTime: "18:00", slotLength: "60" },
+  { day: "Thursday", enabled: true, startTime: "09:00", endTime: "18:00", slotLength: "60" },
+  { day: "Friday", enabled: true, startTime: "09:00", endTime: "18:00", slotLength: "60" },
+  { day: "Saturday", enabled: false, startTime: "09:00", endTime: "18:00", slotLength: "60" },
+  { day: "Sunday", enabled: false, startTime: "09:00", endTime: "18:00", slotLength: "60" },
 ];
 
 function generateHourlyTimeOptions() {
-  const options: string[] = [];
+  const options: { value: string; label: string }[] = [];
 
   for (let hour = 0; hour < 24; hour++) {
     const period = hour >= 12 ? "PM" : "AM";
     const displayHour = hour % 12 === 0 ? 12 : hour % 12;
-    options.push(`${displayHour.toString().padStart(2, "0")}:00 ${period}`);
+    options.push({
+      value: `${hour.toString().padStart(2, "0")}:00`,
+      label: `${displayHour.toString().padStart(2, "0")}:00 ${period}`,
+    });
   }
 
   return options;
 }
 
 const timeOptions = generateHourlyTimeOptions();
+
+const deliveryFormatOptions = [
+  { value: "in_person", label: "In-person" },
+  { value: "virtual", label: "Virtual (Zoom)" },
+  { value: "hybrid", label: "Hybrid" },
+];
+
+const currencyOptions = [
+  { value: "USD", label: "USD ($)" },
+  { value: "INR", label: "INR (₹)" },
+  { value: "EUR", label: "EUR (€)" },
+];
+
+const cancellationPolicyOptions = [
+  { value: "24-hour cancellation required", label: "Flexible - full refund 24hrs before" },
+  { value: "Reschedule only", label: "Moderate - reschedule only" },
+  { value: "No refund", label: "Strict - no refund" },
+];
+
+function resolveOptionValue(value: string, options: { value: string; label: string }[]) {
+  const normalized = value.trim().toLowerCase();
+  const match = options.find(
+    (option) =>
+      option.value.toLowerCase() === normalized || option.label.toLowerCase() === normalized,
+  );
+
+  return match?.value ?? "";
+}
+
+function resolveOptionLabel(value: string, options: { value: string; label: string }[]) {
+  return options.find((option) => option.value === value)?.label || value || "Not provided";
+}
+
+function buildAvailabilitySchedule(days: WeekdaySchedule[]): AvailabilityScheduleItem[] {
+  return days
+    .filter((day) => day.enabled)
+    .map((day) => ({
+      day: day.day.toLowerCase(),
+      is_available: true,
+      start_time: day.startTime,
+      end_time: day.endTime,
+      slot_length: day.slotLength,
+    }));
+}
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return <span className="text-sm font-bold text-[#06201c]">{children}</span>;
@@ -53,6 +109,21 @@ function selectClass() {
 
 function scheduleSelectClass() {
   return controlClass();
+}
+
+function optionalText(value: string) {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function optionalNumber(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function isValidServicePrice(value: string) {
@@ -100,6 +171,12 @@ export default function CreateServicePage() {
   const [serviceCategory, setServiceCategory] = useState("IT Services");
   const [servicePrice, setServicePrice] = useState("");
   const [duration, setDuration] = useState("");
+  const [maxParticipants, setMaxParticipants] = useState("");
+  const [providerName, setProviderName] = useState("");
+  const [deliveryFormat, setDeliveryFormat] = useState("");
+  const [packagePrice, setPackagePrice] = useState("");
+  const [currency, setCurrency] = useState("");
+  const [cancellationPolicy, setCancellationPolicy] = useState("");
   const [customAttributes, setCustomAttributes] = useState<CustomAttributeRow[]>([]);
   const [enterpriseOptions, setEnterpriseOptions] = useState<EnterpriseOption[]>([]);
   const [isLoadingEnterprises, setIsLoadingEnterprises] = useState(true);
@@ -127,6 +204,10 @@ export default function CreateServicePage() {
     selectedEnterprise?.business_short_name ||
     selectedEnterprise?.name ||
     "Unnamed Enterprise";
+  const reviewDeliveryFormat = resolveOptionLabel(deliveryFormat, deliveryFormatOptions);
+  const reviewCurrency = resolveOptionLabel(currency, currencyOptions);
+  const reviewCancellationPolicy = resolveOptionLabel(cancellationPolicy, cancellationPolicyOptions);
+  const availabilitySchedule = buildAvailabilitySchedule(weekdays);
   const reviewCustomAttributes = customAttributes.filter(
     (attribute) => attribute.attribute_name.trim() && attribute.attribute_value.trim(),
   );
@@ -158,6 +239,12 @@ export default function CreateServicePage() {
     const trimmedServiceCategory = serviceCategory.trim();
     const parsedPrice = Number(servicePrice.trim());
     const parsedMinutes = Number(duration.trim());
+    const parsedMaxParticipants = optionalNumber(maxParticipants);
+    const trimmedProviderName = optionalText(providerName);
+    const trimmedDeliveryFormat = optionalText(deliveryFormat);
+    const parsedPackagePrice = optionalNumber(packagePrice);
+    const trimmedCurrency = optionalText(currency);
+    const trimmedCancellationPolicy = optionalText(cancellationPolicy);
 
     if (
       !trimmedEnterpriseId ||
@@ -179,7 +266,7 @@ export default function CreateServicePage() {
       setIsSubmitting(true);
       setError(null);
 
-      const createdService = await createService({
+  const createdService = await createService({
         enterprise_id: trimmedEnterpriseId,
         service_name: trimmedServiceName,
         service_description: trimmedServiceDescription,
@@ -188,6 +275,13 @@ export default function CreateServicePage() {
         duration: parsedMinutes,
         availability_status: availabilityStatus,
         service_status: true,
+        ...(parsedMaxParticipants !== undefined ? { max_participants: parsedMaxParticipants } : {}),
+        ...(trimmedProviderName ? { provider_name: trimmedProviderName } : {}),
+        ...(trimmedDeliveryFormat ? { delivery_format: trimmedDeliveryFormat } : {}),
+        ...(parsedPackagePrice !== undefined ? { package_price: parsedPackagePrice } : {}),
+        ...(trimmedCurrency ? { currency: trimmedCurrency } : {}),
+        ...(trimmedCancellationPolicy ? { cancellation_policy: trimmedCancellationPolicy } : {}),
+        availability_schedule: availabilitySchedule,
       });
 
       const attributeOperations = customAttributes
@@ -330,17 +424,38 @@ export default function CreateServicePage() {
               </label>
               <label className="block">
                 <FieldLabel>Max Participants</FieldLabel>
-                <input type="text" placeholder="1" className={inputClass()} />
+                <input
+                  type="text"
+                  placeholder="1"
+                  value={maxParticipants}
+                  onChange={(event) => setMaxParticipants(event.target.value)}
+                  className={inputClass()}
+                />
               </label>
               <label className="block">
                 <FieldLabel>Provider/Instructor</FieldLabel>
-                <input type="text" placeholder="Sarah Jones" className={inputClass()} />
+                <input
+                  type="text"
+                  placeholder="Sarah Jones"
+                  value={providerName}
+                  onChange={(event) => setProviderName(event.target.value)}
+                  className={inputClass()}
+                />
               </label>
               <label className="block">
                 <FieldLabel>Delivery Format</FieldLabel>
-                <select className={selectClass()} defaultValue="In-person">
-                  {["In-person", "Virtual (Zoom)", "Hybrid"].map((option) => (
-                    <option key={option}>{option}</option>
+                <select
+                  className={selectClass()}
+                  value={deliveryFormat}
+                  onChange={(event) =>
+                    setDeliveryFormat(resolveOptionValue(event.target.value, deliveryFormatOptions))
+                  }
+                >
+                  <option value="">Select delivery format</option>
+                  {deliveryFormatOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -381,14 +496,25 @@ export default function CreateServicePage() {
                 <input
                   type="text"
                   placeholder="5-pack for $425"
+                  value={packagePrice}
+                  onChange={(event) => setPackagePrice(event.target.value)}
                   className={inputClass()}
                 />
               </label>
               <label className="block">
                 <FieldLabel>Currency</FieldLabel>
-                <select className={selectClass()} defaultValue="USD ($)">
-                  {["USD ($)", "INR (₹)", "EUR (€)"].map((option) => (
-                    <option key={option}>{option}</option>
+                <select
+                  className={selectClass()}
+                  value={currency}
+                  onChange={(event) =>
+                    setCurrency(resolveOptionValue(event.target.value, currencyOptions))
+                  }
+                >
+                  <option value="">Select currency</option>
+                  {currencyOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -396,14 +522,18 @@ export default function CreateServicePage() {
                 <FieldLabel>Cancellation Policy</FieldLabel>
                 <select
                   className={selectClass()}
-                  defaultValue="Flexible - full refund 24hrs before"
+                  value={cancellationPolicy}
+                  onChange={(event) =>
+                    setCancellationPolicy(
+                      resolveOptionValue(event.target.value, cancellationPolicyOptions),
+                    )
+                  }
                 >
-                  {[
-                    "Flexible - full refund 24hrs before",
-                    "Moderate - full refund 48hrs before",
-                    "Strict - no refund",
-                  ].map((option) => (
-                    <option key={option}>{option}</option>
+                  <option value="">Select cancellation policy</option>
+                  {cancellationPolicyOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -444,23 +574,61 @@ export default function CreateServicePage() {
                   </label>
                   {day.enabled ? (
                     <>
-                      <select className={scheduleSelectClass()} defaultValue="09:00 AM">
+                      <select
+                        className={scheduleSelectClass()}
+                        value={day.startTime}
+                        onChange={(event) =>
+                          setWeekdays((current) =>
+                            current.map((currentDay, currentIndex) =>
+                              currentIndex === index
+                                ? { ...currentDay, startTime: event.target.value }
+                                : currentDay,
+                            ),
+                          )
+                        }
+                      >
                         {timeOptions.map((time) => (
-                          <option key={time} value={time}>
-                            {time}
+                          <option key={time.value} value={time.value}>
+                            {time.label}
                           </option>
                         ))}
                       </select>
-                      <select className={scheduleSelectClass()} defaultValue="06:00 PM">
+                      <select
+                        className={scheduleSelectClass()}
+                        value={day.endTime}
+                        onChange={(event) =>
+                          setWeekdays((current) =>
+                            current.map((currentDay, currentIndex) =>
+                              currentIndex === index
+                                ? { ...currentDay, endTime: event.target.value }
+                                : currentDay,
+                            ),
+                          )
+                        }
+                      >
                         {timeOptions.map((time) => (
-                          <option key={time} value={time}>
-                            {time}
+                          <option key={time.value} value={time.value}>
+                            {time.label}
                           </option>
                         ))}
                       </select>
-                      <select className={scheduleSelectClass()} defaultValue="60 min">
-                        {["30 min", "45 min", "60 min", "90 min"].map((option) => (
-                          <option key={option}>{option}</option>
+                      <select
+                        className={scheduleSelectClass()}
+                        value={day.slotLength}
+                        onChange={(event) =>
+                          setWeekdays((current) =>
+                            current.map((currentDay, currentIndex) =>
+                              currentIndex === index
+                                ? { ...currentDay, slotLength: event.target.value }
+                                : currentDay,
+                            ),
+                          )
+                        }
+                      >
+                        {["30", "45", "60", "90"].map((option) => (
+                          <option key={option} value={option}>
+                            {option} min
+                          </option>
                         ))}
                       </select>
                     </>
@@ -622,6 +790,28 @@ export default function CreateServicePage() {
                   <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Availability</p>
                   <p className="mt-1 text-sm font-semibold text-[#06201c]">
                     {availabilityStatus ? "Available" : "Unavailable"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
+                    Delivery Format
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-[#06201c]">
+                    {reviewDeliveryFormat}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
+                    Currency
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-[#06201c]">{reviewCurrency}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
+                    Cancellation Policy
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-[#06201c]">
+                    {reviewCancellationPolicy}
                   </p>
                 </div>
                 <div>

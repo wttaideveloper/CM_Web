@@ -100,7 +100,7 @@ function mapEnterpriseToListItem(enterprise: EnterpriseDto): EnterpriseListItem 
       enterprise.name ||
       "Unnamed Enterprise",
     description: enterprise.business_description || enterprise.description || "",
-    category: "Enterprise",
+    category: enterprise.business_category || "Enterprise",
     location:
       enterprise.business_address ||
       enterprise.registered_address ||

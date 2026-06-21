@@ -20,8 +20,33 @@ function selectClass() {
   return inputClass();
 }
 
-function formatText(value: string | null | undefined) {
-  return value?.trim() || "";
+const businessCategoryOptions = [
+  "Fitness & Wellness",
+  "Nutrition",
+  "Mental Health",
+  "Preventive Care",
+  "Rehabilitation",
+  "Corporate Wellness",
+  "Other",
+];
+
+const yearFoundedOptions = ["2026", "2025", "2024", "2023", "2022", "2021", "2020", "2019", "2018"];
+
+function formatText(value: unknown) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  return String(value).trim();
+}
+
+function optionalText(value: string) {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function hasOption(value: string, options: string[]) {
+  return options.includes(value);
 }
 
 function addressesMatch(
@@ -41,16 +66,27 @@ export default function EditEnterprisePage() {
   const [enterprise, setEnterprise] = useState<EnterpriseDto | null>(null);
   const [enterpriseName, setEnterpriseName] = useState("");
   const [tradingName, setTradingName] = useState("");
+  const [registrationNumber, setRegistrationNumber] = useState("");
+  const [businessCategory, setBusinessCategory] = useState("");
+  const [websiteUrl, setWebsiteUrl] = useState("");
+  const [yearFounded, setYearFounded] = useState("");
   const [description, setDescription] = useState("");
   const [businessEmail, setBusinessEmail] = useState("");
   const [businessPhone, setBusinessPhone] = useState("");
+  const [primaryContactName, setPrimaryContactName] = useState("");
+  const [primaryContactTitle, setPrimaryContactTitle] = useState("");
+  const [secondaryEmail, setSecondaryEmail] = useState("");
+  const [secondaryPhone, setSecondaryPhone] = useState("");
   const [registeredAddress, setRegisteredAddress] = useState("");
   const [businessAddress, setBusinessAddress] = useState("");
   const [communicationAddress, setCommunicationAddress] = useState("");
   const [useRegisteredAddressForOtherAddresses, setUseRegisteredAddressForOtherAddresses] =
     useState(true);
+  const [suiteUnit, setSuiteUnit] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
   const [businessImages, setBusinessImages] = useState("");
+  const [brandColor, setBrandColor] = useState("");
+  const [tagline, setTagline] = useState("");
   const [status, setStatus] = useState("Active");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,12 +107,21 @@ export default function EditEnterprisePage() {
       setEnterprise(data);
       setEnterpriseName(formatText(data.business_legal_name || data.name));
       setTradingName(formatText(data.business_short_name));
+      setRegistrationNumber(formatText(data.registration_number));
+      setBusinessCategory(formatText(data.business_category));
+      setWebsiteUrl(formatText(data.website_url));
+      setYearFounded(formatText(data.year_founded));
       setDescription(formatText(data.business_description || data.description));
       setBusinessEmail(formatText(data.business_email));
       setBusinessPhone(formatText(data.business_phone));
+      setPrimaryContactName(formatText(data.primary_contact_name));
+      setPrimaryContactTitle(formatText(data.primary_contact_title));
+      setSecondaryEmail(formatText(data.secondary_email));
+      setSecondaryPhone(formatText(data.secondary_phone));
       setRegisteredAddress(formatText(data.registered_address));
       setBusinessAddress(formatText(data.business_address));
       setCommunicationAddress(formatText(data.communication_address));
+      setSuiteUnit(formatText(data.suite_unit));
       setUseRegisteredAddressForOtherAddresses(
         addressesMatch(
           formatText(data.registered_address),
@@ -86,6 +131,8 @@ export default function EditEnterprisePage() {
       );
       setLogoUrl(formatText(data.logo_url));
       setBusinessImages(formatText(data.business_images));
+      setBrandColor(formatText(data.brand_color));
+      setTagline(formatText(data.tagline));
       setStatus(data.status === false ? "Inactive" : "Active");
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Unable to load enterprise.");
@@ -101,12 +148,23 @@ export default function EditEnterprisePage() {
   async function handleSubmit() {
     const trimmedName = enterpriseName.trim();
     const trimmedTradingName = tradingName.trim();
+    const trimmedRegistrationNumber = optionalText(registrationNumber);
+    const trimmedBusinessCategory = optionalText(businessCategory);
+    const trimmedWebsiteUrl = optionalText(websiteUrl);
+    const trimmedYearFounded = optionalText(yearFounded);
     const trimmedDescription = description.trim();
     const trimmedBusinessEmail = businessEmail.trim();
     const trimmedBusinessPhone = businessPhone.trim();
+    const trimmedPrimaryContactName = optionalText(primaryContactName);
+    const trimmedPrimaryContactTitle = optionalText(primaryContactTitle);
+    const trimmedSecondaryEmail = optionalText(secondaryEmail);
+    const trimmedSecondaryPhone = optionalText(secondaryPhone);
     const trimmedRegisteredAddress = registeredAddress.trim();
     const trimmedBusinessAddress = businessAddress.trim();
     const trimmedCommunicationAddress = communicationAddress.trim();
+    const trimmedSuiteUnit = optionalText(suiteUnit);
+    const trimmedBrandColor = optionalText(brandColor);
+    const trimmedTagline = optionalText(tagline);
 
     if (
       !trimmedName ||
@@ -145,6 +203,17 @@ export default function EditEnterprisePage() {
           : trimmedCommunicationAddress,
         logo_url: logoUrl.trim(),
         business_images: businessImages.trim(),
+        ...(trimmedRegistrationNumber ? { registration_number: trimmedRegistrationNumber } : {}),
+        ...(trimmedBusinessCategory ? { business_category: trimmedBusinessCategory } : {}),
+        ...(trimmedWebsiteUrl ? { website_url: trimmedWebsiteUrl } : {}),
+        ...(trimmedYearFounded ? { year_founded: trimmedYearFounded } : {}),
+        ...(trimmedPrimaryContactName ? { primary_contact_name: trimmedPrimaryContactName } : {}),
+        ...(trimmedPrimaryContactTitle ? { primary_contact_title: trimmedPrimaryContactTitle } : {}),
+        ...(trimmedSecondaryEmail ? { secondary_email: trimmedSecondaryEmail } : {}),
+        ...(trimmedSecondaryPhone ? { secondary_phone: trimmedSecondaryPhone } : {}),
+        ...(trimmedSuiteUnit ? { suite_unit: trimmedSuiteUnit } : {}),
+        ...(trimmedBrandColor ? { brand_color: trimmedBrandColor } : {}),
+        ...(trimmedTagline ? { tagline: trimmedTagline } : {}),
         status: status !== "Inactive",
       });
 
@@ -238,6 +307,60 @@ export default function EditEnterprisePage() {
               className={inputClass()}
             />
           </label>
+          <label className="block">
+            <FieldLabel>Registration Number</FieldLabel>
+            <input
+              type="text"
+              value={registrationNumber}
+              onChange={(event) => setRegistrationNumber(event.target.value)}
+              className={inputClass()}
+            />
+          </label>
+          <label className="block">
+            <FieldLabel>Business Category</FieldLabel>
+            <select
+              className={selectClass()}
+              value={businessCategory}
+              onChange={(event) => setBusinessCategory(event.target.value)}
+            >
+              <option value="">Select business category</option>
+              {businessCategoryOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+              {businessCategory && !hasOption(businessCategory, businessCategoryOptions) ? (
+                <option value={businessCategory}>{businessCategory}</option>
+              ) : null}
+            </select>
+          </label>
+          <label className="block">
+            <FieldLabel>Website URL</FieldLabel>
+            <input
+              type="text"
+              value={websiteUrl}
+              onChange={(event) => setWebsiteUrl(event.target.value)}
+              className={inputClass()}
+            />
+          </label>
+          <label className="block">
+            <FieldLabel>Year Founded</FieldLabel>
+            <select
+              className={selectClass()}
+              value={yearFounded}
+              onChange={(event) => setYearFounded(event.target.value)}
+            >
+              <option value="">Select year founded</option>
+              {yearFoundedOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+              {yearFounded && !hasOption(yearFounded, yearFoundedOptions) ? (
+                <option value={yearFounded}>{yearFounded}</option>
+              ) : null}
+            </select>
+          </label>
           <label className="block md:col-span-2">
             <FieldLabel>Description*</FieldLabel>
             <textarea
@@ -251,6 +374,24 @@ export default function EditEnterprisePage() {
         <div className="mt-6">
           <h3 className="text-lg font-bold text-[#06201c]">Contact</h3>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className="block">
+              <FieldLabel>Primary Contact Name</FieldLabel>
+              <input
+                type="text"
+                value={primaryContactName}
+                onChange={(event) => setPrimaryContactName(event.target.value)}
+                className={inputClass()}
+              />
+            </label>
+            <label className="block">
+              <FieldLabel>Job Title</FieldLabel>
+              <input
+                type="text"
+                value={primaryContactTitle}
+                onChange={(event) => setPrimaryContactTitle(event.target.value)}
+                className={inputClass()}
+              />
+            </label>
             <label className="block">
               <FieldLabel>Email Address*</FieldLabel>
               <input
@@ -269,6 +410,24 @@ export default function EditEnterprisePage() {
                 className={inputClass()}
               />
             </label>
+            <label className="block">
+              <FieldLabel>Secondary Email</FieldLabel>
+              <input
+                type="email"
+                value={secondaryEmail}
+                onChange={(event) => setSecondaryEmail(event.target.value)}
+                className={inputClass()}
+              />
+            </label>
+            <label className="block">
+              <FieldLabel>Secondary Phone</FieldLabel>
+              <input
+                type="text"
+                value={secondaryPhone}
+                onChange={(event) => setSecondaryPhone(event.target.value)}
+                className={inputClass()}
+              />
+            </label>
           </div>
         </div>
 
@@ -281,6 +440,15 @@ export default function EditEnterprisePage() {
                 type="text"
                 value={registeredAddress}
                 onChange={(event) => setRegisteredAddress(event.target.value)}
+                className={inputClass()}
+              />
+            </label>
+            <label className="block">
+              <FieldLabel>Suite / Unit</FieldLabel>
+              <input
+                type="text"
+                value={suiteUnit}
+                onChange={(event) => setSuiteUnit(event.target.value)}
                 className={inputClass()}
               />
             </label>
@@ -338,6 +506,24 @@ export default function EditEnterprisePage() {
                 type="text"
                 value={businessImages}
                 onChange={(event) => setBusinessImages(event.target.value)}
+                className={inputClass()}
+              />
+            </label>
+            <label className="block">
+              <FieldLabel>Brand Color</FieldLabel>
+              <input
+                type="text"
+                value={brandColor}
+                onChange={(event) => setBrandColor(event.target.value)}
+                className={inputClass()}
+              />
+            </label>
+            <label className="block">
+              <FieldLabel>Tagline</FieldLabel>
+              <input
+                type="text"
+                value={tagline}
+                onChange={(event) => setTagline(event.target.value)}
                 className={inputClass()}
               />
             </label>

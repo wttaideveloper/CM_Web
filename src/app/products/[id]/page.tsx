@@ -39,6 +39,14 @@ function fallbackEnterpriseName(enterpriseId: string, enterpriseMap: Record<stri
   return resolveEnterpriseName(enterprise);
 }
 
+function formatMaybeNumber(value: number | undefined, suffix = "") {
+  if (value === undefined || value === null || Number.isNaN(value)) {
+    return "N/A";
+  }
+
+  return `${value}${suffix}`;
+}
+
 function ProductImagePreview({ src, alt }: { src: string; alt: string }) {
   const [hasError, setHasError] = useState(false);
   const hasImage = Boolean(src.trim()) && !hasError;
@@ -286,6 +294,33 @@ export default function ProductDetailsPage() {
           <DetailRow label="Category" value={product.product_category || "N/A"} />
           <DetailRow label="Price" value={formatPrice(product.product_price)} />
           <DetailRow label="Enterprise" value={enterpriseName} />
+        </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <DetailRow label="SKU" value={product.sku || "N/A"} />
+          <DetailRow label="Barcode / UPC" value={product.barcode_upc || "N/A"} />
+          <DetailRow label="Weight" value={formatMaybeNumber(product.weight, " kg")} />
+          <DetailRow label="Dimensions" value={product.dimensions || "N/A"} />
+          <DetailRow
+            label="Sale Price"
+            value={product.sale_price !== undefined ? formatPrice(product.sale_price) : "N/A"}
+          />
+          <DetailRow
+            label="Cost Price"
+            value={product.cost_price !== undefined ? formatPrice(product.cost_price) : "N/A"}
+          />
+          <DetailRow
+            label="Stock Quantity"
+            value={formatMaybeNumber(product.stock_quantity)}
+          />
+          <DetailRow
+            label="Low Stock Alert"
+            value={formatMaybeNumber(product.low_stock_alert_threshold)}
+          />
+          <DetailRow label="Tax Class" value={product.tax_class || "N/A"} />
+          <DetailRow label="Stock Management" value={product.stock_management || "N/A"} />
+          <DetailRow label="Currency" value={product.currency || "N/A"} />
+          <DetailRow label="Publish Status" value={product.publish_status || "N/A"} />
         </div>
 
         <div className="mt-4 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] p-4">

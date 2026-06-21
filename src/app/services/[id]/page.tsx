@@ -25,6 +25,14 @@ function resolveEnterpriseName(enterprise: EnterpriseDto) {
   );
 }
 
+function formatMaybeNumber(value: number | undefined, suffix = "") {
+  if (value === undefined || value === null || Number.isNaN(value)) {
+    return "N/A";
+  }
+
+  return `${value}${suffix}`;
+}
+
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] p-4">
@@ -257,6 +265,23 @@ export default function ServiceDetailsPage() {
           <DetailRow label="Duration" value={`${service.duration || 0} min`} />
           <DetailRow label="Enterprise" value={enterpriseName} />
           <DetailRow label="Status" value={serviceStatus} />
+        </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <DetailRow
+            label="Max Participants"
+            value={formatMaybeNumber(service.max_participants)}
+          />
+          <DetailRow label="Provider / Instructor" value={service.provider_name || "N/A"} />
+          <DetailRow label="Delivery Format" value={service.delivery_format || "N/A"} />
+          <DetailRow
+            label="Package Price"
+            value={
+              service.package_price !== undefined ? formatPrice(service.package_price) : "N/A"
+            }
+          />
+          <DetailRow label="Currency" value={service.currency || "N/A"} />
+          <DetailRow label="Cancellation Policy" value={service.cancellation_policy || "N/A"} />
         </div>
 
         <div className="mt-4 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] p-4">
