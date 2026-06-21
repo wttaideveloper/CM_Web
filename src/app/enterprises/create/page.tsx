@@ -25,6 +25,36 @@ function optionalText(value: string) {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+const phoneCodeOptions = [
+  { code: "+91", label: "🇮🇳 +91" },
+  { code: "+1", label: "🇺🇸 +1" },
+  { code: "+44", label: "🇬🇧 +44" },
+  { code: "+1", label: "🇨🇦 +1" },
+  { code: "+61", label: "🇦🇺 +61" },
+  { code: "+971", label: "🇦🇪 +971" },
+  { code: "+65", label: "🇸🇬 +65" },
+];
+
+const defaultPhoneCode = "+91";
+
+function phoneCodeClass() {
+  return "h-[46px] w-[110px] shrink-0 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-2 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]";
+}
+
+function phoneNumberClass() {
+  return "h-[46px] min-w-0 flex-1 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3.5 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]";
+}
+
+function combinePhone(code: string, number: string) {
+  const trimmedNumber = number.trim();
+
+  if (!trimmedNumber) {
+    return "";
+  }
+
+  return `${code} ${trimmedNumber}`;
+}
+
 function StepCircle({
   index,
   currentStep,
@@ -78,11 +108,13 @@ export default function CreateEnterprisePage() {
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [yearFounded, setYearFounded] = useState("");
   const [businessEmail, setBusinessEmail] = useState("");
-  const [businessPhone, setBusinessPhone] = useState("");
+  const [businessPhoneCode, setBusinessPhoneCode] = useState(defaultPhoneCode);
+  const [businessPhoneNumber, setBusinessPhoneNumber] = useState("");
   const [primaryContactName, setPrimaryContactName] = useState("");
   const [primaryContactTitle, setPrimaryContactTitle] = useState("");
   const [secondaryEmail, setSecondaryEmail] = useState("");
-  const [secondaryPhone, setSecondaryPhone] = useState("");
+  const [secondaryPhoneCode, setSecondaryPhoneCode] = useState(defaultPhoneCode);
+  const [secondaryPhoneNumber, setSecondaryPhoneNumber] = useState("");
   const [description, setDescription] = useState("");
   const [streetAddress, setStreetAddress] = useState("");
   const [city, setCity] = useState("");
@@ -102,6 +134,10 @@ export default function CreateEnterprisePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isFirstStep = currentStep === 0;
   const isLastStep = currentStep === steps.length - 1;
+  const reviewBusinessPhone = combinePhone(businessPhoneCode, businessPhoneNumber);
+  const reviewSecondaryPhone = secondaryPhoneNumber.trim()
+    ? combinePhone(secondaryPhoneCode, secondaryPhoneNumber)
+    : "";
 
   async function handleSubmit() {
     const trimmedName = enterpriseName.trim();
@@ -111,11 +147,11 @@ export default function CreateEnterprisePage() {
     const trimmedWebsiteUrl = optionalText(websiteUrl);
     const trimmedYearFounded = optionalText(yearFounded);
     const trimmedBusinessEmail = businessEmail.trim();
-    const trimmedBusinessPhone = businessPhone.trim();
+    const trimmedBusinessPhoneNumber = businessPhoneNumber.trim();
     const trimmedPrimaryContactName = optionalText(primaryContactName);
     const trimmedPrimaryContactTitle = optionalText(primaryContactTitle);
     const trimmedSecondaryEmail = optionalText(secondaryEmail);
-    const trimmedSecondaryPhone = optionalText(secondaryPhone);
+    const trimmedSecondaryPhoneNumber = secondaryPhoneNumber.trim();
     const trimmedDescription = description.trim();
     const trimmedStreetAddress = streetAddress.trim();
     const trimmedCity = city.trim();
@@ -134,7 +170,7 @@ export default function CreateEnterprisePage() {
       !trimmedTradingName ||
       !trimmedDescription ||
       !trimmedBusinessEmail ||
-      !trimmedBusinessPhone ||
+      !trimmedBusinessPhoneNumber ||
       !trimmedStreetAddress ||
       !trimmedCity ||
       !trimmedStateProvince ||
@@ -155,6 +191,10 @@ export default function CreateEnterprisePage() {
     try {
       setIsSubmitting(true);
       setError(null);
+      const trimmedBusinessPhone = combinePhone(businessPhoneCode, trimmedBusinessPhoneNumber);
+      const trimmedSecondaryPhone = trimmedSecondaryPhoneNumber
+        ? combinePhone(secondaryPhoneCode, trimmedSecondaryPhoneNumber)
+        : "";
 
       await createEnterprise({
         business_legal_name: trimmedName,
@@ -384,13 +424,26 @@ export default function CreateEnterprisePage() {
               </label>
               <label className="block">
                 <FieldLabel>Phone Number*</FieldLabel>
-                <input
-                  type="text"
-                  placeholder="+1 (415) 555-0192"
-                  value={businessPhone}
-                  onChange={(event) => setBusinessPhone(event.target.value)}
-                  className={inputClass()}
-                />
+                <div className="mt-1.5 flex gap-2">
+                  <select
+                    value={businessPhoneCode}
+                    onChange={(event) => setBusinessPhoneCode(event.target.value)}
+                    className={phoneCodeClass()}
+                  >
+                    {phoneCodeOptions.map((option, index) => (
+                      <option key={`${option.label}-${index}`} value={option.code}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    placeholder="415 555 0192"
+                    value={businessPhoneNumber}
+                    onChange={(event) => setBusinessPhoneNumber(event.target.value)}
+                    className={phoneNumberClass()}
+                  />
+                </div>
               </label>
               <label className="block">
                 <FieldLabel>Secondary Email</FieldLabel>
@@ -404,13 +457,26 @@ export default function CreateEnterprisePage() {
               </label>
               <label className="block">
                 <FieldLabel>Secondary Phone</FieldLabel>
-                <input
-                  type="text"
-                  placeholder="+1 (415) 555-0134"
-                  value={secondaryPhone}
-                  onChange={(event) => setSecondaryPhone(event.target.value)}
-                  className={inputClass()}
-                />
+                <div className="mt-1.5 flex gap-2">
+                  <select
+                    value={secondaryPhoneCode}
+                    onChange={(event) => setSecondaryPhoneCode(event.target.value)}
+                    className={phoneCodeClass()}
+                  >
+                    {phoneCodeOptions.map((option, index) => (
+                      <option key={`${option.label}-${index}`} value={option.code}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    placeholder="415 555 0134"
+                    value={secondaryPhoneNumber}
+                    onChange={(event) => setSecondaryPhoneNumber(event.target.value)}
+                    className={phoneNumberClass()}
+                  />
+                </div>
               </label>
             </div>
           </>
@@ -619,7 +685,8 @@ export default function CreateEnterprisePage() {
                     ["Trading / DBA Name", tradingName.trim() || "N/A"],
                     ["Description", description.trim() || "N/A"],
                     ["Email", businessEmail.trim() || "N/A"],
-                    ["Phone", businessPhone.trim() || "N/A"],
+                    ["Phone", reviewBusinessPhone || "N/A"],
+                    ["Secondary Phone", reviewSecondaryPhone || "N/A"],
                     [
                       "Address",
                       `${streetAddress.trim() || "N/A"}, ${city.trim() || "N/A"}, ${stateProvince.trim() || "N/A"} ${postalCode.trim() || "N/A"}, ${country.trim() || "N/A"}`,

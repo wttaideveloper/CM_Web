@@ -49,6 +49,59 @@ function hasOption(value: string, options: string[]) {
   return options.includes(value);
 }
 
+const phoneCodeOptions = [
+  { code: "+91", label: "🇮🇳 +91" },
+  { code: "+1", label: "🇺🇸 +1" },
+  { code: "+44", label: "🇬🇧 +44" },
+  { code: "+1", label: "🇨🇦 +1" },
+  { code: "+61", label: "🇦🇺 +61" },
+  { code: "+971", label: "🇦🇪 +971" },
+  { code: "+65", label: "🇸🇬 +65" },
+].sort((left, right) => right.code.length - left.code.length);
+
+const defaultPhoneCode = "+91";
+
+function phoneCodeClass() {
+  return "h-[46px] w-[110px] shrink-0 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-2 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]";
+}
+
+function phoneNumberClass() {
+  return "h-[46px] min-w-0 flex-1 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3.5 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]";
+}
+
+function combinePhone(code: string, number: string) {
+  const trimmedNumber = number.trim();
+
+  if (!trimmedNumber) {
+    return "";
+  }
+
+  return `${code} ${trimmedNumber}`;
+}
+
+function splitPhoneValue(value: unknown) {
+  const text = formatText(value);
+
+  if (!text) {
+    return { code: defaultPhoneCode, number: "" };
+  }
+
+  const matchedCode = phoneCodeOptions.find((option) => {
+    return text === option.code || text.startsWith(`${option.code} `) || text.startsWith(`${option.code}-`);
+  });
+
+  if (!matchedCode) {
+    return { code: defaultPhoneCode, number: text };
+  }
+
+  const number = text.slice(matchedCode.code.length).trim().replace(/^[-\s]+/, "");
+
+  return {
+    code: matchedCode.code,
+    number,
+  };
+}
+
 function addressesMatch(
   registeredAddress: string,
   businessAddress: string,
@@ -72,11 +125,13 @@ export default function EditEnterprisePage() {
   const [yearFounded, setYearFounded] = useState("");
   const [description, setDescription] = useState("");
   const [businessEmail, setBusinessEmail] = useState("");
-  const [businessPhone, setBusinessPhone] = useState("");
+  const [businessPhoneCode, setBusinessPhoneCode] = useState(defaultPhoneCode);
+  const [businessPhoneNumber, setBusinessPhoneNumber] = useState("");
   const [primaryContactName, setPrimaryContactName] = useState("");
   const [primaryContactTitle, setPrimaryContactTitle] = useState("");
   const [secondaryEmail, setSecondaryEmail] = useState("");
-  const [secondaryPhone, setSecondaryPhone] = useState("");
+  const [secondaryPhoneCode, setSecondaryPhoneCode] = useState(defaultPhoneCode);
+  const [secondaryPhoneNumber, setSecondaryPhoneNumber] = useState("");
   const [registeredAddress, setRegisteredAddress] = useState("");
   const [businessAddress, setBusinessAddress] = useState("");
   const [communicationAddress, setCommunicationAddress] = useState("");
@@ -113,11 +168,15 @@ export default function EditEnterprisePage() {
       setYearFounded(formatText(data.year_founded));
       setDescription(formatText(data.business_description || data.description));
       setBusinessEmail(formatText(data.business_email));
-      setBusinessPhone(formatText(data.business_phone));
+      const primaryPhone = splitPhoneValue(data.business_phone);
+      setBusinessPhoneCode(primaryPhone.code);
+      setBusinessPhoneNumber(primaryPhone.number);
       setPrimaryContactName(formatText(data.primary_contact_name));
       setPrimaryContactTitle(formatText(data.primary_contact_title));
       setSecondaryEmail(formatText(data.secondary_email));
-      setSecondaryPhone(formatText(data.secondary_phone));
+      const secondaryPhone = splitPhoneValue(data.secondary_phone);
+      setSecondaryPhoneCode(secondaryPhone.code);
+      setSecondaryPhoneNumber(secondaryPhone.number);
       setRegisteredAddress(formatText(data.registered_address));
       setBusinessAddress(formatText(data.business_address));
       setCommunicationAddress(formatText(data.communication_address));
@@ -154,11 +213,11 @@ export default function EditEnterprisePage() {
     const trimmedYearFounded = optionalText(yearFounded);
     const trimmedDescription = description.trim();
     const trimmedBusinessEmail = businessEmail.trim();
-    const trimmedBusinessPhone = businessPhone.trim();
+    const trimmedBusinessPhoneNumber = businessPhoneNumber.trim();
     const trimmedPrimaryContactName = optionalText(primaryContactName);
     const trimmedPrimaryContactTitle = optionalText(primaryContactTitle);
     const trimmedSecondaryEmail = optionalText(secondaryEmail);
-    const trimmedSecondaryPhone = optionalText(secondaryPhone);
+    const trimmedSecondaryPhoneNumber = secondaryPhoneNumber.trim();
     const trimmedRegisteredAddress = registeredAddress.trim();
     const trimmedBusinessAddress = businessAddress.trim();
     const trimmedCommunicationAddress = communicationAddress.trim();
@@ -171,7 +230,7 @@ export default function EditEnterprisePage() {
       !trimmedTradingName ||
       !trimmedDescription ||
       !trimmedBusinessEmail ||
-      !trimmedBusinessPhone ||
+      !trimmedBusinessPhoneNumber ||
       !trimmedRegisteredAddress ||
       (!useRegisteredAddressForOtherAddresses &&
         (!trimmedBusinessAddress || !trimmedCommunicationAddress))
@@ -187,6 +246,10 @@ export default function EditEnterprisePage() {
     try {
       setIsSubmitting(true);
       setError(null);
+      const trimmedBusinessPhone = combinePhone(businessPhoneCode, trimmedBusinessPhoneNumber);
+      const combinedSecondaryPhone = trimmedSecondaryPhoneNumber
+        ? combinePhone(secondaryPhoneCode, trimmedSecondaryPhoneNumber)
+        : "";
 
       await updateEnterprise(params.id, {
         business_short_name: trimmedTradingName,
@@ -210,7 +273,7 @@ export default function EditEnterprisePage() {
         ...(trimmedPrimaryContactName ? { primary_contact_name: trimmedPrimaryContactName } : {}),
         ...(trimmedPrimaryContactTitle ? { primary_contact_title: trimmedPrimaryContactTitle } : {}),
         ...(trimmedSecondaryEmail ? { secondary_email: trimmedSecondaryEmail } : {}),
-        ...(trimmedSecondaryPhone ? { secondary_phone: trimmedSecondaryPhone } : {}),
+        ...(combinedSecondaryPhone ? { secondary_phone: combinedSecondaryPhone } : {}),
         ...(trimmedSuiteUnit ? { suite_unit: trimmedSuiteUnit } : {}),
         ...(trimmedBrandColor ? { brand_color: trimmedBrandColor } : {}),
         ...(trimmedTagline ? { tagline: trimmedTagline } : {}),
@@ -403,12 +466,26 @@ export default function EditEnterprisePage() {
             </label>
             <label className="block">
               <FieldLabel>Phone Number*</FieldLabel>
-              <input
-                type="text"
-                value={businessPhone}
-                onChange={(event) => setBusinessPhone(event.target.value)}
-                className={inputClass()}
-              />
+              <div className="mt-1.5 flex gap-2">
+                <select
+                  value={businessPhoneCode}
+                  onChange={(event) => setBusinessPhoneCode(event.target.value)}
+                  className={phoneCodeClass()}
+                >
+                  {phoneCodeOptions.map((option, index) => (
+                    <option key={`${option.label}-${index}`} value={option.code}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  value={businessPhoneNumber}
+                  onChange={(event) => setBusinessPhoneNumber(event.target.value)}
+                  placeholder="415 555 0192"
+                  className={phoneNumberClass()}
+                />
+              </div>
             </label>
             <label className="block">
               <FieldLabel>Secondary Email</FieldLabel>
@@ -421,12 +498,26 @@ export default function EditEnterprisePage() {
             </label>
             <label className="block">
               <FieldLabel>Secondary Phone</FieldLabel>
-              <input
-                type="text"
-                value={secondaryPhone}
-                onChange={(event) => setSecondaryPhone(event.target.value)}
-                className={inputClass()}
-              />
+              <div className="mt-1.5 flex gap-2">
+                <select
+                  value={secondaryPhoneCode}
+                  onChange={(event) => setSecondaryPhoneCode(event.target.value)}
+                  className={phoneCodeClass()}
+                >
+                  {phoneCodeOptions.map((option, index) => (
+                    <option key={`${option.label}-${index}`} value={option.code}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  value={secondaryPhoneNumber}
+                  onChange={(event) => setSecondaryPhoneNumber(event.target.value)}
+                  placeholder="415 555 0134"
+                  className={phoneNumberClass()}
+                />
+              </div>
             </label>
           </div>
         </div>

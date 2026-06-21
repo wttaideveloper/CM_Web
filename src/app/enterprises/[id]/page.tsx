@@ -35,7 +35,11 @@ function resolveEnterpriseName(enterprise: EnterpriseDto) {
   );
 }
 
-function resolveEnterpriseCategory(enterprise: EnterpriseDto) {
+function resolveEnterpriseCategory(enterprise: EnterpriseDto | null) {
+  if (!enterprise) {
+    return "Enterprise";
+  }
+
   const category = enterprise.business_category || (enterprise as EnterpriseDto & { category?: string }).category;
 
   if (!category || !category.trim()) {
