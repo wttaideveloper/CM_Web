@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { useTheme } from "./ThemeProvider";
 
 type OpenMenu = "notifications" | "settings" | "profile" | null;
 
@@ -68,30 +67,6 @@ function ChevronRightIcon() {
   );
 }
 
-function ThemeOption({
-  active,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
-        active
-          ? "bg-[#e8f6ee] text-[#1f6a58] dark:bg-[#12352d] dark:text-[#f8fffc]"
-          : "text-[#52736a] hover:bg-[#f7fbf9] dark:text-[#bdd2cb] dark:hover:bg-[#103329]"
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
-
 type AppHeaderProps = {
   onMenuClick: () => void;
 };
@@ -99,7 +74,6 @@ type AppHeaderProps = {
 export default function AppHeader({ onMenuClick }: AppHeaderProps) {
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const headerRef = useRef<HTMLElement | null>(null);
-  const { theme, setTheme } = useTheme();
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -255,23 +229,6 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
                 <ChevronRightIcon />
               </button>
             ))}
-            <div className="mt-2 border-t border-[#edf3f0] px-1 pt-3 dark:border-[#21463c]">
-              <p className="px-2 text-[11px] font-bold uppercase tracking-[0.22em] text-[#8ca69e] dark:text-[#a7c3ba]">
-                Theme
-              </p>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <ThemeOption
-                  active={theme === "light"}
-                  label="Light Mode"
-                  onClick={() => setTheme("light")}
-                />
-                <ThemeOption
-                  active={theme === "dark"}
-                  label="Dark Mode"
-                  onClick={() => setTheme("dark")}
-                />
-              </div>
-            </div>
           </div>
         </div>
 
