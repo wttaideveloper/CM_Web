@@ -4,14 +4,18 @@ import type {
   UpdateEnterprisePayload,
 } from "@/types/enterprise.types";
 
-export async function getEnterprises(): Promise<EnterpriseDto[]> {
+function getEnterprisesApiBase(): string {
   const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
   if (!baseUrl) {
     throw new Error("API base URL is not configured.");
   }
 
-  const response = await fetch(`${baseUrl}/api/v1/api/enterprises`, {
+  return `${baseUrl}/api/v1/api/enterprises/`;
+}
+
+export async function getEnterprises(): Promise<EnterpriseDto[]> {
+  const response = await fetch(getEnterprisesApiBase(), {
     method: "GET",
     cache: "no-store",
   });
@@ -24,13 +28,7 @@ export async function getEnterprises(): Promise<EnterpriseDto[]> {
 }
 
 export async function getEnterpriseById(id: string): Promise<EnterpriseDto> {
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-
-  if (!baseUrl) {
-    throw new Error("API base URL is not configured.");
-  }
-
-  const response = await fetch(`${baseUrl}/api/v1/api/enterprises/${id}`, {
+  const response = await fetch(`${getEnterprisesApiBase()}${id}`, {
     method: "GET",
     cache: "no-store",
   });
@@ -45,13 +43,7 @@ export async function getEnterpriseById(id: string): Promise<EnterpriseDto> {
 export async function createEnterprise(
   payload: CreateEnterprisePayload,
 ): Promise<EnterpriseDto> {
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-
-  if (!baseUrl) {
-    throw new Error("API base URL is not configured.");
-  }
-
-  const response = await fetch(`${baseUrl}/api/v1/api/enterprises/`, {
+  const response = await fetch(getEnterprisesApiBase(), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -70,13 +62,7 @@ export async function updateEnterprise(
   id: string,
   payload: UpdateEnterprisePayload,
 ): Promise<EnterpriseDto> {
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-
-  if (!baseUrl) {
-    throw new Error("API base URL is not configured.");
-  }
-
-  const response = await fetch(`${baseUrl}/api/v1/api/enterprises/${id}`, {
+  const response = await fetch(`${getEnterprisesApiBase()}${id}`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -92,13 +78,7 @@ export async function updateEnterprise(
 }
 
 export async function deactivateEnterprise(id: string): Promise<string> {
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-
-  if (!baseUrl) {
-    throw new Error("API base URL is not configured.");
-  }
-
-  const response = await fetch(`${baseUrl}/api/v1/api/enterprises/${id}`, {
+  const response = await fetch(`${getEnterprisesApiBase()}${id}`, {
     method: "DELETE",
   });
 
