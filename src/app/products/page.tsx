@@ -250,9 +250,9 @@ export default function ProductsPage() {
                   <th className="w-[8%] px-3 py-3 font-bold">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#edf3f0] dark:divide-[rgba(167,195,186,0.10)]">
+              <tbody className="divide-y divide-[#edf3f0]">
                 {products.map((product, index) => (
-                  <tr key={product.id} className="h-16 cursor-pointer text-xs transition-colors duration-150 hover:bg-emerald-50/60 dark:hover:bg-[#103329]">
+                  <tr key={product.id} className="h-16 cursor-pointer text-xs transition-colors duration-150 hover:bg-emerald-50/60">
                     <td className="px-3">
                       <div className="flex min-w-0 items-center gap-2.5">
                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e8f6ee] text-xs font-bold text-[#1f6a58]">
@@ -281,14 +281,14 @@ export default function ProductsPage() {
                       <div className="flex gap-1.5 text-[#52736a]">
                         <Link
                           href={`/products/${product.id}`}
-                          className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7] dark:border-[#21463c] dark:hover:bg-[#103329]"
+                          className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7]"
                           aria-label={`View ${product.name}`}
                         >
                           <EyeIcon />
                         </Link>
                         <Link
                           href={`/products/${product.id}/edit`}
-                          className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7] dark:border-[#21463c] dark:hover:bg-[#103329]"
+                          className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7]"
                           aria-label={`Edit ${product.name}`}
                         >
                           <EditIcon />

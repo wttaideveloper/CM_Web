@@ -72,7 +72,7 @@ function StepCircle({
           ? "border-[#1f6a58] bg-[#1f6a58] text-white"
           : isCompleted
             ? "border-[#2f8a66] bg-[#e9f4ee] text-[#1f6a58]"
-            : "border-[#d7e5df] bg-white text-[#8ca69e] dark:border-[rgba(167,195,186,0.16)] dark:bg-[#0b211b]"
+          : "border-[#d7e5df] bg-white text-[#8ca69e]"
       }`}
     >
       {isCompleted ? (
@@ -705,9 +705,9 @@ export default function CreateEnterprisePage() {
               </div>
 
               <div className="rounded-2xl border border-[#e1ebe6] bg-white p-5">
-                <div className="rounded-2xl bg-[#e8f6ee] p-4 text-[#16825b] dark:!bg-[#103329] dark:border dark:border-[rgba(56,185,143,0.22)]">
-                  <p className="text-sm font-bold dark:!text-[#5ad2a8]">All required fields completed</p>
-                  <p className="mt-1 text-sm leading-5 text-[#14532d] dark:!text-[#bdd2cb]">
+                <div className="rounded-2xl bg-[#e8f6ee] p-4 text-[#16825b] border border-[rgba(56,185,143,0.22)]">
+                  <p className="text-sm font-bold text-[#16825b]">All required fields completed</p>
+                  <p className="mt-1 text-sm leading-5 text-[#14532d]">
                     Review the details above, then click Submit to create this enterprise.
                   </p>
                 </div>

@@ -227,10 +227,10 @@ export default function DashboardPage() {
       <div className="w-full min-w-0 overflow-x-hidden">
       <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94] dark:text-[#bdd2cb]">
+          <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">
             OVERVIEW &middot; JUNE 2026
           </p>
-          <h2 className="mt-1 text-2xl font-bold text-[#06201c] dark:text-[#f8fffc]">
+          <h2 className="mt-1 text-2xl font-bold text-[#06201c]">
             Good morning, Sarah &#128075;
           </h2>
         </div>
@@ -277,11 +277,11 @@ export default function DashboardPage() {
       </div>
 
       <div className="mt-5 grid w-full min-w-0 gap-5 xl:grid-cols-[1.6fr_0.8fr]">
-        <section className="w-full min-w-0 rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm sm:p-5 dark:bg-[#0b211b]">
+        <section className="w-full min-w-0 rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm sm:p-5">
           <div className="mb-5 flex items-center justify-between">
             <div>
-            <h3 className="text-lg font-semibold dark:text-[#f8fffc]">Revenue Overview</h3>
-            <p className="text-sm text-[#52736a] dark:text-[#bdd2cb]">Monthly revenue for 2026</p>
+            <h3 className="text-lg font-semibold text-[#06201c]">Revenue Overview</h3>
+            <p className="text-sm text-[#52736a]">Monthly revenue for 2026</p>
             </div>
             <select
               defaultValue="2026"
@@ -297,12 +297,12 @@ export default function DashboardPage() {
               (height, index) => (
                 <div key={index} className="flex min-w-0 flex-1 flex-col items-center gap-1.5 sm:gap-2">
                   <div
-                    className={`w-full rounded-t-xl transition-colors duration-200 hover:bg-[#8fb0a8] dark:hover:bg-[#8fc9a8] ${
+                    className={`w-full rounded-t-xl transition-colors duration-200 hover:bg-[#8fb0a8] ${
                       index === 11 ? "bg-[#1f6a58]" : "bg-[#c8d8d3]"
                     }`}
                     style={{ height: `${Math.max(24, Math.round(height * 0.7))}px` }}
                   />
-                  <span className="text-[10px] leading-none text-[#52736a] dark:text-[#bdd2cb] sm:text-xs">
+                  <span className="text-[10px] leading-none text-[#52736a] sm:text-xs">
                     {
                       [
                         "Jan",
@@ -326,8 +326,8 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        <section className="w-full min-w-0 rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm sm:p-5 dark:bg-[#0b211b]">
-          <h3 className="mb-4 text-lg font-bold dark:text-[#f8fffc]">Quick Actions</h3>
+        <section className="w-full min-w-0 rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm sm:p-5">
+          <h3 className="mb-4 text-lg font-bold text-[#06201c]">Quick Actions</h3>
           <div className="space-y-2.5">
             {quickActions.map((item) => (
               <Link
@@ -345,7 +345,7 @@ export default function DashboardPage() {
                             ? "#"
                             : "/integrations"
                 }
-                className="group flex min-w-0 cursor-pointer items-center gap-3 rounded-2xl px-3 py-2.5 transition-all duration-200 hover:bg-gradient-to-r hover:from-[#1f6a58] hover:to-[#8fc9a8] hover:shadow-sm dark:bg-[#0f2a23] dark:hover:from-[#1f6a58] dark:hover:to-[#38b98f]"
+                className="group flex min-w-0 cursor-pointer items-center gap-3 rounded-2xl px-3 py-2.5 transition-all duration-200 hover:bg-gradient-to-r hover:from-[#1f6a58] hover:to-[#8fc9a8] hover:shadow-sm"
               >
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#eef8f2] text-[#1f6a58] transition-all duration-200 group-hover:bg-white/20 group-hover:text-white">
                   {item === "Add Enterprise" ? (
@@ -362,7 +362,7 @@ export default function DashboardPage() {
                     <PlugIcon />
                   )}
                 </span>
-                <span className="min-w-0 text-sm font-medium text-[#06201c] transition-colors duration-200 group-hover:text-white dark:text-[#bdd2cb]">
+                <span className="min-w-0 text-sm font-medium text-[#06201c] transition-colors duration-200 group-hover:text-white">
                   {item}
                 </span>
               </Link>
@@ -373,8 +373,8 @@ export default function DashboardPage() {
 
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
         <section className="w-full min-w-0 rounded-2xl border border-[#e1ebe6] bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-[#edf3f0] p-5 dark:border-[rgba(167,195,186,0.10)]">
-            <h3 className="text-lg font-bold dark:text-[#f8fffc]">Recent Activity</h3>
+          <div className="flex items-center justify-between border-b border-[#edf3f0] p-5">
+            <h3 className="text-lg font-bold text-[#06201c]">Recent Activity</h3>
             <button
               type="button"
               className="text-sm font-semibold text-[#1f6a58] transition-colors duration-200 hover:text-[#185746] hover:underline"
@@ -402,8 +402,8 @@ export default function DashboardPage() {
                   }
                 />
                 <div>
-                  <p className="text-sm font-medium dark:text-[#f8fffc]">{item}</p>
-                  <p className="text-xs text-[#52736a] dark:text-[#bdd2cb]">{index + 2} min ago</p>
+                  <p className="text-sm font-medium text-[#06201c]">{item}</p>
+                  <p className="text-xs text-[#52736a]">{index + 2} min ago</p>
                 </div>
               </div>
             ))}
@@ -411,8 +411,8 @@ export default function DashboardPage() {
         </section>
 
         <section className="w-full min-w-0 rounded-2xl border border-[#e1ebe6] bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-[#edf3f0] p-5 dark:border-[rgba(167,195,186,0.10)]">
-            <h3 className="text-lg font-bold dark:text-[#f8fffc]">Notifications</h3>
+          <div className="flex items-center justify-between border-b border-[#edf3f0] p-5">
+            <h3 className="text-lg font-bold text-[#06201c]">Notifications</h3>
             <span className="rounded-full bg-[#eef4ff] px-3 py-1 text-xs font-bold text-[#2563eb]">
               3 unread
             </span>
@@ -436,8 +436,8 @@ export default function DashboardPage() {
                     }`}
                   />
                   <div>
-                  <p className="text-sm font-semibold dark:text-[#f8fffc]">{item}</p>
-                  <p className="mt-1 text-xs text-[#52736a] dark:text-[#bdd2cb]">
+                  <p className="text-sm font-semibold text-[#06201c]">{item}</p>
+                  <p className="mt-1 text-xs text-[#52736a]">
                     {item === "Pending Approval"
                       ? "MindFlow Center is awaiting verification"
                       : item === "Stripe Webhook Failed"

@@ -393,7 +393,7 @@ export default function EnterpriseDetailsPage() {
 
   return (
     <AppShell>
-      <section className="enterprise-hero-card overflow-hidden rounded-3xl border border-[#d9e8e1] bg-white shadow-sm dark:!bg-[#0b211b]">
+      <section className="enterprise-hero-card overflow-hidden rounded-3xl border border-[#d9e8e1] bg-white shadow-sm">
         <div className="relative overflow-hidden bg-[#1f6a58] px-6 py-7 text-white">
           {enterpriseHeroSrc && !hasHeroImageError ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -449,10 +449,10 @@ export default function EnterpriseDetailsPage() {
           {stats.map((item) => (
             <div
               key={item.label}
-              className="group rounded-2xl border border-[#e1ebe6] bg-[#f9fcfa] p-5 transition-all duration-200 hover:bg-gradient-to-br hover:from-[#1f6a58] hover:to-[#8fc9a8] hover:shadow-md dark:!border-[#21463c] dark:!bg-[#0b211b] dark:hover:!from-[#1f6a58] dark:hover:!to-[#38b98f]"
+            className="group rounded-2xl border border-[#e1ebe6] bg-[#f9fcfa] p-5 transition-all duration-200 hover:bg-gradient-to-br hover:from-[#1f6a58] hover:to-[#8fc9a8] hover:shadow-md"
             >
-              <p className="text-sm text-[#52736a] transition-colors duration-200 group-hover:text-white dark:!text-[#bdd2cb] dark:group-hover:!text-white">{item.label}</p>
-              <p className="mt-2 text-2xl font-extrabold text-[#06201c] transition-colors duration-200 group-hover:text-white dark:!text-[#f8fffc] dark:group-hover:!text-white">
+              <p className="text-sm text-[#52736a] transition-colors duration-200 group-hover:text-white">{item.label}</p>
+              <p className="mt-2 text-2xl font-extrabold text-[#06201c] transition-colors duration-200 group-hover:text-white">
                 {item.value}
               </p>
             </div>
@@ -460,15 +460,15 @@ export default function EnterpriseDetailsPage() {
         </div>
       </section>
 
-      <div className="mt-5 flex gap-2 overflow-x-auto rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-sm dark:!border-[#21463c] dark:!bg-[#0b211b]">
+      <div className="mt-5 flex gap-2 overflow-x-auto rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-sm">
         {tabs.map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={`h-10 whitespace-nowrap rounded-xl px-4 text-sm font-bold ${
               activeTab === tab
-                ? "bg-[#e9f4ee] text-[#1f6a58] dark:!bg-[#103329] dark:!text-[#5ad2a8]"
-                : "text-[#52736a] hover:bg-[#f4faf7] dark:!text-[#bdd2cb] dark:hover:!bg-[#103329] dark:hover:!text-[#f8fffc]"
+                ? "bg-[#e9f4ee] text-[#1f6a58]"
+                : "text-[#52736a] hover:bg-[#f4faf7]"
             }`}
           >
             {tab}
@@ -513,7 +513,7 @@ export default function EnterpriseDetailsPage() {
                   className={`flex items-center justify-between py-3 ${
                     index === 0
                       ? ""
-                      : "border-t border-[#edf3f0] dark:!border-[rgba(167,195,186,0.06)]"
+                      : "border-t border-[#edf3f0]"
                   }`}
                 >
                   <span className="text-sm font-semibold text-[#52736a]">

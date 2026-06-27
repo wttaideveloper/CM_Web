@@ -303,7 +303,7 @@ export default function EnterprisesPage() {
 
       {viewMode === "list" ? (
         <section ref={listSectionRef} className="mt-5 overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-[#edf3f0] px-5 py-4 dark:border-[rgba(167,195,186,0.10)]">
+          <div className="flex items-center justify-between border-b border-[#edf3f0] px-5 py-4">
             <h3 className="text-base font-bold text-[#06201c]">{enterprisesCount} enterprises found</h3>
             <span className="text-sm text-[#52736a]">Updated just now</span>
           </div>
@@ -345,9 +345,9 @@ export default function EnterprisesPage() {
                     <th className="w-[12%] px-3 py-3 text-right font-bold">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#edf3f0] dark:divide-[rgba(167,195,186,0.10)]">
+                <tbody className="divide-y divide-[#edf3f0]">
                   {enterprises.map((enterprise) => (
-                    <tr key={enterprise.id} className="h-[64px] cursor-pointer text-xs transition-colors duration-150 hover:bg-emerald-50/60 dark:hover:bg-[#103329]">
+                    <tr key={enterprise.id} className="h-[64px] cursor-pointer text-xs transition-colors duration-150 hover:bg-emerald-50/60">
                       <td className="px-3 font-semibold text-[#06201c]">
                         {enterprise.name}
                       </td>
@@ -407,7 +407,7 @@ export default function EnterprisesPage() {
             </div>
           )}
 
-          <div className="flex flex-col gap-3 border-t border-[#edf3f0] px-5 py-4 text-sm text-[#52736a] dark:border-[rgba(167,195,186,0.10)] sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 border-t border-[#edf3f0] px-5 py-4 text-sm text-[#52736a] sm:flex-row sm:items-center sm:justify-between">
             <p>{paginationText}</p>
             <div className="flex gap-2">
               <button className="h-10 rounded-full border border-[#d7e5df] px-4 font-semibold">
@@ -549,7 +549,7 @@ export default function EnterprisesPage() {
                       <p className="truncate">{enterprise.location}</p>
                     </div>
 
-                    <div className="mt-4 border-t border-[#edf3f0] pt-4 dark:border-[rgba(167,195,186,0.10)]">
+                    <div className="mt-4 border-t border-[#edf3f0] pt-4">
                       <div className="grid grid-cols-3 gap-3 text-sm">
                         <div className="min-w-0">
                           <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#7f9d94]">
