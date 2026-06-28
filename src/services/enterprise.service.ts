@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "@/lib/api";
 import type {
   CreateEnterprisePayload,
   EnterpriseDto,
@@ -5,13 +6,7 @@ import type {
 } from "@/types/enterprise.types";
 
 function getEnterprisesApiBase(): string {
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-
-  if (!baseUrl) {
-    throw new Error("API base URL is not configured.");
-  }
-
-  return `${baseUrl}/api/v1/api/enterprises/`;
+  return `${API_BASE_URL}/v1/api/enterprises/`;
 }
 
 export async function getEnterprises(): Promise<EnterpriseDto[]> {

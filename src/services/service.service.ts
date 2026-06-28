@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "@/lib/api";
 import type {
   CreateServicePayload,
   ServiceDto,
@@ -5,13 +6,7 @@ import type {
 } from "@/types/service.types";
 
 export async function getServices(): Promise<ServiceDto[]> {
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-
-  if (!baseUrl) {
-    throw new Error("API base URL is not configured.");
-  }
-
-  const response = await fetch(`${baseUrl}/api/v1/api/services/`, {
+  const response = await fetch(`${API_BASE_URL}/v1/api/services/`, {
     method: "GET",
     cache: "no-store",
   });
@@ -24,13 +19,7 @@ export async function getServices(): Promise<ServiceDto[]> {
 }
 
 export async function getServiceById(id: string): Promise<ServiceDto> {
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-
-  if (!baseUrl) {
-    throw new Error("API base URL is not configured.");
-  }
-
-  const response = await fetch(`${baseUrl}/api/v1/api/services/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/v1/api/services/${id}`, {
     method: "GET",
     cache: "no-store",
   });
@@ -43,13 +32,7 @@ export async function getServiceById(id: string): Promise<ServiceDto> {
 }
 
 export async function createService(payload: CreateServicePayload): Promise<ServiceDto> {
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-
-  if (!baseUrl) {
-    throw new Error("API base URL is not configured.");
-  }
-
-  const response = await fetch(`${baseUrl}/api/v1/api/services/`, {
+  const response = await fetch(`${API_BASE_URL}/v1/api/services/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -68,13 +51,7 @@ export async function updateService(
   id: string,
   payload: UpdateServicePayload,
 ): Promise<ServiceDto> {
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-
-  if (!baseUrl) {
-    throw new Error("API base URL is not configured.");
-  }
-
-  const response = await fetch(`${baseUrl}/api/v1/api/services/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/v1/api/services/${id}`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -90,13 +67,7 @@ export async function updateService(
 }
 
 export async function deactivateService(id: string): Promise<string> {
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-
-  if (!baseUrl) {
-    throw new Error("API base URL is not configured.");
-  }
-
-  const response = await fetch(`${baseUrl}/api/v1/api/services/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/v1/api/services/${id}`, {
     method: "DELETE",
   });
 
