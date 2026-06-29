@@ -14,6 +14,10 @@ import type { EnterpriseDto, EnterpriseListItem } from "@/types/enterprise.types
 
 const filters = ["Category", "Status", "Location"];
 
+type EnterpriseListItemWithCreatedAt = EnterpriseListItem & {
+  created_at?: string;
+};
+
 function statusClass(status: string) {
   if (status === "Active") {
     return "bg-[#e8f6ee] text-[#16825b]";
@@ -91,7 +95,7 @@ function MoreVerticalIcon() {
   );
 }
 
-function mapEnterpriseToListItem(enterprise: EnterpriseDto): EnterpriseListItem {
+function mapEnterpriseToListItem(enterprise: EnterpriseDto): EnterpriseListItemWithCreatedAt {
   return {
     id: enterprise.id,
     name:
@@ -110,7 +114,34 @@ function mapEnterpriseToListItem(enterprise: EnterpriseDto): EnterpriseListItem 
     revenue: "\u2014",
     joined: "\u2014",
     status: enterprise.status === false ? "Inactive" : "Active",
+    created_at: enterprise.created_at,
   };
+}
+
+function sortEnterprisesByCreatedAt(
+  enterprises: EnterpriseListItemWithCreatedAt[],
+): EnterpriseListItemWithCreatedAt[] {
+  return [...enterprises].sort((left, right) => {
+    const leftTime = left.created_at ? Date.parse(left.created_at) : Number.NaN;
+    const rightTime = right.created_at ? Date.parse(right.created_at) : Number.NaN;
+
+    const leftValid = Number.isFinite(leftTime);
+    const rightValid = Number.isFinite(rightTime);
+
+    if (leftValid && rightValid) {
+      return rightTime - leftTime;
+    }
+
+    if (leftValid) {
+      return -1;
+    }
+
+    if (rightValid) {
+      return 1;
+    }
+
+    return 0;
+  });
 }
 
 export default function EnterprisesPage() {
@@ -118,7 +149,7 @@ export default function EnterprisesPage() {
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [openActionsId, setOpenActionsId] = useState<string | null>(null);
   const [openActionsPosition, setOpenActionsPosition] = useState<{ top: number; right: number } | null>(null);
-  const [enterprises, setEnterprises] = useState<EnterpriseListItem[]>([]);
+  const [enterprises, setEnterprises] = useState<EnterpriseListItemWithCreatedAt[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const listSectionRef = useRef<HTMLElement | null>(null);
@@ -130,7 +161,7 @@ export default function EnterprisesPage() {
       setError(null);
 
       const data = await getEnterprises();
-      setEnterprises(data.map(mapEnterpriseToListItem));
+      setEnterprises(sortEnterprisesByCreatedAt(data.map(mapEnterpriseToListItem)));
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Unable to load enterprises.");
       setEnterprises([]);

@@ -1,4 +1,17 @@
+ "use client";
+
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+
 export default function LoginPage() {
+  const router = useRouter();
+  const [loginType, setLoginType] = useState<"super-admin" | "admin">("super-admin");
+
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    router.push(loginType === "super-admin" ? "/dashboard" : "/admin/dashboard");
+  }
+
   return (
     <main className="min-h-screen bg-white text-[#06201c] lg:h-screen lg:overflow-hidden">
       <div className="grid min-h-screen lg:h-screen lg:grid-cols-[1.08fr_1fr]">
@@ -84,6 +97,36 @@ export default function LoginPage() {
         <section className="flex min-h-screen items-center justify-center px-6 py-12 sm:px-10 lg:h-screen lg:min-h-0 lg:px-16 lg:py-8">
           <div className="w-full max-w-[500px]">
             <div>
+              <div
+                className="mb-5 inline-flex items-center rounded-full border border-[#dbe8e3] bg-[#f6fbf8] p-0.5 shadow-[0_1px_0_rgba(7,53,45,0.03)]"
+                role="tablist"
+                aria-label="Login type"
+              >
+                <button
+                  type="button"
+                  onClick={() => setLoginType("super-admin")}
+                  className={`rounded-full px-3 py-1.5 text-[11px] font-semibold leading-4 transition ${
+                    loginType === "super-admin"
+                      ? "bg-[#1f6a58] text-white shadow-sm"
+                      : "text-[#6f8c84] hover:bg-white hover:text-[#35544b]"
+                  }`}
+                  aria-pressed={loginType === "super-admin"}
+                >
+                  Super Admin Login
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLoginType("admin")}
+                  className={`rounded-full px-3 py-1.5 text-[11px] font-semibold leading-4 transition ${
+                    loginType === "admin"
+                      ? "bg-[#1f6a58] text-white shadow-sm"
+                      : "text-[#6f8c84] hover:bg-white hover:text-[#35544b]"
+                  }`}
+                  aria-pressed={loginType === "admin"}
+                >
+                  Admin Login
+                </button>
+              </div>
               <h2 className="text-[32px] font-extrabold tracking-normal text-[#041a16] sm:text-[34px] lg:text-[34px]">
                 Welcome back
               </h2>
@@ -92,7 +135,7 @@ export default function LoginPage() {
               </p>
             </div>
 
-            <form className="mt-11 space-y-6 lg:mt-9 lg:space-y-4">
+            <form onSubmit={handleSubmit} className="mt-11 space-y-6 lg:mt-9 lg:space-y-4">
               <label className="block">
                 <span className="text-base font-bold text-[#051915]">Email Address</span>
                 <input
