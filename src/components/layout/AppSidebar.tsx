@@ -115,6 +115,16 @@ function TagIcon() {
   );
 }
 
+function FormsIcon() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+      <path d="M5 4.5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-13a1 1 0 0 1 1-1Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M8 9h8M8 13h8M8 17h5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M8 6.5h.01" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 const superAdminNavGroups: NavGroup[] = [
   {
     title: "AUTH",
@@ -135,6 +145,7 @@ const superAdminNavGroups: NavGroup[] = [
       { label: "Trainings", href: "/trainings", icon: <TrainingIcon /> },
       { label: "Integrations", href: "/integrations", icon: <IntegrationIcon /> },
       { label: "Attributes", href: "/attributes", icon: <TagIcon /> },
+      { label: "Onboarding Forms", href: "/onboarding-forms", icon: <FormsIcon /> },
     ],
   },
 ];

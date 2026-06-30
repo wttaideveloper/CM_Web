@@ -11,8 +11,10 @@ import {
   getDynamicAttributes,
   updateDynamicAttribute,
 } from "@/services/attribute.service";
+import { getEnterpriseLocations } from "@/services/enterprise-location.service";
 import { getServiceById, updateService } from "@/services/service.service";
 import type { DynamicAttributeDto } from "@/types/attribute.types";
+import type { EnterpriseLocationDto } from "@/types/location.types";
 import type { AvailabilityScheduleItem, ServiceDto } from "@/types/service.types";
 
 type ServiceAttributeRow = {
@@ -116,6 +118,17 @@ function hasCategoryOption(value: string) {
   return categoryOptions.includes(value);
 }
 
+function resolveLocationLabel(location: EnterpriseLocationDto) {
+  const locationName = location.location_name?.trim();
+  const cityState = [location.city, location.state].filter(Boolean).join(", ");
+
+  if (locationName && cityState) {
+    return `${locationName} · ${cityState}`;
+  }
+
+  return locationName || cityState || "Unnamed Location";
+}
+
 function createInitialWeekdays(): WeekdaySchedule[] {
   return weekdayNames.map((day) => ({
     day,
@@ -195,9 +208,37 @@ export default function EditServicePage() {
   const [weekdays, setWeekdays] = useState<WeekdaySchedule[]>(() => createInitialWeekdays());
   const [serviceStatus, setServiceStatus] = useState(true);
   const [customAttributes, setCustomAttributes] = useState<ServiceAttributeRow[]>([]);
+  const [locationId, setLocationId] = useState("");
+  const [locationOptions, setLocationOptions] = useState<EnterpriseLocationDto[]>([]);
+  const [isLoadingLocations, setIsLoadingLocations] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  async function fetchLocations(enterpriseId: string, nextLocationId?: string | null) {
+    if (!enterpriseId) {
+      setLocationOptions([]);
+      setLocationId("");
+      setLocationError(null);
+      return;
+    }
+
+    try {
+      setIsLoadingLocations(true);
+      setLocationError(null);
+
+      const data = await getEnterpriseLocations(enterpriseId);
+      setLocationOptions(data);
+      setLocationId(nextLocationId ?? "");
+    } catch (fetchError) {
+      setLocationOptions([]);
+      setLocationId(nextLocationId ?? "");
+      setLocationError(fetchError instanceof Error ? fetchError.message : "Unable to load locations.");
+    } finally {
+      setIsLoadingLocations(false);
+    }
+  }
 
   async function fetchService() {
     if (!params.id) {
@@ -225,6 +266,9 @@ export default function EditServicePage() {
       setCancellationPolicy(resolveOptionValue(data.cancellation_policy, cancellationPolicyOptions));
       setWeekdays(buildWeekdayState(data.availability_schedule));
       setServiceStatus(data.service_status !== false);
+      setLocationId(data.location_id ?? "");
+      setLocationError(null);
+      void fetchLocations(data.enterprise_id, data.location_id ?? "");
 
       try {
         const attributes = await getDynamicAttributes("service", data.id);
@@ -235,6 +279,9 @@ export default function EditServicePage() {
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Unable to load service.");
       setService(null);
+      setLocationOptions([]);
+      setLocationId("");
+      setLocationError(null);
     } finally {
       setIsLoading(false);
     }
@@ -295,6 +342,7 @@ export default function EditServicePage() {
         duration: parsedDuration,
         availability_status: availabilityStatus,
         service_status: serviceStatus,
+        ...(locationId.trim() ? { location_id: locationId.trim() } : {}),
         ...(parsedMaxParticipants !== undefined ? { max_participants: parsedMaxParticipants } : {}),
         ...(trimmedProviderName ? { provider_name: trimmedProviderName } : {}),
         ...(trimmedDeliveryFormat ? { delivery_format: trimmedDeliveryFormat } : {}),
@@ -506,6 +554,31 @@ export default function EditServicePage() {
               <option>Active</option>
               <option>Inactive</option>
             </select>
+          </label>
+          <label className="block">
+            <FieldLabel>Location</FieldLabel>
+            <select
+              value={locationId}
+              onChange={(event) => setLocationId(event.target.value)}
+              className={inputClass()}
+              disabled={isLoadingLocations || locationOptions.length === 0}
+            >
+              <option value="">
+                {isLoadingLocations
+                  ? "Loading locations..."
+                  : locationOptions.length === 0
+                    ? "No locations available"
+                    : "Select location"}
+              </option>
+              {locationOptions.map((location) => (
+                <option key={location.id} value={location.id}>
+                  {resolveLocationLabel(location)}
+                </option>
+              ))}
+            </select>
+            {locationError ? (
+              <p className="mt-1.5 text-xs font-medium text-[#b42318]">{locationError}</p>
+            ) : null}
           </label>
           <label className="block">
             <FieldLabel>Max Participants</FieldLabel>

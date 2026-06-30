@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import AppShell from "@/components/layout/AppShell";
+import { getEnterpriseLocations } from "@/services/enterprise-location.service";
 import { createDynamicAttribute } from "@/services/attribute.service";
 import { getEnterprises } from "@/services/enterprise.service";
 import { createProduct } from "@/services/product.service";
@@ -14,6 +15,13 @@ type EnterpriseOption = {
   id: string;
   business_legal_name?: string | null;
   business_short_name?: string | null;
+};
+
+type LocationOption = {
+  id: string;
+  location_name?: string | null;
+  city?: string | null;
+  state?: string | null;
 };
 
 type CustomAttributeRow = {
@@ -106,6 +114,7 @@ export default function CreateProductPage() {
   const [productCategory, setProductCategory] = useState("Equipment");
   const [productPrice, setProductPrice] = useState("");
   const [productImages, setProductImages] = useState("");
+  const [locationId, setLocationId] = useState("");
   const [sku, setSku] = useState("");
   const [barcodeUpc, setBarcodeUpc] = useState("");
   const [weight, setWeight] = useState("");
@@ -120,9 +129,12 @@ export default function CreateProductPage() {
   const [publishStatus, setPublishStatus] = useState("");
   const [customAttributes, setCustomAttributes] = useState<CustomAttributeRow[]>([]);
   const [enterpriseOptions, setEnterpriseOptions] = useState<EnterpriseOption[]>([]);
+  const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
   const [isLoadingEnterprises, setIsLoadingEnterprises] = useState(true);
+  const [isLoadingLocations, setIsLoadingLocations] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const selectedEnterprise = enterpriseOptions.find((enterprise) => enterprise.id === enterpriseId);
   const parsedReviewPrice = Number(productPrice);
   const reviewCustomAttributes = customAttributes.filter(
@@ -132,6 +144,7 @@ export default function CreateProductPage() {
   const reviewStockManagement = resolveOptionLabel(stockManagement, stockManagementOptions);
   const reviewCurrency = resolveOptionLabel(currency, currencyOptions);
   const reviewPublishStatus = resolveOptionLabel(publishStatus, publishStatusOptions);
+  const selectedLocation = locationOptions.find((location) => location.id === locationId);
   const isReviewComplete =
     Boolean(enterpriseId.trim()) &&
     Boolean(productName.trim()) &&
@@ -145,6 +158,14 @@ export default function CreateProductPage() {
     selectedEnterprise?.business_legal_name ||
     selectedEnterprise?.business_short_name ||
     "Unnamed Enterprise";
+  const reviewLocationName = selectedLocation
+    ? [
+        selectedLocation.location_name?.trim(),
+        [selectedLocation.city, selectedLocation.state].filter(Boolean).join(", "),
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
 
   async function fetchEnterprises() {
     try {
@@ -162,9 +183,39 @@ export default function CreateProductPage() {
     }
   }
 
+  async function fetchLocations(nextEnterpriseId: string) {
+    if (!nextEnterpriseId) {
+      setLocationOptions([]);
+      setLocationId("");
+      setLocationError(null);
+      return;
+    }
+
+    try {
+      setIsLoadingLocations(true);
+      setLocationError(null);
+      setLocationOptions([]);
+
+      const data = await getEnterpriseLocations(nextEnterpriseId);
+      setLocationOptions(data);
+    } catch (fetchError) {
+      setLocationOptions([]);
+      setLocationError(
+        fetchError instanceof Error ? fetchError.message : "Unable to load locations.",
+      );
+    } finally {
+      setIsLoadingLocations(false);
+    }
+  }
+
   useEffect(() => {
     void fetchEnterprises();
   }, []);
+
+  useEffect(() => {
+    setLocationId("");
+    void fetchLocations(enterpriseId.trim());
+  }, [enterpriseId]);
 
   async function handleSubmit() {
     const trimmedEnterpriseId = enterpriseId.trim();
@@ -206,6 +257,7 @@ export default function CreateProductPage() {
 
       const createdProduct = await createProduct({
         enterprise_id: trimmedEnterpriseId,
+        ...(locationId.trim() ? { location_id: locationId.trim() } : {}),
         product_name: trimmedProductName,
         product_description: trimmedProductDescription,
         product_category: trimmedProductCategory,
@@ -351,6 +403,40 @@ export default function CreateProductPage() {
                     </option>
                   ))}
                 </select>
+              </label>
+              <label className="block">
+                <FieldLabel>Location</FieldLabel>
+                <select
+                  className={inputClass()}
+                  value={locationId}
+                  onChange={(event) => setLocationId(event.target.value)}
+                  disabled={
+                    !enterpriseId.trim() ||
+                    isLoadingLocations ||
+                    locationOptions.length === 0 ||
+                    Boolean(locationError)
+                  }
+                >
+                  <option value="">
+                    {!enterpriseId.trim()
+                      ? "Select enterprise first"
+                      : isLoadingLocations
+                        ? "Loading locations..."
+                        : locationOptions.length === 0
+                          ? "No locations available"
+                          : "Select location"}
+                  </option>
+                  {locationOptions.map((location) => (
+                    <option key={location.id} value={location.id}>
+                      {location.location_name ||
+                        [location.city, location.state].filter(Boolean).join(", ") ||
+                        "Unnamed Location"}
+                    </option>
+                  ))}
+                </select>
+                {locationError ? (
+                  <p className="mt-1.5 text-xs font-medium text-[#b42318]">{locationError}</p>
+                ) : null}
               </label>
               <label className="block">
                 <FieldLabel>SKU</FieldLabel>
@@ -609,10 +695,11 @@ export default function CreateProductPage() {
             <div className="grid gap-5 lg:grid-cols-[1fr_0.8fr]">
               <div className="rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] p-5">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  {[
+                  {[ 
                     ["Product Name", productName.trim() || "Not provided"],
                     ["Category", productCategory.trim() || "Not provided"],
                     ["Enterprise", reviewEnterpriseName],
+                    ["Location", reviewLocationName || "Not selected"],
                     ["Price", reviewProductPrice],
                     ["Stock", "Not wired yet"],
                     ["Status", isReviewComplete ? "Ready to publish" : "Incomplete"],

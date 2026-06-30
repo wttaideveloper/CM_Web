@@ -6,13 +6,15 @@ import type {
   UpdateDynamicAttributePayload,
 } from "@/types/attribute.types";
 
+type DynamicAttributeListResponse = DynamicAttributeDto[] | { items?: DynamicAttributeDto[] };
+
 export async function getDynamicAttributes(
   entityType: AttributeEntityType,
   entityId: string,
 ): Promise<DynamicAttributeDto[]> {
   const query = `entity_type=${encodeURIComponent(entityType)}&entity_id=${encodeURIComponent(entityId)}`;
 
-  const response = await fetch(`${API_BASE_URL}/v1/api/attributes?${query}`, {
+  const response = await fetch(`${API_BASE_URL}/attributes?${query}`, {
     method: "GET",
     cache: "no-store",
   });
@@ -23,13 +25,23 @@ export async function getDynamicAttributes(
     );
   }
 
-  return response.json();
+  const data: DynamicAttributeListResponse = await response.json();
+
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (data && Array.isArray(data.items)) {
+    return data.items;
+  }
+
+  return [];
 }
 
 export async function createDynamicAttribute(
   payload: CreateDynamicAttributePayload,
 ): Promise<DynamicAttributeDto> {
-  const response = await fetch(`${API_BASE_URL}/v1/api/attributes`, {
+  const response = await fetch(`${API_BASE_URL}/attributes`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -50,7 +62,7 @@ export async function updateDynamicAttribute(
   id: string,
   payload: UpdateDynamicAttributePayload,
 ): Promise<DynamicAttributeDto> {
-  const response = await fetch(`${API_BASE_URL}/v1/api/attributes/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/attributes/${id}`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -68,7 +80,7 @@ export async function updateDynamicAttribute(
 }
 
 export async function deleteDynamicAttribute(id: string): Promise<string> {
-  const response = await fetch(`${API_BASE_URL}/v1/api/attributes/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/attributes/${id}`, {
     method: "DELETE",
   });
 

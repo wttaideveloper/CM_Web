@@ -11,8 +11,10 @@ import {
   getDynamicAttributes,
   updateDynamicAttribute,
 } from "@/services/attribute.service";
+import { getEnterpriseLocations } from "@/services/enterprise-location.service";
 import { getProductById, updateProduct } from "@/services/product.service";
 import type { DynamicAttributeDto } from "@/types/attribute.types";
+import type { EnterpriseLocationDto } from "@/types/location.types";
 import type { ProductDto } from "@/types/product.types";
 
 type ProductAttributeRow = {
@@ -98,6 +100,17 @@ function hasCategoryOption(value: string) {
   return categoryOptions.includes(value);
 }
 
+function resolveLocationLabel(location: EnterpriseLocationDto) {
+  const locationName = location.location_name?.trim();
+  const cityState = [location.city, location.state].filter(Boolean).join(", ");
+
+  if (locationName && cityState) {
+    return `${locationName} · ${cityState}`;
+  }
+
+  return locationName || cityState || "Unnamed Location";
+}
+
 function createAttributeRow(attribute?: DynamicAttributeDto): ProductAttributeRow {
   return {
     id: attribute?.id,
@@ -131,9 +144,37 @@ export default function EditProductPage() {
   const [publishStatus, setPublishStatus] = useState("");
   const [productStatus, setProductStatus] = useState(true);
   const [customAttributes, setCustomAttributes] = useState<ProductAttributeRow[]>([]);
+  const [locationId, setLocationId] = useState("");
+  const [locationOptions, setLocationOptions] = useState<EnterpriseLocationDto[]>([]);
+  const [isLoadingLocations, setIsLoadingLocations] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  async function fetchLocations(enterpriseId: string, nextLocationId?: string | null) {
+    if (!enterpriseId) {
+      setLocationOptions([]);
+      setLocationId("");
+      setLocationError(null);
+      return;
+    }
+
+    try {
+      setIsLoadingLocations(true);
+      setLocationError(null);
+
+      const data = await getEnterpriseLocations(enterpriseId);
+      setLocationOptions(data);
+      setLocationId(nextLocationId ?? "");
+    } catch (fetchError) {
+      setLocationOptions([]);
+      setLocationId(nextLocationId ?? "");
+      setLocationError(fetchError instanceof Error ? fetchError.message : "Unable to load locations.");
+    } finally {
+      setIsLoadingLocations(false);
+    }
+  }
 
   async function fetchProduct() {
     if (!params.id) {
@@ -166,6 +207,9 @@ export default function EditProductPage() {
       setCurrency(normalizeOptionValue(data.currency, currencyOptions));
       setPublishStatus(normalizeOptionValue(data.publish_status, publishStatusOptions));
       setProductStatus(data.product_status !== false);
+      setLocationId(data.location_id ?? "");
+      setLocationError(null);
+      void fetchLocations(data.enterprise_id, data.location_id ?? "");
 
       try {
         const attributes = await getDynamicAttributes("product", data.id);
@@ -176,6 +220,9 @@ export default function EditProductPage() {
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Unable to load product.");
       setProduct(null);
+      setLocationOptions([]);
+      setLocationId("");
+      setLocationError(null);
     } finally {
       setIsLoading(false);
     }
@@ -223,6 +270,7 @@ export default function EditProductPage() {
         product_price: parsedPrice,
         product_images: productImages.trim(),
         product_status: productStatus,
+        ...(locationId.trim() ? { location_id: locationId.trim() } : {}),
         ...(trimmedSku ? { sku: trimmedSku } : {}),
         ...(trimmedBarcodeUpc ? { barcode_upc: trimmedBarcodeUpc } : {}),
         ...(parsedWeight !== undefined ? { weight: parsedWeight } : {}),
@@ -385,6 +433,32 @@ export default function EditProductPage() {
                 </option>
               ))}
             </select>
+          </label>
+
+          <label className="block">
+            <FieldLabel>Location</FieldLabel>
+            <select
+              value={locationId}
+              onChange={(event) => setLocationId(event.target.value)}
+              className={inputClass()}
+              disabled={isLoadingLocations || locationOptions.length === 0}
+            >
+              <option value="">
+                {isLoadingLocations
+                  ? "Loading locations..."
+                  : locationOptions.length === 0
+                    ? "No locations available"
+                    : "Select location"}
+              </option>
+              {locationOptions.map((location) => (
+                <option key={location.id} value={location.id}>
+                  {resolveLocationLabel(location)}
+                </option>
+              ))}
+            </select>
+            {locationError ? (
+              <p className="mt-1.5 text-xs font-medium text-[#b42318]">{locationError}</p>
+            ) : null}
           </label>
 
           <label className="block md:col-span-2">

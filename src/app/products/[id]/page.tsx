@@ -7,9 +7,11 @@ import { useParams } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { getDynamicAttributes } from "@/services/attribute.service";
 import { getEnterprises } from "@/services/enterprise.service";
+import { getLocationById } from "@/services/enterprise-location.service";
 import { activateProduct, deactivateProduct, getProductById } from "@/services/product.service";
 import type { DynamicAttributeDto } from "@/types/attribute.types";
 import type { EnterpriseDto } from "@/types/enterprise.types";
+import type { EnterpriseLocationDto } from "@/types/location.types";
 import type { ProductDto } from "@/types/product.types";
 
 function formatPrice(price: number) {
@@ -37,6 +39,17 @@ function fallbackEnterpriseName(enterpriseId: string, enterpriseMap: Record<stri
   }
 
   return resolveEnterpriseName(enterprise);
+}
+
+function resolveLocationSummary(location: EnterpriseLocationDto) {
+  const locationName = location.location_name?.trim();
+  const cityState = [location.city, location.state].filter(Boolean).join(", ");
+
+  if (locationName && cityState) {
+    return `${locationName} · ${cityState}`;
+  }
+
+  return locationName || cityState || "Not provided";
 }
 
 function formatMaybeNumber(value: number | undefined, suffix = "") {
@@ -92,8 +105,11 @@ export default function ProductDetailsPage() {
   const params = useParams<{ id: string }>();
   const [product, setProduct] = useState<ProductDto | null>(null);
   const [enterpriseMap, setEnterpriseMap] = useState<Record<string, EnterpriseDto>>({});
+  const [locationSummary, setLocationSummary] = useState<string>("Not provided");
   const [dynamicAttributes, setDynamicAttributes] = useState<DynamicAttributeDto[]>([]);
   const [attributesError, setAttributesError] = useState<string | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isTogglingStatus, setIsTogglingStatus] = useState(false);
@@ -119,6 +135,24 @@ export default function ProductDetailsPage() {
       setEnterpriseMap(nextEnterpriseMap);
       setDynamicAttributes([]);
       setAttributesError(null);
+      setLocationSummary("Not provided");
+      setLocationError(null);
+      const productLocationId = productData.location_id?.trim();
+      setIsLoadingLocation(Boolean(productLocationId));
+
+      if (productLocationId) {
+        void (async () => {
+          try {
+            const locationData = await getLocationById(productLocationId);
+            setLocationSummary(resolveLocationSummary(locationData));
+          } catch {
+            setLocationError("Unable to load location");
+            setLocationSummary("Unable to load location");
+          } finally {
+            setIsLoadingLocation(false);
+          }
+        })();
+      }
 
       void (async () => {
         try {
@@ -133,6 +167,9 @@ export default function ProductDetailsPage() {
       setError(fetchError instanceof Error ? fetchError.message : "Unable to load product.");
       setProduct(null);
       setEnterpriseMap({});
+      setLocationSummary("Not provided");
+      setLocationError(null);
+      setIsLoadingLocation(false);
       setDynamicAttributes([]);
       setAttributesError(null);
     } finally {
@@ -227,6 +264,11 @@ export default function ProductDetailsPage() {
 
   const productStatus = statusLabel(product.product_status);
   const enterpriseName = fallbackEnterpriseName(product.enterprise_id, enterpriseMap);
+  const locationValue = locationError
+    ? locationError
+    : isLoadingLocation
+      ? "Loading location..."
+      : locationSummary;
   const productImage = product.product_images?.trim() || "";
 
   return (
@@ -294,6 +336,7 @@ export default function ProductDetailsPage() {
           <DetailRow label="Category" value={product.product_category || "N/A"} />
           <DetailRow label="Price" value={formatPrice(product.product_price)} />
           <DetailRow label="Enterprise" value={enterpriseName} />
+          <DetailRow label="Location" value={locationValue} />
         </div>
 
         <div className="mt-4 grid gap-4 md:grid-cols-2">

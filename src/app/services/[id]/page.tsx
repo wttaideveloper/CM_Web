@@ -7,9 +7,11 @@ import { useParams } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { getDynamicAttributes } from "@/services/attribute.service";
 import { getEnterprises } from "@/services/enterprise.service";
+import { getLocationById } from "@/services/enterprise-location.service";
 import { activateService, deactivateService, getServiceById } from "@/services/service.service";
 import type { DynamicAttributeDto } from "@/types/attribute.types";
 import type { EnterpriseDto } from "@/types/enterprise.types";
+import type { EnterpriseLocationDto } from "@/types/location.types";
 import type { ServiceDto } from "@/types/service.types";
 
 function formatPrice(price: number) {
@@ -23,6 +25,17 @@ function resolveEnterpriseName(enterprise: EnterpriseDto) {
     enterprise.name ||
     "Unnamed Enterprise"
   );
+}
+
+function resolveLocationSummary(location: EnterpriseLocationDto) {
+  const locationName = location.location_name?.trim();
+  const cityState = [location.city, location.state].filter(Boolean).join(", ");
+
+  if (locationName && cityState) {
+    return `${locationName} · ${cityState}`;
+  }
+
+  return locationName || cityState || "Not provided";
 }
 
 function formatMaybeNumber(value: number | undefined, suffix = "") {
@@ -46,8 +59,11 @@ export default function ServiceDetailsPage() {
   const params = useParams<{ id: string }>();
   const [service, setService] = useState<ServiceDto | null>(null);
   const [enterpriseMap, setEnterpriseMap] = useState<Record<string, EnterpriseDto>>({});
+  const [locationSummary, setLocationSummary] = useState("Not provided");
   const [dynamicAttributes, setDynamicAttributes] = useState<DynamicAttributeDto[]>([]);
   const [attributesError, setAttributesError] = useState<string | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isTogglingStatus, setIsTogglingStatus] = useState(false);
@@ -76,6 +92,24 @@ export default function ServiceDetailsPage() {
       setEnterpriseMap(nextEnterpriseMap);
       setDynamicAttributes([]);
       setAttributesError(null);
+      setLocationSummary("Not provided");
+      setLocationError(null);
+      const serviceLocationId = serviceData.location_id?.trim();
+      setIsLoadingLocation(Boolean(serviceLocationId));
+
+      if (serviceLocationId) {
+        void (async () => {
+          try {
+            const locationData = await getLocationById(serviceLocationId);
+            setLocationSummary(resolveLocationSummary(locationData));
+          } catch {
+            setLocationError("Unable to load location");
+            setLocationSummary("Unable to load location");
+          } finally {
+            setIsLoadingLocation(false);
+          }
+        })();
+      }
 
       void (async () => {
         try {
@@ -90,6 +124,9 @@ export default function ServiceDetailsPage() {
       setError(fetchError instanceof Error ? fetchError.message : "Unable to load service.");
       setService(null);
       setEnterpriseMap({});
+      setLocationSummary("Not provided");
+      setLocationError(null);
+      setIsLoadingLocation(false);
       setDynamicAttributes([]);
       setAttributesError(null);
     } finally {
@@ -186,6 +223,11 @@ export default function ServiceDetailsPage() {
     enterpriseMap[service.enterprise_id]
       ? resolveEnterpriseName(enterpriseMap[service.enterprise_id])
       : "Unknown Enterprise";
+  const locationValue = locationError
+    ? locationError
+    : isLoadingLocation
+      ? "Loading location..."
+      : locationSummary;
   const serviceStatus = service.service_status === false ? "Inactive" : "Active";
   const availabilityStatus = service.availability_status === false ? "Unavailable" : "Available";
 
@@ -264,6 +306,7 @@ export default function ServiceDetailsPage() {
           <DetailRow label="Price" value={formatPrice(service.service_price)} />
           <DetailRow label="Duration" value={`${service.duration || 0} min`} />
           <DetailRow label="Enterprise" value={enterpriseName} />
+          <DetailRow label="Location" value={locationValue} />
           <DetailRow label="Status" value={serviceStatus} />
         </div>
 

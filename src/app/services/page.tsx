@@ -73,6 +73,18 @@ function resolveEnterpriseName(enterprise: EnterpriseDto) {
   );
 }
 
+function toEnterpriseList(data: EnterpriseDto[] | { items?: EnterpriseDto[] } | null | undefined) {
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (data && Array.isArray(data.items)) {
+    return data.items;
+  }
+
+  return [];
+}
+
 function mapServiceToListItem(
   service: ServiceDto,
   enterpriseNameMap: Record<string, string>,
@@ -102,11 +114,21 @@ export default function ServicesPage() {
       setIsLoading(true);
       setError(null);
 
-      const [serviceData, enterpriseData] = await Promise.all([getServices(), getEnterprises()]);
-      const nextEnterpriseNameMap = enterpriseData.reduce<Record<string, string>>((acc, enterprise) => {
+      const serviceData = await getServices();
+      let enterpriseData: EnterpriseDto[] | { items?: EnterpriseDto[] } | null = [];
+
+      try {
+        enterpriseData = await getEnterprises();
+      } catch {
+        enterpriseData = [];
+      }
+
+      const nextEnterpriseNameMap = toEnterpriseList(enterpriseData).reduce<Record<string, string>>(
+        (acc, enterprise) => {
         acc[enterprise.id] = resolveEnterpriseName(enterprise);
         return acc;
-      }, {});
+      },
+      {});
 
       setServices(serviceData.map((service) => mapServiceToListItem(service, nextEnterpriseNameMap)));
     } catch (fetchError) {

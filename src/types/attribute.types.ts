@@ -7,6 +7,9 @@ export type DynamicAttributeDto = {
   attribute_name: string;
   attribute_value: string;
   attribute_type: string;
+  is_required?: boolean;
+  status?: string;
+  created_at?: string;
 };
 
 export type CreateDynamicAttributePayload = {

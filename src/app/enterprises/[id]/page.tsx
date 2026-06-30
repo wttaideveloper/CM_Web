@@ -5,10 +5,17 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
 import AppShell from "@/components/layout/AppShell";
+import {
+  createEnterpriseLocation,
+  deleteLocation,
+  getEnterpriseLocations,
+  updateLocation,
+} from "@/services/enterprise-location.service";
 import { getEnterpriseById, getEnterprises } from "@/services/enterprise.service";
 import { getProducts } from "@/services/product.service";
 import { getServices } from "@/services/service.service";
 import type { EnterpriseDto } from "@/types/enterprise.types";
+import type { EnterpriseLocationDto } from "@/types/location.types";
 import type { ProductDto } from "@/types/product.types";
 import type { ServiceDto } from "@/types/service.types";
 
@@ -24,6 +31,50 @@ const performance = [
 
 function SectionLabel({ children }: { children: string }) {
   return <p className="text-sm font-bold text-[#06201c]">{children}</p>;
+}
+
+type LocationDraft = {
+  location_name: string;
+  address_line_1: string;
+  address_line_2: string;
+  city: string;
+  state: string;
+  country: string;
+  postal_code: string;
+  phone: string;
+  email: string;
+  latitude: string;
+  longitude: string;
+  status: string;
+};
+
+function createLocationDraft(location?: EnterpriseLocationDto): LocationDraft {
+  return {
+    location_name: location?.location_name ?? "",
+    address_line_1: location?.address_line_1 ?? "",
+    address_line_2: location?.address_line_2 ?? "",
+    city: location?.city ?? "",
+    state: location?.state ?? "",
+    country: location?.country ?? "",
+    postal_code: location?.postal_code ?? "",
+    phone: location?.phone ?? "",
+    email: location?.email ?? "",
+    latitude: location?.latitude !== undefined && location?.latitude !== null ? String(location.latitude) : "",
+    longitude:
+      location?.longitude !== undefined && location?.longitude !== null ? String(location.longitude) : "",
+    status: location?.status ?? "",
+  };
+}
+
+function parseOptionalNumber(value: string) {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  const next = Number(trimmed);
+  return Number.isFinite(next) ? next : null;
 }
 
 function resolveEnterpriseName(enterprise: EnterpriseDto) {
@@ -196,6 +247,62 @@ function ServiceCard({ service }: { service: ServiceDto }) {
   );
 }
 
+function LocationCard({
+  location,
+  onEdit,
+  onDelete,
+  isDeleting,
+}: {
+  location: EnterpriseLocationDto;
+  onEdit: () => void;
+  onDelete: () => void;
+  isDeleting?: boolean;
+}) {
+  const addressParts = [location.address_line_1, location.address_line_2, location.city, location.state, location.country, location.postal_code]
+    .filter((part) => Boolean(part && part.trim()))
+    .join(", ");
+
+  return (
+    <article className="rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-[#c6ddd3] hover:shadow-md">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="text-base font-bold text-[#06201c]">{location.location_name}</h4>
+            <span className="rounded-full bg-[#e8f6ee] px-2.5 py-1 text-[11px] font-bold text-[#16825b]">
+              {location.status?.trim() || "Active"}
+            </span>
+          </div>
+          <p className="mt-2 text-sm text-[#52736a]">{addressParts || "N/A"}</p>
+          <div className="mt-3 grid gap-2 text-sm text-[#52736a] sm:grid-cols-2">
+            <p>Phone: {location.phone?.trim() || "N/A"}</p>
+            <p>Email: {location.email?.trim() || "N/A"}</p>
+            <p>Latitude: {location.latitude ?? "N/A"}</p>
+            <p>Longitude: {location.longitude ?? "N/A"}</p>
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={onEdit}
+            className="rounded-full border border-[#d7e5df] px-3 py-2 text-xs font-semibold text-[#1f6a58] hover:bg-[#f4faf7]"
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={isDeleting}
+            className="rounded-full border border-[#d7e5df] px-3 py-2 text-xs font-semibold text-[#b42318] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 export default function EnterpriseDetailsPage() {
   const params = useParams<{ id: string }>();
   const [activeTab, setActiveTab] = useState(tabs[0]);
@@ -203,13 +310,21 @@ export default function EnterpriseDetailsPage() {
   const [enterpriseOptions, setEnterpriseOptions] = useState<EnterpriseDto[]>([]);
   const [products, setProducts] = useState<ProductDto[]>([]);
   const [services, setServices] = useState<ServiceDto[]>([]);
+  const [locations, setLocations] = useState<EnterpriseLocationDto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [isLoadingServices, setIsLoadingServices] = useState(true);
+  const [isLoadingLocations, setIsLoadingLocations] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [locationsError, setLocationsError] = useState<string | null>(null);
   const [showSelector, setShowSelector] = useState(false);
   const [hasLogoImageError, setHasLogoImageError] = useState(false);
   const [hasHeroImageError, setHasHeroImageError] = useState(false);
+  const [showLocationForm, setShowLocationForm] = useState(false);
+  const [editingLocationId, setEditingLocationId] = useState<string | null>(null);
+  const [locationDraft, setLocationDraft] = useState<LocationDraft>(() => createLocationDraft());
+  const [isSavingLocation, setIsSavingLocation] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
 
   async function fetchEnterpriseOptions() {
     try {
@@ -279,6 +394,102 @@ export default function EnterpriseDetailsPage() {
     }
   }
 
+  async function fetchEnterpriseLocations(enterpriseId: string) {
+    try {
+      setIsLoadingLocations(true);
+      setLocationsError(null);
+      const data = await getEnterpriseLocations(enterpriseId);
+      setLocations(data);
+    } catch (fetchError) {
+      setLocations([]);
+      setLocationsError(
+        fetchError instanceof Error ? fetchError.message : "Unable to load locations.",
+      );
+    } finally {
+      setIsLoadingLocations(false);
+    }
+  }
+
+  function openNewLocationForm() {
+    setEditingLocationId(null);
+    setLocationDraft(createLocationDraft());
+    setLocationError(null);
+    setLocationsError(null);
+    setShowLocationForm(true);
+  }
+
+  function openEditLocationForm(location: EnterpriseLocationDto) {
+    setEditingLocationId(location.id);
+    setLocationDraft(createLocationDraft(location));
+    setLocationError(null);
+    setLocationsError(null);
+    setShowLocationForm(true);
+  }
+
+  async function saveLocation() {
+    const enterpriseId = currentId;
+
+    if (!enterpriseId) {
+      return;
+    }
+
+    if (!locationDraft.location_name.trim() || !locationDraft.address_line_1.trim()) {
+      setLocationError("Location name and Address Line 1 are required.");
+      return;
+    }
+
+    const payload = {
+      location_name: locationDraft.location_name.trim(),
+      address_line_1: locationDraft.address_line_1.trim(),
+      address_line_2: locationDraft.address_line_2.trim() || undefined,
+      city: locationDraft.city.trim(),
+      state: locationDraft.state.trim(),
+      country: locationDraft.country.trim(),
+      postal_code: locationDraft.postal_code.trim(),
+      phone: locationDraft.phone.trim() || undefined,
+      email: locationDraft.email.trim() || undefined,
+      latitude: parseOptionalNumber(locationDraft.latitude),
+      longitude: parseOptionalNumber(locationDraft.longitude),
+      status: locationDraft.status.trim() || undefined,
+    };
+
+    try {
+      setIsSavingLocation(true);
+      setLocationError(null);
+      setLocationsError(null);
+
+      const savedLocation = editingLocationId
+        ? await updateLocation(editingLocationId, payload)
+        : await createEnterpriseLocation(enterpriseId, payload);
+
+      setLocations((current) => {
+        if (editingLocationId) {
+          return current.map((location) => (location.id === savedLocation.id ? savedLocation : location));
+        }
+
+        return [savedLocation, ...current];
+      });
+      setShowLocationForm(false);
+      setEditingLocationId(null);
+      setLocationDraft(createLocationDraft());
+    } catch (saveError) {
+      setLocationError(saveError instanceof Error ? saveError.message : "Unable to save location.");
+    } finally {
+      setIsSavingLocation(false);
+    }
+  }
+
+  async function handleDeleteLocation(locationId: string) {
+    try {
+      setLocationError(null);
+      setLocationsError(null);
+      await deleteLocation(locationId);
+      setLocations((current) => current.filter((location) => location.id !== locationId));
+    } catch (deleteError) {
+      setLocationError(deleteError instanceof Error ? deleteError.message : "Unable to delete location.");
+    }
+  }
+
   useEffect(() => {
     void fetchEnterprise();
   }, [params.id]);
@@ -290,6 +501,16 @@ export default function EnterpriseDetailsPage() {
   useEffect(() => {
     void fetchEnterpriseServices();
   }, []);
+
+  useEffect(() => {
+    if (!params.id) {
+      setLocations([]);
+      setIsLoadingLocations(false);
+      return;
+    }
+
+    void fetchEnterpriseLocations(params.id);
+  }, [params.id]);
 
   const currentId = params.id;
   const enterpriseName = enterprise ? resolveEnterpriseName(enterprise) : "Unnamed Enterprise";
@@ -477,56 +698,187 @@ export default function EnterpriseDetailsPage() {
       </div>
 
       {activeTab === "Overview" ? (
-        <div className="mt-5 grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
-          <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
-            <h3 className="text-lg font-bold text-[#06201c]">Overview</h3>
-            <div className="mt-5">
-              <SectionLabel>About</SectionLabel>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-[#52736a]">
-                {aboutText}
+        <>
+          <div className="mt-5 grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
+            <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
+              <h3 className="text-lg font-bold text-[#06201c]">Overview</h3>
+              <div className="mt-5">
+                <SectionLabel>About</SectionLabel>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-[#52736a]">
+                  {aboutText}
+                </p>
+              </div>
+
+              <div className="mt-6 grid gap-4 md:grid-cols-2">
+                {contactItems.map((item) => (
+                  <div
+                    key={item.label}
+                    className="rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-[#b9d8cc] hover:shadow-md"
+                  >
+                    <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
+                      {item.label}
+                    </p>
+                    <p className="mt-2 text-sm font-semibold text-[#06201c]">
+                      {item.value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
+              <h3 className="text-lg font-bold text-[#06201c]">Performance</h3>
+              <div className="mt-4">
+                {performance.map((item, index) => (
+                  <div
+                    key={item.label}
+                    className={`flex items-center justify-between py-3 ${
+                      index === 0
+                        ? ""
+                        : "border-t border-[#edf3f0]"
+                    }`}
+                  >
+                    <span className="text-sm font-semibold text-[#52736a]">
+                      {item.label}
+                    </span>
+                    <span className="text-sm font-extrabold text-[#52736a]">
+                      N/A
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+
+          <section className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-[#06201c]">Locations</h3>
+                <p className="mt-1 text-sm text-[#52736a]">
+                  Manage the enterprise locations used across the platform.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={openNewLocationForm}
+                className="inline-flex h-12 items-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
+              >
+                + Add Location
+              </button>
+            </div>
+
+            {locationsError || locationError ? (
+              <p className="mt-4 rounded-2xl border border-[#f5c2c7] bg-[#fff5f5] px-4 py-3 text-sm font-medium text-[#b42318]">
+                {locationsError || locationError}
               </p>
-            </div>
+            ) : null}
 
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
-              {contactItems.map((item) => (
-                <div
-                  key={item.label}
-                  className="rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-[#b9d8cc] hover:shadow-md"
-                >
-                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
-                    {item.label}
-                  </p>
-                  <p className="mt-2 text-sm font-semibold text-[#06201c]">
-                    {item.value}
-                  </p>
+            {showLocationForm ? (
+              <div className="mt-5 rounded-2xl border border-[#e1ebe6] bg-[#f9fcfa] p-5">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
+                      {editingLocationId ? "Edit Location" : "Add Location"}
+                    </p>
+                    <h4 className="mt-1 text-base font-bold text-[#06201c]">
+                      {editingLocationId ? "Update location details" : "Create a new location"}
+                    </h4>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowLocationForm(false);
+                      setEditingLocationId(null);
+                      setLocationDraft(createLocationDraft());
+                      setLocationError(null);
+                    }}
+                    className="h-10 rounded-full border border-[#d7e5df] px-4 text-sm font-semibold text-[#52736a] hover:bg-[#f4faf7]"
+                  >
+                    Cancel
+                  </button>
                 </div>
-              ))}
-            </div>
-          </section>
 
-          <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
-            <h3 className="text-lg font-bold text-[#06201c]">Performance</h3>
-            <div className="mt-4">
-              {performance.map((item, index) => (
-                <div
-                  key={item.label}
-                  className={`flex items-center justify-between py-3 ${
-                    index === 0
-                      ? ""
-                      : "border-t border-[#edf3f0]"
-                  }`}
-                >
-                  <span className="text-sm font-semibold text-[#52736a]">
-                    {item.label}
-                  </span>
-                  <span className="text-sm font-extrabold text-[#52736a]">
-                    N/A
-                  </span>
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  {[
+                    ["location_name", "Location Name"],
+                    ["address_line_1", "Address Line 1"],
+                    ["address_line_2", "Address Line 2"],
+                    ["city", "City"],
+                    ["state", "State"],
+                    ["country", "Country"],
+                    ["postal_code", "Postal Code"],
+                    ["phone", "Phone"],
+                    ["email", "Email"],
+                    ["latitude", "Latitude"],
+                    ["longitude", "Longitude"],
+                    ["status", "Status"],
+                  ].map(([key, label]) => (
+                    <label key={key} className="block">
+                      <span className="text-sm font-bold text-[#06201c]">{label}</span>
+                      {key === "address_line_2" ? (
+                        <textarea
+                          value={locationDraft[key as keyof LocationDraft]}
+                          onChange={(event) =>
+                            setLocationDraft((current) => ({
+                              ...current,
+                              [key]: event.target.value,
+                            }))
+                          }
+                          className="mt-1.5 min-h-24 w-full rounded-xl border border-[#d7e5df] bg-white px-3.5 py-3 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]"
+                        />
+                      ) : (
+                        <input
+                          type={key === "latitude" || key === "longitude" ? "number" : "text"}
+                          value={locationDraft[key as keyof LocationDraft]}
+                          onChange={(event) =>
+                            setLocationDraft((current) => ({
+                              ...current,
+                              [key]: event.target.value,
+                            }))
+                          }
+                          className="mt-1.5 h-[46px] w-full rounded-xl border border-[#d7e5df] bg-white px-3.5 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]"
+                        />
+                      )}
+                    </label>
+                  ))}
                 </div>
-              ))}
-            </div>
+
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={saveLocation}
+                    disabled={isSavingLocation}
+                    className="h-11 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isSavingLocation ? "Saving..." : editingLocationId ? "Save Changes" : "Save Location"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {isLoadingLocations ? (
+              <div className="mt-5 rounded-2xl border border-dashed border-[#d7e5df] bg-[#f9fcfa] px-5 py-14 text-center">
+                <p className="text-base font-bold text-[#06201c]">Loading locations...</p>
+              </div>
+            ) : locations.length === 0 ? (
+              <div className="mt-5 rounded-2xl border border-dashed border-[#d7e5df] bg-[#f9fcfa] px-5 py-14 text-center">
+                <p className="text-base font-bold text-[#06201c]">No locations added yet.</p>
+                <p className="mt-2 text-sm text-[#52736a]">Add the first enterprise location to get started.</p>
+              </div>
+            ) : (
+              <div className="mt-5 grid gap-4 xl:grid-cols-2">
+                {locations.map((location) => (
+                  <LocationCard
+                    key={location.id}
+                    location={location}
+                    onEdit={() => openEditLocationForm(location)}
+                    onDelete={() => void handleDeleteLocation(location.id)}
+                  />
+                ))}
+              </div>
+            )}
           </section>
-        </div>
+        </>
       ) : null}
 
       {activeTab === "Products" ? (

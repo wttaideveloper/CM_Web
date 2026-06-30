@@ -5,8 +5,10 @@ import type {
   UpdateServicePayload,
 } from "@/types/service.types";
 
+type ServiceListResponse = ServiceDto[] | { items?: ServiceDto[] };
+
 export async function getServices(): Promise<ServiceDto[]> {
-  const response = await fetch(`${API_BASE_URL}/v1/api/services/`, {
+  const response = await fetch(`${API_BASE_URL}/services/`, {
     method: "GET",
     cache: "no-store",
   });
@@ -15,11 +17,21 @@ export async function getServices(): Promise<ServiceDto[]> {
     throw new Error(`Failed to load services (${response.status} ${response.statusText}).`);
   }
 
-  return response.json();
+  const data: ServiceListResponse = await response.json();
+
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (data && Array.isArray(data.items)) {
+    return data.items;
+  }
+
+  return [];
 }
 
 export async function getServiceById(id: string): Promise<ServiceDto> {
-  const response = await fetch(`${API_BASE_URL}/v1/api/services/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/services/${id}`, {
     method: "GET",
     cache: "no-store",
   });
@@ -32,7 +44,7 @@ export async function getServiceById(id: string): Promise<ServiceDto> {
 }
 
 export async function createService(payload: CreateServicePayload): Promise<ServiceDto> {
-  const response = await fetch(`${API_BASE_URL}/v1/api/services/`, {
+  const response = await fetch(`${API_BASE_URL}/services/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -51,7 +63,7 @@ export async function updateService(
   id: string,
   payload: UpdateServicePayload,
 ): Promise<ServiceDto> {
-  const response = await fetch(`${API_BASE_URL}/v1/api/services/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/services/${id}`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -67,7 +79,7 @@ export async function updateService(
 }
 
 export async function deactivateService(id: string): Promise<string> {
-  const response = await fetch(`${API_BASE_URL}/v1/api/services/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/services/${id}`, {
     method: "DELETE",
   });
 

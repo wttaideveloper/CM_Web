@@ -1,8 +1,18 @@
 import { API_BASE_URL } from "@/lib/api";
 import type { CreateProductPayload, ProductDto, UpdateProductPayload } from "@/types/product.types";
 
+type ProductListResponse = ProductDto[] | { items?: ProductDto[] };
+
+function isProductArray(value: unknown): value is ProductDto[] {
+  return Array.isArray(value);
+}
+
+function isProductListResponse(value: unknown): value is { items?: ProductDto[] } {
+  return typeof value === "object" && value !== null && "items" in value;
+}
+
 export async function getProducts(): Promise<ProductDto[]> {
-  const response = await fetch(`${API_BASE_URL}/v1/api/products/`, {
+  const response = await fetch(`${API_BASE_URL}/products/`, {
     method: "GET",
     cache: "no-store",
   });
@@ -11,11 +21,21 @@ export async function getProducts(): Promise<ProductDto[]> {
     throw new Error(`Failed to load products (${response.status} ${response.statusText}).`);
   }
 
-  return response.json();
+  const data: ProductListResponse = await response.json();
+
+  if (isProductArray(data)) {
+    return data;
+  }
+
+  if (isProductListResponse(data) && Array.isArray(data.items)) {
+    return data.items;
+  }
+
+  return [];
 }
 
 export async function getProductById(id: string): Promise<ProductDto> {
-  const response = await fetch(`${API_BASE_URL}/v1/api/products/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/products/${id}`, {
     method: "GET",
     cache: "no-store",
   });
@@ -28,7 +48,7 @@ export async function getProductById(id: string): Promise<ProductDto> {
 }
 
 export async function createProduct(payload: CreateProductPayload): Promise<ProductDto> {
-  const response = await fetch(`${API_BASE_URL}/v1/api/products/`, {
+  const response = await fetch(`${API_BASE_URL}/products/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -47,7 +67,7 @@ export async function updateProduct(
   id: string,
   payload: UpdateProductPayload,
 ): Promise<ProductDto> {
-  const response = await fetch(`${API_BASE_URL}/v1/api/products/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/products/${id}`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -63,7 +83,7 @@ export async function updateProduct(
 }
 
 export async function deactivateProduct(id: string): Promise<string> {
-  const response = await fetch(`${API_BASE_URL}/v1/api/products/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/products/${id}`, {
     method: "DELETE",
   });
 

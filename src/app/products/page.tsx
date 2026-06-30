@@ -101,6 +101,18 @@ function resolveEnterpriseName(enterprise: EnterpriseDto) {
   );
 }
 
+function toEnterpriseList(data: EnterpriseDto[] | { items?: EnterpriseDto[] } | null | undefined) {
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (data && Array.isArray(data.items)) {
+    return data.items;
+  }
+
+  return [];
+}
+
 function mapProductToListItem(
   product: ProductDto,
   enterpriseNameMap: Record<string, string>,
@@ -131,11 +143,21 @@ export default function ProductsPage() {
       setIsLoading(true);
       setError(null);
 
-      const [productData, enterpriseData] = await Promise.all([getProducts(), getEnterprises()]);
-      const nextEnterpriseNameMap = enterpriseData.reduce<Record<string, string>>((acc, enterprise) => {
+      const productData = await getProducts();
+      let enterpriseData: EnterpriseDto[] | { items?: EnterpriseDto[] } | null = [];
+
+      try {
+        enterpriseData = await getEnterprises();
+      } catch {
+        enterpriseData = [];
+      }
+
+      const nextEnterpriseNameMap = toEnterpriseList(enterpriseData).reduce<Record<string, string>>(
+        (acc, enterprise) => {
         acc[enterprise.id] = resolveEnterpriseName(enterprise);
         return acc;
-      }, {});
+      },
+      {});
 
       setProducts(
         productData.map((product) => mapProductToListItem(product, nextEnterpriseNameMap)),

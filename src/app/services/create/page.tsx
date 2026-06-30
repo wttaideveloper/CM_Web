@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import AppShell from "@/components/layout/AppShell";
+import { getEnterpriseLocations } from "@/services/enterprise-location.service";
 import { createDynamicAttribute } from "@/services/attribute.service";
 import { getEnterprises } from "@/services/enterprise.service";
 import { createService } from "@/services/service.service";
 import type { EnterpriseDto } from "@/types/enterprise.types";
+import type { EnterpriseLocationDto } from "@/types/location.types";
 import type { AvailabilityScheduleItem } from "@/types/service.types";
 
 const tabs = ["Service Info", "Pricing", "Availability", "Review"];
@@ -145,6 +147,8 @@ type EnterpriseOption = Pick<
   "id" | "business_legal_name" | "business_short_name" | "name"
 >;
 
+type LocationOption = Pick<EnterpriseLocationDto, "id" | "location_name" | "city" | "state">;
+
 type CustomAttributeRow = {
   id: string;
   attribute_name: string;
@@ -179,9 +183,13 @@ export default function CreateServicePage() {
   const [cancellationPolicy, setCancellationPolicy] = useState("");
   const [customAttributes, setCustomAttributes] = useState<CustomAttributeRow[]>([]);
   const [enterpriseOptions, setEnterpriseOptions] = useState<EnterpriseOption[]>([]);
+  const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
   const [isLoadingEnterprises, setIsLoadingEnterprises] = useState(true);
+  const [isLoadingLocations, setIsLoadingLocations] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [locationId, setLocationId] = useState("");
+  const [locationError, setLocationError] = useState<string | null>(null);
 
   const selectedEnterprise = enterpriseOptions.find((enterprise) => enterprise.id === enterpriseId);
   const availabilityStatus = weekdays.some((day) => day.enabled);
@@ -204,10 +212,19 @@ export default function CreateServicePage() {
     selectedEnterprise?.business_short_name ||
     selectedEnterprise?.name ||
     "Unnamed Enterprise";
+  const selectedLocation = locationOptions.find((location) => location.id === locationId);
   const reviewDeliveryFormat = resolveOptionLabel(deliveryFormat, deliveryFormatOptions);
   const reviewCurrency = resolveOptionLabel(currency, currencyOptions);
   const reviewCancellationPolicy = resolveOptionLabel(cancellationPolicy, cancellationPolicyOptions);
   const availabilitySchedule = buildAvailabilitySchedule(weekdays);
+  const reviewLocationName = selectedLocation
+    ? [
+        selectedLocation.location_name?.trim(),
+        [selectedLocation.city, selectedLocation.state].filter(Boolean).join(", "),
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
   const reviewCustomAttributes = customAttributes.filter(
     (attribute) => attribute.attribute_name.trim() && attribute.attribute_value.trim(),
   );
@@ -228,9 +245,39 @@ export default function CreateServicePage() {
     }
   }
 
+  async function fetchLocations(nextEnterpriseId: string) {
+    if (!nextEnterpriseId) {
+      setLocationOptions([]);
+      setLocationId("");
+      setLocationError(null);
+      return;
+    }
+
+    try {
+      setIsLoadingLocations(true);
+      setLocationError(null);
+      setLocationOptions([]);
+
+      const data = await getEnterpriseLocations(nextEnterpriseId);
+      setLocationOptions(data);
+    } catch (fetchError) {
+      setLocationOptions([]);
+      setLocationError(
+        fetchError instanceof Error ? fetchError.message : "Unable to load locations.",
+      );
+    } finally {
+      setIsLoadingLocations(false);
+    }
+  }
+
   useEffect(() => {
     void fetchEnterprises();
   }, []);
+
+  useEffect(() => {
+    setLocationId("");
+    void fetchLocations(enterpriseId.trim());
+  }, [enterpriseId]);
 
   async function handleCreate() {
     const trimmedEnterpriseId = enterpriseId.trim();
@@ -266,8 +313,9 @@ export default function CreateServicePage() {
       setIsSubmitting(true);
       setError(null);
 
-  const createdService = await createService({
+      const createdService = await createService({
         enterprise_id: trimmedEnterpriseId,
+        ...(locationId.trim() ? { location_id: locationId.trim() } : {}),
         service_name: trimmedServiceName,
         service_description: trimmedServiceDescription,
         service_category: trimmedServiceCategory,
@@ -411,6 +459,40 @@ export default function CreateServicePage() {
                     </option>
                   ))}
                 </select>
+              </label>
+              <label className="block">
+                <FieldLabel>Location</FieldLabel>
+                <select
+                  className={selectClass()}
+                  value={locationId}
+                  onChange={(event) => setLocationId(event.target.value)}
+                  disabled={
+                    !enterpriseId.trim() ||
+                    isLoadingLocations ||
+                    locationOptions.length === 0 ||
+                    Boolean(locationError)
+                  }
+                >
+                  <option value="">
+                    {!enterpriseId.trim()
+                      ? "Select enterprise first"
+                      : isLoadingLocations
+                        ? "Loading locations..."
+                        : locationOptions.length === 0
+                          ? "No locations available"
+                          : "Select location"}
+                  </option>
+                  {locationOptions.map((location) => (
+                    <option key={location.id} value={location.id}>
+                      {location.location_name ||
+                        [location.city, location.state].filter(Boolean).join(", ") ||
+                        "Unnamed Location"}
+                    </option>
+                  ))}
+                </select>
+                {locationError ? (
+                  <p className="mt-1.5 text-xs font-medium text-[#b42318]">{locationError}</p>
+                ) : null}
               </label>
               <label className="block">
                 <FieldLabel>Duration (minutes)*</FieldLabel>
@@ -753,22 +835,28 @@ export default function CreateServicePage() {
               </p>
             </div>
             <div className="rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] p-5">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Service</p>
-                  <p className="mt-1 text-sm font-semibold text-[#06201c]">
-                    {serviceName || "Not provided"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Enterprise</p>
-                  <p className="mt-1 text-sm font-semibold text-[#06201c]">
-                    {reviewEnterpriseName}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Category</p>
-                  <p className="mt-1 text-sm font-semibold text-[#06201c]">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Service</p>
+                    <p className="mt-1 text-sm font-semibold text-[#06201c]">
+                      {serviceName || "Not provided"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Enterprise</p>
+                    <p className="mt-1 text-sm font-semibold text-[#06201c]">
+                      {reviewEnterpriseName}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Location</p>
+                    <p className="mt-1 text-sm font-semibold text-[#06201c]">
+                      {reviewLocationName || "Not selected"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Category</p>
+                    <p className="mt-1 text-sm font-semibold text-[#06201c]">
                     {serviceCategory || "Not provided"}
                   </p>
                 </div>

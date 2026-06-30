@@ -5,8 +5,10 @@ import type {
   UpdateEnterprisePayload,
 } from "@/types/enterprise.types";
 
+type EnterpriseListResponse = EnterpriseDto[] | { items?: EnterpriseDto[] };
+
 function getEnterprisesApiBase(): string {
-  return `${API_BASE_URL}/v1/api/enterprises/`;
+  return `${API_BASE_URL}/enterprises/`;
 }
 
 export async function getEnterprises(): Promise<EnterpriseDto[]> {
@@ -19,7 +21,17 @@ export async function getEnterprises(): Promise<EnterpriseDto[]> {
     throw new Error(`Failed to load enterprises (${response.status} ${response.statusText}).`);
   }
 
-  return response.json();
+  const data: EnterpriseListResponse = await response.json();
+
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (data && Array.isArray(data.items)) {
+    return data.items;
+  }
+
+  return [];
 }
 
 export async function getEnterpriseById(id: string): Promise<EnterpriseDto> {

@@ -9,6 +9,7 @@ export type AvailabilityScheduleItem = {
 export type ServiceDto = {
   id: string;
   enterprise_id: string;
+  location_id?: string | null;
   service_name: string;
   service_description: string;
   service_category: string;
@@ -28,6 +29,7 @@ export type ServiceDto = {
 
 export type CreateServicePayload = {
   enterprise_id: string;
+  location_id?: string;
   service_name: string;
   service_description: string;
   service_category: string;
@@ -46,6 +48,7 @@ export type CreateServicePayload = {
 };
 
 export type UpdateServicePayload = Partial<{
+  location_id: string;
   service_name: string;
   service_description: string;
   service_category: string;
