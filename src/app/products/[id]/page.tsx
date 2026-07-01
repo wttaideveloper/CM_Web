@@ -101,7 +101,17 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-export default function ProductDetailsPage() {
+type ProductDetailsPageProps = {
+  enterpriseFilterId?: string;
+  listHref?: string;
+  editHrefBase?: string;
+};
+
+export function ProductDetailsPage({
+  enterpriseFilterId,
+  listHref = "/products",
+  editHrefBase = "/products",
+}: ProductDetailsPageProps = {}) {
   const params = useParams<{ id: string }>();
   const [product, setProduct] = useState<ProductDto | null>(null);
   const [enterpriseMap, setEnterpriseMap] = useState<Record<string, EnterpriseDto>>({});
@@ -109,6 +119,7 @@ export default function ProductDetailsPage() {
   const [dynamicAttributes, setDynamicAttributes] = useState<DynamicAttributeDto[]>([]);
   const [attributesError, setAttributesError] = useState<string | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState<string | null>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -124,8 +135,22 @@ export default function ProductDetailsPage() {
     try {
       setIsLoading(true);
       setError(null);
+      setAccessDenied(null);
 
       const [productData, enterpriseData] = await Promise.all([getProductById(params.id), getEnterprises()]);
+
+      if (enterpriseFilterId && productData.enterprise_id !== enterpriseFilterId) {
+        setProduct(null);
+        setEnterpriseMap({});
+        setLocationSummary("Not provided");
+        setLocationError(null);
+        setIsLoadingLocation(false);
+        setDynamicAttributes([]);
+        setAttributesError(null);
+        setAccessDenied("This product belongs to another enterprise.");
+        return;
+      }
+
       const nextEnterpriseMap = enterpriseData.reduce<Record<string, EnterpriseDto>>((acc, enterprise) => {
         acc[enterprise.id] = enterprise;
         return acc;
@@ -252,6 +277,23 @@ export default function ProductDetailsPage() {
     );
   }
 
+  if (accessDenied) {
+    return (
+      <AppShell>
+        <section className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
+          <p className="text-base font-bold text-[#06201c]">Access denied.</p>
+          <p className="mt-2 text-sm text-[#52736a]">{accessDenied}</p>
+          <Link
+            href={listHref}
+            className="mt-5 inline-flex h-11 items-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
+          >
+            Back to Products
+          </Link>
+        </section>
+      </AppShell>
+    );
+  }
+
   if (!product) {
     return (
       <AppShell>
@@ -282,7 +324,7 @@ export default function ProductDetailsPage() {
         </div>
         <div className="flex flex-wrap gap-3">
           <Link
-            href={`/products/${product.id}/edit`}
+            href={`${editHrefBase}/${product.id}/edit`}
             className="inline-flex h-12 items-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-bold text-[#1f6a58] shadow-sm"
           >
             Edit Product
@@ -307,7 +349,7 @@ export default function ProductDetailsPage() {
             </button>
           )}
           <Link
-            href="/products"
+            href={listHref}
             className="inline-flex h-12 items-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-bold text-[#1f6a58] shadow-sm"
           >
             Back to Products
@@ -426,4 +468,8 @@ export default function ProductDetailsPage() {
       </section>
     </AppShell>
   );
+}
+
+export default function PublicProductDetailsPage() {
+  return <ProductDetailsPage />;
 }

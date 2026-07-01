@@ -121,7 +121,17 @@ function createAttributeRow(attribute?: DynamicAttributeDto): ProductAttributeRo
   };
 }
 
-export default function EditProductPage() {
+type EditProductPageProps = {
+  enterpriseFilterId?: string;
+  listHref?: string;
+  detailHrefBase?: string;
+};
+
+export function EditProductPage({
+  enterpriseFilterId,
+  listHref = "/products",
+  detailHrefBase = "/products",
+}: EditProductPageProps = {}) {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const [product, setProduct] = useState<ProductDto | null>(null);
@@ -148,6 +158,7 @@ export default function EditProductPage() {
   const [locationOptions, setLocationOptions] = useState<EnterpriseLocationDto[]>([]);
   const [isLoadingLocations, setIsLoadingLocations] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -186,8 +197,19 @@ export default function EditProductPage() {
     try {
       setIsLoading(true);
       setError(null);
+      setAccessDenied(null);
 
       const data = await getProductById(params.id);
+
+      if (enterpriseFilterId && data.enterprise_id !== enterpriseFilterId) {
+        setProduct(null);
+        setLocationOptions([]);
+        setLocationId("");
+        setLocationError(null);
+        setAccessDenied("This product belongs to another enterprise.");
+        return;
+      }
+
       setProduct(data);
       setProductName(data.product_name || "");
       setProductDescription(data.product_description || "");
@@ -259,11 +281,16 @@ export default function EditProductPage() {
       return;
     }
 
+    if (!product || accessDenied) {
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       setError(null);
 
       await updateProduct(params.id, {
+        enterprise_id: enterpriseFilterId ?? product.enterprise_id,
         product_name: trimmedName,
         product_description: trimmedDescription,
         product_category: trimmedCategory,
@@ -334,7 +361,7 @@ export default function EditProductPage() {
         return;
       }
 
-      router.push(`/products/${params.id}`);
+      router.push(listHref);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Unable to update product.");
     } finally {
@@ -371,12 +398,29 @@ export default function EditProductPage() {
     );
   }
 
+  if (accessDenied) {
+    return (
+      <AppShell>
+        <section className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
+          <p className="text-base font-bold text-[#06201c]">Access denied.</p>
+          <p className="mt-2 text-sm text-[#52736a]">{accessDenied}</p>
+          <Link
+            href={listHref}
+            className="mt-5 inline-flex h-11 items-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
+          >
+            Back to Products
+          </Link>
+        </section>
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3">
           <Link
-            href={`/products/${params.id}`}
+            href={`${detailHrefBase}/${params.id}`}
             className="mt-1 flex h-10 w-10 items-center justify-center rounded-full border border-[#d7e5df] text-[#52736a]"
           >
             &larr;
@@ -388,7 +432,7 @@ export default function EditProductPage() {
         </div>
         <div className="flex gap-3">
           <Link
-            href={`/products/${params.id}`}
+            href={`${detailHrefBase}/${params.id}`}
             className="inline-flex h-12 items-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-bold text-[#1f6a58] shadow-sm"
           >
             Cancel
@@ -783,4 +827,8 @@ export default function EditProductPage() {
       </section>
     </AppShell>
   );
+}
+
+export default function PublicEditProductPage() {
+  return <EditProductPage />;
 }

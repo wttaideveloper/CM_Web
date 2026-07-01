@@ -6,9 +6,13 @@ import {
   publishOnboardingForm,
   updateOnboardingForm,
 } from "@/services/onboarding-form.service";
-import type { CreateOnboardingFormPayload, OnboardingFormDto } from "@/types/onboarding-form.types";
+import type {
+  CreateOnboardingFormPayload,
+  OnboardingFormDto,
+  RegistrationType,
+} from "@/types/onboarding-form.types";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DndContext, type DragEndEvent, closestCenter } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import {
@@ -31,6 +35,20 @@ const fieldTypes = [
   "radio",
   "file",
   "image",
+] as const;
+
+const enterpriseTypeOptions = [
+  "Healthcare",
+  "Fitness & Wellness",
+  "Nutrition",
+  "Mental Health",
+  "Education",
+  "Retail",
+] as const;
+
+const registrationTypeOptions = [
+  "Enterprise (Business)",
+  "Individual (Professional)",
 ] as const;
 
 type FieldType = (typeof fieldTypes)[number];
@@ -62,6 +80,8 @@ type FormSchema = {
   name: string;
   description: string;
   entity_type: "enterprise";
+  enterprise_type: string | null;
+  registration_type: RegistrationType;
   status: FormStatus;
   sections: FormSection[];
 };
@@ -250,11 +270,36 @@ function hydrateSections(
   });
 }
 
-function buildFormPayload(form: FormSchema, status: FormStatus): CreateOnboardingFormPayload {
+function toRegistrationTypeValue(
+  value: (typeof registrationTypeOptions)[number],
+): Exclude<RegistrationType, null> {
+  return value === "Individual (Professional)" ? "individual" : "enterprise";
+}
+
+function toRegistrationTypeLabel(
+  value: RegistrationType | undefined,
+): (typeof registrationTypeOptions)[number] {
+  return value === "individual" ? "Individual (Professional)" : "Enterprise (Business)";
+}
+
+function toEnterpriseTypeOption(value: string | null | undefined) {
+  return enterpriseTypeOptions.includes(value as (typeof enterpriseTypeOptions)[number])
+    ? (value as (typeof enterpriseTypeOptions)[number])
+    : "Healthcare";
+}
+
+function buildFormPayload(
+  form: FormSchema,
+  status: FormStatus,
+  enterpriseType: string | null,
+  registrationType: (typeof registrationTypeOptions)[number],
+): CreateOnboardingFormPayload {
   return {
     name: form.name,
     description: form.description,
     entity_type: form.entity_type,
+    enterprise_type: enterpriseType,
+    registration_type: toRegistrationTypeValue(registrationType),
     status,
     sections: form.sections.map(toApiSection),
   };
@@ -271,7 +316,7 @@ function createDefaultForm(): FormSchema {
           placeholder: "Pinnacle Wellness Co.",
           help_text: "Legal enterprise name displayed across onboarding screens.",
           required: true,
-          locked: true,
+          locked: false,
           visible: true,
         }),
         createField({
@@ -281,7 +326,7 @@ function createDefaultForm(): FormSchema {
           placeholder: "Pinnacle Wellness",
           help_text: "Short business name used in forms and summaries.",
           required: false,
-          locked: true,
+          locked: false,
           visible: true,
         }),
       ]),
@@ -391,6 +436,8 @@ function createDefaultForm(): FormSchema {
     name: "Standard Enterprise Onboarding Form",
     description: "Default onboarding form for enterprise owners.",
     entity_type: "enterprise",
+    enterprise_type: "Healthcare",
+    registration_type: "enterprise",
     status: "draft",
     sections,
   };
@@ -452,18 +499,45 @@ function DragHandleIcon() {
   );
 }
 
+function FieldTypeIcon({ fieldType }: { fieldType: FieldType }) {
+  const accentClass =
+    fieldType === "email"
+      ? "bg-[#f3e8ff] text-[#9333ea]"
+      : fieldType === "phone"
+        ? "bg-[#e7f8ee] text-[#16a34a]"
+        : fieldType === "dropdown"
+          ? "bg-[#fff4e5] text-[#d97706]"
+          : fieldType === "file" || fieldType === "image"
+            ? "bg-[#ffe7e5] text-[#ef4444]"
+            : fieldType === "url"
+              ? "bg-[#e0f2fe] text-[#0284c7]"
+              : fieldType === "textarea"
+                ? "bg-[#ede9fe] text-[#6366f1]"
+                : fieldType === "date"
+                  ? "bg-[#fff1f2] text-[#f97316]"
+                  : fieldType === "checkbox"
+                    ? "bg-[#ecfeff] text-[#0891b2]"
+                    : "bg-[#e8f1ee] text-[#2f6a5c]";
+
+  return (
+    <span className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${accentClass}`}>
+      {fieldTypeLabel(fieldType).slice(0, 1)}
+    </span>
+  );
+}
+
 function SectionCard({
   section,
   isActive,
-  isRearrangeMode,
   onSelect,
   onDelete,
+  children,
 }: {
   section: FormSection;
   isActive: boolean;
-  isRearrangeMode: boolean;
   onSelect: () => void;
   onDelete: () => void;
+  children: ReactNode;
 }) {
   const {
     attributes,
@@ -484,156 +558,121 @@ function SectionCard({
     <div
       ref={setNodeRef}
       style={style}
-      role="button"
-      tabIndex={0}
-      onClick={onSelect}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onSelect();
-        }
-      }}
-      className={`w-full rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:border-[#c6ddd3] hover:shadow-md ${
-        isActive ? "border-[#c6ddd3] bg-[#f4faf7]" : "border-[#e1ebe6] bg-white"
+      className={`w-full rounded-[24px] border bg-white text-left shadow-sm transition ${
+        isActive ? "border-[#c6ddd3] ring-2 ring-[#e2efe8]" : "border-[#e1ebe6]"
       } ${isDragging ? "opacity-70" : ""}`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            {isRearrangeMode ? (
-              <button
-                type="button"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#d7e5df] bg-white text-[#52736a] shadow-sm"
-                aria-label={`Drag ${section.title}`}
-                {...attributes}
-                {...listeners}
-              >
-                <DragHandleIcon />
-              </button>
-            ) : null}
-            <p className="truncate text-sm font-bold text-[#06201c]">{section.title}</p>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onSelect}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onSelect();
+          }
+        }}
+        className="flex items-center justify-between gap-3 border-b border-[#edf3f0] px-4 py-3"
+      >
+        <div className="flex min-w-0 items-center gap-3">
+          <button
+            type="button"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#6c877f]"
+            aria-label={`Drag ${section.title}`}
+            onClick={(event) => event.stopPropagation()}
+            {...attributes}
+            {...listeners}
+          >
+            <DragHandleIcon />
+          </button>
+          <div className="min-w-0">
+            <p className="truncate text-base font-bold text-[#06201c]">{section.title}</p>
+            <p className="mt-0.5 text-xs text-[#7f9d94]">{section.fields.length} field(s)</p>
           </div>
-          <p className="mt-1 text-xs text-[#52736a]">{section.fields.length} field(s)</p>
-          <p className="mt-1 text-xs text-[#7f9d94]">Order {section.order}</p>
-          {containsLockedFields ? (
-            <span className="mt-2 inline-flex rounded-full bg-[#eef4ff] px-2.5 py-1 text-[11px] font-bold text-[#4c6ef5]">
-              Locked fields
-            </span>
-          ) : null}
         </div>
-        <button
-          type="button"
-          aria-label={`Delete ${section.title}`}
-          disabled={containsLockedFields}
-          onClick={(event) => {
-            event.stopPropagation();
-            onDelete();
-          }}
-          className="rounded-full border border-[#d7e5df] px-2 py-1 text-[11px] font-semibold text-[#b42318] disabled:cursor-not-allowed disabled:opacity-40"
-          title={containsLockedFields ? "Locked fields cannot be deleted" : undefined}
-        >
-          Delete
-        </button>
+        {!containsLockedFields ? (
+          <button
+            type="button"
+            aria-label={`Delete ${section.title}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete();
+            }}
+            className="rounded-full p-2 text-sm font-semibold text-[#b42318] hover:bg-[#fff5f5]"
+          >
+            ×
+          </button>
+        ) : null}
       </div>
+      <div className="px-4 py-4">{children}</div>
     </div>
   );
 }
 
 function FieldCard({
   field,
-  isRearrangeMode,
   onEdit,
   onDelete,
+  onToggleRequired,
 }: {
   field: FormField;
-  isRearrangeMode: boolean;
   onEdit: () => void;
   onDelete: () => void;
+  onToggleRequired: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: field.id,
   });
 
-  const style = isRearrangeMode
-    ? {
-        transform: CSS.Transform.toString(transform),
-        transition,
-      }
-    : undefined;
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
 
   return (
     <article
       ref={setNodeRef}
       style={style}
-      className={`rounded-2xl border border-[#e1ebe6] bg-[#f9fcfa] p-4 transition hover:-translate-y-0.5 hover:border-[#c6ddd3] hover:shadow-md ${
-        isDragging && isRearrangeMode ? "opacity-70" : ""
+      className={`rounded-2xl border border-[#e6eeea] bg-[#fbfdfc] px-4 py-3 transition hover:border-[#c6ddd3] ${
+        isDragging ? "opacity-70" : ""
       }`}
     >
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            {isRearrangeMode ? (
-              <button
-                type="button"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#d7e5df] bg-white text-[#52736a] shadow-sm"
-                aria-label={`Drag ${field.label}`}
-                {...attributes}
-                {...listeners}
-              >
-                <DragHandleIcon />
-              </button>
-            ) : null}
-            <h4 className="text-sm font-bold text-[#06201c]">{field.label}</h4>
-            <span className="rounded-full bg-[#e8f6ee] px-2.5 py-1 text-[11px] font-bold text-[#16825b]">
-              {fieldTypeLabel(field.field_type)}
-            </span>
-            {field.locked ? (
-              <span className="rounded-full bg-[#eef4ff] px-2.5 py-1 text-[11px] font-bold text-[#4c6ef5]">
-                Locked
-              </span>
-            ) : null}
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#6c877f]"
+          aria-label={`Drag ${field.label}`}
+          {...attributes}
+          {...listeners}
+        >
+          <DragHandleIcon />
+        </button>
+        <button type="button" onClick={onEdit} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+          <FieldTypeIcon fieldType={field.field_type} />
+          <div className="min-w-0">
+            <h4 className="truncate text-sm font-bold text-[#06201c]">{field.label}</h4>
+            <p className="mt-0.5 text-xs text-[#7f9d94]">{fieldTypeLabel(field.field_type)}</p>
           </div>
-          <p className="text-xs text-[#52736a]">
-            Field Key: <span className="font-mono">{field.field_key}</span>
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <span
-              className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
-                field.required ? "bg-[#e8f6ee] text-[#16825b]" : "bg-[#f1f4f3] text-[#6b7f79]"
-              }`}
-            >
-              {field.required ? "Required" : "Optional"}
-            </span>
-            <span
-              className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
-                field.visible ? "bg-[#e8f6ee] text-[#16825b]" : "bg-[#f1f4f3] text-[#6b7f79]"
-              }`}
-            >
-              {field.visible ? "Visible" : "Hidden"}
-            </span>
-            <span className="rounded-full bg-[#f1f4f3] px-2.5 py-1 text-[11px] font-bold text-[#6b7f79]">
-              Order {field.order}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 text-xs">
+        </button>
+        <div className="ml-auto flex items-center gap-2">
           <button
             type="button"
-            onClick={onEdit}
-            className="rounded-full border border-[#d7e5df] px-3 py-2 font-semibold text-[#1f6a58] hover:bg-[#f4faf7]"
+            onClick={onToggleRequired}
+            className={`rounded-full px-3 py-1.5 text-[11px] font-bold ${
+              field.required ? "bg-[#ffe4e7] text-[#d92d20]" : "bg-[#f1ecff] text-[#6d5bd0]"
+            }`}
           >
-            Edit
+            {field.required ? "Required" : "Optional"}
           </button>
-          <button
-            type="button"
-            onClick={onDelete}
-            disabled={field.locked}
-            title={field.locked ? "Locked fields cannot be deleted" : undefined}
-            className="rounded-full border border-[#d7e5df] px-3 py-2 font-semibold text-[#b42318] disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Delete
-          </button>
+          {!field.locked ? (
+            <button
+              type="button"
+              onClick={onDelete}
+              className="rounded-full p-2 text-sm font-semibold text-[#b42318] hover:bg-[#fff5f5]"
+            >
+              ×
+            </button>
+          ) : null}
         </div>
       </div>
     </article>
@@ -731,8 +770,6 @@ export default function OnboardingFormCreatePage() {
   const previewRef = useRef<HTMLDivElement | null>(null);
   const [form, setForm] = useState<FormSchema>(() => initialForm);
   const [activeSectionId, setActiveSectionId] = useState<string>(initialForm.sections[0]?.id ?? "");
-  const [isRearrangeMode, setIsRearrangeMode] = useState(false);
-  const [isFieldRearrangeMode, setIsFieldRearrangeMode] = useState(false);
   const [previewScope, setPreviewScope] = useState<PreviewScope>("section");
   const [isFieldEditorOpen, setIsFieldEditorOpen] = useState(false);
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
@@ -741,6 +778,10 @@ export default function OnboardingFormCreatePage() {
   const [savedFormId, setSavedFormId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [enterpriseType, setEnterpriseType] =
+    useState<(typeof enterpriseTypeOptions)[number]>("Healthcare");
+  const [registrationType, setRegistrationType] =
+    useState<(typeof registrationTypeOptions)[number]>("Enterprise (Business)");
   const activeSection = form.sections.find((section) => section.id === activeSectionId) ?? form.sections[0];
 
   useEffect(() => {
@@ -836,32 +877,45 @@ export default function OnboardingFormCreatePage() {
     updateSections(arrayMove(form.sections, oldIndex, newIndex));
   }
 
-  function handleFieldDragEnd(event: DragEndEvent) {
-    if (!activeSection || !isFieldRearrangeMode) {
-      return;
-    }
-
+  function handleFieldDragEnd(sectionId: string, event: DragEndEvent) {
     const { active, over } = event;
 
     if (!over || active.id === over.id) {
       return;
     }
 
-    const oldIndex = activeSection.fields.findIndex((field) => field.id === active.id);
-    const newIndex = activeSection.fields.findIndex((field) => field.id === over.id);
-
-    if (oldIndex < 0 || newIndex < 0) {
-      return;
-    }
-
-    const nextFields = normalizeFields(arrayMove(activeSection.fields, oldIndex, newIndex));
-
     setForm((current) => ({
       ...current,
       sections: current.sections.map((section) =>
-        section.id === activeSection.id ? { ...section, fields: nextFields } : section,
+        section.id === sectionId
+          ? {
+              ...section,
+              fields: (() => {
+                const oldIndex = section.fields.findIndex((field) => field.id === active.id);
+                const newIndex = section.fields.findIndex((field) => field.id === over.id);
+
+                if (oldIndex < 0 || newIndex < 0) {
+                  return section.fields;
+                }
+
+                return normalizeFields(arrayMove(section.fields, oldIndex, newIndex));
+              })(),
+            }
+          : section,
       ),
     }));
+  }
+
+  function openAddFieldPanelForSection(sectionId: string, nextFieldType: FieldType = fieldDraft.field_type) {
+    setActiveSectionId(sectionId);
+    setEditingFieldId(null);
+    setFieldDraft((current) => ({
+      ...createFieldDraft(),
+      field_type: nextFieldType,
+      label: current.field_type === nextFieldType ? current.label : fieldTypeLabel(nextFieldType),
+      field_key: slugifyFieldKey(`new_${nextFieldType}_field`) || "new_field",
+    }));
+    setIsFieldEditorOpen(true);
   }
 
   function openAddFieldPanel() {
@@ -869,12 +923,18 @@ export default function OnboardingFormCreatePage() {
       return;
     }
 
-    setEditingFieldId(null);
-    setFieldDraft(createFieldDraft());
-    setIsFieldEditorOpen(true);
+    openAddFieldPanelForSection(activeSection.id);
   }
 
-  function openEditFieldPanel(field: FormField) {
+  function openAddFieldPanelWithType(fieldType: FieldType) {
+    if (!activeSection) {
+      return;
+    }
+    openAddFieldPanelForSection(activeSection.id, fieldType);
+  }
+
+  function openEditFieldPanel(sectionId: string, field: FormField) {
+    setActiveSectionId(sectionId);
     setEditingFieldId(field.id);
     setFieldDraft(createFieldDraft(field));
     setIsFieldEditorOpen(true);
@@ -896,6 +956,22 @@ export default function OnboardingFormCreatePage() {
       sections: current.sections.map((section) =>
         section.id === activeSection.id
           ? { ...section, fields: normalizeFields(section.fields.filter((field) => field.id !== fieldId)) }
+          : section,
+      ),
+    }));
+  }
+
+  function toggleFieldRequired(sectionId: string, fieldId: string) {
+    setForm((current) => ({
+      ...current,
+      sections: current.sections.map((section) =>
+        section.id === sectionId
+          ? {
+              ...section,
+              fields: section.fields.map((field) =>
+                field.id === fieldId ? { ...field, required: !field.required } : field,
+              ),
+            }
           : section,
       ),
     }));
@@ -995,17 +1071,21 @@ export default function OnboardingFormCreatePage() {
 
   async function saveDraft() {
     const snapshot = form;
-    const payload = buildFormPayload(snapshot, "draft");
+    const payload = buildFormPayload(snapshot, "draft", enterpriseType, registrationType);
     setIsSaving(true);
 
     try {
       if (savedFormId === null) {
         const response = await createOnboardingForm(payload);
         setSavedFormId(response.id);
+        setEnterpriseType(toEnterpriseTypeOption(response.enterprise_type));
+        setRegistrationType(toRegistrationTypeLabel(response.registration_type));
         setForm((current) => ({
           ...current,
           name: response.name ?? current.name,
           description: response.description ?? current.description,
+          enterprise_type: response.enterprise_type ?? current.enterprise_type,
+          registration_type: response.registration_type ?? current.registration_type,
           status: response.status ?? "draft",
           sections: hydrateSections(response.sections, current.sections),
         }));
@@ -1020,8 +1100,12 @@ export default function OnboardingFormCreatePage() {
       }
 
       const response = await updateOnboardingForm(savedFormId, payload);
+      setEnterpriseType(toEnterpriseTypeOption(response.enterprise_type));
+      setRegistrationType(toRegistrationTypeLabel(response.registration_type));
       setForm((current) => ({
         ...current,
+        enterprise_type: response.enterprise_type ?? current.enterprise_type,
+        registration_type: response.registration_type ?? current.registration_type,
         status: response.status ?? current.status,
       }));
       persistDraftLocally({ ...snapshot, status: response.status ?? snapshot.status });
@@ -1036,7 +1120,7 @@ export default function OnboardingFormCreatePage() {
 
   async function publishForm() {
     const snapshot = form;
-    const payload = buildFormPayload(snapshot, "draft");
+    const payload = buildFormPayload(snapshot, "draft", enterpriseType, registrationType);
     setIsPublishing(true);
 
     try {
@@ -1046,10 +1130,14 @@ export default function OnboardingFormCreatePage() {
         const createResponse = await createOnboardingForm(payload);
         nextSavedFormId = createResponse.id;
         setSavedFormId(createResponse.id);
+        setEnterpriseType(toEnterpriseTypeOption(createResponse.enterprise_type));
+        setRegistrationType(toRegistrationTypeLabel(createResponse.registration_type));
         setForm((current) => ({
           ...current,
           name: createResponse.name ?? current.name,
           description: createResponse.description ?? current.description,
+          enterprise_type: createResponse.enterprise_type ?? current.enterprise_type,
+          registration_type: createResponse.registration_type ?? current.registration_type,
           status: createResponse.status ?? "draft",
           sections: hydrateSections(createResponse.sections, current.sections),
         }));
@@ -1060,8 +1148,12 @@ export default function OnboardingFormCreatePage() {
         });
       } else {
         const updateResponse = await updateOnboardingForm(nextSavedFormId, payload);
+        setEnterpriseType(toEnterpriseTypeOption(updateResponse.enterprise_type));
+        setRegistrationType(toRegistrationTypeLabel(updateResponse.registration_type));
         setForm((current) => ({
           ...current,
+          enterprise_type: updateResponse.enterprise_type ?? current.enterprise_type,
+          registration_type: updateResponse.registration_type ?? current.registration_type,
           status: updateResponse.status ?? current.status,
         }));
         persistDraftLocally({ ...snapshot, status: updateResponse.status ?? snapshot.status });
@@ -1086,219 +1178,345 @@ export default function OnboardingFormCreatePage() {
 
   const previewSections = previewScope === "section" && activeSection ? [activeSection] : form.sections;
   const currentFieldList = activeSection?.fields ?? [];
+  const requiredFieldsCount = form.sections.reduce(
+    (total, section) => total + section.fields.filter((field) => field.required).length,
+    0,
+  );
+  const totalFieldsCount = form.sections.reduce((total, section) => total + section.fields.length, 0);
+  const optionalFieldsCount = totalFieldsCount - requiredFieldsCount;
 
   return (
     <AppShell>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-3">
-            <h2 className="text-2xl font-bold text-[#06201c] sm:text-3xl">Onboarding Form Builder</h2>
+            <h2 className="text-2xl font-bold text-[#06201c] sm:text-3xl">Registration Form Builder</h2>
             <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${badgeClass(form.status)}`}>
               {statusLabel(form.status)}
             </span>
           </div>
-          <p className="text-sm text-[#52736a]">Build the enterprise onboarding form template.</p>
+          <p className="max-w-3xl text-sm text-[#52736a]">
+            Design the onboarding form enterprise owners fill out once when joining the platform.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={showPreview}
+            className="inline-flex h-11 items-center justify-center rounded-full border border-[#cfe6d9] bg-white px-5 text-sm font-bold text-[#1f6a58] shadow-sm transition hover:bg-[#f4faf7]"
+          >
+            Preview Form
+          </button>
+          <button
+            type="button"
+            onClick={publishForm}
+            disabled={isSaving || isPublishing}
+            className="inline-flex h-11 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm transition hover:bg-[#175245] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isPublishing ? "Publishing..." : "Save & Publish"}
+          </button>
         </div>
       </div>
 
-      <section className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_320px]">
-          <div className="space-y-4">
-            <label className="block">
-              <span className="text-sm font-bold text-[#06201c]">Form Name</span>
-              <input
-                type="text"
-                value={form.name}
-                onChange={(event) => updateFormName(event.target.value)}
-                className="mt-1.5 h-[46px] w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3.5 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
-              />
-            </label>
-
-            <label className="block">
-              <span className="text-sm font-bold text-[#06201c]">Description</span>
-              <textarea
-                value={form.description}
-                onChange={(event) => updateFormDescription(event.target.value)}
-                className="mt-1.5 min-h-24 w-full resize-none rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3.5 py-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
-              />
-            </label>
-
-            {notice ? (
-              <p className="rounded-xl border border-[#cfe6d9] bg-[#f1f8f4] px-4 py-3 text-sm font-medium text-[#16644f]">
-                {notice}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#7f9d94]">Actions</p>
-            <div className="mt-4 grid gap-3">
-              <button
-                type="button"
-                onClick={saveDraft}
-                disabled={isSaving || isPublishing}
-                className="h-11 rounded-full border border-[#cfe6d9] bg-white px-4 text-sm font-bold text-[#1f6a58] shadow-sm transition hover:border-[#b6d7c5] hover:bg-[#f4faf7] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isSaving ? "Saving..." : "Save Draft"}
-              </button>
-              <button
-                type="button"
-                onClick={showPreview}
-                className="h-11 rounded-full border border-[#cfe6d9] px-4 text-sm font-bold text-[#1f6a58] transition hover:bg-[#f4faf7]"
-              >
-                Preview
-              </button>
-              <button
-                type="button"
-                onClick={publishForm}
-                disabled={isSaving || isPublishing}
-                className="h-11 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white shadow-sm transition hover:bg-[#175245] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isPublishing ? "Publishing..." : "Publish"}
-              </button>
-              <button
-                type="button"
-                disabled
-                title="Coming soon"
-                className="h-11 cursor-not-allowed rounded-full border border-dashed border-[#d7e5df] bg-[#f5f7f6] px-4 text-sm font-bold text-[#8ca69e] opacity-80"
-              >
-                Assign to Enterprise
-              </button>
+      <section className="mt-5 rounded-[28px] border border-[#bfd6ff] bg-[#eef5ff] p-6 shadow-sm">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+          <div>
+            <p className="text-sm font-bold text-[#1c4ed8]">Form Builder — What it is</p>
+            <p className="mt-3 text-sm leading-7 text-[#33558d]">
+              Controls the <span className="font-semibold text-[#1c4ed8]">registration / onboarding wizard</span>{" "}
+              that an Enterprise Owner fills out one time when first signing up. Think of it as the job application
+              form used to collect, verify, and approve the enterprise before it goes live.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {["Hospital Name", "Upload Medical License", "GST Certificate", "Departments Offered", "Google Maps Link"].map((item) => (
+                <span
+                  key={item}
+                  className="rounded-full bg-[#dce9ff] px-3 py-1 text-xs font-semibold text-[#1c4ed8]"
+                >
+                  {item}
+                </span>
+              ))}
             </div>
-            <p className="mt-3 text-xs text-[#7f9d94]">Assign is disabled for now and marked as coming soon.</p>
+          </div>
+          <div className="space-y-3 text-sm text-[#33558d]">
+            {[
+              "Runs once — only during enterprise signup / setup",
+              "Drives approval — admin reviews this form before activating",
+              "Sections & ordering — drag and reorder the whole wizard",
+              "Not the same as Dynamic Attributes — those are post-signup metadata fields on listings",
+            ].map((item) => (
+              <div key={item} className="flex items-start gap-3">
+                <span className="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs font-bold text-[#1c4ed8]">
+                  ✓
+                </span>
+                <p>{item}</p>
+              </div>
+            ))}
+            <div className="rounded-2xl bg-[#dfeaff] px-4 py-3 text-sm text-[#1c4ed8]">
+              <span className="font-semibold">Analogy:</span> A job application form — filled once, used to screen
+              and approve the applicant.
+            </div>
           </div>
         </div>
       </section>
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
+      {notice ? (
+        <p className="mt-5 rounded-2xl border border-[#cfe6d9] bg-[#f1f8f4] px-4 py-3 text-sm font-medium text-[#16644f]">
+          {notice}
+        </p>
+      ) : null}
+
+      <div className="mt-5 grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
         <aside className="space-y-5">
-          <section className="rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#7f9d94]">Sections</p>
-                <h3 className="mt-1 text-base font-bold text-[#06201c]">Form Structure</h3>
+          <section className="rounded-[24px] border border-[#e1ebe6] bg-white p-4 shadow-sm">
+            <h3 className="text-lg font-bold text-[#06201c]">Form Configuration</h3>
+            <div className="mt-4 space-y-3.5">
+              <label className="block">
+                <span className="text-sm font-bold text-[#06201c]">Form Name</span>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(event) => updateFormName(event.target.value)}
+                  className="mt-1.5 h-[46px] w-full rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-3.5 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-bold text-[#06201c]">Description</span>
+                <textarea
+                  value={form.description}
+                  onChange={(event) => updateFormDescription(event.target.value)}
+                  className="mt-1.5 min-h-24 w-full resize-none rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-3.5 py-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-bold text-[#06201c]">Enterprise Type</span>
+                <select
+                  value={enterpriseType}
+                  onChange={(event) =>
+                    setEnterpriseType(event.target.value as (typeof enterpriseTypeOptions)[number])
+                  }
+                  className="mt-1.5 h-[46px] w-full rounded-2xl border border-[#d7e5df] bg-[#f3f8f6] px-3.5 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]"
+                >
+                  {enterpriseTypeOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-sm font-bold text-[#06201c]">Registration Type</span>
+                <select
+                  value={registrationType}
+                  onChange={(event) =>
+                    setRegistrationType(event.target.value as (typeof registrationTypeOptions)[number])
+                  }
+                  className="mt-1.5 h-[46px] w-full rounded-2xl border border-[#c8ddd3] bg-[#f3f8f6] px-3.5 text-sm text-[#06201c] outline-none ring-2 ring-[#d8e8df] focus:border-[#1f6a58]"
+                >
+                  {registrationTypeOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="rounded-2xl bg-[#eef6f2] px-3.5 py-3">
+                <p className="text-sm font-bold text-[#1f6a58]">Live Preview</p>
+                <p className="mt-2 text-xs leading-6 text-[#52736a]">
+                  Any changes made here are instantly visible in the preview below and will shape how enterprise owners
+                  move through signup.
+                </p>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsRearrangeMode((current) => !current)}
-                  className="h-10 rounded-full border border-[#cfe6d9] px-4 text-sm font-bold text-[#1f6a58] transition hover:bg-[#f4faf7]"
-                >
-                  {isRearrangeMode ? "Done" : "Rearrange"}
-                </button>
-                <button
-                  type="button"
-                  onClick={addSection}
-                  className="h-10 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white shadow-sm"
-                >
-                  + Add Section
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              <DndContext collisionDetection={closestCenter} onDragEnd={handleSectionDragEnd}>
-                <SortableContext
-                  items={form.sections.map((section) => section.id)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  {form.sections.map((section) => {
-                    const active = section.id === activeSectionId;
-
-                    return (
-                      <SectionCard
-                        key={section.id}
-                        section={section}
-                        isActive={active}
-                        isRearrangeMode={isRearrangeMode}
-                        onSelect={() => setActiveSectionId(section.id)}
-                        onDelete={() => deleteSection(section.id)}
-                      />
-                    );
-                  })}
-                </SortableContext>
-              </DndContext>
             </div>
           </section>
 
-          <section className="rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#7f9d94]">Rename Selected Section</p>
-            <label className="mt-3 block">
-              <span className="text-sm font-bold text-[#06201c]">Section Title</span>
-              <input
-                type="text"
-                value={activeSection?.title ?? ""}
-                onChange={(event) => updateSelectedSectionTitle(event.target.value)}
-                className="mt-1.5 h-[46px] w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3.5 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
-              />
-            </label>
-            <p className="mt-3 text-xs text-[#7f9d94]">
-              {activeSection ? `Selected: ${activeSection.title}` : "No section selected."}
-            </p>
+          <section className="rounded-[24px] border border-[#e1ebe6] bg-white p-4 shadow-sm">
+            <h3 className="text-lg font-bold text-[#06201c]">Add Field Types</h3>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+              {[
+                { label: "Text Field", type: "text" as FieldType },
+                { label: "Email", type: "email" as FieldType },
+                { label: "Phone", type: "phone" as FieldType },
+                { label: "Dropdown", type: "dropdown" as FieldType },
+                { label: "File Upload", type: "file" as FieldType },
+                { label: "Web Link", type: "url" as FieldType },
+                { label: "Long Text", type: "textarea" as FieldType },
+                { label: "Date Picker", type: "date" as FieldType },
+                { label: "Checkbox", type: "checkbox" as FieldType },
+              ].map((item) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => openAddFieldPanelWithType(item.type)}
+                  className={`rounded-2xl px-3.5 py-2.5 text-left text-sm font-semibold transition ${
+                    fieldDraft.field_type === item.type && isFieldEditorOpen
+                      ? "bg-[#2e6a5b] text-white"
+                      : "border border-[#e1ebe6] bg-[#f8fbf9] text-[#355a51] hover:bg-[#eef6f2]"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-[24px] border border-[#e1ebe6] bg-white p-4 shadow-sm">
+            <h3 className="text-lg font-bold text-[#06201c]">Quick Stats</h3>
+            <div className="mt-3 grid grid-cols-2 gap-2.5">
+              {[
+                { label: "Total Sections", value: form.sections.length },
+                { label: "Total Fields", value: totalFieldsCount },
+                { label: "Required Fields", value: requiredFieldsCount },
+                { label: "Optional Fields", value: optionalFieldsCount },
+              ].map((item) => (
+                <div key={item.label} className="rounded-2xl bg-[#f7faf8] px-3 py-3">
+                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">{item.label}</p>
+                  <p className="mt-2 text-2xl font-bold text-[#06201c]">{item.value}</p>
+                </div>
+              ))}
+            </div>
           </section>
         </aside>
 
         <div className="space-y-5">
-          <section className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#7f9d94]">Fields</p>
-                <h3 className="mt-1 text-base font-bold text-[#06201c]">
-                  {activeSection ? activeSection.title : "Selected Section"}
-                </h3>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsFieldRearrangeMode((current) => !current)}
-                  className="h-11 rounded-full border border-[#cfe6d9] px-4 text-sm font-bold text-[#1f6a58] transition hover:bg-[#f4faf7]"
-                >
-                  {isFieldRearrangeMode ? "Done" : "Rearrange Fields"}
-                </button>
-                <button
-                  type="button"
-                  onClick={openAddFieldPanel}
-                  className="h-11 rounded-full border border-[#cfe6d9] px-4 text-sm font-bold text-[#1f6a58] transition hover:bg-[#f4faf7]"
-                >
-                  + Add Field
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              {!activeSection ? (
-                <div className="rounded-2xl border border-dashed border-[#d7e5df] bg-[#f9fcfa] px-4 py-12 text-center">
-                  <p className="text-sm font-semibold text-[#06201c]">Select a section to manage fields.</p>
-                </div>
-              ) : currentFieldList.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-[#d7e5df] bg-[#f9fcfa] px-4 py-12 text-center">
-                  <p className="text-sm font-semibold text-[#06201c]">No fields in this section yet.</p>
-                  <p className="mt-1 text-sm text-[#52736a]">Add a field to start building the section.</p>
-                </div>
-              ) : (
-                <DndContext collisionDetection={closestCenter} onDragEnd={handleFieldDragEnd}>
-                  <SortableContext
-                    items={currentFieldList.map((field) => field.id)}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    <div className="space-y-3">
-                      {currentFieldList.map((field) => (
-                        <FieldCard
-                          key={field.id}
-                          field={field}
-                          isRearrangeMode={isFieldRearrangeMode}
-                          onEdit={() => openEditFieldPanel(field)}
-                          onDelete={() => deleteField(field.id)}
-                        />
-                      ))}
-                    </div>
-                  </SortableContext>
-                </DndContext>
-              )}
-            </div>
+          <section className="rounded-[28px] border border-[#bfd6ff] bg-[#f3f7ff] px-5 py-4 shadow-sm">
+            <p className="text-base font-bold text-[#1c4ed8]">Drag sections to reorder</p>
+            <p className="mt-1 text-sm text-[#5670a6]">
+              Use the existing rearrange controls to change the onboarding wizard flow. Enterprise owners will see
+              sections in this exact order.
+            </p>
           </section>
 
-          {isFieldEditorOpen ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={saveDraft}
+              disabled={isSaving || isPublishing}
+              className="h-11 rounded-full border border-[#cfe6d9] bg-white px-4 text-sm font-bold text-[#1f6a58] shadow-sm transition hover:border-[#b6d7c5] hover:bg-[#f4faf7] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSaving ? "Saving..." : "Save Draft"}
+            </button>
+            <button
+              type="button"
+              onClick={addSection}
+              className="h-11 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white shadow-sm"
+            >
+              + Add Section
+            </button>
+          </div>
+
+          <DndContext collisionDetection={closestCenter} onDragEnd={handleSectionDragEnd}>
+            <SortableContext
+              items={form.sections.map((section) => section.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <div className="space-y-4">
+                {form.sections.map((section) => {
+                  const isSelected = section.id === activeSectionId;
+
+                  return (
+                    <SectionCard
+                      key={section.id}
+                      section={section}
+                      isActive={isSelected}
+                      onSelect={() => setActiveSectionId(section.id)}
+                      onDelete={() => deleteSection(section.id)}
+                    >
+                      <div className="space-y-3">
+                        {isSelected ? (
+                          <label className="block">
+                            <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
+                              Section Title
+                            </span>
+                            <input
+                              type="text"
+                              value={activeSection?.title ?? ""}
+                              onChange={(event) => updateSelectedSectionTitle(event.target.value)}
+                              className="mt-1.5 h-10 w-full rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
+                            />
+                          </label>
+                        ) : null}
+
+                        <DndContext
+                          collisionDetection={closestCenter}
+                          onDragEnd={(event) => handleFieldDragEnd(section.id, event)}
+                        >
+                          <SortableContext
+                            items={section.fields.map((field) => field.id)}
+                            strategy={verticalListSortingStrategy}
+                          >
+                            <div className="space-y-2.5">
+                              {section.fields.map((field) => (
+                                <FieldCard
+                                  key={field.id}
+                                  field={field}
+                                  onEdit={() => openEditFieldPanel(section.id, field)}
+                                  onDelete={() => deleteField(field.id)}
+                                  onToggleRequired={() => toggleFieldRequired(section.id, field.id)}
+                                />
+                              ))}
+                            </div>
+                          </SortableContext>
+                        </DndContext>
+
+                        {isSelected && isFieldEditorOpen && !editingFieldId ? (
+                          <div className="flex flex-col gap-2 rounded-2xl border border-dashed border-[#b7d1c5] bg-[#fcfefd] px-4 py-3 sm:flex-row sm:items-center">
+                            <input
+                              type="text"
+                              value={fieldDraft.label}
+                              onChange={(event) =>
+                                setFieldDraft((current) => ({
+                                  ...current,
+                                  label: event.target.value,
+                                  field_key:
+                                    current.field_key.trim().length > 0 &&
+                                    current.field_key !== slugifyFieldKey(current.label)
+                                      ? current.field_key
+                                      : slugifyFieldKey(event.target.value),
+                                }))
+                              }
+                              placeholder="Enter field label..."
+                              className="h-10 flex-1 rounded-xl border border-[#d7e5df] bg-white px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
+                            />
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={saveField}
+                                className="rounded-full bg-[#1f6a58] px-4 py-2 text-xs font-bold text-white"
+                              >
+                                Add
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsFieldEditorOpen(false);
+                                  setEditingFieldId(null);
+                                  setFieldDraft(createFieldDraft());
+                                }}
+                                className="rounded-full px-3 py-2 text-xs font-semibold text-[#52736a]"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => openAddFieldPanelForSection(section.id)}
+                            className="flex w-full items-center justify-start rounded-2xl border border-dashed border-[#cfe0d6] bg-[#fcfefd] px-4 py-3 text-left text-sm font-semibold text-[#52736a] hover:bg-[#f4faf7]"
+                          >
+                            + Add {fieldTypeLabel(fieldDraft.field_type)} field
+                          </button>
+                        )}
+                      </div>
+                    </SectionCard>
+                  );
+                })}
+              </div>
+            </SortableContext>
+          </DndContext>
+
+          {isFieldEditorOpen && editingFieldId ? (
             <section className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>

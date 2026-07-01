@@ -5,6 +5,7 @@ import type {
   OnboardingFormDto,
   OnboardingFormListParams,
   OnboardingFormListResponse,
+  RegistrationType,
   UpdateOnboardingFormPayload,
 } from "@/types/onboarding-form.types";
 
@@ -12,6 +13,8 @@ type UpdateOnboardingFormResponse = {
   id: string;
   name: string;
   status: FormStatus;
+  enterprise_type?: string | null;
+  registration_type?: RegistrationType;
   sections_count: number;
   fields_count: number;
   updated_at?: string;

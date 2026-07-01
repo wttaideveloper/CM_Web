@@ -113,9 +113,22 @@ function addressesMatch(
   );
 }
 
-export default function EditEnterprisePage() {
+type EditEnterprisePageProps = {
+  enterpriseId?: string;
+  successRedirect?: string;
+  backHref?: string;
+};
+
+export function EditEnterprisePage({
+  enterpriseId,
+  successRedirect,
+  backHref,
+}: EditEnterprisePageProps = {}) {
   const router = useRouter();
   const params = useParams<{ id: string }>();
+  const resolvedEnterpriseId = enterpriseId ?? params.id;
+  const resolvedSuccessRedirect = successRedirect ?? `/enterprises/${resolvedEnterpriseId}`;
+  const resolvedBackHref = backHref ?? `/enterprises/${resolvedEnterpriseId}`;
   const [enterprise, setEnterprise] = useState<EnterpriseDto | null>(null);
   const [enterpriseName, setEnterpriseName] = useState("");
   const [tradingName, setTradingName] = useState("");
@@ -145,11 +158,13 @@ export default function EditEnterprisePage() {
   const [status, setStatus] = useState("Active");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isNotFound, setIsNotFound] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function fetchEnterprise() {
-    if (!params.id) {
+    if (!resolvedEnterpriseId) {
       setError("Unable to load enterprise.");
+      setIsNotFound(false);
       setIsLoading(false);
       return;
     }
@@ -157,8 +172,9 @@ export default function EditEnterprisePage() {
     try {
       setIsLoading(true);
       setError(null);
+      setIsNotFound(false);
 
-      const data = await getEnterpriseById(params.id);
+      const data = await getEnterpriseById(resolvedEnterpriseId);
       setEnterprise(data);
       setEnterpriseName(formatText(data.business_legal_name || data.name));
       setTradingName(formatText(data.business_short_name));
@@ -194,7 +210,10 @@ export default function EditEnterprisePage() {
       setTagline(formatText(data.tagline));
       setStatus(data.status === false ? "Inactive" : "Active");
     } catch (fetchError) {
-      setError(fetchError instanceof Error ? fetchError.message : "Unable to load enterprise.");
+      const nextError =
+        fetchError instanceof Error ? fetchError.message : "Unable to load enterprise.";
+      setIsNotFound(nextError.includes("(404"));
+      setError(nextError);
     } finally {
       setIsLoading(false);
     }
@@ -202,7 +221,7 @@ export default function EditEnterprisePage() {
 
   useEffect(() => {
     void fetchEnterprise();
-  }, [params.id]);
+  }, [resolvedEnterpriseId]);
 
   async function handleSubmit() {
     const trimmedName = enterpriseName.trim();
@@ -239,7 +258,7 @@ export default function EditEnterprisePage() {
       return;
     }
 
-    if (!params.id || isSubmitting) {
+    if (!resolvedEnterpriseId || isSubmitting) {
       return;
     }
 
@@ -251,7 +270,7 @@ export default function EditEnterprisePage() {
         ? combinePhone(secondaryPhoneCode, trimmedSecondaryPhoneNumber)
         : "";
 
-      await updateEnterprise(params.id, {
+      await updateEnterprise(resolvedEnterpriseId, {
         business_short_name: trimmedTradingName,
         business_legal_name: trimmedName,
         business_description: trimmedDescription,
@@ -280,7 +299,7 @@ export default function EditEnterprisePage() {
         status: status !== "Inactive",
       });
 
-      router.push(`/enterprises/${params.id}`);
+      router.push(resolvedSuccessRedirect);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Unable to update enterprise.");
     } finally {
@@ -303,15 +322,19 @@ export default function EditEnterprisePage() {
     return (
       <AppShell>
         <section className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
-          <p className="text-base font-bold text-[#06201c]">Unable to load enterprise.</p>
-          <p className="mt-2 text-sm text-[#52736a]">Please try again.</p>
-          <button
-            type="button"
-            onClick={() => void fetchEnterprise()}
-            className="mt-5 h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
-          >
-            Retry
-          </button>
+          <p className="text-base font-bold text-[#06201c]">
+            {isNotFound ? "Enterprise not found." : "Unable to load enterprise."}
+          </p>
+          <p className="mt-2 text-sm text-[#52736a]">{error}</p>
+          {!isNotFound ? (
+            <button
+              type="button"
+              onClick={() => void fetchEnterprise()}
+              className="mt-5 h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
+            >
+              Retry
+            </button>
+          ) : null}
         </section>
       </AppShell>
     );
@@ -323,7 +346,7 @@ export default function EditEnterprisePage() {
         <div className="flex items-start gap-3">
           <button
             aria-label="Back"
-            onClick={() => router.push(`/enterprises/${params.id}`)}
+            onClick={() => router.push(resolvedBackHref)}
             className="mt-1 flex h-10 w-10 items-center justify-center rounded-full border border-[#d7e5df] text-[#52736a]"
           >
             &larr;
@@ -336,7 +359,7 @@ export default function EditEnterprisePage() {
           </div>
         </div>
         <Link
-          href={`/enterprises/${params.id}`}
+          href={resolvedBackHref}
           className="inline-flex h-12 items-center rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a]"
         >
           Cancel
@@ -641,7 +664,7 @@ export default function EditEnterprisePage() {
         <div className="mt-6 flex flex-col gap-3 border-t border-[#edf3f0] pt-5 sm:flex-row sm:items-center sm:justify-between">
           <button
             type="button"
-            onClick={() => router.push(`/enterprises/${params.id}`)}
+            onClick={() => router.push(resolvedBackHref)}
             className="h-12 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a]"
           >
             Back
@@ -658,4 +681,8 @@ export default function EditEnterprisePage() {
       </section>
     </AppShell>
   );
+}
+
+export default function SuperAdminEditEnterprisePage() {
+  return <EditEnterprisePage />;
 }

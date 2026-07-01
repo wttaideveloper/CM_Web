@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 type OpenMenu = "notifications" | "settings" | "profile" | null;
@@ -72,6 +73,7 @@ type AppHeaderProps = {
 };
 
 export default function AppHeader({ onMenuClick }: AppHeaderProps) {
+  const router = useRouter();
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const headerRef = useRef<HTMLElement | null>(null);
 
@@ -257,11 +259,16 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
             <div className="py-2">
               {profileItems.map((item) => (
                 <button
-                key={item}
-                type="button"
-                onClick={closeMenu}
-                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]"
-              >
+                  key={item}
+                  type="button"
+                  onClick={() => {
+                    closeMenu();
+                    if (item === "Logout") {
+                      router.push("/auth/login");
+                    }
+                  }}
+                  className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]"
+                >
                   <span>{item}</span>
                   <ChevronRightIcon />
                 </button>

@@ -13,6 +13,7 @@ export type FieldType =
   | "image";
 
 export type FormStatus = "draft" | "published" | "inactive" | (string & {});
+export type RegistrationType = "enterprise" | "individual" | null;
 
 export type OnboardingFormField = {
   id?: string;
@@ -40,6 +41,8 @@ export type OnboardingFormDto = {
   name: string;
   description: string;
   entity_type: "enterprise";
+  enterprise_type?: string | null;
+  registration_type?: RegistrationType;
   status: FormStatus;
   sections: OnboardingFormSection[];
   created_at?: string;
@@ -52,6 +55,8 @@ export type OnboardingFormListItem = {
   name: string;
   description: string;
   entity_type: "enterprise";
+  enterprise_type?: string | null;
+  registration_type?: RegistrationType;
   status: FormStatus;
   sections_count: number;
   fields_count: number;
@@ -74,6 +79,8 @@ export type CreateOnboardingFormPayload = {
   name: string;
   description: string;
   entity_type: "enterprise";
+  enterprise_type?: string | null;
+  registration_type?: RegistrationType;
   status?: FormStatus;
   sections: OnboardingFormSection[];
 };
@@ -82,6 +89,8 @@ export type UpdateOnboardingFormPayload = Partial<{
   name: string;
   description: string;
   entity_type: "enterprise";
+  enterprise_type: string | null;
+  registration_type: RegistrationType;
   status: FormStatus;
   sections: OnboardingFormSection[];
 }>;

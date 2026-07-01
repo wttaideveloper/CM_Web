@@ -55,7 +55,17 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-export default function ServiceDetailsPage() {
+type ServiceDetailsPageProps = {
+  enterpriseFilterId?: string;
+  listHref?: string;
+  editHrefBase?: string;
+};
+
+export function ServiceDetailsPage({
+  enterpriseFilterId,
+  listHref = "/services",
+  editHrefBase = "/services",
+}: ServiceDetailsPageProps = {}) {
   const params = useParams<{ id: string }>();
   const [service, setService] = useState<ServiceDto | null>(null);
   const [enterpriseMap, setEnterpriseMap] = useState<Record<string, EnterpriseDto>>({});
@@ -63,6 +73,7 @@ export default function ServiceDetailsPage() {
   const [dynamicAttributes, setDynamicAttributes] = useState<DynamicAttributeDto[]>([]);
   const [attributesError, setAttributesError] = useState<string | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState<string | null>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -78,11 +89,25 @@ export default function ServiceDetailsPage() {
     try {
       setIsLoading(true);
       setError(null);
+      setAccessDenied(null);
 
       const [serviceData, enterpriseData] = await Promise.all([
         getServiceById(params.id),
         getEnterprises(),
       ]);
+
+      if (enterpriseFilterId && serviceData.enterprise_id !== enterpriseFilterId) {
+        setService(null);
+        setEnterpriseMap({});
+        setLocationSummary("Not provided");
+        setLocationError(null);
+        setIsLoadingLocation(false);
+        setDynamicAttributes([]);
+        setAttributesError(null);
+        setAccessDenied("This service belongs to another enterprise.");
+        return;
+      }
+
       const nextEnterpriseMap = enterpriseData.reduce<Record<string, EnterpriseDto>>((acc, enterprise) => {
         acc[enterprise.id] = enterprise;
         return acc;
@@ -209,6 +234,23 @@ export default function ServiceDetailsPage() {
     );
   }
 
+  if (accessDenied) {
+    return (
+      <AppShell>
+        <section className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
+          <p className="text-base font-bold text-[#06201c]">Access denied.</p>
+          <p className="mt-2 text-sm text-[#52736a]">{accessDenied}</p>
+          <Link
+            href={listHref}
+            className="mt-5 inline-flex h-11 items-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
+          >
+            Back to Services
+          </Link>
+        </section>
+      </AppShell>
+    );
+  }
+
   if (!service) {
     return (
       <AppShell>
@@ -242,13 +284,13 @@ export default function ServiceDetailsPage() {
         </div>
         <div className="flex flex-wrap gap-3">
           <Link
-            href={`/services/${service.id}/edit`}
+            href={`${editHrefBase}/${service.id}/edit`}
             className="inline-flex h-12 items-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-bold text-[#1f6a58] shadow-sm"
           >
             Edit Service
           </Link>
           <Link
-            href="/services"
+            href={listHref}
             className="inline-flex h-12 items-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-bold text-[#1f6a58] shadow-sm"
           >
             Back to Services
@@ -376,4 +418,8 @@ export default function ServiceDetailsPage() {
       </section>
     </AppShell>
   );
+}
+
+export default function PublicServiceDetailsPage() {
+  return <ServiceDetailsPage />;
 }

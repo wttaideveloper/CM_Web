@@ -303,8 +303,59 @@ function LocationCard({
   );
 }
 
-export default function EnterpriseDetailsPage() {
+type EnterpriseDetailsPageProps = {
+  enterpriseId?: string;
+  editHref?: string;
+  productCreateHref?: string;
+  serviceCreateHref?: string;
+  allowEnterpriseSelector?: boolean;
+  emptyValue?: string;
+};
+
+function formatDisplayValue(value: unknown, emptyValue: string): string {
+  if (value === null || value === undefined) {
+    return emptyValue;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed || emptyValue;
+  }
+
+  if (typeof value === "number") {
+    return String(value);
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "Yes" : "No";
+  }
+
+  if (Array.isArray(value)) {
+    const cleaned: string[] = value
+      .map((item) => formatDisplayValue(item, ""))
+      .filter((item) => item);
+
+    return cleaned.length > 0 ? cleaned.join(", ") : emptyValue;
+  }
+
+  if (typeof value === "object") {
+    return emptyValue;
+  }
+
+  return String(value);
+}
+
+export function EnterpriseDetailsPage({
+  enterpriseId,
+  editHref,
+  productCreateHref = "/products/create",
+  serviceCreateHref = "/services/create",
+  allowEnterpriseSelector = true,
+  emptyValue = "N/A",
+}: EnterpriseDetailsPageProps = {}) {
   const params = useParams<{ id: string }>();
+  const resolvedEnterpriseId = enterpriseId ?? params.id;
+  const resolvedEditHref = editHref ?? `/enterprises/${resolvedEnterpriseId}/edit`;
   const [activeTab, setActiveTab] = useState(tabs[0]);
   const [enterprise, setEnterprise] = useState<EnterpriseDto | null>(null);
   const [enterpriseOptions, setEnterpriseOptions] = useState<EnterpriseDto[]>([]);
@@ -316,6 +367,7 @@ export default function EnterpriseDetailsPage() {
   const [isLoadingServices, setIsLoadingServices] = useState(true);
   const [isLoadingLocations, setIsLoadingLocations] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isNotFound, setIsNotFound] = useState(false);
   const [locationsError, setLocationsError] = useState<string | null>(null);
   const [showSelector, setShowSelector] = useState(false);
   const [hasLogoImageError, setHasLogoImageError] = useState(false);
@@ -343,26 +395,45 @@ export default function EnterpriseDetailsPage() {
   }
 
   async function fetchEnterprise() {
-    if (!params.id) {
-      await fetchEnterpriseOptions();
+    if (!resolvedEnterpriseId) {
+      if (allowEnterpriseSelector) {
+        await fetchEnterpriseOptions();
+      } else {
+        setError("Unable to load enterprise.");
+        setIsNotFound(false);
+        setShowSelector(false);
+        setIsLoading(false);
+      }
       return;
     }
 
     try {
       setIsLoading(true);
       setError(null);
+      setIsNotFound(false);
 
-      const data = await getEnterpriseById(params.id);
+      const data = await getEnterpriseById(resolvedEnterpriseId);
       setEnterprise(data);
       setShowSelector(false);
-    } catch {
-      try {
-        const data = await getEnterprises();
-        setEnterpriseOptions(data);
-        setShowSelector(true);
-        setError(null);
-      } catch (selectorError) {
-        setError(selectorError instanceof Error ? selectorError.message : "Unable to load enterprise.");
+    } catch (fetchError) {
+      const nextError =
+        fetchError instanceof Error ? fetchError.message : "Unable to load enterprise.";
+      setIsNotFound(nextError.includes("(404"));
+
+      if (allowEnterpriseSelector) {
+        try {
+          const data = await getEnterprises();
+          setEnterpriseOptions(data);
+          setShowSelector(true);
+          setError(null);
+        } catch (selectorError) {
+          setError(
+            selectorError instanceof Error ? selectorError.message : "Unable to load enterprise.",
+          );
+          setShowSelector(false);
+        }
+      } else {
+        setError(nextError);
         setShowSelector(false);
       }
     } finally {
@@ -492,7 +563,7 @@ export default function EnterpriseDetailsPage() {
 
   useEffect(() => {
     void fetchEnterprise();
-  }, [params.id]);
+  }, [resolvedEnterpriseId, allowEnterpriseSelector]);
 
   useEffect(() => {
     void fetchEnterpriseProducts();
@@ -503,19 +574,22 @@ export default function EnterpriseDetailsPage() {
   }, []);
 
   useEffect(() => {
-    if (!params.id) {
+    if (!resolvedEnterpriseId) {
       setLocations([]);
       setIsLoadingLocations(false);
       return;
     }
 
-    void fetchEnterpriseLocations(params.id);
-  }, [params.id]);
+    void fetchEnterpriseLocations(resolvedEnterpriseId);
+  }, [resolvedEnterpriseId]);
 
-  const currentId = params.id;
+  const currentId = resolvedEnterpriseId;
   const enterpriseName = enterprise ? resolveEnterpriseName(enterprise) : "Unnamed Enterprise";
   const enterpriseStatus = enterprise?.status === false ? "Inactive" : "Active";
-  const aboutText = enterprise?.business_description || enterprise?.description || "N/A";
+  const aboutText = formatDisplayValue(
+    enterprise?.business_description || enterprise?.description,
+    emptyValue,
+  );
   const enterpriseLogoSrc = formatImageUrl(enterprise?.logo_url);
   const enterpriseHeroSrc = formatImageUrl(enterprise?.business_images);
 
@@ -535,18 +609,25 @@ export default function EnterpriseDetailsPage() {
     { label: "Revenue", value: "$0" },
   ];
   const contactItems = [
-    { label: "Email", value: enterprise?.business_email || "N/A" },
-    { label: "Phone", value: enterprise?.business_phone || "N/A" },
-    { label: "Registration Number", value: enterprise?.registration_number || "N/A" },
-    { label: "Business Category", value: enterprise?.business_category || "N/A" },
-    { label: "Website", value: enterprise?.website_url || "N/A" },
-    { label: "Year Founded", value: enterprise?.year_founded || "N/A" },
+    { label: "Email", value: formatDisplayValue(enterprise?.business_email, emptyValue) },
+    { label: "Phone", value: formatDisplayValue(enterprise?.business_phone, emptyValue) },
+    {
+      label: "Registration Number",
+      value: formatDisplayValue(enterprise?.registration_number, emptyValue),
+    },
+    {
+      label: "Business Category",
+      value: formatDisplayValue(enterprise?.business_category, emptyValue),
+    },
+    { label: "Website", value: formatDisplayValue(enterprise?.website_url, emptyValue) },
+    { label: "Year Founded", value: formatDisplayValue(enterprise?.year_founded, emptyValue) },
     {
       label: "Address",
-      value: formatAddress(
+      value: formatDisplayValue(
         enterprise?.business_address ||
           enterprise?.registered_address ||
           enterprise?.communication_address,
+        emptyValue,
       ),
     },
   ];
@@ -566,21 +647,25 @@ export default function EnterpriseDetailsPage() {
     return (
       <AppShell>
         <section className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
-          <p className="text-base font-bold text-[#06201c]">Unable to load enterprise.</p>
-          <p className="mt-2 text-sm text-[#52736a]">Please try again.</p>
-          <button
-            type="button"
-            onClick={() => void fetchEnterprise()}
-            className="mt-5 h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
-          >
-            Retry
-          </button>
+          <p className="text-base font-bold text-[#06201c]">
+            {isNotFound ? "Enterprise not found." : "Unable to load enterprise."}
+          </p>
+          <p className="mt-2 text-sm text-[#52736a]">{error}</p>
+          {!isNotFound ? (
+            <button
+              type="button"
+              onClick={() => void fetchEnterprise()}
+              className="mt-5 h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
+            >
+              Retry
+            </button>
+          ) : null}
         </section>
       </AppShell>
     );
   }
 
-  if (showSelector) {
+  if (showSelector && allowEnterpriseSelector) {
     return (
       <AppShell>
         <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
@@ -658,7 +743,7 @@ export default function EnterpriseDetailsPage() {
               </div>
             </div>
             <Link
-              href={`/enterprises/${currentId}/edit`}
+              href={resolvedEditHref}
               className="inline-flex h-12 items-center rounded-full bg-white px-5 text-sm font-bold text-[#1f6a58]"
             >
               Edit
@@ -890,7 +975,7 @@ export default function EnterpriseDetailsPage() {
               className="h-12 w-full rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58] sm:max-w-sm"
             />
             <Link
-              href="/products/create"
+              href={productCreateHref}
               className="inline-flex h-12 items-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
             >
               + Add Product
@@ -920,7 +1005,7 @@ export default function EnterpriseDetailsPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h3 className="text-lg font-bold text-[#06201c]">Services</h3>
             <Link
-              href="/services/create"
+              href={serviceCreateHref}
               className="inline-flex h-12 items-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
             >
               + Add Service
@@ -957,4 +1042,8 @@ export default function EnterpriseDetailsPage() {
       ) : null}
     </AppShell>
   );
+}
+
+export default function SuperAdminEnterpriseDetailsPage() {
+  return <EnterpriseDetailsPage />;
 }

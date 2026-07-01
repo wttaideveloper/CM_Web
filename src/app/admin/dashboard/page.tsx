@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import AppShell from "@/components/layout/AppShell";
+import { CURRENT_ENTERPRISE } from "@/lib/current-enterprise";
 
 const quickActions = [
   "Create Product",
@@ -167,10 +168,10 @@ function ActivityIcon({ kind }: { kind: "package" | "service" | "grad" }) {
 
 export default function AdminDashboardPage() {
   const stats = [
-    { label: "Total Revenue", value: "$0", change: "+18.4%" },
-    { label: "Active Members", value: "0", change: "+12.3%" },
-    { label: "Services Listed", value: "4", change: "+8" },
-    { label: "Products Listed", value: "6", change: "+94" },
+    { label: "My Products", value: "6", change: "+3" },
+    { label: "My Services", value: "4", change: "+1" },
+    { label: "Bookings This Month", value: "156", change: "+22" },
+    { label: "My Revenue", value: "$0", change: "+8.2%" },
   ];
 
   return (
@@ -179,25 +180,22 @@ export default function AdminDashboardPage() {
         <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">
-              ADMIN PORTAL &middot; JUNE 2026
+              ENTERPRISE OWNER &middot; {CURRENT_ENTERPRISE.name.toUpperCase()}
             </p>
             <h2 className="mt-1 text-2xl font-bold text-[#06201c]">
-              Good morning, Sarah &#128075;
+              My Business Dashboard
             </h2>
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              className="rounded-full border border-[#d7e5df] px-4 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#f5faf7]"
-            >
-              Refresh
-            </button>
+            <span className="inline-flex items-center rounded-full bg-[#e8f6ee] px-4 py-2 text-sm font-semibold text-[#1f6a58]">
+              Active &amp; Verified
+            </span>
             <Link
               href="/admin/products/create"
               className="rounded-full bg-[#1f6a58] px-5 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#195646]"
             >
-              + Create Product
+              + Add Listing
             </Link>
           </div>
         </div>
@@ -211,13 +209,13 @@ export default function AdminDashboardPage() {
               <div className="mb-4 flex items-center justify-between">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e8f6ee] text-[#1f6a58] transition-all duration-200 group-hover:bg-white/20 group-hover:text-white">
                   {index === 0 ? (
-                    <RevenueIcon />
-                  ) : index === 1 ? (
-                    <UsersIcon />
-                  ) : index === 2 ? (
-                    <ServiceIcon />
-                  ) : (
                     <PackageIcon />
+                  ) : index === 1 ? (
+                    <ServiceIcon />
+                  ) : index === 2 ? (
+                    <CalendarIcon />
+                  ) : (
+                    <RevenueIcon />
                   )}
                 </div>
                 <span className="flex items-center gap-1 text-xs font-bold text-[#08a36b] transition-all duration-200 group-hover:text-white">

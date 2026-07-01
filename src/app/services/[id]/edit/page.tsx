@@ -190,7 +190,17 @@ function createAttributeRow(attribute?: DynamicAttributeDto): ServiceAttributeRo
   };
 }
 
-export default function EditServicePage() {
+type EditServicePageProps = {
+  enterpriseFilterId?: string;
+  listHref?: string;
+  detailHrefBase?: string;
+};
+
+export function EditServicePage({
+  enterpriseFilterId,
+  listHref = "/services",
+  detailHrefBase = "/services",
+}: EditServicePageProps = {}) {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const [service, setService] = useState<ServiceDto | null>(null);
@@ -212,6 +222,7 @@ export default function EditServicePage() {
   const [locationOptions, setLocationOptions] = useState<EnterpriseLocationDto[]>([]);
   const [isLoadingLocations, setIsLoadingLocations] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -250,8 +261,19 @@ export default function EditServicePage() {
     try {
       setIsLoading(true);
       setError(null);
+      setAccessDenied(null);
 
       const data = await getServiceById(params.id);
+
+      if (enterpriseFilterId && data.enterprise_id !== enterpriseFilterId) {
+        setService(null);
+        setLocationOptions([]);
+        setLocationId("");
+        setLocationError(null);
+        setAccessDenied("This service belongs to another enterprise.");
+        return;
+      }
+
       setService(data);
       setServiceName(data.service_name || "");
       setServiceDescription(data.service_description || "");
@@ -330,11 +352,16 @@ export default function EditServicePage() {
       return;
     }
 
+    if (!service || accessDenied) {
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       setError(null);
 
       await updateService(params.id, {
+        enterprise_id: enterpriseFilterId ?? service.enterprise_id,
         service_name: trimmedName,
         service_description: trimmedDescription,
         service_category: trimmedCategory,
@@ -399,7 +426,7 @@ export default function EditServicePage() {
         return;
       }
 
-      router.push(`/services/${params.id}`);
+      router.push(listHref);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Unable to update service.");
     } finally {
@@ -438,12 +465,29 @@ export default function EditServicePage() {
     );
   }
 
+  if (accessDenied) {
+    return (
+      <AppShell>
+        <section className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
+          <p className="text-base font-bold text-[#06201c]">Access denied.</p>
+          <p className="mt-2 text-sm text-[#52736a]">{accessDenied}</p>
+          <Link
+            href={listHref}
+            className="mt-5 inline-flex h-11 items-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
+          >
+            Back to Services
+          </Link>
+        </section>
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3">
           <Link
-            href={`/services/${params.id}`}
+            href={`${detailHrefBase}/${params.id}`}
             className="mt-1 flex h-10 w-10 items-center justify-center rounded-full border border-[#d7e5df] text-[#52736a]"
           >
             &larr;
@@ -455,7 +499,7 @@ export default function EditServicePage() {
         </div>
         <div className="flex gap-3">
           <Link
-            href={`/services/${params.id}`}
+            href={`${detailHrefBase}/${params.id}`}
             className="inline-flex h-12 items-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-bold text-[#1f6a58] shadow-sm"
           >
             Cancel
@@ -888,4 +932,8 @@ export default function EditServicePage() {
       </section>
     </AppShell>
   );
+}
+
+export default function PublicEditServicePage() {
+  return <EditServicePage />;
 }

@@ -132,7 +132,21 @@ function mapProductToListItem(
   };
 }
 
-export default function ProductsPage() {
+type ProductsPageProps = {
+  enterpriseFilterId?: string;
+  createHref?: string;
+  detailHrefBase?: string;
+  editHrefBase?: string;
+  enterpriseName?: string;
+};
+
+export function ProductsPage({
+  enterpriseFilterId,
+  createHref = "/products/create",
+  detailHrefBase = "/products",
+  editHrefBase = "/products",
+  enterpriseName,
+}: ProductsPageProps = {}) {
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [products, setProducts] = useState<ProductListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -159,8 +173,19 @@ export default function ProductsPage() {
       },
       {});
 
+      const filteredProducts = enterpriseFilterId
+        ? productData.filter((product) => product.enterprise_id === enterpriseFilterId)
+        : productData;
+
       setProducts(
-        productData.map((product) => mapProductToListItem(product, nextEnterpriseNameMap)),
+        filteredProducts.map((product) =>
+          mapProductToListItem(
+            product,
+            enterpriseName
+              ? { [product.enterprise_id]: enterpriseName }
+              : nextEnterpriseNameMap,
+          ),
+        ),
       );
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Unable to load products.");
@@ -184,7 +209,7 @@ export default function ProductsPage() {
           </p>
         </div>
         <Link
-          href="/products/create"
+          href={createHref}
           className="inline-flex h-12 items-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
         >
           + Add Product
@@ -302,14 +327,14 @@ export default function ProductsPage() {
                     <td className="px-3">
                       <div className="flex gap-1.5 text-[#52736a]">
                         <Link
-                          href={`/products/${product.id}`}
+                          href={`${detailHrefBase}/${product.id}`}
                           className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7]"
                           aria-label={`View ${product.name}`}
                         >
                           <EyeIcon />
                         </Link>
                         <Link
-                          href={`/products/${product.id}/edit`}
+                          href={`${editHrefBase}/${product.id}/edit`}
                           className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7]"
                           aria-label={`Edit ${product.name}`}
                         >
@@ -388,4 +413,8 @@ export default function ProductsPage() {
       )}
     </AppShell>
   );
+}
+
+export default function PublicProductsPage() {
+  return <ProductsPage />;
 }

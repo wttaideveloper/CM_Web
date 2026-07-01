@@ -48,6 +48,7 @@ export type CreateServicePayload = {
 };
 
 export type UpdateServicePayload = Partial<{
+  enterprise_id: string;
   location_id: string;
   service_name: string;
   service_description: string;

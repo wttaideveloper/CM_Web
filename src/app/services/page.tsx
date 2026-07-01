@@ -104,7 +104,21 @@ function mapServiceToListItem(
   };
 }
 
-export default function ServicesPage() {
+type ServicesPageProps = {
+  enterpriseFilterId?: string;
+  createHref?: string;
+  detailHrefBase?: string;
+  editHrefBase?: string;
+  enterpriseName?: string;
+};
+
+export function ServicesPage({
+  enterpriseFilterId,
+  createHref = "/services/create",
+  detailHrefBase = "/services",
+  editHrefBase = "/services",
+  enterpriseName,
+}: ServicesPageProps = {}) {
   const [services, setServices] = useState<ServiceListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -130,7 +144,20 @@ export default function ServicesPage() {
       },
       {});
 
-      setServices(serviceData.map((service) => mapServiceToListItem(service, nextEnterpriseNameMap)));
+      const filteredServices = enterpriseFilterId
+        ? serviceData.filter((service) => service.enterprise_id === enterpriseFilterId)
+        : serviceData;
+
+      setServices(
+        filteredServices.map((service) =>
+          mapServiceToListItem(
+            service,
+            enterpriseName
+              ? { [service.enterprise_id]: enterpriseName }
+              : nextEnterpriseNameMap,
+          ),
+        ),
+      );
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Unable to load services.");
       setServices([]);
@@ -153,7 +180,7 @@ export default function ServicesPage() {
           </p>
         </div>
         <Link
-          href="/services/create"
+          href={createHref}
           className="inline-flex h-12 items-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
         >
           + Add Service
@@ -251,14 +278,14 @@ export default function ServicesPage() {
                     <td className="px-3">
                       <div className="flex gap-1.5 text-[#52736a]">
                         <Link
-                          href={`/services/${service.id}`}
+                          href={`${detailHrefBase}/${service.id}`}
                           className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7]"
                           aria-label={`View ${service.name}`}
                         >
                           <EyeIcon />
                         </Link>
                         <Link
-                          href={`/services/${service.id}/edit`}
+                          href={`${editHrefBase}/${service.id}/edit`}
                           className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7]"
                           aria-label={`Edit ${service.name}`}
                         >
@@ -275,4 +302,8 @@ export default function ServicesPage() {
       </section>
     </AppShell>
   );
+}
+
+export default function PublicServicesPage() {
+  return <ServicesPage />;
 }

@@ -6,6 +6,14 @@ import { useState } from "react";
 export default function LoginPage() {
   const router = useRouter();
   const [loginType, setLoginType] = useState<"super-admin" | "admin">("super-admin");
+  const isSuperAdmin = loginType === "super-admin";
+  const emailPlaceholder = isSuperAdmin ? "admin@invigoratehealth.com" : "owner@yourcompany.com";
+  const subtitle = isSuperAdmin
+    ? "Sign in to the Super Admin portal"
+    : "Sign in to your Enterprise Owner portal";
+  const buttonLabel = isSuperAdmin
+    ? "Sign In as Super Admin"
+    : "Sign In as Enterprise Owner";
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -95,72 +103,67 @@ export default function LoginPage() {
         </section>
 
         <section className="flex min-h-screen items-center justify-center px-6 py-12 sm:px-10 lg:h-screen lg:min-h-0 lg:px-16 lg:py-8">
-          <div className="w-full max-w-[500px]">
-            <div>
-              <div
-                className="mb-5 inline-flex items-center rounded-full border border-[#dbe8e3] bg-[#f6fbf8] p-0.5 shadow-[0_1px_0_rgba(7,53,45,0.03)]"
-                role="tablist"
-                aria-label="Login type"
+          <div className="w-full max-w-[470px]">
+            <div className="mb-8 inline-flex rounded-full bg-[#e9f4ee] p-1 shadow-[0_1px_0_rgba(7,53,45,0.03)]">
+              <button
+                type="button"
+                onClick={() => setLoginType("super-admin")}
+                className={`rounded-full px-5 py-2.5 text-sm font-semibold transition ${
+                  isSuperAdmin
+                    ? "bg-white text-[#1f6a58] shadow-sm"
+                    : "text-[#6f8c84] hover:text-[#35544b]"
+                }`}
+                aria-pressed={isSuperAdmin}
               >
-                <button
-                  type="button"
-                  onClick={() => setLoginType("super-admin")}
-                  className={`rounded-full px-3 py-1.5 text-[11px] font-semibold leading-4 transition ${
-                    loginType === "super-admin"
-                      ? "bg-[#1f6a58] text-white shadow-sm"
-                      : "text-[#6f8c84] hover:bg-white hover:text-[#35544b]"
-                  }`}
-                  aria-pressed={loginType === "super-admin"}
-                >
-                  Super Admin Login
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLoginType("admin")}
-                  className={`rounded-full px-3 py-1.5 text-[11px] font-semibold leading-4 transition ${
-                    loginType === "admin"
-                      ? "bg-[#1f6a58] text-white shadow-sm"
-                      : "text-[#6f8c84] hover:bg-white hover:text-[#35544b]"
-                  }`}
-                  aria-pressed={loginType === "admin"}
-                >
-                  Admin Login
-                </button>
-              </div>
-              <h2 className="text-[32px] font-extrabold tracking-normal text-[#041a16] sm:text-[34px] lg:text-[34px]">
-                Welcome back
-              </h2>
-              <p className="mt-2 text-xl text-[#55746b] lg:text-xl">
-                Sign in to your enterprise portal
-              </p>
+                Super Admin
+              </button>
+              <button
+                type="button"
+                onClick={() => setLoginType("admin")}
+                className={`rounded-full px-5 py-2.5 text-sm font-semibold transition ${
+                  !isSuperAdmin
+                    ? "bg-white text-[#1f6a58] shadow-sm"
+                    : "text-[#6f8c84] hover:text-[#35544b]"
+                }`}
+                aria-pressed={!isSuperAdmin}
+              >
+                Enterprise Owner
+              </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="mt-11 space-y-6 lg:mt-9 lg:space-y-4">
+            <div>
+              <h2 className="text-[32px] font-extrabold tracking-tight text-[#041a16] sm:text-[34px]">
+                Welcome back
+              </h2>
+              <p className="mt-2 text-lg text-[#55746b]">{subtitle}</p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="mt-8 space-y-5">
               <label className="block">
-                <span className="text-base font-bold text-[#051915]">Email Address</span>
+                <span className="text-sm font-bold text-[#051915]">Email Address</span>
                 <input
                   type="email"
-                  placeholder="you@company.com"
-                  className="mt-3 h-14 w-full rounded-[20px] border border-[#c9ddd7] bg-[#f1f7f4] px-5 text-xl text-[#173b34] outline-none transition placeholder:text-[#8aa19a] focus:border-[#226b58] focus:ring-4 focus:ring-[#226b58]/10 lg:h-[52px] lg:text-lg"
+                  placeholder={emailPlaceholder}
+                  className="mt-2 h-14 w-full rounded-[18px] border border-[#c9ddd7] bg-[#f1f7f4] px-5 text-base text-[#173b34] outline-none transition placeholder:text-[#8aa19a] focus:border-[#226b58] focus:ring-4 focus:ring-[#226b58]/10"
                 />
               </label>
 
               <label className="block">
                 <span className="flex items-center justify-between gap-4">
-                  <span className="text-base font-bold text-[#051915]">Password</span>
-                  <a href="#" className="text-base font-medium text-[#0b5b4e]">
-                    Forgot password?
+                  <span className="text-sm font-bold text-[#051915]">Password</span>
+                  <a href="#" className="text-sm font-semibold text-[#0b5b4e]">
+                    Forgot?
                   </a>
                 </span>
-                <span className="relative mt-3 block">
+                <span className="relative mt-2 block">
                   <input
                     type="password"
                     placeholder="Enter your password"
-                    className="h-14 w-full rounded-[20px] border border-[#c9ddd7] bg-[#f1f7f4] px-5 pr-14 text-xl text-[#173b34] outline-none transition placeholder:text-[#8aa19a] focus:border-[#226b58] focus:ring-4 focus:ring-[#226b58]/10 lg:h-[52px] lg:text-lg"
+                    className="h-14 w-full rounded-[18px] border border-[#c9ddd7] bg-[#f1f7f4] px-5 pr-14 text-base text-[#173b34] outline-none transition placeholder:text-[#8aa19a] focus:border-[#226b58] focus:ring-4 focus:ring-[#226b58]/10"
                   />
                   <svg
                     aria-hidden="true"
-                    className="absolute right-6 top-1/2 h-6 w-6 -translate-y-1/2 text-[#6b8b83]"
+                    className="absolute right-5 top-1/2 h-5 w-5 -translate-y-1/2 text-[#6b8b83]"
                     viewBox="0 0 24 24"
                     fill="none"
                     xmlns="http://www.w3.org/2000/svg"
@@ -184,47 +187,30 @@ export default function LoginPage() {
                 </span>
               </label>
 
-              <label className="flex items-center gap-4 text-xl font-medium text-[#58736d] lg:text-lg">
-                <input
-                  type="checkbox"
-                  className="h-5 w-5 rounded border-[#6b736f] accent-[#1d6b58]"
-                />
-                <span>Keep me signed in</span>
-              </label>
-
               <button
                 type="submit"
-                className="h-[58px] w-full rounded-[20px] bg-[#1f6a58] text-xl font-bold text-white shadow-[0_6px_10px_rgba(0,0,0,0.18)] transition hover:bg-[#185746] focus:outline-none focus:ring-4 focus:ring-[#226b58]/20 lg:h-[54px] lg:text-lg"
+                className="h-14 w-full rounded-[18px] bg-[#1f6a58] text-base font-bold text-white shadow-[0_6px_10px_rgba(0,0,0,0.18)] transition hover:bg-[#185746] focus:outline-none focus:ring-4 focus:ring-[#226b58]/20"
               >
-                Sign In to Portal
+                {buttonLabel}
               </button>
             </form>
 
-            <div className="mt-9 text-center lg:mt-7">
-              <p className="text-base text-[#4c7168]">or continue with</p>
-              <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:mt-5">
-                <button className="flex h-14 items-center justify-center gap-4 rounded-[18px] border border-[#e1e6e8] bg-white text-xl font-semibold text-[#071d19] transition hover:border-[#cfd8d7] lg:h-[52px] lg:text-lg">
-                  <span className="font-bold text-[#4285f4]">G</span>
-                  <span>Google</span>
-                </button>
-                <button className="flex h-14 items-center justify-center gap-4 rounded-[18px] border border-[#e1e6e8] bg-white text-xl font-semibold text-[#071d19] transition hover:border-[#cfd8d7] lg:h-[52px] lg:text-lg">
-                  <span className="grid h-5 w-5 grid-cols-2 gap-0.5">
-                    <span className="bg-[#f25022]" />
-                    <span className="bg-[#7fba00]" />
-                    <span className="bg-[#00a4ef]" />
-                    <span className="bg-[#ffb900]" />
-                  </span>
-                  <span>Microsoft</span>
-                </button>
-              </div>
+            <div className="mt-6">
+              {isSuperAdmin ? (
+                <div className="rounded-2xl border border-[#f0c36a] bg-[#fff8e6] px-5 py-4 text-sm text-[#7a4b00]">
+                  <p className="font-bold">Super Admin Access</p>
+                  <p className="mt-1">This portal is restricted to authorized administrators only.</p>
+                  <p className="mt-1">All actions are logged.</p>
+                </div>
+              ) : (
+                <a
+                  href="#"
+                  className="inline-flex items-center text-sm font-semibold text-[#0b5b4e] hover:underline"
+                >
+                  Not registered yet? Apply for access &rarr;
+                </a>
+              )}
             </div>
-
-            <p className="mt-10 text-center text-xl text-[#4c7168] lg:mt-7 lg:text-lg">
-              New enterprise?{" "}
-              <a href="#" className="font-bold text-[#0b5b4e]">
-                Request access &rarr;
-              </a>
-            </p>
           </div>
         </section>
       </div>

@@ -8,6 +8,7 @@ import { getEnterpriseLocations } from "@/services/enterprise-location.service";
 import { createDynamicAttribute } from "@/services/attribute.service";
 import { getEnterprises } from "@/services/enterprise.service";
 import { createProduct } from "@/services/product.service";
+import { CURRENT_ENTERPRISE } from "@/lib/current-enterprise";
 
 const tabs = ["Product Info", "Pricing", "Images", "Review"];
 
@@ -29,6 +30,11 @@ type CustomAttributeRow = {
   attribute_name: string;
   attribute_value: string;
   attribute_type: string;
+};
+
+type ProductCreatePageProps = {
+  mode?: "super-admin" | "enterprise-admin";
+  redirectTo?: string;
 };
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
@@ -105,10 +111,13 @@ function createAttributeRow(): CustomAttributeRow {
   };
 }
 
-export default function CreateProductPage() {
+export function ProductCreatePage({ mode = "super-admin", redirectTo }: ProductCreatePageProps = {}) {
   const router = useRouter();
+  const isEnterpriseAdmin = mode === "enterprise-admin";
   const [activeTab, setActiveTab] = useState(tabs[0]);
-  const [enterpriseId, setEnterpriseId] = useState("");
+  const [enterpriseId, setEnterpriseId] = useState(() =>
+    isEnterpriseAdmin ? CURRENT_ENTERPRISE.id : "",
+  );
   const [productName, setProductName] = useState("");
   const [productDescription, setProductDescription] = useState("");
   const [productCategory, setProductCategory] = useState("Equipment");
@@ -155,9 +164,11 @@ export default function CreateProductPage() {
     ? `₹${parsedReviewPrice.toFixed(2)}`
     : "Not provided";
   const reviewEnterpriseName =
-    selectedEnterprise?.business_legal_name ||
-    selectedEnterprise?.business_short_name ||
-    "Unnamed Enterprise";
+    (isEnterpriseAdmin
+      ? CURRENT_ENTERPRISE.name
+      : selectedEnterprise?.business_legal_name ||
+        selectedEnterprise?.business_short_name ||
+        "Unnamed Enterprise");
   const reviewLocationName = selectedLocation
     ? [
         selectedLocation.location_name?.trim(),
@@ -168,6 +179,19 @@ export default function CreateProductPage() {
     : "";
 
   async function fetchEnterprises() {
+    if (isEnterpriseAdmin) {
+      setEnterpriseOptions([
+        {
+          id: CURRENT_ENTERPRISE.id,
+          business_legal_name: CURRENT_ENTERPRISE.name,
+          business_short_name: CURRENT_ENTERPRISE.name,
+        },
+      ]);
+      setEnterpriseId(CURRENT_ENTERPRISE.id);
+      setIsLoadingEnterprises(false);
+      return;
+    }
+
     try {
       setIsLoadingEnterprises(true);
       setError(null);
@@ -210,7 +234,7 @@ export default function CreateProductPage() {
 
   useEffect(() => {
     void fetchEnterprises();
-  }, []);
+  }, [isEnterpriseAdmin]);
 
   useEffect(() => {
     setLocationId("");
@@ -256,7 +280,7 @@ export default function CreateProductPage() {
       setError(null);
 
       const createdProduct = await createProduct({
-        enterprise_id: trimmedEnterpriseId,
+        enterprise_id: trimmedEnterpriseId || CURRENT_ENTERPRISE.id,
         ...(locationId.trim() ? { location_id: locationId.trim() } : {}),
         product_name: trimmedProductName,
         product_description: trimmedProductDescription,
@@ -303,7 +327,7 @@ export default function CreateProductPage() {
         }
       }
 
-      router.push("/products");
+      router.push(redirectTo || (isEnterpriseAdmin ? "/admin/products" : "/products"));
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Unable to create product.");
     } finally {
@@ -386,23 +410,32 @@ export default function CreateProductPage() {
               </label>
               <label className="block">
                 <FieldLabel>Enterprise*</FieldLabel>
-                <select
-                  className={inputClass()}
-                  value={enterpriseId}
-                  onChange={(event) => setEnterpriseId(event.target.value)}
-                  disabled={isLoadingEnterprises || enterpriseOptions.length === 0}
-                >
-                  <option value="">
-                    {isLoadingEnterprises ? "Loading enterprises..." : "Select enterprise"}
-                  </option>
-                  {enterpriseOptions.map((enterprise) => (
-                    <option key={enterprise.id} value={enterprise.id}>
-                      {enterprise.business_legal_name ||
-                        enterprise.business_short_name ||
-                        "Unnamed Enterprise"}
+                {isEnterpriseAdmin ? (
+                  <input
+                    type="text"
+                    value={CURRENT_ENTERPRISE.name}
+                    readOnly
+                    className={inputClass()}
+                  />
+                ) : (
+                  <select
+                    className={inputClass()}
+                    value={enterpriseId}
+                    onChange={(event) => setEnterpriseId(event.target.value)}
+                    disabled={isLoadingEnterprises || enterpriseOptions.length === 0}
+                  >
+                    <option value="">
+                      {isLoadingEnterprises ? "Loading enterprises..." : "Select enterprise"}
                     </option>
-                  ))}
-                </select>
+                    {enterpriseOptions.map((enterprise) => (
+                      <option key={enterprise.id} value={enterprise.id}>
+                        {enterprise.business_legal_name ||
+                          enterprise.business_short_name ||
+                          "Unnamed Enterprise"}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </label>
               <label className="block">
                 <FieldLabel>Location</FieldLabel>
@@ -932,4 +965,8 @@ export default function CreateProductPage() {
       </section>
     </AppShell>
   );
+}
+
+export default function PublicCreateProductPage() {
+  return <ProductCreatePage />;
 }

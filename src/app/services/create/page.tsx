@@ -8,6 +8,7 @@ import { getEnterpriseLocations } from "@/services/enterprise-location.service";
 import { createDynamicAttribute } from "@/services/attribute.service";
 import { getEnterprises } from "@/services/enterprise.service";
 import { createService } from "@/services/service.service";
+import { CURRENT_ENTERPRISE } from "@/lib/current-enterprise";
 import type { EnterpriseDto } from "@/types/enterprise.types";
 import type { EnterpriseLocationDto } from "@/types/location.types";
 import type { AvailabilityScheduleItem } from "@/types/service.types";
@@ -156,6 +157,11 @@ type CustomAttributeRow = {
   attribute_type: string;
 };
 
+type ServiceCreatePageProps = {
+  mode?: "super-admin" | "enterprise-admin";
+  redirectTo?: string;
+};
+
 function createAttributeRow(): CustomAttributeRow {
   return {
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -165,11 +171,14 @@ function createAttributeRow(): CustomAttributeRow {
   };
 }
 
-export default function CreateServicePage() {
+export function ServiceCreatePage({ mode = "super-admin", redirectTo }: ServiceCreatePageProps = {}) {
   const router = useRouter();
+  const isEnterpriseAdmin = mode === "enterprise-admin";
   const [activeTab, setActiveTab] = useState(tabs[0]);
   const [weekdays, setWeekdays] = useState(initialWeekdays);
-  const [enterpriseId, setEnterpriseId] = useState("");
+  const [enterpriseId, setEnterpriseId] = useState(() =>
+    isEnterpriseAdmin ? CURRENT_ENTERPRISE.id : "",
+  );
   const [serviceName, setServiceName] = useState("");
   const [serviceDescription, setServiceDescription] = useState("");
   const [serviceCategory, setServiceCategory] = useState("IT Services");
@@ -208,10 +217,12 @@ export default function CreateServicePage() {
     isServiceDurationValid;
 
   const reviewEnterpriseName =
-    selectedEnterprise?.business_legal_name ||
-    selectedEnterprise?.business_short_name ||
-    selectedEnterprise?.name ||
-    "Unnamed Enterprise";
+    (isEnterpriseAdmin
+      ? CURRENT_ENTERPRISE.name
+      : selectedEnterprise?.business_legal_name ||
+        selectedEnterprise?.business_short_name ||
+        selectedEnterprise?.name ||
+        "Unnamed Enterprise");
   const selectedLocation = locationOptions.find((location) => location.id === locationId);
   const reviewDeliveryFormat = resolveOptionLabel(deliveryFormat, deliveryFormatOptions);
   const reviewCurrency = resolveOptionLabel(currency, currencyOptions);
@@ -230,6 +241,20 @@ export default function CreateServicePage() {
   );
 
   async function fetchEnterprises() {
+    if (isEnterpriseAdmin) {
+      setEnterpriseOptions([
+        {
+          id: CURRENT_ENTERPRISE.id,
+          business_legal_name: CURRENT_ENTERPRISE.name,
+          business_short_name: CURRENT_ENTERPRISE.name,
+          name: CURRENT_ENTERPRISE.name,
+        },
+      ]);
+      setEnterpriseId(CURRENT_ENTERPRISE.id);
+      setIsLoadingEnterprises(false);
+      return;
+    }
+
     try {
       setIsLoadingEnterprises(true);
       setError(null);
@@ -272,7 +297,7 @@ export default function CreateServicePage() {
 
   useEffect(() => {
     void fetchEnterprises();
-  }, []);
+  }, [isEnterpriseAdmin]);
 
   useEffect(() => {
     setLocationId("");
@@ -314,7 +339,7 @@ export default function CreateServicePage() {
       setError(null);
 
       const createdService = await createService({
-        enterprise_id: trimmedEnterpriseId,
+        enterprise_id: trimmedEnterpriseId || CURRENT_ENTERPRISE.id,
         ...(locationId.trim() ? { location_id: locationId.trim() } : {}),
         service_name: trimmedServiceName,
         service_description: trimmedServiceDescription,
@@ -355,7 +380,7 @@ export default function CreateServicePage() {
         }
       }
 
-      router.push("/services");
+      router.push(redirectTo || (isEnterpriseAdmin ? "/admin/services" : "/services"));
     } catch (submitError) {
       console.error(submitError);
       setError(submitError instanceof Error ? submitError.message : "Unable to create service.");
@@ -443,22 +468,33 @@ export default function CreateServicePage() {
               </label>
               <label className="block">
                 <FieldLabel>Enterprise*</FieldLabel>
-                <select
-                  className={selectClass()}
-                  value={enterpriseId}
-                  onChange={(event) => setEnterpriseId(event.target.value)}
-                  disabled={isLoadingEnterprises || enterpriseOptions.length === 0}
-                >
-                  <option value="">{isLoadingEnterprises ? "Loading enterprises..." : "Select enterprise"}</option>
-                  {enterpriseOptions.map((enterprise) => (
-                    <option key={enterprise.id} value={enterprise.id}>
-                      {enterprise.business_legal_name ||
-                        enterprise.business_short_name ||
-                        enterprise.name ||
-                        "Unnamed Enterprise"}
+                {isEnterpriseAdmin ? (
+                  <input
+                    type="text"
+                    value={CURRENT_ENTERPRISE.name}
+                    readOnly
+                    className={selectClass()}
+                  />
+                ) : (
+                  <select
+                    className={selectClass()}
+                    value={enterpriseId}
+                    onChange={(event) => setEnterpriseId(event.target.value)}
+                    disabled={isLoadingEnterprises || enterpriseOptions.length === 0}
+                  >
+                    <option value="">
+                      {isLoadingEnterprises ? "Loading enterprises..." : "Select enterprise"}
                     </option>
-                  ))}
-                </select>
+                    {enterpriseOptions.map((enterprise) => (
+                      <option key={enterprise.id} value={enterprise.id}>
+                        {enterprise.business_legal_name ||
+                          enterprise.business_short_name ||
+                          enterprise.name ||
+                          "Unnamed Enterprise"}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </label>
               <label className="block">
                 <FieldLabel>Location</FieldLabel>
@@ -966,4 +1002,8 @@ export default function CreateServicePage() {
       </section>
     </AppShell>
   );
+}
+
+export default function PublicCreateServicePage() {
+  return <ServiceCreatePage />;
 }

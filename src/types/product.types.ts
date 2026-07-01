@@ -46,6 +46,7 @@ export type CreateProductPayload = {
 };
 
 export type UpdateProductPayload = Partial<{
+  enterprise_id: string;
   location_id: string;
   product_name: string;
   product_description: string;
