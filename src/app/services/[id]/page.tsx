@@ -8,7 +8,7 @@ import AppShell from "@/components/layout/AppShell";
 import { getDynamicAttributes } from "@/services/attribute.service";
 import { getEnterprises } from "@/services/enterprise.service";
 import { getLocationById } from "@/services/enterprise-location.service";
-import { activateService, deactivateService, getServiceById } from "@/services/service.service";
+import { activateService, getServiceById } from "@/services/service.service";
 import type { DynamicAttributeDto } from "@/types/attribute.types";
 import type { EnterpriseDto } from "@/types/enterprise.types";
 import type { EnterpriseLocationDto } from "@/types/location.types";
@@ -163,27 +163,6 @@ export function ServiceDetailsPage({
     void fetchService();
   }, [params.id]);
 
-  async function handleDeactivate() {
-    if (!service || isTogglingStatus) {
-      return;
-    }
-
-    const confirmed = window.confirm("Are you sure you want to deactivate this service?");
-    if (!confirmed) {
-      return;
-    }
-
-    try {
-      setIsTogglingStatus(true);
-      await deactivateService(service.id);
-      setService((current) => (current ? { ...current, service_status: false } : current));
-    } catch {
-      window.alert("Unable to deactivate service.");
-    } finally {
-      setIsTogglingStatus(false);
-    }
-  }
-
   async function handleActivate() {
     if (!service || isTogglingStatus) {
       return;
@@ -295,16 +274,7 @@ export function ServiceDetailsPage({
           >
             Back to Services
           </Link>
-          {serviceStatus === "Active" ? (
-            <button
-              type="button"
-              onClick={() => void handleDeactivate()}
-              disabled={isTogglingStatus}
-              className="inline-flex h-12 items-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-bold text-[#b42318] shadow-sm disabled:opacity-60"
-            >
-              Deactivate
-            </button>
-          ) : (
+          {serviceStatus !== "Active" ? (
             <button
               type="button"
               onClick={() => void handleActivate()}
@@ -313,7 +283,7 @@ export function ServiceDetailsPage({
             >
               Activate
             </button>
-          )}
+          ) : null}
         </div>
       </div>
 

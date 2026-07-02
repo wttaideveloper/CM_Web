@@ -8,7 +8,7 @@ import AppShell from "@/components/layout/AppShell";
 import { getDynamicAttributes } from "@/services/attribute.service";
 import { getEnterprises } from "@/services/enterprise.service";
 import { getLocationById } from "@/services/enterprise-location.service";
-import { activateProduct, deactivateProduct, getProductById } from "@/services/product.service";
+import { activateProduct, getProductById } from "@/services/product.service";
 import type { DynamicAttributeDto } from "@/types/attribute.types";
 import type { EnterpriseDto } from "@/types/enterprise.types";
 import type { EnterpriseLocationDto } from "@/types/location.types";
@@ -206,27 +206,6 @@ export function ProductDetailsPage({
     void fetchProduct();
   }, [params.id]);
 
-  async function handleDeactivate() {
-    if (!product || isTogglingStatus) {
-      return;
-    }
-
-    const confirmed = window.confirm("Are you sure you want to deactivate this product?");
-    if (!confirmed) {
-      return;
-    }
-
-    try {
-      setIsTogglingStatus(true);
-      await deactivateProduct(product.id);
-      setProduct((current) => (current ? { ...current, product_status: false } : current));
-    } catch {
-      window.alert("Unable to deactivate product.");
-    } finally {
-      setIsTogglingStatus(false);
-    }
-  }
-
   async function handleActivate() {
     if (!product || isTogglingStatus) {
       return;
@@ -329,16 +308,7 @@ export function ProductDetailsPage({
           >
             Edit Product
           </Link>
-          {productStatus === "Active" ? (
-            <button
-              type="button"
-              onClick={() => void handleDeactivate()}
-              disabled={isTogglingStatus}
-              className="inline-flex h-12 items-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-bold text-[#b42318] shadow-sm disabled:opacity-60"
-            >
-              Deactivate
-            </button>
-          ) : (
+          {productStatus !== "Active" ? (
             <button
               type="button"
               onClick={() => void handleActivate()}
@@ -347,7 +317,7 @@ export function ProductDetailsPage({
             >
               Activate
             </button>
-          )}
+          ) : null}
           <Link
             href={listHref}
             className="inline-flex h-12 items-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-bold text-[#1f6a58] shadow-sm"

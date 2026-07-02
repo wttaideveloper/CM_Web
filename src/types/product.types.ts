@@ -76,7 +76,7 @@ export type ProductListItem = {
   category: string;
   price: string;
   image: string;
-  status: "Active" | "Inactive";
+  status: "Active" | "Inactive" | "Deactivated";
   enterprise: string;
   stock: string;
   sales: string;

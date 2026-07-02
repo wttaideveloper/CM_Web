@@ -16,6 +16,10 @@ function statusClass(status: string) {
     return "bg-[#e8f6ee] text-[#16825b]";
   }
 
+  if (status === "Deactivated") {
+    return "bg-[#fff1f0] text-[#b42318]";
+  }
+
   if (status === "Out of Stock") {
     return "bg-[#fff1f0] text-[#b42318]";
   }
@@ -117,6 +121,13 @@ function mapProductToListItem(
   product: ProductDto,
   enterpriseNameMap: Record<string, string>,
 ): ProductListItem {
+  const status =
+    product.publish_status?.trim().toLowerCase() === "deactivated"
+      ? "Deactivated"
+      : product.product_status === false
+        ? "Inactive"
+        : "Active";
+
   return {
     id: product.id,
     enterpriseId: product.enterprise_id,
@@ -125,7 +136,7 @@ function mapProductToListItem(
     category: product.product_category || "N/A",
     price: `₹${Number.isFinite(product.product_price) ? product.product_price.toFixed(2) : "0.00"}`,
     image: product.product_images || "",
-    status: product.product_status === false ? "Inactive" : "Active",
+    status,
     enterprise: enterpriseNameMap[product.enterprise_id] || "N/A",
     stock: product.stock_quantity !== undefined ? String(product.stock_quantity) : "N/A",
     sales: "—",
@@ -398,6 +409,8 @@ export function ProductsPage({
                         className={`rounded-full px-3 py-1 text-xs font-bold ${
                           product.status === "Active"
                             ? "bg-[#e8f6ee] text-[#16825b]"
+                            : product.status === "Deactivated"
+                              ? "bg-[#fff1f0] text-[#b42318]"
                             : "bg-[#f1f4f3] text-[#6b7f79]"
                         }`}
                       >

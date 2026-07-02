@@ -78,16 +78,8 @@ export async function updateService(
   return response.json();
 }
 
-export async function deactivateService(id: string): Promise<string> {
-  const response = await fetch(`${API_BASE_URL}/services/${id}`, {
-    method: "DELETE",
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to deactivate service (${response.status} ${response.statusText}).`);
-  }
-
-  return response.text();
+export async function deactivateService(id: string): Promise<ServiceDto> {
+  return updateService(id, { service_status: false });
 }
 
 export async function activateService(id: string): Promise<ServiceDto> {
