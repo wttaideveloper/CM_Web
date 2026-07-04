@@ -24,6 +24,20 @@ const statusFilters: Array<{ label: string; value: FormStatus | "" }> = [
   { label: "Inactive", value: "inactive" },
 ];
 
+const enterpriseTypeOptions = [
+  "Healthcare",
+  "Fitness & Wellness",
+  "Nutrition",
+  "Mental Health",
+  "Education",
+  "Retail",
+];
+
+const registrationTypeOptions = [
+  { label: "Enterprise", value: "enterprise" },
+  { label: "Individual", value: "individual" },
+] as const;
+
 function statusBadgeClass(status: FormStatus) {
   if (status === "draft") {
     return "bg-[#f1f4f3] text-[#6b7f79]";
@@ -46,6 +60,26 @@ function statusLabel(status: FormStatus) {
   }
 
   return "Published";
+}
+
+function getRegistrationTypeLabel(value?: string | null) {
+  if (value === "enterprise") {
+    return "Enterprise";
+  }
+
+  if (value === "individual") {
+    return "Individual";
+  }
+
+  return "No registration type";
+}
+
+function hasEnterpriseType(value?: string | null) {
+  return Boolean(value && value.trim());
+}
+
+function getEnterpriseTypeLabel(value?: string | null) {
+  return hasEnterpriseType(value) ? value!.trim() : "No enterprise type";
 }
 
 function formatDate(value?: string) {
@@ -134,14 +168,37 @@ function FormCard({
     <article className="flex h-full flex-col rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:border-[#bcd8cf] hover:shadow-[0_14px_30px_rgba(15,63,52,0.12)]">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <h3 className="min-w-0 flex-1 min-h-[58px] overflow-hidden text-[16px] font-extrabold leading-[1.2] tracking-tight text-[#031d18] [display:-webkit-box] [-webkit-line-clamp:3] [-webkit-box-orient:vertical]">
+          <h3 className="min-w-0 min-h-[58px] overflow-hidden text-[16px] font-extrabold leading-[1.2] tracking-tight text-[#031d18] [display:-webkit-box] [-webkit-line-clamp:3] [-webkit-box-orient:vertical]">
             {form.name}
           </h3>
+
           <p className="mt-2 min-h-[48px] text-[14px] leading-[1.45] text-[#41675e] line-clamp-2">
             {form.description || "—"}
           </p>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                hasEnterpriseType(form.enterprise_type)
+                  ? "bg-[#eef6f2] text-[#1f6a58]"
+                  : "bg-[#f1f4f3] text-[#6b7f79]"
+              }`}
+            >
+              {getEnterpriseTypeLabel(form.enterprise_type)}
+            </span>
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                form.registration_type === "enterprise" || form.registration_type === "individual"
+                  ? "bg-[#eef6f2] text-[#1f6a58]"
+                  : "bg-[#f1f4f3] text-[#6b7f79]"
+              }`}
+            >
+              {getRegistrationTypeLabel(form.registration_type)}
+            </span>
+          </div>
         </div>
-        <span className={`shrink-0 inline-flex rounded-full px-3 py-1 text-xs font-bold ${statusBadgeClass(form.status)}`}>
+
+        <span className={`inline-flex shrink-0 rounded-full px-3 py-1 text-xs font-bold ${statusBadgeClass(form.status)}`}>
           {statusLabel(form.status)}
         </span>
       </div>
@@ -261,6 +318,8 @@ export default function OnboardingFormsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchVersion, setSearchVersion] = useState(0);
   const [statusFilter, setStatusFilter] = useState<FormStatus | "">("");
+  const [enterpriseTypeFilter, setEnterpriseTypeFilter] = useState("all");
+  const [registrationTypeFilter, setRegistrationTypeFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [isActionBusy, setIsActionBusy] = useState(false);
 
@@ -307,6 +366,15 @@ export default function OnboardingFormsPage() {
     setStatusFilter(value);
   }
 
+  const filteredForms = items.filter((form) => {
+    const matchesEnterpriseType =
+      enterpriseTypeFilter === "all" || form.enterprise_type === enterpriseTypeFilter;
+    const matchesRegistrationType =
+      registrationTypeFilter === "all" || form.registration_type === registrationTypeFilter;
+
+    return matchesEnterpriseType && matchesRegistrationType;
+  });
+
   const totalPages = pagination?.total_pages ?? 1;
 
   return (
@@ -325,44 +393,74 @@ export default function OnboardingFormsPage() {
       </div>
 
       <section className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <form
-            onSubmit={handleSearchSubmit}
-            className="flex w-full flex-col gap-3 sm:flex-row lg:max-w-[650px]"
-          >
-            <input
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Search forms by name or description"
-              className="h-12 flex-1 rounded-full border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
-            />
-            <button
-              type="submit"
-              className="h-12 shrink-0 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white shadow-sm transition hover:bg-[#175245]"
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <form
+              onSubmit={handleSearchSubmit}
+              className="flex w-full flex-col gap-3 sm:flex-row lg:max-w-[650px]"
             >
-              Search
-            </button>
-          </form>
+              <input
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                placeholder="Search forms by name or description"
+                className="h-12 flex-1 rounded-full border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
+              />
+              <button
+                type="submit"
+                className="h-12 shrink-0 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white shadow-sm transition hover:bg-[#175245]"
+              >
+                Search
+              </button>
+            </form>
 
-          <div className="flex flex-wrap gap-3 lg:flex-nowrap lg:justify-end">
-            {statusFilters.map((filter) => {
-              const active = filter.value === statusFilter;
+            <div className="flex flex-wrap gap-3 lg:flex-nowrap lg:justify-end">
+              {statusFilters.map((filter) => {
+                const active = filter.value === statusFilter;
 
-              return (
-                <button
-                  key={filter.label}
-                  type="button"
-                  onClick={() => handleFilterChange(filter.value)}
-                  className={`shrink-0 rounded-full px-6 h-12 text-sm font-semibold transition ${
-                    active
-                      ? "bg-[#e8f6ee] text-[#1f6a58]"
-                      : "border border-[#d7e5df] bg-white text-[#52736a] hover:bg-[#f4faf7]"
-                  }`}
-                >
-                  {filter.label}
-                </button>
-              );
-            })}
+                return (
+                  <button
+                    key={filter.label}
+                    type="button"
+                    onClick={() => handleFilterChange(filter.value)}
+                    className={`h-12 shrink-0 rounded-full px-6 text-sm font-semibold transition ${
+                      active
+                        ? "bg-[#e8f6ee] text-[#1f6a58]"
+                        : "border border-[#d7e5df] bg-white text-[#52736a] hover:bg-[#f4faf7]"
+                    }`}
+                  >
+                    {filter.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <select
+              value={enterpriseTypeFilter}
+              onChange={(event) => setEnterpriseTypeFilter(event.target.value)}
+              className="h-11 min-w-[200px] rounded-full border border-[#d7e5df] bg-white px-4 text-sm font-semibold text-[#355a51] outline-none transition focus:border-[#1f6a58]"
+            >
+              <option value="all">All Enterprise Types</option>
+              {enterpriseTypeOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={registrationTypeFilter}
+              onChange={(event) => setRegistrationTypeFilter(event.target.value)}
+              className="h-11 min-w-[200px] rounded-full border border-[#d7e5df] bg-white px-4 text-sm font-semibold text-[#355a51] outline-none transition focus:border-[#1f6a58]"
+            >
+              <option value="all">All Registration Types</option>
+              {registrationTypeOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </section>
@@ -376,11 +474,11 @@ export default function OnboardingFormsPage() {
       <section className="mt-5">
         {isLoading ? (
           <LoadingState />
-        ) : items.length === 0 ? (
+        ) : filteredForms.length === 0 ? (
           <EmptyState />
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {items.map((form) => (
+            {filteredForms.map((form) => (
               <FormCard
                 key={form.id}
                 form={form}

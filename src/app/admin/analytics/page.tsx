@@ -161,9 +161,9 @@ function RankingCard({
 export default function AdminAnalyticsPage() {
   return (
     <AppShell>
-      <div className="min-h-full bg-[#f7fbf8]">
-        <div className="mx-auto w-full max-w-7xl">
-          <div className="mb-5">
+      <div className="min-h-[calc(100vh-72px)] bg-[#f7fbf8] px-6 py-6">
+        <div className="mx-auto w-full max-w-7xl space-y-5">
+          <div>
             <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">
               ENTERPRISE OWNER · PINNACLE WELLNESS
             </p>
@@ -179,7 +179,7 @@ export default function AdminAnalyticsPage() {
             ))}
           </div>
 
-          <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
             <RankingCard title="Top Services by Bookings" items={topServices} />
             <RankingCard title="Top Products by Revenue" items={topProducts} />
           </div>

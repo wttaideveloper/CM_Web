@@ -226,7 +226,6 @@ export function ProductDetailsPage({
       setIsTogglingStatus(false);
     }
   }
-
   async function handleActivate() {
     if (!product || isTogglingStatus) {
       return;
@@ -329,16 +328,7 @@ export function ProductDetailsPage({
           >
             Edit Product
           </Link>
-          {productStatus === "Active" ? (
-            <button
-              type="button"
-              onClick={() => void handleDeactivate()}
-              disabled={isTogglingStatus}
-              className="inline-flex h-12 items-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-bold text-[#b42318] shadow-sm disabled:opacity-60"
-            >
-              Deactivate
-            </button>
-          ) : (
+          {productStatus !== "Active" ? (
             <button
               type="button"
               onClick={() => void handleActivate()}
@@ -347,7 +337,7 @@ export function ProductDetailsPage({
             >
               Activate
             </button>
-          )}
+          ) : null}
           <Link
             href={listHref}
             className="inline-flex h-12 items-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-bold text-[#1f6a58] shadow-sm"

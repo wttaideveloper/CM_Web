@@ -163,6 +163,7 @@ export function ServiceDetailsPage({
     void fetchService();
   }, [params.id]);
 
+
   async function handleDeactivate() {
     if (!service || isTogglingStatus) {
       return;
@@ -183,7 +184,6 @@ export function ServiceDetailsPage({
       setIsTogglingStatus(false);
     }
   }
-
   async function handleActivate() {
     if (!service || isTogglingStatus) {
       return;
@@ -295,16 +295,7 @@ export function ServiceDetailsPage({
           >
             Back to Services
           </Link>
-          {serviceStatus === "Active" ? (
-            <button
-              type="button"
-              onClick={() => void handleDeactivate()}
-              disabled={isTogglingStatus}
-              className="inline-flex h-12 items-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-bold text-[#b42318] shadow-sm disabled:opacity-60"
-            >
-              Deactivate
-            </button>
-          ) : (
+          {serviceStatus !== "Active" ? (
             <button
               type="button"
               onClick={() => void handleActivate()}
@@ -313,7 +304,7 @@ export function ServiceDetailsPage({
             >
               Activate
             </button>
-          )}
+          ) : null}
         </div>
       </div>
 

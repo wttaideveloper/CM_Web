@@ -110,6 +110,31 @@ function slugifyFieldKey(value: string) {
     .replace(/^_+|_+$/g, "");
 }
 
+function getAllFieldKeys(sections: FormSection[]) {
+  return new Set(
+    sections.flatMap((section) => section.fields.map((field) => field.field_key).filter(Boolean)),
+  );
+}
+
+function createUniqueFieldKey(baseValue: string, sections: FormSection[]) {
+  const baseKey = slugifyFieldKey(baseValue) || "new_field";
+  const existingKeys = getAllFieldKeys(sections);
+
+  if (!existingKeys.has(baseKey)) {
+    return baseKey;
+  }
+
+  let counter = 2;
+  let nextKey = `${baseKey}_${counter}`;
+
+  while (existingKeys.has(nextKey)) {
+    counter += 1;
+    nextKey = `${baseKey}_${counter}`;
+  }
+
+  return nextKey;
+}
+
 function supportsOptions(fieldType: FieldType) {
   return fieldType === "dropdown" || fieldType === "checkbox" || fieldType === "radio";
 }
@@ -193,6 +218,25 @@ function normalizeFields(fields: FormField[]) {
     ...field,
     order: index + 1,
   }));
+}
+
+function findDuplicateFieldKey(sections: FormSection[]) {
+  const seen = new Set<string>();
+
+  for (const section of sections) {
+    for (const field of section.fields) {
+      const key = field.field_key.trim();
+      if (!key) continue;
+
+      if (seen.has(key)) {
+        return key;
+      }
+
+      seen.add(key);
+    }
+  }
+
+  return null;
 }
 
 function sortFields(fields: FormField[]) {
@@ -626,11 +670,13 @@ function FieldCard({
   onEdit,
   onDelete,
   onToggleRequired,
+  isSelected = false,
 }: {
   field: FormField;
   onEdit: () => void;
   onDelete: () => void;
   onToggleRequired: () => void;
+  isSelected?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: field.id,
@@ -645,7 +691,9 @@ function FieldCard({
     <article
       ref={setNodeRef}
       style={style}
-      className={`rounded-2xl border border-[#e6eeea] bg-[#fbfdfc] px-4 py-3 transition hover:border-[#c6ddd3] ${
+      className={`rounded-2xl border px-4 py-3 transition hover:border-[#c6ddd3] ${
+        isSelected ? "border-[#1f6a58] bg-[#f3f8f6] ring-1 ring-[#1f6a58]" : "border-[#e6eeea] bg-[#fbfdfc]"
+      } ${
         isDragging ? "opacity-70" : ""
       }`}
     >
@@ -782,6 +830,7 @@ export default function OnboardingFormEditPage() {
   const formId = Array.isArray(params.id) ? params.id[0] ?? "" : params.id ?? "";
   const initialForm = useMemo(() => createDefaultForm(), []);
   const previewRef = useRef<HTMLDivElement | null>(null);
+  const formNameRef = useRef<HTMLInputElement | null>(null);
   const [form, setForm] = useState<FormSchema>(() => initialForm);
   const [activeSectionId, setActiveSectionId] = useState<string>(initialForm.sections[0]?.id ?? "");
   const [previewScope, setPreviewScope] = useState<PreviewScope>("section");
@@ -798,6 +847,10 @@ export default function OnboardingFormEditPage() {
   const [registrationType, setRegistrationType] =
     useState<(typeof registrationTypeOptions)[number]>("Enterprise (Business)");
   const activeSection = form.sections.find((section) => section.id === activeSectionId) ?? form.sections[0];
+  const editingField =
+    editingFieldId && activeSection
+      ? activeSection.fields.find((field) => field.id === editingFieldId) ?? null
+      : null;
 
   useEffect(() => {
     if (notice) {
@@ -865,12 +918,6 @@ export default function OnboardingFormEditPage() {
       setActiveSectionId(form.sections[0].id);
     }
   }, [activeSectionId, form.sections]);
-
-  useEffect(() => {
-    setIsFieldEditorOpen(false);
-    setEditingFieldId(null);
-    setFieldDraft(createFieldDraft());
-  }, [activeSectionId]);
 
   if (isLoading) {
     return (
@@ -944,6 +991,13 @@ export default function OnboardingFormEditPage() {
   function updateSections(nextSections: FormSection[]) {
     const normalizedSections = normalizeSections(nextSections);
     setForm((current) => ({ ...current, sections: normalizedSections }));
+  }
+
+  function selectSection(sectionId: string) {
+    setActiveSectionId(sectionId);
+    setIsFieldEditorOpen(false);
+    setEditingFieldId(null);
+    setFieldDraft(createFieldDraft());
   }
 
   function addSection() {
@@ -1028,13 +1082,14 @@ export default function OnboardingFormEditPage() {
       ...createFieldDraft(),
       field_type: nextFieldType,
       label: current.field_type === nextFieldType ? current.label : fieldTypeLabel(nextFieldType),
-      field_key: slugifyFieldKey(`new_${nextFieldType}_field`) || "new_field",
+      field_key: createUniqueFieldKey(`new_${nextFieldType}_field`, form.sections),
     }));
     setIsFieldEditorOpen(true);
   }
 
   function openAddFieldPanel() {
     if (!activeSection) {
+      setNotice("Add a section first.");
       return;
     }
 
@@ -1043,6 +1098,7 @@ export default function OnboardingFormEditPage() {
 
   function openAddFieldPanelWithType(fieldType: FieldType) {
     if (!activeSection) {
+      setNotice("Add a section first.");
       return;
     }
     openAddFieldPanelForSection(activeSection.id, fieldType);
@@ -1177,6 +1233,11 @@ export default function OnboardingFormEditPage() {
   }
 
   function validateFormForSave() {
+    if (form.sections.length === 0) {
+      setNotice("Add at least one section before saving.");
+      return false;
+    }
+
     if (!form.name.trim()) {
       setNotice("Form name is required.");
       return false;
@@ -1193,6 +1254,12 @@ export default function OnboardingFormEditPage() {
 
   async function saveChanges() {
     if (!validateFormForSave() || isSaving) {
+      return;
+    }
+
+    const duplicateKey = findDuplicateFieldKey(form.sections);
+    if (duplicateKey) {
+      setNotice(`Duplicate field key: ${duplicateKey}. Please make field keys unique.`);
       return;
     }
 
@@ -1222,6 +1289,12 @@ export default function OnboardingFormEditPage() {
 
   async function publishForm() {
     if (!validateFormForSave() || isSaving || isPublishing) {
+      return;
+    }
+
+    const duplicateKey = findDuplicateFieldKey(form.sections);
+    if (duplicateKey) {
+      setNotice(`Duplicate field key: ${duplicateKey}. Please make field keys unique.`);
       return;
     }
 
@@ -1307,6 +1380,14 @@ export default function OnboardingFormEditPage() {
           </button>
           <button
             type="button"
+            onClick={saveChanges}
+            disabled={isSaving || isPublishing}
+            className="h-11 rounded-full border border-[#cfe6d9] bg-white px-5 text-sm font-bold text-[#1f6a58] shadow-sm transition hover:border-[#b6d7c5] hover:bg-[#f4faf7] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSaving ? "Saving..." : "Save Changes"}
+          </button>
+          <button
+            type="button"
             onClick={form.status === "published" ? unpublishForm : publishForm}
             disabled={isSaving || isPublishing}
             className="inline-flex h-11 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm transition hover:bg-[#175245] disabled:cursor-not-allowed disabled:opacity-60"
@@ -1321,6 +1402,145 @@ export default function OnboardingFormEditPage() {
           </button>
         </div>
       </div>
+
+      <section className="relative mt-5 overflow-hidden rounded-[28px] border border-[#e1ebe6] bg-white shadow-sm">
+        <div className="absolute left-0 right-0 top-0 h-1.5 bg-[#1f6a58]" />
+        <div className="px-5 pb-0 pt-6">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px_150px]">
+            <div className="space-y-4">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#7f9d94]">FORM NAME *</p>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <input
+                    ref={formNameRef}
+                    type="text"
+                    value={form.name}
+                    onChange={(event) => updateFormName(event.target.value)}
+                    className="mt-2 w-full min-w-0 border-0 bg-transparent p-0 text-[21px] font-bold leading-tight text-[#12483d] outline-none shadow-none ring-0 placeholder:text-[#8ca69e] focus:border-transparent focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => formNameRef.current?.focus()}
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#d7e5df] bg-white text-[#52736a] shadow-sm transition hover:bg-[#f4faf7]"
+                    aria-label="Edit form name"
+                  >
+                    <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M12 20h9"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                      />
+                      <path
+                        d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm font-semibold text-[#52736a]">Description (shown to Enterprise Owners)</p>
+                <textarea
+                  value={form.description}
+                  onChange={(event) => updateFormDescription(event.target.value)}
+                  className="mt-2 min-h-[54px] w-full resize-none rounded-2xl border border-[#d7e5df] bg-[#f8fbf9] px-3.5 py-2.5 text-sm leading-5 text-[#06201c] outline-none focus:border-[#1f6a58] focus:ring-0"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#7f9d94]">ENTERPRISE TYPE *</p>
+                <select
+                  value={enterpriseType}
+                  onChange={(event) =>
+                    setEnterpriseType(event.target.value as (typeof enterpriseTypeOptions)[number])
+                  }
+                  className="mt-2 h-12 w-full rounded-2xl border border-[#d7e5df] bg-[#f3f8f6] px-4 text-[15px] font-bold text-[#06201c] outline-none focus:border-[#1f6a58] focus:ring-0"
+                >
+                  {enterpriseTypeOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#7f9d94]">PROVIDER TYPE *</p>
+                <div className="mt-2 grid grid-cols-2 gap-2.5">
+                  {[
+                    {
+                      label: "Enterprise",
+                      value: "Enterprise (Business)" as const,
+                    },
+                    {
+                      label: "Individual",
+                      value: "Individual (Professional)" as const,
+                    },
+                  ].map((option) => {
+                    const active = registrationType === option.value;
+
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setRegistrationType(option.value)}
+                        className={`flex h-12 items-center justify-center rounded-2xl border px-4 text-sm font-bold shadow-sm transition ${
+                          active
+                            ? "border-[#1f6a58] bg-[#1f6a58] text-white"
+                            : "border-[#d7e5df] bg-white text-[#355a51] hover:bg-[#f8fbf9]"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="min-w-[140px] rounded-[22px] border border-[#e1ebe6] bg-[#f7faf8] p-3.5">
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#7f9d94]">SUMMARY</p>
+              <div className="mt-2 divide-y divide-[#edf3f0] text-sm">
+                {[
+                  { label: "Sections", value: form.sections.length },
+                  { label: "Total Fields", value: totalFieldsCount },
+                  { label: "Required", value: requiredFieldsCount },
+                  { label: "Optional", value: optionalFieldsCount },
+                ].map((item) => (
+                  <div key={item.label} className="flex items-center justify-between gap-3 py-1.5">
+                    <span className="text-[#52736a]">{item.label}</span>
+                    <span
+                      className={`text-base font-bold ${
+                        item.label === "Required" ? "text-[#b42318]" : item.label === "Optional" ? "text-[#16825b]" : "text-[#12483d]"
+                      }`}
+                    >
+                      {item.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-wrap items-center gap-2.5 border-t border-[#edf3f0] bg-[#f8fbf9] px-5 py-3 text-sm">
+          <span className="font-semibold text-[#06201c]">This form is Step 2 of:</span>
+          <span className="font-semibold text-[#52736a]">Enterprise signs up</span>
+          <span className="text-[#52736a]">&gt;</span>
+          <span className="rounded-full bg-[#1f6a58] px-4 py-2 font-bold text-white">Fills this form</span>
+          <span className="text-[#52736a]">&gt;</span>
+          <span className="font-semibold text-[#52736a]">Admin reviews</span>
+          <span className="text-[#52736a]">&gt;</span>
+          <span className="font-semibold text-[#52736a]">Approved &amp; Live</span>
+        </div>
+      </section>
 
       <section className="mt-5 rounded-[28px] border border-[#bfd6ff] bg-[#eef5ff] p-6 shadow-sm">
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
@@ -1370,73 +1590,11 @@ export default function OnboardingFormEditPage() {
         </p>
       ) : null}
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="space-y-5">
+      <div className="mt-5 grid gap-5 xl:grid-cols-[240px_minmax(0,1fr)_300px]">
+        <aside className="space-y-5 xl:sticky xl:top-24 xl:self-start xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto xl:overflow-x-hidden">
           <section className="rounded-[24px] border border-[#e1ebe6] bg-white p-4 shadow-sm">
-            <h3 className="text-lg font-bold text-[#06201c]">Form Configuration</h3>
-            <div className="mt-4 space-y-3.5">
-              <label className="block">
-                <span className="text-sm font-bold text-[#06201c]">Form Name</span>
-                <input
-                  type="text"
-                  value={form.name}
-                  onChange={(event) => updateFormName(event.target.value)}
-                  className="mt-1.5 h-[46px] w-full rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-3.5 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
-                />
-              </label>
-              <label className="block">
-                <span className="text-sm font-bold text-[#06201c]">Description</span>
-                <textarea
-                  value={form.description}
-                  onChange={(event) => updateFormDescription(event.target.value)}
-                  className="mt-1.5 min-h-24 w-full resize-none rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-3.5 py-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
-                />
-              </label>
-              <label className="block">
-                <span className="text-sm font-bold text-[#06201c]">Enterprise Type</span>
-                <select
-                  value={enterpriseType}
-                  onChange={(event) =>
-                    setEnterpriseType(event.target.value as (typeof enterpriseTypeOptions)[number])
-                  }
-                  className="mt-1.5 h-[46px] w-full rounded-2xl border border-[#d7e5df] bg-[#f3f8f6] px-3.5 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]"
-                >
-                  {enterpriseTypeOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="text-sm font-bold text-[#06201c]">Registration Type</span>
-                <select
-                  value={registrationType}
-                  onChange={(event) =>
-                    setRegistrationType(event.target.value as (typeof registrationTypeOptions)[number])
-                  }
-                  className="mt-1.5 h-[46px] w-full rounded-2xl border border-[#c8ddd3] bg-[#f3f8f6] px-3.5 text-sm text-[#06201c] outline-none ring-2 ring-[#d8e8df] focus:border-[#1f6a58]"
-                >
-                  {registrationTypeOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="rounded-2xl bg-[#eef6f2] px-3.5 py-3">
-                <p className="text-sm font-bold text-[#1f6a58]">Live Preview</p>
-                <p className="mt-2 text-xs leading-6 text-[#52736a]">
-                  Any changes made here are instantly visible in the preview below and will shape how enterprise owners
-                  move through signup.
-                </p>
-              </div>
-            </div>
-          </section>
-
-          <section className="rounded-[24px] border border-[#e1ebe6] bg-white p-4 shadow-sm">
-            <h3 className="text-lg font-bold text-[#06201c]">Add Field Types</h3>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+            <h3 className="text-base font-bold text-[#06201c]">Add Field Types</h3>
+            <div className="mt-3 grid grid-cols-2 gap-2">
               {[
                 { label: "Text Field", type: "text" as FieldType },
                 { label: "Email", type: "email" as FieldType },
@@ -1452,31 +1610,14 @@ export default function OnboardingFormEditPage() {
                   key={item.label}
                   type="button"
                   onClick={() => openAddFieldPanelWithType(item.type)}
-                  className={`rounded-2xl px-3.5 py-2.5 text-left text-sm font-semibold transition ${
+                  className={`rounded-xl px-3 py-2 text-left text-xs font-bold transition ${
                     fieldDraft.field_type === item.type && isFieldEditorOpen
-                      ? "bg-[#2e6a5b] text-white"
+                      ? "border border-[#2e6a5b] bg-[#2e6a5b] text-white"
                       : "border border-[#e1ebe6] bg-[#f8fbf9] text-[#355a51] hover:bg-[#eef6f2]"
                   }`}
                 >
                   {item.label}
                 </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="rounded-[24px] border border-[#e1ebe6] bg-white p-4 shadow-sm">
-            <h3 className="text-lg font-bold text-[#06201c]">Quick Stats</h3>
-            <div className="mt-3 grid grid-cols-2 gap-2.5">
-              {[
-                { label: "Total Sections", value: form.sections.length },
-                { label: "Total Fields", value: totalFieldsCount },
-                { label: "Required Fields", value: requiredFieldsCount },
-                { label: "Optional Fields", value: optionalFieldsCount },
-              ].map((item) => (
-                <div key={item.label} className="rounded-2xl bg-[#f7faf8] px-3 py-3">
-                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">{item.label}</p>
-                  <p className="mt-2 text-2xl font-bold text-[#06201c]">{item.value}</p>
-                </div>
               ))}
             </div>
           </section>
@@ -1494,14 +1635,6 @@ export default function OnboardingFormEditPage() {
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
-              onClick={saveChanges}
-              disabled={isSaving || isPublishing}
-              className="h-11 rounded-full border border-[#cfe6d9] bg-white px-4 text-sm font-bold text-[#1f6a58] shadow-sm transition hover:border-[#b6d7c5] hover:bg-[#f4faf7] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isSaving ? "Saving..." : "Save Changes"}
-            </button>
-            <button
-              type="button"
               onClick={addSection}
               className="h-11 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white shadow-sm"
             >
@@ -1509,288 +1642,141 @@ export default function OnboardingFormEditPage() {
             </button>
           </div>
 
-          <DndContext collisionDetection={closestCenter} onDragEnd={handleSectionDragEnd}>
-            <SortableContext
-              items={form.sections.map((section) => section.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              <div className="space-y-4">
-                {form.sections.map((section) => {
-                  const isSelected = section.id === activeSectionId;
-
-                  return (
-                    <SectionCard
-                      key={section.id}
-                      section={section}
-                      isActive={isSelected}
-                      onSelect={() => setActiveSectionId(section.id)}
-                      onDelete={() => deleteSection(section.id)}
-                    >
-                      <div className="space-y-3">
-                        {isSelected ? (
-                          <label className="block">
-                            <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
-                              Section Title
-                            </span>
-                            <input
-                              type="text"
-                              value={activeSection?.title ?? ""}
-                              onChange={(event) => updateSelectedSectionTitle(event.target.value)}
-                              className="mt-1.5 h-10 w-full rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
-                            />
-                          </label>
-                        ) : null}
-
-                        <DndContext
-                          collisionDetection={closestCenter}
-                          onDragEnd={(event) => handleFieldDragEnd(section.id, event)}
-                        >
-                          <SortableContext
-                            items={section.fields.map((field) => field.id)}
-                            strategy={verticalListSortingStrategy}
-                          >
-                            <div className="space-y-2.5">
-                              {section.fields.map((field) => (
-                                <FieldCard
-                                  key={field.id}
-                                  field={field}
-                                  onEdit={() => openEditFieldPanel(section.id, field)}
-                                  onDelete={() => deleteField(field.id)}
-                                  onToggleRequired={() => toggleFieldRequired(section.id, field.id)}
-                                />
-                              ))}
-                            </div>
-                          </SortableContext>
-                        </DndContext>
-
-                        {isSelected && isFieldEditorOpen && !editingFieldId ? (
-                          <div className="flex flex-col gap-2 rounded-2xl border border-dashed border-[#b7d1c5] bg-[#fcfefd] px-4 py-3 sm:flex-row sm:items-center">
-                            <input
-                              type="text"
-                              value={fieldDraft.label}
-                              onChange={(event) =>
-                                setFieldDraft((current) => ({
-                                  ...current,
-                                  label: event.target.value,
-                                  field_key:
-                                    current.field_key.trim().length > 0 &&
-                                    current.field_key !== slugifyFieldKey(current.label)
-                                      ? current.field_key
-                                      : slugifyFieldKey(event.target.value),
-                                }))
-                              }
-                              placeholder="Enter field label..."
-                              className="h-10 flex-1 rounded-xl border border-[#d7e5df] bg-white px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
-                            />
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={saveField}
-                                className="rounded-full bg-[#1f6a58] px-4 py-2 text-xs font-bold text-white"
-                              >
-                                Add
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setIsFieldEditorOpen(false);
-                                  setEditingFieldId(null);
-                                  setFieldDraft(createFieldDraft());
-                                }}
-                                className="rounded-full px-3 py-2 text-xs font-semibold text-[#52736a]"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => openAddFieldPanelForSection(section.id)}
-                            className="flex w-full items-center justify-start rounded-2xl border border-dashed border-[#cfe0d6] bg-[#fcfefd] px-4 py-3 text-left text-sm font-semibold text-[#52736a] hover:bg-[#f4faf7]"
-                          >
-                            + Add {fieldTypeLabel(fieldDraft.field_type)} field
-                          </button>
-                        )}
-                      </div>
-                    </SectionCard>
-                  );
-                })}
-              </div>
-            </SortableContext>
-          </DndContext>
-
-          {isFieldEditorOpen && editingFieldId ? (
-            <section className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#7f9d94]">
-                    {editingFieldId ? "Edit Field Settings" : "Add Field"}
-                  </p>
-                  <h3 className="mt-1 text-base font-bold text-[#06201c]">
-                    {editingFieldId ? "Update the selected field" : "Create a new field for this section"}
-                  </h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsFieldEditorOpen(false);
-                    setEditingFieldId(null);
-                    setFieldDraft(createFieldDraft());
-                  }}
-                  className="h-10 rounded-full border border-[#d7e5df] px-4 text-sm font-semibold text-[#52736a] hover:bg-[#f4faf7]"
-                >
-                  Cancel
-                </button>
-              </div>
-
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <label className="block">
-                  <span className="text-sm font-bold text-[#06201c]">Label</span>
-                  <input
-                    type="text"
-                    value={fieldDraft.label}
-                    onChange={(event) => {
-                      const nextLabel = event.target.value;
-                      setFieldDraft((current) => ({
-                        ...current,
-                        label: nextLabel,
-                        field_key:
-                          current.field_key.trim().length > 0 &&
-                          current.field_key !== slugifyFieldKey(current.label)
-                            ? current.field_key
-                            : slugifyFieldKey(nextLabel),
-                      }));
-                    }}
-                    className="mt-1.5 h-[46px] w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3.5 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="text-sm font-bold text-[#06201c]">Field Key</span>
-                  <input
-                    type="text"
-                    value={fieldDraft.field_key}
-                    onChange={(event) =>
-                      setFieldDraft((current) => ({ ...current, field_key: event.target.value }))
-                    }
-                    className="mt-1.5 h-[46px] w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3.5 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="text-sm font-bold text-[#06201c]">Field Type</span>
-                  <select
-                    value={fieldDraft.field_type}
-                    onChange={(event) =>
-                      setFieldDraft((current) => ({
-                        ...current,
-                        field_type: event.target.value as FieldType,
-                      }))
-                    }
-                    className="mt-1.5 h-[46px] w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3.5 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]"
-                  >
-                    {fieldTypes.map((fieldType) => (
-                      <option key={fieldType} value={fieldType}>
-                        {fieldTypeLabel(fieldType)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="block">
-                  <span className="text-sm font-bold text-[#06201c]">Placeholder</span>
-                  <input
-                    type="text"
-                    value={fieldDraft.placeholder}
-                    onChange={(event) =>
-                      setFieldDraft((current) => ({ ...current, placeholder: event.target.value }))
-                    }
-                    className="mt-1.5 h-[46px] w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3.5 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
-                  />
-                </label>
-
-                <label className="block md:col-span-2">
-                  <span className="text-sm font-bold text-[#06201c]">Help Text</span>
-                  <textarea
-                    value={fieldDraft.help_text}
-                    onChange={(event) =>
-                      setFieldDraft((current) => ({ ...current, help_text: event.target.value }))
-                    }
-                    className="mt-1.5 min-h-24 w-full resize-none rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3.5 py-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
-                  />
-                </label>
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-4">
-                <label className="inline-flex items-center gap-2 text-sm font-semibold text-[#06201c]">
-                  <input
-                    type="checkbox"
-                    checked={fieldDraft.required}
-                    onChange={(event) =>
-                      setFieldDraft((current) => ({ ...current, required: event.target.checked }))
-                    }
-                    className="h-4 w-4 rounded border-[#c6ddd3] text-[#1f6a58] focus:ring-[#1f6a58]"
-                  />
-                  Required
-                </label>
-                <label className="inline-flex items-center gap-2 text-sm font-semibold text-[#06201c]">
-                  <input
-                    type="checkbox"
-                    checked={fieldDraft.visible}
-                    onChange={(event) =>
-                      setFieldDraft((current) => ({ ...current, visible: event.target.checked }))
-                    }
-                    className="h-4 w-4 rounded border-[#c6ddd3] text-[#1f6a58] focus:ring-[#1f6a58]"
-                  />
-                  Visible
-                </label>
-              </div>
-
-              {supportsOptions(fieldDraft.field_type) ? (
-                <label className="mt-4 block">
-                  <span className="text-sm font-bold text-[#06201c]">
-                    Options
-                    <span className="ml-2 text-xs font-medium text-[#7f9d94]">
-                      Comma-separated values
-                    </span>
-                  </span>
-                  <input
-                    type="text"
-                    value={fieldDraft.optionsText}
-                    onChange={(event) =>
-                      setFieldDraft((current) => ({ ...current, optionsText: event.target.value }))
-                    }
-                    placeholder="Option 1, Option 2, Option 3"
-                    className="mt-1.5 h-[46px] w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3.5 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
-                  />
-                </label>
-              ) : null}
-
-              <div className="mt-5 flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsFieldEditorOpen(false);
-                    setEditingFieldId(null);
-                    setFieldDraft(createFieldDraft());
-                  }}
-                  className="h-11 rounded-full border border-[#d7e5df] px-4 text-sm font-semibold text-[#52736a] hover:bg-[#f4faf7]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={saveField}
-                  className="h-11 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white shadow-sm hover:bg-[#175245]"
-                >
-                  {editingFieldId ? "Save Changes" : "Add Field"}
-                </button>
-              </div>
+          {form.sections.length === 0 ? (
+            <section className="rounded-[24px] border border-dashed border-[#cfe0d6] bg-[#fcfefd] p-8 text-center shadow-sm">
+              <p className="text-lg font-bold text-[#06201c]">No sections yet</p>
+              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-[#52736a]">
+                Start by adding a section, then add fields to build this onboarding form.
+              </p>
+              <button
+                type="button"
+                onClick={addSection}
+                className="mt-5 h-11 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white shadow-sm"
+              >
+                + Add Section
+              </button>
             </section>
-          ) : null}
+          ) : (
+            <DndContext collisionDetection={closestCenter} onDragEnd={handleSectionDragEnd}>
+              <SortableContext
+                items={form.sections.map((section) => section.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="space-y-4">
+                  {form.sections.map((section) => {
+                    const isSelected = section.id === activeSectionId;
 
-          <section ref={previewRef} className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
+                    return (
+                      <SectionCard
+                        key={section.id}
+                        section={section}
+                        isActive={isSelected}
+                        onSelect={() => selectSection(section.id)}
+                        onDelete={() => deleteSection(section.id)}
+                      >
+                        <div className="space-y-3">
+                          {isSelected ? (
+                            <label className="block">
+                              <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
+                                Section Title
+                              </span>
+                              <input
+                                type="text"
+                                value={activeSection?.title ?? ""}
+                                onChange={(event) => updateSelectedSectionTitle(event.target.value)}
+                                className="mt-1.5 h-10 w-full rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
+                              />
+                            </label>
+                          ) : null}
+
+                          <DndContext
+                            collisionDetection={closestCenter}
+                            onDragEnd={(event) => handleFieldDragEnd(section.id, event)}
+                          >
+                            <SortableContext
+                              items={section.fields.map((field) => field.id)}
+                              strategy={verticalListSortingStrategy}
+                            >
+                              <div className="space-y-2.5">
+                                {section.fields.map((field) => (
+                                  <FieldCard
+                                    key={field.id}
+                                    field={field}
+                                    isSelected={editingFieldId === field.id}
+                                    onEdit={() => openEditFieldPanel(section.id, field)}
+                                    onDelete={() => deleteField(field.id)}
+                                    onToggleRequired={() => toggleFieldRequired(section.id, field.id)}
+                                  />
+                                ))}
+                              </div>
+                            </SortableContext>
+                          </DndContext>
+
+                          {isSelected && isFieldEditorOpen && !editingFieldId ? (
+                            <div className="flex flex-col gap-2 rounded-2xl border border-dashed border-[#b7d1c5] bg-[#fcfefd] px-4 py-3 sm:flex-row sm:items-center">
+                              <input
+                                type="text"
+                                value={fieldDraft.label}
+                                onChange={(event) =>
+                                  setFieldDraft((current) => ({
+                                    ...current,
+                                    label: event.target.value,
+                                    field_key:
+                                      current.field_key.trim().length > 0 &&
+                                      current.field_key !== slugifyFieldKey(current.label)
+                                        ? current.field_key
+                                        : createUniqueFieldKey(event.target.value, form.sections),
+                                  }))
+                                }
+                                placeholder="Enter field label..."
+                                className="h-10 flex-1 rounded-xl border border-[#d7e5df] bg-white px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
+                              />
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={saveField}
+                                  className="rounded-full bg-[#1f6a58] px-4 py-2 text-xs font-bold text-white"
+                                >
+                                  Add
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsFieldEditorOpen(false);
+                                    setEditingFieldId(null);
+                                    setFieldDraft(createFieldDraft());
+                                  }}
+                                  className="rounded-full px-3 py-2 text-xs font-semibold text-[#52736a]"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openAddFieldPanelForSection(section.id);
+                              }}
+                              className="flex w-full items-center justify-start rounded-2xl border border-dashed border-[#cfe0d6] bg-[#fcfefd] px-4 py-3 text-left text-sm font-semibold text-[#52736a] hover:bg-[#f4faf7]"
+                            >
+                              + Add {fieldTypeLabel(fieldDraft.field_type)} field
+                            </button>
+                          )}
+                        </div>
+                      </SectionCard>
+                    );
+                  })}
+                </div>
+              </SortableContext>
+            </DndContext>
+          )}
+
+          <section
+            ref={previewRef}
+            className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm xl:col-start-2 xl:col-end-3"
+          >
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#7f9d94]">Preview</p>
@@ -1855,7 +1841,236 @@ export default function OnboardingFormEditPage() {
           </section>
 
         </div>
-      </div>
+
+        <aside className="space-y-5 xl:sticky xl:top-24 xl:self-start xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto xl:overflow-x-hidden">
+          <section className="rounded-[24px] border border-[#e1ebe6] bg-white p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#7f9d94]">
+                  FIELD PROPERTIES
+                </p>
+                <h3 className="mt-1 text-lg font-bold text-[#06201c]">
+                  {editingField ? "Edit Field" : "Field Properties"}
+                </h3>
+              </div>
+              {editingField ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsFieldEditorOpen(false);
+                    setEditingFieldId(null);
+                    setFieldDraft(createFieldDraft());
+                  }}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold text-[#52736a] hover:bg-[#f4faf7]"
+                  aria-label="Close field properties"
+                >
+                  x
+                </button>
+              ) : (
+                <span className="rounded-full bg-[#f1f8f4] px-2 py-0.5 text-[11px] font-bold text-[#16825b]">
+                  Ready
+                </span>
+              )}
+            </div>
+
+            {editingField ? (
+              <div className="mt-3 space-y-3">
+                <div className="flex items-center gap-3 rounded-2xl border border-[#e1ebe6] bg-[#f8fbf9] p-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center">
+                    <FieldTypeIcon fieldType={fieldDraft.field_type} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-[15px] font-bold text-[#06201c]">
+                      {fieldDraft.label || "Selected Field"}
+                    </p>
+                    <p className="mt-0.5 text-xs text-[#7f9d94]">{fieldTypeLabel(fieldDraft.field_type)}</p>
+                  </div>
+                </div>
+
+                <label className="block">
+                  <span className="mb-1.5 inline-block text-[11px] font-bold uppercase tracking-[0.14em] text-[#7f9d94]">
+                    Label
+                  </span>
+                  <input
+                    type="text"
+                    value={fieldDraft.label}
+                    onChange={(event) => {
+                      const nextLabel = event.target.value;
+                      setFieldDraft((current) => ({
+                        ...current,
+                        label: nextLabel,
+                        field_key: current.field_key,
+                      }));
+                    }}
+                    className="h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-1.5 inline-block text-[11px] font-bold uppercase tracking-[0.14em] text-[#7f9d94]">
+                    Field Key
+                  </span>
+                  <input
+                    type="text"
+                    value={fieldDraft.field_key}
+                    onChange={(event) =>
+                      setFieldDraft((current) => ({ ...current, field_key: event.target.value }))
+                    }
+                    className="h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-1.5 inline-block text-[11px] font-bold uppercase tracking-[0.14em] text-[#7f9d94]">
+                    Field Type
+                  </span>
+                  <select
+                    value={fieldDraft.field_type}
+                    onChange={(event) =>
+                      setFieldDraft((current) => ({
+                        ...current,
+                        field_type: event.target.value as FieldType,
+                      }))
+                    }
+                    className="h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]"
+                  >
+                    {fieldTypes.map((fieldType) => (
+                      <option key={fieldType} value={fieldType}>
+                        {fieldTypeLabel(fieldType)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
+                  <span className="mb-1.5 inline-block text-[11px] font-bold uppercase tracking-[0.14em] text-[#7f9d94]">
+                    Placeholder
+                  </span>
+                  <input
+                    type="text"
+                    value={fieldDraft.placeholder}
+                    onChange={(event) =>
+                      setFieldDraft((current) => ({ ...current, placeholder: event.target.value }))
+                    }
+                    className="h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-1.5 inline-block text-[11px] font-bold uppercase tracking-[0.14em] text-[#7f9d94]">
+                    Help Text
+                  </span>
+                  <textarea
+                    value={fieldDraft.help_text}
+                    onChange={(event) =>
+                      setFieldDraft((current) => ({ ...current, help_text: event.target.value }))
+                    }
+                    className="min-h-[64px] w-full resize-none rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 py-2.5 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
+                  />
+                </label>
+
+                <div className="grid gap-2">
+                  <label className="flex items-center gap-2.5 rounded-2xl border border-[#e1ebe6] bg-[#fbfdfc] p-3 text-sm font-semibold text-[#06201c]">
+                    <input
+                      type="checkbox"
+                      checked={fieldDraft.required}
+                      onChange={(event) =>
+                        setFieldDraft((current) => ({ ...current, required: event.target.checked }))
+                      }
+                      className="h-3.5 w-3.5 rounded border-[#c6ddd3] text-[#1f6a58] focus:ring-[#1f6a58]"
+                    />
+                    Required
+                  </label>
+                  <label className="flex items-center gap-2.5 rounded-2xl border border-[#e1ebe6] bg-[#fbfdfc] p-3 text-sm font-semibold text-[#06201c]">
+                    <input
+                      type="checkbox"
+                      checked={fieldDraft.visible}
+                      onChange={(event) =>
+                        setFieldDraft((current) => ({ ...current, visible: event.target.checked }))
+                      }
+                      className="h-3.5 w-3.5 rounded border-[#c6ddd3] text-[#1f6a58] focus:ring-[#1f6a58]"
+                    />
+                    Visible
+                  </label>
+                </div>
+
+                {supportsOptions(fieldDraft.field_type) ? (
+                  <label className="block">
+                    <span className="mb-1.5 inline-block text-[11px] font-bold uppercase tracking-[0.14em] text-[#7f9d94]">
+                      Options
+                      <span className="ml-2 text-[11px] font-medium text-[#7f9d94]">Comma-separated values</span>
+                    </span>
+                    <input
+                      type="text"
+                      value={fieldDraft.optionsText}
+                      onChange={(event) =>
+                        setFieldDraft((current) => ({ ...current, optionsText: event.target.value }))
+                      }
+                      placeholder="Option 1, Option 2, Option 3"
+                      className="h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
+                    />
+                  </label>
+                ) : null}
+
+                <div className="flex flex-wrap gap-2.5">
+                  {editingField && !editingField.locked ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        deleteField(editingField.id);
+                        setIsFieldEditorOpen(false);
+                        setEditingFieldId(null);
+                        setFieldDraft(createFieldDraft());
+                      }}
+                      className="h-10 rounded-xl border border-[#f0c7c5] px-3.5 text-sm font-semibold text-[#b42318] hover:bg-[#fff5f5]"
+                    >
+                      Remove Field
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={saveField}
+                    className="h-10 rounded-xl bg-[#1f6a58] px-3.5 text-sm font-bold text-white shadow-sm hover:bg-[#175245]"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 rounded-2xl border border-dashed border-[#cfe0d6] bg-[#fcfefd] p-3">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-[#f1f8f4]">
+                    <FieldTypeIcon fieldType="text" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-[#06201c]">Select a field to edit its properties</p>
+                    <p className="mt-1 text-xs leading-5 text-[#52736a]">
+                      Update labels, field keys, visibility, required state, and options from here while keeping the
+                      builder canvas clean.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-3 space-y-1.5 text-sm text-[#52736a]">
+                  {[
+                    "Click a field card in the builder to open its settings.",
+                    "Changes stay scoped to the selected section and field.",
+                    "Use the sticky panel while scrolling through long forms.",
+                  ].map((item) => (
+                    <div key={item} className="flex items-start gap-2">
+                      <span className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#e8f6ee] text-[10px] font-bold text-[#1f6a58]">
+                        -
+                      </span>
+                      <p>{item}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        </aside>
+
+        </div>
     </AppShell>
   );
 }
