@@ -131,13 +131,17 @@ function FormCard({
   }
 
   return (
-    <article className="flex h-full flex-col rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h3 className="truncate text-lg font-bold text-[#06201c]">{form.name}</h3>
-          <p className="mt-2 line-clamp-2 text-sm text-[#52736a]">{form.description || "—"}</p>
+    <article className="flex h-full flex-col rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:border-[#bcd8cf] hover:shadow-[0_14px_30px_rgba(15,63,52,0.12)]">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h3 className="min-w-0 flex-1 min-h-[58px] overflow-hidden text-[16px] font-extrabold leading-[1.2] tracking-tight text-[#031d18] [display:-webkit-box] [-webkit-line-clamp:3] [-webkit-box-orient:vertical]">
+            {form.name}
+          </h3>
+          <p className="mt-2 min-h-[48px] text-[14px] leading-[1.45] text-[#41675e] line-clamp-2">
+            {form.description || "—"}
+          </p>
         </div>
-        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${statusBadgeClass(form.status)}`}>
+        <span className={`shrink-0 inline-flex rounded-full px-3 py-1 text-xs font-bold ${statusBadgeClass(form.status)}`}>
           {statusLabel(form.status)}
         </span>
       </div>
@@ -177,7 +181,7 @@ function FormCard({
           href={`/onboarding-forms/${form.id}`}
           className="rounded-full border border-[#d7e5df] px-3 py-2 text-xs font-semibold text-[#1f6a58] hover:bg-[#f4faf7]"
         >
-          View
+          Preview
         </Link>
         <Link
           href={`/onboarding-forms/${form.id}/edit`}
