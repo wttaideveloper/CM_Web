@@ -218,8 +218,8 @@ export function ProductDetailsPage({
 
     try {
       setIsTogglingStatus(true);
-      await deactivateProduct(product.id);
-      setProduct((current) => (current ? { ...current, product_status: false } : current));
+      const updatedProduct = await deactivateProduct(product.id);
+      setProduct(updatedProduct);
     } catch {
       window.alert("Unable to deactivate product.");
     } finally {

@@ -321,23 +321,26 @@ export default function OnboardingFormsPage() {
       </div>
 
       <section className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <form onSubmit={handleSearchSubmit} className="flex w-full flex-col gap-3 sm:flex-row">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <form
+            onSubmit={handleSearchSubmit}
+            className="flex w-full flex-col gap-3 sm:flex-row lg:max-w-[650px]"
+          >
             <input
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
               placeholder="Search forms by name or description"
-              className="h-11 w-full rounded-full border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
+              className="h-12 flex-1 rounded-full border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
             />
             <button
               type="submit"
-              className="h-11 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white shadow-sm transition hover:bg-[#175245]"
+              className="h-12 shrink-0 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white shadow-sm transition hover:bg-[#175245]"
             >
               Search
             </button>
           </form>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-3 lg:flex-nowrap lg:justify-end">
             {statusFilters.map((filter) => {
               const active = filter.value === statusFilter;
 
@@ -346,7 +349,7 @@ export default function OnboardingFormsPage() {
                   key={filter.label}
                   type="button"
                   onClick={() => handleFilterChange(filter.value)}
-                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  className={`shrink-0 rounded-full px-6 h-12 text-sm font-semibold transition ${
                     active
                       ? "bg-[#e8f6ee] text-[#1f6a58]"
                       : "border border-[#d7e5df] bg-white text-[#52736a] hover:bg-[#f4faf7]"

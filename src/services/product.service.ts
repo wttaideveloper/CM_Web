@@ -82,16 +82,8 @@ export async function updateProduct(
   return response.json();
 }
 
-export async function deactivateProduct(id: string): Promise<string> {
-  const response = await fetch(`${API_BASE_URL}/products/${id}`, {
-    method: "DELETE",
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to deactivate product (${response.status} ${response.statusText}).`);
-  }
-
-  return response.text();
+export async function deactivateProduct(id: string): Promise<ProductDto> {
+  return updateProduct(id, { product_status: false });
 }
 
 export async function activateProduct(id: string): Promise<ProductDto> {

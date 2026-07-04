@@ -175,8 +175,8 @@ export function ServiceDetailsPage({
 
     try {
       setIsTogglingStatus(true);
-      await deactivateService(service.id);
-      setService((current) => (current ? { ...current, service_status: false } : current));
+      const updatedService = await deactivateService(service.id);
+      setService(updatedService);
     } catch {
       window.alert("Unable to deactivate service.");
     } finally {
