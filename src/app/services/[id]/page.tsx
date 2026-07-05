@@ -289,12 +289,6 @@ export function ServiceDetailsPage({
           >
             Edit Service
           </Link>
-          <Link
-            href={listHref}
-            className="inline-flex h-12 items-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-bold text-[#1f6a58] shadow-sm"
-          >
-            Back to Services
-          </Link>
           {serviceStatus !== "Active" ? (
             <button
               type="button"
@@ -304,7 +298,22 @@ export function ServiceDetailsPage({
             >
               Activate
             </button>
-          ) : null}
+          ) : (
+            <button
+              type="button"
+              onClick={() => void handleDeactivate()}
+              disabled={isTogglingStatus}
+              className="inline-flex h-12 items-center rounded-full border border-[#efd4d1] bg-white px-5 text-sm font-bold text-[#b42318] shadow-sm disabled:opacity-60"
+            >
+              Deactivate
+            </button>
+          )}
+          <Link
+            href={listHref}
+            className="inline-flex h-12 items-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-bold text-[#1f6a58] shadow-sm"
+          >
+            Back to Services
+          </Link>
         </div>
       </div>
 
