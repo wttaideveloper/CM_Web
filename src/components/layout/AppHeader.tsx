@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 type OpenMenu = "notifications" | "settings" | "profile" | null;
@@ -45,6 +45,20 @@ function BellIcon() {
   );
 }
 
+function MessageIcon() {
+  return (
+    <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M7 18.5 4 21V7a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H7Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <path d="M8.5 10h7M8.5 13h4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function SettingsIcon() {
   return (
     <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none">
@@ -74,8 +88,10 @@ type AppHeaderProps = {
 
 export default function AppHeader({ onMenuClick }: AppHeaderProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const headerRef = useRef<HTMLElement | null>(null);
+  const showMessagesShortcut = pathname.startsWith("/admin");
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -201,6 +217,17 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
             </Link>
           </div>
         </div>
+
+        {showMessagesShortcut ? (
+          <Link
+            href="/admin/messages"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4]"
+            aria-label="Messages"
+            title="Messages"
+          >
+            <MessageIcon />
+          </Link>
+        ) : null}
 
         <div className="relative">
           <button
