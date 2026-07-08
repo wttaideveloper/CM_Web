@@ -1,6 +1,7 @@
 "use client";
 
 import AppShell from "@/components/layout/AppShell";
+import EmojiPicker from "emoji-picker-react";
 import {
   deleteMessage,
   getConversationById,
@@ -9,12 +10,22 @@ import {
   getProviderConversations,
   markConversationRead,
   editMessage,
+  downloadAttachmentBlob,
   uploadAttachment,
   sendMessage,
   updateTypingStatus,
 } from "@/services/chat.service";
 import { createChatSocket, type ChatSocket } from "@/services/chat-socket.service";
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type UIEvent,
+} from "react";
 
 type ChatStatus = "ACTIVE" | "READ_ONLY" | "CLOSED";
 type LimitReason = "CHAT_WINDOW_CLOSED" | "FREE_LIMIT_REACHED" | "BOOKING_REQUIRED";
@@ -52,6 +63,12 @@ type ChatMessage = {
   readByUserIds?: string[];
   readAt?: string;
   attachmentName?: string;
+  attachmentId?: string;
+  attachmentDownloadUrl?: string;
+  attachmentType?: string;
+  attachmentFileName?: string;
+  downloadUrl?: string;
+  attachment?: BackendAttachment;
 };
 
 type BackendConversation = {
@@ -77,6 +94,12 @@ type BackendMessage = {
   content?: string;
   message_type?: string;
   attachment_id?: string | null;
+  file_name?: string;
+  filename?: string;
+  download_url?: string;
+  file_size?: number;
+  mime_type?: string;
+  attachment?: BackendAttachment;
   is_deleted?: boolean;
   is_edited?: boolean;
   edited_at?: string;
@@ -91,9 +114,29 @@ type BackendAttachment = {
   filename?: string;
   attachment_type?: string;
   download_url?: string;
+  file_size?: number;
+  mime_type?: string;
+};
+
+type UploadedAttachment = {
+  id: string;
+  fileName: string;
+  attachmentType: "image" | "document" | "audio" | "video";
+  downloadUrl?: string;
+  fileSize?: number;
+  mimeType?: string;
+};
+
+type PendingVoice = {
+  file: File;
+  objectUrl: string;
+  durationSeconds: number;
+  fileName: string;
+  mimeType: string;
 };
 
 const DEV_CHAT_USER_ID = "550e8400-e29b-41d4-a716-446655440020"; // TODO: replace with the real logged-in user id later.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const emojiOptions = ["😀", "😊", "👍", "🙏", "❤️", "👋", "✅", "🩺", "💬", "📎"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -243,6 +286,12 @@ function formatTimestamp(value?: string) {
   });
 }
 
+function formatRecordingDuration(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 function mapConversationSummary(data: BackendConversation): Conversation {
   const status = normalizeStatus(data.status, data.is_read_only);
   const serviceName = firstString(data.subject) ?? "General enquiry";
@@ -325,21 +374,40 @@ function mapMessage(data: BackendMessage): ChatMessage {
   const hasBeenReadByOtherParticipant = readByUserIds.some(
     (value) => typeof value === "string" && value !== DEV_CHAT_USER_ID,
   );
+  const attachment = data.attachment;
 
   return {
     id: data.id,
     conversationId: data.conversation_id,
-    text: firstString(data.content) ?? "",
+    text: firstString(data.content) ?? (data.attachment_id ? "Attachment" : ""),
     createdAt: formatTimestamp(data.created_at),
     isMine,
     messageType:
-      firstString(data.message_type)?.toLowerCase() ?? (data.attachment_id ? "attachment" : "text"),
+      firstString(data.message_type)?.toLowerCase() ??
+      (data.attachment_id ? "attachment" : "text"),
     deliveryState: isMine ? (hasBeenReadByOtherParticipant ? "read" : "sent") : undefined,
     isDeleted: data.is_deleted ?? false,
     isEdited: data.is_edited ?? false,
     editedAt: firstString(data.edited_at),
     readByUserIds,
-    attachmentName: data.attachment_id ? "Attachment" : undefined,
+    attachmentId: firstString(data.attachment_id) ?? undefined,
+    attachmentName: firstString(data.file_name, data.filename) ?? (data.attachment_id ? "Attachment" : undefined),
+    attachmentDownloadUrl: firstString(data.download_url, attachment?.download_url),
+    attachmentType: firstString(attachment?.attachment_type, data.message_type)?.toLowerCase() ?? undefined,
+    attachmentFileName: firstString(data.file_name, data.filename) ?? undefined,
+    downloadUrl: firstString(data.download_url, attachment?.download_url),
+    attachment: isRecord(data.attachment)
+      ? {
+          id: firstString(attachment?.id),
+          attachment_id: firstString(attachment?.attachment_id),
+          file_name: firstString(attachment?.file_name),
+          filename: firstString(attachment?.filename),
+          attachment_type: firstString(attachment?.attachment_type),
+          download_url: firstString(attachment?.download_url),
+          file_size: typeof attachment?.file_size === "number" ? attachment.file_size : undefined,
+          mime_type: firstString(attachment?.mime_type),
+        }
+      : undefined,
   };
 }
 
@@ -406,6 +474,24 @@ function upsertChatMessages(
   }
 
   return [...existingMessages, incomingMessage];
+}
+
+function prependUniqueChatMessages(existingMessages: ChatMessage[], incomingMessages: ChatMessage[]) {
+  const seen = new Set<string>(existingMessages.map((message) => message.id));
+  const next = [...existingMessages];
+
+  for (let index = incomingMessages.length - 1; index >= 0; index -= 1) {
+    const message = incomingMessages[index];
+
+    if (seen.has(message.id)) {
+      continue;
+    }
+
+    seen.add(message.id);
+    next.unshift(message);
+  }
+
+  return next;
 }
 
 function mergeConversationWithMessage(
@@ -510,6 +596,35 @@ function formatMessageBody(message: ChatMessage) {
   return message.text;
 }
 
+function getMessageAttachmentLabel(message: ChatMessage) {
+  return message.attachmentFileName || message.attachmentName || "";
+}
+
+function getAttachmentCaption(message: ChatMessage) {
+  if (message.isDeleted) {
+    return "";
+  }
+
+  const caption = message.text.trim();
+  const attachmentLabel = getMessageAttachmentLabel(message).trim();
+  const normalizedCaption = caption.toLowerCase();
+  const normalizedAttachmentLabel = attachmentLabel.toLowerCase();
+
+  if (!caption) {
+    return "";
+  }
+
+  if (normalizedCaption === "attachment" || normalizedCaption === "protected file") {
+    return "";
+  }
+
+  if (attachmentLabel && normalizedCaption === normalizedAttachmentLabel) {
+    return "";
+  }
+
+  return caption;
+}
+
 function canEditMessage(message: ChatMessage) {
   return message.isMine && !message.isDeleted && message.messageType === "text" && !message.attachmentName;
 }
@@ -576,6 +691,15 @@ function SendIcon() {
   );
 }
 
+function CloseIcon() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+      <path d="M6 6 18 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M18 6 6 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function PaperclipIcon() {
   return (
     <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none">
@@ -586,6 +710,17 @@ function PaperclipIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+function MicIcon() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+      <rect x="9" y="4" width="6" height="10" rx="3" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M6.5 11a5.5 5.5 0 0 0 11 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M12 16v4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M9 20h6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
 }
@@ -634,6 +769,83 @@ function InboxIcon() {
       />
       <path d="M9 12h6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
+  );
+}
+
+function AudioAttachmentPlayer({ message }: { message: ChatMessage }) {
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioLoadError, setAudioLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    let objectUrl: string | null = null;
+
+    async function loadAudio() {
+      if (!message.attachmentId || message.messageType !== "audio") {
+        return;
+      }
+
+      try {
+        setAudioLoadError(null);
+        setAudioUrl(null);
+        const response = await downloadAttachmentBlob(message.attachmentId);
+
+        if (response.blob.size === 0) {
+          if (active) {
+            setAudioLoadError("Audio file is empty");
+          }
+          return;
+        }
+
+        objectUrl = window.URL.createObjectURL(response.blob);
+
+        if (active) {
+          setAudioUrl(objectUrl);
+        } else {
+          window.URL.revokeObjectURL(objectUrl);
+        }
+      } catch {
+        if (active) {
+          setAudioUrl(null);
+          setAudioLoadError("Audio could not be loaded");
+        }
+      }
+    }
+
+    void loadAudio();
+
+    return () => {
+      active = false;
+      if (objectUrl) {
+        window.URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [message.attachmentId, message.messageType]);
+
+  if (!message.attachmentId || message.messageType !== "audio") {
+    return null;
+  }
+
+  if (audioLoadError) {
+    return (
+      <div className="mt-2 rounded-xl border border-[#dfeee6] bg-white px-3 py-2 text-[11px] text-[#8f3b2f]">
+        {audioLoadError}
+      </div>
+    );
+  }
+
+  if (!audioUrl) {
+    return (
+      <div className="mt-2 rounded-xl border border-[#dfeee6] bg-white px-3 py-2 text-[11px] text-[#52736a]">
+        Loading audio...
+      </div>
+    );
+  }
+
+  return (
+    <audio controls preload="none" src={audioUrl} className="mt-2 w-full max-w-[260px]">
+      Your browser does not support the audio element.
+    </audio>
   );
 }
 
@@ -708,6 +920,12 @@ export default function AdminMessagesPage() {
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [draftMessage, setDraftMessage] = useState("");
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [voiceRecordingState, setVoiceRecordingState] = useState<"idle" | "recording" | "processing">(
+    "idle",
+  );
+  const [voiceRecordingSeconds, setVoiceRecordingSeconds] = useState(0);
+  const [voiceRecordingError, setVoiceRecordingError] = useState<string | null>(null);
+  const [pendingVoice, setPendingVoice] = useState<PendingVoice | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messagesByConversation, setMessagesByConversation] = useState<Record<string, ChatMessage[]>>(
     {},
@@ -717,11 +935,15 @@ export default function AdminMessagesPage() {
   const [selectedConversationLoading, setSelectedConversationLoading] = useState(false);
   const [selectedConversationError, setSelectedConversationError] = useState<string | null>(null);
   const [selectedConversationDetail, setSelectedConversationDetail] = useState<Conversation | null>(null);
+  const [olderMessagesCursor, setOlderMessagesCursor] = useState<string | null>(null);
+  const [hasMoreOlderMessages, setHasMoreOlderMessages] = useState(true);
+  const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [attachmentUploadStatus, setAttachmentUploadStatus] = useState<
     "idle" | "uploading" | "uploaded" | "failed"
   >("idle");
   const [attachmentUploadFileName, setAttachmentUploadFileName] = useState("");
+  const [uploadedAttachment, setUploadedAttachment] = useState<UploadedAttachment | null>(null);
   const [openMessageActionId, setOpenMessageActionId] = useState<string | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingMessageError, setEditingMessageError] = useState<string | null>(null);
@@ -736,10 +958,28 @@ export default function AdminMessagesPage() {
   const activeRoomConversationIdRef = useRef<string | null>(null);
   const selectedConversationIdRef = useRef<string | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const emojiPickerRef = useRef<HTMLDivElement | null>(null);
+  const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
+  const voiceRecorderRef = useRef<MediaRecorder | null>(null);
+  const voiceStreamRef = useRef<MediaStream | null>(null);
+  const voiceChunksRef = useRef<BlobPart[]>([]);
+  const voiceTimerRef = useRef<number | null>(null);
+  const voiceStartTimeRef = useRef<number | null>(null);
+  const voiceConversationIdRef = useRef<string | null>(null);
+  const voiceCancelRequestedRef = useRef(false);
+  const uploadedAttachmentRef = useRef<UploadedAttachment | null>(null);
+  const pendingVoiceRef = useRef<PendingVoice | null>(null);
+  const pendingInitialScrollToBottomRef = useRef(false);
+  const pendingOlderScrollRestoreRef = useRef<{
+    conversationId: string;
+    previousScrollHeight: number;
+    previousScrollTop: number;
+  } | null>(null);
   const pendingSocketMessageRef = useRef<{
     conversationId: string;
     tempId: string;
     content: string;
+    attachmentId?: string;
   } | null>(null);
   const typingConversationIdRef = useRef<string | null>(null);
   const typingActiveByConversationRef = useRef<Record<string, boolean>>({});
@@ -765,6 +1005,43 @@ export default function AdminMessagesPage() {
   useEffect(() => {
     messagesByConversationRef.current = messagesByConversation;
   }, [messagesByConversation]);
+
+  useEffect(() => {
+    uploadedAttachmentRef.current = uploadedAttachment;
+  }, [uploadedAttachment]);
+
+  useEffect(() => {
+    pendingVoiceRef.current = pendingVoice;
+  }, [pendingVoice]);
+
+  useEffect(() => {
+    if (!showEmojiPicker) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      const pickerElement = emojiPickerRef.current;
+      const buttonElement = emojiButtonRef.current;
+
+      if (pickerElement?.contains(target) || buttonElement?.contains(target)) {
+        return;
+      }
+
+      setShowEmojiPicker(false);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [showEmojiPicker]);
 
   const getConversationPreview = useCallback(
     (conversation: Conversation) => {
@@ -823,32 +1100,33 @@ export default function AdminMessagesPage() {
         conversation_id: conversationId,
       });
 
-      if (process.env.NODE_ENV !== "production") {
-        console.log(
-          `[Chat socket] emitted ${isTyping ? "typing_start" : "typing_stop"} conversation id`,
-          conversationId,
-        );
-      }
-
       return;
     }
 
     try {
       await updateTypingStatus(conversationId, isTyping);
-    } catch (error) {
-      if (process.env.NODE_ENV !== "production") {
-        console.warn("Typing status update failed", error);
-      }
-    }
+    } catch {}
   }, []);
 
   const clearAttachmentUploadState = useCallback(() => {
     setAttachmentUploadStatus("idle");
     setAttachmentUploadFileName("");
+    setUploadedAttachment(null);
 
     if (attachmentInputRef.current) {
       attachmentInputRef.current.value = "";
     }
+  }, []);
+
+  const clearPendingVoice = useCallback(() => {
+    const currentPendingVoice = pendingVoiceRef.current;
+
+    if (currentPendingVoice?.objectUrl) {
+      window.URL.revokeObjectURL(currentPendingVoice.objectUrl);
+    }
+
+    pendingVoiceRef.current = null;
+    setPendingVoice(null);
   }, []);
 
   const clearEditMode = useCallback(() => {
@@ -856,6 +1134,354 @@ export default function AdminMessagesPage() {
     setEditingMessageError(null);
     setOpenMessageActionId(null);
   }, []);
+
+  const resetMessagePaginationState = useCallback(() => {
+    setOlderMessagesCursor(null);
+    setHasMoreOlderMessages(true);
+    setIsLoadingOlderMessages(false);
+    pendingInitialScrollToBottomRef.current = false;
+    pendingOlderScrollRestoreRef.current = null;
+  }, []);
+
+  const stopVoiceRecordingTimers = useCallback(() => {
+    if (voiceTimerRef.current !== null) {
+      window.clearInterval(voiceTimerRef.current);
+      voiceTimerRef.current = null;
+    }
+  }, []);
+
+  const resetVoiceRecordingState = useCallback(() => {
+    stopVoiceRecordingTimers();
+    if (voiceStreamRef.current) {
+      voiceStreamRef.current.getTracks().forEach((track) => track.stop());
+    }
+
+    voiceRecorderRef.current = null;
+    voiceStreamRef.current = null;
+    voiceChunksRef.current = [];
+    voiceStartTimeRef.current = null;
+    voiceConversationIdRef.current = null;
+    voiceCancelRequestedRef.current = false;
+    setVoiceRecordingState("idle");
+    setVoiceRecordingSeconds(0);
+  }, [stopVoiceRecordingTimers]);
+
+  const sendPendingVoiceMessage = useCallback(
+    async (pendingVoiceItem: PendingVoice, caption: string) => {
+      const conversationId = selectedConversationIdRef.current;
+      const messageContent = caption || pendingVoiceItem.fileName;
+
+      if (!conversationId) {
+        throw new Error("Voice message could not be sent");
+      }
+
+      setVoiceRecordingState("processing");
+      setVoiceRecordingError(null);
+
+      try {
+        let uploadResponse: unknown;
+
+        try {
+          uploadResponse = await uploadAttachment(conversationId, pendingVoiceItem.file, "audio");
+        } catch {
+          throw new Error("Voice upload failed");
+        }
+
+        const attachment =
+          extractObjectResponse<BackendAttachment>(uploadResponse) ??
+          (isRecord(uploadResponse) ? (uploadResponse as BackendAttachment) : null);
+        const attachmentId = firstString(attachment?.id, attachment?.attachment_id);
+
+        if (!attachmentId) {
+          throw new Error("Voice upload failed");
+        }
+
+        const socket = socketRef.current;
+        const shouldUseSocket = Boolean(socket?.connected);
+        const optimisticTempId = shouldUseSocket ? `temp-${Date.now()}` : null;
+        const sendPayload = {
+          conversation_id: conversationId,
+          content: messageContent,
+          message_type: "audio" as const,
+          attachment_id: attachmentId,
+        };
+
+        const applyMessageToState = (mappedMessage: ChatMessage, replaceTempId?: string) => {
+          setMessagesByConversation((current) => ({
+            ...current,
+            [conversationId]: upsertChatMessages(current[conversationId] ?? [], mappedMessage, {
+              replaceTempId,
+            }),
+          }));
+
+          setConversations((current) =>
+            current.map((conversation) =>
+              conversation.id === conversationId
+                ? mergeConversationWithMessage(conversation, mappedMessage, true)
+                : conversation,
+            ),
+          );
+
+          setSelectedConversationDetail((current) =>
+            current && current.id === conversationId
+              ? mergeConversationWithMessage(current, mappedMessage, true)
+              : current,
+          );
+        };
+
+        const sendViaRest = async (replaceTempId?: string) => {
+          let mappedMessage: ChatMessage;
+
+          try {
+            const sendResponse = await sendMessage(sendPayload);
+            const createdMessage = extractObjectResponse<BackendMessage>(sendResponse);
+
+            mappedMessage = createdMessage
+              ? mapMessage(createdMessage)
+              : {
+                  id: replaceTempId ?? `temp-${Date.now()}`,
+                  conversationId,
+                  text: messageContent,
+                  createdAt: "Just now",
+                  isMine: true,
+                  deliveryState: "sent",
+                  isDeleted: false,
+                  isEdited: false,
+                  messageType: "audio",
+                  attachmentId,
+                  attachmentName: pendingVoiceItem.fileName,
+                  attachmentDownloadUrl: firstString(attachment?.download_url),
+                  attachmentType: "audio",
+                  attachmentFileName: pendingVoiceItem.fileName,
+                  downloadUrl: firstString(attachment?.download_url),
+                  attachment: attachment
+                    ? {
+                        id: firstString(attachment?.id),
+                        attachment_id: firstString(attachment?.attachment_id),
+                        file_name: firstString(attachment?.file_name),
+                        filename: firstString(attachment?.filename),
+                        attachment_type: firstString(attachment?.attachment_type),
+                        download_url: firstString(attachment?.download_url),
+                        file_size:
+                          typeof attachment?.file_size === "number" ? attachment.file_size : undefined,
+                        mime_type: firstString(attachment?.mime_type),
+                      }
+                    : undefined,
+                };
+
+          } catch {
+            throw new Error("Voice message could not be sent");
+          }
+
+          applyMessageToState(mappedMessage, replaceTempId);
+          pendingSocketMessageRef.current = null;
+        };
+
+        if (shouldUseSocket && socket) {
+          const optimisticMessage: ChatMessage = {
+            id: optimisticTempId ?? `temp-${Date.now()}`,
+            conversationId,
+            text: messageContent,
+            createdAt: "Just now",
+            isMine: true,
+            deliveryState: "sent",
+            isPending: true,
+            isDeleted: false,
+            isEdited: false,
+            messageType: "audio",
+            attachmentId,
+            attachmentName: pendingVoiceItem.fileName,
+            attachmentDownloadUrl: firstString(attachment?.download_url),
+            attachmentType: "audio",
+            attachmentFileName: pendingVoiceItem.fileName,
+            downloadUrl: firstString(attachment?.download_url),
+            attachment: attachment
+              ? {
+                  id: firstString(attachment?.id),
+                  attachment_id: firstString(attachment?.attachment_id),
+                  file_name: firstString(attachment?.file_name),
+                  filename: firstString(attachment?.filename),
+                  attachment_type: firstString(attachment?.attachment_type),
+                  download_url: firstString(attachment?.download_url),
+                  file_size:
+                    typeof attachment?.file_size === "number" ? attachment.file_size : undefined,
+                  mime_type: firstString(attachment?.mime_type),
+                }
+              : undefined,
+          };
+
+          applyMessageToState(optimisticMessage);
+          pendingSocketMessageRef.current = {
+            conversationId,
+            tempId: optimisticMessage.id,
+            content: messageContent,
+            attachmentId,
+          };
+
+          socket.emit("send_message", sendPayload);
+        } else {
+          await sendViaRest();
+        }
+
+        setSelectedConversationError(null);
+        clearPendingVoice();
+        setDraftMessage("");
+        setShowEmojiPicker(false);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Voice message could not be sent";
+        setVoiceRecordingError(errorMessage);
+        throw error;
+      } finally {
+        setVoiceRecordingState("idle");
+        setIsSendingMessage(false);
+      }
+    },
+    [clearPendingVoice],
+  );
+
+  const stopVoiceRecording = useCallback(
+    (cancelRecording: boolean) => {
+      const recorder = voiceRecorderRef.current;
+
+      voiceCancelRequestedRef.current = cancelRecording;
+      setVoiceRecordingState("idle");
+      setVoiceRecordingSeconds(0);
+      stopVoiceRecordingTimers();
+
+      if (recorder && recorder.state !== "inactive") {
+        try {
+          recorder.stop();
+          return;
+        } catch {
+          // fall through to cleanup
+        }
+      }
+
+      resetVoiceRecordingState();
+    },
+    [resetVoiceRecordingState, stopVoiceRecordingTimers],
+  );
+
+  const startVoiceRecording = useCallback(async () => {
+    const conversationId = selectedConversationIdRef.current;
+    const conversation = conversationsRef.current.find((item) => item.id === conversationId);
+
+    if (!conversationId || !conversation || !conversation.canSendMessage) {
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setVoiceRecordingError("Voice recording is not supported in this browser.");
+      return;
+    }
+
+    try {
+      clearPendingVoice();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      if (selectedConversationIdRef.current !== conversationId) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
+      const recorder = new MediaRecorder(stream);
+
+      voiceStreamRef.current = stream;
+      voiceRecorderRef.current = recorder;
+      voiceChunksRef.current = [];
+      voiceConversationIdRef.current = conversationId;
+      voiceCancelRequestedRef.current = false;
+      voiceStartTimeRef.current = Date.now();
+      setVoiceRecordingSeconds(0);
+      setVoiceRecordingError(null);
+      setVoiceRecordingState("recording");
+
+      if (voiceTimerRef.current !== null) {
+        window.clearInterval(voiceTimerRef.current);
+      }
+
+      voiceTimerRef.current = window.setInterval(() => {
+        if (voiceStartTimeRef.current) {
+          setVoiceRecordingSeconds(Math.max(0, Math.floor((Date.now() - voiceStartTimeRef.current) / 1000)));
+        }
+      }, 1000);
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          voiceChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const activeConversationId = voiceConversationIdRef.current;
+        const wasCanceled = voiceCancelRequestedRef.current;
+        const chunks = voiceChunksRef.current.slice();
+        const elapsed = voiceStartTimeRef.current
+          ? Math.max(1, Math.floor((Date.now() - voiceStartTimeRef.current) / 1000))
+          : 0;
+
+        const stream = voiceStreamRef.current;
+        if (stream) {
+          stream.getTracks().forEach((track) => track.stop());
+        }
+
+        stopVoiceRecordingTimers();
+
+        voiceRecorderRef.current = null;
+        voiceStreamRef.current = null;
+        voiceStartTimeRef.current = null;
+        voiceConversationIdRef.current = null;
+
+        if (wasCanceled || !activeConversationId || chunks.length === 0) {
+          voiceChunksRef.current = [];
+          setVoiceRecordingState("idle");
+          setVoiceRecordingSeconds(0);
+          voiceCancelRequestedRef.current = false;
+          return;
+        }
+
+        const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+        const fileName = `voice-${Date.now()}.webm`;
+        const file = new File([blob], fileName, {
+          type: blob.type || "audio/webm",
+        });
+        const objectUrl = window.URL.createObjectURL(blob);
+
+        if (pendingVoiceRef.current?.objectUrl) {
+          window.URL.revokeObjectURL(pendingVoiceRef.current.objectUrl);
+        }
+
+        pendingVoiceRef.current = {
+          file,
+          objectUrl,
+          durationSeconds: elapsed,
+          fileName,
+          mimeType: blob.type || "audio/webm",
+        };
+        setPendingVoice(pendingVoiceRef.current);
+        voiceChunksRef.current = [];
+        setVoiceRecordingSeconds(0);
+        setVoiceRecordingError(null);
+        setVoiceRecordingState("idle");
+      };
+
+      recorder.start();
+    } catch (error) {
+      setVoiceRecordingError(
+        error instanceof DOMException && error.name === "NotAllowedError"
+          ? "Microphone access was denied."
+          : "Voice recording could not start.",
+      );
+      resetVoiceRecordingState();
+    }
+  }, [clearPendingVoice, resetVoiceRecordingState, stopVoiceRecordingTimers]);
+
+  useEffect(() => {
+    return () => {
+      stopVoiceRecording(true);
+      clearPendingVoice();
+    };
+  }, [selectedConversationId, clearPendingVoice, stopVoiceRecording]);
 
   const stopTypingForConversation = useCallback(
     (conversationId: string) => {
@@ -885,18 +1511,10 @@ export default function AdminMessagesPage() {
 
       if (socket?.connected) {
         socket.emit("mark_read", messageId ? { message_id: messageId } : { conversation_id: conversationId });
-
-        if (process.env.NODE_ENV !== "production") {
-          console.log("[Chat socket] emitted mark_read conversation id", conversationId);
-        }
         return;
       }
 
-      void markConversationRead(conversationId).catch((error) => {
-        if (process.env.NODE_ENV !== "production") {
-          console.warn("Mark conversation read failed", error);
-        }
-      });
+      void markConversationRead(conversationId).catch(() => undefined);
     },
     [],
   );
@@ -928,15 +1546,6 @@ export default function AdminMessagesPage() {
 
       if (!conversationId || !userId || typeof isTyping !== "boolean") {
         return;
-      }
-
-      if (process.env.NODE_ENV !== "production") {
-        console.log(
-          "[Chat socket] received typing conversation id / user id / is_typing",
-          conversationId,
-          userId,
-          isTyping,
-        );
       }
 
       if (userId === DEV_CHAT_USER_ID || selectedConversationIdRef.current !== conversationId) {
@@ -996,15 +1605,6 @@ export default function AdminMessagesPage() {
         return;
       }
 
-      if (process.env.NODE_ENV !== "production") {
-        console.log(
-          "[Chat socket] received message_read conversation id / message id / user id",
-          conversationId,
-          messageId ?? "(conversation)",
-          userId,
-        );
-      }
-
       setMessagesByConversation((current) => {
         const existingMessages = current[conversationId] ?? [];
 
@@ -1058,12 +1658,8 @@ export default function AdminMessagesPage() {
         const otherTypingUsers = getVisibleTypingUsers(response);
         typingPollErrorCountRef.current = 0;
         window.setTimeout(() => setVisibleTypingUsers(otherTypingUsers), 0);
-      } catch (error) {
+      } catch {
         typingPollErrorCountRef.current += 1;
-
-        if (process.env.NODE_ENV !== "production") {
-          console.warn("Typing poll failed", error);
-        }
 
         if (typingPollErrorCountRef.current >= 2) {
           window.setTimeout(() => setVisibleTypingUsers([]), 0);
@@ -1108,9 +1704,21 @@ export default function AdminMessagesPage() {
           }
 
           clearAttachmentUploadState();
+          clearEditMode();
+          resetMessagePaginationState();
+          stopTypingTimers();
+          setVisibleTypingUsers([]);
+          setDraftMessage("");
+          setShowEmojiPicker(false);
           setSelectedConversationId(null);
           setSelectedConversationDetail(null);
+          setSelectedConversationLoading(false);
+          setSelectedConversationError(null);
           activeRoomConversationIdRef.current = null;
+          typingConversationIdRef.current = null;
+          typingPollConversationIdRef.current = null;
+          typingPollErrorCountRef.current = 0;
+          pendingSocketMessageRef.current = null;
         }
       }
     } catch (error) {
@@ -1118,7 +1726,7 @@ export default function AdminMessagesPage() {
     } finally {
       setIsConversationsLoading(false);
     }
-  }, [applyDeletedPreviewOverride, clearAttachmentUploadState]);
+  }, [applyDeletedPreviewOverride, clearAttachmentUploadState, clearEditMode, resetMessagePaginationState, stopTypingTimers]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -1134,15 +1742,17 @@ export default function AdminMessagesPage() {
     }
 
     let active = true;
+    pendingInitialScrollToBottomRef.current = true;
 
     async function loadSelectedConversation() {
       setSelectedConversationLoading(true);
       setSelectedConversationError(null);
+      setIsLoadingOlderMessages(false);
 
       try {
         const [conversationResponse, messagesResponse] = await Promise.all([
           getConversationById(selectedConversationId),
-          getConversationMessages(selectedConversationId, { limit: 20 }),
+          getConversationMessages<BackendMessage>(selectedConversationId, { limit: 50 }),
         ]);
 
         if (!active) {
@@ -1150,7 +1760,9 @@ export default function AdminMessagesPage() {
         }
 
         const detail = extractObjectResponse<BackendConversation>(conversationResponse);
-        const messages = extractListResponse<BackendMessage>(messagesResponse).map(mapMessage);
+        const messages = messagesResponse.items.map(mapMessage);
+        const nextCursor = messagesResponse.pagination.next_cursor;
+        const hasMoreOlder = messagesResponse.pagination.has_more;
 
         if (detail) {
           setSelectedConversationDetail(mapConversationDetail(detail));
@@ -1160,6 +1772,11 @@ export default function AdminMessagesPage() {
           ...current,
           [selectedConversationId]: messages,
         }));
+        setOlderMessagesCursor(nextCursor);
+        setHasMoreOlderMessages(hasMoreOlder);
+        if (messages.length === 0) {
+          pendingInitialScrollToBottomRef.current = false;
+        }
 
         if (socketRef.current?.connected) {
           emitMarkRead(selectedConversationId);
@@ -1203,6 +1820,7 @@ export default function AdminMessagesPage() {
     return () => {
       active = false;
       window.clearTimeout(timer);
+      pendingInitialScrollToBottomRef.current = false;
     };
   }, [selectedConversationId, emitMarkRead]);
 
@@ -1232,6 +1850,7 @@ export default function AdminMessagesPage() {
         : typeof candidate._id === "string"
           ? candidate._id
           : undefined;
+    const attachment = isRecord(candidate.attachment) ? candidate.attachment : undefined;
 
     if (!isRecord(candidate) || !messageId || !conversationId) {
       return null;
@@ -1248,6 +1867,38 @@ export default function AdminMessagesPage() {
         typeof candidate.attachment_id === "string" || candidate.attachment_id === null
           ? candidate.attachment_id
           : undefined,
+      file_name: typeof candidate.file_name === "string" ? candidate.file_name : undefined,
+      filename: typeof candidate.filename === "string" ? candidate.filename : undefined,
+      download_url: typeof candidate.download_url === "string" ? candidate.download_url : undefined,
+      file_size: typeof candidate.file_size === "number" ? candidate.file_size : undefined,
+      mime_type: typeof candidate.mime_type === "string" ? candidate.mime_type : undefined,
+      attachment: attachment
+        ? {
+            id: typeof attachment.id === "string" ? attachment.id : undefined,
+            attachment_id:
+              typeof attachment.attachment_id === "string"
+                ? attachment.attachment_id
+                : undefined,
+            file_name:
+              typeof attachment.file_name === "string"
+                ? attachment.file_name
+                : undefined,
+            filename: typeof attachment.filename === "string" ? attachment.filename : undefined,
+            attachment_type:
+              typeof attachment.attachment_type === "string"
+                ? attachment.attachment_type
+                : undefined,
+            download_url:
+              typeof attachment.download_url === "string"
+                ? attachment.download_url
+                : undefined,
+            file_size:
+              typeof attachment.file_size === "number"
+                ? attachment.file_size
+                : undefined,
+            mime_type: typeof attachment.mime_type === "string" ? attachment.mime_type : undefined,
+          }
+        : undefined,
       is_deleted: typeof candidate.is_deleted === "boolean" ? candidate.is_deleted : false,
       is_edited: typeof candidate.is_edited === "boolean" ? candidate.is_edited : false,
       edited_at: typeof candidate.edited_at === "string" ? candidate.edited_at : undefined,
@@ -1314,15 +1965,13 @@ export default function AdminMessagesPage() {
         (conversation) => conversation.id === conversationId,
       );
       const pendingSocketMessage = pendingSocketMessageRef.current;
+      const incomingAttachmentId = mappedMessage.attachmentId;
       const shouldReplaceOptimisticMessage =
         pendingSocketMessage !== null &&
         pendingSocketMessage.conversationId === conversationId &&
         pendingSocketMessage.content === mappedMessage.text &&
+        (pendingSocketMessage.attachmentId ?? undefined) === (incomingAttachmentId ?? undefined) &&
         mappedMessage.isMine;
-
-      if (process.env.NODE_ENV !== "production") {
-        console.log("[Chat socket] received new_message conversation id", conversationId);
-      }
 
       setMessagesByConversation((current) => {
         const existingMessages = current[conversationId] ?? [];
@@ -1403,10 +2052,6 @@ export default function AdminMessagesPage() {
 
       const conversationId = conversation.id;
 
-      if (process.env.NODE_ENV !== "production") {
-        console.log("[Chat socket] received conversation_updated conversation id", conversationId);
-      }
-
       setConversations((current) => {
         const index = current.findIndex((item) => item.id === conversationId);
 
@@ -1481,18 +2126,11 @@ export default function AdminMessagesPage() {
     socketRef.current = socket;
 
     const handleConnect = () => {
-      if (process.env.NODE_ENV !== "production") {
-        console.log("Chat socket connected");
-      }
-
       setSocketStatus("connected");
 
       const conversationId = selectedConversationIdRef.current;
       if (conversationId) {
         socket.emit("join_room", { conversation_id: conversationId });
-        if (process.env.NODE_ENV !== "production") {
-          console.log("[Chat socket] joined room conversation id", conversationId);
-        }
         activeRoomConversationIdRef.current = conversationId;
         emitMarkRead(conversationId);
       }
@@ -1504,20 +2142,12 @@ export default function AdminMessagesPage() {
       setVisibleTypingUsers([]);
     };
 
-    const handleConnectError = (error: unknown) => {
+    const handleConnectError = () => {
       setSocketStatus("reconnecting");
-
-      if (process.env.NODE_ENV !== "production") {
-        console.warn("Chat socket connect_error", error);
-      }
     };
 
     const handleSocketErrorEvent = (payload: unknown) => {
       setSocketStatus("reconnecting");
-
-      if (process.env.NODE_ENV !== "production") {
-        console.warn("[Chat socket] error event detail", payload);
-      }
 
       const pendingSocketMessage = pendingSocketMessageRef.current;
       const eventName =
@@ -1619,9 +2249,6 @@ export default function AdminMessagesPage() {
       const activeConversationId = activeRoomConversationIdRef.current;
       if (activeConversationId) {
         socket.emit("leave_room", { conversation_id: activeConversationId });
-        if (process.env.NODE_ENV !== "production") {
-          console.log("[Chat socket] left room conversation id", activeConversationId);
-        }
       }
 
       socket.off("connect", handleConnect);
@@ -1667,16 +2294,10 @@ export default function AdminMessagesPage() {
 
     if (previousConversationId && previousConversationId !== nextConversationId) {
       socket.emit("leave_room", { conversation_id: previousConversationId });
-      if (process.env.NODE_ENV !== "production") {
-        console.log("[Chat socket] left room conversation id", previousConversationId);
-      }
     }
 
     if (nextConversationId && previousConversationId !== nextConversationId) {
       socket.emit("join_room", { conversation_id: nextConversationId });
-      if (process.env.NODE_ENV !== "production") {
-        console.log("[Chat socket] joined room conversation id", nextConversationId);
-      }
       activeRoomConversationIdRef.current = nextConversationId;
     }
 
@@ -1804,11 +2425,113 @@ export default function AdminMessagesPage() {
       ? selectedConversation
       : null;
 
+  const visibleSelectedConversationId = visibleSelectedConversation?.id ?? null;
+
   const selectedMessages = visibleSelectedConversation
     ? messagesByConversation[visibleSelectedConversation.id] ?? []
     : [];
 
   const quickReplies = visibleSelectedConversation ? getQuickReplies(visibleSelectedConversation) : [];
+
+  const loadOlderMessages = useCallback(async () => {
+    const conversationId = selectedConversationIdRef.current;
+    const cursor = olderMessagesCursor;
+    const selectedConversationExists =
+      Boolean(visibleSelectedConversationId) || Boolean(selectedConversationDetail?.id);
+    const element = messagesListRef.current;
+
+    if (
+      !conversationId ||
+      !cursor ||
+      !hasMoreOlderMessages ||
+      isLoadingOlderMessages ||
+      !selectedConversationExists
+    ) {
+      return;
+    }
+
+    if (element) {
+      pendingOlderScrollRestoreRef.current = {
+        conversationId,
+        previousScrollHeight: element.scrollHeight,
+        previousScrollTop: element.scrollTop,
+      };
+    }
+
+    setIsLoadingOlderMessages(true);
+
+    try {
+      const response = await getConversationMessages<BackendMessage>(conversationId, {
+        cursor,
+        limit: 50,
+      });
+
+      if (selectedConversationIdRef.current !== conversationId) {
+        return;
+      }
+
+      const olderMessages = response.items.map(mapMessage);
+      const nextMessages = prependUniqueChatMessages(
+        messagesByConversationRef.current[conversationId] ?? [],
+        olderMessages,
+      );
+
+      setMessagesByConversation((current) => ({
+        ...current,
+        [conversationId]: nextMessages,
+      }));
+      setOlderMessagesCursor(response.pagination.next_cursor);
+      setHasMoreOlderMessages(response.pagination.has_more);
+
+    } catch {
+      pendingOlderScrollRestoreRef.current = null;
+    } finally {
+      if (selectedConversationIdRef.current === conversationId) {
+        setIsLoadingOlderMessages(false);
+      }
+    }
+  }, [
+    hasMoreOlderMessages,
+    isLoadingOlderMessages,
+    olderMessagesCursor,
+    selectedConversationDetail?.id,
+    visibleSelectedConversationId,
+  ]);
+
+  useLayoutEffect(() => {
+    const element = messagesListRef.current;
+
+    if (!element || !visibleSelectedConversationId) {
+      return;
+    }
+
+    const restore = pendingOlderScrollRestoreRef.current;
+
+    if (restore && restore.conversationId === visibleSelectedConversationId) {
+      const previousScrollHeight = restore.previousScrollHeight;
+      const previousScrollTop = restore.previousScrollTop;
+
+      pendingOlderScrollRestoreRef.current = null;
+
+      requestAnimationFrame(() => {
+        const nextElement = messagesListRef.current;
+
+        if (!nextElement) {
+          return;
+        }
+
+        nextElement.scrollTop =
+          nextElement.scrollHeight - previousScrollHeight + previousScrollTop;
+      });
+
+      return;
+    }
+
+    if (pendingInitialScrollToBottomRef.current && selectedMessages.length > 0) {
+      pendingInitialScrollToBottomRef.current = false;
+      element.scrollTop = element.scrollHeight;
+    }
+  }, [selectedMessages.length, visibleSelectedConversationId]);
 
   useEffect(() => {
     const element = messagesListRef.current;
@@ -1817,11 +2540,20 @@ export default function AdminMessagesPage() {
       return;
     }
 
+    if (pendingOlderScrollRestoreRef.current || pendingInitialScrollToBottomRef.current) {
+      return;
+    }
+
     const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
     if (distanceFromBottom <= 120) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [selectedMessages.length, visibleTypingUsers.length, selectedConversationId]);
+  }, [
+    selectedMessages.length,
+    visibleTypingUsers.length,
+    selectedConversationId,
+    isLoadingOlderMessages,
+  ]);
 
   const activeCount = conversations.filter(
     (conversation) => conversation.status === "ACTIVE" && conversation.canSendMessage,
@@ -1833,9 +2565,23 @@ export default function AdminMessagesPage() {
 
   async function handleSend() {
     const text = draftMessage.trim();
+    const attachment = uploadedAttachmentRef.current;
+    const voicePreview = pendingVoiceRef.current;
+    const hasAttachment = Boolean(attachment);
+    const messageContent = text || attachment?.fileName || "Attachment";
 
     if (!selectedConversation || isSendingMessage) {
       return;
+    }
+
+    if (voicePreview) {
+      setIsSendingMessage(true);
+      try {
+        await sendPendingVoiceMessage(voicePreview, text || voicePreview.fileName);
+        return;
+      } catch {
+        return;
+      }
     }
 
     if (editingMessageId) {
@@ -1937,13 +2683,6 @@ export default function AdminMessagesPage() {
           typingStopTimerRef.current = null;
         }
       } catch (error) {
-        if (process.env.NODE_ENV !== "production") {
-          console.warn("[Chat messages] edit_message failed", {
-            messageId: editingMessageId,
-            error,
-          });
-        }
-
         setEditingMessageError(error instanceof Error ? error.message : "Failed to edit message.");
       } finally {
         setIsSendingMessage(false);
@@ -1952,7 +2691,7 @@ export default function AdminMessagesPage() {
       return;
     }
 
-    if (!text || !selectedConversation.canSendMessage) {
+    if ((!text && !hasAttachment) || !selectedConversation.canSendMessage) {
       return;
     }
 
@@ -1960,6 +2699,13 @@ export default function AdminMessagesPage() {
     const socket = socketRef.current;
     const shouldUseSocket = Boolean(socket?.connected);
     const optimisticTempId = shouldUseSocket ? `temp-${Date.now()}` : null;
+    const messageType = attachment?.attachmentType ?? "text";
+    const sendPayload = {
+      conversation_id: conversationId,
+      content: messageContent,
+      message_type: messageType,
+      ...(attachment?.id ? { attachment_id: attachment.id } : {}),
+    };
 
     setIsSendingMessage(true);
 
@@ -2000,11 +2746,7 @@ export default function AdminMessagesPage() {
 
     const sendViaRest = async (replaceTempId?: string, restoreDraftOnFailure = false) => {
       try {
-        const response = await sendMessage({
-          conversation_id: conversationId,
-          content: text,
-          message_type: "text",
-        });
+        const response = await sendMessage(sendPayload);
 
         stopTypingForConversation(conversationId);
         if (typingStopTimerRef.current !== null) {
@@ -2021,11 +2763,17 @@ export default function AdminMessagesPage() {
             {
               id: replaceTempId ?? `temp-${Date.now()}`,
               conversationId,
-              text,
+              text: messageContent,
               createdAt: "Just now",
               isMine: true,
               deliveryState: "sent",
               isPending: false,
+              messageType,
+              attachmentId: attachment?.id,
+              attachmentName: attachment?.fileName,
+              attachmentDownloadUrl: attachment?.downloadUrl,
+              attachmentType: attachment?.attachmentType,
+              attachmentFileName: attachment?.fileName,
             },
             replaceTempId,
           );
@@ -2034,6 +2782,7 @@ export default function AdminMessagesPage() {
         await refreshConversationList();
         setDraftMessage("");
         setShowEmojiPicker(false);
+        clearAttachmentUploadState();
         setOpenMessageActionId(null);
         pendingSocketMessageRef.current = null;
         setIsSendingMessage(false);
@@ -2060,52 +2809,48 @@ export default function AdminMessagesPage() {
     };
 
     try {
-      if (shouldUseSocket && socket) {
-        const optimisticMessage: ChatMessage = {
-          id: optimisticTempId ?? `temp-${Date.now()}`,
-          conversationId,
-          text,
-          createdAt: "Just now",
-          isMine: true,
-          deliveryState: "sent",
-          isPending: true,
-        };
+        if (shouldUseSocket && socket) {
+          const optimisticMessage: ChatMessage = {
+            id: optimisticTempId ?? `temp-${Date.now()}`,
+            conversationId,
+            text: messageContent,
+            createdAt: "Just now",
+            isMine: true,
+            deliveryState: "sent",
+            isPending: true,
+            messageType,
+            attachmentId: attachment?.id,
+            attachmentName: attachment?.fileName,
+            attachmentDownloadUrl: attachment?.downloadUrl,
+            attachmentType: attachment?.attachmentType,
+            attachmentFileName: attachment?.fileName,
+          };
 
-        pendingSocketMessageRef.current = {
-          conversationId,
-          tempId: optimisticMessage.id,
-          content: text,
-        };
+          pendingSocketMessageRef.current = {
+            conversationId,
+            tempId: optimisticMessage.id,
+            content: messageContent,
+            attachmentId: attachment?.id,
+          };
 
-        applyMessageToState(optimisticMessage);
-        socket.emit("send_message", {
-          conversation_id: conversationId,
-          content: text,
-          message_type: "text",
-        });
-
-        if (process.env.NODE_ENV !== "production") {
-          console.log("[Chat socket] emitted send_message conversation id", conversationId);
-        }
+          applyMessageToState(optimisticMessage);
+          socket.emit("send_message", sendPayload);
 
         stopTypingForConversation(conversationId);
-        if (typingStopTimerRef.current !== null) {
-          window.clearTimeout(typingStopTimerRef.current);
-          typingStopTimerRef.current = null;
-        }
+          if (typingStopTimerRef.current !== null) {
+            window.clearTimeout(typingStopTimerRef.current);
+            typingStopTimerRef.current = null;
+          }
 
-        setDraftMessage("");
-        setShowEmojiPicker(false);
-        setOpenMessageActionId(null);
-      } else {
-        await sendViaRest();
-      }
-    } catch (error) {
+          setDraftMessage("");
+          setShowEmojiPicker(false);
+          clearAttachmentUploadState();
+          setOpenMessageActionId(null);
+        } else {
+          await sendViaRest();
+        }
+      } catch (error) {
       if (shouldUseSocket && socket && optimisticTempId) {
-        if (process.env.NODE_ENV !== "production") {
-          console.warn("[Chat socket] send_message emit failed", error);
-        }
-
         pendingSocketMessageRef.current = null;
 
         try {
@@ -2127,12 +2872,86 @@ export default function AdminMessagesPage() {
 
   function handleConversationSelect(conversationId: string) {
     clearAttachmentUploadState();
+    clearPendingVoice();
     if (editingMessageId) {
       setDraftMessage("");
     }
     clearEditMode();
+    stopVoiceRecording(true);
+    setVoiceRecordingError(null);
+    resetMessagePaginationState();
     setSelectedConversationId(conversationId);
   }
+
+  const handleMessagesScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>) => {
+      const element = event.currentTarget;
+
+      if (
+        element.scrollTop <= 80 &&
+        hasMoreOlderMessages &&
+        olderMessagesCursor &&
+        !isLoadingOlderMessages &&
+        !selectedConversationLoading &&
+        selectedConversationId
+      ) {
+        void loadOlderMessages();
+      }
+    },
+    [
+      hasMoreOlderMessages,
+      isLoadingOlderMessages,
+      loadOlderMessages,
+      olderMessagesCursor,
+      selectedConversationId,
+      selectedConversationLoading,
+    ],
+  );
+
+  const handleCloseConversation = useCallback(() => {
+    const conversationId = activeRoomConversationIdRef.current ?? selectedConversationIdRef.current;
+    const socket = socketRef.current;
+
+    if (conversationId && socket?.connected) {
+      socket.emit("leave_room", { conversation_id: conversationId });
+    }
+
+    activeRoomConversationIdRef.current = null;
+    pendingSocketMessageRef.current = null;
+    if (conversationId) {
+      stopTypingForConversation(conversationId);
+    }
+    typingConversationIdRef.current = null;
+    typingPollConversationIdRef.current = null;
+    typingPollErrorCountRef.current = 0;
+    resetMessagePaginationState();
+    setSelectedConversationId(null);
+    setSelectedConversationDetail(null);
+    setSelectedConversationLoading(false);
+    setSelectedConversationError(null);
+    setOlderMessagesCursor(null);
+    setHasMoreOlderMessages(true);
+    setIsLoadingOlderMessages(false);
+    pendingInitialScrollToBottomRef.current = false;
+    pendingOlderScrollRestoreRef.current = null;
+    clearAttachmentUploadState();
+    clearPendingVoice();
+    clearEditMode();
+    stopVoiceRecording(true);
+    setVoiceRecordingError(null);
+    stopTypingTimers();
+    setVisibleTypingUsers([]);
+    setDraftMessage("");
+    setShowEmojiPicker(false);
+  }, [
+    clearAttachmentUploadState,
+    clearPendingVoice,
+    clearEditMode,
+    resetMessagePaginationState,
+    stopTypingTimers,
+    stopTypingForConversation,
+    stopVoiceRecording,
+  ]);
 
   function handleDraftMessageChange(value: string) {
     setDraftMessage(value);
@@ -2184,6 +3003,7 @@ export default function AdminMessagesPage() {
     if (!conversationId || !conversation || !conversation.canSendMessage) {
       setAttachmentUploadStatus("failed");
       setAttachmentUploadFileName(file.name);
+      setUploadedAttachment(null);
       return;
     }
 
@@ -2191,6 +3011,7 @@ export default function AdminMessagesPage() {
 
     setAttachmentUploadStatus("uploading");
     setAttachmentUploadFileName(file.name);
+    setUploadedAttachment(null);
 
     try {
       const response = await uploadAttachment(conversationId, file, attachmentType);
@@ -2200,28 +3021,68 @@ export default function AdminMessagesPage() {
       const attachmentId = firstString(attachment?.id, attachment?.attachment_id);
       const responseFileName = firstString(attachment?.file_name, attachment?.filename) ?? file.name;
       const responseAttachmentType = firstString(attachment?.attachment_type) ?? attachmentType;
-      const downloadUrlExists = Boolean(attachment?.download_url);
+      const mimeType = (firstString(attachment?.mime_type) ?? file.type) || undefined;
+      const fileSize = typeof attachment?.file_size === "number" ? attachment.file_size : file.size;
 
-      if (process.env.NODE_ENV !== "production") {
-        console.log("[Chat attachment] upload response", {
-          attachmentId,
-          fileName: responseFileName,
-          attachmentType: responseAttachmentType,
-          downloadUrlExists,
-        });
+      if (!attachmentId) {
+        setAttachmentUploadStatus("failed");
+        setAttachmentUploadFileName(file.name);
+        return;
       }
 
+      setUploadedAttachment({
+        id: attachmentId,
+        fileName: responseFileName,
+        attachmentType: responseAttachmentType,
+        downloadUrl: firstString(attachment?.download_url),
+        fileSize,
+        mimeType,
+      });
       setAttachmentUploadStatus("uploaded");
       setAttachmentUploadFileName(responseFileName);
-    } catch (error) {
-      if (process.env.NODE_ENV !== "production") {
-        console.warn("Attachment upload failed", error);
-      }
-
+    } catch {
       setAttachmentUploadStatus("failed");
       setAttachmentUploadFileName(file.name);
+      setUploadedAttachment(null);
     }
   }
+
+  const openAttachmentBlob = useCallback(
+    async (message: ChatMessage, shouldDownload: boolean) => {
+      const attachmentId = message.attachmentId;
+
+      if (!attachmentId) {
+        setSelectedConversationError("File unavailable.");
+        return;
+      }
+
+      try {
+        const response = await downloadAttachmentBlob(attachmentId);
+        const blobUrl = window.URL.createObjectURL(response.blob);
+        const fileName =
+          getMessageAttachmentLabel(message) ||
+          response.fileName ||
+          `attachment-${attachmentId.slice(0, 8)}`;
+
+        if (shouldDownload) {
+          const anchor = document.createElement("a");
+          anchor.href = blobUrl;
+          anchor.download = fileName;
+          anchor.rel = "noreferrer";
+          document.body.appendChild(anchor);
+          anchor.click();
+          anchor.remove();
+        } else {
+          window.open(blobUrl, "_blank", "noopener,noreferrer");
+        }
+
+        window.setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1500);
+      } catch {
+        setSelectedConversationError("Attachment could not be opened right now.");
+      }
+    },
+    [],
+  );
 
   function handleEditMessage(messageId: string) {
     const message = selectedMessages.find((item) => item.id === messageId);
@@ -2230,6 +3091,7 @@ export default function AdminMessagesPage() {
       return;
     }
 
+    clearAttachmentUploadState();
     setEditingMessageId(message.id);
     setEditingMessageError(null);
     setDraftMessage(message.text);
@@ -2538,12 +3400,23 @@ export default function AdminMessagesPage() {
                     </div>
 
                     <div className="flex shrink-0 flex-col items-start gap-2 lg:items-end">
-                      {visibleSelectedConversation.chatCloseAt ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-[#f4f7f5] px-2.5 py-1 text-[11px] font-medium text-[#6b7f79]">
-                          <ClockIcon />
-                          Closes {visibleSelectedConversation.chatCloseAt}
-                        </span>
-                      ) : null}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleCloseConversation}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] bg-white text-[#52736a] shadow-sm transition hover:border-[#1f6a58] hover:text-[#1f6a58]"
+                          aria-label="Close conversation"
+                        >
+                          <CloseIcon />
+                        </button>
+
+                        {visibleSelectedConversation.chatCloseAt ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-[#f4f7f5] px-2.5 py-1 text-[11px] font-medium text-[#6b7f79]">
+                            <ClockIcon />
+                            Closes {visibleSelectedConversation.chatCloseAt}
+                          </span>
+                        ) : null}
+                      </div>
                       <span className="inline-flex items-center gap-1 rounded-full bg-[#eef8f2] px-2.5 py-1 text-[11px] font-semibold text-[#1f6a58]">
                         <UserIcon />
                         {getHeaderStatusLabel(visibleSelectedConversation)}
@@ -2580,7 +3453,11 @@ export default function AdminMessagesPage() {
                   ) : null}
                 </div>
 
-                <div ref={messagesListRef} className="min-h-0 flex-1 overflow-y-auto bg-[#fbfdfc] px-4 py-4">
+                <div
+                  ref={messagesListRef}
+                  onScroll={handleMessagesScroll}
+                  className="min-h-0 flex-1 overflow-y-auto bg-[#fbfdfc] px-4 py-4"
+                >
                   {selectedConversationLoading && selectedMessages.length === 0 ? (
                     <div className="flex min-h-[220px] items-center justify-center text-center">
                       <div>
@@ -2591,12 +3468,24 @@ export default function AdminMessagesPage() {
                     </div>
                   ) : (
                     <div className="space-y-2.5">
+                      {isLoadingOlderMessages ? (
+                        <div className="sticky top-0 z-10 flex justify-center pb-1">
+                          <span className="rounded-full border border-[#dfeee6] bg-white px-3 py-1 text-[11px] font-medium text-[#6b7f79] shadow-sm">
+                            Loading older messages...
+                          </span>
+                        </div>
+                      ) : null}
+
                       {selectedMessages.map((message) => {
                         const isMine = message.isMine;
                         const showDeleteAction = isMine && !message.isDeleted;
                         const showEditAction = canEditMessage(message);
                         const showMessageActions = showDeleteAction || showEditAction;
                         const isActionOpen = openMessageActionId === message.id;
+                        const attachmentLabel = getMessageAttachmentLabel(message);
+                        const attachmentCaption = getAttachmentCaption(message);
+                        const hasAttachmentId = Boolean(message.attachmentId);
+                        const hasAttachment = Boolean(attachmentLabel || hasAttachmentId);
 
                         return (
                           <div
@@ -2662,20 +3551,52 @@ export default function AdminMessagesPage() {
                                 </div>
                               ) : null}
 
-                              {message.attachmentName ? (
-                                <div className="mb-1.5 inline-flex items-center gap-1 rounded-full bg-[#f1f4f3] px-2 py-1 text-[12px] font-semibold text-[#506b63]">
-                                  <PaperclipIcon />
-                                  {message.attachmentName}
+                              {message.isDeleted ? (
+                                <p className="text-[13px] leading-5 italic text-[#6b7f79]">
+                                  This message was deleted.
+                                </p>
+                              ) : hasAttachment ? (
+                                <div className="mb-2 overflow-hidden rounded-xl border border-[#dfeee6] bg-[#f8fbf9] px-2.5 py-2">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <p className="truncate text-[12px] font-semibold text-[#06201c]">
+                                        {attachmentLabel || "attachment"}
+                                      </p>
+                                      <p className="truncate text-[11px] text-[#52736a]">
+                                        {hasAttachmentId ? "Protected file" : "File unavailable"}
+                                      </p>
+                                    </div>
+
+                                    <div className="flex shrink-0 items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => void openAttachmentBlob(message, false)}
+                                        disabled={!hasAttachmentId}
+                                        className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-[#1f6a58] shadow-sm transition hover:bg-[#eef8f2] disabled:cursor-not-allowed disabled:opacity-60"
+                                      >
+                                        Open
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => void openAttachmentBlob(message, true)}
+                                        disabled={!hasAttachmentId}
+                                        className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-[#1f6a58] shadow-sm transition hover:bg-[#eef8f2] disabled:cursor-not-allowed disabled:opacity-60"
+                                      >
+                                        Download
+                                      </button>
+                                    </div>
+                                  </div>
+                                  {message.messageType === "audio" ? (
+                                    <AudioAttachmentPlayer message={message} />
+                                  ) : null}
                                 </div>
+                              ) : message.text.trim() ? (
+                                <p className="text-[13px] leading-5">{formatMessageBody(message)}</p>
                               ) : null}
 
-                              <p
-                                className={`text-[13px] leading-5 ${
-                                  message.isDeleted ? "italic text-[#6b7f79]" : ""
-                                }`}
-                              >
-                                {formatMessageBody(message)}
-                              </p>
+                              {!message.isDeleted && hasAttachment && attachmentCaption ? (
+                                <p className="text-[13px] leading-5">{attachmentCaption}</p>
+                              ) : null}
 
                               <div
                                 className={`mt-1 flex items-center text-[10px] leading-none text-[#6b7f79] ${
@@ -2743,22 +3664,21 @@ export default function AdminMessagesPage() {
                 {visibleSelectedConversation.canSendMessage ? (
                   <div className="sticky bottom-0 relative border-t border-[#edf3f0] bg-white px-4 py-3.5">
                     {showEmojiPicker ? (
-                      <div className="absolute bottom-[calc(100%+12px)] right-4 z-20 w-[240px] rounded-2xl border border-[#e1ebe6] bg-white p-3 shadow-[0_16px_32px_rgba(15,61,51,0.12)]">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#7f9d94]">
-                          Emoji
-                        </p>
-                        <div className="mt-2 grid grid-cols-5 gap-2">
-                          {emojiOptions.map((emoji) => (
-                            <button
-                              key={emoji}
-                              type="button"
-                              onClick={() => handleEmojiPick(emoji)}
-                              className="flex h-10 items-center justify-center rounded-xl border border-[#edf3f0] text-lg transition hover:border-[#c7ddd2] hover:bg-[#f4faf7]"
-                            >
-                              {emoji}
-                            </button>
-                          ))}
-                        </div>
+                      <div
+                        ref={emojiPickerRef}
+                        className="absolute bottom-[calc(100%+12px)] right-4 z-20 overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-[0_16px_32px_rgba(15,61,51,0.12)]"
+                      >
+                        <EmojiPicker
+                          onEmojiClick={(emojiData) => handleEmojiPick(emojiData.emoji)}
+                          autoFocusSearch={false}
+                          width={320}
+                          height={360}
+                          lazyLoadEmojis
+                          skinTonesDisabled
+                          previewConfig={{
+                            showPreview: false,
+                          }}
+                        />
                       </div>
                     ) : null}
 
@@ -2790,12 +3710,94 @@ export default function AdminMessagesPage() {
                             : "border-[#dfeee6] bg-[#f8fbf9] text-[#52736a]"
                         }`}
                       >
-                        {attachmentUploadStatus === "uploading"
-                          ? "Uploading..."
-                          : attachmentUploadStatus === "uploaded"
-                            ? `Uploaded: ${attachmentUploadFileName}`
-                            : "Upload failed"}
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="min-w-0 truncate">
+                            {attachmentUploadStatus === "uploading"
+                              ? "Uploading..."
+                              : attachmentUploadStatus === "uploaded"
+                                ? `Uploaded: ${attachmentUploadFileName}`
+                                : "Upload failed"}
+                          </span>
+                          {attachmentUploadStatus === "uploaded" ? (
+                            <button
+                              type="button"
+                              onClick={clearAttachmentUploadState}
+                              className="shrink-0 rounded-full border border-[#d7e5df] bg-white px-2 py-0.5 text-[10px] font-semibold text-[#52736a] transition hover:border-[#1f6a58] hover:text-[#1f6a58]"
+                              aria-label="Cancel attachment"
+                            >
+                              X
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
+                    ) : null}
+
+                    {pendingVoice ? (
+                      <div className="mb-2 rounded-xl border border-[#d7e5df] bg-[#f8fbf9] px-3 py-2 text-[11px] text-[#52736a]">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-[#06201c]">Voice message ready</p>
+                            <p className="truncate text-[#52736a]">
+                              {pendingVoice.fileName} · {formatRecordingDuration(pendingVoice.durationSeconds)}
+                            </p>
+                            <audio controls preload="none" src={pendingVoice.objectUrl} className="mt-2 w-full">
+                              Your browser does not support the audio element.
+                            </audio>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={clearPendingVoice}
+                            className="shrink-0 rounded-full border border-[#d7e5df] bg-white px-2.5 py-0.5 text-[10px] font-semibold text-[#52736a] transition hover:border-[#1f6a58] hover:text-[#1f6a58]"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {voiceRecordingState === "recording" ? (
+                      <div className="mb-2 rounded-xl border border-[#d7e5df] bg-[#f8fbf9] px-3 py-2 text-[11px] text-[#52736a]">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-medium text-[#06201c]">
+                              {voiceRecordingState === "recording"
+                                ? `Recording... ${formatRecordingDuration(voiceRecordingSeconds)}`
+                                : "Uploading voice..."}
+                            </p>
+                            <p className="truncate text-[#52736a]">
+                              {voiceRecordingState === "recording"
+                                ? "Speak into the mic"
+                                : "Sending voice message"}
+                            </p>
+                          </div>
+                          {voiceRecordingState === "recording" ? (
+                            <div className="flex shrink-0 items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => stopVoiceRecording(false)}
+                                className="rounded-full bg-[#1f6a58] px-2.5 py-0.5 text-[10px] font-semibold text-white transition hover:bg-[#175245]"
+                              >
+                                Stop
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  stopVoiceRecording(true);
+                                  setVoiceRecordingError(null);
+                                }}
+                                className="rounded-full border border-[#d7e5df] bg-white px-2.5 py-0.5 text-[10px] font-semibold text-[#52736a] transition hover:border-[#1f6a58] hover:text-[#1f6a58]"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {voiceRecordingError ? (
+                      <p className="mb-2 text-[11px] text-[#8f3b2f]">{voiceRecordingError}</p>
                     ) : null}
 
                     {editingMessageId ? (
@@ -2821,6 +3823,23 @@ export default function AdminMessagesPage() {
 
                     <div className="flex items-end gap-2.5">
                       <button
+                        type="button"
+                        onClick={() => {
+                          setVoiceRecordingError(null);
+                          void startVoiceRecording();
+                        }}
+                        disabled={voiceRecordingState !== "idle" || Boolean(pendingVoice)}
+                        title={
+                          pendingVoice ? "Send or remove current voice message first" : undefined
+                        }
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#d7e5df] bg-[#f8fbf9] text-[#52736a] transition hover:border-[#c3d7cf] hover:text-[#1f6a58] disabled:cursor-not-allowed disabled:opacity-60"
+                        aria-label="Record voice"
+                      >
+                        <MicIcon />
+                      </button>
+
+                      <button
+                        ref={emojiButtonRef}
                         type="button"
                         onClick={() => setShowEmojiPicker((current) => !current)}
                         className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#d7e5df] bg-[#f8fbf9] text-[#52736a] transition hover:border-[#c3d7cf] hover:text-[#1f6a58]"
@@ -2856,12 +3875,16 @@ export default function AdminMessagesPage() {
                         />
                       </label>
 
-                      <button
-                        type="button"
-                        onClick={() => void handleSend()}
-                        disabled={!draftMessage.trim() || isSendingMessage}
-                        className="inline-flex h-9 shrink-0 items-center gap-2 rounded-full bg-[#1f6a58] px-3.5 text-[13px] font-bold text-white shadow-sm transition hover:bg-[#175245] disabled:cursor-not-allowed disabled:bg-[#9eb5ad]"
-                      >
+                        <button
+                          type="button"
+                          onClick={() => void handleSend()}
+                        disabled={
+                          ((!draftMessage.trim() && !uploadedAttachment && !pendingVoice) ||
+                            isSendingMessage ||
+                            voiceRecordingState !== "idle")
+                        }
+                          className="inline-flex h-9 shrink-0 items-center gap-2 rounded-full bg-[#1f6a58] px-3.5 text-[13px] font-bold text-white shadow-sm transition hover:bg-[#175245] disabled:cursor-not-allowed disabled:bg-[#9eb5ad]"
+                        >
                         <SendIcon />
                         {editingMessageId ? "Save" : "Send"}
                       </button>

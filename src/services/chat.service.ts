@@ -11,10 +11,22 @@ type ConversationMessagesParams = {
   limit?: number;
 };
 
+type ConversationMessagesPagination = {
+  has_more: boolean;
+  next_cursor: string | null;
+  limit: number;
+};
+
+export type ConversationMessagesResponse<T = unknown> = {
+  items: T[];
+  pagination: ConversationMessagesPagination;
+};
+
 type SendMessagePayload = {
   conversation_id: string;
   content: string;
-  message_type: "text";
+  message_type?: "text" | "image" | "document" | "audio" | "video";
+  attachment_id?: string;
 };
 
 type EditMessagePayload = {
@@ -22,6 +34,11 @@ type EditMessagePayload = {
 };
 
 type UploadAttachmentResponse = unknown;
+type DownloadAttachmentResponse = {
+  blob: Blob;
+  fileName?: string;
+  mimeType?: string;
+};
 
 type TypingUsersResponse = unknown[] | { items?: unknown[] } | { data?: unknown[] };
 
@@ -120,16 +137,22 @@ export function getConversationById(conversationId: string) {
   return requestJson<unknown>(`/conversations/${conversationId}`);
 }
 
-export function getConversationMessages(conversationId: string, params?: ConversationMessagesParams) {
+export function getConversationMessages<T = unknown>(
+  conversationId: string,
+  options?: ConversationMessagesParams,
+) {
   const searchParams = new URLSearchParams();
 
-  searchParams.set("limit", String(params?.limit ?? 20));
+  const limit = Math.min(Math.max(options?.limit ?? 50, 1), 100);
+  searchParams.set("limit", String(limit));
 
-  if (params?.cursor) {
-    searchParams.set("cursor", params.cursor);
-  }
+  const query = options?.cursor
+    ? `${searchParams.toString()}&cursor=${encodeURIComponent(options.cursor)}`
+    : searchParams.toString();
 
-  return requestJson<unknown>(`/conversations/${conversationId}/messages?${searchParams.toString()}`);
+  return requestJson<ConversationMessagesResponse<T>>(
+    `/conversations/${encodeURIComponent(conversationId)}/messages?${query}`,
+  );
 }
 
 export function markConversationRead(conversationId: string) {
@@ -141,7 +164,12 @@ export function markConversationRead(conversationId: string) {
 export function sendMessage(payload: SendMessagePayload) {
   return requestJson<unknown>(`/messages/`, {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      conversation_id: payload.conversation_id,
+      content: payload.content,
+      message_type: payload.message_type ?? "text",
+      ...(payload.attachment_id ? { attachment_id: payload.attachment_id } : {}),
+    }),
   });
 }
 
@@ -185,4 +213,80 @@ export async function getTypingUsers(conversationId: string) {
   }
 
   return [];
+}
+
+function getFileNameFromContentDisposition(headerValue?: string | null) {
+  if (!headerValue) {
+    return undefined;
+  }
+
+  const filenameStarMatch = headerValue.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+  if (filenameStarMatch?.[1]) {
+    try {
+      return decodeURIComponent(filenameStarMatch[1].trim().replace(/^"|"$/g, ""));
+    } catch {
+      return filenameStarMatch[1].trim().replace(/^"|"$/g, "");
+    }
+  }
+
+  const filenameMatch = headerValue.match(/filename\s*=\s*("?)([^";]+)\1/i);
+  if (filenameMatch?.[2]) {
+    return filenameMatch[2].trim();
+  }
+
+  return undefined;
+}
+
+export async function downloadAttachment(attachmentId: string): Promise<DownloadAttachmentResponse> {
+  const attachmentPath = `/attachments/${encodeURIComponent(attachmentId)}?download=true`;
+
+  const response = await fetch(
+    `${API_BASE_URL}${attachmentPath}`,
+    {
+      method: "GET",
+      cache: "no-store",
+      headers: toHeaders({}, false),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("Chat attachment download failed", {
+        attachmentId,
+        status: response.status,
+        errorText,
+      });
+    }
+
+    throw new Error(errorText || `Request failed with status ${response.status}`);
+  }
+
+  const responseContentType = response.headers.get("content-type") ?? "";
+
+  if (responseContentType.toLowerCase().includes("application/json")) {
+    await response.text().catch(() => "");
+
+    throw new Error("Attachment download returned JSON instead of audio data.");
+  }
+
+  const blob = await response.blob();
+  const fileName =
+    getFileNameFromContentDisposition(response.headers.get("content-disposition")) ?? "attachment";
+  const shouldNormalizeM4a =
+    responseContentType.toLowerCase() === "audio/m4a" ||
+    blob.type.toLowerCase() === "audio/m4a" ||
+    fileName.toLowerCase().endsWith(".m4a");
+  const normalizedBlob = shouldNormalizeM4a ? new Blob([blob], { type: "audio/mp4" }) : blob;
+
+  return {
+    blob: normalizedBlob,
+    fileName,
+    mimeType: response.headers.get("content-type") ?? undefined,
+  };
+}
+
+export async function downloadAttachmentBlob(attachmentId: string): Promise<DownloadAttachmentResponse> {
+  return downloadAttachment(attachmentId);
 }
