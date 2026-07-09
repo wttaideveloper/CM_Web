@@ -3,21 +3,28 @@
 import AppShell from "@/components/layout/AppShell";
 import EmojiPicker from "emoji-picker-react";
 import {
+  archiveConversation,
+  closeConversation,
   deleteMessage,
   getConversationById,
+  getArchivedConversations,
   getConversationMessages,
+  getUserLastSeen,
   getTypingUsers,
   getProviderConversations,
   markConversationRead,
   editMessage,
   downloadAttachmentBlob,
+  reopenConversation,
   uploadAttachment,
   sendMessage,
   updateTypingStatus,
+  updatePresenceStatus,
 } from "@/services/chat.service";
 import { createChatSocket, type ChatSocket } from "@/services/chat-socket.service";
 import {
   useCallback,
+  Fragment,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -27,9 +34,9 @@ import {
   type UIEvent,
 } from "react";
 
-type ChatStatus = "ACTIVE" | "READ_ONLY" | "CLOSED";
+type ChatStatus = "open" | "closed" | "archived" | "read_only";
 type LimitReason = "CHAT_WINDOW_CLOSED" | "FREE_LIMIT_REACHED" | "BOOKING_REQUIRED";
-type FilterKind = "ALL" | "UNREAD" | "CLOSED";
+type FilterKind = "ALL" | "UNREAD" | "CLOSED" | "ARCHIVED";
 
 type Conversation = {
   id: string;
@@ -46,6 +53,11 @@ type Conversation = {
   last_message_preview?: string;
   lastMessageAt: string;
   chatCloseAt?: string;
+  isArchived?: boolean;
+  archivedAt?: string | null;
+  otherParticipantUserId?: string;
+  otherParticipantPresenceStatus?: "online" | "offline" | "away" | string;
+  otherParticipantLastSeenAt?: string;
 };
 
 type ChatMessage = {
@@ -53,6 +65,8 @@ type ChatMessage = {
   conversationId: string;
   text: string;
   createdAt: string;
+  createdAtTime?: string;
+  createdAtRaw?: string;
   isMine: boolean;
   messageType?: string;
   deliveryState?: "sent" | "read";
@@ -81,9 +95,19 @@ type BackendConversation = {
   unread_count?: number;
   assigned_provider_id?: string;
   updated_at?: string;
-  participants?: unknown;
   is_read_only?: boolean;
   expires_at?: string;
+  is_archived?: boolean;
+  archived_at?: string | null;
+  participants?: BackendConversationParticipant[];
+};
+
+type BackendConversationParticipant = {
+  id?: string;
+  user_id?: string;
+  role?: string;
+  last_read_at?: string;
+  joined_at?: string;
 };
 
 type BackendMessage = {
@@ -134,6 +158,38 @@ type PendingVoice = {
   fileName: string;
   mimeType: string;
 };
+
+type SpeechRecognitionAlternativeLike = {
+  transcript: string;
+};
+
+type SpeechRecognitionResultLike = {
+  isFinal: boolean;
+  [index: number]: SpeechRecognitionAlternativeLike | undefined;
+};
+
+type SpeechRecognitionEventLike = Event & {
+  results: ArrayLike<SpeechRecognitionResultLike>;
+  resultIndex: number;
+};
+
+type SpeechRecognitionErrorEventLike = Event & {
+  error: string;
+};
+
+interface SpeechRecognitionLike extends EventTarget {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+
+type SpeechRecognitionConstructorLike = new () => SpeechRecognitionLike;
 
 const DEV_CHAT_USER_ID = "550e8400-e29b-41d4-a716-446655440020"; // TODO: replace with the real logged-in user id later.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -187,18 +243,51 @@ function firstString(...values: Array<unknown>): string | undefined {
   return undefined;
 }
 
+function getSpeechRecognitionConstructor(): SpeechRecognitionConstructorLike | undefined {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  const speechWindow = window as Window & {
+    SpeechRecognition?: SpeechRecognitionConstructorLike;
+    webkitSpeechRecognition?: SpeechRecognitionConstructorLike;
+  };
+
+  return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+}
+
+function mergeSpeechDraft(baseDraft: string, transcript: string) {
+  const trimmedTranscript = transcript.trim();
+
+  if (!trimmedTranscript) {
+    return baseDraft;
+  }
+
+  const trimmedBase = baseDraft.trimEnd();
+
+  if (!trimmedBase) {
+    return trimmedTranscript;
+  }
+
+  return `${trimmedBase} ${trimmedTranscript}`;
+}
+
 function normalizeStatus(value?: string, isReadOnly?: boolean): ChatStatus {
-  const normalized = value?.toUpperCase();
+  const normalized = value?.trim().toLowerCase();
 
-  if (normalized === "CLOSED") {
-    return "CLOSED";
+  if (normalized === "closed") {
+    return "closed";
   }
 
-  if (normalized === "READ_ONLY" || isReadOnly) {
-    return "READ_ONLY";
+  if (normalized === "archived") {
+    return "archived";
   }
 
-  return "ACTIVE";
+  if (normalized === "read_only" || isReadOnly) {
+    return "read_only";
+  }
+
+  return "open";
 }
 
 function shortenIdentifier(value?: string) {
@@ -251,6 +340,95 @@ function getParticipantDisplayName(participants: unknown, roleMatchers: string[]
   return undefined;
 }
 
+function getOtherParticipantUserId(participants: unknown) {
+  if (!Array.isArray(participants)) {
+    return undefined;
+  }
+
+  const rolePriority = [
+    (role: string) => role === "customer",
+    (role: string) => ["user", "patient", "tenant"].some((matcher) => role.includes(matcher)),
+  ];
+
+  for (const participant of participants as BackendConversationParticipant[]) {
+    if (!isRecord(participant)) {
+      continue;
+    }
+
+    const userId = firstString(participant.user_id);
+    const role = firstString(participant.role)?.toLowerCase();
+
+    if (!userId || !role) {
+      continue;
+    }
+
+    if (rolePriority[0](role)) {
+      return userId;
+    }
+  }
+
+  for (const participant of participants as BackendConversationParticipant[]) {
+    if (!isRecord(participant)) {
+      continue;
+    }
+
+    const userId = firstString(participant.user_id);
+    const role = firstString(participant.role)?.toLowerCase();
+
+    if (!userId || !role) {
+      continue;
+    }
+
+    if (rolePriority[1](role)) {
+      return userId;
+    }
+  }
+
+  return undefined;
+}
+
+function formatLastSeen(value?: string) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function normalizePresenceResponse(value: unknown) {
+  if (!isRecord(value)) {
+    return {
+      status: undefined as string | undefined,
+      lastSeenAt: undefined as string | undefined,
+    };
+  }
+
+  const candidate = isRecord(value.data) ? value.data : value;
+
+  return {
+    status:
+      firstString(candidate.status, candidate.presence_status, candidate.presenceStatus) ?? undefined,
+    lastSeenAt:
+      firstString(
+        candidate.last_seen_at,
+        candidate.lastSeenAt,
+        candidate.last_seen,
+        candidate.lastSeen,
+      ) ?? undefined,
+  };
+}
+
 function formatTimestamp(value?: string) {
   if (!value) {
     return "Just now";
@@ -286,6 +464,74 @@ function formatTimestamp(value?: string) {
   });
 }
 
+function formatMessageTime(value?: string) {
+  if (!value) {
+    return "Just now";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Just now";
+  }
+
+  return date.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatMessageDateLabel(value?: string) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  const now = new Date();
+  const isSameDay = date.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday = date.toDateString() === yesterday.toDateString();
+
+  if (isSameDay) {
+    return "Today";
+  }
+
+  if (isYesterday) {
+    return "Yesterday";
+  }
+
+  return date.toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    year: date.getFullYear() === now.getFullYear() ? undefined : "numeric",
+  });
+}
+
+function areSameCalendarDay(left?: string, right?: string) {
+  if (!left || !right) {
+    return false;
+  }
+
+  const leftDate = new Date(left);
+  const rightDate = new Date(right);
+
+  if (Number.isNaN(leftDate.getTime()) || Number.isNaN(rightDate.getTime())) {
+    return false;
+  }
+
+  return leftDate.toDateString() === rightDate.toDateString();
+}
+
+function getMessageBubbleTime(message: ChatMessage) {
+  return message.createdAtTime || message.createdAt;
+}
+
 function formatRecordingDuration(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
@@ -305,6 +551,8 @@ function mapConversationSummary(data: BackendConversation): Conversation {
   const enterpriseName =
     getParticipantDisplayName(data.participants, ["enterprise", "organization", "organisation", "company", "clinic"]) ??
     "Enterprise";
+  const isArchived = data.is_archived ?? Boolean(data.archived_at);
+  const otherParticipantUserId = getOtherParticipantUserId(data.participants);
 
   return {
     id: data.id,
@@ -313,11 +561,11 @@ function mapConversationSummary(data: BackendConversation): Conversation {
     doctorName: providerName,
     enterpriseName,
     status,
-    canSendMessage: status === "ACTIVE",
+    canSendMessage: status === "open" && !isArchived,
     limitReason:
-      status === "CLOSED"
+      status === "closed"
         ? "CHAT_WINDOW_CLOSED"
-        : status === "READ_ONLY"
+        : status === "read_only"
           ? "FREE_LIMIT_REACHED"
           : undefined,
     unreadCount: data.unread_count ?? 0,
@@ -326,6 +574,9 @@ function mapConversationSummary(data: BackendConversation): Conversation {
     last_message_preview: firstString(data.last_message_preview) ?? "",
     lastMessageAt: formatTimestamp(data.last_message_at ?? data.updated_at),
     chatCloseAt: data.expires_at ? formatTimestamp(data.expires_at) : undefined,
+    isArchived,
+    archivedAt: data.archived_at ?? null,
+    otherParticipantUserId,
   };
 }
 
@@ -342,6 +593,8 @@ function mapConversationDetail(data: BackendConversation): Conversation {
   const enterpriseName =
     getParticipantDisplayName(data.participants, ["enterprise", "organization", "organisation", "company", "clinic"]) ??
     "Enterprise";
+  const isArchived = data.is_archived ?? Boolean(data.archived_at);
+  const otherParticipantUserId = getOtherParticipantUserId(data.participants);
 
   return {
     id: data.id,
@@ -350,11 +603,11 @@ function mapConversationDetail(data: BackendConversation): Conversation {
     doctorName: providerName,
     enterpriseName,
     status,
-    canSendMessage: status === "ACTIVE",
+    canSendMessage: status === "open" && !isArchived,
     limitReason:
-      status === "CLOSED"
+      status === "closed"
         ? "CHAT_WINDOW_CLOSED"
-        : status === "READ_ONLY"
+        : status === "read_only"
           ? "FREE_LIMIT_REACHED"
           : undefined,
     unreadCount: data.unread_count ?? 0,
@@ -363,6 +616,9 @@ function mapConversationDetail(data: BackendConversation): Conversation {
     last_message_preview: firstString(data.last_message_preview) ?? "",
     lastMessageAt: formatTimestamp(data.last_message_at ?? data.updated_at),
     chatCloseAt: data.expires_at ? formatTimestamp(data.expires_at) : undefined,
+    isArchived,
+    archivedAt: data.archived_at ?? null,
+    otherParticipantUserId,
   };
 }
 
@@ -381,6 +637,8 @@ function mapMessage(data: BackendMessage): ChatMessage {
     conversationId: data.conversation_id,
     text: firstString(data.content) ?? (data.attachment_id ? "Attachment" : ""),
     createdAt: formatTimestamp(data.created_at),
+    createdAtTime: formatMessageTime(data.created_at),
+    createdAtRaw: firstString(data.created_at),
     isMine,
     messageType:
       firstString(data.message_type)?.toLowerCase() ??
@@ -529,6 +787,8 @@ function mergeConversationSnapshot(
     last_message_preview: firstString(data.last_message_preview) ?? conversation.last_message_preview,
     lastMessageAt: lastMessageAtSource ? formatTimestamp(lastMessageAtSource) : conversation.lastMessageAt,
     chatCloseAt: data.expires_at ? formatTimestamp(data.expires_at) : conversation.chatCloseAt,
+    isArchived: data.is_archived ?? Boolean(data.archived_at) ?? mappedConversation.isArchived,
+    archivedAt: data.archived_at ?? mappedConversation.archivedAt ?? conversation.archivedAt ?? null,
     userName: conversation.userName || mappedConversation.userName,
     serviceName: conversation.serviceName || mappedConversation.serviceName,
     doctorName: conversation.doctorName || mappedConversation.doctorName,
@@ -536,8 +796,20 @@ function mergeConversationSnapshot(
   };
 }
 
+function isConversationArchived(conversation: Pick<Conversation, "id" | "isArchived" | "archivedAt">, archivedIds?: Set<string>) {
+  return (
+    conversation.isArchived === true ||
+    Boolean(conversation.archivedAt) ||
+    Boolean(archivedIds?.has(conversation.id))
+  );
+}
+
 function getListStatusLabel(conversation: Conversation) {
-  if (conversation.status === "CLOSED") {
+  if (conversation.isArchived || conversation.status === "archived") {
+    return "Archived";
+  }
+
+  if (conversation.status === "closed") {
     return "Closed";
   }
 
@@ -549,7 +821,11 @@ function getListStatusLabel(conversation: Conversation) {
 }
 
 function getHeaderStatusLabel(conversation: Conversation) {
-  if (conversation.status === "CLOSED") {
+  if (conversation.isArchived || conversation.status === "archived") {
+    return "Archived";
+  }
+
+  if (conversation.status === "closed") {
     return "Closed";
   }
 
@@ -567,6 +843,10 @@ function getStatusStyles(label: string) {
 
   if (label === "Closed") {
     return "bg-[#f1f4f3] text-[#6b7f79]";
+  }
+
+  if (label === "Archived") {
+    return "bg-[#fff3e8] text-[#b15d16]";
   }
 
   return "bg-[#eef4ff] text-[#2457d6]";
@@ -594,6 +874,82 @@ function formatMessageBody(message: ChatMessage) {
   }
 
   return message.text;
+}
+
+function renderMessageTextWithLinks(text: string) {
+  const lines = text.split(/\r?\n/);
+  const urlPattern = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
+
+  return lines.map((line, lineIndex) => {
+    const parts: Array<{ type: "text" | "link"; value: string }> = [];
+    let lastIndex = 0;
+
+    for (const match of line.matchAll(urlPattern)) {
+      const matchIndex = match.index ?? 0;
+      const matchedText = match[0];
+
+      if (matchIndex > lastIndex) {
+        parts.push({
+          type: "text",
+          value: line.slice(lastIndex, matchIndex),
+        });
+      }
+
+      parts.push({
+        type: "link",
+        value: matchedText,
+      });
+      lastIndex = matchIndex + matchedText.length;
+    }
+
+    if (lastIndex < line.length) {
+      parts.push({
+        type: "text",
+        value: line.slice(lastIndex),
+      });
+    }
+
+    return (
+      <Fragment key={`line-${lineIndex}`}>
+        {parts.map((part, partIndex) =>
+          part.type === "link" ? (
+            <a
+              key={`link-${lineIndex}-${partIndex}`}
+              href={part.value.startsWith("www.") ? `https://${part.value}` : part.value}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#1f6a58] underline decoration-[#9ed6c5] underline-offset-2 hover:text-[#175245]"
+            >
+              {part.value}
+            </a>
+          ) : (
+            <span key={`text-${lineIndex}-${partIndex}`}>{part.value}</span>
+          ),
+        )}
+        {lineIndex < lines.length - 1 ? <br /> : null}
+      </Fragment>
+    );
+  });
+}
+
+function getMessageCopyText(message: ChatMessage) {
+  if (message.isDeleted) {
+    return "";
+  }
+
+  const attachmentLabel = getMessageAttachmentLabel(message).trim();
+  const caption = getAttachmentCaption(message).trim();
+  const text = message.text.trim();
+
+  if (caption) {
+    return caption;
+  }
+
+  if (text) {
+    return text;
+  }
+
+  return attachmentLabel;
 }
 
 function getMessageAttachmentLabel(message: ChatMessage) {
@@ -772,6 +1128,15 @@ function InboxIcon() {
   );
 }
 
+function DownArrowIcon() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+      <path d="M12 5v12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="m7 12 5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function AudioAttachmentPlayer({ message }: { message: ChatMessage }) {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioLoadError, setAudioLoadError] = useState<string | null>(null);
@@ -863,7 +1228,7 @@ function isTypingConversationReadOnly(conversation?: Conversation | null) {
     return true;
   }
 
-  return !conversation.canSendMessage || conversation.status !== "ACTIVE";
+  return !conversation.canSendMessage;
 }
 
 function extractTypingUsers(value: unknown) {
@@ -919,6 +1284,8 @@ export default function AdminMessagesPage() {
   const [filter, setFilter] = useState<FilterKind>("ALL");
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [draftMessage, setDraftMessage] = useState("");
+  const [isSpeechListening, setIsSpeechListening] = useState(false);
+  const [speechError, setSpeechError] = useState<string | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [voiceRecordingState, setVoiceRecordingState] = useState<"idle" | "recording" | "processing">(
     "idle",
@@ -945,11 +1312,22 @@ export default function AdminMessagesPage() {
   const [attachmentUploadFileName, setAttachmentUploadFileName] = useState("");
   const [uploadedAttachment, setUploadedAttachment] = useState<UploadedAttachment | null>(null);
   const [openMessageActionId, setOpenMessageActionId] = useState<string | null>(null);
+  const [openConversationMenuId, setOpenConversationMenuId] = useState<string | null>(null);
+  const [archivingConversationId, setArchivingConversationId] = useState<string | null>(null);
+  const [closingConversationId, setClosingConversationId] = useState<string | null>(null);
+  const [reopeningConversationId, setReopeningConversationId] = useState<string | null>(null);
+  const [conversationActionError, setConversationActionError] = useState<string | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingMessageError, setEditingMessageError] = useState<string | null>(null);
+  const [archivedConversationIds, setArchivedConversationIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [archivedConversations, setArchivedConversations] = useState<Conversation[]>([]);
   const [deletedPreviewByConversationId, setDeletedPreviewByConversationId] = useState<
     Record<string, boolean>
   >({});
+  const [showScrollToBottomButton, setShowScrollToBottomButton] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [socketStatus, setSocketStatus] = useState<"connected" | "reconnecting" | "disconnected">(
     "disconnected",
   );
@@ -957,9 +1335,12 @@ export default function AdminMessagesPage() {
   const socketRef = useRef<ChatSocket | null>(null);
   const activeRoomConversationIdRef = useRef<string | null>(null);
   const selectedConversationIdRef = useRef<string | null>(null);
+  const selectedConversationOtherParticipantUserIdRef = useRef<string | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const emojiPickerRef = useRef<HTMLDivElement | null>(null);
   const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
+  const speechRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const speechDraftBaseRef = useRef("");
   const voiceRecorderRef = useRef<MediaRecorder | null>(null);
   const voiceStreamRef = useRef<MediaStream | null>(null);
   const voiceChunksRef = useRef<BlobPart[]>([]);
@@ -984,6 +1365,7 @@ export default function AdminMessagesPage() {
   const typingConversationIdRef = useRef<string | null>(null);
   const typingActiveByConversationRef = useRef<Record<string, boolean>>({});
   const conversationsRef = useRef<Conversation[]>([]);
+  const archivedConversationsRef = useRef<Conversation[]>([]);
   const messagesByConversationRef = useRef<Record<string, ChatMessage[]>>({});
   const typingStopTimerRef = useRef<number | null>(null);
   const typingAutoHideTimerRef = useRef<number | null>(null);
@@ -992,6 +1374,7 @@ export default function AdminMessagesPage() {
   const typingPollInFlightRef = useRef(false);
   const typingPollConversationIdRef = useRef<string | null>(null);
   const markReadThrottleRef = useRef<Record<string, number>>({});
+  const copiedMessageResetTimerRef = useRef<number | null>(null);
   const messagesListRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -999,8 +1382,17 @@ export default function AdminMessagesPage() {
   }, [selectedConversationId]);
 
   useEffect(() => {
+    selectedConversationOtherParticipantUserIdRef.current =
+      selectedConversationDetail?.otherParticipantUserId ?? null;
+  }, [selectedConversationDetail?.otherParticipantUserId]);
+
+  useEffect(() => {
     conversationsRef.current = conversations;
   }, [conversations]);
+
+  useEffect(() => {
+    archivedConversationsRef.current = archivedConversations;
+  }, [archivedConversations]);
 
   useEffect(() => {
     messagesByConversationRef.current = messagesByConversation;
@@ -1013,6 +1405,35 @@ export default function AdminMessagesPage() {
   useEffect(() => {
     pendingVoiceRef.current = pendingVoice;
   }, [pendingVoice]);
+
+  useEffect(() => {
+    void updatePresenceStatus("online").catch(() => undefined);
+
+    return () => {
+      void updatePresenceStatus("offline").catch(() => undefined);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!copiedMessageId) {
+      return;
+    }
+
+    if (copiedMessageResetTimerRef.current) {
+      window.clearTimeout(copiedMessageResetTimerRef.current);
+    }
+
+    copiedMessageResetTimerRef.current = window.setTimeout(() => {
+      setCopiedMessageId(null);
+      copiedMessageResetTimerRef.current = null;
+    }, 1200);
+
+    return () => {
+      if (copiedMessageResetTimerRef.current) {
+        window.clearTimeout(copiedMessageResetTimerRef.current);
+      }
+    };
+  }, [copiedMessageId]);
 
   useEffect(() => {
     if (!showEmojiPicker) {
@@ -1042,6 +1463,58 @@ export default function AdminMessagesPage() {
       document.removeEventListener("mousedown", handlePointerDown);
     };
   }, [showEmojiPicker]);
+
+  useEffect(() => {
+    if (!openConversationMenuId) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+
+      if (!(target instanceof Element)) {
+        return;
+      }
+
+      if (target.closest("[data-conversation-menu-root='true']")) {
+        return;
+      }
+
+      setOpenConversationMenuId(null);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [openConversationMenuId]);
+
+  useEffect(() => {
+    if (!openMessageActionId) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+
+      if (!(target instanceof Element)) {
+        return;
+      }
+
+      if (target.closest("[data-message-menu-root='true']")) {
+        return;
+      }
+
+      setOpenMessageActionId(null);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [openMessageActionId]);
 
   const getConversationPreview = useCallback(
     (conversation: Conversation) => {
@@ -1166,6 +1639,115 @@ export default function AdminMessagesPage() {
     setVoiceRecordingSeconds(0);
   }, [stopVoiceRecordingTimers]);
 
+  const stopSpeechToText = useCallback(() => {
+    const recognition = speechRecognitionRef.current;
+
+    if (!recognition) {
+      setIsSpeechListening(false);
+      speechDraftBaseRef.current = "";
+      return;
+    }
+
+    try {
+      recognition.stop();
+    } catch {
+      try {
+        recognition.abort();
+      } catch {
+        // ignore
+      }
+    } finally {
+      setIsSpeechListening(false);
+    }
+  }, []);
+
+  const startSpeechToText = useCallback(() => {
+    if (isSpeechListening) {
+      stopSpeechToText();
+      return;
+    }
+
+    if (voiceRecordingState !== "idle" || pendingVoice) {
+      return;
+    }
+
+    const SpeechRecognitionCtor = getSpeechRecognitionConstructor();
+
+    if (!SpeechRecognitionCtor) {
+      setSpeechError("Speech-to-text is not supported in this browser.");
+      return;
+    }
+
+    setSpeechError(null);
+
+    let recognition: SpeechRecognitionLike;
+
+    try {
+      recognition = new SpeechRecognitionCtor();
+    } catch {
+      setSpeechError("Speech recognition could not start.");
+      return;
+    }
+
+    const baseDraft = draftMessage;
+    speechDraftBaseRef.current = baseDraft;
+    speechRecognitionRef.current = recognition;
+    setIsSpeechListening(true);
+
+    recognition.lang = "en-IN";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+
+    recognition.onresult = (event) => {
+      if (speechRecognitionRef.current !== recognition) {
+        return;
+      }
+
+      let transcript = "";
+
+      for (let index = 0; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        const alternative = result?.[0];
+
+        if (alternative?.transcript) {
+          transcript += alternative.transcript;
+        }
+      }
+
+      setDraftMessage(mergeSpeechDraft(speechDraftBaseRef.current, transcript));
+    };
+
+    recognition.onerror = () => {
+      if (speechRecognitionRef.current !== recognition) {
+        return;
+      }
+
+      setSpeechError("Speech recognition could not start.");
+      stopSpeechToText();
+      speechRecognitionRef.current = null;
+      speechDraftBaseRef.current = "";
+    };
+
+    recognition.onend = () => {
+      if (speechRecognitionRef.current !== recognition) {
+        return;
+      }
+
+      speechRecognitionRef.current = null;
+      speechDraftBaseRef.current = "";
+      setIsSpeechListening(false);
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      setSpeechError("Speech recognition could not start.");
+      speechRecognitionRef.current = null;
+      speechDraftBaseRef.current = "";
+      setIsSpeechListening(false);
+    }
+  }, [draftMessage, isSpeechListening, pendingVoice, stopSpeechToText, voiceRecordingState]);
+
   const sendPendingVoiceMessage = useCallback(
     async (pendingVoiceItem: PendingVoice, caption: string) => {
       const conversationId = selectedConversationIdRef.current;
@@ -1243,6 +1825,8 @@ export default function AdminMessagesPage() {
                   conversationId,
                   text: messageContent,
                   createdAt: "Just now",
+                  createdAtTime: formatMessageTime(new Date().toISOString()),
+                  createdAtRaw: new Date().toISOString(),
                   isMine: true,
                   deliveryState: "sent",
                   isDeleted: false,
@@ -1283,6 +1867,8 @@ export default function AdminMessagesPage() {
             conversationId,
             text: messageContent,
             createdAt: "Just now",
+            createdAtTime: formatMessageTime(new Date().toISOString()),
+            createdAtRaw: new Date().toISOString(),
             isMine: true,
             deliveryState: "sent",
             isPending: true,
@@ -1483,6 +2069,10 @@ export default function AdminMessagesPage() {
     };
   }, [selectedConversationId, clearPendingVoice, stopVoiceRecording]);
 
+  useEffect(() => {
+    stopSpeechToText();
+  }, [selectedConversationId, stopSpeechToText]);
+
   const stopTypingForConversation = useCallback(
     (conversationId: string) => {
       typingActiveByConversationRef.current[conversationId] = false;
@@ -1632,6 +2222,72 @@ export default function AdminMessagesPage() {
     [],
   );
 
+  const handleSocketUserOnline = useCallback((payload: unknown) => {
+    if (!isRecord(payload)) {
+      return;
+    }
+
+    const userId =
+      typeof payload.user_id === "string"
+        ? payload.user_id
+        : typeof payload.userId === "string"
+          ? payload.userId
+          : undefined;
+
+    if (!userId) {
+      return;
+    }
+
+    if (selectedConversationOtherParticipantUserIdRef.current !== userId) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+
+    setSelectedConversationDetail((current) =>
+      current && current.otherParticipantUserId === userId
+        ? {
+            ...current,
+            otherParticipantPresenceStatus: "online",
+            otherParticipantLastSeenAt: current.otherParticipantLastSeenAt ?? now,
+          }
+        : current,
+    );
+  }, []);
+
+  const handleSocketUserOffline = useCallback((payload: unknown) => {
+    if (!isRecord(payload)) {
+      return;
+    }
+
+    const userId =
+      typeof payload.user_id === "string"
+        ? payload.user_id
+        : typeof payload.userId === "string"
+          ? payload.userId
+          : undefined;
+
+    if (!userId) {
+      return;
+    }
+
+    if (selectedConversationOtherParticipantUserIdRef.current !== userId) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+
+    setSelectedConversationDetail((current) =>
+      current && current.otherParticipantUserId === userId
+        ? {
+            ...current,
+            otherParticipantPresenceStatus: "offline",
+            otherParticipantLastSeenAt: now,
+          }
+        : current,
+    );
+  }, []);
+
   const syncTypingIndicator = useCallback(
     async (conversationId: string) => {
       if (socketRef.current?.connected) {
@@ -1676,15 +2332,29 @@ export default function AdminMessagesPage() {
     setConversationsError(null);
 
     try {
-      const response = await getProviderConversations({ page: 1, pageSize: 20 });
-      const items = extractListResponse<BackendConversation>(response)
+      const [providerResponse, archivedResponse] = await Promise.all([
+        getProviderConversations({ page: 1, pageSize: 20 }),
+        getArchivedConversations(),
+      ]);
+
+      const archivedItems = extractListResponse<BackendConversation>(archivedResponse)
         .map(mapConversationSummary)
         .map(applyDeletedPreviewOverride);
+      const archivedIds = new Set(archivedItems.map((conversation) => conversation.id));
+      const items = extractListResponse<BackendConversation>(providerResponse)
+        .map(mapConversationSummary)
+        .map(applyDeletedPreviewOverride)
+        .filter((conversation) => !archivedIds.has(conversation.id));
+
+      setArchivedConversations(archivedItems);
+      setArchivedConversationIds(archivedIds);
       setConversations(items);
 
       const selectedId = selectedConversationIdRef.current;
       if (selectedId) {
-        const refreshedSelectedConversation = items.find((conversation) => conversation.id === selectedId);
+        const refreshedSelectedConversation =
+          items.find((conversation) => conversation.id === selectedId) ??
+          archivedItems.find((conversation) => conversation.id === selectedId);
 
         if (refreshedSelectedConversation) {
           setSelectedConversationDetail((current) =>
@@ -1776,6 +2446,19 @@ export default function AdminMessagesPage() {
         setHasMoreOlderMessages(hasMoreOlder);
         if (messages.length === 0) {
           pendingInitialScrollToBottomRef.current = false;
+        } else {
+          pendingInitialScrollToBottomRef.current = true;
+          window.requestAnimationFrame(() => {
+            const element = messagesListRef.current;
+
+            if (!element || selectedConversationIdRef.current !== selectedConversationId) {
+              return;
+            }
+
+            element.scrollTop = element.scrollHeight;
+            setShowScrollToBottomButton(false);
+            pendingInitialScrollToBottomRef.current = false;
+          });
         }
 
         if (socketRef.current?.connected) {
@@ -1823,6 +2506,62 @@ export default function AdminMessagesPage() {
       pendingInitialScrollToBottomRef.current = false;
     };
   }, [selectedConversationId, emitMarkRead]);
+
+  useEffect(() => {
+    const conversationId = selectedConversationDetail?.id;
+    const userId = selectedConversationDetail?.otherParticipantUserId;
+
+    if (!conversationId || !userId) {
+      return;
+    }
+
+    let active = true;
+
+    async function loadPresence() {
+      try {
+        const response = await getUserLastSeen(userId);
+        if (!active || selectedConversationIdRef.current !== conversationId) {
+          return;
+        }
+
+        if (!response) {
+          return;
+        }
+
+        const presence = normalizePresenceResponse(response);
+
+        setSelectedConversationDetail((current) =>
+          current && current.id === conversationId
+            ? {
+                ...current,
+                otherParticipantUserId: userId,
+                otherParticipantPresenceStatus: presence.status ?? current.otherParticipantPresenceStatus,
+                otherParticipantLastSeenAt: presence.lastSeenAt ?? current.otherParticipantLastSeenAt,
+              }
+            : current,
+        );
+      } catch {
+        if (!active || selectedConversationIdRef.current !== conversationId) {
+          return;
+        }
+
+        setSelectedConversationDetail((current) =>
+          current && current.id === conversationId
+            ? {
+                ...current,
+                otherParticipantUserId: userId,
+              }
+            : current,
+        );
+      }
+    }
+
+    void loadPresence();
+
+    return () => {
+      active = false;
+    };
+  }, [selectedConversationDetail?.id, selectedConversationDetail?.otherParticipantUserId]);
 
   function normalizeSocketMessage(payload: unknown): BackendMessage | null {
     if (!isRecord(payload)) {
@@ -1946,6 +2685,12 @@ export default function AdminMessagesPage() {
       is_read_only:
         typeof candidate.is_read_only === "boolean" ? candidate.is_read_only : undefined,
       expires_at: typeof candidate.expires_at === "string" ? candidate.expires_at : undefined,
+      is_archived:
+        typeof candidate.is_archived === "boolean" ? candidate.is_archived : undefined,
+      archived_at:
+        typeof candidate.archived_at === "string" || candidate.archived_at === null
+          ? candidate.archived_at
+          : undefined,
     };
   }
 
@@ -2189,6 +2934,8 @@ export default function AdminMessagesPage() {
                   conversationId: fallbackPendingMessage.conversationId,
                   text: fallbackPendingMessage.content,
                   createdAt: "Just now",
+                  createdAtTime: formatMessageTime(new Date().toISOString()),
+                  createdAtRaw: new Date().toISOString(),
                   isMine: true,
                   deliveryState: "sent",
                   isPending: false,
@@ -2242,6 +2989,8 @@ export default function AdminMessagesPage() {
     socket.on("message_read", handleSocketMessageRead);
     socket.on("new_message", handleSocketNewMessage);
     socket.on("conversation_updated", handleConversationUpdated);
+    socket.on("user_online", handleSocketUserOnline);
+    socket.on("user_offline", handleSocketUserOffline);
 
     socket.connect();
 
@@ -2261,6 +3010,8 @@ export default function AdminMessagesPage() {
       socket.off("message_read", handleSocketMessageRead);
       socket.off("new_message", handleSocketNewMessage);
       socket.off("conversation_updated", handleConversationUpdated);
+      socket.off("user_online", handleSocketUserOnline);
+      socket.off("user_offline", handleSocketUserOffline);
       const activeTypingConversationId = typingConversationIdRef.current;
       if (activeTypingConversationId) {
         stopTypingForConversation(activeTypingConversationId);
@@ -2275,6 +3026,8 @@ export default function AdminMessagesPage() {
     handleConversationUpdated,
     handleSocketNewMessage,
     handleSocketMessageRead,
+    handleSocketUserOnline,
+    handleSocketUserOffline,
     handleSocketTyping,
     applyMessageToConversation,
     emitMarkRead,
@@ -2391,8 +3144,12 @@ export default function AdminMessagesPage() {
 
   const filteredConversations = useMemo(() => {
     const normalized = search.trim().toLowerCase();
+    const sourceConversations =
+      filter === "ARCHIVED"
+        ? archivedConversations
+        : conversations.filter((conversation) => !isConversationArchived(conversation, archivedConversationIds));
 
-    return conversations.filter((conversation) => {
+    return sourceConversations.filter((conversation) => {
       const preview = getConversationPreview(conversation);
       const matchesSearch =
         !normalized ||
@@ -2408,16 +3165,20 @@ export default function AdminMessagesPage() {
           ? true
           : filter === "UNREAD"
             ? conversation.unreadCount > 0
-            : conversation.status !== "ACTIVE" || !conversation.canSendMessage;
+            : filter === "CLOSED"
+              ? conversation.status === "closed" || !conversation.canSendMessage
+              : true;
 
       return matchesSearch && matchesFilter;
     });
-  }, [conversations, filter, getConversationPreview, search]);
+  }, [archivedConversationIds, archivedConversations, conversations, filter, getConversationPreview, search]);
 
   const selectedConversation =
     selectedConversationDetail?.id === selectedConversationId
       ? selectedConversationDetail
-      : conversations.find((conversation) => conversation.id === selectedConversationId) ?? null;
+      : (filter === "ARCHIVED" ? archivedConversations : conversations).find(
+          (conversation) => conversation.id === selectedConversationId,
+        ) ?? null;
 
   const visibleSelectedConversation =
     selectedConversationId &&
@@ -2531,6 +3292,9 @@ export default function AdminMessagesPage() {
       pendingInitialScrollToBottomRef.current = false;
       element.scrollTop = element.scrollHeight;
     }
+
+    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+    setShowScrollToBottomButton(selectedMessages.length > 10 && distanceFromBottom > 160);
   }, [selectedMessages.length, visibleSelectedConversationId]);
 
   useEffect(() => {
@@ -2545,6 +3309,7 @@ export default function AdminMessagesPage() {
     }
 
     const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+    setShowScrollToBottomButton(selectedMessages.length > 10 && distanceFromBottom > 160);
     if (distanceFromBottom <= 120) {
       element.scrollTop = element.scrollHeight;
     }
@@ -2556,12 +3321,21 @@ export default function AdminMessagesPage() {
   ]);
 
   const activeCount = conversations.filter(
-    (conversation) => conversation.status === "ACTIVE" && conversation.canSendMessage,
+    (conversation) =>
+      !isConversationArchived(conversation, archivedConversationIds) &&
+      conversation.status === "open" &&
+      conversation.canSendMessage,
   ).length;
-  const unreadCount = conversations.filter((conversation) => conversation.unreadCount > 0).length;
+  const unreadCount = conversations.filter(
+    (conversation) =>
+      !isConversationArchived(conversation, archivedConversationIds) && conversation.unreadCount > 0,
+  ).length;
   const closedCount = conversations.filter(
-    (conversation) => conversation.status !== "ACTIVE" || !conversation.canSendMessage,
+    (conversation) =>
+      !isConversationArchived(conversation, archivedConversationIds) &&
+      (conversation.status === "closed" || !conversation.canSendMessage),
   ).length;
+  const archivedCount = archivedConversations.length;
 
   async function handleSend() {
     const text = draftMessage.trim();
@@ -2765,6 +3539,8 @@ export default function AdminMessagesPage() {
               conversationId,
               text: messageContent,
               createdAt: "Just now",
+              createdAtTime: formatMessageTime(new Date().toISOString()),
+              createdAtRaw: new Date().toISOString(),
               isMine: true,
               deliveryState: "sent",
               isPending: false,
@@ -2815,6 +3591,8 @@ export default function AdminMessagesPage() {
             conversationId,
             text: messageContent,
             createdAt: "Just now",
+            createdAtTime: formatMessageTime(new Date().toISOString()),
+            createdAtRaw: new Date().toISOString(),
             isMine: true,
             deliveryState: "sent",
             isPending: true,
@@ -2871,6 +3649,9 @@ export default function AdminMessagesPage() {
   }
 
   function handleConversationSelect(conversationId: string) {
+    setOpenConversationMenuId(null);
+    stopSpeechToText();
+    setSpeechError(null);
     clearAttachmentUploadState();
     clearPendingVoice();
     if (editingMessageId) {
@@ -2883,9 +3664,25 @@ export default function AdminMessagesPage() {
     setSelectedConversationId(conversationId);
   }
 
+  const scrollMessagesToBottom = useCallback(() => {
+    const element = messagesListRef.current;
+
+    if (!element) {
+      return;
+    }
+
+    element.scrollTo({
+      top: element.scrollHeight,
+      behavior: "smooth",
+    });
+  }, []);
+
   const handleMessagesScroll = useCallback(
     (event: UIEvent<HTMLDivElement>) => {
       const element = event.currentTarget;
+      const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+
+      setShowScrollToBottomButton(selectedMessages.length > 10 && distanceFromBottom > 160);
 
       if (
         element.scrollTop <= 80 &&
@@ -2905,6 +3702,7 @@ export default function AdminMessagesPage() {
       olderMessagesCursor,
       selectedConversationId,
       selectedConversationLoading,
+      selectedMessages.length,
     ],
   );
 
@@ -2912,6 +3710,8 @@ export default function AdminMessagesPage() {
     const conversationId = activeRoomConversationIdRef.current ?? selectedConversationIdRef.current;
     const socket = socketRef.current;
 
+    stopSpeechToText();
+    setSpeechError(null);
     if (conversationId && socket?.connected) {
       socket.emit("leave_room", { conversation_id: conversationId });
     }
@@ -2934,6 +3734,7 @@ export default function AdminMessagesPage() {
     setIsLoadingOlderMessages(false);
     pendingInitialScrollToBottomRef.current = false;
     pendingOlderScrollRestoreRef.current = null;
+    setOpenConversationMenuId(null);
     clearAttachmentUploadState();
     clearPendingVoice();
     clearEditMode();
@@ -2948,10 +3749,156 @@ export default function AdminMessagesPage() {
     clearPendingVoice,
     clearEditMode,
     resetMessagePaginationState,
+    stopSpeechToText,
     stopTypingTimers,
     stopTypingForConversation,
     stopVoiceRecording,
   ]);
+
+  const updateConversationLifecycleState = useCallback(
+    (conversationId: string, nextStatus: ChatStatus, updatedAt?: string) => {
+      const nextLimitReason =
+        nextStatus === "closed"
+          ? "CHAT_WINDOW_CLOSED"
+          : nextStatus === "read_only"
+            ? "FREE_LIMIT_REACHED"
+            : undefined;
+      const nextLastMessageAt = updatedAt ? formatTimestamp(updatedAt) : undefined;
+
+      const applyUpdate = (conversation: Conversation) => {
+        if (conversation.id !== conversationId) {
+          return conversation;
+        }
+
+        return {
+          ...conversation,
+          status: nextStatus,
+          canSendMessage: nextStatus === "open" && !conversation.isArchived,
+          limitReason: nextLimitReason,
+          lastMessageAt: nextLastMessageAt ?? conversation.lastMessageAt,
+        };
+      };
+
+      setConversations((current) => current.map(applyUpdate));
+      setArchivedConversations((current) => current.map(applyUpdate));
+      setSelectedConversationDetail((current) =>
+        current && current.id === conversationId ? applyUpdate(current) : current,
+      );
+    },
+    [],
+  );
+
+  async function handleArchiveConversation(conversationId: string, archived: boolean) {
+    const isSelectedConversation = selectedConversationIdRef.current === conversationId;
+
+    setConversationActionError(null);
+    setOpenConversationMenuId(null);
+    setArchivingConversationId(conversationId);
+
+    try {
+      await archiveConversation(conversationId, archived);
+
+      setArchivedConversationIds((current) => {
+        const next = new Set(current);
+        if (archived) {
+          next.add(conversationId);
+        } else {
+          next.delete(conversationId);
+        }
+        return next;
+      });
+
+      setConversations((current) => {
+        if (archived) {
+          return current.filter((conversation) => conversation.id !== conversationId);
+        }
+
+        return current.map((conversation) =>
+          conversation.id === conversationId
+            ? {
+                ...conversation,
+                isArchived: false,
+                archivedAt: null,
+              }
+            : conversation,
+        );
+      });
+
+      setArchivedConversations((current) => {
+        if (archived) {
+          return current.map((conversation) =>
+            conversation.id === conversationId
+              ? {
+                  ...conversation,
+                  isArchived: true,
+                  archivedAt: conversation.archivedAt ?? new Date().toISOString(),
+                }
+              : conversation,
+          );
+        }
+
+        return current.filter((conversation) => conversation.id !== conversationId);
+      });
+
+      if (isSelectedConversation) {
+        handleCloseConversation();
+      }
+
+      await refreshConversationList();
+    } catch (error) {
+      setConversationActionError(
+        error instanceof Error ? error.message : archived ? "Failed to archive conversation." : "Failed to unarchive conversation.",
+      );
+    } finally {
+      setArchivingConversationId((current) => (current === conversationId ? null : current));
+    }
+  }
+
+  async function handleCloseConversationLifecycle(conversationId: string) {
+    setConversationActionError(null);
+    setOpenConversationMenuId(null);
+    setClosingConversationId(conversationId);
+
+    try {
+      const response = await closeConversation(conversationId);
+      const payload = extractObjectResponse<{ id?: string; status?: string; updated_at?: string }>(
+        response,
+      );
+      const nextStatus = normalizeStatus(payload?.status ?? "closed");
+
+      updateConversationLifecycleState(conversationId, nextStatus, payload?.updated_at);
+      await refreshConversationList();
+    } catch (error) {
+      setConversationActionError(
+        error instanceof Error ? error.message : "Failed to close conversation.",
+      );
+    } finally {
+      setClosingConversationId((current) => (current === conversationId ? null : current));
+    }
+  }
+
+  async function handleReopenConversationLifecycle(conversationId: string) {
+    setConversationActionError(null);
+    setOpenConversationMenuId(null);
+    setReopeningConversationId(conversationId);
+
+    try {
+      const response = await reopenConversation(conversationId);
+      const payload = extractObjectResponse<{ id?: string; status?: string; updated_at?: string }>(
+        response,
+      );
+      const nextStatus = normalizeStatus(payload?.status ?? "open");
+
+      updateConversationLifecycleState(conversationId, nextStatus, payload?.updated_at);
+      await refreshConversationList();
+    } catch (error) {
+      setConversationActionError(
+        error instanceof Error ? error.message : "Failed to reopen conversation.",
+      );
+    } finally {
+      setReopeningConversationId((current) => (current === conversationId ? null : current));
+    }
+  }
 
   function handleDraftMessageChange(value: string) {
     setDraftMessage(value);
@@ -3211,12 +4158,15 @@ export default function AdminMessagesPage() {
             <span className="inline-flex items-center rounded-full bg-[#f4f7f5] px-3 py-1 text-[11px] font-semibold text-[#6b7f79]">
               {closedCount} Closed
             </span>
+            <span className="inline-flex items-center rounded-full bg-[#fff3e8] px-3 py-1 text-[11px] font-semibold text-[#b15d16]">
+              {archivedCount} Archived
+            </span>
           </div>
         </div>
 
-        <div className="grid h-[calc(100vh-210px)] min-h-[680px] gap-4 xl:grid-cols-[392px_minmax(0,1fr)]">
-          <section className="flex min-h-0 flex-col overflow-hidden rounded-[20px] border border-[#e1ebe6] bg-white shadow-[0_8px_24px_rgba(15,61,51,0.06)]">
-            <div className="border-b border-[#edf3f0] px-4 py-3.5">
+        <div className="grid h-[calc(100vh-210px)] min-h-[680px] gap-4 xl:grid-cols-[330px_minmax(0,1fr)] 2xl:grid-cols-[360px_minmax(0,1fr)]">
+          <section className="flex min-h-0 w-full max-w-[370px] shrink-0 flex-col overflow-hidden rounded-[20px] border border-[#e1ebe6] bg-white shadow-[0_8px_24px_rgba(15,61,51,0.06)]">
+            <div className="border-b border-[#edf3f0] px-4 py-3">
               <label className="relative block">
                 <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8ca69e]">
                   <SearchIcon />
@@ -3230,16 +4180,27 @@ export default function AdminMessagesPage() {
                 />
               </label>
 
-              <div className="mt-3 flex flex-wrap gap-2">
-                {(["ALL", "UNREAD", "CLOSED"] as FilterKind[]).map((item) => {
+              <div className="mt-2.5 flex flex-wrap gap-2">
+                {(["ALL", "UNREAD", "CLOSED", "ARCHIVED"] as FilterKind[]).map((item) => {
                   const isActive = filter === item;
-                  const label = item === "ALL" ? "All" : item === "UNREAD" ? "Unread" : "Closed";
+                  const label =
+                    item === "ALL"
+                      ? "All"
+                      : item === "UNREAD"
+                        ? "Unread"
+                        : item === "CLOSED"
+                          ? "Closed"
+                          : "Archived";
 
                   return (
                     <button
                       key={item}
                       type="button"
-                      onClick={() => setFilter(item)}
+                      onClick={() => {
+                        setOpenConversationMenuId(null);
+                        setConversationActionError(null);
+                        setFilter(item);
+                      }}
                       className={`rounded-full px-3 py-1.5 text-[11px] font-bold transition ${
                         isActive
                           ? "bg-[#1f6a58] text-white shadow-sm"
@@ -3251,11 +4212,17 @@ export default function AdminMessagesPage() {
                   );
                 })}
               </div>
+
+              {conversationActionError ? (
+                <div className="mt-3 rounded-xl border border-[#f0d8d2] bg-[#fff6f4] px-3 py-2 text-[12px] text-[#8f3b2f]">
+                  {conversationActionError}
+                </div>
+              ) : null}
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto">
               {conversationsError ? (
-                <div className="flex min-h-[320px] items-center justify-center px-6 py-12 text-center">
+                <div className="flex min-h-[320px] items-center justify-center px-5 py-10 text-center">
                   <div className="max-w-sm rounded-2xl border border-[#f0d8d2] bg-[#fff6f4] px-4 py-4">
                     <p className="text-sm font-semibold text-[#8f3b2f]">Failed to load conversations</p>
                     <p className="mt-1 text-[13px] leading-6 text-[#a35b4c]">{conversationsError}</p>
@@ -3282,7 +4249,7 @@ export default function AdminMessagesPage() {
                   ))}
                 </div>
               ) : filteredConversations.length === 0 ? (
-                <div className="flex min-h-[320px] items-center justify-center px-6 py-12 text-center">
+                <div className="flex min-h-[320px] items-center justify-center px-5 py-10 text-center">
                   <div>
                     <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#eef8f2] text-[#1f6a58]">
                       <InboxIcon />
@@ -3298,13 +4265,42 @@ export default function AdminMessagesPage() {
                   {filteredConversations.map((conversation) => {
                     const isSelected = conversation.id === selectedConversationId;
                     const statusLabel = getListStatusLabel(conversation);
+                    const isArchivedView = filter === "ARCHIVED";
+                    const isConversationClosed = conversation.status === "closed";
+                    const isConversationActionLoading =
+                      archivingConversationId === conversation.id ||
+                      closingConversationId === conversation.id ||
+                      reopeningConversationId === conversation.id;
+                    const isConversationMenuOpen = openConversationMenuId === conversation.id;
+                    const archiveMenuLabel =
+                      archivingConversationId === conversation.id
+                        ? isArchivedView
+                          ? "Unarchiving..."
+                          : "Archiving..."
+                        : isArchivedView
+                          ? "Unarchive"
+                          : "Archive";
+                    const lifecycleMenuLabel = isConversationClosed
+                      ? closingConversationId === conversation.id
+                        ? "Reopening..."
+                        : "Reopen"
+                      : closingConversationId === conversation.id
+                        ? "Closing..."
+                        : "Close";
 
                     return (
-                      <button
+                      <div
                         key={conversation.id}
-                        type="button"
                         onClick={() => handleConversationSelect(conversation.id)}
-                        className={`flex w-full items-start gap-3 px-4 py-3 text-left transition ${
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            handleConversationSelect(conversation.id);
+                          }
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        className={`flex w-full items-start gap-2.5 px-4 py-3 text-left transition ${
                           isSelected ? "bg-[#f4faf7] ring-1 ring-inset ring-[#d9eee4]" : "hover:bg-[#fbfdfc]"
                         }`}
                       >
@@ -3313,7 +4309,7 @@ export default function AdminMessagesPage() {
                         </div>
 
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start justify-between gap-2.5">
                             <div className="min-w-0">
                               <p className="truncate text-[13px] font-bold text-[#06201c]">
                                 {conversation.userName}
@@ -3323,9 +4319,64 @@ export default function AdminMessagesPage() {
                             </div>
 
                             <div className="flex shrink-0 flex-col items-end gap-1">
-                              <span className="text-[11px] font-medium text-[#7f9d94]">
-                                {conversation.lastMessageAt}
-                              </span>
+                              <div className="flex items-start gap-1.5">
+                                <span className="pt-0.5 text-[11px] font-medium text-[#7f9d94]">
+                                  {conversation.lastMessageAt}
+                                </span>
+                                <div className="relative" data-conversation-menu-root="true">
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                      setConversationActionError(null);
+                                      setOpenConversationMenuId((current) =>
+                                        current === conversation.id ? null : conversation.id,
+                                      );
+                                    }}
+                                    className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#d7e5df] bg-white text-[#52736a] shadow-sm transition hover:border-[#1f6a58] hover:text-[#1f6a58]"
+                                    aria-label="Conversation actions"
+                                  >
+                                    <MoreVerticalIcon />
+                                  </button>
+
+                                  {isConversationMenuOpen ? (
+                                    <div className="absolute right-0 top-7 z-20 w-32 overflow-hidden rounded-xl border border-[#dfeee6] bg-white shadow-[0_12px_24px_rgba(15,61,51,0.12)]">
+                                      {!isArchivedView ? (
+                                        <button
+                                          type="button"
+                                          disabled={isConversationActionLoading}
+                                          onClick={(event) => {
+                                            event.preventDefault();
+                                            event.stopPropagation();
+                                            void (isConversationClosed
+                                              ? handleReopenConversationLifecycle(conversation.id)
+                                              : handleCloseConversationLifecycle(conversation.id));
+                                          }}
+                                          className="flex w-full items-center px-3 py-2 text-left text-[12px] font-medium text-[#06201c] transition hover:bg-[#f4faf7] disabled:cursor-not-allowed disabled:text-[#8ca69e]"
+                                        >
+                                          {lifecycleMenuLabel}
+                                        </button>
+                                      ) : null}
+                                      <button
+                                        type="button"
+                                        disabled={isConversationActionLoading}
+                                        onClick={(event) => {
+                                          event.preventDefault();
+                                          event.stopPropagation();
+                                          void handleArchiveConversation(
+                                            conversation.id,
+                                            !isArchivedView,
+                                          );
+                                        }}
+                                        className="flex w-full items-center px-3 py-2 text-left text-[12px] font-medium text-[#06201c] transition hover:bg-[#f4faf7] disabled:cursor-not-allowed disabled:text-[#8ca69e]"
+                                      >
+                                        {archiveMenuLabel}
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </div>
                               {conversation.unreadCount > 0 ? (
                                 <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-[#1f6a58] px-1.5 py-0.5 text-[10px] font-bold text-white">
                                   {conversation.unreadCount}
@@ -3347,7 +4398,7 @@ export default function AdminMessagesPage() {
                             </span>
                           </div>
                         </div>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -3355,9 +4406,9 @@ export default function AdminMessagesPage() {
             </div>
           </section>
 
-          <section className="flex min-h-0 flex-col overflow-hidden rounded-[20px] border border-[#e1ebe6] bg-white shadow-[0_8px_24px_rgba(15,61,51,0.06)]">
+          <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[20px] border border-[#e1ebe6] bg-white shadow-[0_8px_24px_rgba(15,61,51,0.06)]">
             {!visibleSelectedConversation ? (
-              <div className="flex min-h-0 flex-1 items-center justify-center px-6 py-12 text-center">
+              <div className="flex min-h-0 flex-1 items-center justify-center px-5 py-10 text-center">
                 <div className="max-w-md">
                   <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#eef8f2] text-[#1f6a58] shadow-sm">
                     <MessageIcon />
@@ -3369,9 +4420,9 @@ export default function AdminMessagesPage() {
                 </div>
               </div>
             ) : (
-              <div className="flex min-h-0 flex-1 flex-col">
-                <div className="border-b-2 border-[#bfdccd] bg-[#f3fbf7] px-4 pb-4 pt-3.5">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="relative flex min-h-0 flex-1 flex-col">
+                <div className="border-b-2 border-[#bfdccd] bg-[#f3fbf7] px-4 py-3">
+                  <div className="flex flex-col gap-2.5 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-[17px] font-bold text-[#06201c]">
@@ -3384,22 +4435,14 @@ export default function AdminMessagesPage() {
                         ) : null}
                       </div>
 
-                      <div className="mt-1.5 space-y-1 text-[12px] text-[#52736a]">
-                        <p className="truncate">Service: {visibleSelectedConversation.serviceName}</p>
-                        <p className="truncate">
-                          Provider: {visibleSelectedConversation.doctorName} · Enterprise:{" "}
-                          {visibleSelectedConversation.enterpriseName}
-                        </p>
-                      </div>
-
-                      <p className="mt-2 text-[11px] text-[#7f9d94]">
-                        Service: {visibleSelectedConversation.serviceName} · Doctor:{" "}
+                      <p className="mt-1.5 max-w-full whitespace-normal break-words text-[12px] leading-5 text-[#52736a]">
+                        Service: {visibleSelectedConversation.serviceName} · Provider:{" "}
                         {visibleSelectedConversation.doctorName} · Enterprise:{" "}
                         {visibleSelectedConversation.enterpriseName}
                       </p>
                     </div>
 
-                    <div className="flex shrink-0 flex-col items-start gap-2 lg:items-end">
+                    <div className="flex shrink-0 flex-col items-start gap-1.5 lg:items-end">
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
@@ -3417,10 +4460,26 @@ export default function AdminMessagesPage() {
                           </span>
                         ) : null}
                       </div>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-[#eef8f2] px-2.5 py-1 text-[11px] font-semibold text-[#1f6a58]">
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${getStatusStyles(
+                          getHeaderStatusLabel(visibleSelectedConversation),
+                        )}`}
+                      >
                         <UserIcon />
                         {getHeaderStatusLabel(visibleSelectedConversation)}
                       </span>
+                      {visibleSelectedConversation.otherParticipantUserId &&
+                      visibleSelectedConversation.otherParticipantPresenceStatus === "online" ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-[#eef8f2] px-2.5 py-1 text-[11px] font-semibold text-[#16825b]">
+                          <span className="h-2 w-2 rounded-full bg-[#16825b]" />
+                          Online
+                        </span>
+                      ) : visibleSelectedConversation.otherParticipantUserId &&
+                        visibleSelectedConversation.otherParticipantLastSeenAt ? (
+                        <span className="inline-flex items-center rounded-full bg-[#f4f7f5] px-2.5 py-1 text-[11px] font-medium text-[#6b7f79]">
+                          Last seen {formatLastSeen(visibleSelectedConversation.otherParticipantLastSeenAt)}
+                        </span>
+                      ) : null}
                       <span
                         className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                           socketStatus === "connected"
@@ -3456,7 +4515,7 @@ export default function AdminMessagesPage() {
                 <div
                   ref={messagesListRef}
                   onScroll={handleMessagesScroll}
-                  className="min-h-0 flex-1 overflow-y-auto bg-[#fbfdfc] px-4 py-4"
+                  className="relative min-h-0 flex-1 overflow-y-auto bg-[#fbfdfc] px-4 py-3.5"
                 >
                   {selectedConversationLoading && selectedMessages.length === 0 ? (
                     <div className="flex min-h-[220px] items-center justify-center text-center">
@@ -3467,7 +4526,7 @@ export default function AdminMessagesPage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="space-y-2.5">
+                    <div className="relative space-y-2.5 pb-14">
                       {isLoadingOlderMessages ? (
                         <div className="sticky top-0 z-10 flex justify-center pb-1">
                           <span className="rounded-full border border-[#dfeee6] bg-white px-3 py-1 text-[11px] font-medium text-[#6b7f79] shadow-sm">
@@ -3476,31 +4535,50 @@ export default function AdminMessagesPage() {
                         </div>
                       ) : null}
 
-                      {selectedMessages.map((message) => {
+                      {selectedMessages.map((message, index) => {
                         const isMine = message.isMine;
                         const showDeleteAction = isMine && !message.isDeleted;
                         const showEditAction = canEditMessage(message);
-                        const showMessageActions = showDeleteAction || showEditAction;
+                        const showMessageActions = true;
                         const isActionOpen = openMessageActionId === message.id;
                         const attachmentLabel = getMessageAttachmentLabel(message);
                         const attachmentCaption = getAttachmentCaption(message);
                         const hasAttachmentId = Boolean(message.attachmentId);
                         const hasAttachment = Boolean(attachmentLabel || hasAttachmentId);
+                        const copyText = getMessageCopyText(message);
+                        const canCopyMessage = Boolean(copyText);
+                        const copyMenuLabel =
+                          copiedMessageId === message.id && canCopyMessage ? "Copied" : "Copy";
+                        const currentMessageDate = message.createdAtRaw || message.createdAt;
+                        const previousMessageDate =
+                          selectedMessages[index - 1]?.createdAtRaw ||
+                          selectedMessages[index - 1]?.createdAt;
+                        const showDateSeparator =
+                          index === 0 || !areSameCalendarDay(previousMessageDate, currentMessageDate);
+                        const dateLabel = formatMessageDateLabel(currentMessageDate);
 
                         return (
-                          <div
-                            key={message.id}
-                            className={`group relative flex ${isMine ? "justify-end" : "justify-start"}`}
-                          >
+                          <Fragment key={message.id}>
+                            {showDateSeparator && dateLabel ? (
+                              <div className="flex justify-center py-2">
+                                <span className="inline-flex items-center rounded-full border border-[#dfeee6] bg-white px-3 py-1 text-[11px] font-semibold text-[#6b7f79] shadow-sm">
+                                  {dateLabel}
+                                </span>
+                              </div>
+                            ) : null}
+
                             <div
-                              className={`relative w-fit max-w-[70%] rounded-xl border px-3 py-1.5 shadow-sm sm:max-w-[60%] ${
-                                isMine
-                                  ? "border-[#cdebd8] bg-[#dcf8e6] text-[#06201c]"
-                                  : "border-[#dfeee6] bg-white text-[#06201c]"
-                              }`}
+                              className={`group relative flex ${isMine ? "justify-end" : "justify-start"}`}
                             >
+                              <div
+                                className={`relative w-fit max-w-[65%] rounded-xl border px-3 py-1.5 shadow-sm sm:max-w-[60%] ${
+                                  isMine
+                                    ? "border-[#cdebd8] bg-[#dcf8e6] text-[#06201c]"
+                                    : "border-[#dfeee6] bg-white text-[#06201c]"
+                                }`}
+                              >
                               {showMessageActions ? (
-                                <div className="absolute right-1 top-1 z-10">
+                                <div className="absolute right-1 top-1 z-10" data-message-menu-root="true">
                                   <button
                                     type="button"
                                     onClick={(event) => {
@@ -3520,7 +4598,34 @@ export default function AdminMessagesPage() {
                                   </button>
 
                                   {isActionOpen ? (
-                                    <div className="absolute right-0 top-7 z-20 w-28 overflow-hidden rounded-xl border border-[#dfeee6] bg-white shadow-[0_12px_24px_rgba(15,61,51,0.12)]">
+                                    <div
+                                      className={`absolute top-7 z-20 w-28 overflow-hidden rounded-xl border border-[#dfeee6] bg-white shadow-[0_12px_24px_rgba(15,61,51,0.12)] ${
+                                        isMine ? "right-0" : "right-0"
+                                      }`}
+                                    >
+                                      <button
+                                        type="button"
+                                        disabled={!canCopyMessage}
+                                        onClick={async (event) => {
+                                          event.stopPropagation();
+                                          if (!copyText) {
+                                            return;
+                                          }
+
+                                          try {
+                                            await navigator.clipboard.writeText(copyText);
+                                            setCopiedMessageId(message.id);
+                                          } catch {
+                                            return;
+                                          } finally {
+                                            setOpenMessageActionId(null);
+                                          }
+                                        }}
+                                        className="flex w-full items-center px-3 py-2 text-left text-[12px] font-medium text-[#06201c] transition hover:bg-[#f4faf7] disabled:cursor-not-allowed disabled:text-[#8ca69e]"
+                                      >
+                                        {copyMenuLabel}
+                                      </button>
+
                                       {showEditAction ? (
                                         <button
                                           type="button"
@@ -3535,16 +4640,16 @@ export default function AdminMessagesPage() {
                                       ) : null}
 
                                       {showDeleteAction ? (
-                                      <button
-                                        type="button"
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          void handleDeleteMessage(message.id);
-                                        }}
-                                        className="flex w-full items-center px-3 py-2 text-left text-[12px] font-medium text-[#8f3b2f] transition hover:bg-[#fff6f4]"
-                                      >
-                                        Delete
-                                      </button>
+                                        <button
+                                          type="button"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            void handleDeleteMessage(message.id);
+                                          }}
+                                          className="flex w-full items-center px-3 py-2 text-left text-[12px] font-medium text-[#8f3b2f] transition hover:bg-[#fff6f4]"
+                                        >
+                                          Delete
+                                        </button>
                                       ) : null}
                                     </div>
                                   ) : null}
@@ -3556,8 +4661,8 @@ export default function AdminMessagesPage() {
                                   This message was deleted.
                                 </p>
                               ) : hasAttachment ? (
-                                <div className="mb-2 overflow-hidden rounded-xl border border-[#dfeee6] bg-[#f8fbf9] px-2.5 py-2">
-                                  <div className="flex items-start justify-between gap-3">
+                                <div className="mb-2 max-w-[320px] overflow-hidden rounded-xl border border-[#dfeee6] bg-[#f8fbf9] px-2.5 py-2">
+                                  <div className="flex items-start justify-between gap-2.5">
                                     <div className="min-w-0">
                                       <p className="truncate text-[12px] font-semibold text-[#06201c]">
                                         {attachmentLabel || "attachment"}
@@ -3591,43 +4696,49 @@ export default function AdminMessagesPage() {
                                   ) : null}
                                 </div>
                               ) : message.text.trim() ? (
-                                <p className="text-[13px] leading-5">{formatMessageBody(message)}</p>
+                                <p className="text-[13px] leading-5">
+                                  {renderMessageTextWithLinks(formatMessageBody(message))}
+                                </p>
                               ) : null}
 
                               {!message.isDeleted && hasAttachment && attachmentCaption ? (
                                 <p className="text-[13px] leading-5">{attachmentCaption}</p>
                               ) : null}
 
-                              <div
-                                className={`mt-1 flex items-center text-[10px] leading-none text-[#6b7f79] ${
-                                  isMine ? "justify-between gap-2" : "justify-end gap-1"
-                                }`}
-                              >
-                                {isMine && !message.isDeleted && message.deliveryState ? (
-                                  <span className="flex items-center gap-1 font-medium text-[#6b7f79]">
-                                    <span>{message.deliveryState === "read" ? "Read" : "Sent"}</span>
-                                    {message.isEdited ? (
-                                      <span className="text-[#8ca69e]">edited</span>
-                                    ) : null}
-                                  </span>
-                                ) : (
-                                  <span className="flex items-center gap-1">
-                                    {message.isEdited ? (
-                                      <span className="text-[#8ca69e]">edited</span>
-                                    ) : null}
-                                  </span>
-                                )}
+                                <div
+                                  className={`mt-1 flex items-center text-[10px] leading-none text-[#6b7f79] ${
+                                    isMine ? "justify-between gap-2" : "justify-end gap-1"
+                                  }`}
+                                >
+                                  {isMine && !message.isDeleted && message.deliveryState ? (
+                                    <span className="flex items-center gap-1 font-medium text-[#6b7f79]">
+                                      <span className="text-[10px] leading-none">
+                                        {message.deliveryState === "read" ? "✓✓" : "✓"}
+                                      </span>
+                                      <span>{message.deliveryState === "read" ? "Read" : "Sent"}</span>
+                                      {message.isEdited ? (
+                                        <span className="text-[#8ca69e]">edited</span>
+                                      ) : null}
+                                    </span>
+                                  ) : (
+                                    <span className="flex items-center gap-1">
+                                      {message.isEdited ? (
+                                        <span className="text-[#8ca69e]">edited</span>
+                                      ) : null}
+                                    </span>
+                                  )}
 
-                                <span>{message.createdAt}</span>
+                                  <span>{getMessageBubbleTime(message)}</span>
+                                </div>
                               </div>
                             </div>
-                          </div>
+                          </Fragment>
                         );
                       })}
 
                       {visibleTypingUsers.length > 0 && !isTypingConversationReadOnly(visibleSelectedConversation) ? (
                         <div className="flex justify-start">
-                          <div className="w-fit max-w-[70%] rounded-xl border border-[#dfeee6] bg-white px-3 py-2 shadow-sm sm:max-w-[60%]">
+                          <div className="w-fit max-w-[65%] rounded-xl border border-[#dfeee6] bg-white px-3 py-2 shadow-sm sm:max-w-[60%]">
                             <div className="flex items-center gap-2 text-[12px] text-[#52736a]">
                               <span className="font-medium text-[#06201c]">Typing</span>
                               <span className="inline-flex items-center gap-0.5">
@@ -3657,16 +4768,29 @@ export default function AdminMessagesPage() {
                           </div>
                         </div>
                       ) : null}
+
                     </div>
                   )}
+
                 </div>
 
+                {showScrollToBottomButton ? (
+                  <button
+                    type="button"
+                    onClick={scrollMessagesToBottom}
+                    className="absolute bottom-[148px] left-1/2 z-20 inline-flex h-10 w-10 -translate-x-1/2 items-center justify-center rounded-full border border-[#d7e5df] bg-white text-[#1f6a58] shadow-[0_10px_24px_rgba(15,61,51,0.12)] transition hover:border-[#1f6a58] hover:bg-[#eef8f2]"
+                    aria-label="Scroll to latest messages"
+                  >
+                    <DownArrowIcon />
+                  </button>
+                ) : null}
+
                 {visibleSelectedConversation.canSendMessage ? (
-                  <div className="sticky bottom-0 relative border-t border-[#edf3f0] bg-white px-4 py-3.5">
+                  <div className="sticky bottom-0 relative border-t border-[#edf3f0] bg-white px-4 py-3">
                     {showEmojiPicker ? (
                       <div
                         ref={emojiPickerRef}
-                        className="absolute bottom-[calc(100%+12px)] right-4 z-20 overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-[0_16px_32px_rgba(15,61,51,0.12)]"
+                        className="absolute bottom-[calc(100%+10px)] right-4 z-20 overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-[0_16px_32px_rgba(15,61,51,0.12)]"
                       >
                         <EmojiPicker
                           onEmojiClick={(emojiData) => handleEmojiPick(emojiData.emoji)}
@@ -3684,16 +4808,16 @@ export default function AdminMessagesPage() {
 
                     {quickReplies.length > 0 ? (
                       <div className="mb-2">
-                        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#7f9d94]">
+                        <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#7f9d94]">
                           Quick replies
                         </div>
-                        <div className="flex gap-2 overflow-x-auto pb-0.5">
+                        <div className="flex gap-1.5 overflow-x-auto pb-0.5">
                           {quickReplies.map((reply) => (
                             <button
                               key={reply}
                               type="button"
                               onClick={() => handleQuickReply(reply)}
-                              className="shrink-0 rounded-full border border-[#d7e5df] bg-[#f8fbf9] px-2.5 py-1 text-left text-[11px] text-[#355a51] transition hover:border-[#1f6a58] hover:bg-[#eef8f2]"
+                              className="shrink-0 rounded-full border border-[#d7e5df] bg-[#f8fbf9] px-2 py-0.5 text-left text-[10px] text-[#355a51] transition hover:border-[#1f6a58] hover:bg-[#eef8f2]"
                             >
                               {reply}
                             </button>
@@ -3734,13 +4858,18 @@ export default function AdminMessagesPage() {
 
                     {pendingVoice ? (
                       <div className="mb-2 rounded-xl border border-[#d7e5df] bg-[#f8fbf9] px-3 py-2 text-[11px] text-[#52736a]">
-                        <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start justify-between gap-2.5">
                           <div className="min-w-0 flex-1">
                             <p className="font-medium text-[#06201c]">Voice message ready</p>
                             <p className="truncate text-[#52736a]">
                               {pendingVoice.fileName} · {formatRecordingDuration(pendingVoice.durationSeconds)}
                             </p>
-                            <audio controls preload="none" src={pendingVoice.objectUrl} className="mt-2 w-full">
+                            <audio
+                              controls
+                              preload="none"
+                              src={pendingVoice.objectUrl}
+                              className="mt-2 w-full max-w-[320px]"
+                            >
                               Your browser does not support the audio element.
                             </audio>
                           </div>
@@ -3800,6 +4929,10 @@ export default function AdminMessagesPage() {
                       <p className="mb-2 text-[11px] text-[#8f3b2f]">{voiceRecordingError}</p>
                     ) : null}
 
+                    {speechError ? (
+                      <p className="mb-2 text-[11px] text-[#8f3b2f]">{speechError}</p>
+                    ) : null}
+
                     {editingMessageId ? (
                       <div className="mb-2 rounded-xl border border-[#d7e5df] bg-[#f8fbf9] px-3 py-2 text-[11px] text-[#52736a]">
                         <div className="flex items-center justify-between gap-2">
@@ -3821,7 +4954,7 @@ export default function AdminMessagesPage() {
                       </div>
                     ) : null}
 
-                    <div className="flex items-end gap-2.5">
+                      <div className="flex items-end gap-2">
                       <button
                         type="button"
                         onClick={() => {
@@ -3864,27 +4997,53 @@ export default function AdminMessagesPage() {
                         onChange={(event) => void handleAttachmentSelected(event)}
                       />
 
-                      <label className="flex-1">
+                      <label className="flex min-w-0 flex-1">
                         <span className="sr-only">Type your reply</span>
                         <textarea
                           value={draftMessage}
                           onChange={(event) => handleDraftMessageChange(event.target.value)}
                           placeholder="Type your reply..."
                           rows={2}
-                          className="min-h-[76px] w-full resize-none rounded-2xl border border-[#d7e5df] bg-[#f8fbf9] px-3.5 py-2.5 text-[13px] text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
+                          className="min-h-[76px] w-full resize-none rounded-2xl border border-[#d7e5df] bg-[#f8fbf9] px-3.5 py-2 text-[13px] text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
                         />
                       </label>
 
-                        <button
-                          type="button"
-                          onClick={() => void handleSend()}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSpeechError(null);
+                          if (isSpeechListening) {
+                            stopSpeechToText();
+                            return;
+                          }
+
+                          void startSpeechToText();
+                        }}
+                        disabled={
+                          voiceRecordingState !== "idle" ||
+                          Boolean(pendingVoice) ||
+                          isSendingMessage
+                        }
+                        className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-full px-3.5 text-[13px] font-bold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                          isSpeechListening
+                            ? "border border-[#1f6a58] bg-[#1f6a58] text-white hover:bg-[#175245]"
+                            : "border border-[#d7e5df] bg-[#f8fbf9] text-[#1f6a58] hover:border-[#c3d7cf] hover:bg-[#eef8f2]"
+                        }`}
+                      >
+                        <MicIcon />
+                        {isSpeechListening ? "Listening..." : "Speak"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => void handleSend()}
                         disabled={
                           ((!draftMessage.trim() && !uploadedAttachment && !pendingVoice) ||
                             isSendingMessage ||
                             voiceRecordingState !== "idle")
                         }
-                          className="inline-flex h-9 shrink-0 items-center gap-2 rounded-full bg-[#1f6a58] px-3.5 text-[13px] font-bold text-white shadow-sm transition hover:bg-[#175245] disabled:cursor-not-allowed disabled:bg-[#9eb5ad]"
-                        >
+                        className="inline-flex h-9 shrink-0 items-center gap-2 rounded-full bg-[#1f6a58] px-3.5 text-[13px] font-bold text-white shadow-sm transition hover:bg-[#175245] disabled:cursor-not-allowed disabled:bg-[#9eb5ad]"
+                      >
                         <SendIcon />
                         {editingMessageId ? "Save" : "Send"}
                       </button>

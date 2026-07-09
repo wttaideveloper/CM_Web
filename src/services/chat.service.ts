@@ -41,6 +41,7 @@ type DownloadAttachmentResponse = {
 };
 
 type TypingUsersResponse = unknown[] | { items?: unknown[] } | { data?: unknown[] };
+type PresenceStatus = "online" | "offline" | "away";
 
 function toHeaders(initHeaders?: HeadersInit, includeJsonContentType = true): Headers {
   const headers = new Headers(initHeaders);
@@ -133,6 +134,10 @@ export function getProviderConversations(params?: ProviderConversationsParams) {
   return requestJson<unknown>(`/conversations/provider?${searchParams.toString()}`);
 }
 
+export function getArchivedConversations() {
+  return requestJson<unknown>(`/conversations/provider/archived`);
+}
+
 export function getConversationById(conversationId: string) {
   return requestJson<unknown>(`/conversations/${conversationId}`);
 }
@@ -158,6 +163,27 @@ export function getConversationMessages<T = unknown>(
 export function markConversationRead(conversationId: string) {
   return requestJson<unknown>(`/conversations/${conversationId}/read`, {
     method: "PATCH",
+  });
+}
+
+export function closeConversation(conversationId: string) {
+  return requestJson<unknown>(`/conversations/${encodeURIComponent(conversationId)}/close`, {
+    method: "PATCH",
+  });
+}
+
+export function reopenConversation(conversationId: string) {
+  return requestJson<unknown>(`/conversations/${encodeURIComponent(conversationId)}/reopen`, {
+    method: "PATCH",
+  });
+}
+
+export function archiveConversation(conversationId: string, archived: boolean) {
+  return requestJson<unknown>(`/conversations/${encodeURIComponent(conversationId)}/archive`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      archived,
+    }),
   });
 }
 
@@ -193,6 +219,54 @@ export function updateTypingStatus(conversationId: string, isTyping: boolean) {
       is_typing: isTyping,
     }),
   });
+}
+
+export function updatePresenceStatus(status: PresenceStatus) {
+  return requestJson<unknown>(`/presence/status`, {
+    method: "PUT",
+    body: JSON.stringify({
+      status,
+    }),
+  });
+}
+
+export async function getUserLastSeen(userId: string) {
+  const response = await fetch(
+    `${API_BASE_URL}/presence/${encodeURIComponent(userId)}/last-seen`,
+    {
+      method: "GET",
+      cache: "no-store",
+      headers: toHeaders(undefined, false),
+    },
+  );
+
+  if (response.status === 404) {
+    const errorText = await response.text().catch(() => "");
+
+    if (errorText.includes("User presence not found")) {
+      return null;
+    }
+  }
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("Chat API request failed", {
+        path: `/presence/${encodeURIComponent(userId)}/last-seen`,
+        status: response.status,
+        errorText,
+      });
+    }
+
+    throw new Error(errorText || `Request failed with status ${response.status}`);
+  }
+
+  if (response.status === 204) {
+    return null;
+  }
+
+  return response.json();
 }
 
 export async function getTypingUsers(conversationId: string) {
