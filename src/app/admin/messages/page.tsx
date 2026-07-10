@@ -41,6 +41,8 @@ import {
 type ChatStatus = "open" | "closed" | "archived" | "read_only";
 type LimitReason = "CHAT_WINDOW_CLOSED" | "FREE_LIMIT_REACHED" | "BOOKING_REQUIRED";
 type FilterKind = "ALL" | "UNREAD" | "CLOSED" | "ARCHIVED";
+type ConversationMediaTab = "media" | "links" | "docs";
+type ConversationMediaKind = "image" | "video" | "audio" | "document";
 
 type Conversation = {
   id: string;
@@ -87,6 +89,20 @@ type ChatMessage = {
   attachmentFileName?: string;
   downloadUrl?: string;
   attachment?: BackendAttachment;
+};
+
+type ConversationMediaItem = {
+  id: string;
+  message: ChatMessage;
+  title: string;
+  senderLabel: "You" | "Customer";
+  dateLabel: string;
+  timeLabel: string;
+  kind: ConversationMediaTab;
+  mediaKind?: ConversationMediaKind;
+  previewText?: string;
+  attachmentLabel?: string;
+  url?: string;
 };
 
 type BackendConversation = {
@@ -628,6 +644,147 @@ function getMessageBubbleTime(message: ChatMessage) {
   return message.createdAtTime || message.createdAt;
 }
 
+const IMAGE_FILE_EXTENSIONS = new Set([
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "bmp",
+  "svg",
+  "heic",
+  "heif",
+  "avif",
+]);
+const VIDEO_FILE_EXTENSIONS = new Set(["mp4", "mov", "webm", "m4v", "3gp", "3gpp", "mkv"]);
+const AUDIO_FILE_EXTENSIONS = new Set(["mp3", "wav", "ogg", "m4a", "aac", "flac", "webm"]);
+
+function getFileExtension(value?: string) {
+  if (!value) {
+    return "";
+  }
+
+  const cleanValue = value.split("?")[0].split("#")[0];
+  const lastDotIndex = cleanValue.lastIndexOf(".");
+
+  if (lastDotIndex < 0) {
+    return "";
+  }
+
+  return cleanValue.slice(lastDotIndex + 1).toLowerCase();
+}
+
+function getMediaAttachmentFileName(message: ChatMessage) {
+  return message.attachmentFileName || message.attachmentName || "";
+}
+
+function getMessageAttachmentMediaKind(message: ChatMessage): ConversationMediaKind | null {
+  const messageType = (message.messageType || "").toLowerCase();
+  const attachmentType = (message.attachmentType || "").toLowerCase();
+  const mimeType = (message.attachment?.mime_type || "").toLowerCase();
+  const fileName = getMediaAttachmentFileName(message) || message.text;
+  const extension = getFileExtension(fileName);
+
+  if (
+    messageType === "image" ||
+    attachmentType === "image" ||
+    mimeType.startsWith("image/") ||
+    IMAGE_FILE_EXTENSIONS.has(extension)
+  ) {
+    return "image";
+  }
+
+  if (
+    messageType === "video" ||
+    attachmentType === "video" ||
+    mimeType.startsWith("video/") ||
+    VIDEO_FILE_EXTENSIONS.has(extension)
+  ) {
+    return "video";
+  }
+
+  if (
+    messageType === "audio" ||
+    attachmentType === "audio" ||
+    mimeType.startsWith("audio/") ||
+    AUDIO_FILE_EXTENSIONS.has(extension)
+  ) {
+    return "audio";
+  }
+
+  return null;
+}
+
+function extractMessageLinks(text?: string) {
+  if (!text) {
+    return [];
+  }
+
+  const urlPattern = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
+
+  return Array.from(text.matchAll(urlPattern), (match) => match[0]);
+}
+
+function buildConversationMediaItems(messages: ChatMessage[]) {
+  const media: ConversationMediaItem[] = [];
+  const links: ConversationMediaItem[] = [];
+  const docs: ConversationMediaItem[] = [];
+
+  messages.forEach((message) => {
+    if (message.isDeleted) {
+      return;
+    }
+
+    const senderLabel: "You" | "Customer" = message.isMine ? "You" : "Customer";
+    const dateLabel = formatMessageDateLabel(message.createdAtRaw || message.createdAt) || "Just now";
+    const timeLabel = getMessageBubbleTime(message);
+    const attachmentLabel = getMediaAttachmentFileName(message).trim();
+    const mediaKind = getMessageAttachmentMediaKind(message);
+    const hasAttachment = Boolean(message.attachmentId || attachmentLabel || message.downloadUrl);
+
+    if (mediaKind) {
+      media.push({
+        id: message.id,
+        message,
+        title: attachmentLabel || message.text.trim() || "Attachment",
+        senderLabel,
+        dateLabel,
+        timeLabel,
+        kind: "media",
+        mediaKind,
+        attachmentLabel: attachmentLabel || undefined,
+      });
+    } else if (hasAttachment) {
+      docs.push({
+        id: message.id,
+        message,
+        title: attachmentLabel || message.text.trim() || "Attachment",
+        senderLabel,
+        dateLabel,
+        timeLabel,
+        kind: "docs",
+        attachmentLabel: attachmentLabel || undefined,
+      });
+    }
+
+    extractMessageLinks(message.text).forEach((link, index) => {
+      links.push({
+        id: `${message.id}-link-${index}`,
+        message,
+        title: link,
+        senderLabel,
+        dateLabel,
+        timeLabel,
+        kind: "links",
+        previewText: link,
+        url: link.startsWith("www.") ? `https://${link}` : link,
+      });
+    });
+  });
+
+  return { media, links, docs };
+}
+
 function formatRecordingDuration(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
@@ -846,6 +1003,39 @@ function prependUniqueChatMessages(existingMessages: ChatMessage[], incomingMess
   }
 
   return next;
+}
+
+function getChatMessageSortTimestamp(message: ChatMessage) {
+  const rawValue = message.createdAtRaw || message.createdAt;
+
+  if (!rawValue) {
+    return 0;
+  }
+
+  const timestamp = new Date(rawValue).getTime();
+
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function combineUniqueChatMessagesForMediaDrawer(
+  currentMessages: ChatMessage[],
+  historicalMessages: ChatMessage[],
+) {
+  const seen = new Set<string>();
+  const combined: ChatMessage[] = [];
+
+  [...historicalMessages, ...currentMessages].forEach((message) => {
+    if (!message.id || seen.has(message.id)) {
+      return;
+    }
+
+    seen.add(message.id);
+    combined.push(message);
+  });
+
+  return combined.sort(
+    (left, right) => getChatMessageSortTimestamp(right) - getChatMessageSortTimestamp(left),
+  );
 }
 
 function mergeConversationWithMessage(
@@ -1421,6 +1611,16 @@ export default function AdminMessagesPage() {
   const [selectedConversationLoading, setSelectedConversationLoading] = useState(false);
   const [selectedConversationError, setSelectedConversationError] = useState<string | null>(null);
   const [selectedConversationDetail, setSelectedConversationDetail] = useState<Conversation | null>(null);
+  const [conversationMediaPanelOpen, setConversationMediaPanelOpen] = useState(false);
+  const [conversationMediaPanelTab, setConversationMediaPanelTab] =
+    useState<ConversationMediaTab>("media");
+  const [mediaDrawerMessagesByConversation, setMediaDrawerMessagesByConversation] = useState<
+    Record<string, ChatMessage[]>
+  >({});
+  const [isMediaHistoryLoading, setIsMediaHistoryLoading] = useState(false);
+  const [mediaHistoryError, setMediaHistoryError] = useState<string | null>(null);
+  const [mediaHistoryFullyLoadedByConversation, setMediaHistoryFullyLoadedByConversation] =
+    useState<Record<string, boolean>>({});
   const [isMessageSearchOpen, setIsMessageSearchOpen] = useState(false);
   const [messageSearchQuery, setMessageSearchQuery] = useState("");
   const [messageSearchResults, setMessageSearchResults] = useState<ChatMessage[]>([]);
@@ -1502,6 +1702,12 @@ export default function AdminMessagesPage() {
   const copiedMessageResetTimerRef = useRef<number | null>(null);
   const messagesListRef = useRef<HTMLDivElement | null>(null);
   const previousSearchValueRef = useRef("");
+  const selectedMessagesCountRef = useRef(0);
+  const mediaHistoryRequestIdRef = useRef(0);
+  const mediaHistoryScanStartedByConversationRef = useRef<Record<string, boolean>>({});
+  const mediaHistoryCursorByConversationRef = useRef<Record<string, string | null>>({});
+  const mediaHistoryActiveConversationIdRef = useRef<string | null>(null);
+  const olderMessagesCursorRef = useRef<string | null>(null);
 
   useEffect(() => {
     selectedConversationIdRef.current = selectedConversationId;
@@ -1511,6 +1717,10 @@ export default function AdminMessagesPage() {
     selectedConversationOtherParticipantUserIdRef.current =
       selectedConversationDetail?.otherParticipantUserId ?? null;
   }, [selectedConversationDetail?.otherParticipantUserId]);
+
+  useEffect(() => {
+    olderMessagesCursorRef.current = olderMessagesCursor;
+  }, [olderMessagesCursor]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -1523,6 +1733,184 @@ export default function AdminMessagesPage() {
 
     return () => window.clearTimeout(timer);
   }, [selectedConversationId]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setConversationMediaPanelOpen(false);
+      setConversationMediaPanelTab("media");
+      setMediaHistoryError(null);
+      setIsMediaHistoryLoading(false);
+      mediaHistoryRequestIdRef.current += 1;
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [selectedConversationId]);
+
+  useEffect(() => {
+    if (conversationMediaPanelOpen) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setMediaHistoryError(null);
+      setIsMediaHistoryLoading(false);
+      mediaHistoryRequestIdRef.current += 1;
+      mediaHistoryActiveConversationIdRef.current = null;
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [conversationMediaPanelOpen]);
+
+  useEffect(() => {
+    const conversationId = selectedConversationId;
+
+    if (!conversationId || !conversationMediaPanelOpen) {
+      return;
+    }
+
+    const activeConversationId = mediaHistoryActiveConversationIdRef.current;
+
+    if (activeConversationId && activeConversationId !== conversationId) {
+      return;
+    }
+
+    if (mediaHistoryFullyLoadedByConversation[conversationId]) {
+      const timer = window.setTimeout(() => {
+        setIsMediaHistoryLoading(false);
+        setMediaHistoryError(null);
+      }, 0);
+
+      return () => window.clearTimeout(timer);
+    }
+
+    if (mediaHistoryScanStartedByConversationRef.current[conversationId]) {
+      return;
+    }
+
+    const initialCursor =
+      mediaHistoryCursorByConversationRef.current[conversationId] ??
+      olderMessagesCursorRef.current ??
+      null;
+
+    mediaHistoryCursorByConversationRef.current[conversationId] = initialCursor;
+
+    if (!initialCursor) {
+      if (selectedConversationLoading && selectedMessagesCountRef.current === 0) {
+        return;
+      }
+
+      const timer = window.setTimeout(() => {
+        setMediaHistoryFullyLoadedByConversation((current) =>
+          current[conversationId] ? current : { ...current, [conversationId]: true },
+        );
+        setIsMediaHistoryLoading(false);
+        setMediaHistoryError(null);
+      }, 0);
+
+      return () => window.clearTimeout(timer);
+    }
+
+    const requestId = mediaHistoryRequestIdRef.current + 1;
+    mediaHistoryRequestIdRef.current = requestId;
+    mediaHistoryScanStartedByConversationRef.current[conversationId] = true;
+    mediaHistoryActiveConversationIdRef.current = conversationId;
+
+    setIsMediaHistoryLoading(true);
+    setMediaHistoryError(null);
+
+    let active = true;
+
+    void (async () => {
+      let cursor = initialCursor;
+      let pageCount = 0;
+
+      try {
+        while (cursor && pageCount < 20) {
+          if (
+            !active ||
+            mediaHistoryRequestIdRef.current !== requestId ||
+            selectedConversationIdRef.current !== conversationId ||
+            !conversationMediaPanelOpen
+          ) {
+            return;
+          }
+
+          const response = await getConversationMessages<BackendMessage>(conversationId, {
+            limit: 50,
+            cursor,
+          });
+
+          if (
+            !active ||
+            mediaHistoryRequestIdRef.current !== requestId ||
+            selectedConversationIdRef.current !== conversationId ||
+            !conversationMediaPanelOpen
+          ) {
+            return;
+          }
+
+          const mappedMessages = response.items.map(mapMessage);
+
+          setMediaDrawerMessagesByConversation((current) => {
+            const existingMessages = current[conversationId] ?? [];
+            const nextMessages = prependUniqueChatMessages(existingMessages, mappedMessages);
+
+            return {
+              ...current,
+              [conversationId]: nextMessages,
+            };
+          });
+
+          cursor = response.pagination.next_cursor ?? null;
+          mediaHistoryCursorByConversationRef.current[conversationId] = cursor;
+          pageCount += 1;
+
+          if (!response.pagination.has_more || !cursor) {
+            setMediaHistoryFullyLoadedByConversation((current) =>
+              current[conversationId] ? current : { ...current, [conversationId]: true },
+            );
+            break;
+          }
+        }
+
+        if (pageCount >= 20) {
+          setMediaHistoryFullyLoadedByConversation((current) =>
+            current[conversationId] ? current : { ...current, [conversationId]: true },
+          );
+        }
+      } catch {
+        if (
+          active &&
+          mediaHistoryRequestIdRef.current === requestId &&
+          selectedConversationIdRef.current === conversationId &&
+          conversationMediaPanelOpen
+        ) {
+          setMediaHistoryError("Could not load older media. Showing loaded messages only.");
+        }
+      } finally {
+        if (
+          active &&
+          mediaHistoryRequestIdRef.current === requestId &&
+          selectedConversationIdRef.current === conversationId
+        ) {
+          setIsMediaHistoryLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+
+      if (mediaHistoryRequestIdRef.current === requestId) {
+        mediaHistoryRequestIdRef.current += 1;
+      }
+    };
+  }, [
+    conversationMediaPanelOpen,
+    mediaHistoryFullyLoadedByConversation,
+    selectedConversationId,
+    selectedConversationLoading,
+  ]);
 
   useEffect(() => {
     if (!isMessageSearchOpen) {
@@ -3747,11 +4135,35 @@ export default function AdminMessagesPage() {
 
   const visibleSelectedConversationId = visibleSelectedConversation?.id ?? null;
 
-  const selectedMessages = visibleSelectedConversation
-    ? messagesByConversation[visibleSelectedConversation.id] ?? []
-    : [];
+  const selectedConversationMessagesId = visibleSelectedConversation?.id ?? null;
+  const selectedMessages = useMemo(
+    () => (selectedConversationMessagesId ? messagesByConversation[selectedConversationMessagesId] ?? [] : []),
+    [messagesByConversation, selectedConversationMessagesId],
+  );
+
+  useEffect(() => {
+    selectedMessagesCountRef.current = selectedMessages.length;
+  }, [selectedMessages.length]);
 
   const quickReplies = visibleSelectedConversation ? getQuickReplies(visibleSelectedConversation) : [];
+  const mediaDrawerHistoryMessages = useMemo(
+    () => (selectedConversationId ? mediaDrawerMessagesByConversation[selectedConversationId] ?? [] : []),
+    [mediaDrawerMessagesByConversation, selectedConversationId],
+  );
+  const conversationMediaSourceMessages = useMemo(
+    () => combineUniqueChatMessagesForMediaDrawer(selectedMessages, mediaDrawerHistoryMessages),
+    [mediaDrawerHistoryMessages, selectedMessages],
+  );
+  const conversationMediaItems = useMemo(
+    () => buildConversationMediaItems(conversationMediaSourceMessages),
+    [conversationMediaSourceMessages],
+  );
+  const visibleConversationMediaItems =
+    conversationMediaPanelTab === "media"
+      ? conversationMediaItems.media
+      : conversationMediaPanelTab === "links"
+        ? conversationMediaItems.links
+        : conversationMediaItems.docs;
 
   const handleMessageSearchResultClick = useCallback((message: ChatMessage) => {
     const conversationId = selectedConversationIdRef.current;
@@ -5058,8 +5470,21 @@ export default function AdminMessagesPage() {
                           onClick={handleCloseConversation}
                           className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] bg-white text-[#52736a] shadow-sm transition hover:border-[#1f6a58] hover:text-[#1f6a58]"
                           aria-label="Close conversation"
+                          >
+                            <CloseIcon />
+                          </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setConversationMediaPanelOpen((current) => !current)}
+                          className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[11px] font-semibold shadow-sm transition ${
+                            conversationMediaPanelOpen
+                              ? "border-[#1f6a58] bg-[#eef8f2] text-[#1f6a58]"
+                              : "border-[#d7e5df] bg-white text-[#52736a] hover:border-[#1f6a58] hover:text-[#1f6a58]"
+                          }`}
+                          aria-label="Media, links and docs"
                         >
-                          <CloseIcon />
+                          <span>Media</span>
                         </button>
 
                         <button
@@ -5265,7 +5690,12 @@ export default function AdminMessagesPage() {
                                 }`}
                               >
                               {showMessageActions ? (
-                                <div className="absolute right-1 top-1 z-10" data-message-menu-root="true">
+                                <div
+                                  className={`absolute top-1 z-20 flex flex-col ${
+                                    isMine ? "right-1 items-end" : "left-1 items-start"
+                                  }`}
+                                  data-message-menu-root="true"
+                                >
                                   <button
                                     type="button"
                                     onClick={(event) => {
@@ -5274,7 +5704,7 @@ export default function AdminMessagesPage() {
                                         current === message.id ? null : message.id,
                                       );
                                     }}
-                                    className={`inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#d7e5df] bg-white/95 text-[#52736a] shadow-sm transition hover:border-[#1f6a58] hover:text-[#1f6a58] ${
+                                    className={`inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#d7e5df] bg-white/95 text-[#52736a] shadow-sm transition hover:border-[#1f6a58] hover:text-[#1f6a58] ${
                                       isActionOpen
                                         ? "opacity-100"
                                         : "opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto"
@@ -5286,8 +5716,8 @@ export default function AdminMessagesPage() {
 
                                   {isActionOpen ? (
                                     <div
-                                      className={`absolute top-7 z-20 w-28 overflow-hidden rounded-xl border border-[#dfeee6] bg-white shadow-[0_12px_24px_rgba(15,61,51,0.12)] ${
-                                        isMine ? "right-0" : "right-0"
+                                      className={`absolute top-full mt-1 min-w-[110px] max-w-[180px] overflow-hidden whitespace-nowrap rounded-xl border border-[#dfeee6] bg-white shadow-[0_12px_24px_rgba(15,61,51,0.12)] z-30 ${
+                                        isMine ? "right-0" : "left-0"
                                       }`}
                                     >
                                       <button
@@ -5308,7 +5738,7 @@ export default function AdminMessagesPage() {
                                             setOpenMessageActionId(null);
                                           }
                                         }}
-                                        className="flex w-full items-center px-3 py-2 text-left text-[12px] font-medium text-[#06201c] transition hover:bg-[#f4faf7] disabled:cursor-not-allowed disabled:text-[#8ca69e]"
+                                        className="flex w-full items-center whitespace-nowrap px-3 py-2 text-left text-[12px] font-medium text-[#06201c] transition hover:bg-[#f4faf7] disabled:cursor-not-allowed disabled:text-[#8ca69e]"
                                       >
                                         {copyMenuLabel}
                                       </button>
@@ -5320,7 +5750,7 @@ export default function AdminMessagesPage() {
                                             event.stopPropagation();
                                             handleEditMessage(message.id);
                                           }}
-                                          className="flex w-full items-center px-3 py-2 text-left text-[12px] font-medium text-[#06201c] transition hover:bg-[#f4faf7]"
+                                          className="flex w-full items-center whitespace-nowrap px-3 py-2 text-left text-[12px] font-medium text-[#06201c] transition hover:bg-[#f4faf7]"
                                         >
                                           Edit
                                         </button>
@@ -5333,7 +5763,7 @@ export default function AdminMessagesPage() {
                                             event.stopPropagation();
                                             void handleDeleteMessage(message.id);
                                           }}
-                                          className="flex w-full items-center px-3 py-2 text-left text-[12px] font-medium text-[#8f3b2f] transition hover:bg-[#fff6f4]"
+                                          className="flex w-full items-center whitespace-nowrap px-3 py-2 text-left text-[12px] font-medium text-[#8f3b2f] transition hover:bg-[#fff6f4]"
                                         >
                                           Delete
                                         </button>
@@ -5744,8 +6174,166 @@ export default function AdminMessagesPage() {
                     </div>
                   </div>
                 )}
-              </div>
-            )}
+                {conversationMediaPanelOpen ? (
+                  <aside className="absolute inset-y-3 right-3 z-20 flex w-[340px] flex-col overflow-hidden rounded-[22px] border border-[#dfeee6] bg-white/96 shadow-[0_20px_42px_rgba(15,61,51,0.16)] backdrop-blur-sm">
+                    <div className="flex items-start justify-between gap-3 border-b border-[#edf3f0] px-4 py-3.5">
+                      <div className="min-w-0">
+                        <p className="text-[14px] font-semibold text-[#06201c]">Media, links and docs</p>
+                        <p className="mt-0.5 text-[11px] text-[#6b7f79]">
+                          Loaded chat plus older history
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setConversationMediaPanelOpen(false)}
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#d7e5df] bg-white text-[#52736a] shadow-sm transition hover:border-[#1f6a58] hover:text-[#1f6a58]"
+                        aria-label="Close media panel"
+                      >
+                        <CloseIcon />
+                      </button>
+                    </div>
+
+                    <div className="border-b border-[#edf3f0] px-3 py-2.5">
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {[
+                          { key: "media" as const, label: "Media", count: conversationMediaItems.media.length },
+                          { key: "links" as const, label: "Links", count: conversationMediaItems.links.length },
+                          { key: "docs" as const, label: "Docs", count: conversationMediaItems.docs.length },
+                        ].map((tab) => (
+                          <button
+                            key={tab.key}
+                            type="button"
+                            onClick={() => setConversationMediaPanelTab(tab.key)}
+                            className={`inline-flex items-center justify-center gap-1 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${
+                              conversationMediaPanelTab === tab.key
+                                ? "border-[#1f6a58] bg-[#eef8f2] text-[#1f6a58]"
+                                : "border-[#d7e5df] bg-[#f8fbf9] text-[#52736a] hover:border-[#1f6a58] hover:text-[#1f6a58]"
+                            }`}
+                          >
+                            <span>{tab.label}</span>
+                            <span className="text-[10px] font-medium opacity-80">{tab.count}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+                      <div className="space-y-2.5">
+                        {isMediaHistoryLoading ? (
+                          <p className="rounded-2xl border border-[#eef3ef] bg-[#fbfdfc] px-3 py-2 text-[11px] text-[#6b7f79] shadow-sm">
+                            Loading older media...
+                          </p>
+                        ) : null}
+
+                        {mediaHistoryError ? (
+                          <p className="rounded-2xl border border-[#f2e5cf] bg-[#fffaf2] px-3 py-2 text-[11px] text-[#8b5b17] shadow-sm">
+                            Could not load older media. Showing loaded messages only.
+                          </p>
+                        ) : null}
+
+                        {visibleConversationMediaItems.length > 0 ? (
+                          visibleConversationMediaItems.map((item) => {
+                            const hasAttachmentId = Boolean(item.message.attachmentId);
+                            const isLinkTab = item.kind === "links";
+
+                            return (
+                              <div
+                                key={item.id}
+                                className="rounded-2xl border border-[#dfeee6] bg-[#fbfdfc] px-3 py-2.5 shadow-sm transition hover:border-[#cfe3db]"
+                              >
+                                <div className="flex items-start gap-2.5">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <p className="truncate text-[12px] font-semibold text-[#06201c]">
+                                          {item.title || (isLinkTab ? "Link" : "Attachment")}
+                                        </p>
+                                        <p className="mt-0.5 text-[11px] text-[#52736a]">
+                                          {item.senderLabel} · {item.dateLabel} · {item.timeLabel}
+                                        </p>
+                                      </div>
+
+                                      <span className="shrink-0 rounded-full bg-[#eef8f2] px-2 py-1 text-[10px] font-semibold text-[#1f6a58]">
+                                        {isLinkTab
+                                          ? "Link"
+                                          : item.kind === "media"
+                                            ? item.mediaKind
+                                              ? item.mediaKind.charAt(0).toUpperCase() +
+                                                item.mediaKind.slice(1)
+                                              : "Media"
+                                            : "Doc"}
+                                      </span>
+                                    </div>
+
+                                    {isLinkTab ? (
+                                      <p className="mt-1.5 break-words text-[11px] leading-5 text-[#1f6a58] underline decoration-[#9ed6c5] underline-offset-2">
+                                        {item.previewText || item.url}
+                                      </p>
+                                    ) : item.attachmentLabel ? (
+                                      <p className="mt-1.5 truncate text-[11px] text-[#6b7f79]">
+                                        {item.attachmentLabel}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                </div>
+
+                                <div className="mt-2 flex items-center justify-end gap-2">
+                                  {isLinkTab ? (
+                                    <a
+                                      href={item.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex h-7 items-center rounded-full border border-[#d7e5df] bg-white px-2.5 text-[10px] font-semibold text-[#1f6a58] shadow-sm transition hover:border-[#1f6a58] hover:bg-[#eef8f2]"
+                                    >
+                                      Open link
+                                    </a>
+                                  ) : (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => void openAttachmentBlob(item.message, false)}
+                                        disabled={!hasAttachmentId}
+                                        className="inline-flex h-7 items-center rounded-full border border-[#d7e5df] bg-white px-2.5 text-[10px] font-semibold text-[#1f6a58] shadow-sm transition hover:border-[#1f6a58] hover:bg-[#eef8f2] disabled:cursor-not-allowed disabled:opacity-60"
+                                      >
+                                        Open
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => void openAttachmentBlob(item.message, true)}
+                                        disabled={!hasAttachmentId}
+                                        className="inline-flex h-7 items-center rounded-full border border-[#d7e5df] bg-white px-2.5 text-[10px] font-semibold text-[#1f6a58] shadow-sm transition hover:border-[#1f6a58] hover:bg-[#eef8f2] disabled:cursor-not-allowed disabled:opacity-60"
+                                      >
+                                        Download
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })
+                        ) : !isMediaHistoryLoading ? (
+                          <div className="flex min-h-[220px] items-center justify-center px-4 text-center">
+                            <div>
+                              <p className="text-[13px] font-semibold text-[#06201c]">
+                                {conversationMediaPanelTab === "media"
+                                  ? "No media found"
+                                  : conversationMediaPanelTab === "links"
+                                    ? "No links found"
+                                    : "No documents found"}
+                              </p>
+                              <p className="mt-1 text-[11px] leading-5 text-[#6b7f79]">
+                                This panel includes the loaded chat and older history pages.
+                              </p>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  </aside>
+                ) : null}
+            </div>
+          )}
           </section>
         </div>
       </div>
