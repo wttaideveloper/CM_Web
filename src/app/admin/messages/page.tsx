@@ -10,11 +10,15 @@ import {
   getArchivedConversations,
   getConversationMessages,
   getUserLastSeen,
+  getOnlineUsers,
   getTypingUsers,
   getProviderConversations,
   markConversationRead,
   editMessage,
   downloadAttachmentBlob,
+  markMessageRead,
+  searchConversations,
+  searchMessages,
   reopenConversation,
   uploadAttachment,
   sendMessage,
@@ -100,6 +104,7 @@ type BackendConversation = {
   is_archived?: boolean;
   archived_at?: string | null;
   participants?: BackendConversationParticipant[];
+  other_participant_user_id?: string;
 };
 
 type BackendConversationParticipant = {
@@ -108,6 +113,20 @@ type BackendConversationParticipant = {
   role?: string;
   last_read_at?: string;
   joined_at?: string;
+};
+
+type BackendPresenceEntry = {
+  user_id?: string;
+  userId?: string;
+  id?: string;
+  participant_id?: string;
+  status?: string;
+  presence_status?: string;
+  presenceStatus?: string;
+  last_seen_at?: string;
+  lastSeenAt?: string;
+  last_seen?: string;
+  lastSeen?: string;
 };
 
 type BackendMessage = {
@@ -429,6 +448,83 @@ function normalizePresenceResponse(value: unknown) {
   };
 }
 
+function getPresenceUserId(entry: unknown) {
+  if (!isRecord(entry)) {
+    return undefined;
+  }
+
+  return firstString(entry.user_id, entry.userId, entry.id, entry.participant_id);
+}
+
+function getPresenceStatus(entry: unknown) {
+  if (!isRecord(entry)) {
+    return undefined;
+  }
+
+  return firstString(entry.status, entry.presence_status, entry.presenceStatus)?.toLowerCase();
+}
+
+function getPresenceLastSeenAt(entry: unknown) {
+  if (!isRecord(entry)) {
+    return undefined;
+  }
+
+  return firstString(entry.last_seen_at, entry.lastSeenAt, entry.last_seen, entry.lastSeen);
+}
+
+function buildOnlinePresenceMap(value: unknown) {
+  const onlineUsers = extractListResponse<BackendPresenceEntry>(value);
+  const map = new Map<
+    string,
+    {
+      status: "online";
+      lastSeenAt?: string;
+    }
+  >();
+
+  for (const entry of onlineUsers) {
+    const userId = getPresenceUserId(entry);
+
+    if (!userId) {
+      continue;
+    }
+
+    const status = getPresenceStatus(entry);
+
+    if (status !== "online") {
+      continue;
+    }
+
+    map.set(userId, {
+      status: "online",
+      lastSeenAt: getPresenceLastSeenAt(entry),
+    });
+  }
+
+  return map;
+}
+
+function applyPresenceToConversation(
+  conversation: Conversation,
+  presenceMap: Map<
+    string,
+    {
+      status: "online";
+      lastSeenAt?: string;
+    }
+  >,
+) {
+  const presence = conversation.otherParticipantUserId
+    ? presenceMap.get(conversation.otherParticipantUserId)
+    : undefined;
+
+  return {
+    ...conversation,
+    otherParticipantPresenceStatus: presence?.status,
+    otherParticipantLastSeenAt: presence?.lastSeenAt ?? conversation.otherParticipantLastSeenAt,
+  };
+}
+
 function formatTimestamp(value?: string) {
   if (!value) {
     return "Just now";
@@ -552,7 +648,7 @@ function mapConversationSummary(data: BackendConversation): Conversation {
     getParticipantDisplayName(data.participants, ["enterprise", "organization", "organisation", "company", "clinic"]) ??
     "Enterprise";
   const isArchived = data.is_archived ?? Boolean(data.archived_at);
-  const otherParticipantUserId = getOtherParticipantUserId(data.participants);
+  const otherParticipantUserId = firstString(data.other_participant_user_id) ?? getOtherParticipantUserId(data.participants);
 
   return {
     id: data.id,
@@ -594,7 +690,7 @@ function mapConversationDetail(data: BackendConversation): Conversation {
     getParticipantDisplayName(data.participants, ["enterprise", "organization", "organisation", "company", "clinic"]) ??
     "Enterprise";
   const isArchived = data.is_archived ?? Boolean(data.archived_at);
-  const otherParticipantUserId = getOtherParticipantUserId(data.participants);
+  const otherParticipantUserId = firstString(data.other_participant_user_id) ?? getOtherParticipantUserId(data.participants);
 
   return {
     id: data.id,
@@ -793,6 +889,28 @@ function mergeConversationSnapshot(
     serviceName: conversation.serviceName || mappedConversation.serviceName,
     doctorName: conversation.doctorName || mappedConversation.doctorName,
     enterpriseName: conversation.enterpriseName || mappedConversation.enterpriseName,
+  };
+}
+
+function mergeConversationPresence(
+  current: Conversation,
+  next: Conversation,
+): Conversation {
+  const hasLivePresence = current.otherParticipantPresenceStatus === "online";
+  const nextPresenceStatus =
+    next.otherParticipantPresenceStatus ?? current.otherParticipantPresenceStatus;
+  const nextLastSeenAt =
+    next.otherParticipantLastSeenAt ?? current.otherParticipantLastSeenAt ?? undefined;
+
+  return {
+    ...next,
+    otherParticipantUserId: next.otherParticipantUserId ?? current.otherParticipantUserId,
+    otherParticipantPresenceStatus: hasLivePresence
+      ? "online"
+      : nextPresenceStatus,
+    otherParticipantLastSeenAt: hasLivePresence
+      ? current.otherParticipantLastSeenAt ?? nextLastSeenAt
+      : nextLastSeenAt,
   };
 }
 
@@ -1298,10 +1416,16 @@ export default function AdminMessagesPage() {
     {},
   );
   const [isConversationsLoading, setIsConversationsLoading] = useState(true);
+  const [isSearchingConversations, setIsSearchingConversations] = useState(false);
   const [conversationsError, setConversationsError] = useState<string | null>(null);
   const [selectedConversationLoading, setSelectedConversationLoading] = useState(false);
   const [selectedConversationError, setSelectedConversationError] = useState<string | null>(null);
   const [selectedConversationDetail, setSelectedConversationDetail] = useState<Conversation | null>(null);
+  const [isMessageSearchOpen, setIsMessageSearchOpen] = useState(false);
+  const [messageSearchQuery, setMessageSearchQuery] = useState("");
+  const [messageSearchResults, setMessageSearchResults] = useState<ChatMessage[]>([]);
+  const [messageSearchLoading, setMessageSearchLoading] = useState(false);
+  const [messageSearchError, setMessageSearchError] = useState<string | null>(null);
   const [olderMessagesCursor, setOlderMessagesCursor] = useState<string | null>(null);
   const [hasMoreOlderMessages, setHasMoreOlderMessages] = useState(true);
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
@@ -1339,6 +1463,7 @@ export default function AdminMessagesPage() {
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const emojiPickerRef = useRef<HTMLDivElement | null>(null);
   const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
+  const messageSearchInputRef = useRef<HTMLInputElement | null>(null);
   const speechRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const speechDraftBaseRef = useRef("");
   const voiceRecorderRef = useRef<MediaRecorder | null>(null);
@@ -1376,6 +1501,7 @@ export default function AdminMessagesPage() {
   const markReadThrottleRef = useRef<Record<string, number>>({});
   const copiedMessageResetTimerRef = useRef<number | null>(null);
   const messagesListRef = useRef<HTMLDivElement | null>(null);
+  const previousSearchValueRef = useRef("");
 
   useEffect(() => {
     selectedConversationIdRef.current = selectedConversationId;
@@ -1385,6 +1511,30 @@ export default function AdminMessagesPage() {
     selectedConversationOtherParticipantUserIdRef.current =
       selectedConversationDetail?.otherParticipantUserId ?? null;
   }, [selectedConversationDetail?.otherParticipantUserId]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setIsMessageSearchOpen(false);
+      setMessageSearchQuery("");
+      setMessageSearchResults([]);
+      setMessageSearchLoading(false);
+      setMessageSearchError(null);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [selectedConversationId]);
+
+  useEffect(() => {
+    if (!isMessageSearchOpen) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      messageSearchInputRef.current?.focus();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [isMessageSearchOpen]);
 
   useEffect(() => {
     conversationsRef.current = conversations;
@@ -1407,10 +1557,14 @@ export default function AdminMessagesPage() {
   }, [pendingVoice]);
 
   useEffect(() => {
-    void updatePresenceStatus("online").catch(() => undefined);
+    void updatePresenceStatus("online")
+      .then(() => undefined)
+      .catch(() => undefined);
 
     return () => {
-      void updatePresenceStatus("offline").catch(() => undefined);
+      void updatePresenceStatus("offline")
+        .then(() => undefined)
+        .catch(() => undefined);
     };
   }, []);
 
@@ -1569,6 +1723,15 @@ export default function AdminMessagesPage() {
     const socket = socketRef.current;
 
     if (socket?.connected) {
+      if (process.env.NODE_ENV !== "production") {
+        console.log(
+          isTyping ? "[Chat socket] emit typing_start" : "[Chat socket] emit typing_stop",
+          {
+            conversation_id: conversationId,
+          },
+        );
+      }
+
       socket.emit(isTyping ? "typing_start" : "typing_stop", {
         conversation_id: conversationId,
       });
@@ -1904,6 +2067,14 @@ export default function AdminMessagesPage() {
             attachmentId,
           };
 
+          if (process.env.NODE_ENV !== "production") {
+            console.log("[Chat socket] emit send_message", {
+              conversation_id: sendPayload.conversation_id,
+              message_type: sendPayload.message_type,
+              has_attachment: Boolean(sendPayload.attachment_id),
+            });
+          }
+
           socket.emit("send_message", sendPayload);
         } else {
           await sendViaRest();
@@ -2092,15 +2263,25 @@ export default function AdminMessagesPage() {
       const socket = socketRef.current;
       const now = Date.now();
       const lastEmitAt = markReadThrottleRef.current[conversationId] ?? 0;
+      const throttled = now - lastEmitAt < 1200;
+      const payload = messageId ? { message_id: messageId } : { conversation_id: conversationId };
 
-      if (now - lastEmitAt < 1200) {
+      if (throttled) {
         return;
       }
 
       markReadThrottleRef.current[conversationId] = now;
 
       if (socket?.connected) {
-        socket.emit("mark_read", messageId ? { message_id: messageId } : { conversation_id: conversationId });
+        if (process.env.NODE_ENV !== "production") {
+          console.log("[Chat socket] emit mark_read", {
+            conversation_id: payload.conversation_id,
+            message_id: payload.message_id,
+          });
+        }
+
+        socket.emit("mark_read", payload);
+
         return;
       }
 
@@ -2136,6 +2317,13 @@ export default function AdminMessagesPage() {
 
       if (!conversationId || !userId || typeof isTyping !== "boolean") {
         return;
+      }
+
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[Chat socket] receive typing", {
+          conversation_id: conversationId,
+          is_typing: isTyping,
+        });
       }
 
       if (userId === DEV_CHAT_USER_ID || selectedConversationIdRef.current !== conversationId) {
@@ -2195,6 +2383,15 @@ export default function AdminMessagesPage() {
         return;
       }
 
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[Chat socket] receive message_read", {
+          conversationId,
+          messageId,
+          userId,
+          read_at: readAt,
+        });
+      }
+
       setMessagesByConversation((current) => {
         const existingMessages = current[conversationId] ?? [];
 
@@ -2238,21 +2435,38 @@ export default function AdminMessagesPage() {
       return;
     }
 
-    if (selectedConversationOtherParticipantUserIdRef.current !== userId) {
-      return;
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[Chat socket] receive user_online", {
+        user_id: userId,
+      });
     }
 
     const now = new Date().toISOString();
-
-    setSelectedConversationDetail((current) =>
-      current && current.otherParticipantUserId === userId
+    const applyPresence = (conversation: Conversation) =>
+      conversation.otherParticipantUserId === userId
         ? {
-            ...current,
+            ...conversation,
             otherParticipantPresenceStatus: "online",
-            otherParticipantLastSeenAt: current.otherParticipantLastSeenAt ?? now,
+            otherParticipantLastSeenAt: conversation.otherParticipantLastSeenAt ?? now,
           }
-        : current,
-    );
+        : conversation;
+
+    setConversations((current) => current.map(applyPresence));
+    setArchivedConversations((current) => current.map(applyPresence));
+
+    setSelectedConversationDetail((current) => {
+      if (!current || current.otherParticipantUserId !== userId) {
+        return current;
+      }
+
+      const next = {
+        ...current,
+        otherParticipantPresenceStatus: "online",
+        otherParticipantLastSeenAt: current.otherParticipantLastSeenAt ?? now,
+      };
+
+      return next;
+    });
   }, []);
 
   const handleSocketUserOffline = useCallback((payload: unknown) => {
@@ -2271,21 +2485,38 @@ export default function AdminMessagesPage() {
       return;
     }
 
-    if (selectedConversationOtherParticipantUserIdRef.current !== userId) {
-      return;
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[Chat socket] receive user_offline", {
+        user_id: userId,
+      });
     }
 
     const now = new Date().toISOString();
-
-    setSelectedConversationDetail((current) =>
-      current && current.otherParticipantUserId === userId
+    const applyPresence = (conversation: Conversation) =>
+      conversation.otherParticipantUserId === userId
         ? {
-            ...current,
+            ...conversation,
             otherParticipantPresenceStatus: "offline",
             otherParticipantLastSeenAt: now,
           }
-        : current,
-    );
+        : conversation;
+
+    setConversations((current) => current.map(applyPresence));
+    setArchivedConversations((current) => current.map(applyPresence));
+
+    setSelectedConversationDetail((current) => {
+      if (!current || current.otherParticipantUserId !== userId) {
+        return current;
+      }
+
+      const next = {
+        ...current,
+        otherParticipantPresenceStatus: "offline",
+        otherParticipantLastSeenAt: now,
+      };
+
+      return next;
+    });
   }, []);
 
   const syncTypingIndicator = useCallback(
@@ -2332,17 +2563,22 @@ export default function AdminMessagesPage() {
     setConversationsError(null);
 
     try {
-      const [providerResponse, archivedResponse] = await Promise.all([
+      const [providerResponse, archivedResponse, onlineResponse] = await Promise.all([
         getProviderConversations({ page: 1, pageSize: 20 }),
         getArchivedConversations(),
+        getOnlineUsers(),
       ]);
+
+      const onlinePresenceMap = buildOnlinePresenceMap(onlineResponse);
 
       const archivedItems = extractListResponse<BackendConversation>(archivedResponse)
         .map(mapConversationSummary)
+        .map((conversation) => applyPresenceToConversation(conversation, onlinePresenceMap))
         .map(applyDeletedPreviewOverride);
       const archivedIds = new Set(archivedItems.map((conversation) => conversation.id));
       const items = extractListResponse<BackendConversation>(providerResponse)
         .map(mapConversationSummary)
+        .map((conversation) => applyPresenceToConversation(conversation, onlinePresenceMap))
         .map(applyDeletedPreviewOverride)
         .filter((conversation) => !archivedIds.has(conversation.id));
 
@@ -2359,10 +2595,7 @@ export default function AdminMessagesPage() {
         if (refreshedSelectedConversation) {
           setSelectedConversationDetail((current) =>
             current && current.id === selectedId
-              ? {
-                  ...current,
-                  ...refreshedSelectedConversation,
-                }
+              ? mergeConversationPresence(current, refreshedSelectedConversation)
               : current,
           );
         } else {
@@ -2398,6 +2631,36 @@ export default function AdminMessagesPage() {
     }
   }, [applyDeletedPreviewOverride, clearAttachmentUploadState, clearEditMode, resetMessagePaginationState, stopTypingTimers]);
 
+  const runConversationSearch = useCallback(
+    async (query: string) => {
+      setIsSearchingConversations(true);
+      setConversationsError(null);
+
+      try {
+        const searchResponse = await searchConversations({
+          q: query,
+          page: 1,
+          pageSize: 20,
+        });
+
+        const items = extractListResponse<BackendConversation>(searchResponse)
+          .map(mapConversationSummary)
+          .map(applyDeletedPreviewOverride)
+          .filter((conversation) => !isConversationArchived(conversation, archivedConversationIds));
+
+        setConversations(items);
+        setConversationsError(null);
+      } catch {
+        setConversationsError("Search failed. Please try again.");
+      } finally {
+        setIsSearchingConversations(false);
+      }
+    },
+    [applyDeletedPreviewOverride, archivedConversationIds],
+  );
+
+  const normalizedSearch = search.trim();
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void refreshConversationList();
@@ -2405,6 +2668,140 @@ export default function AdminMessagesPage() {
 
     return () => window.clearTimeout(timer);
   }, [refreshConversationList]);
+
+  useEffect(() => {
+    if (filter !== "ARCHIVED" && normalizedSearch !== "") {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void refreshConversationList();
+    }, 60000);
+
+    return () => window.clearInterval(timer);
+  }, [filter, normalizedSearch, refreshConversationList]);
+
+  useEffect(() => {
+    if (filter === "ARCHIVED") {
+      const timer = window.setTimeout(() => {
+        setIsSearchingConversations(false);
+        setConversationsError(null);
+        previousSearchValueRef.current = normalizedSearch;
+      }, 0);
+
+      return () => window.clearTimeout(timer);
+    }
+
+    if (normalizedSearch === "") {
+      const timer = window.setTimeout(() => {
+        setIsSearchingConversations(false);
+        setConversationsError(null);
+        if (previousSearchValueRef.current !== "") {
+          void refreshConversationList();
+        }
+        previousSearchValueRef.current = normalizedSearch;
+      }, 0);
+
+      return () => window.clearTimeout(timer);
+    }
+
+    previousSearchValueRef.current = normalizedSearch;
+
+    const timer = window.setTimeout(() => {
+      void runConversationSearch(normalizedSearch);
+    }, 300);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [
+    filter,
+    normalizedSearch,
+    refreshConversationList,
+    runConversationSearch,
+  ]);
+
+  const runMessageSearch = useCallback(
+    async (query: string, conversationId: string) => {
+      setMessageSearchLoading(true);
+      setMessageSearchError(null);
+
+      try {
+        const response = await searchMessages<unknown>({
+          q: query,
+          conversationId,
+          providerId: DEV_CHAT_USER_ID,
+          page: 1,
+          pageSize: 20,
+        });
+
+        if (selectedConversationIdRef.current !== conversationId) {
+          return;
+        }
+
+        let results = extractListResponse<BackendMessage>(response).map(mapMessage);
+
+        if (results.length === 0) {
+          const fallbackResponse = await searchMessages<unknown>({
+            q: query,
+            conversationId,
+            page: 1,
+            pageSize: 20,
+          });
+
+          if (selectedConversationIdRef.current !== conversationId) {
+            return;
+          }
+
+          results = extractListResponse<BackendMessage>(fallbackResponse).map(mapMessage);
+        }
+
+        if (results.length === 0) {
+          const normalizedQuery = query.toLowerCase();
+          results = (messagesByConversationRef.current[conversationId] ?? []).filter((message) => {
+            const haystack = `${getMessageCopyText(message)} ${formatMessageBody(message)}`.toLowerCase();
+            return haystack.includes(normalizedQuery);
+          });
+        }
+
+        setMessageSearchResults(results);
+        setMessageSearchError(null);
+      } catch {
+        if (selectedConversationIdRef.current !== conversationId) {
+          return;
+        }
+
+        setMessageSearchResults([]);
+        setMessageSearchError("Message search failed. Please try again.");
+      } finally {
+        if (selectedConversationIdRef.current === conversationId) {
+          setMessageSearchLoading(false);
+        }
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const conversationId = selectedConversationId;
+    const query = messageSearchQuery.trim();
+
+    if (!isMessageSearchOpen || !conversationId || query === "") {
+      const timer = window.setTimeout(() => {
+        setMessageSearchLoading(false);
+        setMessageSearchError(null);
+        setMessageSearchResults([]);
+      }, 0);
+
+      return () => window.clearTimeout(timer);
+    }
+
+    const timer = window.setTimeout(() => {
+      void runMessageSearch(query, conversationId);
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [isMessageSearchOpen, messageSearchQuery, runMessageSearch, selectedConversationId]);
 
   useEffect(() => {
     if (!selectedConversationId) {
@@ -2435,7 +2832,12 @@ export default function AdminMessagesPage() {
         const hasMoreOlder = messagesResponse.pagination.has_more;
 
         if (detail) {
-          setSelectedConversationDetail(mapConversationDetail(detail));
+          const mappedDetail = mapConversationDetail(detail);
+          setSelectedConversationDetail((current) =>
+            current && current.id === mappedDetail.id
+              ? mergeConversationPresence(current, mappedDetail)
+              : mappedDetail,
+          );
         }
 
         setMessagesByConversation((current) => ({
@@ -2461,14 +2863,97 @@ export default function AdminMessagesPage() {
           });
         }
 
-        if (socketRef.current?.connected) {
-          emitMarkRead(selectedConversationId);
-        } else {
-          await markConversationRead(selectedConversationId).catch(() => undefined);
+        const unreadIncomingMessages = messages.filter(
+          (message) =>
+            !message.isMine &&
+            message.isDeleted !== true &&
+            Boolean(message.id) &&
+            !(message.readByUserIds ?? []).includes(DEV_CHAT_USER_ID),
+        );
+
+        const socketConnected = Boolean(socketRef.current?.connected);
+
+        if (socketConnected) {
+          unreadIncomingMessages.forEach((message) => {
+            if (!message.id) {
+              return;
+            }
+
+            if (process.env.NODE_ENV !== "production") {
+              console.log("[Chat socket] emit mark_read", {
+                message_id: message.id,
+              });
+            }
+
+            socketRef.current?.emit("mark_read", { message_id: message.id });
+          });
         }
+
+        const readSettlements = await Promise.allSettled(
+          unreadIncomingMessages
+            .filter((message) => Boolean(message.id))
+            .map(async (message) => {
+              if (!message.id) {
+                return null;
+              }
+
+              const result = await markMessageRead(message.id);
+
+              return {
+                messageId: message.id,
+                result,
+              };
+            }),
+        );
+
+        readSettlements.forEach((settlement, index) => {
+          const message = unreadIncomingMessages[index];
+          if (!message?.id) {
+            return;
+          }
+
+          if (settlement.status === "rejected") {
+            return;
+          }
+        });
+
+        await markConversationRead(selectedConversationId).catch(() => undefined);
+
+        const fulfilledMessageIds = new Set(
+          readSettlements.flatMap((settlement, index) =>
+            settlement.status === "fulfilled" && unreadIncomingMessages[index]?.id
+              ? [unreadIncomingMessages[index].id]
+              : [],
+          ),
+        );
 
         if (!active) {
           return;
+        }
+
+        if (fulfilledMessageIds.size > 0) {
+          setMessagesByConversation((current) => {
+            const existingMessages = current[selectedConversationId] ?? [];
+            const nextMessages = existingMessages.map((message) =>
+              message.id && fulfilledMessageIds.has(message.id)
+                ? {
+                    ...message,
+                    readByUserIds: Array.from(
+                      new Set([...(message.readByUserIds ?? []), DEV_CHAT_USER_ID]),
+                    ),
+                    deliveryState:
+                      message.isMine && message.deliveryState !== "read"
+                        ? "read"
+                        : message.deliveryState,
+                  }
+                : message,
+            );
+
+            return {
+              ...current,
+              [selectedConversationId]: nextMessages,
+            };
+          });
         }
 
         setConversations((current) =>
@@ -2480,6 +2965,15 @@ export default function AdminMessagesPage() {
                 }
               : conversation,
           ),
+        );
+
+        setSelectedConversationDetail((current) =>
+          current && current.id === selectedConversationId
+            ? {
+                ...current,
+                unreadCount: 0,
+              }
+            : current,
         );
       } catch (error) {
         if (!active) {
@@ -2530,16 +3024,21 @@ export default function AdminMessagesPage() {
 
         const presence = normalizePresenceResponse(response);
 
-        setSelectedConversationDetail((current) =>
-          current && current.id === conversationId
-            ? {
-                ...current,
-                otherParticipantUserId: userId,
-                otherParticipantPresenceStatus: presence.status ?? current.otherParticipantPresenceStatus,
-                otherParticipantLastSeenAt: presence.lastSeenAt ?? current.otherParticipantLastSeenAt,
-              }
-            : current,
-        );
+        setSelectedConversationDetail((current) => {
+          if (!current || current.id !== conversationId) {
+            return current;
+          }
+
+          const next = {
+            ...current,
+            otherParticipantUserId: userId,
+            otherParticipantPresenceStatus:
+              presence.status ?? current.otherParticipantPresenceStatus,
+            otherParticipantLastSeenAt: presence.lastSeenAt ?? current.otherParticipantLastSeenAt,
+          };
+
+          return next;
+        });
       } catch {
         if (!active || selectedConversationIdRef.current !== conversationId) {
           return;
@@ -2718,6 +3217,13 @@ export default function AdminMessagesPage() {
         (pendingSocketMessage.attachmentId ?? undefined) === (incomingAttachmentId ?? undefined) &&
         mappedMessage.isMine;
 
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[Chat socket] receive new_message", {
+          conversation_id: conversationId,
+          message_type: mappedMessage.messageType,
+        });
+      }
+
       setMessagesByConversation((current) => {
         const existingMessages = current[conversationId] ?? [];
         const nextMessages = upsertChatMessages(existingMessages, mappedMessage, {
@@ -2797,6 +3303,12 @@ export default function AdminMessagesPage() {
 
       const conversationId = conversation.id;
 
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[Chat socket] receive conversation_updated", {
+          conversation_id: conversationId,
+        });
+      }
+
       setConversations((current) => {
         const index = current.findIndex((item) => item.id === conversationId);
 
@@ -2872,27 +3384,56 @@ export default function AdminMessagesPage() {
 
     const handleConnect = () => {
       setSocketStatus("connected");
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[Chat socket] connected", {
+          socketId: socket.id ?? undefined,
+        });
+      }
 
       const conversationId = selectedConversationIdRef.current;
       if (conversationId) {
+        if (process.env.NODE_ENV !== "production") {
+          console.log("[Chat socket] emit join_room", {
+            conversation_id: conversationId,
+          });
+        }
+
         socket.emit("join_room", { conversation_id: conversationId });
         activeRoomConversationIdRef.current = conversationId;
         emitMarkRead(conversationId);
       }
     };
 
-    const handleDisconnect = () => {
+    const handleDisconnect = (reason: string) => {
       setSocketStatus("disconnected");
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[Chat socket] disconnected", {
+          reason,
+        });
+      }
       activeRoomConversationIdRef.current = null;
       setVisibleTypingUsers([]);
     };
 
-    const handleConnectError = () => {
+    const handleConnectError = (error: Error) => {
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[Chat socket] connection error", {
+          message: error?.message ?? "connection_error",
+        });
+      }
       setSocketStatus("reconnecting");
     };
 
     const handleSocketErrorEvent = (payload: unknown) => {
       setSocketStatus("reconnecting");
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[Chat socket] receive error", {
+          error:
+            isRecord(payload) && typeof payload.detail === "string"
+              ? payload.detail
+              : "socket_error",
+        });
+      }
 
       const pendingSocketMessage = pendingSocketMessageRef.current;
       const eventName =
@@ -2997,6 +3538,12 @@ export default function AdminMessagesPage() {
     return () => {
       const activeConversationId = activeRoomConversationIdRef.current;
       if (activeConversationId) {
+        if (process.env.NODE_ENV !== "production") {
+          console.log("[Chat socket] emit leave_room", {
+            conversation_id: activeConversationId,
+          });
+        }
+
         socket.emit("leave_room", { conversation_id: activeConversationId });
       }
 
@@ -3046,10 +3593,22 @@ export default function AdminMessagesPage() {
     }
 
     if (previousConversationId && previousConversationId !== nextConversationId) {
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[Chat socket] emit leave_room", {
+          conversation_id: previousConversationId,
+        });
+      }
+
       socket.emit("leave_room", { conversation_id: previousConversationId });
     }
 
     if (nextConversationId && previousConversationId !== nextConversationId) {
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[Chat socket] emit join_room", {
+          conversation_id: nextConversationId,
+        });
+      }
+
       socket.emit("join_room", { conversation_id: nextConversationId });
       activeRoomConversationIdRef.current = nextConversationId;
     }
@@ -3193,6 +3752,29 @@ export default function AdminMessagesPage() {
     : [];
 
   const quickReplies = visibleSelectedConversation ? getQuickReplies(visibleSelectedConversation) : [];
+
+  const handleMessageSearchResultClick = useCallback((message: ChatMessage) => {
+    const conversationId = selectedConversationIdRef.current;
+
+    if (!conversationId || !message.id) {
+      return;
+    }
+
+    const loadedMessages = messagesByConversationRef.current[conversationId] ?? [];
+
+    if (!loadedMessages.some((item) => item.id === message.id)) {
+      return;
+    }
+
+    const element = messagesListRef.current?.querySelector<HTMLElement>(
+      `[data-message-id="${message.id}"]`,
+    );
+
+    element?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  }, []);
 
   const loadOlderMessages = useCallback(async () => {
     const conversationId = selectedConversationIdRef.current;
@@ -3612,6 +4194,13 @@ export default function AdminMessagesPage() {
           };
 
           applyMessageToState(optimisticMessage);
+          if (process.env.NODE_ENV !== "production") {
+            console.log("[Chat socket] emit send_message", {
+              conversation_id: sendPayload.conversation_id,
+              message_type: sendPayload.message_type,
+              has_attachment: Boolean(sendPayload.attachment_id),
+            });
+          }
           socket.emit("send_message", sendPayload);
 
         stopTypingForConversation(conversationId);
@@ -4213,6 +4802,10 @@ export default function AdminMessagesPage() {
                 })}
               </div>
 
+              {isSearchingConversations && filter !== "ARCHIVED" ? (
+                <p className="mt-2 text-[12px] font-medium text-[#52736a]">Searching...</p>
+              ) : null}
+
               {conversationActionError ? (
                 <div className="mt-3 rounded-xl border border-[#f0d8d2] bg-[#fff6f4] px-3 py-2 text-[12px] text-[#8f3b2f]">
                   {conversationActionError}
@@ -4224,11 +4817,21 @@ export default function AdminMessagesPage() {
               {conversationsError ? (
                 <div className="flex min-h-[320px] items-center justify-center px-5 py-10 text-center">
                   <div className="max-w-sm rounded-2xl border border-[#f0d8d2] bg-[#fff6f4] px-4 py-4">
-                    <p className="text-sm font-semibold text-[#8f3b2f]">Failed to load conversations</p>
+                    <p className="text-sm font-semibold text-[#8f3b2f]">
+                      {conversationsError === "Search failed. Please try again."
+                        ? "Search failed"
+                        : "Failed to load conversations"}
+                    </p>
                     <p className="mt-1 text-[13px] leading-6 text-[#a35b4c]">{conversationsError}</p>
                     <button
                       type="button"
-                      onClick={() => void refreshConversationList()}
+                      onClick={() => {
+                        if (normalizedSearch && filter !== "ARCHIVED") {
+                          void runConversationSearch(normalizedSearch);
+                        } else {
+                          void refreshConversationList();
+                        }
+                      }}
                       className="mt-3 inline-flex items-center rounded-full bg-[#1f6a58] px-3 py-1.5 text-[11px] font-bold text-white shadow-sm transition hover:bg-[#175245]"
                     >
                       Retry
@@ -4304,8 +4907,14 @@ export default function AdminMessagesPage() {
                           isSelected ? "bg-[#f4faf7] ring-1 ring-inset ring-[#d9eee4]" : "hover:bg-[#fbfdfc]"
                         }`}
                       >
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#1f6a58] text-[11px] font-bold text-white">
+                        <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#1f6a58] text-[11px] font-bold text-white">
                           {getInitials(conversation.userName)}
+                          {conversation.otherParticipantPresenceStatus === "online" ? (
+                            <span
+                              className="absolute -right-0.5 -bottom-0.5 h-2.5 w-2.5 rounded-full border border-white bg-[#16825b]"
+                              aria-hidden="true"
+                            />
+                          ) : null}
                         </div>
 
                         <div className="min-w-0 flex-1">
@@ -4453,6 +5062,30 @@ export default function AdminMessagesPage() {
                           <CloseIcon />
                         </button>
 
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setConversationActionError(null);
+                            if (isMessageSearchOpen) {
+                              setIsMessageSearchOpen(false);
+                              setMessageSearchQuery("");
+                              setMessageSearchResults([]);
+                              setMessageSearchLoading(false);
+                              setMessageSearchError(null);
+                            } else {
+                              setIsMessageSearchOpen(true);
+                            }
+                          }}
+                          className={`inline-flex h-8 w-8 items-center justify-center rounded-full border bg-white shadow-sm transition ${
+                            isMessageSearchOpen
+                              ? "border-[#1f6a58] text-[#1f6a58]"
+                              : "border-[#d7e5df] text-[#52736a] hover:border-[#1f6a58] hover:text-[#1f6a58]"
+                          }`}
+                          aria-label="Search messages"
+                        >
+                          <SearchIcon />
+                        </button>
+
                         {visibleSelectedConversation.chatCloseAt ? (
                           <span className="inline-flex items-center gap-1 rounded-full bg-[#f4f7f5] px-2.5 py-1 text-[11px] font-medium text-[#6b7f79]">
                             <ClockIcon />
@@ -4498,6 +5131,59 @@ export default function AdminMessagesPage() {
                       </span>
                     </div>
                   </div>
+
+                  {isMessageSearchOpen ? (
+                    <div className="mt-3 rounded-2xl border border-[#dfeee6] bg-white/95 px-3 py-3 shadow-sm">
+                      <label className="relative block">
+                        <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8ca69e]">
+                          <SearchIcon />
+                        </span>
+                        <input
+                          ref={messageSearchInputRef}
+                          type="search"
+                          value={messageSearchQuery}
+                          onChange={(event) => setMessageSearchQuery(event.target.value)}
+                          placeholder="Search messages"
+                          className="h-8 w-full rounded-xl border border-[#d7e5df] bg-[#f8fbf9] pl-10 pr-3 text-[12px] text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
+                        />
+                      </label>
+
+                      {messageSearchLoading ? (
+                        <p className="mt-2 text-[12px] text-[#52736a]">Searching messages...</p>
+                      ) : messageSearchError ? (
+                        <p className="mt-2 text-[12px] text-[#8f3b2f]">{messageSearchError}</p>
+                      ) : messageSearchQuery.trim() ? (
+                        messageSearchResults.length > 0 ? (
+                          <div className="mt-2 max-h-52 space-y-1.5 overflow-y-auto">
+                            {messageSearchResults.map((message) => (
+                              <button
+                                key={message.id}
+                                type="button"
+                                onClick={() => handleMessageSearchResultClick(message)}
+                                className="flex w-full items-start gap-2 rounded-xl border border-[#edf3f0] bg-[#fbfdfc] px-2.5 py-2 text-left transition hover:border-[#1f6a58] hover:bg-[#f4fbf7]"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <p className="truncate text-[12px] font-semibold text-[#06201c]">
+                                      {message.isMine ? "You" : "Customer"}
+                                    </p>
+                                    <span className="shrink-0 text-[10px] font-medium text-[#6b7f79]">
+                                      {getMessageBubbleTime(message)}
+                                    </span>
+                                  </div>
+                                  <p className="mt-0.5 truncate text-[11px] text-[#52736a]">
+                                    {getMessageCopyText(message) || formatMessageBody(message)}
+                                  </p>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-[12px] text-[#6b7f79]">No matching messages found</p>
+                        )
+                      ) : null}
+                    </div>
+                  ) : null}
 
                   {getLimitBanner(visibleSelectedConversation.limitReason) ? (
                     <div className="mt-3 rounded-2xl border border-[#f0e2cc] bg-[#fffaf2] px-3 py-2.5 text-[13px] text-[#8b5b17]">
@@ -4568,6 +5254,7 @@ export default function AdminMessagesPage() {
                             ) : null}
 
                             <div
+                              data-message-id={message.id}
                               className={`group relative flex ${isMine ? "justify-end" : "justify-start"}`}
                             >
                               <div

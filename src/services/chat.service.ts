@@ -6,6 +6,21 @@ type ProviderConversationsParams = {
   pageSize?: number;
 };
 
+type SearchConversationsParams = {
+  q: string;
+  providerId?: string;
+  page?: number;
+  pageSize?: number;
+};
+
+type SearchMessagesParams = {
+  q: string;
+  conversationId?: string;
+  providerId?: string;
+  page?: number;
+  pageSize?: number;
+};
+
 type ConversationMessagesParams = {
   cursor?: string;
   limit?: number;
@@ -138,6 +153,42 @@ export function getArchivedConversations() {
   return requestJson<unknown>(`/conversations/provider/archived`);
 }
 
+export function searchConversations(params: SearchConversationsParams) {
+  const searchParams = new URLSearchParams();
+
+  searchParams.set("q", params.q);
+  searchParams.set("page", String(params.page ?? 1));
+  searchParams.set("page_size", String(params.pageSize ?? 20));
+
+  if (params.providerId) {
+    searchParams.set("provider_id", params.providerId);
+  }
+
+  return requestJson<unknown>(`/conversations/search?${searchParams.toString()}`);
+}
+
+export function searchMessages<T = unknown>(params: SearchMessagesParams) {
+  const searchParams = new URLSearchParams();
+
+  searchParams.set("q", params.q);
+  searchParams.set("page", String(params.page ?? 1));
+  searchParams.set("page_size", String(params.pageSize ?? 20));
+
+  if (params.conversationId) {
+    searchParams.set("conversation_id", params.conversationId);
+  }
+
+  if (params.providerId) {
+    searchParams.set("provider_id", params.providerId);
+  }
+
+  return requestJson<T>(`/messages/search?${searchParams.toString()}`);
+}
+
+export function getOnlineUsers() {
+  return requestJson<unknown>(`/presence/online`);
+}
+
 export function getConversationById(conversationId: string) {
   return requestJson<unknown>(`/conversations/${conversationId}`);
 }
@@ -162,6 +213,12 @@ export function getConversationMessages<T = unknown>(
 
 export function markConversationRead(conversationId: string) {
   return requestJson<unknown>(`/conversations/${conversationId}/read`, {
+    method: "PATCH",
+  });
+}
+
+export function markMessageRead(messageId: string) {
+  return requestJson<unknown>(`/messages/${encodeURIComponent(messageId)}/read`, {
     method: "PATCH",
   });
 }
