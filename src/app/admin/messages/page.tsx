@@ -1911,12 +1911,6 @@ export default function AdminMessagesPage() {
     void updatePresenceStatus("online")
       .then(() => undefined)
       .catch(() => undefined);
-
-    return () => {
-      void updatePresenceStatus("offline")
-        .then(() => undefined)
-        .catch(() => undefined);
-    };
   }, []);
 
   useEffect(() => {
@@ -3754,6 +3748,9 @@ export default function AdminMessagesPage() {
 
     const handleConnect = () => {
       setSocketStatus("connected");
+      void updatePresenceStatus("online")
+        .then(() => undefined)
+        .catch(() => undefined);
       if (process.env.NODE_ENV !== "production") {
         console.log("[Chat socket] connected", {
           socketId: socket.id ?? undefined,
@@ -3888,6 +3885,9 @@ export default function AdminMessagesPage() {
 
     const handleReconnect = () => {
       setSocketStatus("connected");
+      void updatePresenceStatus("online")
+        .then(() => undefined)
+        .catch(() => undefined);
     };
 
     socket.on("connect", handleConnect);
