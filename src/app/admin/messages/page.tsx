@@ -9,6 +9,7 @@ import {
   getConversationById,
   getArchivedConversations,
   getConversationMessages,
+  type ConversationMessagesResponse,
   getUserLastSeen,
   getOnlineUsers,
   getTypingUsers,
@@ -950,6 +951,14 @@ function getAttachmentType(file: File): "image" | "document" | "audio" | "video"
   return "document";
 }
 
+function normalizeAttachmentType(value?: string): "image" | "document" | "audio" | "video" {
+  if (value === "image" || value === "document" || value === "audio" || value === "video") {
+    return value;
+  }
+
+  return "document";
+}
+
 function getChatMessagePreviewText(message: ChatMessage) {
   return message.isDeleted ? "This message was deleted" : message.text || "No messages yet";
 }
@@ -1702,7 +1711,6 @@ export default function AdminMessagesPage() {
   const copiedMessageResetTimerRef = useRef<number | null>(null);
   const messagesListRef = useRef<HTMLDivElement | null>(null);
   const previousSearchValueRef = useRef("");
-  const selectedMessagesCountRef = useRef(0);
   const mediaHistoryRequestIdRef = useRef(0);
   const mediaHistoryScanStartedByConversationRef = useRef<Record<string, boolean>>({});
   const mediaHistoryCursorByConversationRef = useRef<Record<string, string | null>>({});
@@ -1735,33 +1743,6 @@ export default function AdminMessagesPage() {
   }, [selectedConversationId]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setConversationMediaPanelOpen(false);
-      setConversationMediaPanelTab("media");
-      setMediaHistoryError(null);
-      setIsMediaHistoryLoading(false);
-      mediaHistoryRequestIdRef.current += 1;
-    }, 0);
-
-    return () => window.clearTimeout(timer);
-  }, [selectedConversationId]);
-
-  useEffect(() => {
-    if (conversationMediaPanelOpen) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      setMediaHistoryError(null);
-      setIsMediaHistoryLoading(false);
-      mediaHistoryRequestIdRef.current += 1;
-      mediaHistoryActiveConversationIdRef.current = null;
-    }, 0);
-
-    return () => window.clearTimeout(timer);
-  }, [conversationMediaPanelOpen]);
-
-  useEffect(() => {
     const conversationId = selectedConversationId;
 
     if (!conversationId || !conversationMediaPanelOpen) {
@@ -1775,12 +1756,7 @@ export default function AdminMessagesPage() {
     }
 
     if (mediaHistoryFullyLoadedByConversation[conversationId]) {
-      const timer = window.setTimeout(() => {
-        setIsMediaHistoryLoading(false);
-        setMediaHistoryError(null);
-      }, 0);
-
-      return () => window.clearTimeout(timer);
+      return;
     }
 
     if (mediaHistoryScanStartedByConversationRef.current[conversationId]) {
@@ -1788,26 +1764,12 @@ export default function AdminMessagesPage() {
     }
 
     const initialCursor =
-      mediaHistoryCursorByConversationRef.current[conversationId] ??
-      olderMessagesCursorRef.current ??
-      null;
+      mediaHistoryCursorByConversationRef.current[conversationId] ?? olderMessagesCursor ?? null;
 
     mediaHistoryCursorByConversationRef.current[conversationId] = initialCursor;
 
     if (!initialCursor) {
-      if (selectedConversationLoading && selectedMessagesCountRef.current === 0) {
-        return;
-      }
-
-      const timer = window.setTimeout(() => {
-        setMediaHistoryFullyLoadedByConversation((current) =>
-          current[conversationId] ? current : { ...current, [conversationId]: true },
-        );
-        setIsMediaHistoryLoading(false);
-        setMediaHistoryError(null);
-      }, 0);
-
-      return () => window.clearTimeout(timer);
+      return;
     }
 
     const requestId = mediaHistoryRequestIdRef.current + 1;
@@ -1821,7 +1783,7 @@ export default function AdminMessagesPage() {
     let active = true;
 
     void (async () => {
-      let cursor = initialCursor;
+      let cursor: string | null = initialCursor;
       let pageCount = 0;
 
       try {
@@ -1835,10 +1797,11 @@ export default function AdminMessagesPage() {
             return;
           }
 
-          const response = await getConversationMessages<BackendMessage>(conversationId, {
-            limit: 50,
-            cursor,
-          });
+          const response: ConversationMessagesResponse<BackendMessage> =
+            await getConversationMessages<BackendMessage>(conversationId, {
+              limit: 50,
+              cursor,
+            });
 
           if (
             !active ||
@@ -1909,7 +1872,7 @@ export default function AdminMessagesPage() {
     conversationMediaPanelOpen,
     mediaHistoryFullyLoadedByConversation,
     selectedConversationId,
-    selectedConversationLoading,
+    olderMessagesCursor,
   ]);
 
   useEffect(() => {
@@ -3192,7 +3155,9 @@ export default function AdminMessagesPage() {
   }, [isMessageSearchOpen, messageSearchQuery, runMessageSearch, selectedConversationId]);
 
   useEffect(() => {
-    if (!selectedConversationId) {
+    const conversationId = selectedConversationId;
+
+    if (!conversationId) {
       return;
     }
 
@@ -3200,14 +3165,19 @@ export default function AdminMessagesPage() {
     pendingInitialScrollToBottomRef.current = true;
 
     async function loadSelectedConversation() {
+      const activeConversationId = conversationId;
+      if (!activeConversationId) {
+        return;
+      }
+
       setSelectedConversationLoading(true);
       setSelectedConversationError(null);
       setIsLoadingOlderMessages(false);
 
       try {
         const [conversationResponse, messagesResponse] = await Promise.all([
-          getConversationById(selectedConversationId),
-          getConversationMessages<BackendMessage>(selectedConversationId, { limit: 50 }),
+          getConversationById(activeConversationId),
+          getConversationMessages<BackendMessage>(activeConversationId, { limit: 50 }),
         ]);
 
         if (!active) {
@@ -3230,7 +3200,7 @@ export default function AdminMessagesPage() {
 
         setMessagesByConversation((current) => ({
           ...current,
-          [selectedConversationId]: messages,
+          [activeConversationId]: messages,
         }));
         setOlderMessagesCursor(nextCursor);
         setHasMoreOlderMessages(hasMoreOlder);
@@ -3241,7 +3211,7 @@ export default function AdminMessagesPage() {
           window.requestAnimationFrame(() => {
             const element = messagesListRef.current;
 
-            if (!element || selectedConversationIdRef.current !== selectedConversationId) {
+            if (!element || selectedConversationIdRef.current !== activeConversationId) {
               return;
             }
 
@@ -3305,7 +3275,7 @@ export default function AdminMessagesPage() {
           }
         });
 
-        await markConversationRead(selectedConversationId).catch(() => undefined);
+        await markConversationRead(activeConversationId).catch(() => undefined);
 
         const fulfilledMessageIds = new Set(
           readSettlements.flatMap((settlement, index) =>
@@ -3321,7 +3291,7 @@ export default function AdminMessagesPage() {
 
         if (fulfilledMessageIds.size > 0) {
           setMessagesByConversation((current) => {
-            const existingMessages = current[selectedConversationId] ?? [];
+            const existingMessages = current[activeConversationId] ?? [];
             const nextMessages = existingMessages.map((message) =>
               message.id && fulfilledMessageIds.has(message.id)
                 ? {
@@ -3339,14 +3309,14 @@ export default function AdminMessagesPage() {
 
             return {
               ...current,
-              [selectedConversationId]: nextMessages,
+              [activeConversationId]: nextMessages,
             };
           });
         }
 
         setConversations((current) =>
           current.map((conversation) =>
-            conversation.id === selectedConversationId
+            conversation.id === activeConversationId
               ? {
                   ...conversation,
                   unreadCount: 0,
@@ -3356,7 +3326,7 @@ export default function AdminMessagesPage() {
         );
 
         setSelectedConversationDetail((current) =>
-          current && current.id === selectedConversationId
+          current && current.id === activeConversationId
             ? {
                 ...current,
                 unreadCount: 0,
@@ -3390,8 +3360,9 @@ export default function AdminMessagesPage() {
   }, [selectedConversationId, emitMarkRead]);
 
   useEffect(() => {
-    const conversationId = selectedConversationDetail?.id;
-    const userId = selectedConversationDetail?.otherParticipantUserId;
+    const conversationId = selectedConversationDetail?.id ?? null;
+    const otherParticipantUserId = selectedConversationDetail?.otherParticipantUserId;
+    const userId = otherParticipantUserId ?? null;
 
     if (!conversationId || !userId) {
       return;
@@ -3400,9 +3371,16 @@ export default function AdminMessagesPage() {
     let active = true;
 
     async function loadPresence() {
+      const activeConversationId = conversationId;
+      const activeUserId = userId;
+
+      if (!activeConversationId || !activeUserId) {
+        return;
+      }
+
       try {
-        const response = await getUserLastSeen(userId);
-        if (!active || selectedConversationIdRef.current !== conversationId) {
+        const response = await getUserLastSeen(activeUserId);
+        if (!active || selectedConversationIdRef.current !== activeConversationId) {
           return;
         }
 
@@ -3413,13 +3391,13 @@ export default function AdminMessagesPage() {
         const presence = normalizePresenceResponse(response);
 
         setSelectedConversationDetail((current) => {
-          if (!current || current.id !== conversationId) {
+          if (!current || current.id !== activeConversationId) {
             return current;
           }
 
           const next = {
             ...current,
-            otherParticipantUserId: userId,
+            otherParticipantUserId: activeUserId,
             otherParticipantPresenceStatus:
               presence.status ?? current.otherParticipantPresenceStatus,
             otherParticipantLastSeenAt: presence.lastSeenAt ?? current.otherParticipantLastSeenAt,
@@ -3428,15 +3406,15 @@ export default function AdminMessagesPage() {
           return next;
         });
       } catch {
-        if (!active || selectedConversationIdRef.current !== conversationId) {
+        if (!active || selectedConversationIdRef.current !== activeConversationId) {
           return;
         }
 
         setSelectedConversationDetail((current) =>
-          current && current.id === conversationId
+          current && current.id === activeConversationId
             ? {
                 ...current,
-                otherParticipantUserId: userId,
+                otherParticipantUserId: activeUserId,
               }
             : current,
         );
@@ -3551,6 +3529,10 @@ export default function AdminMessagesPage() {
       return null;
     }
 
+    const participants = Array.isArray(candidate.participants)
+      ? (candidate.participants as BackendConversationParticipant[])
+      : undefined;
+
     return {
       id: candidate.id,
       status: typeof candidate.status === "string" ? candidate.status : undefined,
@@ -3568,7 +3550,7 @@ export default function AdminMessagesPage() {
           ? candidate.assigned_provider_id
           : undefined,
       updated_at: typeof candidate.updated_at === "string" ? candidate.updated_at : undefined,
-      participants: candidate.participants,
+      participants,
       is_read_only:
         typeof candidate.is_read_only === "boolean" ? candidate.is_read_only : undefined,
       expires_at: typeof candidate.expires_at === "string" ? candidate.expires_at : undefined,
@@ -4141,10 +4123,6 @@ export default function AdminMessagesPage() {
     [messagesByConversation, selectedConversationMessagesId],
   );
 
-  useEffect(() => {
-    selectedMessagesCountRef.current = selectedMessages.length;
-  }, [selectedMessages.length]);
-
   const quickReplies = visibleSelectedConversation ? getQuickReplies(visibleSelectedConversation) : [];
   const mediaDrawerHistoryMessages = useMemo(
     () => (selectedConversationId ? mediaDrawerMessagesByConversation[selectedConversationId] ?? [] : []),
@@ -4164,6 +4142,15 @@ export default function AdminMessagesPage() {
       : conversationMediaPanelTab === "links"
         ? conversationMediaItems.links
         : conversationMediaItems.docs;
+
+  const resetMediaDrawerState = useCallback(() => {
+    setConversationMediaPanelOpen(false);
+    setConversationMediaPanelTab("media");
+    setMediaHistoryError(null);
+    setIsMediaHistoryLoading(false);
+    mediaHistoryRequestIdRef.current += 1;
+    mediaHistoryActiveConversationIdRef.current = null;
+  }, []);
 
   const handleMessageSearchResultClick = useCallback((message: ChatMessage) => {
     const conversationId = selectedConversationIdRef.current;
@@ -4467,8 +4454,9 @@ export default function AdminMessagesPage() {
     const socket = socketRef.current;
     const shouldUseSocket = Boolean(socket?.connected);
     const optimisticTempId = shouldUseSocket ? `temp-${Date.now()}` : null;
-    const messageType = attachment?.attachmentType ?? "text";
-    const sendPayload = {
+    const messageType: "text" | "image" | "document" | "audio" | "video" =
+      attachment?.attachmentType ?? "text";
+    const sendPayload: Parameters<typeof sendMessage>[0] = {
       conversation_id: conversationId,
       content: messageContent,
       message_type: messageType,
@@ -4653,6 +4641,7 @@ export default function AdminMessagesPage() {
     setOpenConversationMenuId(null);
     stopSpeechToText();
     setSpeechError(null);
+    resetMediaDrawerState();
     clearAttachmentUploadState();
     clearPendingVoice();
     if (editingMessageId) {
@@ -4713,6 +4702,7 @@ export default function AdminMessagesPage() {
 
     stopSpeechToText();
     setSpeechError(null);
+    resetMediaDrawerState();
     if (conversationId && socket?.connected) {
       socket.emit("leave_room", { conversation_id: conversationId });
     }
@@ -4746,6 +4736,7 @@ export default function AdminMessagesPage() {
     setDraftMessage("");
     setShowEmojiPicker(false);
   }, [
+    resetMediaDrawerState,
     clearAttachmentUploadState,
     clearPendingVoice,
     clearEditMode,
@@ -4758,7 +4749,7 @@ export default function AdminMessagesPage() {
 
   const updateConversationLifecycleState = useCallback(
     (conversationId: string, nextStatus: ChatStatus, updatedAt?: string) => {
-      const nextLimitReason =
+      const nextLimitReason: LimitReason | undefined =
         nextStatus === "closed"
           ? "CHAT_WINDOW_CLOSED"
           : nextStatus === "read_only"
@@ -4766,7 +4757,7 @@ export default function AdminMessagesPage() {
             : undefined;
       const nextLastMessageAt = updatedAt ? formatTimestamp(updatedAt) : undefined;
 
-      const applyUpdate = (conversation: Conversation) => {
+      const applyUpdate = (conversation: Conversation): Conversation => {
         if (conversation.id !== conversationId) {
           return conversation;
         }
@@ -4969,6 +4960,7 @@ export default function AdminMessagesPage() {
       const attachmentId = firstString(attachment?.id, attachment?.attachment_id);
       const responseFileName = firstString(attachment?.file_name, attachment?.filename) ?? file.name;
       const responseAttachmentType = firstString(attachment?.attachment_type) ?? attachmentType;
+      const normalizedAttachmentType = normalizeAttachmentType(responseAttachmentType);
       const mimeType = (firstString(attachment?.mime_type) ?? file.type) || undefined;
       const fileSize = typeof attachment?.file_size === "number" ? attachment.file_size : file.size;
 
@@ -4981,7 +4973,7 @@ export default function AdminMessagesPage() {
       setUploadedAttachment({
         id: attachmentId,
         fileName: responseFileName,
-        attachmentType: responseAttachmentType,
+        attachmentType: normalizedAttachmentType,
         downloadUrl: firstString(attachment?.download_url),
         fileSize,
         mimeType,
@@ -5053,14 +5045,17 @@ export default function AdminMessagesPage() {
 
       const selectedConversationIdForDelete = selectedConversation?.id ?? null;
       const deletedMessage = selectedMessages.find((message) => message.id === messageId);
+      if (!deletedMessage) {
+        return;
+      }
+
       const selectedConversationPreview = selectedConversation
         ? getConversationPreview(selectedConversation)
         : "";
       const isLatestMessage = selectedMessages[selectedMessages.length - 1]?.id === messageId;
       const shouldOverridePreview =
         Boolean(selectedConversationIdForDelete) &&
-        Boolean(deletedMessage) &&
-        (isLatestMessage || selectedConversationPreview === deletedMessage.text);
+        (isLatestMessage || selectedConversationPreview === (deletedMessage.text ?? ""));
 
       setMessagesByConversation((current) => {
         if (!selectedConversation) {

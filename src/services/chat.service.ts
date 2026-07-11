@@ -335,12 +335,20 @@ export async function getTypingUsers(conversationId: string) {
     return response;
   }
 
-  if (response && Array.isArray(response.items)) {
-    return response.items;
+  if (response && typeof response === "object" && "items" in response) {
+    const items = response.items;
+
+    if (Array.isArray(items)) {
+      return items;
+    }
   }
 
-  if (response && Array.isArray(response.data)) {
-    return response.data;
+  if (response && typeof response === "object" && "data" in response) {
+    const data = response.data;
+
+    if (Array.isArray(data)) {
+      return data;
+    }
   }
 
   return [];
