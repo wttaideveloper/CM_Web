@@ -1,7 +1,11 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import AppShell from "@/components/layout/AppShell";
+import { useAdminSocket } from "@/contexts/AdminSocketContext";
 import EmojiPicker from "emoji-picker-react";
+import { useSearchParams } from "next/navigation";
 import {
   archiveConversation,
   closeConversation,
@@ -26,8 +30,9 @@ import {
   updateTypingStatus,
   updatePresenceStatus,
 } from "@/services/chat.service";
-import { createChatSocket, type ChatSocket } from "@/services/chat-socket.service";
+import { type ChatSocket } from "@/services/chat-socket.service";
 import {
+  Suspense,
   useCallback,
   Fragment,
   useEffect,
@@ -226,6 +231,22 @@ interface SpeechRecognitionLike extends EventTarget {
 }
 
 type SpeechRecognitionConstructorLike = new () => SpeechRecognitionLike;
+
+function ConversationUrlSync({
+  onConversationIdChange,
+}: {
+  onConversationIdChange: (conversationId: string | null) => void;
+}) {
+  const searchParams = useSearchParams();
+  const conversationId =
+    searchParams.get("conversationId") ?? searchParams.get("conversation_id");
+
+  useEffect(() => {
+    onConversationIdChange(conversationId);
+  }, [conversationId, onConversationIdChange]);
+
+  return null;
+}
 
 const DEV_CHAT_USER_ID = "550e8400-e29b-41d4-a716-446655440020"; // TODO: replace with the real logged-in user id later.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1661,13 +1682,14 @@ export default function AdminMessagesPage() {
   >({});
   const [showScrollToBottomButton, setShowScrollToBottomButton] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-  const [socketStatus, setSocketStatus] = useState<"connected" | "reconnecting" | "disconnected">(
-    "disconnected",
-  );
   const [visibleTypingUsers, setVisibleTypingUsers] = useState<string[]>([]);
+  const { socket: adminSocket, status: socketStatus, markConversationNotificationsAsRead } =
+    useAdminSocket();
+  const [conversationIdFromUrl, setConversationIdFromUrl] = useState<string | null>(null);
   const socketRef = useRef<ChatSocket | null>(null);
   const activeRoomConversationIdRef = useRef<string | null>(null);
   const selectedConversationIdRef = useRef<string | null>(null);
+  const handledConversationIdRef = useRef<string | null>(null);
   const selectedConversationOtherParticipantUserIdRef = useRef<string | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const emojiPickerRef = useRef<HTMLDivElement | null>(null);
@@ -1708,6 +1730,8 @@ export default function AdminMessagesPage() {
   const typingPollInFlightRef = useRef(false);
   const typingPollConversationIdRef = useRef<string | null>(null);
   const markReadThrottleRef = useRef<Record<string, number>>({});
+  const liveReadInFlightMessageIdsRef = useRef<Set<string>>(new Set());
+  const liveReadCompletedMessageIdsRef = useRef<Set<string>>(new Set());
   const copiedMessageResetTimerRef = useRef<number | null>(null);
   const messagesListRef = useRef<HTMLDivElement | null>(null);
   const previousSearchValueRef = useRef("");
@@ -1720,6 +1744,23 @@ export default function AdminMessagesPage() {
   useEffect(() => {
     selectedConversationIdRef.current = selectedConversationId;
   }, [selectedConversationId]);
+
+  useEffect(() => {
+    if (!conversationIdFromUrl) {
+      handledConversationIdRef.current = null;
+      return;
+    }
+
+    if (handledConversationIdRef.current === conversationIdFromUrl) {
+      return;
+    }
+
+    handledConversationIdRef.current = conversationIdFromUrl;
+
+    if (selectedConversationIdRef.current !== conversationIdFromUrl) {
+      setSelectedConversationId(conversationIdFromUrl);
+    }
+  }, [conversationIdFromUrl]);
 
   useEffect(() => {
     selectedConversationOtherParticipantUserIdRef.current =
@@ -2604,33 +2645,69 @@ export default function AdminMessagesPage() {
   );
 
   const emitMarkRead = useCallback(
-    (conversationId: string, messageId?: string) => {
+    async (conversationId: string, messageId?: string) => {
       const socket = socketRef.current;
-      const now = Date.now();
-      const lastEmitAt = markReadThrottleRef.current[conversationId] ?? 0;
-      const throttled = now - lastEmitAt < 1200;
-      const payload = messageId ? { message_id: messageId } : { conversation_id: conversationId };
+      const payload = messageId
+        ? { conversation_id: conversationId, message_id: messageId }
+        : { conversation_id: conversationId };
 
-      if (throttled) {
-        return;
-      }
-
-      markReadThrottleRef.current[conversationId] = now;
-
-      if (socket?.connected) {
-        if (process.env.NODE_ENV !== "production") {
-          console.log("[Chat socket] emit mark_read", {
-            conversation_id: payload.conversation_id,
-            message_id: payload.message_id,
-          });
+      if (messageId) {
+        if (
+          liveReadCompletedMessageIdsRef.current.has(messageId) ||
+          liveReadInFlightMessageIdsRef.current.has(messageId)
+        ) {
+          return;
         }
 
-        socket.emit("mark_read", payload);
+        liveReadInFlightMessageIdsRef.current.add(messageId);
+      } else {
+        const now = Date.now();
+        const lastEmitAt = markReadThrottleRef.current[conversationId] ?? 0;
+        const throttled = now - lastEmitAt < 1200;
 
-        return;
+        if (throttled) {
+          return;
+        }
+
+        markReadThrottleRef.current[conversationId] = now;
       }
 
-      void markConversationRead(conversationId).catch(() => undefined);
+      try {
+        if (messageId) {
+          await markMessageRead(messageId);
+          liveReadCompletedMessageIdsRef.current.add(messageId);
+          await markConversationNotificationsAsRead(conversationId).catch(() => undefined);
+
+          if (socket?.connected) {
+            if (process.env.NODE_ENV !== "production") {
+              console.log("[Chat socket] emit mark_read", {
+                conversation_id: payload.conversation_id,
+                message_id: payload.message_id,
+              });
+            }
+
+            socket.emit("mark_read", payload);
+          }
+          return;
+        }
+
+        await markConversationRead(conversationId);
+        await markConversationNotificationsAsRead(conversationId).catch(() => undefined);
+
+        if (socket?.connected) {
+          if (process.env.NODE_ENV !== "production") {
+            console.log("[Chat socket] emit mark_read", {
+              conversation_id: payload.conversation_id,
+            });
+          }
+
+          socket.emit("mark_read", payload);
+        }
+      } finally {
+        if (messageId) {
+          liveReadInFlightMessageIdsRef.current.delete(messageId);
+        }
+      }
     },
     [],
   );
@@ -2724,7 +2801,7 @@ export default function AdminMessagesPage() {
             ? payload.readAt
             : undefined;
 
-      if (!conversationId || !userId) {
+      if (!userId || (!conversationId && !messageId)) {
         return;
       }
 
@@ -2738,27 +2815,52 @@ export default function AdminMessagesPage() {
       }
 
       setMessagesByConversation((current) => {
-        const existingMessages = current[conversationId] ?? [];
+        if (conversationId) {
+          const existingMessages = current[conversationId] ?? [];
 
-        return {
-          ...current,
-          [conversationId]: existingMessages.map((message) => {
-            if (messageId) {
+          return {
+            ...current,
+            [conversationId]: existingMessages.map((message) => {
+              if (messageId) {
+                const candidateIds = [message.id, (message as { _id?: string })._id];
+                if (!candidateIds.includes(messageId)) {
+                  return message;
+                }
+
+                return updateMessageReadStatus(message, userId, readAt);
+              }
+
+              if (!message.isMine) {
+                return message;
+              }
+
+              return updateMessageReadStatus(message, userId, readAt);
+            }),
+          };
+        }
+
+        if (!messageId) {
+          return current;
+        }
+
+        let didUpdate = false;
+        const nextState = Object.fromEntries(
+          Object.entries(current).map(([existingConversationId, existingMessages]) => {
+            const nextMessages = existingMessages.map((message) => {
               const candidateIds = [message.id, (message as { _id?: string })._id];
               if (!candidateIds.includes(messageId)) {
                 return message;
               }
 
+              didUpdate = true;
               return updateMessageReadStatus(message, userId, readAt);
-            }
+            });
 
-            if (!message.isMine) {
-              return message;
-            }
-
-            return updateMessageReadStatus(message, userId, readAt);
+            return [existingConversationId, nextMessages] as const;
           }),
-        };
+        ) as Record<string, ChatMessage[]>;
+
+        return didUpdate ? nextState : current;
       });
     },
     [],
@@ -3233,11 +3335,15 @@ export default function AdminMessagesPage() {
 
             if (process.env.NODE_ENV !== "production") {
               console.log("[Chat socket] emit mark_read", {
+                conversation_id: activeConversationId,
                 message_id: message.id,
               });
             }
 
-            socketRef.current?.emit("mark_read", { message_id: message.id });
+            socketRef.current?.emit("mark_read", {
+              conversation_id: activeConversationId,
+              message_id: message.id,
+            });
           });
         }
 
@@ -3270,6 +3376,7 @@ export default function AdminMessagesPage() {
         });
 
         await markConversationRead(activeConversationId).catch(() => undefined);
+        await markConversationNotificationsAsRead(activeConversationId).catch(() => undefined);
 
         const fulfilledMessageIds = new Set(
           readSettlements.flatMap((settlement, index) =>
@@ -3640,14 +3747,36 @@ export default function AdminMessagesPage() {
         return next;
       });
 
+      const liveMessageId =
+        typeof mappedMessage.id === "string" && mappedMessage.id.trim().length > 0
+          ? mappedMessage.id
+          : null;
+      const shouldMarkLiveRead =
+        isSelectedConversation &&
+        !mappedMessage.isMine &&
+        !mappedMessage.isDeleted &&
+        liveMessageId !== null &&
+        typeof document !== "undefined" &&
+        document.visibilityState === "visible";
+
+      if (shouldMarkLiveRead) {
+        if (process.env.NODE_ENV !== "production") {
+          console.log("[Chat socket] live mark_read candidate", {
+            conversation_id: conversationId,
+            message_id: liveMessageId,
+            message_type: mappedMessage.messageType,
+          });
+        }
+
+        void emitMarkRead(conversationId, liveMessageId);
+      }
+
       if (isSelectedConversation) {
         setSelectedConversationDetail((current) =>
           current && current.id === conversationId
             ? mergeConversationWithMessage(current, mappedMessage, true)
             : current,
         );
-
-        emitMarkRead(conversationId, mappedMessage.id);
       }
 
       if (!conversationExists) {
@@ -3742,12 +3871,18 @@ export default function AdminMessagesPage() {
   );
 
   useEffect(() => {
-    const token = process.env.NEXT_PUBLIC_DEV_CHAT_TOKEN;
-    const socket = createChatSocket(token ?? undefined);
-    socketRef.current = socket;
+    socketRef.current = adminSocket;
+  }, [adminSocket]);
+
+  useEffect(() => {
+    const socket = adminSocket;
+
+    if (!socket) {
+      socketRef.current = null;
+      return;
+    }
 
     const handleConnect = () => {
-      setSocketStatus("connected");
       void updatePresenceStatus("online")
         .then(() => undefined)
         .catch(() => undefined);
@@ -3761,18 +3896,19 @@ export default function AdminMessagesPage() {
       if (conversationId) {
         if (process.env.NODE_ENV !== "production") {
           console.log("[Chat socket] emit join_room", {
-            conversation_id: conversationId,
+            conversationId,
+            connected: socket.connected,
+            socketId: socket.id,
           });
         }
 
         socket.emit("join_room", { conversation_id: conversationId });
         activeRoomConversationIdRef.current = conversationId;
-        emitMarkRead(conversationId);
+        void emitMarkRead(conversationId);
       }
     };
 
     const handleDisconnect = (reason: string) => {
-      setSocketStatus("disconnected");
       if (process.env.NODE_ENV !== "production") {
         console.log("[Chat socket] disconnected", {
           reason,
@@ -3788,11 +3924,9 @@ export default function AdminMessagesPage() {
           message: error?.message ?? "connection_error",
         });
       }
-      setSocketStatus("reconnecting");
     };
 
     const handleSocketErrorEvent = (payload: unknown) => {
-      setSocketStatus("reconnecting");
       if (process.env.NODE_ENV !== "production") {
         console.log("[Chat socket] receive error", {
           error:
@@ -3880,14 +4014,20 @@ export default function AdminMessagesPage() {
     };
 
     const handleReconnectAttempt = () => {
-      setSocketStatus("reconnecting");
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[Chat socket] reconnect attempt");
+      }
     };
 
     const handleReconnect = () => {
-      setSocketStatus("connected");
       void updatePresenceStatus("online")
         .then(() => undefined)
         .catch(() => undefined);
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[Chat socket] reconnected", {
+          socketId: socket.id ?? undefined,
+        });
+      }
     };
 
     socket.on("connect", handleConnect);
@@ -3902,8 +4042,6 @@ export default function AdminMessagesPage() {
     socket.on("conversation_updated", handleConversationUpdated);
     socket.on("user_online", handleSocketUserOnline);
     socket.on("user_offline", handleSocketUserOffline);
-
-    socket.connect();
 
     return () => {
       const activeConversationId = activeRoomConversationIdRef.current;
@@ -3933,13 +4071,13 @@ export default function AdminMessagesPage() {
       if (activeTypingConversationId) {
         stopTypingForConversation(activeTypingConversationId);
       }
-      socket.disconnect();
-      socketRef.current = null;
       activeRoomConversationIdRef.current = null;
       pendingSocketMessageRef.current = null;
       setVisibleTypingUsers([]);
+      socketRef.current = null;
     };
   }, [
+    adminSocket,
     handleConversationUpdated,
     handleSocketNewMessage,
     handleSocketMessageRead,
@@ -3972,12 +4110,14 @@ export default function AdminMessagesPage() {
       socket.emit("leave_room", { conversation_id: previousConversationId });
     }
 
-    if (nextConversationId && previousConversationId !== nextConversationId) {
-      if (process.env.NODE_ENV !== "production") {
-        console.log("[Chat socket] emit join_room", {
-          conversation_id: nextConversationId,
-        });
-      }
+      if (nextConversationId && previousConversationId !== nextConversationId) {
+        if (process.env.NODE_ENV !== "production") {
+          console.log("[Chat socket] emit join_room", {
+            conversationId: nextConversationId,
+            connected: socket.connected,
+            socketId: socket.id,
+          });
+        }
 
       socket.emit("join_room", { conversation_id: nextConversationId });
       activeRoomConversationIdRef.current = nextConversationId;
@@ -5131,7 +5271,11 @@ export default function AdminMessagesPage() {
   }
 
   return (
-    <AppShell>
+    <>
+      <Suspense fallback={null}>
+        <ConversationUrlSync onConversationIdChange={setConversationIdFromUrl} />
+      </Suspense>
+      <AppShell>
       <div className="mx-auto w-full max-w-[1480px]">
         <div className="mb-4 flex flex-col gap-2">
           <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">
@@ -6352,6 +6496,7 @@ export default function AdminMessagesPage() {
           animation: typingDotPulse 1.1s infinite ease-in-out;
         }
       `}</style>
-    </AppShell>
+      </AppShell>
+    </>
   );
 }

@@ -2,24 +2,21 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import { useAdminSocket } from "@/contexts/AdminSocketContext";
 
 type OpenMenu = "notifications" | "settings" | "profile" | null;
 
-const notificationItems = [
-  {
-    title: "Pending Approval",
-    subtitle: "MindFlow Center is awaiting verification",
-  },
-  {
-    title: "Stripe Webhook Failed",
-    subtitle: "Pinnacle Wellness - check integration config",
-  },
-  {
-    title: "New 5-Star Review",
-    subtitle: "FlexFit Academy received a 5-star product review",
-  },
-];
+type NotificationLike = {
+  id: string;
+  notification_type: string;
+  title: string;
+  body: string;
+  data: Record<string, unknown>;
+  is_read: boolean;
+  created_at: string | null;
+};
 
 const settingsItems = [
   "Account Settings",
@@ -82,6 +79,38 @@ function ChevronRightIcon() {
   );
 }
 
+function getNotificationConversationId(notification: NotificationLike): string | null {
+  const candidate = notification.data.conversation_id ?? notification.data.conversationId;
+
+  return typeof candidate === "string" && candidate.trim().length > 0 ? candidate.trim() : null;
+}
+
+function formatNotificationTime(value: string | null) {
+  if (!value) {
+    return "Just now";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Just now";
+  }
+
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function clampBadge(value: number) {
+  if (value <= 0) {
+    return null;
+  }
+
+  return value > 99 ? "99+" : String(value);
+}
+
 type AppHeaderProps = {
   onMenuClick: () => void;
 };
@@ -89,9 +118,29 @@ type AppHeaderProps = {
 export default function AppHeader({ onMenuClick }: AppHeaderProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const headerRef = useRef<HTMLElement | null>(null);
-  const showMessagesShortcut = pathname.startsWith("/admin");
+  const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
+  const isAdminRoute = pathname.startsWith("/admin");
+  const notificationsRoute = isAdminRoute ? "/admin/notifications" : "/notifications";
+  const messagesRoute = isAdminRoute ? "/admin/messages" : null;
+  const {
+    notifications,
+    unreadNotificationCount,
+    unreadMessageCount,
+    isLoadingNotifications,
+    notificationError,
+    notificationPagination,
+    loadMoreNotifications,
+    markAllNotificationsAsRead,
+    markNotificationAsRead,
+  } = useAdminSocket();
+
+  const visibleNotifications = useMemo(() => notifications.slice(0, 6), [notifications]);
+  const unreadNotificationBadge = clampBadge(unreadNotificationCount);
+  const unreadMessageBadge = clampBadge(unreadMessageCount);
+  const hasMoreNotifications =
+    notificationPagination !== null &&
+    notificationPagination.page < notificationPagination.total_pages;
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -120,6 +169,28 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
   };
 
   const closeMenu = () => setOpenMenu(null);
+
+  const handleProfileItemClick = (item: string) => {
+    if (item === "Logout") {
+      closeMenu();
+      router.push("/auth/login");
+      return;
+    }
+
+    closeMenu();
+  };
+
+  const handleNotificationClick = (notification: NotificationLike) => {
+    closeMenu();
+    void markNotificationAsRead(notification.id).catch(() => undefined);
+
+    const conversationId = getNotificationConversationId(notification);
+    if (!conversationId || !messagesRoute) {
+      return;
+    }
+
+    router.push(`${messagesRoute}?conversationId=${encodeURIComponent(conversationId)}`);
+  };
 
   return (
     <header
@@ -171,11 +242,16 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
           <button
             type="button"
             onClick={() => toggleMenu("notifications")}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4]"
+            className="relative flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4]"
             aria-label="Notifications"
             aria-expanded={openMenu === "notifications"}
           >
             <BellIcon />
+            {unreadNotificationBadge ? (
+              <span className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-[#d92d20] px-1 text-[10px] font-bold leading-4 text-white">
+                {unreadNotificationBadge}
+              </span>
+            ) : null}
           </button>
 
           <div
@@ -188,27 +264,86 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
             <div className="flex items-center justify-between border-b border-[#edf3f0] px-2 pb-3">
               <div>
                 <p className="text-sm font-bold text-[#06201c]">Notifications</p>
-                <p className="text-xs font-semibold text-[#7f9d94]">3 unread</p>
+                <p className="text-xs font-semibold text-[#7f9d94]">
+                  {unreadNotificationCount} unread
+                </p>
               </div>
-              <span className="rounded-full bg-[#e8f6ee] px-2.5 py-1 text-[11px] font-bold text-[#16825b]">
-                3 unread
-              </span>
+              <div className="flex items-center gap-2">
+                {unreadNotificationCount > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      closeMenu();
+                      void markAllNotificationsAsRead().catch(() => undefined);
+                    }}
+                    className="rounded-full bg-[#eef7f2] px-2.5 py-1 text-[11px] font-bold text-[#1f6a58] transition hover:bg-[#e2f2ea]"
+                  >
+                    Mark all read
+                  </button>
+                ) : null}
+                <span className="rounded-full bg-[#e8f6ee] px-2.5 py-1 text-[11px] font-bold text-[#16825b]">
+                  {unreadNotificationCount} unread
+                </span>
+              </div>
             </div>
 
             <div className="space-y-1 py-2">
-              {notificationItems.map((item) => (
-                <div
-                  key={item.title}
-                  className="rounded-xl px-2 py-2 transition hover:bg-[#f7fbf9]"
-                >
-                  <p className="text-sm font-bold text-[#06201c]">{item.title}</p>
-                  <p className="mt-0.5 text-xs leading-5 text-[#52736a]">{item.subtitle}</p>
+              {isLoadingNotifications ? (
+                <div className="rounded-xl px-3 py-4 text-sm text-[#52736a]">Loading notifications...</div>
+              ) : notificationError ? (
+                <div className="rounded-xl bg-[#fff6f6] px-3 py-4 text-sm text-[#b42318]">
+                  {notificationError}
                 </div>
-              ))}
+              ) : visibleNotifications.length > 0 ? (
+                visibleNotifications.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleNotificationClick(item)}
+                    className={`flex w-full gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-[#f7fbf9] ${
+                      item.is_read ? "opacity-80" : ""
+                    }`}
+                  >
+                    <span
+                      className={`mt-2 h-2.5 w-2.5 shrink-0 rounded-full ${
+                        item.is_read ? "bg-[#d0dbd7]" : "bg-[#1f6a58]"
+                      }`}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-start justify-between gap-2">
+                        <span className="min-w-0">
+                          <span className="block text-sm font-bold text-[#06201c]">{item.title}</span>
+                          <span className="mt-0.5 block text-xs leading-5 text-[#52736a]">
+                            {item.body}
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-[11px] font-semibold text-[#7f9d94]">
+                          {formatNotificationTime(item.created_at)}
+                        </span>
+                      </span>
+                    </span>
+                  </button>
+                ))
+              ) : (
+                <div className="rounded-xl px-3 py-4 text-sm text-[#52736a]">No notifications yet.</div>
+              )}
             </div>
 
+            {hasMoreNotifications ? (
+              <button
+                type="button"
+                onClick={() => {
+                  void loadMoreNotifications().catch(() => undefined);
+                }}
+                className="mt-1 flex w-full items-center justify-between rounded-xl bg-[#f7fbf9] px-3 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#eef7f2]"
+              >
+                <span>Load more</span>
+                <ChevronRightIcon />
+              </button>
+            ) : null}
+
             <Link
-              href="/notifications"
+              href={notificationsRoute}
               onClick={closeMenu}
               className="mt-1 flex items-center justify-between rounded-xl bg-[#f7fbf9] px-3 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#eef7f2]"
             >
@@ -218,14 +353,19 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
           </div>
         </div>
 
-        {showMessagesShortcut ? (
+        {messagesRoute ? (
           <Link
-            href="/admin/messages"
-            className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4]"
+            href={messagesRoute}
+            className="relative flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4]"
             aria-label="Messages"
             title="Messages"
           >
             <MessageIcon />
+            {unreadMessageBadge ? (
+              <span className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-[#d92d20] px-1 text-[10px] font-bold leading-4 text-white">
+                {unreadMessageBadge}
+              </span>
+            ) : null}
           </Link>
         ) : null}
 
@@ -265,42 +405,31 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
           <button
             type="button"
             onClick={() => toggleMenu("profile")}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-[#1f6a58] text-sm font-bold text-white"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-[#e8f6ee] font-bold text-[#1f6a58] hover:bg-[#def0e7]"
             aria-label="Profile"
             aria-expanded={openMenu === "profile"}
           >
-            SJ
+            IH
           </button>
 
           <div
-            className={`absolute right-0 top-[calc(100%+10px)] w-64 origin-top-right rounded-2xl border border-[#e1ebe6] bg-white p-3 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 ${
+            className={`absolute right-0 top-[calc(100%+10px)] w-60 origin-top-right rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 ${
               openMenu === "profile"
                 ? "pointer-events-auto scale-100 opacity-100"
                 : "pointer-events-none scale-95 opacity-0"
             }`}
           >
-            <div className="border-b border-[#edf3f0] px-2 pb-3">
-              <p className="text-sm font-bold text-[#06201c]">Sarah Johnson</p>
-              <p className="mt-0.5 text-xs text-[#52736a]">sarah@invigorate.com</p>
-            </div>
-            <div className="py-2">
-              {profileItems.map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  onClick={() => {
-                    closeMenu();
-                    if (item === "Logout") {
-                      router.push("/auth/login");
-                    }
-                  }}
-                  className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]"
-                >
-                  <span>{item}</span>
-                  <ChevronRightIcon />
-                </button>
-              ))}
-            </div>
+            {profileItems.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => handleProfileItemClick(item)}
+                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]"
+              >
+                <span>{item}</span>
+                <ChevronRightIcon />
+              </button>
+            ))}
           </div>
         </div>
       </div>
