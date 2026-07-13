@@ -1,11 +1,13 @@
- "use client";
+"use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export default function LoginPage() {
   const router = useRouter();
   const [loginType, setLoginType] = useState<"super-admin" | "admin">("super-admin");
+  const [isEnterpriseOwnerLoginStarting, setIsEnterpriseOwnerLoginStarting] = useState(false);
   const isSuperAdmin = loginType === "super-admin";
   const emailPlaceholder = isSuperAdmin ? "admin@invigoratehealth.com" : "owner@yourcompany.com";
   const subtitle = isSuperAdmin
@@ -18,6 +20,40 @@ export default function LoginPage() {
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     router.push(loginType === "super-admin" ? "/dashboard" : "/admin/dashboard");
+  }
+
+  function handleEnterpriseOwnerSignIn() {
+    if (isEnterpriseOwnerLoginStarting) {
+      return;
+    }
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    setIsEnterpriseOwnerLoginStarting(true);
+
+    const frontendOrigin = window.location.origin;
+    const returnTo = "/auth/validate";
+    const freshLoginRequested = true;
+    const params = new URLSearchParams({
+      frontend_origin: frontendOrigin,
+      return_to: returnTo,
+      rememberMe: "false",
+      fresh: String(freshLoginRequested),
+    });
+    const loginUrl = `/api/v1/auth/login?${params.toString()}`;
+
+    if (process.env.NODE_ENV === "development") {
+      console.log("[Auth] Enterprise Owner login URL", {
+        loginUrl,
+        frontend_origin: frontendOrigin,
+        return_to: returnTo,
+        fresh: freshLoginRequested,
+      });
+    }
+
+    window.location.assign(loginUrl);
   }
 
   return (
@@ -191,62 +227,96 @@ export default function LoginPage() {
               <p className="mt-1.5 text-[14px] text-[#55746b]">{subtitle}</p>
             </div>
 
-            <form onSubmit={handleSubmit} className="mt-6 space-y-3.5">
-              <label className="block">
-                <span className="text-[12px] font-bold text-[#051915]">Email Address</span>
-                <input
-                  type="email"
-                  placeholder={emailPlaceholder}
-                  className="mt-1.5 h-10 w-full rounded-[13px] border border-[#c9ddd7] bg-[#f1f7f4] px-3.5 text-[14px] text-[#173b34] outline-none transition placeholder:text-[#8aa19a] focus:border-[#226b58] focus:ring-4 focus:ring-[#226b58]/10"
-                />
-              </label>
-
-              <label className="block">
-                <span className="flex items-center justify-between gap-4">
-                  <span className="text-[12px] font-bold text-[#051915]">Password</span>
-                  <a href="#" className="text-[12px] font-semibold text-[#0b5b4e]">
-                    Forgot?
-                  </a>
-                </span>
-                <span className="relative mt-2 block">
+            {isSuperAdmin ? (
+              <form onSubmit={handleSubmit} className="mt-6 space-y-3.5">
+                <label className="block">
+                  <span className="text-[12px] font-bold text-[#051915]">Email Address</span>
                   <input
-                    type="password"
-                    placeholder="Enter your password"
-                    className="h-10 w-full rounded-[13px] border border-[#c9ddd7] bg-[#f1f7f4] px-3.5 pr-10 text-[14px] text-[#173b34] outline-none transition placeholder:text-[#8aa19a] focus:border-[#226b58] focus:ring-4 focus:ring-[#226b58]/10"
+                    type="email"
+                    placeholder={emailPlaceholder}
+                    className="mt-1.5 h-10 w-full rounded-[13px] border border-[#c9ddd7] bg-[#f1f7f4] px-3.5 text-[14px] text-[#173b34] outline-none transition placeholder:text-[#8aa19a] focus:border-[#226b58] focus:ring-4 focus:ring-[#226b58]/10"
                   />
-                  <svg
-                    aria-hidden="true"
-                    className="absolute right-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#6b8b83]"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <rect
-                      x="5"
-                      y="10"
-                      width="14"
-                      height="10"
-                      rx="2"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    />
-                    <path
-                      d="M8 10V7a4 4 0 0 1 8 0v3"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                </span>
-              </label>
+                </label>
 
-              <button
-                type="submit"
-                className="h-10 w-full rounded-[13px] bg-[#1f6a58] text-[14px] font-bold text-white shadow-[0_3px_6px_rgba(0,0,0,0.14)] transition hover:bg-[#185746] focus:outline-none focus:ring-4 focus:ring-[#226b58]/20"
-              >
-                {buttonLabel}
-              </button>
-            </form>
+                <label className="block">
+                  <span className="flex items-center justify-between gap-4">
+                    <span className="text-[12px] font-bold text-[#051915]">Password</span>
+                    <a href="#" className="text-[12px] font-semibold text-[#0b5b4e]">
+                      Forgot?
+                    </a>
+                  </span>
+                  <span className="relative mt-2 block">
+                    <input
+                      type="password"
+                      placeholder="Enter your password"
+                      className="h-10 w-full rounded-[13px] border border-[#c9ddd7] bg-[#f1f7f4] px-3.5 pr-10 text-[14px] text-[#173b34] outline-none transition placeholder:text-[#8aa19a] focus:border-[#226b58] focus:ring-4 focus:ring-[#226b58]/10"
+                    />
+                    <svg
+                      aria-hidden="true"
+                      className="absolute right-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#6b8b83]"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <rect
+                        x="5"
+                        y="10"
+                        width="14"
+                        height="10"
+                        rx="2"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      />
+                      <path
+                        d="M8 10V7a4 4 0 0 1 8 0v3"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </span>
+                </label>
+
+                <button
+                  type="submit"
+                  className="h-10 w-full rounded-[13px] bg-[#1f6a58] text-[14px] font-bold text-white shadow-[0_3px_6px_rgba(0,0,0,0.14)] transition hover:bg-[#185746] focus:outline-none focus:ring-4 focus:ring-[#226b58]/20"
+                >
+                  {buttonLabel}
+                </button>
+              </form>
+            ) : (
+              <div className="mt-6 space-y-4 rounded-[18px] border border-[#dfece5] bg-[#f7fbf9] p-5">
+                <div className="space-y-2">
+                  <p className="text-[14px] font-semibold text-[#0a2823]">
+                    Enterprise Owner authentication continues through secure Invigorate Health sign-in.
+                  </p>
+                  <p className="text-[13px] leading-6 text-[#55746b]">
+                    You&apos;ll be redirected to the branded Keycloak login page to complete sign in.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleEnterpriseOwnerSignIn}
+                  disabled={isEnterpriseOwnerLoginStarting}
+                  className="h-10 w-full rounded-[13px] bg-[#1f6a58] text-[14px] font-bold text-white shadow-[0_3px_6px_rgba(0,0,0,0.14)] transition hover:bg-[#185746] disabled:cursor-not-allowed disabled:bg-[#8fb5aa] focus:outline-none focus:ring-4 focus:ring-[#226b58]/20"
+                >
+                  {isEnterpriseOwnerLoginStarting
+                    ? "Opening secure sign-in..."
+                    : "Continue to Enterprise Owner Sign In"}
+                </button>
+
+                <p className="text-center text-[13px] text-[#55746b]">
+                  Not registered yet?{" "}
+                  <Link
+                    href="/auth/register"
+                    className="font-semibold text-[#0b5b4e] underline-offset-2 hover:underline"
+                  >
+                    Apply for access &rarr;
+                  </Link>
+                </p>
+              </div>
+            )}
 
             <div className="mt-5">
               {isSuperAdmin ? (
@@ -272,17 +342,7 @@ export default function LoginPage() {
                   <p className="mt-0.5">This portal is restricted to authorized administrators only.</p>
                   <p className="mt-0.5">All actions are logged.</p>
                 </div>
-              ) : (
-                <p className="text-center text-[13px] text-[#55746b]">
-                  Not registered yet?{" "}
-                  <a
-                    href="#"
-                    className="font-semibold text-[#0b5b4e] underline-offset-2 hover:underline"
-                  >
-                    Apply for access &rarr;
-                  </a>
-                </p>
-              )}
+              ) : null}
             </div>
           </div>
         </section>

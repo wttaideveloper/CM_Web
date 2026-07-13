@@ -43,6 +43,7 @@ type AdminSocketNotification = {
 
 type AdminSocketContextValue = {
   socket: ChatSocket | null;
+  disconnect: () => void;
   status: AdminSocketStatus;
   notifications: AdminSocketNotification[];
   unreadNotificationCount: number;
@@ -347,6 +348,20 @@ export function AdminSocketProvider({ children }: { children: ReactNode }) {
       window.clearTimeout(notificationReconcileTimerRef.current);
       notificationReconcileTimerRef.current = null;
     }
+  }, []);
+
+  const disconnect = useCallback(() => {
+    const existingSocket = socketRef.current;
+
+    if (!existingSocket) {
+      return;
+    }
+
+    existingSocket.removeAllListeners();
+    existingSocket.disconnect();
+    socketRef.current = null;
+    setSocket(null);
+    setStatus("disconnected");
   }, []);
 
   const refreshUnreadCounts = useCallback(async () => {
@@ -889,6 +904,7 @@ export function AdminSocketProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AdminSocketContextValue>(
     () => ({
       socket,
+      disconnect,
       status,
       notifications: notificationState.notifications,
       unreadNotificationCount: notificationState.unreadNotificationCount,
@@ -907,6 +923,7 @@ export function AdminSocketProvider({ children }: { children: ReactNode }) {
     }),
     [
       latestConversationUpdate,
+      disconnect,
       loadMoreNotifications,
       markAllNotificationsAsRead,
       markConversationNotificationsAsRead,

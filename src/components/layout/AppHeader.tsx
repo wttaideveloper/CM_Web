@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { useAuth } from "@/contexts/AuthContext";
 import { useAdminSocket } from "@/contexts/AdminSocketContext";
 
 type OpenMenu = "notifications" | "settings" | "profile" | null;
@@ -120,6 +121,7 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
   const pathname = usePathname();
   const headerRef = useRef<HTMLElement | null>(null);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
+  const { logout, isLoggingOut } = useAuth();
   const isAdminRoute = pathname.startsWith("/admin");
   const notificationsRoute = isAdminRoute ? "/admin/notifications" : "/notifications";
   const messagesRoute = isAdminRoute ? "/admin/messages" : null;
@@ -172,8 +174,7 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
 
   const handleProfileItemClick = (item: string) => {
     if (item === "Logout") {
-      closeMenu();
-      router.push("/auth/login");
+      void logout();
       return;
     }
 
@@ -424,9 +425,10 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
                 key={item}
                 type="button"
                 onClick={() => handleProfileItemClick(item)}
-                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]"
+                disabled={item === "Logout" && isLoggingOut}
+                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <span>{item}</span>
+                <span>{item === "Logout" && isLoggingOut ? "Logging out..." : item}</span>
                 <ChevronRightIcon />
               </button>
             ))}
