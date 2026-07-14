@@ -4,11 +4,11 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import AppShell from "@/components/layout/AppShell";
+import { useCurrentEnterprise } from "@/contexts/CurrentEnterpriseContext";
 import { getEnterpriseLocations } from "@/services/enterprise-location.service";
 import { createDynamicAttribute } from "@/services/attribute.service";
 import { getEnterprises } from "@/services/enterprise.service";
 import { createProduct } from "@/services/product.service";
-import { CURRENT_ENTERPRISE } from "@/lib/current-enterprise";
 
 const tabs = ["Product Info", "Pricing", "Images", "Review"];
 
@@ -113,11 +113,11 @@ function createAttributeRow(): CustomAttributeRow {
 
 export function ProductCreatePage({ mode = "super-admin", redirectTo }: ProductCreatePageProps = {}) {
   const router = useRouter();
+  const { enterpriseId: currentEnterpriseId, enterpriseName: currentEnterpriseName } =
+    useCurrentEnterprise();
   const isEnterpriseAdmin = mode === "enterprise-admin";
   const [activeTab, setActiveTab] = useState(tabs[0]);
-  const [enterpriseId, setEnterpriseId] = useState(() =>
-    isEnterpriseAdmin ? CURRENT_ENTERPRISE.id : "",
-  );
+  const [enterpriseId, setEnterpriseId] = useState("");
   const [productName, setProductName] = useState("");
   const [productDescription, setProductDescription] = useState("");
   const [productCategory, setProductCategory] = useState("Equipment");
@@ -165,7 +165,7 @@ export function ProductCreatePage({ mode = "super-admin", redirectTo }: ProductC
     : "Not provided";
   const reviewEnterpriseName =
     (isEnterpriseAdmin
-      ? CURRENT_ENTERPRISE.name
+      ? currentEnterpriseName
       : selectedEnterprise?.business_legal_name ||
         selectedEnterprise?.business_short_name ||
         "Unnamed Enterprise");
@@ -180,14 +180,21 @@ export function ProductCreatePage({ mode = "super-admin", redirectTo }: ProductC
 
   async function fetchEnterprises() {
     if (isEnterpriseAdmin) {
+      if (!currentEnterpriseId) {
+        setEnterpriseOptions([]);
+        setEnterpriseId("");
+        setIsLoadingEnterprises(false);
+        return;
+      }
+
       setEnterpriseOptions([
         {
-          id: CURRENT_ENTERPRISE.id,
-          business_legal_name: CURRENT_ENTERPRISE.name,
-          business_short_name: CURRENT_ENTERPRISE.name,
+          id: currentEnterpriseId,
+          business_legal_name: currentEnterpriseName,
+          business_short_name: currentEnterpriseName,
         },
       ]);
-      setEnterpriseId(CURRENT_ENTERPRISE.id);
+      setEnterpriseId(currentEnterpriseId);
       setIsLoadingEnterprises(false);
       return;
     }
@@ -234,7 +241,7 @@ export function ProductCreatePage({ mode = "super-admin", redirectTo }: ProductC
 
   useEffect(() => {
     void fetchEnterprises();
-  }, [isEnterpriseAdmin]);
+  }, [currentEnterpriseId, currentEnterpriseName, isEnterpriseAdmin]);
 
   useEffect(() => {
     setLocationId("");
@@ -276,11 +283,18 @@ export function ProductCreatePage({ mode = "super-admin", redirectTo }: ProductC
     }
 
     try {
+      const enterpriseIdForCreate = trimmedEnterpriseId || currentEnterpriseId;
+
+      if (!enterpriseIdForCreate) {
+        setError("Marketplace enterprise is not linked yet.");
+        return;
+      }
+
       setIsSubmitting(true);
       setError(null);
 
       const createdProduct = await createProduct({
-        enterprise_id: trimmedEnterpriseId || CURRENT_ENTERPRISE.id,
+        enterprise_id: enterpriseIdForCreate,
         ...(locationId.trim() ? { location_id: locationId.trim() } : {}),
         product_name: trimmedProductName,
         product_description: trimmedProductDescription,
@@ -413,7 +427,7 @@ export function ProductCreatePage({ mode = "super-admin", redirectTo }: ProductC
                 {isEnterpriseAdmin ? (
                   <input
                     type="text"
-                    value={CURRENT_ENTERPRISE.name}
+                    value={currentEnterpriseName}
                     readOnly
                     className={inputClass()}
                   />

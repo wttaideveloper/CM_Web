@@ -4,11 +4,11 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import AppShell from "@/components/layout/AppShell";
+import { useCurrentEnterprise } from "@/contexts/CurrentEnterpriseContext";
 import { getEnterpriseLocations } from "@/services/enterprise-location.service";
 import { createDynamicAttribute } from "@/services/attribute.service";
 import { getEnterprises } from "@/services/enterprise.service";
 import { createService } from "@/services/service.service";
-import { CURRENT_ENTERPRISE } from "@/lib/current-enterprise";
 import type { EnterpriseDto } from "@/types/enterprise.types";
 import type { EnterpriseLocationDto } from "@/types/location.types";
 import type { AvailabilityScheduleItem } from "@/types/service.types";
@@ -173,12 +173,12 @@ function createAttributeRow(): CustomAttributeRow {
 
 export function ServiceCreatePage({ mode = "super-admin", redirectTo }: ServiceCreatePageProps = {}) {
   const router = useRouter();
+  const { enterpriseId: currentEnterpriseId, enterpriseName: currentEnterpriseName } =
+    useCurrentEnterprise();
   const isEnterpriseAdmin = mode === "enterprise-admin";
   const [activeTab, setActiveTab] = useState(tabs[0]);
   const [weekdays, setWeekdays] = useState(initialWeekdays);
-  const [enterpriseId, setEnterpriseId] = useState(() =>
-    isEnterpriseAdmin ? CURRENT_ENTERPRISE.id : "",
-  );
+  const [enterpriseId, setEnterpriseId] = useState("");
   const [serviceName, setServiceName] = useState("");
   const [serviceDescription, setServiceDescription] = useState("");
   const [serviceCategory, setServiceCategory] = useState("IT Services");
@@ -218,7 +218,7 @@ export function ServiceCreatePage({ mode = "super-admin", redirectTo }: ServiceC
 
   const reviewEnterpriseName =
     (isEnterpriseAdmin
-      ? CURRENT_ENTERPRISE.name
+      ? currentEnterpriseName
       : selectedEnterprise?.business_legal_name ||
         selectedEnterprise?.business_short_name ||
         selectedEnterprise?.name ||
@@ -242,15 +242,22 @@ export function ServiceCreatePage({ mode = "super-admin", redirectTo }: ServiceC
 
   async function fetchEnterprises() {
     if (isEnterpriseAdmin) {
+      if (!currentEnterpriseId) {
+        setEnterpriseOptions([]);
+        setEnterpriseId("");
+        setIsLoadingEnterprises(false);
+        return;
+      }
+
       setEnterpriseOptions([
         {
-          id: CURRENT_ENTERPRISE.id,
-          business_legal_name: CURRENT_ENTERPRISE.name,
-          business_short_name: CURRENT_ENTERPRISE.name,
-          name: CURRENT_ENTERPRISE.name,
+          id: currentEnterpriseId,
+          business_legal_name: currentEnterpriseName,
+          business_short_name: currentEnterpriseName,
+          name: currentEnterpriseName,
         },
       ]);
-      setEnterpriseId(CURRENT_ENTERPRISE.id);
+      setEnterpriseId(currentEnterpriseId);
       setIsLoadingEnterprises(false);
       return;
     }
@@ -297,7 +304,7 @@ export function ServiceCreatePage({ mode = "super-admin", redirectTo }: ServiceC
 
   useEffect(() => {
     void fetchEnterprises();
-  }, [isEnterpriseAdmin]);
+  }, [currentEnterpriseId, currentEnterpriseName, isEnterpriseAdmin]);
 
   useEffect(() => {
     setLocationId("");
@@ -335,11 +342,18 @@ export function ServiceCreatePage({ mode = "super-admin", redirectTo }: ServiceC
     }
 
     try {
+      const enterpriseIdForCreate = trimmedEnterpriseId || currentEnterpriseId;
+
+      if (!enterpriseIdForCreate) {
+        setError("Marketplace enterprise is not linked yet.");
+        return;
+      }
+
       setIsSubmitting(true);
       setError(null);
 
       const createdService = await createService({
-        enterprise_id: trimmedEnterpriseId || CURRENT_ENTERPRISE.id,
+        enterprise_id: enterpriseIdForCreate,
         ...(locationId.trim() ? { location_id: locationId.trim() } : {}),
         service_name: trimmedServiceName,
         service_description: trimmedServiceDescription,
@@ -471,7 +485,7 @@ export function ServiceCreatePage({ mode = "super-admin", redirectTo }: ServiceC
                 {isEnterpriseAdmin ? (
                   <input
                     type="text"
-                    value={CURRENT_ENTERPRISE.name}
+                    value={currentEnterpriseName}
                     readOnly
                     className={selectClass()}
                   />

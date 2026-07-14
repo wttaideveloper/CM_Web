@@ -20,8 +20,6 @@ import {
   updateAuthProfile,
 } from "@/services/auth.service";
 
-const WORKFLOW_ROLE_HINTS = ["workflow", "staff", "team", "member", "operator", "care", "clinical"];
-
 type TabKey = "overview" | "members";
 
 type ProfileFormState = {
@@ -93,30 +91,28 @@ function resolveCountryLabel(value: string | null | undefined) {
   return findCountryOption(value)?.name ?? value ?? "Unavailable";
 }
 
-function isWorkflowRole(role: InviteRoleOption) {
-  const haystack = normalizeText(`${role.slug} ${role.name} ${role.category ?? ""}`);
-  return WORKFLOW_ROLE_HINTS.some((hint) => haystack.includes(hint));
-}
-
-function isOwnerRole(role: InviteRoleOption) {
-  const haystack = normalizeText(`${role.slug} ${role.name} ${role.category ?? ""}`);
-  return haystack.includes("owner");
-}
-
-function canInviteRole(currentTenantRole: string | null, role: InviteRoleOption) {
-  if (isOwnerRole(role)) {
-    return false;
+function getInviteErrorMessage(error: unknown, fallback: string) {
+  if (!(error instanceof AuthServiceError)) {
+    return fallback;
   }
 
-  if (currentTenantRole === "tenant_admin") {
-    return isWorkflowRole(role);
+  if (error.status === 401) {
+    return "Your session is no longer authorized to invite members. Please sign in again.";
   }
 
-  if (currentTenantRole === "tenant_owner") {
-    return isWorkflowRole(role) || normalizeText(role.slug).includes("admin") || normalizeText(role.name).includes("admin");
+  if (error.status === 403) {
+    return "You do not have permission to invite members for this tenant.";
   }
 
-  return false;
+  if (error.status === 409) {
+    return "An invite for this member already exists or the member is already part of the tenant.";
+  }
+
+  if (error.status === 400 || error.status === 422) {
+    return "Please check the invite details and try again.";
+  }
+
+  return error.message || fallback;
 }
 
 function PageCard({
@@ -380,10 +376,7 @@ export default function AdminSettingsPage() {
   const [memberDetailsError, setMemberDetailsError] = useState<string | null>(null);
   const [memberDetailsRetryId, setMemberDetailsRetryId] = useState<string | null>(null);
 
-  const hasInviteableRoles = useMemo(
-    () => inviteRoles.some((role) => canInviteRole(currentTenantRole, role)),
-    [currentTenantRole, inviteRoles],
-  );
+  const hasInviteableRoles = useMemo(() => inviteRoles.length > 0, [inviteRoles]);
 
   const loadTenant = useCallback(async () => {
     let active = true;
@@ -450,7 +443,7 @@ export default function AdminSettingsPage() {
       }
     } catch (error) {
       if (active) {
-        setInviteRolesError(error instanceof Error ? error.message : "Invite roles could not be loaded.");
+        setInviteRolesError(getInviteErrorMessage(error, "Invite roles could not be loaded."));
       }
     } finally {
       if (active) {
@@ -604,7 +597,7 @@ export default function AdminSettingsPage() {
       const nextMembers = await getTenantMembers();
       setMembers(nextMembers.data);
     } catch (error) {
-      setInviteError(error instanceof Error ? error.message : "Unable to send invite.");
+      setInviteError(getInviteErrorMessage(error, "Unable to send invite."));
     } finally {
       setInviteSaving(false);
     }
@@ -1147,17 +1140,15 @@ export default function AdminSettingsPage() {
               >
                 <option value="">{inviteRolesLoading ? "Loading roles..." : "Select role"}</option>
                 {inviteRoles.map((role) => {
-                  const allowed = canInviteRole(currentTenantRole, role);
-                  const label = `${role.name}${role.category ? ` - ${humanize(role.category)}` : ""}`;
                   return (
-                    <option key={role.slug || role.name} value={role.slug} disabled={!allowed}>
-                      {allowed ? label : `${label} (Coming soon)`}
+                    <option key={role.slug || role.name} value={role.slug}>
+                      {role.name}
                     </option>
                   );
                 })}
               </SelectInput>
               <p className="text-xs text-[#5f7a71]">
-                Tenant owners can invite tenant_admin and workflow roles. Tenant admins cannot invite tenant_admin.
+                Select any role returned by the backend invite-role endpoint.
               </p>
               {!hasInviteableRoles ? (
                 <p className="text-xs font-medium text-[#8a5b00]">

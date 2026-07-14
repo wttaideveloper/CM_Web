@@ -9,13 +9,15 @@ import {
   AuthServiceError,
   type CompleteLoginResponse,
 } from "@/services/auth.service";
+import {
+  canAccessAdminPath,
+  resolveAdminLandingRoute,
+} from "@/lib/admin-routing";
 
 type ViewState =
   | { kind: "loading" }
   | { kind: "error"; message: string }
   | { kind: "success" };
-
-const SUPPORTED_ADMIN_ROLES = new Set(["tenant_owner", "tenant_admin", "admin"]);
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
@@ -47,14 +49,10 @@ function extractTenantRole(response: CompleteLoginResponse) {
   return response.data.membership?.tenantRole ?? response.data.roles?.tenantRole ?? null;
 }
 
-function isSupportedAdminRole(tenantRole: string | null) {
-  return tenantRole !== null && SUPPORTED_ADMIN_ROLES.has(tenantRole);
-}
-
 function AuthValidateContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { setAuthenticatedUser, restoreSession, logout, isLoggingOut } = useAuth();
+  const { setAuthenticatedUser, restoreSession } = useAuth();
   const handledSessionCodeRef = useRef<string | null>(null);
   const handledExistingSessionRef = useRef(false);
   const [viewState, setViewState] = useState<ViewState>({ kind: "loading" });
@@ -62,9 +60,6 @@ function AuthValidateContent() {
   const sessionCode = searchParams.get("he_session_code");
   const authReady = searchParams.get("he_auth_ready");
   const authReadyIsOne = authReady === "1";
-  const isUnauthorizedAccessError =
-    viewState.kind === "error" &&
-    viewState.message === "This account does not have Enterprise Owner access.";
 
   useEffect(() => {
     if (process.env.NODE_ENV === "development") {
@@ -88,13 +83,6 @@ function AuthValidateContent() {
 
     window.location.href = restartUrl;
   }, []);
-
-  const signOutAndUseAnotherAccount = useCallback(() => {
-    void logout({
-      local: true,
-      returnToLogin: true,
-    });
-  }, [logout]);
 
   useEffect(() => {
     if (sessionCode) {
@@ -120,22 +108,21 @@ function AuthValidateContent() {
           }
 
           const tenantRole = extractTenantRole(response);
+          const resolvedDestinationRoute = resolveAdminLandingRoute(tenantRole);
+          const routeAccessAllowed = canAccessAdminPath(resolvedDestinationRoute, tenantRole);
 
           if (process.env.NODE_ENV === "development") {
-            console.log("[Auth validate] tenant role", tenantRole);
-          }
-
-          if (!isSupportedAdminRole(tenantRole)) {
-            setViewState({
-              kind: "error",
-              message: "This account does not have Enterprise Owner access.",
+            console.log("[Auth validate] route decision", {
+              authenticated: true,
+              tenantRole,
+              resolvedDestinationRoute,
+              routeAccessAllowed,
             });
-            return;
           }
 
           setAuthenticatedUser(response.data);
           setViewState({ kind: "success" });
-          router.replace("/admin/dashboard");
+          router.replace(resolvedDestinationRoute);
         } catch (error) {
           if (!active) {
             return;
@@ -206,22 +193,21 @@ function AuthValidateContent() {
 
         const tenantRole =
           response.data.membership?.tenantRole ?? response.data.roles?.tenantRole ?? null;
+        const resolvedDestinationRoute = resolveAdminLandingRoute(tenantRole);
+        const routeAccessAllowed = canAccessAdminPath(resolvedDestinationRoute, tenantRole);
 
         if (process.env.NODE_ENV === "development") {
-          console.log("[Auth validate] restored tenant role", tenantRole);
-        }
-
-        if (!isSupportedAdminRole(tenantRole)) {
-          setViewState({
-            kind: "error",
-            message: "This account does not have Enterprise Owner access.",
+          console.log("[Auth validate] route decision", {
+            authenticated: true,
+            tenantRole,
+            resolvedDestinationRoute,
+            routeAccessAllowed,
           });
-          return;
         }
 
         setAuthenticatedUser(response.data);
         setViewState({ kind: "success" });
-        router.replace("/admin/dashboard");
+        router.replace(resolvedDestinationRoute);
       } catch (error) {
         if (!active) {
           return;
@@ -264,41 +250,19 @@ function AuthValidateContent() {
             </div>
 
             <div className="flex flex-wrap gap-3">
-              {isUnauthorizedAccessError ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={signOutAndUseAnotherAccount}
-                    disabled={isLoggingOut}
-                    className="inline-flex h-10 items-center justify-center rounded-[13px] bg-[#1f6a58] px-4 text-sm font-bold text-white transition hover:bg-[#185746] disabled:cursor-not-allowed disabled:bg-[#8fb5aa]"
-                  >
-                    {isLoggingOut ? "Signing out..." : "Sign out and use another account"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={startFreshLogin}
-                    className="inline-flex h-10 items-center justify-center rounded-[13px] border border-[#d8e4df] bg-white px-4 text-sm font-bold text-[#06201c] transition hover:bg-[#f7fbf9]"
-                  >
-                    Try login again
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  onClick={startFreshLogin}
-                  className="inline-flex h-10 items-center justify-center rounded-[13px] bg-[#1f6a58] px-4 text-sm font-bold text-white transition hover:bg-[#185746]"
-                >
-                  Start fresh login
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={startFreshLogin}
+                className="inline-flex h-10 items-center justify-center rounded-[13px] bg-[#1f6a58] px-4 text-sm font-bold text-white transition hover:bg-[#185746]"
+              >
+                Start fresh login
+              </button>
             </div>
           </div>
         ) : (
           <div className="space-y-3">
             <h1 className="text-2xl font-bold text-[#1f6a58]">Signed in</h1>
-            <p className="text-sm text-[#52736a]">
-              Redirecting you to your Enterprise Owner dashboard...
-            </p>
+            <p className="text-sm text-[#52736a]">Redirecting you to your portal...</p>
           </div>
         )}
       </div>

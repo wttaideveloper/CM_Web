@@ -1,24 +1,10 @@
 "use client";
 
 import { useEffect, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import { useAuth } from "@/contexts/AuthContext";
-import type { AuthUser } from "@/services/auth.service";
-
-const ALLOWED_ADMIN_ROLES = new Set(["tenant_owner", "tenant_admin", "admin"]);
-
-function getTenantRole(authenticatedUser: AuthUser | null): string | null {
-  return authenticatedUser?.membership?.tenantRole ?? authenticatedUser?.roles?.tenantRole ?? null;
-}
-
-function isAllowedAdminRole(tenantRole: string | null) {
-  if (!tenantRole) {
-    return false;
-  }
-
-  return ALLOWED_ADMIN_ROLES.has(tenantRole);
-}
+import { canAccessAdminPath, resolveAdminLandingRoute } from "@/lib/admin-routing";
 
 function AdminLayoutLoading() {
   return (
@@ -27,7 +13,7 @@ function AdminLayoutLoading() {
         <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#dceae4] border-t-[#1f6a58]" />
         <div className="text-center">
           <h1 className="text-lg font-bold text-[#06201c]">Checking session...</h1>
-          <p className="mt-1 text-sm text-[#52736a]">Verifying your Enterprise Owner access.</p>
+          <p className="mt-1 text-sm text-[#52736a]">Verifying your access.</p>
         </div>
       </div>
     </main>
@@ -36,24 +22,39 @@ function AdminLayoutLoading() {
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { authenticatedUser, isAuthLoading, isAuthenticated, restoreSession } = useAuth();
-
-  const tenantRole = getTenantRole(authenticatedUser);
-  const hasAdminAccess = isAuthenticated && isAllowedAdminRole(tenantRole);
+  const tenantRole = authenticatedUser?.membership?.tenantRole ?? authenticatedUser?.roles?.tenantRole ?? null;
+  const routeAccessAllowed = canAccessAdminPath(pathname, tenantRole);
+  const resolvedDestinationRoute = isAuthenticated
+    ? routeAccessAllowed
+      ? pathname
+      : resolveAdminLandingRoute(tenantRole)
+    : "/auth/login";
 
   useEffect(() => {
     if (process.env.NODE_ENV === "development") {
-      console.log("[Admin guard] tenant role", tenantRole);
+      console.log("[Admin guard] route decision", {
+        authenticated: isAuthenticated,
+        tenantRole,
+        resolvedDestinationRoute,
+        routeAccessAllowed,
+      });
     }
 
     if (isAuthLoading) {
       return;
     }
 
-    if (!hasAdminAccess) {
+    if (!isAuthenticated) {
       router.replace("/auth/login");
+      return;
     }
-  }, [hasAdminAccess, isAuthLoading, router, tenantRole]);
+
+    if (!routeAccessAllowed) {
+      router.replace(resolvedDestinationRoute);
+    }
+  }, [isAuthLoading, isAuthenticated, pathname, resolvedDestinationRoute, routeAccessAllowed, router, tenantRole]);
 
   useEffect(() => {
     const handlePageShow = (event: PageTransitionEvent) => {
@@ -71,7 +72,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     };
   }, [restoreSession]);
 
-  if (isAuthLoading || !hasAdminAccess) {
+  if (isAuthLoading) {
+    return <AdminLayoutLoading />;
+  }
+
+  if (!isAuthenticated || !routeAccessAllowed) {
     return <AdminLayoutLoading />;
   }
 

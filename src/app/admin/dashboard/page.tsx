@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 
+import { useAuth } from "@/contexts/AuthContext";
 import AppShell from "@/components/layout/AppShell";
-import { CURRENT_ENTERPRISE } from "@/lib/current-enterprise";
 
 const quickActions = [
   "Create Product",
@@ -167,6 +167,9 @@ function ActivityIcon({ kind }: { kind: "package" | "service" | "grad" }) {
 }
 
 export default function AdminDashboardPage() {
+  const { authenticatedUser } = useAuth();
+  const tenantName =
+    authenticatedUser?.membership?.tenantName ?? authenticatedUser?.roles?.tenantName ?? "Your tenant";
   const stats = [
     { label: "My Products", value: "6", change: "+3" },
     { label: "My Services", value: "4", change: "+1" },
@@ -180,7 +183,7 @@ export default function AdminDashboardPage() {
         <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">
-              ENTERPRISE OWNER &middot; {CURRENT_ENTERPRISE.name.toUpperCase()}
+              ENTERPRISE OWNER &middot; {tenantName.toUpperCase()}
             </p>
             <h2 className="mt-1 text-2xl font-bold text-[#06201c]">
               My Business Dashboard
