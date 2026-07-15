@@ -19,7 +19,7 @@ type MarketplaceDemoTokenResponse = {
   user: MarketplaceDemoUser;
 };
 
-const DEMO_LOGIN_ENDPOINT = "/api/demo-auth/login";
+const DEMO_LOGIN_ENDPOINT = "/internal/demo-auth/login";
 const MARKETPLACE_CHAT_TOKEN_KEY = "marketplace_chat_token";
 const MARKETPLACE_CHAT_TOKEN_EXPIRES_AT_KEY = "marketplace_chat_token_expires_at";
 const MARKETPLACE_CHAT_USER_KEY = "marketplace_chat_user";
