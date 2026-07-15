@@ -1,5 +1,6 @@
 import { API_BASE_URL } from "@/lib/api";
-import { requestJson, toHeaders } from "@/services/api-client";
+import { toHeaders } from "@/services/api-client";
+import { requestMarketplaceJson } from "@/services/marketplace-request";
 
 export interface NotificationUnreadCounts {
   unread_messages: number;
@@ -77,7 +78,7 @@ export async function getUnreadCounts(): Promise<NotificationUnreadCounts> {
     console.log("[Notifications] unread-count request");
   }
 
-  const response = await requestJson<unknown>("/notifications/unread-count");
+  const response = await requestMarketplaceJson<unknown>("/notifications/unread-count");
   const counts = parseCountsResponse(response);
 
   if (!counts) {
@@ -106,7 +107,7 @@ export async function getNotificationHistory(
     page: String(page),
     page_size: String(pageSize),
   });
-  const response = await requestJson<unknown>(`/notifications/history?${searchParams.toString()}`);
+  const response = await requestMarketplaceJson<unknown>(`/notifications/history?${searchParams.toString()}`);
 
   if (!isRecord(response) || !Array.isArray(response.items) || !isRecord(response.pagination)) {
     throw new Error("Invalid notification history response");

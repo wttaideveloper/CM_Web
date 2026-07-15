@@ -1,5 +1,6 @@
 import { API_BASE_URL } from "@/lib/api";
 import { request, requestJson, toHeaders } from "@/services/api-client";
+import { requestMarketplaceJson } from "@/services/marketplace-request";
 
 type ProviderConversationsParams = {
   status?: string;
@@ -89,11 +90,11 @@ export function getProviderConversations(params?: ProviderConversationsParams) {
     searchParams.set("status", params.status);
   }
 
-  return requestJson<unknown>(`/conversations/provider?${searchParams.toString()}`);
+  return requestMarketplaceJson<unknown>(`/conversations/provider?${searchParams.toString()}`);
 }
 
 export function getArchivedConversations() {
-  return requestJson<unknown>(`/conversations/provider/archived`);
+  return requestMarketplaceJson<unknown>(`/conversations/provider/archived`);
 }
 
 export function searchConversations(params: SearchConversationsParams) {
@@ -129,7 +130,7 @@ export function searchMessages<T = unknown>(params: SearchMessagesParams) {
 }
 
 export function getOnlineUsers() {
-  return requestJson<unknown>(`/presence/online`);
+  return requestMarketplaceJson<unknown>(`/presence/online`);
 }
 
 export function getConversationById(conversationId: string) {
@@ -261,7 +262,7 @@ export function updateTypingStatus(conversationId: string, isTyping: boolean) {
 }
 
 export function updatePresenceStatus(status: PresenceStatus) {
-  return requestJson<unknown>(`/presence/status`, {
+  return requestMarketplaceJson<unknown>(`/presence/status`, {
     method: "PUT",
     body: JSON.stringify({
       status,
