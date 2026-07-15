@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import AppShell from "@/components/layout/AppShell";
+import { formatCurrency } from "@/lib/format-currency";
 import { getEnterprises } from "@/services/enterprise.service";
 import { getServices } from "@/services/service.service";
 import type { EnterpriseDto } from "@/types/enterprise.types";
@@ -95,7 +96,7 @@ function mapServiceToListItem(
     name: service.service_name || "Unnamed Service",
     description: service.service_description || "",
     category: service.service_category || "N/A",
-    price: `₹${Number.isFinite(service.service_price) ? service.service_price.toFixed(2) : "0.00"}`,
+    price: formatCurrency(service.service_price, service.currency),
     duration: `${Number.isFinite(service.duration) ? service.duration : 0} min`,
     availability: service.availability_status === false ? "Unavailable" : "Available",
     status: service.service_status === false ? "Inactive" : "Active",

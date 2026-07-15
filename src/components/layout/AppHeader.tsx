@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useAdminSocket } from "@/contexts/AdminSocketContext";
+import { clearMarketplaceDemoSession } from "@/services/marketplace-demo-auth.service";
 
 type OpenMenu = "notifications" | "settings" | "profile" | null;
 
@@ -173,7 +174,8 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
   const handleProfileItemClick = (item: string) => {
     if (item === "Logout") {
       closeMenu();
-      router.push("/auth/login");
+      clearMarketplaceDemoSession();
+      router.replace("/auth/login");
       return;
     }
 

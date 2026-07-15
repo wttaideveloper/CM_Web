@@ -84,16 +84,8 @@ export async function updateEnterprise(
   return response.json();
 }
 
-export async function deactivateEnterprise(id: string): Promise<string> {
-  const response = await fetch(`${getEnterprisesApiBase()}${id}`, {
-    method: "DELETE",
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to deactivate enterprise (${response.status} ${response.statusText}).`);
-  }
-
-  return response.text();
+export async function deactivateEnterprise(id: string): Promise<EnterpriseDto> {
+  return updateEnterprise(id, { status: false });
 }
 
 export async function activateEnterprise(id: string): Promise<EnterpriseDto> {

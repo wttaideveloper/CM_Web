@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import AppShell from "@/components/layout/AppShell";
+import { formatCurrency } from "@/lib/format-currency";
 import { getEnterpriseLocations } from "@/services/enterprise-location.service";
 import { createDynamicAttribute } from "@/services/attribute.service";
 import { getEnterprises } from "@/services/enterprise.service";
@@ -160,9 +161,10 @@ export function ProductCreatePage({ mode = "super-admin", redirectTo }: ProductC
     Boolean(productDescription.trim()) &&
     Boolean(productCategory.trim()) &&
     Number.isFinite(parsedReviewPrice);
-  const reviewProductPrice = productPrice.trim() && Number.isFinite(parsedReviewPrice)
-    ? `₹${parsedReviewPrice.toFixed(2)}`
-    : "Not provided";
+  const reviewProductPrice =
+    productPrice.trim() && Number.isFinite(parsedReviewPrice)
+      ? formatCurrency(parsedReviewPrice, currency)
+      : "Not provided";
   const reviewEnterpriseName =
     (isEnterpriseAdmin
       ? CURRENT_ENTERPRISE.name

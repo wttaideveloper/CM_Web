@@ -9,14 +9,11 @@ import { getDynamicAttributes } from "@/services/attribute.service";
 import { getEnterprises } from "@/services/enterprise.service";
 import { getLocationById } from "@/services/enterprise-location.service";
 import { activateService, deactivateService, getServiceById } from "@/services/service.service";
+import { formatCurrency } from "@/lib/format-currency";
 import type { DynamicAttributeDto } from "@/types/attribute.types";
 import type { EnterpriseDto } from "@/types/enterprise.types";
 import type { EnterpriseLocationDto } from "@/types/location.types";
 import type { ServiceDto } from "@/types/service.types";
-
-function formatPrice(price: number) {
-  return `₹${Number.isFinite(price) ? price.toFixed(2) : "0.00"}`;
-}
 
 function resolveEnterpriseName(enterprise: EnterpriseDto) {
   return (
@@ -345,7 +342,7 @@ export function ServiceDetailsPage({
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           <DetailRow label="Service Name" value={service.service_name || "N/A"} />
           <DetailRow label="Category" value={service.service_category || "N/A"} />
-          <DetailRow label="Price" value={formatPrice(service.service_price)} />
+          <DetailRow label="Price" value={formatCurrency(service.service_price, service.currency)} />
           <DetailRow label="Duration" value={`${service.duration || 0} min`} />
           <DetailRow label="Enterprise" value={enterpriseName} />
           <DetailRow label="Location" value={locationValue} />
@@ -362,7 +359,9 @@ export function ServiceDetailsPage({
           <DetailRow
             label="Package Price"
             value={
-              service.package_price !== undefined ? formatPrice(service.package_price) : "N/A"
+              service.package_price !== undefined
+                ? formatCurrency(service.package_price, service.currency)
+                : "N/A"
             }
           />
           <DetailRow label="Currency" value={service.currency || "N/A"} />

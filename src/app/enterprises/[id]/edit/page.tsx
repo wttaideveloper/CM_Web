@@ -6,7 +6,10 @@ import { useParams, useRouter } from "next/navigation";
 
 import AppShell from "@/components/layout/AppShell";
 import { getEnterpriseById, updateEnterprise } from "@/services/enterprise.service";
-import type { EnterpriseDto } from "@/types/enterprise.types";
+import {
+  normalizeEnterpriseStatusFlag,
+  type EnterpriseDto,
+} from "@/types/enterprise.types";
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return <span className="text-sm font-bold text-[#06201c]">{children}</span>;
@@ -155,7 +158,7 @@ export function EditEnterprisePage({
   const [businessImages, setBusinessImages] = useState("");
   const [brandColor, setBrandColor] = useState("");
   const [tagline, setTagline] = useState("");
-  const [status, setStatus] = useState("Active");
+  const [status, setStatus] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isNotFound, setIsNotFound] = useState(false);
@@ -175,6 +178,12 @@ export function EditEnterprisePage({
       setIsNotFound(false);
 
       const data = await getEnterpriseById(resolvedEnterpriseId);
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[Enterprise edit] GET status", {
+          enterprise_id: resolvedEnterpriseId,
+          status: data.status,
+        });
+      }
       setEnterprise(data);
       setEnterpriseName(formatText(data.business_legal_name || data.name));
       setTradingName(formatText(data.business_short_name));
@@ -208,7 +217,7 @@ export function EditEnterprisePage({
       setBusinessImages(formatText(data.business_images));
       setBrandColor(formatText(data.brand_color));
       setTagline(formatText(data.tagline));
-      setStatus(data.status === false ? "Inactive" : "Active");
+      setStatus(normalizeEnterpriseStatusFlag(data.status));
     } catch (fetchError) {
       const nextError =
         fetchError instanceof Error ? fetchError.message : "Unable to load enterprise.";
@@ -269,8 +278,16 @@ export function EditEnterprisePage({
       const combinedSecondaryPhone = trimmedSecondaryPhoneNumber
         ? combinePhone(secondaryPhoneCode, trimmedSecondaryPhoneNumber)
         : "";
+      const payloadStatus = status;
 
-      await updateEnterprise(resolvedEnterpriseId, {
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[Enterprise edit] submit status", {
+          enterprise_id: resolvedEnterpriseId,
+          selected_status: payloadStatus,
+        });
+      }
+
+      const updatedEnterprise = await updateEnterprise(resolvedEnterpriseId, {
         business_short_name: trimmedTradingName,
         business_legal_name: trimmedName,
         business_description: trimmedDescription,
@@ -296,8 +313,18 @@ export function EditEnterprisePage({
         ...(trimmedSuiteUnit ? { suite_unit: trimmedSuiteUnit } : {}),
         ...(trimmedBrandColor ? { brand_color: trimmedBrandColor } : {}),
         ...(trimmedTagline ? { tagline: trimmedTagline } : {}),
-        status: status !== "Inactive",
+        status: payloadStatus,
       });
+
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[Enterprise edit] update response status", {
+          enterprise_id: resolvedEnterpriseId,
+          status: updatedEnterprise.status,
+        });
+      }
+
+      setEnterprise(updatedEnterprise);
+      setStatus(normalizeEnterpriseStatusFlag(updatedEnterprise.status));
 
       router.push(resolvedSuccessRedirect);
     } catch (submitError) {
@@ -644,12 +671,12 @@ export function EditEnterprisePage({
             <label className="block md:col-span-2">
               <FieldLabel>Status</FieldLabel>
               <select
-                value={status}
-                onChange={(event) => setStatus(event.target.value)}
+                value={String(status)}
+                onChange={(event) => setStatus(event.target.value === "true")}
                 className={selectClass()}
               >
-                <option>Active</option>
-                <option>Inactive</option>
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
               </select>
             </label>
           </div>

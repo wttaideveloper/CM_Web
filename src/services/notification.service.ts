@@ -1,5 +1,4 @@
-import { API_BASE_URL } from "@/lib/api";
-import { requestJson, toHeaders } from "@/services/api-client";
+import { requestJson, requestResponse } from "@/services/api-client";
 
 export interface NotificationUnreadCounts {
   unread_messages: number;
@@ -142,10 +141,8 @@ export async function getNotificationHistory(
 }
 
 async function readNotificationResponse(path: string) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await requestResponse(path, {
     method: "PATCH",
-    cache: "no-store",
-    headers: toHeaders(undefined),
   });
 
   const body = await response.text().catch(() => "");

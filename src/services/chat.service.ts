@@ -1,5 +1,4 @@
-import { API_BASE_URL } from "@/lib/api";
-import { request, requestJson, toHeaders } from "@/services/api-client";
+import { request, requestJson, requestResponse } from "@/services/api-client";
 
 type ProviderConversationsParams = {
   status?: string;
@@ -167,10 +166,8 @@ export function markMessageRead(messageId: string) {
     });
   }
 
-  return fetch(`${API_BASE_URL}/socket-io/mark-read`, {
+  return requestResponse("/socket-io/mark-read", {
     method: "POST",
-    cache: "no-store",
-    headers: toHeaders(undefined),
     body: JSON.stringify({
       message_id: messageId,
     }),
@@ -270,13 +267,12 @@ export function updatePresenceStatus(status: PresenceStatus) {
 }
 
 export async function getUserLastSeen(userId: string) {
-  const response = await fetch(
-    `${API_BASE_URL}/presence/${encodeURIComponent(userId)}/last-seen`,
+  const response = await requestResponse(
+    `/presence/${encodeURIComponent(userId)}/last-seen`,
     {
       method: "GET",
-      cache: "no-store",
-      headers: toHeaders(undefined, false),
     },
+    false,
   );
 
   if (response.status === 404) {
@@ -361,14 +357,9 @@ function getFileNameFromContentDisposition(headerValue?: string | null) {
 export async function downloadAttachment(attachmentId: string): Promise<DownloadAttachmentResponse> {
   const attachmentPath = `/attachments/${encodeURIComponent(attachmentId)}?download=true`;
 
-  const response = await fetch(
-    `${API_BASE_URL}${attachmentPath}`,
-    {
-      method: "GET",
-      cache: "no-store",
-      headers: toHeaders({}, false),
-    },
-  );
+  const response = await requestResponse(attachmentPath, {
+    method: "GET",
+  }, false);
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");

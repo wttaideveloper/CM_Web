@@ -12,6 +12,7 @@ import {
   updateLocation,
 } from "@/services/enterprise-location.service";
 import { getEnterpriseById, getEnterprises } from "@/services/enterprise.service";
+import { formatCurrency } from "@/lib/format-currency";
 import { getProducts } from "@/services/product.service";
 import { getServices } from "@/services/service.service";
 import type { EnterpriseDto } from "@/types/enterprise.types";
@@ -116,10 +117,6 @@ function formatImageUrl(value: string | null | undefined) {
   return value.trim();
 }
 
-function formatPrice(price: number) {
-  return `₹${Number.isFinite(price) ? price.toFixed(2) : "0.00"}`;
-}
-
 function ProductCard({ product }: { product: ProductDto }) {
   const [hasImageError, setHasImageError] = useState(false);
   const imageSrc = product.product_images?.trim() || "";
@@ -174,7 +171,9 @@ function ProductCard({ product }: { product: ProductDto }) {
         </div>
 
         <div className="mt-4 flex items-center justify-between gap-3">
-          <p className="text-sm font-semibold text-[#06201c]">{formatPrice(product.product_price)}</p>
+          <p className="text-sm font-semibold text-[#06201c]">
+            {formatCurrency(product.product_price, product.currency)}
+          </p>
         </div>
       </div>
     </article>
@@ -213,7 +212,7 @@ function ServiceCard({ service }: { service: ServiceDto }) {
               </p>
             </div>
             <p className="whitespace-nowrap text-sm font-bold text-[#06201c]">
-              {formatPrice(service.service_price)}
+              {formatCurrency(service.service_price, service.currency)}
             </p>
           </div>
 

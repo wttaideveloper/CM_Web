@@ -27,6 +27,46 @@ export type EnterpriseDto = {
   description?: string;
 };
 
+export type EnterpriseStatusLabel = "Active" | "Inactive" | "Draft" | "Pending";
+
+export function normalizeEnterpriseStatus(status: unknown): EnterpriseStatusLabel {
+  if (status === true) {
+    return "Active";
+  }
+
+  if (status === false) {
+    return "Inactive";
+  }
+
+  if (typeof status !== "string") {
+    return "Inactive";
+  }
+
+  const normalized = status.trim().toLowerCase();
+
+  if (normalized === "active") {
+    return "Active";
+  }
+
+  if (normalized === "inactive" || normalized === "deactivated") {
+    return "Inactive";
+  }
+
+  if (normalized === "draft") {
+    return "Draft";
+  }
+
+  if (normalized === "pending") {
+    return "Pending";
+  }
+
+  return normalized.length > 0 ? (normalized.charAt(0).toUpperCase() + normalized.slice(1)) as EnterpriseStatusLabel : "Inactive";
+}
+
+export function normalizeEnterpriseStatusFlag(status: unknown): boolean {
+  return normalizeEnterpriseStatus(status) === "Active";
+}
+
 export type CreateEnterprisePayload = {
   business_short_name: string;
   business_legal_name: string;
@@ -49,6 +89,7 @@ export type CreateEnterprisePayload = {
   suite_unit?: string;
   brand_color?: string;
   tagline?: string;
+  status: "draft" | "active";
 };
 
 export type UpdateEnterprisePayload = Partial<{
@@ -85,5 +126,5 @@ export type EnterpriseListItem = {
   members: string;
   revenue: string;
   joined: string;
-  status: "Active" | "Inactive";
+  status: EnterpriseStatusLabel;
 };

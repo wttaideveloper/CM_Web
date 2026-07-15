@@ -37,6 +37,8 @@ const phoneCodeOptions = [
 
 const defaultPhoneCode = "+91";
 
+type EnterpriseCreateStatus = "draft" | "active";
+
 function phoneCodeClass() {
   return "h-[46px] w-[110px] shrink-0 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-2 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]";
 }
@@ -53,6 +55,81 @@ function combinePhone(code: string, number: string) {
   }
 
   return `${code} ${trimmedNumber}`;
+}
+
+function buildCreateEnterprisePayload({
+  enterpriseName,
+  tradingName,
+  description,
+  businessEmail,
+  businessPhone,
+  registeredAddress,
+  businessAddress,
+  communicationAddress,
+  logoUrl,
+  businessImages,
+  registrationNumber,
+  businessCategory,
+  websiteUrl,
+  yearFounded,
+  primaryContactName,
+  primaryContactTitle,
+  secondaryEmail,
+  secondaryPhone,
+  suiteUnit,
+  brandColor,
+  tagline,
+  status,
+  useRegisteredAddressForOtherAddresses,
+}: {
+  enterpriseName: string;
+  tradingName: string;
+  description: string;
+  businessEmail: string;
+  businessPhone: string;
+  registeredAddress: string;
+  businessAddress: string;
+  communicationAddress: string;
+  logoUrl: string;
+  businessImages: string;
+  registrationNumber?: string;
+  businessCategory?: string;
+  websiteUrl?: string;
+  yearFounded?: string;
+  primaryContactName?: string;
+  primaryContactTitle?: string;
+  secondaryEmail?: string;
+  secondaryPhone?: string;
+  suiteUnit?: string;
+  brandColor?: string;
+  tagline?: string;
+  status: EnterpriseCreateStatus;
+  useRegisteredAddressForOtherAddresses: boolean;
+}) {
+  return {
+    business_legal_name: enterpriseName,
+    business_short_name: tradingName,
+    business_description: description,
+    business_email: businessEmail,
+    business_phone: businessPhone,
+    registered_address: registeredAddress,
+    business_address: useRegisteredAddressForOtherAddresses ? registeredAddress : businessAddress,
+    communication_address: useRegisteredAddressForOtherAddresses ? registeredAddress : communicationAddress,
+    logo_url: logoUrl,
+    business_images: businessImages,
+    status,
+    ...(registrationNumber ? { registration_number: registrationNumber } : {}),
+    ...(businessCategory ? { business_category: businessCategory } : {}),
+    ...(websiteUrl ? { website_url: websiteUrl } : {}),
+    ...(yearFounded ? { year_founded: yearFounded } : {}),
+    ...(primaryContactName ? { primary_contact_name: primaryContactName } : {}),
+    ...(primaryContactTitle ? { primary_contact_title: primaryContactTitle } : {}),
+    ...(secondaryEmail ? { secondary_email: secondaryEmail } : {}),
+    ...(secondaryPhone ? { secondary_phone: secondaryPhone } : {}),
+    ...(suiteUnit ? { suite_unit: suiteUnit } : {}),
+    ...(brandColor ? { brand_color: brandColor } : {}),
+    ...(tagline ? { tagline: tagline } : {}),
+  };
 }
 
 function StepCircle({
@@ -139,7 +216,7 @@ export default function CreateEnterprisePage() {
     ? combinePhone(secondaryPhoneCode, secondaryPhoneNumber)
     : "";
 
-  async function handleSubmit() {
+  async function handleSubmit(status: EnterpriseCreateStatus) {
     const trimmedName = enterpriseName.trim();
     const trimmedTradingName = tradingName.trim();
     const trimmedRegistrationNumber = optionalText(registrationNumber);
@@ -196,33 +273,33 @@ export default function CreateEnterprisePage() {
         ? combinePhone(secondaryPhoneCode, trimmedSecondaryPhoneNumber)
         : "";
 
-      await createEnterprise({
-        business_legal_name: trimmedName,
-        business_short_name: trimmedTradingName,
-        business_description: trimmedDescription,
-        business_email: trimmedBusinessEmail,
-        business_phone: trimmedBusinessPhone,
-        registered_address: registeredAddress,
-        business_address: useRegisteredAddressForOtherAddresses
-          ? registeredAddress
-          : trimmedBusinessAddress,
-        communication_address: useRegisteredAddressForOtherAddresses
-          ? registeredAddress
-          : trimmedCommunicationAddress,
-        logo_url: logoUrl.trim(),
-        business_images: businessImages.trim(),
-        ...(trimmedRegistrationNumber ? { registration_number: trimmedRegistrationNumber } : {}),
-        ...(trimmedBusinessCategory ? { business_category: trimmedBusinessCategory } : {}),
-        ...(trimmedWebsiteUrl ? { website_url: trimmedWebsiteUrl } : {}),
-        ...(trimmedYearFounded ? { year_founded: trimmedYearFounded } : {}),
-        ...(trimmedPrimaryContactName ? { primary_contact_name: trimmedPrimaryContactName } : {}),
-        ...(trimmedPrimaryContactTitle ? { primary_contact_title: trimmedPrimaryContactTitle } : {}),
-        ...(trimmedSecondaryEmail ? { secondary_email: trimmedSecondaryEmail } : {}),
-        ...(trimmedSecondaryPhone ? { secondary_phone: trimmedSecondaryPhone } : {}),
-        ...(trimmedSuiteUnit ? { suite_unit: trimmedSuiteUnit } : {}),
-        ...(trimmedBrandColor ? { brand_color: trimmedBrandColor } : {}),
-        ...(trimmedTagline ? { tagline: trimmedTagline } : {}),
-      });
+      await createEnterprise(
+        buildCreateEnterprisePayload({
+          enterpriseName: trimmedName,
+          tradingName: trimmedTradingName,
+          description: trimmedDescription,
+          businessEmail: trimmedBusinessEmail,
+          businessPhone: trimmedBusinessPhone,
+          registeredAddress,
+          businessAddress: trimmedBusinessAddress,
+          communicationAddress: trimmedCommunicationAddress,
+          logoUrl: logoUrl.trim(),
+          businessImages: businessImages.trim(),
+          registrationNumber: trimmedRegistrationNumber,
+          businessCategory: trimmedBusinessCategory,
+          websiteUrl: trimmedWebsiteUrl,
+          yearFounded: trimmedYearFounded,
+          primaryContactName: trimmedPrimaryContactName,
+          primaryContactTitle: trimmedPrimaryContactTitle,
+          secondaryEmail: trimmedSecondaryEmail,
+          secondaryPhone: trimmedSecondaryPhone,
+          suiteUnit: trimmedSuiteUnit,
+          brandColor: trimmedBrandColor,
+          tagline: trimmedTagline,
+          status,
+          useRegisteredAddressForOtherAddresses,
+        }),
+      );
 
       router.push("/enterprises");
     } catch (submitError) {
@@ -723,7 +800,12 @@ export default function CreateEnterprisePage() {
         ) : null}
 
         <div className="mt-6 flex flex-col gap-3 border-t border-[#edf3f0] pt-5 sm:flex-row sm:items-center sm:justify-between">
-          <button className="h-12 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a]">
+          <button
+            type="button"
+            disabled={isSubmitting || !isLastStep}
+            onClick={() => void handleSubmit("draft")}
+            className="h-12 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a] disabled:cursor-not-allowed disabled:opacity-40"
+          >
             Save as Draft
           </button>
           <div className="flex flex-col gap-3 sm:flex-row">
@@ -739,7 +821,7 @@ export default function CreateEnterprisePage() {
               disabled={isSubmitting}
               onClick={() =>
                 isLastStep
-                  ? void handleSubmit()
+                  ? void handleSubmit("active")
                   : setCurrentStep((step) => Math.min(step + 1, steps.length - 1))
               }
               className="h-12 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-70"

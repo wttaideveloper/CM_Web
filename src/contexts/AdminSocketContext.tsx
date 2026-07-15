@@ -15,6 +15,12 @@ import { usePathname } from "next/navigation";
 
 import { createChatSocket, type ChatSocket } from "@/services/chat-socket.service";
 import {
+  clearMarketplaceDemoSession,
+  getMarketplaceChatToken,
+  getMarketplaceDemoSession,
+  redirectToMarketplaceLogin,
+} from "@/services/marketplace-demo-auth.service";
+import {
   getNotificationHistory,
   getUnreadCounts,
   markAllNotificationsRead as apiMarkAllNotificationsRead,
@@ -311,19 +317,76 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function AdminSocketProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const token = process.env.NEXT_PUBLIC_DEV_CHAT_TOKEN;
-  const shouldConnect = Boolean(token) && pathname !== "/" && !pathname.startsWith("/auth");
+  // Temporary demo/staging authentication using a shared seeded Marketplace provider account.
+  // Not production multi-user authentication.
+  const shouldConnect =
+    Boolean(getMarketplaceDemoSession()) && pathname !== "/" && !pathname.startsWith("/auth");
   const socketRef = useRef<ChatSocket | null>(null);
+  const socketTokenRef = useRef<string | null>(null);
   const [socket, setSocket] = useState<ChatSocket | null>(null);
   const [status, setStatus] = useState<AdminSocketStatus>("disconnected");
   const [notificationState, setNotificationState] = useState<NotificationStateSnapshot>(
     cachedNotificationState,
   );
+  const [runtimeToken, setRuntimeToken] = useState<string | null>(null);
   const [latestConversationUpdate, setLatestConversationUpdate] = useState<unknown | null>(null);
   const notificationReconcileTimerRef = useRef<number | null>(null);
   const notificationReconcileInFlightRef = useRef(false);
   const notificationReconcileQueuedRef = useRef(false);
   const conversationNotificationReadGuardsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!pathname.startsWith("/admin") || pathname.startsWith("/auth")) {
+      return;
+    }
+
+    if (getMarketplaceDemoSession()) {
+      return;
+    }
+
+    clearMarketplaceDemoSession();
+    redirectToMarketplaceLogin();
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!shouldConnect) {
+      setRuntimeToken(null);
+      return;
+    }
+
+    let active = true;
+
+    const syncRuntimeToken = async () => {
+      try {
+        const token = await getMarketplaceChatToken();
+
+        if (!active) {
+          return;
+        }
+
+        setRuntimeToken((current) => (current === token ? current : token));
+      } catch {
+        if (!active) {
+          return;
+        }
+
+        clearMarketplaceDemoSession();
+        redirectToMarketplaceLogin();
+        setRuntimeToken(null);
+      }
+    };
+
+    void syncRuntimeToken();
+
+    const intervalId = window.setInterval(() => {
+      void syncRuntimeToken();
+    }, 60000);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [shouldConnect]);
 
   useEffect(() => {
     cachedNotificationState = notificationState;
@@ -725,7 +788,7 @@ export function AdminSocketProvider({ children }: { children: ReactNode }) {
   }, [shouldConnect]);
 
   useEffect(() => {
-    if (!shouldConnect) {
+    if (!shouldConnect || !runtimeToken) {
       const existingSocket = socketRef.current;
 
       if (existingSocket) {
@@ -735,16 +798,25 @@ export function AdminSocketProvider({ children }: { children: ReactNode }) {
         setSocket(null);
       }
 
+      socketTokenRef.current = null;
       setStatus("disconnected");
       return;
     }
 
     let active = true;
-    let nextSocket = socketRef.current;
+    const existingSocket = socketRef.current;
+    const shouldRecreateSocket = !existingSocket || socketTokenRef.current !== runtimeToken;
+    let nextSocket = existingSocket;
 
-    if (!nextSocket) {
-      nextSocket = createChatSocket(token);
+    if (shouldRecreateSocket) {
+      if (existingSocket) {
+        existingSocket.removeAllListeners();
+        existingSocket.disconnect();
+      }
+
+      nextSocket = createChatSocket(runtimeToken);
       socketRef.current = nextSocket;
+      socketTokenRef.current = runtimeToken;
       setSocket(nextSocket);
       if (process.env.NODE_ENV === "development") {
         console.log("[Admin socket] instance created", {
@@ -752,9 +824,15 @@ export function AdminSocketProvider({ children }: { children: ReactNode }) {
           socketId: nextSocket.id,
         });
       }
-    } else {
+    } else if (nextSocket) {
       nextSocket.auth = {
-        token,
+        token: runtimeToken,
+      };
+    }
+
+    if (!nextSocket) {
+      return () => {
+        active = false;
       };
     }
 
@@ -883,8 +961,9 @@ export function AdminSocketProvider({ children }: { children: ReactNode }) {
       nextSocket.off("notification", handleNotification);
       nextSocket.off("conversation_updated", handleConversationUpdated);
       socketRef.current = null;
+      socketTokenRef.current = null;
     };
-  }, [handleConversationUpdated, handleNotification, queueNotificationReconciliation, shouldConnect, token]);
+  }, [handleConversationUpdated, handleNotification, queueNotificationReconciliation, runtimeToken, shouldConnect]);
 
   const value = useMemo<AdminSocketContextValue>(
     () => ({

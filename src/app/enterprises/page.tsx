@@ -10,7 +10,11 @@ import {
   deactivateEnterprise,
   getEnterprises,
 } from "@/services/enterprise.service";
-import type { EnterpriseDto, EnterpriseListItem } from "@/types/enterprise.types";
+import {
+  normalizeEnterpriseStatus,
+  type EnterpriseDto,
+  type EnterpriseListItem,
+} from "@/types/enterprise.types";
 
 const filters = ["Category", "Status", "Location"];
 
@@ -25,6 +29,10 @@ function statusClass(status: string) {
 
   if (status === "Pending") {
     return "bg-[#fff7e5] text-[#b7791f]";
+  }
+
+  if (status === "Draft") {
+    return "bg-[#f7f0ff] text-[#7a4b00]";
   }
 
   return "bg-[#f1f4f3] text-[#6b7f79]";
@@ -113,7 +121,7 @@ function mapEnterpriseToListItem(enterprise: EnterpriseDto): EnterpriseListItemW
     members: "\u2014",
     revenue: "\u2014",
     joined: "\u2014",
-    status: enterprise.status === false ? "Inactive" : "Active",
+    status: normalizeEnterpriseStatus(enterprise.status),
     created_at: enterprise.created_at,
   };
 }
@@ -161,6 +169,14 @@ export default function EnterprisesPage() {
       setError(null);
 
       const data = await getEnterprises();
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[Enterprises] list response status snapshot", {
+          total: data.length,
+          inactive: data.filter((enterprise) => normalizeEnterpriseStatus(enterprise.status) === "Inactive").length,
+          draft: data.filter((enterprise) => normalizeEnterpriseStatus(enterprise.status) === "Draft").length,
+          pending: data.filter((enterprise) => normalizeEnterpriseStatus(enterprise.status) === "Pending").length,
+        });
+      }
       setEnterprises(sortEnterprisesByCreatedAt(data.map(mapEnterpriseToListItem)));
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Unable to load enterprises.");
@@ -178,8 +194,12 @@ export default function EnterprisesPage() {
     }
 
     try {
-      await deactivateEnterprise(id);
-      setEnterprises((current) => current.filter((enterprise) => enterprise.id !== id));
+      const updatedEnterprise = await deactivateEnterprise(id);
+      setEnterprises((current) =>
+        current.map((enterprise) =>
+          enterprise.id === id ? { ...enterprise, status: normalizeEnterpriseStatus(updatedEnterprise.status) } : enterprise,
+        ),
+      );
       setOpenActionsId(null);
     } catch (deactivateError) {
       window.alert(
@@ -198,10 +218,10 @@ export default function EnterprisesPage() {
     }
 
     try {
-      await activateEnterprise(id);
+      const updatedEnterprise = await activateEnterprise(id);
       setEnterprises((current) =>
         current.map((enterprise) =>
-          enterprise.id === id ? { ...enterprise, status: "Active" } : enterprise,
+          enterprise.id === id ? { ...enterprise, status: normalizeEnterpriseStatus(updatedEnterprise.status) } : enterprise,
         ),
       );
       setOpenActionsId(null);

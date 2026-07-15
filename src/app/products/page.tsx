@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import AppShell from "@/components/layout/AppShell";
+import { formatCurrency } from "@/lib/format-currency";
 import { getEnterprises } from "@/services/enterprise.service";
 import { getProducts } from "@/services/product.service";
 import type { EnterpriseDto } from "@/types/enterprise.types";
@@ -134,7 +135,7 @@ function mapProductToListItem(
     name: product.product_name || "Unnamed Product",
     description: product.product_description || "",
     category: product.product_category || "N/A",
-    price: `₹${Number.isFinite(product.product_price) ? product.product_price.toFixed(2) : "0.00"}`,
+    price: formatCurrency(product.product_price, product.currency),
     image: product.product_images || "",
     status,
     enterprise: enterpriseNameMap[product.enterprise_id] || "N/A",

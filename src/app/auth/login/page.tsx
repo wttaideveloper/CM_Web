@@ -1,11 +1,16 @@
- "use client";
+"use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { loginMarketplaceDemoUser } from "@/services/marketplace-demo-auth.service";
 
 export default function LoginPage() {
   const router = useRouter();
   const [loginType, setLoginType] = useState<"super-admin" | "admin">("super-admin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const isSuperAdmin = loginType === "super-admin";
   const emailPlaceholder = isSuperAdmin ? "admin@invigoratehealth.com" : "owner@yourcompany.com";
   const subtitle = isSuperAdmin
@@ -15,9 +20,57 @@ export default function LoginPage() {
     ? "Sign In as Super Admin"
     : "Sign In as Enterprise Owner";
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  // TEMPORARY HARDCODED LOGIN GATE — replace with backend authentication.
+  useEffect(() => {
+    setEmail("");
+    setPassword("");
+    setLoginError(null);
+  }, [loginType]);
+
+  const trimmedEmail = email.trim().toLowerCase();
+  const canSubmit = Boolean(trimmedEmail) && Boolean(password) && !isSubmitting;
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    router.push(loginType === "super-admin" ? "/dashboard" : "/admin/dashboard");
+
+    if (isSubmitting) {
+      return;
+    }
+
+    setLoginError(null);
+    setIsSubmitting(true);
+
+    try {
+      const demoCredentialsError = "Please enter correct demo credentials.";
+
+      if (!trimmedEmail || !password) {
+        setLoginError(demoCredentialsError);
+        return;
+      }
+
+      if (loginType === "super-admin") {
+        if (trimmedEmail !== "superwis@gmail.com" || password !== "superpass") {
+          setLoginError(demoCredentialsError);
+          return;
+        }
+
+        router.push("/dashboard");
+        return;
+      }
+
+      if (trimmedEmail !== "enterprise@gmail.com" || password !== "enterpass") {
+        setLoginError(demoCredentialsError);
+        return;
+      }
+
+      // Enterprise Owner must still obtain the Marketplace demo token for chat and socket features.
+      await loginMarketplaceDemoUser();
+      router.push("/admin/messages");
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : "Marketplace demo login failed.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -191,11 +244,16 @@ export default function LoginPage() {
               <p className="mt-1.5 text-[14px] text-[#55746b]">{subtitle}</p>
             </div>
 
-            <form onSubmit={handleSubmit} className="mt-6 space-y-3.5">
+            <form onSubmit={(event) => void handleSubmit(event)} className="mt-6 space-y-3.5">
               <label className="block">
                 <span className="text-[12px] font-bold text-[#051915]">Email Address</span>
                 <input
                   type="email"
+                  value={email}
+                  onChange={(event) => {
+                    setEmail(event.target.value);
+                    setLoginError(null);
+                  }}
                   placeholder={emailPlaceholder}
                   className="mt-1.5 h-10 w-full rounded-[13px] border border-[#c9ddd7] bg-[#f1f7f4] px-3.5 text-[14px] text-[#173b34] outline-none transition placeholder:text-[#8aa19a] focus:border-[#226b58] focus:ring-4 focus:ring-[#226b58]/10"
                 />
@@ -211,6 +269,11 @@ export default function LoginPage() {
                 <span className="relative mt-2 block">
                   <input
                     type="password"
+                    value={password}
+                    onChange={(event) => {
+                      setPassword(event.target.value);
+                      setLoginError(null);
+                    }}
                     placeholder="Enter your password"
                     className="h-10 w-full rounded-[13px] border border-[#c9ddd7] bg-[#f1f7f4] px-3.5 pr-10 text-[14px] text-[#173b34] outline-none transition placeholder:text-[#8aa19a] focus:border-[#226b58] focus:ring-4 focus:ring-[#226b58]/10"
                   />
@@ -242,11 +305,16 @@ export default function LoginPage() {
 
               <button
                 type="submit"
+                disabled={!canSubmit}
                 className="h-10 w-full rounded-[13px] bg-[#1f6a58] text-[14px] font-bold text-white shadow-[0_3px_6px_rgba(0,0,0,0.14)] transition hover:bg-[#185746] focus:outline-none focus:ring-4 focus:ring-[#226b58]/20"
               >
-                {buttonLabel}
+                {isSubmitting ? "Signing in..." : buttonLabel}
               </button>
             </form>
+
+            {loginError ? (
+              <p className="mt-3 text-sm font-medium text-[#b42318]">{loginError}</p>
+            ) : null}
 
             <div className="mt-5">
               {isSuperAdmin ? (

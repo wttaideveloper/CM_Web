@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import AppShell from "@/components/layout/AppShell";
+import { formatCurrency } from "@/lib/format-currency";
 import { getEnterpriseLocations } from "@/services/enterprise-location.service";
 import { createDynamicAttribute } from "@/services/attribute.service";
 import { getEnterprises } from "@/services/enterprise.service";
@@ -906,7 +907,7 @@ export function ServiceCreatePage({ mode = "super-admin", redirectTo }: ServiceC
                   <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Price</p>
                   <p className="mt-1 text-sm font-semibold text-[#06201c]">
                     {isServicePriceValid
-                      ? `₹${parsedServicePrice.toFixed(2)}`
+                      ? formatCurrency(parsedServicePrice, currency)
                       : "Not provided"}
                   </p>
                 </div>
