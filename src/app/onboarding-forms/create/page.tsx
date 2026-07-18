@@ -615,7 +615,6 @@ function FieldControlPreview({ field }: { field: FormField }) {
             {field.label}
             {field.required ? <span className="ml-1 text-[#b42318]">*</span> : null}
           </p>
-          <p className="mt-1 text-xs text-[#52736a]">Key: {field.field_key}</p>
         </div>
         {!field.visible ? (
           <span className="rounded-full bg-[#f1f4f3] px-2.5 py-1 text-[11px] font-bold text-[#6b7f79]">
@@ -697,6 +696,7 @@ export default function OnboardingFormCreatePage() {
   const [isFieldEditorOpen, setIsFieldEditorOpen] = useState(false);
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
   const [fieldDraft, setFieldDraft] = useState<FieldDraft>(() => createFieldDraft());
+  const [quickAddOptionsError, setQuickAddOptionsError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [savedFormId, setSavedFormId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -719,6 +719,15 @@ export default function OnboardingFormCreatePage() {
 
     return undefined;
   }, [notice]);
+
+  useEffect(() => {
+    if (quickAddOptionsError) {
+      const timer = window.setTimeout(() => setQuickAddOptionsError(null), 2200);
+      return () => window.clearTimeout(timer);
+    }
+
+    return undefined;
+  }, [quickAddOptionsError]);
 
   useEffect(() => {
     if (form.sections.length > 0 && !form.sections.some((section) => section.id === activeSectionId)) {
@@ -941,9 +950,15 @@ export default function OnboardingFormCreatePage() {
 
     const trimmedLabel = fieldDraft.label.trim();
     const trimmedFieldKey = fieldDraft.field_key.trim();
+    const parsedOptions = supportsOptions(fieldDraft.field_type) ? parseOptions(fieldDraft.optionsText) : [];
 
     if (!trimmedLabel || !trimmedFieldKey) {
       setNotice("Label and Field Key are required.");
+      return;
+    }
+
+    if (!editingFieldId && supportsOptions(fieldDraft.field_type) && parsedOptions.length < 2) {
+      setQuickAddOptionsError("Please enter at least 2 choices.");
       return;
     }
 
@@ -965,7 +980,7 @@ export default function OnboardingFormCreatePage() {
           ? activeSection.fields.find((field) => field.id === editingFieldId)?.locked ?? false
           : false,
       visible: fieldDraft.visible,
-      options: supportsOptions(fieldDraft.field_type) ? parseOptions(fieldDraft.optionsText) : [],
+      options: parsedOptions,
     };
 
     setForm((current) => ({
@@ -989,6 +1004,7 @@ export default function OnboardingFormCreatePage() {
     setIsFieldEditorOpen(false);
     setEditingFieldId(null);
     setFieldDraft(createFieldDraft());
+    setQuickAddOptionsError(null);
   }
 
   function persistDraftLocally(snapshot: FormSchema) {
@@ -1464,20 +1480,6 @@ export default function OnboardingFormCreatePage() {
 
                   <label className="block">
                     <span className="mb-1.5 inline-block text-[11px] font-bold uppercase tracking-[0.14em] text-[#7f9d94]">
-                      Field Key
-                    </span>
-                    <input
-                      type="text"
-                      value={fieldDraft.field_key}
-                      onChange={(event) =>
-                        setFieldDraft((current) => ({ ...current, field_key: event.target.value }))
-                      }
-                      className="h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
-                    />
-                  </label>
-
-                  <label className="block">
-                    <span className="mb-1.5 inline-block text-[11px] font-bold uppercase tracking-[0.14em] text-[#7f9d94]">
                       Field Type
                     </span>
                     <select
@@ -1719,23 +1721,54 @@ export default function OnboardingFormCreatePage() {
 
                           {isSelected && isFieldEditorOpen && !editingFieldId ? (
                             <div className="flex flex-col gap-2 rounded-2xl border border-dashed border-[#b7d1c5] bg-[#fcfefd] px-4 py-3 sm:flex-row sm:items-center">
-                              <input
-                                type="text"
-                                value={fieldDraft.label}
-                                onChange={(event) =>
-                                  setFieldDraft((current) => ({
-                                    ...current,
-                                    label: event.target.value,
-                                    field_key:
-                                      current.field_key.trim().length > 0 &&
-                                      current.field_key !== slugifyFieldKey(current.label)
-                                        ? current.field_key
-                                        : createUniqueFieldKey(event.target.value, form.sections),
-                                  }))
-                                }
-                                placeholder="Enter field label..."
-                                className="h-10 flex-1 rounded-xl border border-[#d7e5df] bg-white px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
-                              />
+                              <div className="flex-1 space-y-2">
+                                <input
+                                  type="text"
+                                  value={fieldDraft.label}
+                                  onChange={(event) =>
+                                    setFieldDraft((current) => ({
+                                      ...current,
+                                      label: event.target.value,
+                                      field_key:
+                                        current.field_key.trim().length > 0 &&
+                                        current.field_key !== slugifyFieldKey(current.label)
+                                          ? current.field_key
+                                          : createUniqueFieldKey(event.target.value, form.sections),
+                                    }))
+                                  }
+                                  placeholder="Enter field label..."
+                                  className="h-10 w-full rounded-xl border border-[#d7e5df] bg-white px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
+                                />
+                                {supportsOptions(fieldDraft.field_type) ? (
+                                  <label className="block">
+                                    <span className="mb-1 inline-block text-xs font-semibold text-[#52736a]">
+                                      Choices
+                                    </span>
+                                    <input
+                                      type="text"
+                                      value={fieldDraft.optionsText}
+                                      onChange={(event) => {
+                                        setFieldDraft((current) => ({
+                                          ...current,
+                                          optionsText: event.target.value,
+                                        }));
+                                        setQuickAddOptionsError(null);
+                                      }}
+                                      placeholder="Cardiology, Neurology, Pediatrics"
+                                      className="h-10 w-full rounded-xl border border-[#d7e5df] bg-white px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
+                                    />
+                                    {quickAddOptionsError ? (
+                                      <p className="mt-1 text-xs font-medium text-[#b42318]">
+                                        {quickAddOptionsError}
+                                      </p>
+                                    ) : (
+                                      <p className="mt-1 text-xs text-[#7f9d94]">
+                                        Separate choices with commas.
+                                      </p>
+                                    )}
+                                  </label>
+                                ) : null}
+                              </div>
                               <div className="flex items-center gap-2">
                                 <button
                                   type="button"
@@ -1754,6 +1787,7 @@ export default function OnboardingFormCreatePage() {
                                     setIsFieldEditorOpen(false);
                                     setEditingFieldId(null);
                                     setFieldDraft(createFieldDraft());
+                                    setQuickAddOptionsError(null);
                                   }}
                                   className="rounded-full px-3 py-2 text-xs font-semibold text-[#52736a]"
                                 >

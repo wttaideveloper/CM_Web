@@ -69,6 +69,8 @@ const cancellationPolicyOptions = [
   { value: "No refund", label: "Strict - no refund" },
 ];
 
+const serviceDurationOptions = ["30", "60"] as const;
+
 function resolveOptionValue(value: string, options: { value: string; label: string }[]) {
   const normalized = value.trim().toLowerCase();
   const match = options.find(
@@ -305,6 +307,19 @@ export function ServiceCreatePage({ mode = "super-admin", redirectTo }: ServiceC
     void fetchLocations(enterpriseId.trim());
   }, [enterpriseId]);
 
+  useEffect(() => {
+    if (!serviceDurationOptions.includes(duration as (typeof serviceDurationOptions)[number])) {
+      return;
+    }
+
+    setWeekdays((current) =>
+      current.map((day) => ({
+        ...day,
+        slotLength: duration,
+      })),
+    );
+  }, [duration]);
+
   async function handleCreate() {
     const trimmedEnterpriseId = enterpriseId.trim();
     const trimmedServiceName = serviceName.trim();
@@ -533,13 +548,18 @@ export function ServiceCreatePage({ mode = "super-admin", redirectTo }: ServiceC
               </label>
               <label className="block">
                 <FieldLabel>Duration (minutes)*</FieldLabel>
-                <input
-                  type="text"
-                  placeholder="30"
+                <select
+                  className={selectClass()}
                   value={duration}
                   onChange={(event) => setDuration(event.target.value)}
-                  className={inputClass()}
-                />
+                >
+                  <option value="">Select duration</option>
+                  {serviceDurationOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="block">
                 <FieldLabel>Max Participants</FieldLabel>
@@ -601,6 +621,23 @@ export function ServiceCreatePage({ mode = "super-admin", redirectTo }: ServiceC
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <label className="block">
+                <FieldLabel>Currency</FieldLabel>
+                <select
+                  className={selectClass()}
+                  value={currency}
+                  onChange={(event) =>
+                    setCurrency(resolveOptionValue(event.target.value, currencyOptions))
+                  }
+                >
+                  <option value="">Select currency</option>
+                  {currencyOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
                 <FieldLabel>Session Price*</FieldLabel>
                 <input
                   type="text"
@@ -619,23 +656,6 @@ export function ServiceCreatePage({ mode = "super-admin", redirectTo }: ServiceC
                   onChange={(event) => setPackagePrice(event.target.value)}
                   className={inputClass()}
                 />
-              </label>
-              <label className="block">
-                <FieldLabel>Currency</FieldLabel>
-                <select
-                  className={selectClass()}
-                  value={currency}
-                  onChange={(event) =>
-                    setCurrency(resolveOptionValue(event.target.value, currencyOptions))
-                  }
-                >
-                  <option value="">Select currency</option>
-                  {currencyOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
               </label>
               <label className="block">
                 <FieldLabel>Cancellation Policy</FieldLabel>
@@ -744,7 +764,7 @@ export function ServiceCreatePage({ mode = "super-admin", redirectTo }: ServiceC
                           )
                         }
                       >
-                        {["30", "45", "60", "90"].map((option) => (
+                        {serviceDurationOptions.map((option) => (
                           <option key={option} value={option}>
                             {option} min
                           </option>

@@ -1,12 +1,129 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { City, Country, State } from "country-state-city";
 
 import AppShell from "@/components/layout/AppShell";
 import { createEnterprise } from "@/services/enterprise.service";
 
 const steps = ["Business Info", "Contact", "Address", "Branding", "Review"];
+const countryOptions = Country.getAllCountries().sort((left, right) =>
+  left.name.localeCompare(right.name),
+);
+
+type EnterpriseFieldKey =
+  | "enterpriseName"
+  | "tradingName"
+  | "registrationNumber"
+  | "businessCategory"
+  | "websiteUrl"
+  | "yearFounded"
+  | "description"
+  | "primaryContactName"
+  | "primaryContactTitle"
+  | "businessEmail"
+  | "businessPhoneNumber"
+  | "secondaryEmail"
+  | "secondaryPhoneNumber"
+  | "streetAddress"
+  | "suiteUnit"
+  | "country"
+  | "stateProvince"
+  | "city"
+  | "postalCode"
+  | "businessAddress"
+  | "communicationAddress"
+  | "logoUrl"
+  | "businessImages"
+  | "brandColor"
+  | "tagline";
+
+const backendFieldToEnterpriseFieldKey: Record<string, EnterpriseFieldKey> = {
+  business_legal_name: "enterpriseName",
+  business_short_name: "tradingName",
+  registration_number: "registrationNumber",
+  business_category: "businessCategory",
+  website_url: "websiteUrl",
+  year_founded: "yearFounded",
+  business_description: "description",
+  business_email: "businessEmail",
+  business_phone: "businessPhoneNumber",
+  primary_contact_name: "primaryContactName",
+  primary_contact_title: "primaryContactTitle",
+  secondary_email: "secondaryEmail",
+  secondary_phone: "secondaryPhoneNumber",
+  registered_address: "streetAddress",
+  street_address: "streetAddress",
+  suite_unit: "suiteUnit",
+  country: "country",
+  state: "stateProvince",
+  state_province: "stateProvince",
+  city: "city",
+  postal_code: "postalCode",
+  business_address: "businessAddress",
+  communication_address: "communicationAddress",
+  logo_url: "logoUrl",
+  business_images: "businessImages",
+  brand_color: "brandColor",
+  tagline: "tagline",
+};
+
+const enterpriseFieldLabels: Record<EnterpriseFieldKey, string> = {
+  enterpriseName: "Enterprise Name",
+  tradingName: "Trading / DBA Name",
+  registrationNumber: "Registration Number",
+  businessCategory: "Business Category",
+  websiteUrl: "Website URL",
+  yearFounded: "Year Founded",
+  description: "Description",
+  primaryContactName: "Primary Contact Name",
+  primaryContactTitle: "Job Title",
+  businessEmail: "Email Address",
+  businessPhoneNumber: "Phone Number",
+  secondaryEmail: "Secondary Email",
+  secondaryPhoneNumber: "Secondary Phone",
+  streetAddress: "Street Address",
+  suiteUnit: "Suite / Unit",
+  country: "Country",
+  stateProvince: "State / Province",
+  city: "City",
+  postalCode: "Postal Code",
+  businessAddress: "Business Address",
+  communicationAddress: "Communication Address",
+  logoUrl: "Logo URL",
+  businessImages: "Banner Image URL",
+  brandColor: "Brand Color",
+  tagline: "Tagline",
+};
+
+const enterpriseFieldSteps: Record<EnterpriseFieldKey, number> = {
+  enterpriseName: 0,
+  tradingName: 0,
+  registrationNumber: 0,
+  businessCategory: 0,
+  websiteUrl: 0,
+  yearFounded: 0,
+  description: 0,
+  primaryContactName: 1,
+  primaryContactTitle: 1,
+  businessEmail: 1,
+  businessPhoneNumber: 1,
+  secondaryEmail: 1,
+  secondaryPhoneNumber: 1,
+  streetAddress: 2,
+  suiteUnit: 2,
+  country: 2,
+  stateProvince: 2,
+  city: 2,
+  postalCode: 2,
+  businessAddress: 2,
+  communicationAddress: 2,
+  logoUrl: 3,
+  businessImages: 3,
+  brandColor: 3,
+  tagline: 3,
+};
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return <span className="text-sm font-bold text-[#06201c]">{children}</span>;
@@ -23,6 +140,50 @@ function selectClass() {
 function optionalText(value: string) {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function getStateOptions(countryCode: string) {
+  return State.getStatesOfCountry(countryCode).sort((left, right) =>
+    left.name.localeCompare(right.name),
+  );
+}
+
+function getCityOptions(countryCode: string, stateCode: string) {
+  return City.getCitiesOfState(countryCode, stateCode).sort((left, right) =>
+    left.name.localeCompare(right.name),
+  );
+}
+
+function normalizeEnterpriseErrorMessage(fieldKey: EnterpriseFieldKey, message: string) {
+  const trimmed = message.trim();
+
+  if (!trimmed) {
+    return `Please check ${enterpriseFieldLabels[fieldKey]}.`;
+  }
+
+  return `${enterpriseFieldLabels[fieldKey]}: ${trimmed}`;
+}
+
+function getFirstEnterpriseValidationError(
+  fieldErrors: Record<string, string[]> | undefined,
+): { fieldKey: EnterpriseFieldKey; message: string } | null {
+  if (!fieldErrors) {
+    return null;
+  }
+
+  for (const [backendField, messages] of Object.entries(fieldErrors)) {
+    const fieldKey = backendFieldToEnterpriseFieldKey[backendField];
+    const message = messages.find((item) => item.trim())?.trim();
+
+    if (fieldKey && message) {
+      return {
+        fieldKey,
+        message: normalizeEnterpriseErrorMessage(fieldKey, message),
+      };
+    }
+  }
+
+  return null;
 }
 
 const phoneCodeOptions = [
@@ -181,6 +342,7 @@ function StepCircle({
 
 export default function CreateEnterprisePage() {
   const router = useRouter();
+  const fieldRefs = useRef<Partial<Record<EnterpriseFieldKey, HTMLElement | null>>>({});
   const [currentStep, setCurrentStep] = useState(0);
   const [enterpriseName, setEnterpriseName] = useState("");
   const [tradingName, setTradingName] = useState("");
@@ -201,7 +363,9 @@ export default function CreateEnterprisePage() {
   const [city, setCity] = useState("");
   const [stateProvince, setStateProvince] = useState("");
   const [postalCode, setPostalCode] = useState("");
-  const [country, setCountry] = useState("United States");
+  const [country, setCountry] = useState("");
+  const [selectedCountryCode, setSelectedCountryCode] = useState("");
+  const [selectedStateCode, setSelectedStateCode] = useState("");
   const [useRegisteredAddressForOtherAddresses, setUseRegisteredAddressForOtherAddresses] =
     useState(true);
   const [suiteUnit, setSuiteUnit] = useState("");
@@ -212,6 +376,7 @@ export default function CreateEnterprisePage() {
   const [logoUrl, setLogoUrl] = useState("");
   const [businessImages, setBusinessImages] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [pendingFocusField, setPendingFocusField] = useState<EnterpriseFieldKey | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isFirstStep = currentStep === 0;
   const isLastStep = currentStep === steps.length - 1;
@@ -219,6 +384,61 @@ export default function CreateEnterprisePage() {
   const reviewSecondaryPhone = secondaryPhoneNumber.trim()
     ? combinePhone(secondaryPhoneCode, secondaryPhoneNumber)
     : "";
+  const cityOptions = selectedCountryCode && selectedStateCode
+    ? getCityOptions(selectedCountryCode, selectedStateCode)
+    : [];
+
+  useEffect(() => {
+    if (!pendingFocusField) {
+      return;
+    }
+
+    const targetStep = enterpriseFieldSteps[pendingFocusField];
+    if (currentStep !== targetStep) {
+      return;
+    }
+
+    const target = fieldRefs.current[pendingFocusField];
+    if (!target) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      target.focus();
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      setPendingFocusField(null);
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [currentStep, pendingFocusField]);
+
+  function registerFieldRef(fieldKey: EnterpriseFieldKey) {
+    return (element: HTMLElement | null) => {
+      fieldRefs.current[fieldKey] = element;
+    };
+  }
+
+  function focusEnterpriseField(fieldKey: EnterpriseFieldKey) {
+    const targetStep = enterpriseFieldSteps[fieldKey];
+    setCurrentStep(targetStep);
+    setPendingFocusField(fieldKey);
+  }
+
+  function handleEnterpriseValidationError(
+    fieldErrors: Record<string, string[]> | undefined,
+    fallbackMessage: string,
+  ) {
+    const mappedFieldError = getFirstEnterpriseValidationError(fieldErrors);
+
+    if (mappedFieldError) {
+      setError(mappedFieldError.message);
+      focusEnterpriseField(mappedFieldError.fieldKey);
+      return;
+    }
+
+    setPendingFocusField(null);
+    setError(fallbackMessage);
+  }
 
   async function handleSubmit(status: EnterpriseCreateStatus) {
     const trimmedName = enterpriseName.trim();
@@ -307,9 +527,20 @@ export default function CreateEnterprisePage() {
 
       router.push("/enterprises");
     } catch (submitError) {
-      setError(
-        submitError instanceof Error ? submitError.message : "Unable to create enterprise.",
-      );
+      const enterpriseError = submitError as Error & {
+        fieldErrors?: Record<string, string[]>;
+      };
+
+      if (enterpriseError.fieldErrors) {
+        handleEnterpriseValidationError(
+          enterpriseError.fieldErrors,
+          enterpriseError.message || "Unable to create enterprise.",
+        );
+        return;
+      }
+
+      setPendingFocusField(null);
+      setError(submitError instanceof Error ? submitError.message : "Unable to create enterprise.");
     } finally {
       setIsSubmitting(false);
     }
@@ -379,6 +610,7 @@ export default function CreateEnterprisePage() {
               <label className="block">
                 <FieldLabel>Enterprise Name*</FieldLabel>
                 <input
+                  ref={registerFieldRef("enterpriseName")}
                   type="text"
                   placeholder="Pinnacle Wellness Co."
                   value={enterpriseName}
@@ -389,6 +621,7 @@ export default function CreateEnterprisePage() {
               <label className="block">
                 <FieldLabel>Trading / DBA Name</FieldLabel>
                 <input
+                  ref={registerFieldRef("tradingName")}
                   type="text"
                   placeholder="Pinnacle Wellness"
                   value={tradingName}
@@ -399,6 +632,7 @@ export default function CreateEnterprisePage() {
               <label className="block">
                 <FieldLabel>Registration Number</FieldLabel>
                 <input
+                  ref={registerFieldRef("registrationNumber")}
                   type="text"
                   placeholder="REG-2026-0142"
                   value={registrationNumber}
@@ -409,6 +643,7 @@ export default function CreateEnterprisePage() {
               <label className="block">
                 <FieldLabel>Business Category</FieldLabel>
                 <select
+                  ref={registerFieldRef("businessCategory")}
                   className={selectClass()}
                   value={businessCategory}
                   onChange={(event) => setBusinessCategory(event.target.value)}
@@ -429,6 +664,7 @@ export default function CreateEnterprisePage() {
               <label className="block">
                 <FieldLabel>Website URL</FieldLabel>
                 <input
+                  ref={registerFieldRef("websiteUrl")}
                   type="text"
                   placeholder="https://pinnaclewellness.com"
                   value={websiteUrl}
@@ -439,6 +675,7 @@ export default function CreateEnterprisePage() {
               <label className="block">
                 <FieldLabel>Year Founded</FieldLabel>
                 <select
+                  ref={registerFieldRef("yearFounded")}
                   className={selectClass()}
                   value={yearFounded}
                   onChange={(event) => setYearFounded(event.target.value)}
@@ -454,6 +691,7 @@ export default function CreateEnterprisePage() {
               <label className="block md:col-span-2">
                 <FieldLabel>Description*</FieldLabel>
                 <textarea
+                  ref={registerFieldRef("description")}
                   placeholder="Describe the enterprise, services, and wellness focus."
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
@@ -476,6 +714,7 @@ export default function CreateEnterprisePage() {
               <label className="block">
                 <FieldLabel>Primary Contact Name</FieldLabel>
                 <input
+                  ref={registerFieldRef("primaryContactName")}
                   type="text"
                   placeholder="Sarah Johnson"
                   value={primaryContactName}
@@ -486,6 +725,7 @@ export default function CreateEnterprisePage() {
               <label className="block">
                 <FieldLabel>Job Title</FieldLabel>
                 <input
+                  ref={registerFieldRef("primaryContactTitle")}
                   type="text"
                   placeholder="Founder & CEO"
                   value={primaryContactTitle}
@@ -496,6 +736,7 @@ export default function CreateEnterprisePage() {
               <label className="block">
                 <FieldLabel>Email Address*</FieldLabel>
                 <input
+                  ref={registerFieldRef("businessEmail")}
                   type="email"
                   placeholder="sarah@pinnacle.com"
                   value={businessEmail}
@@ -507,6 +748,7 @@ export default function CreateEnterprisePage() {
                 <FieldLabel>Phone Number*</FieldLabel>
                 <div className="mt-1.5 flex gap-2">
                   <select
+                    ref={registerFieldRef("businessPhoneNumber")}
                     value={businessPhoneCode}
                     onChange={(event) => setBusinessPhoneCode(event.target.value)}
                     className={phoneCodeClass()}
@@ -518,6 +760,7 @@ export default function CreateEnterprisePage() {
                     ))}
                   </select>
                   <input
+                    ref={registerFieldRef("businessPhoneNumber")}
                     type="text"
                     placeholder="415 555 0192"
                     value={businessPhoneNumber}
@@ -531,6 +774,7 @@ export default function CreateEnterprisePage() {
               <label className="block">
                 <FieldLabel>Secondary Email</FieldLabel>
                 <input
+                  ref={registerFieldRef("secondaryEmail")}
                   type="email"
                   placeholder="ops@pinnacle.com"
                   value={secondaryEmail}
@@ -542,6 +786,7 @@ export default function CreateEnterprisePage() {
                 <FieldLabel>Secondary Phone</FieldLabel>
                 <div className="mt-1.5 flex gap-2">
                   <select
+                    ref={registerFieldRef("secondaryPhoneNumber")}
                     value={secondaryPhoneCode}
                     onChange={(event) => setSecondaryPhoneCode(event.target.value)}
                     className={phoneCodeClass()}
@@ -553,6 +798,7 @@ export default function CreateEnterprisePage() {
                     ))}
                   </select>
                   <input
+                    ref={registerFieldRef("secondaryPhoneNumber")}
                     type="text"
                     placeholder="415 555 0134"
                     value={secondaryPhoneNumber}
@@ -581,6 +827,7 @@ export default function CreateEnterprisePage() {
               <label className="block md:col-span-2">
                 <FieldLabel>Street Address*</FieldLabel>
                 <input
+                  ref={registerFieldRef("streetAddress")}
                   type="text"
                   placeholder="124 Wellness Ave"
                   value={streetAddress}
@@ -591,6 +838,7 @@ export default function CreateEnterprisePage() {
               <label className="block">
                 <FieldLabel>Suite / Unit</FieldLabel>
                 <input
+                  ref={registerFieldRef("suiteUnit")}
                   type="text"
                   placeholder="Suite 400"
                   value={suiteUnit}
@@ -598,53 +846,88 @@ export default function CreateEnterprisePage() {
                   className={inputClass()}
                 />
               </label>
-              <label className="block">
-                <FieldLabel>City*</FieldLabel>
-                <input
-                  type="text"
-                  placeholder="San Francisco"
-                  value={city}
-                  onChange={(event) => setCity(event.target.value)}
-                  className={inputClass()}
-                />
+              <label className="block md:col-span-2">
+                <FieldLabel>Country*</FieldLabel>
+                <select
+                  ref={registerFieldRef("country")}
+                  className={selectClass()}
+                  value={selectedCountryCode}
+                  onChange={(event) => {
+                    const nextCountry = countryOptions.find(
+                      (option) => option.isoCode === event.target.value,
+                    );
+
+                    setSelectedCountryCode(event.target.value);
+                    setCountry(nextCountry?.name ?? "");
+                    setSelectedStateCode("");
+                    setStateProvince("");
+                    setCity("");
+                  }}
+                >
+                  <option value="">Select country</option>
+                  {countryOptions.map((option) => (
+                    <option key={option.isoCode} value={option.isoCode}>
+                      {option.name}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="block">
                 <FieldLabel>State / Province*</FieldLabel>
-                <input
-                  type="text"
-                  placeholder="CA"
-                  value={stateProvince}
-                  onChange={(event) => setStateProvince(event.target.value)}
-                  className={inputClass()}
-                />
+                <select
+                  ref={registerFieldRef("stateProvince")}
+                  className={selectClass()}
+                  value={selectedStateCode}
+                  onChange={(event) => {
+                    const nextState = selectedCountryCode
+                      ? getStateOptions(selectedCountryCode).find(
+                          (state) => state.isoCode === event.target.value,
+                        )
+                      : undefined;
+
+                    setSelectedStateCode(event.target.value);
+                    setStateProvince(nextState?.name ?? "");
+                    setCity("");
+                  }}
+                  disabled={!selectedCountryCode}
+                >
+                  <option value="">{selectedCountryCode ? "Select state" : "Select country first"}</option>
+                  {selectedCountryCode
+                    ? getStateOptions(selectedCountryCode).map((option) => (
+                        <option key={option.isoCode} value={option.isoCode}>
+                          {option.name}
+                        </option>
+                      ))
+                    : null}
+                </select>
+              </label>
+              <label className="block">
+                <FieldLabel>City*</FieldLabel>
+                <select
+                  ref={registerFieldRef("city")}
+                  className={selectClass()}
+                  value={city}
+                  onChange={(event) => setCity(event.target.value)}
+                  disabled={!selectedStateCode}
+                >
+                  <option value="">{selectedStateCode ? "Select city" : "Select state first"}</option>
+                  {cityOptions.map((option) => (
+                    <option key={option.name} value={option.name}>
+                      {option.name}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="block">
                 <FieldLabel>Postal Code*</FieldLabel>
                 <input
+                  ref={registerFieldRef("postalCode")}
                   type="text"
                   placeholder="94105"
                   value={postalCode}
                   onChange={(event) => setPostalCode(event.target.value)}
                   className={inputClass()}
                 />
-              </label>
-              <label className="block md:col-span-2">
-                <FieldLabel>Country*</FieldLabel>
-                <select
-                  className={selectClass()}
-                  value={country}
-                  onChange={(event) => setCountry(event.target.value)}
-                >
-                  {[
-                    "United States",
-                    "India",
-                    "United Kingdom",
-                    "Canada",
-                    "Australia",
-                  ].map((option) => (
-                    <option key={option}>{option}</option>
-                  ))}
-                </select>
               </label>
               <label className="flex items-center gap-3 md:col-span-2">
                 <input
@@ -664,6 +947,7 @@ export default function CreateEnterprisePage() {
                   <label className="block md:col-span-2">
                     <FieldLabel>Business Address*</FieldLabel>
                     <textarea
+                      ref={registerFieldRef("businessAddress")}
                       placeholder="Enter business address"
                       value={businessAddress}
                       onChange={(event) => setBusinessAddress(event.target.value)}
@@ -673,6 +957,7 @@ export default function CreateEnterprisePage() {
                   <label className="block md:col-span-2">
                     <FieldLabel>Communication Address*</FieldLabel>
                     <textarea
+                      ref={registerFieldRef("communicationAddress")}
                       placeholder="Enter communication address"
                       value={communicationAddress}
                       onChange={(event) => setCommunicationAddress(event.target.value)}
@@ -705,6 +990,7 @@ export default function CreateEnterprisePage() {
                 <label className="mt-4 block">
                   <FieldLabel>Logo URL</FieldLabel>
                   <input
+                    ref={registerFieldRef("logoUrl")}
                     type="text"
                     placeholder="https://example.com/logo.png"
                     value={logoUrl}
@@ -724,6 +1010,7 @@ export default function CreateEnterprisePage() {
                 <label className="mt-4 block">
                   <FieldLabel>Banner Image URL</FieldLabel>
                   <input
+                    ref={registerFieldRef("businessImages")}
                     type="text"
                     placeholder="https://example.com/banner.png"
                     value={businessImages}
@@ -735,6 +1022,7 @@ export default function CreateEnterprisePage() {
               <label className="block">
                 <FieldLabel>Brand Color</FieldLabel>
                 <input
+                  ref={registerFieldRef("brandColor")}
                   type="text"
                   placeholder="#1F5D4E"
                   value={brandColor}
@@ -745,6 +1033,7 @@ export default function CreateEnterprisePage() {
               <label className="block">
                 <FieldLabel>Tagline</FieldLabel>
                 <input
+                  ref={registerFieldRef("tagline")}
                   type="text"
                   placeholder="Your wellness, our mission"
                   value={tagline}
