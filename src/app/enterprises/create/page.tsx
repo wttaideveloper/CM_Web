@@ -47,6 +47,10 @@ function phoneNumberClass() {
   return "h-[46px] min-w-0 flex-1 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3.5 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]";
 }
 
+function sanitizePhoneNumber(value: string) {
+  return value.replace(/[^0-9]/g, "");
+}
+
 function combinePhone(code: string, number: string) {
   const trimmedNumber = number.trim();
 
@@ -517,7 +521,9 @@ export default function CreateEnterprisePage() {
                     type="text"
                     placeholder="415 555 0192"
                     value={businessPhoneNumber}
-                    onChange={(event) => setBusinessPhoneNumber(event.target.value)}
+                    onChange={(event) => setBusinessPhoneNumber(sanitizePhoneNumber(event.target.value))}
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     className={phoneNumberClass()}
                   />
                 </div>
@@ -550,7 +556,11 @@ export default function CreateEnterprisePage() {
                     type="text"
                     placeholder="415 555 0134"
                     value={secondaryPhoneNumber}
-                    onChange={(event) => setSecondaryPhoneNumber(event.target.value)}
+                    onChange={(event) =>
+                      setSecondaryPhoneNumber(sanitizePhoneNumber(event.target.value))
+                    }
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     className={phoneNumberClass()}
                   />
                 </div>

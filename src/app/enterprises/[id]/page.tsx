@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { City, Country, State } from "country-state-city";
 
 import AppShell from "@/components/layout/AppShell";
 import {
@@ -30,8 +31,86 @@ const performance = [
   { label: "Retention Rate", value: "91%", tone: "text-[#14532d]" },
 ];
 
+const countryOptions = Country.getAllCountries().sort((left, right) => left.name.localeCompare(right.name));
+
 function SectionLabel({ children }: { children: string }) {
   return <p className="text-sm font-bold text-[#06201c]">{children}</p>;
+}
+
+function normalizeLookupValue(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function formatPhoneCode(phonecode: string) {
+  const trimmed = phonecode.trim();
+  return trimmed.startsWith("+") ? trimmed : `+${trimmed}`;
+}
+
+function findCountryOption(value: string) {
+  const normalizedValue = normalizeLookupValue(value);
+  return countryOptions.find((country) => {
+    return (
+      normalizeLookupValue(country.name) === normalizedValue ||
+      normalizeLookupValue(country.isoCode) === normalizedValue
+    );
+  });
+}
+
+function getStateOptions(countryCode: string) {
+  return State.getStatesOfCountry(countryCode).sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function findStateOption(countryCode: string, value: string) {
+  const normalizedValue = normalizeLookupValue(value);
+  return getStateOptions(countryCode).find((state) => {
+    return (
+      normalizeLookupValue(state.name) === normalizedValue ||
+      normalizeLookupValue(state.isoCode) === normalizedValue
+    );
+  });
+}
+
+function getCityOptions(countryCode: string, stateCode: string) {
+  return City.getCitiesOfState(countryCode, stateCode).sort((left, right) =>
+    left.name.localeCompare(right.name),
+  );
+}
+
+function findCityOption(countryCode: string, stateCode: string, value: string) {
+  const normalizedValue = normalizeLookupValue(value);
+  return getCityOptions(countryCode, stateCode).find((city) => {
+    return normalizeLookupValue(city.name) === normalizedValue;
+  });
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function splitPhoneNumber(phone: string, phoneCode: string) {
+  const trimmedPhone = phone.trim();
+  const trimmedCode = phoneCode.trim();
+
+  if (!trimmedPhone || !trimmedCode) {
+    return trimmedPhone;
+  }
+
+  const codePattern = new RegExp(`^${escapeRegExp(trimmedCode)}(?:\\s+|[-\\s]*)`, "i");
+  return trimmedPhone.replace(codePattern, "").trim();
+}
+
+function sanitizePhoneNumber(value: string) {
+  return value.replace(/[^0-9]/g, "");
+}
+
+function joinPhoneValue(phoneCode: string, phoneNumber: string) {
+  const trimmedNumber = sanitizePhoneNumber(phoneNumber);
+
+  if (!trimmedNumber) {
+    return "";
+  }
+
+  return `${phoneCode} ${trimmedNumber}`;
 }
 
 type LocationDraft = {
@@ -50,6 +129,8 @@ type LocationDraft = {
 };
 
 function createLocationDraft(location?: EnterpriseLocationDto): LocationDraft {
+  const status = location?.status?.trim().toLowerCase() ?? "";
+
   return {
     location_name: location?.location_name ?? "",
     address_line_1: location?.address_line_1 ?? "",
@@ -63,7 +144,7 @@ function createLocationDraft(location?: EnterpriseLocationDto): LocationDraft {
     latitude: location?.latitude !== undefined && location?.latitude !== null ? String(location.latitude) : "",
     longitude:
       location?.longitude !== undefined && location?.longitude !== null ? String(location.longitude) : "",
-    status: location?.status ?? "",
+    status: status === "active" || status === "inactive" || status === "draft" ? status : "",
   };
 }
 
@@ -99,14 +180,6 @@ function resolveEnterpriseCategory(enterprise: EnterpriseDto | null) {
   }
 
   return category.trim();
-}
-
-function formatAddress(address: string | null | undefined) {
-  if (!address) {
-    return "N/A";
-  }
-
-  return address.trim() || "N/A";
 }
 
 function formatImageUrl(value: string | null | undefined) {
@@ -508,6 +581,10 @@ export function EnterpriseDetailsPage({
       return;
     }
 
+    const normalizedPhone = selectedPhoneCode
+      ? joinPhoneValue(selectedPhoneCode, locationPhoneNumber)
+      : locationDraft.phone.trim();
+
     const payload = {
       location_name: locationDraft.location_name.trim(),
       address_line_1: locationDraft.address_line_1.trim(),
@@ -516,11 +593,11 @@ export function EnterpriseDetailsPage({
       state: locationDraft.state.trim(),
       country: locationDraft.country.trim(),
       postal_code: locationDraft.postal_code.trim(),
-      phone: locationDraft.phone.trim() || undefined,
+      phone: normalizedPhone || undefined,
       email: locationDraft.email.trim() || undefined,
       latitude: parseOptionalNumber(locationDraft.latitude),
       longitude: parseOptionalNumber(locationDraft.longitude),
-      status: locationDraft.status.trim() || undefined,
+      status: locationDraft.status.trim().toLowerCase() || undefined,
     };
 
     try {
@@ -585,6 +662,19 @@ export function EnterpriseDetailsPage({
   const currentId = resolvedEnterpriseId;
   const enterpriseName = enterprise ? resolveEnterpriseName(enterprise) : "Unnamed Enterprise";
   const enterpriseStatus = enterprise?.status === false ? "Inactive" : "Active";
+  const selectedCountry = findCountryOption(locationDraft.country);
+  const selectedCountryCode = selectedCountry?.isoCode ?? "";
+  const selectedPhoneCode = selectedCountry ? formatPhoneCode(selectedCountry.phonecode) : "";
+  const selectedState = selectedCountryCode
+    ? findStateOption(selectedCountryCode, locationDraft.state)
+    : undefined;
+  const selectedStateCode = selectedState?.isoCode ?? "";
+  const selectedCity = selectedCountryCode && selectedStateCode
+    ? findCityOption(selectedCountryCode, selectedStateCode, locationDraft.city)
+    : undefined;
+  const locationPhoneNumber = selectedPhoneCode
+    ? sanitizePhoneNumber(splitPhoneNumber(locationDraft.phone, selectedPhoneCode))
+    : sanitizePhoneNumber(locationDraft.phone.trim());
   const aboutText = formatDisplayValue(
     enterprise?.business_description || enterprise?.description,
     emptyValue,
@@ -883,48 +973,241 @@ export function EnterpriseDetailsPage({
                 </div>
 
                 <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  {[
-                    ["location_name", "Location Name"],
-                    ["address_line_1", "Address Line 1"],
-                    ["address_line_2", "Address Line 2"],
-                    ["city", "City"],
-                    ["state", "State"],
-                    ["country", "Country"],
-                    ["postal_code", "Postal Code"],
-                    ["phone", "Phone"],
-                    ["email", "Email"],
-                    ["latitude", "Latitude"],
-                    ["longitude", "Longitude"],
-                    ["status", "Status"],
-                  ].map(([key, label]) => (
-                    <label key={key} className="block">
-                      <span className="text-sm font-bold text-[#06201c]">{label}</span>
-                      {key === "address_line_2" ? (
-                        <textarea
-                          value={locationDraft[key as keyof LocationDraft]}
-                          onChange={(event) =>
-                            setLocationDraft((current) => ({
-                              ...current,
-                              [key]: event.target.value,
-                            }))
-                          }
-                          className="mt-1.5 min-h-24 w-full rounded-xl border border-[#d7e5df] bg-white px-3.5 py-3 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]"
-                        />
-                      ) : (
-                        <input
-                          type={key === "latitude" || key === "longitude" ? "number" : "text"}
-                          value={locationDraft[key as keyof LocationDraft]}
-                          onChange={(event) =>
-                            setLocationDraft((current) => ({
-                              ...current,
-                              [key]: event.target.value,
-                            }))
-                          }
-                          className="mt-1.5 h-[46px] w-full rounded-xl border border-[#d7e5df] bg-white px-3.5 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]"
-                        />
-                      )}
-                    </label>
-                  ))}
+                  <label className="block">
+                    <span className="text-sm font-bold text-[#06201c]">Location Name</span>
+                    <input
+                      type="text"
+                      value={locationDraft.location_name}
+                      onChange={(event) =>
+                        setLocationDraft((current) => ({
+                          ...current,
+                          location_name: event.target.value,
+                        }))
+                      }
+                      className="mt-1.5 h-[46px] w-full rounded-xl border border-[#d7e5df] bg-white px-3.5 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-bold text-[#06201c]">Address Line 1</span>
+                    <input
+                      type="text"
+                      value={locationDraft.address_line_1}
+                      onChange={(event) =>
+                        setLocationDraft((current) => ({
+                          ...current,
+                          address_line_1: event.target.value,
+                        }))
+                      }
+                      className="mt-1.5 h-[46px] w-full rounded-xl border border-[#d7e5df] bg-white px-3.5 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]"
+                    />
+                  </label>
+                  <label className="block md:col-span-2">
+                    <span className="text-sm font-bold text-[#06201c]">Address Line 2</span>
+                    <textarea
+                      value={locationDraft.address_line_2}
+                      onChange={(event) =>
+                        setLocationDraft((current) => ({
+                          ...current,
+                          address_line_2: event.target.value,
+                        }))
+                      }
+                      className="mt-1.5 min-h-24 w-full rounded-xl border border-[#d7e5df] bg-white px-3.5 py-3 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-bold text-[#06201c]">Country</span>
+                    <select
+                      value={selectedCountry?.isoCode ?? ""}
+                      onChange={(event) => {
+                        const nextCountry = countryOptions.find(
+                          (country) => country.isoCode === event.target.value,
+                        );
+                        const nextPhoneCode = nextCountry ? formatPhoneCode(nextCountry.phonecode) : "";
+                        const currentPhoneNumber = selectedPhoneCode
+                          ? splitPhoneNumber(locationDraft.phone, selectedPhoneCode)
+                          : locationDraft.phone.trim();
+
+                        setLocationDraft((current) => ({
+                          ...current,
+                          country: nextCountry?.name ?? "",
+                          state: "",
+                          city: "",
+                          phone: nextCountry ? joinPhoneValue(nextPhoneCode, currentPhoneNumber) : "",
+                        }));
+                      }}
+                      className="mt-1.5 h-[46px] w-full rounded-xl border border-[#d7e5df] bg-white px-3.5 text-sm text-[#06201c] outline-none disabled:cursor-not-allowed disabled:bg-[#f3f7f5] disabled:text-[#8ca69e] focus:border-[#1f6a58]"
+                    >
+                      <option value="">Select country</option>
+                      {countryOptions.map((country) => (
+                        <option key={country.isoCode} value={country.isoCode}>
+                          {country.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-bold text-[#06201c]">State</span>
+                    <select
+                      value={selectedState?.isoCode ?? ""}
+                      onChange={(event) => {
+                        const nextState = selectedCountryCode
+                          ? getStateOptions(selectedCountryCode).find(
+                              (state) => state.isoCode === event.target.value,
+                            )
+                          : undefined;
+
+                        setLocationDraft((current) => ({
+                          ...current,
+                          state: nextState?.name ?? "",
+                          city: "",
+                        }));
+                      }}
+                      disabled={!selectedCountryCode}
+                      className="mt-1.5 h-[46px] w-full rounded-xl border border-[#d7e5df] bg-white px-3.5 text-sm text-[#06201c] outline-none disabled:cursor-not-allowed disabled:bg-[#f3f7f5] disabled:text-[#8ca69e] focus:border-[#1f6a58]"
+                    >
+                      <option value="">
+                        {selectedCountryCode ? "Select state" : "Select country first"}
+                      </option>
+                      {selectedCountryCode
+                        ? getStateOptions(selectedCountryCode).map((state) => (
+                            <option key={state.isoCode} value={state.isoCode}>
+                              {state.name}
+                            </option>
+                          ))
+                        : null}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-bold text-[#06201c]">City</span>
+                    <select
+                      value={selectedCity?.name ?? ""}
+                      onChange={(event) => {
+                        const nextCity = selectedCountryCode && selectedStateCode
+                          ? getCityOptions(selectedCountryCode, selectedStateCode).find(
+                              (city) => city.name === event.target.value,
+                            )
+                          : undefined;
+
+                        setLocationDraft((current) => ({
+                          ...current,
+                          city: nextCity?.name ?? "",
+                        }));
+                      }}
+                      disabled={!selectedStateCode}
+                      className="mt-1.5 h-[46px] w-full rounded-xl border border-[#d7e5df] bg-white px-3.5 text-sm text-[#06201c] outline-none disabled:cursor-not-allowed disabled:bg-[#f3f7f5] disabled:text-[#8ca69e] focus:border-[#1f6a58]"
+                    >
+                      <option value="">
+                        {selectedStateCode ? "Select city" : "Select state first"}
+                      </option>
+                      {selectedCountryCode && selectedStateCode
+                        ? getCityOptions(selectedCountryCode, selectedStateCode).map((city) => (
+                            <option key={city.name} value={city.name}>
+                              {city.name}
+                            </option>
+                          ))
+                        : null}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-bold text-[#06201c]">Phone</span>
+                    <div className="mt-1.5 flex gap-2">
+                      <input
+                        type="text"
+                        value={selectedPhoneCode}
+                        readOnly
+                        disabled={!selectedCountryCode}
+                        className="h-[46px] w-[110px] shrink-0 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-2 text-sm text-[#06201c] outline-none disabled:cursor-not-allowed disabled:bg-[#f3f7f5] disabled:text-[#8ca69e]"
+                      />
+                      <input
+                        type="text"
+                        value={locationPhoneNumber}
+                        onChange={(event) =>
+                          setLocationDraft((current) => ({
+                            ...current,
+                            phone: selectedPhoneCode
+                              ? joinPhoneValue(selectedPhoneCode, event.target.value)
+                              : sanitizePhoneNumber(event.target.value),
+                          }))
+                        }
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        disabled={!selectedCountryCode}
+                        className="h-[46px] min-w-0 flex-1 rounded-xl border border-[#d7e5df] bg-white px-3.5 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] disabled:cursor-not-allowed disabled:bg-[#f3f7f5] disabled:text-[#8ca69e] focus:border-[#1f6a58]"
+                      />
+                    </div>
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-bold text-[#06201c]">Postal Code</span>
+                    <input
+                      type="text"
+                      value={locationDraft.postal_code}
+                      onChange={(event) =>
+                        setLocationDraft((current) => ({
+                          ...current,
+                          postal_code: event.target.value,
+                        }))
+                      }
+                      className="mt-1.5 h-[46px] w-full rounded-xl border border-[#d7e5df] bg-white px-3.5 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-bold text-[#06201c]">Email</span>
+                    <input
+                      type="text"
+                      value={locationDraft.email}
+                      onChange={(event) =>
+                        setLocationDraft((current) => ({
+                          ...current,
+                          email: event.target.value,
+                        }))
+                      }
+                      className="mt-1.5 h-[46px] w-full rounded-xl border border-[#d7e5df] bg-white px-3.5 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-bold text-[#06201c]">Latitude</span>
+                    <input
+                      type="number"
+                      value={locationDraft.latitude}
+                      onChange={(event) =>
+                        setLocationDraft((current) => ({
+                          ...current,
+                          latitude: event.target.value,
+                        }))
+                      }
+                      className="mt-1.5 h-[46px] w-full rounded-xl border border-[#d7e5df] bg-white px-3.5 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-bold text-[#06201c]">Longitude</span>
+                    <input
+                      type="number"
+                      value={locationDraft.longitude}
+                      onChange={(event) =>
+                        setLocationDraft((current) => ({
+                          ...current,
+                          longitude: event.target.value,
+                        }))
+                      }
+                      className="mt-1.5 h-[46px] w-full rounded-xl border border-[#d7e5df] bg-white px-3.5 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]"
+                    />
+                  </label>
+                  <label className="block md:col-span-2">
+                    <span className="text-sm font-bold text-[#06201c]">Status</span>
+                    <select
+                      value={locationDraft.status}
+                      onChange={(event) =>
+                        setLocationDraft((current) => ({
+                          ...current,
+                          status: event.target.value,
+                        }))
+                      }
+                      className="mt-1.5 h-11 w-full rounded-xl border border-[#d7e5df] bg-white px-3.5 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]"
+                    >
+                      <option value="active">active</option>
+                      <option value="inactive">inactive</option>
+                    </select>
+                  </label>
                 </div>
 
                 <div className="mt-5 flex flex-wrap gap-3">
