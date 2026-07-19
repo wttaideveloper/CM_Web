@@ -51,6 +51,7 @@ type AdminSocketNotification = {
 type AdminSocketContextValue = {
   socket: ChatSocket | null;
   status: AdminSocketStatus;
+  setActiveConversationId: (conversationId: string | null) => void;
   notifications: AdminSocketNotification[];
   unreadNotificationCount: number;
   unreadMessageCount: number;
@@ -335,6 +336,10 @@ export function AdminSocketProvider({ children }: { children: ReactNode }) {
   const notificationReconcileInFlightRef = useRef(false);
   const notificationReconcileQueuedRef = useRef(false);
   const conversationNotificationReadGuardsRef = useRef<Set<string>>(new Set());
+  const activeConversationIdRef = useRef<string | null>(null);
+  const setActiveConversationId = useCallback((conversationId: string | null) => {
+    activeConversationIdRef.current = conversationId;
+  }, []);
   const syncOnlinePresence = useCallback(() => {
     void updatePresenceStatus("online").catch(() => undefined);
   }, []);
@@ -442,6 +447,44 @@ export function AdminSocketProvider({ children }: { children: ReactNode }) {
     }
   }, [commitNotificationState]);
 
+  const markConversationNotificationsAsRead = useCallback(
+    async (conversationId: string) => {
+      if (conversationNotificationReadGuardsRef.current.has(conversationId)) {
+        return;
+      }
+
+      try {
+        await apiMarkConversationNotificationsRead(conversationId);
+        conversationNotificationReadGuardsRef.current.add(conversationId);
+        commitNotificationState((current) => {
+          const nextNotifications = current.notifications.map((notification) =>
+            readConversationId(notification.data) === conversationId
+              ? { ...notification, is_read: true }
+              : notification,
+          );
+          const unreadNotificationCount = nextNotifications.filter((item) => !item.is_read).length;
+
+          return {
+            ...current,
+            notifications: nextNotifications,
+            unreadNotificationCount,
+            totalUnreadCount: deriveTotalUnreadCount(unreadNotificationCount, current.unreadMessageCount),
+            notificationError: null,
+          };
+        });
+        await refreshUnreadCounts();
+      } catch (error) {
+        commitNotificationState((current) => ({
+          ...current,
+          notificationError:
+            error instanceof Error ? error.message : "Failed to clear conversation notifications.",
+        }));
+        throw error;
+      }
+    },
+    [commitNotificationState, refreshUnreadCounts],
+  );
+
   const queueNotificationReconciliation = useCallback(
     (reason: string) => {
       if (!shouldConnect) {
@@ -533,6 +576,9 @@ export function AdminSocketProvider({ children }: { children: ReactNode }) {
             : null;
       const receivedAt = new Date().toISOString();
       const data = readNotificationData(payload);
+      const conversationId = readNotificationConversationId(payload);
+      const activeConversationId = activeConversationIdRef.current;
+      const isActiveConversation = activeConversationId !== null && conversationId === activeConversationId;
       const incoming: AdminSocketNotification = {
         id: notificationId,
         notification_type: notificationType,
@@ -540,14 +586,14 @@ export function AdminSocketProvider({ children }: { children: ReactNode }) {
         body,
         data,
         is_read:
-          isRecord(payload) && typeof payload.is_read === "boolean" ? payload.is_read : false,
+          isActiveConversation ||
+          (isRecord(payload) && typeof payload.is_read === "boolean" ? payload.is_read : false),
         created_at: createdAt,
         received_at: receivedAt,
         raw: payload,
         source: "socket",
       };
 
-      const conversationId = readNotificationConversationId(payload);
       if (conversationId) {
         conversationNotificationReadGuardsRef.current.delete(conversationId);
       }
@@ -556,9 +602,15 @@ export function AdminSocketProvider({ children }: { children: ReactNode }) {
         ...current,
         notifications: mergeNotificationRecords(current.notifications, [incoming]),
       }));
+
+      if (isActiveConversation) {
+        void markConversationNotificationsAsRead(conversationId).catch(() => undefined);
+        return;
+      }
+
       queueNotificationReconciliation("socket notification");
     },
-    [commitNotificationState, queueNotificationReconciliation],
+    [commitNotificationState, markConversationNotificationsAsRead, queueNotificationReconciliation],
   );
 
   const handleConversationUpdated = useCallback(
@@ -676,44 +728,6 @@ export function AdminSocketProvider({ children }: { children: ReactNode }) {
       throw error;
     }
   }, [commitNotificationState]);
-
-  const markConversationNotificationsAsRead = useCallback(
-    async (conversationId: string) => {
-      if (conversationNotificationReadGuardsRef.current.has(conversationId)) {
-        return;
-      }
-
-      try {
-        await apiMarkConversationNotificationsRead(conversationId);
-        conversationNotificationReadGuardsRef.current.add(conversationId);
-        commitNotificationState((current) => {
-          const nextNotifications = current.notifications.map((notification) =>
-            readConversationId(notification.data) === conversationId
-              ? { ...notification, is_read: true }
-              : notification,
-          );
-          const unreadNotificationCount = nextNotifications.filter((item) => !item.is_read).length;
-
-          return {
-            ...current,
-            notifications: nextNotifications,
-            unreadNotificationCount,
-            totalUnreadCount: deriveTotalUnreadCount(unreadNotificationCount, current.unreadMessageCount),
-            notificationError: null,
-          };
-        });
-        await refreshUnreadCounts();
-      } catch (error) {
-        commitNotificationState((current) => ({
-          ...current,
-          notificationError:
-            error instanceof Error ? error.message : "Failed to clear conversation notifications.",
-        }));
-        throw error;
-      }
-    },
-    [commitNotificationState, refreshUnreadCounts],
-  );
 
   useEffect(() => {
     if (!shouldConnect) {
@@ -984,6 +998,7 @@ export function AdminSocketProvider({ children }: { children: ReactNode }) {
     () => ({
       socket,
       status,
+      setActiveConversationId,
       notifications: notificationState.notifications,
       unreadNotificationCount: notificationState.unreadNotificationCount,
       unreadMessageCount: notificationState.unreadMessageCount,
@@ -1008,6 +1023,7 @@ export function AdminSocketProvider({ children }: { children: ReactNode }) {
       notificationState,
       refreshNotifications,
       refreshUnreadCounts,
+      setActiveConversationId,
       socket,
       status,
     ],

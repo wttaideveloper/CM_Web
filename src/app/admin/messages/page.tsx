@@ -1687,8 +1687,12 @@ export default function AdminMessagesPage() {
   const [showScrollToBottomButton, setShowScrollToBottomButton] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [visibleTypingUsers, setVisibleTypingUsers] = useState<string[]>([]);
-  const { socket: adminSocket, status: socketStatus, markConversationNotificationsAsRead } =
-    useAdminSocket();
+  const {
+    socket: adminSocket,
+    status: socketStatus,
+    markConversationNotificationsAsRead,
+    setActiveConversationId,
+  } = useAdminSocket();
   const [conversationIdFromUrl, setConversationIdFromUrl] = useState<string | null>(null);
   const socketRef = useRef<ChatSocket | null>(null);
   const activeRoomConversationIdRef = useRef<string | null>(null);
@@ -1748,6 +1752,14 @@ export default function AdminMessagesPage() {
   useEffect(() => {
     selectedConversationIdRef.current = selectedConversationId;
   }, [selectedConversationId]);
+
+  useEffect(() => {
+    setActiveConversationId(selectedConversationId);
+
+    return () => {
+      setActiveConversationId(null);
+    };
+  }, [selectedConversationId, setActiveConversationId]);
 
   useEffect(() => {
     if (!conversationIdFromUrl) {
@@ -2707,7 +2719,7 @@ export default function AdminMessagesPage() {
         }
       }
     },
-    [],
+    [markConversationNotificationsAsRead],
   );
 
   const handleSocketTyping = useCallback(
@@ -3456,7 +3468,7 @@ export default function AdminMessagesPage() {
       window.clearTimeout(timer);
       pendingInitialScrollToBottomRef.current = false;
     };
-  }, [selectedConversationId, emitMarkRead]);
+  }, [selectedConversationId, emitMarkRead, markConversationNotificationsAsRead]);
 
   useEffect(() => {
     const conversationId = selectedConversationDetail?.id ?? null;
@@ -3809,8 +3821,15 @@ export default function AdminMessagesPage() {
 
         const next = [...current];
         const existingConversation = next[index];
+        const mergedConversation = mergeConversationSnapshot(existingConversation, conversation);
 
-        next[index] = mergeConversationSnapshot(existingConversation, conversation);
+        next[index] =
+          selectedConversationIdRef.current === conversationId
+            ? {
+                ...mergedConversation,
+                unreadCount: 0,
+              }
+            : mergedConversation;
 
         return next;
       });
@@ -3818,7 +3837,10 @@ export default function AdminMessagesPage() {
       if (selectedConversationIdRef.current === conversationId) {
         setSelectedConversationDetail((current) =>
           current && current.id === conversationId
-            ? mergeConversationSnapshot(current, conversation)
+            ? {
+                ...mergeConversationSnapshot(current, conversation),
+                unreadCount: 0,
+              }
             : current,
         );
       }
