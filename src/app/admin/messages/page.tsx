@@ -300,6 +300,11 @@ function firstString(...values: Array<unknown>): string | undefined {
   return undefined;
 }
 
+function parseBackendDate(value: string) {
+  const hasTimezone = /(?:Z|[+-]\d{2}:\d{2})$/i.test(value);
+  return new Date(hasTimezone ? value : `${value}Z`);
+}
+
 function getSpeechRecognitionConstructor(): SpeechRecognitionConstructorLike | undefined {
   if (typeof window === "undefined") {
     return undefined;
@@ -449,7 +454,7 @@ function formatLastSeen(value?: string) {
     return null;
   }
 
-  const date = new Date(value);
+  const date = parseBackendDate(value);
 
   if (Number.isNaN(date.getTime())) {
     return null;
@@ -568,7 +573,7 @@ function formatTimestamp(value?: string) {
     return "Just now";
   }
 
-  const date = new Date(value);
+  const date = parseBackendDate(value);
 
   if (Number.isNaN(date.getTime())) {
     return value;
@@ -603,7 +608,7 @@ function formatMessageTime(value?: string) {
     return "Just now";
   }
 
-  const date = new Date(value);
+  const date = parseBackendDate(value);
 
   if (Number.isNaN(date.getTime())) {
     return "Just now";
@@ -620,7 +625,7 @@ function formatMessageDateLabel(value?: string) {
     return null;
   }
 
-  const date = new Date(value);
+  const date = parseBackendDate(value);
 
   if (Number.isNaN(date.getTime())) {
     return null;
@@ -652,8 +657,8 @@ function areSameCalendarDay(left?: string, right?: string) {
     return false;
   }
 
-  const leftDate = new Date(left);
-  const rightDate = new Date(right);
+  const leftDate = parseBackendDate(left);
+  const rightDate = parseBackendDate(right);
 
   if (Number.isNaN(leftDate.getTime()) || Number.isNaN(rightDate.getTime())) {
     return false;
@@ -1042,7 +1047,7 @@ function getChatMessageSortTimestamp(message: ChatMessage) {
     return 0;
   }
 
-  const timestamp = new Date(rawValue).getTime();
+  const timestamp = parseBackendDate(rawValue).getTime();
 
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
