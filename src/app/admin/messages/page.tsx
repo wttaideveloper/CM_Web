@@ -28,7 +28,6 @@ import {
   uploadAttachment,
   sendMessage,
   updateTypingStatus,
-  updatePresenceStatus,
 } from "@/services/chat.service";
 import { type ChatSocket } from "@/services/chat-socket.service";
 import {
@@ -1952,12 +1951,6 @@ export default function AdminMessagesPage() {
   useEffect(() => {
     pendingVoiceRef.current = pendingVoice;
   }, [pendingVoice]);
-
-  useEffect(() => {
-    void updatePresenceStatus("online")
-      .then(() => undefined)
-      .catch(() => undefined);
-  }, []);
 
   useEffect(() => {
     if (!copiedMessageId) {
@@ -3888,9 +3881,6 @@ export default function AdminMessagesPage() {
     }
 
     const handleConnect = () => {
-      void updatePresenceStatus("online")
-        .then(() => undefined)
-        .catch(() => undefined);
       if (process.env.NODE_ENV !== "production") {
         console.log("[Chat socket] connected", {
           socketId: socket.id ?? undefined,
@@ -4025,9 +4015,6 @@ export default function AdminMessagesPage() {
     };
 
     const handleReconnect = () => {
-      void updatePresenceStatus("online")
-        .then(() => undefined)
-        .catch(() => undefined);
       if (process.env.NODE_ENV !== "production") {
         console.log("[Chat socket] reconnected", {
           socketId: socket.id ?? undefined,

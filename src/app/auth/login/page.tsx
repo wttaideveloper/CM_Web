@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { loginMarketplaceDemoUser } from "@/services/marketplace-demo-auth.service";
+import { updatePresenceStatus } from "@/services/chat.service";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -65,6 +66,11 @@ export default function LoginPage() {
 
       // Enterprise Owner must still obtain the Marketplace demo token for chat and socket features.
       await loginMarketplaceDemoUser();
+      try {
+        await updatePresenceStatus("online");
+      } catch {
+        // Presence must not block a successful login.
+      }
       router.push("/admin/messages");
     } catch (error) {
       setLoginError(error instanceof Error ? error.message : "Marketplace demo login failed.");

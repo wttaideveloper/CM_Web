@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useAdminSocket } from "@/contexts/AdminSocketContext";
+import { updatePresenceStatus } from "@/services/chat.service";
 import { clearMarketplaceDemoSession } from "@/services/marketplace-demo-auth.service";
 
 type OpenMenu = "notifications" | "settings" | "profile" | null;
@@ -171,11 +172,17 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
 
   const closeMenu = () => setOpenMenu(null);
 
-  const handleProfileItemClick = (item: string) => {
+  const handleProfileItemClick = async (item: string) => {
     if (item === "Logout") {
       closeMenu();
-      clearMarketplaceDemoSession();
-      router.replace("/auth/login");
+      try {
+        await updatePresenceStatus("offline");
+      } catch {
+        // Logout must continue even if presence update fails.
+      } finally {
+        clearMarketplaceDemoSession();
+        router.replace("/auth/login");
+      }
       return;
     }
 
@@ -425,7 +432,7 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
               <button
                 key={item}
                 type="button"
-                onClick={() => handleProfileItemClick(item)}
+                onClick={() => void handleProfileItemClick(item)}
                 className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]"
               >
                 <span>{item}</span>

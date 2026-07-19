@@ -20,6 +20,7 @@ import {
   getMarketplaceDemoSession,
   redirectToMarketplaceLogin,
 } from "@/services/marketplace-demo-auth.service";
+import { updatePresenceStatus } from "@/services/chat.service";
 import {
   getNotificationHistory,
   getUnreadCounts,
@@ -334,6 +335,9 @@ export function AdminSocketProvider({ children }: { children: ReactNode }) {
   const notificationReconcileInFlightRef = useRef(false);
   const notificationReconcileQueuedRef = useRef(false);
   const conversationNotificationReadGuardsRef = useRef<Set<string>>(new Set());
+  const syncOnlinePresence = useCallback(() => {
+    void updatePresenceStatus("online").catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (!pathname.startsWith("/admin") || pathname.startsWith("/auth")) {
@@ -841,6 +845,7 @@ export function AdminSocketProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      syncOnlinePresence();
       setStatus("connected");
       if (process.env.NODE_ENV === "development") {
         console.log("[Admin socket] connected", {
@@ -934,6 +939,9 @@ export function AdminSocketProvider({ children }: { children: ReactNode }) {
     nextSocket.on("notification", handleNotification);
     nextSocket.on("conversation_updated", handleConversationUpdated);
     nextSocket.connect();
+    if (nextSocket.connected) {
+      syncOnlinePresence();
+    }
 
     return () => {
       active = false;
@@ -963,7 +971,14 @@ export function AdminSocketProvider({ children }: { children: ReactNode }) {
       socketRef.current = null;
       socketTokenRef.current = null;
     };
-  }, [handleConversationUpdated, handleNotification, queueNotificationReconciliation, runtimeToken, shouldConnect]);
+  }, [
+    handleConversationUpdated,
+    handleNotification,
+    queueNotificationReconciliation,
+    runtimeToken,
+    shouldConnect,
+    syncOnlinePresence,
+  ]);
 
   const value = useMemo<AdminSocketContextValue>(
     () => ({
