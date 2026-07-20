@@ -18,7 +18,6 @@ import {
   clearMarketplaceDemoSession,
   getMarketplaceChatToken,
   getMarketplaceDemoSession,
-  redirectToMarketplaceLogin,
 } from "@/services/marketplace-demo-auth.service";
 import { updatePresenceStatus } from "@/services/chat.service";
 import {
@@ -345,19 +344,6 @@ export function AdminSocketProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!pathname.startsWith("/admin") || pathname.startsWith("/auth")) {
-      return;
-    }
-
-    if (getMarketplaceDemoSession()) {
-      return;
-    }
-
-    clearMarketplaceDemoSession();
-    redirectToMarketplaceLogin();
-  }, [pathname]);
-
-  useEffect(() => {
     if (!shouldConnect) {
       setRuntimeToken(null);
       return;
@@ -380,7 +366,6 @@ export function AdminSocketProvider({ children }: { children: ReactNode }) {
         }
 
         clearMarketplaceDemoSession();
-        redirectToMarketplaceLogin();
         setRuntimeToken(null);
       }
     };

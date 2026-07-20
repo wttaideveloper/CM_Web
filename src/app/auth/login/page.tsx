@@ -1,37 +1,38 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { loginMarketplaceDemoUser } from "@/services/marketplace-demo-auth.service";
-import { updatePresenceStatus } from "@/services/chat.service";
+import { useAuth } from "@/contexts/AuthContext";
+import { startLogin } from "@/services/auth.service";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { authenticated, isLoading } = useAuth();
   const [loginType, setLoginType] = useState<"super-admin" | "admin">("super-admin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const isSuperAdmin = loginType === "super-admin";
-  const emailPlaceholder = isSuperAdmin ? "admin@invigoratehealth.com" : "owner@yourcompany.com";
   const subtitle = isSuperAdmin
     ? "Sign in to the Super Admin portal"
     : "Sign in to your Enterprise Owner portal";
   const buttonLabel = isSuperAdmin
     ? "Sign In as Super Admin"
     : "Sign In as Enterprise Owner";
-
-  // TEMPORARY HARDCODED LOGIN GATE — replace with backend authentication.
-  useEffect(() => {
-    setEmail("");
-    setPassword("");
-    setLoginError(null);
-  }, [loginType]);
-
   const trimmedEmail = email.trim().toLowerCase();
-  const canSubmit = Boolean(trimmedEmail) && Boolean(password) && !isSubmitting;
+  const canSubmit = isSuperAdmin
+    ? Boolean(trimmedEmail) && Boolean(password) && !isSubmitting
+    : !isSubmitting && !isLoading;
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    if (!isSuperAdmin && !isLoading && authenticated) {
+      router.replace("/admin/dashboard");
+    }
+  }, [authenticated, isLoading, isSuperAdmin, router]);
+
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (isSubmitting) {
@@ -42,15 +43,13 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      const demoCredentialsError = "Please enter correct demo credentials.";
+      if (isSuperAdmin) {
+        const demoCredentialsError = "Please enter correct demo credentials.";
 
-      if (!trimmedEmail || !password) {
-        setLoginError(demoCredentialsError);
-        return;
-      }
-
-      if (loginType === "super-admin") {
-        if (trimmedEmail !== "superwis@gmail.com" || password !== "superpass") {
+        if (
+          trimmedEmail !== "superwis@gmail.com" ||
+          password !== "superpass"
+        ) {
           setLoginError(demoCredentialsError);
           return;
         }
@@ -59,21 +58,9 @@ export default function LoginPage() {
         return;
       }
 
-      if (trimmedEmail !== "enterprise@gmail.com" || password !== "enterpass") {
-        setLoginError(demoCredentialsError);
-        return;
-      }
-
-      // Enterprise Owner must still obtain the Marketplace demo token for chat and socket features.
-      await loginMarketplaceDemoUser();
-      try {
-        await updatePresenceStatus("online");
-      } catch {
-        // Presence must not block a successful login.
-      }
-      router.push("/admin/messages");
+      startLogin();
     } catch (error) {
-      setLoginError(error instanceof Error ? error.message : "Marketplace demo login failed.");
+      setLoginError(error instanceof Error ? error.message : "Unable to start secure login.");
     } finally {
       setIsSubmitting(false);
     }
@@ -167,7 +154,12 @@ export default function LoginPage() {
               <div className="inline-flex rounded-full bg-[#e9f4ee] p-0.5 shadow-[0_1px_0_rgba(7,53,45,0.03)]">
                 <button
                   type="button"
-                  onClick={() => setLoginType("super-admin")}
+                  onClick={() => {
+                    setLoginType("super-admin");
+                    setEmail("");
+                    setPassword("");
+                    setLoginError(null);
+                  }}
                   className={`rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition ${
                     isSuperAdmin
                       ? "bg-white text-[#1f6a58] shadow-sm"
@@ -196,7 +188,12 @@ export default function LoginPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setLoginType("admin")}
+                  onClick={() => {
+                    setLoginType("admin");
+                    setEmail("");
+                    setPassword("");
+                    setLoginError(null);
+                  }}
                   className={`rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition ${
                     !isSuperAdmin
                       ? "bg-white text-[#1f6a58] shadow-sm"
@@ -250,65 +247,72 @@ export default function LoginPage() {
               <p className="mt-1.5 text-[14px] text-[#55746b]">{subtitle}</p>
             </div>
 
-            <form onSubmit={(event) => void handleSubmit(event)} className="mt-6 space-y-3.5">
-              <label className="block">
-                <span className="text-[12px] font-bold text-[#051915]">Email Address</span>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(event) => {
-                    setEmail(event.target.value);
-                    setLoginError(null);
-                  }}
-                  placeholder={emailPlaceholder}
-                  className="mt-1.5 h-10 w-full rounded-[13px] border border-[#c9ddd7] bg-[#f1f7f4] px-3.5 text-[14px] text-[#173b34] outline-none transition placeholder:text-[#8aa19a] focus:border-[#226b58] focus:ring-4 focus:ring-[#226b58]/10"
-                />
-              </label>
-
-              <label className="block">
-                <span className="flex items-center justify-between gap-4">
-                  <span className="text-[12px] font-bold text-[#051915]">Password</span>
-                  <a href="#" className="text-[12px] font-semibold text-[#0b5b4e]">
-                    Forgot?
-                  </a>
-                </span>
-                <span className="relative mt-2 block">
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(event) => {
-                      setPassword(event.target.value);
-                      setLoginError(null);
-                    }}
-                    placeholder="Enter your password"
-                    className="h-10 w-full rounded-[13px] border border-[#c9ddd7] bg-[#f1f7f4] px-3.5 pr-10 text-[14px] text-[#173b34] outline-none transition placeholder:text-[#8aa19a] focus:border-[#226b58] focus:ring-4 focus:ring-[#226b58]/10"
-                  />
-                  <svg
-                    aria-hidden="true"
-                    className="absolute right-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#6b8b83]"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <rect
-                      x="5"
-                      y="10"
-                      width="14"
-                      height="10"
-                      rx="2"
-                      stroke="currentColor"
-                      strokeWidth="2"
+            <form onSubmit={handleSubmit} className="mt-6 space-y-3.5">
+              {isSuperAdmin ? (
+                <>
+                  <label className="block">
+                    <span className="text-[12px] font-bold text-[#051915]">Email Address</span>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(event) => {
+                        setEmail(event.target.value);
+                        setLoginError(null);
+                      }}
+                      placeholder="admin@invigoratehealth.com"
+                      className="mt-1.5 h-10 w-full rounded-[13px] border border-[#c9ddd7] bg-[#f1f7f4] px-3.5 text-[14px] text-[#173b34] outline-none transition placeholder:text-[#8aa19a] focus:border-[#226b58] focus:ring-4 focus:ring-[#226b58]/10"
                     />
-                    <path
-                      d="M8 10V7a4 4 0 0 1 8 0v3"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                </span>
-              </label>
+                  </label>
 
+                  <label className="block">
+                    <span className="flex items-center justify-between gap-4">
+                      <span className="text-[12px] font-bold text-[#051915]">Password</span>
+                      <a href="#" className="text-[12px] font-semibold text-[#0b5b4e]">
+                        Forgot?
+                      </a>
+                    </span>
+                    <span className="relative mt-2 block">
+                      <input
+                        type="password"
+                        value={password}
+                        onChange={(event) => {
+                          setPassword(event.target.value);
+                          setLoginError(null);
+                        }}
+                        placeholder="Enter your password"
+                        className="h-10 w-full rounded-[13px] border border-[#c9ddd7] bg-[#f1f7f4] px-3.5 pr-10 text-[14px] text-[#173b34] outline-none transition placeholder:text-[#8aa19a] focus:border-[#226b58] focus:ring-4 focus:ring-[#226b58]/10"
+                      />
+                      <svg
+                        aria-hidden="true"
+                        className="absolute right-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#6b8b83]"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <rect
+                          x="5"
+                          y="10"
+                          width="14"
+                          height="10"
+                          rx="2"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        />
+                        <path
+                          d="M8 10V7a4 4 0 0 1 8 0v3"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    </span>
+                  </label>
+                </>
+              ) : (
+                <p className="rounded-[13px] border border-[#c9ddd7] bg-[#f1f7f4] px-4 py-3 text-[13px] leading-5 text-[#55746b]">
+                  Continue to the secure Invigorate Health sign-in page.
+                </p>
+              )}
               <button
                 type="submit"
                 disabled={!canSubmit}
@@ -349,12 +353,12 @@ export default function LoginPage() {
               ) : (
                 <p className="text-center text-[13px] text-[#55746b]">
                   Not registered yet?{" "}
-                  <a
-                    href="#"
+                  <Link
+                    href="/auth/register"
                     className="font-semibold text-[#0b5b4e] underline-offset-2 hover:underline"
                   >
                     Apply for access &rarr;
-                  </a>
+                  </Link>
                 </p>
               )}
             </div>

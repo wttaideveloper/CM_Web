@@ -68,6 +68,7 @@ export function normalizeEnterpriseStatusFlag(status: unknown): boolean {
 }
 
 export type CreateEnterprisePayload = {
+  tenant_id: string;
   business_short_name: string;
   business_legal_name: string;
   business_description: string;

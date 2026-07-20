@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { City, Country, State } from "country-state-city";
 
 import AppShell from "@/components/layout/AppShell";
+import { getAuthTenants, type AuthTenant } from "@/services/auth.service";
 import { createEnterprise } from "@/services/enterprise.service";
 
 const steps = ["Business Info", "Contact", "Address", "Branding", "Review"];
@@ -13,6 +14,7 @@ const countryOptions = Country.getAllCountries().sort((left, right) =>
 );
 
 type EnterpriseFieldKey =
+  | "tenantId"
   | "enterpriseName"
   | "tradingName"
   | "registrationNumber"
@@ -40,6 +42,7 @@ type EnterpriseFieldKey =
   | "tagline";
 
 const backendFieldToEnterpriseFieldKey: Record<string, EnterpriseFieldKey> = {
+  tenant_id: "tenantId",
   business_legal_name: "enterpriseName",
   business_short_name: "tradingName",
   registration_number: "registrationNumber",
@@ -70,6 +73,7 @@ const backendFieldToEnterpriseFieldKey: Record<string, EnterpriseFieldKey> = {
 };
 
 const enterpriseFieldLabels: Record<EnterpriseFieldKey, string> = {
+  tenantId: "Tenant / Organization",
   enterpriseName: "Enterprise Name",
   tradingName: "Trading / DBA Name",
   registrationNumber: "Registration Number",
@@ -98,6 +102,7 @@ const enterpriseFieldLabels: Record<EnterpriseFieldKey, string> = {
 };
 
 const enterpriseFieldSteps: Record<EnterpriseFieldKey, number> = {
+  tenantId: 0,
   enterpriseName: 0,
   tradingName: 0,
   registrationNumber: 0,
@@ -223,6 +228,7 @@ function combinePhone(code: string, number: string) {
 }
 
 function buildCreateEnterprisePayload({
+  tenantId,
   enterpriseName,
   tradingName,
   description,
@@ -247,6 +253,7 @@ function buildCreateEnterprisePayload({
   status,
   useRegisteredAddressForOtherAddresses,
 }: {
+  tenantId: string;
   enterpriseName: string;
   tradingName: string;
   description: string;
@@ -272,6 +279,7 @@ function buildCreateEnterprisePayload({
   useRegisteredAddressForOtherAddresses: boolean;
 }) {
   return {
+    tenant_id: tenantId,
     business_legal_name: enterpriseName,
     business_short_name: tradingName,
     business_description: description,
@@ -344,6 +352,10 @@ export default function CreateEnterprisePage() {
   const router = useRouter();
   const fieldRefs = useRef<Partial<Record<EnterpriseFieldKey, HTMLElement | null>>>({});
   const [currentStep, setCurrentStep] = useState(0);
+  const [tenants, setTenants] = useState<AuthTenant[]>([]);
+  const [selectedTenantId, setSelectedTenantId] = useState("");
+  const [isLoadingTenants, setIsLoadingTenants] = useState(true);
+  const [tenantLoadError, setTenantLoadError] = useState<string | null>(null);
   const [enterpriseName, setEnterpriseName] = useState("");
   const [tradingName, setTradingName] = useState("");
   const [registrationNumber, setRegistrationNumber] = useState("");
@@ -387,6 +399,30 @@ export default function CreateEnterprisePage() {
   const cityOptions = selectedCountryCode && selectedStateCode
     ? getCityOptions(selectedCountryCode, selectedStateCode)
     : [];
+
+  useEffect(() => {
+    let isActive = true;
+
+    void getAuthTenants()
+      .then((nextTenants) => {
+        if (!isActive) return;
+        setTenants(nextTenants);
+        if (nextTenants.length === 0) {
+          setTenantLoadError("No tenants are available to link to this enterprise.");
+        }
+      })
+      .catch((loadError) => {
+        if (!isActive) return;
+        setTenantLoadError(loadError instanceof Error ? loadError.message : "Unable to load tenants.");
+      })
+      .finally(() => {
+        if (isActive) setIsLoadingTenants(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!pendingFocusField) {
@@ -441,6 +477,7 @@ export default function CreateEnterprisePage() {
   }
 
   async function handleSubmit(status: EnterpriseCreateStatus) {
+    const trimmedTenantId = selectedTenantId.trim();
     const trimmedName = enterpriseName.trim();
     const trimmedTradingName = tradingName.trim();
     const trimmedRegistrationNumber = optionalText(registrationNumber);
@@ -467,6 +504,7 @@ export default function CreateEnterprisePage() {
     const trimmedTagline = optionalText(tagline);
 
     if (
+      !trimmedTenantId ||
       !trimmedName ||
       !trimmedTradingName ||
       !trimmedDescription ||
@@ -480,7 +518,7 @@ export default function CreateEnterprisePage() {
       (!useRegisteredAddressForOtherAddresses &&
         (!trimmedBusinessAddress || !trimmedCommunicationAddress))
     ) {
-      setError("Please complete all required enterprise fields.");
+      setError(trimmedTenantId ? "Please complete all required enterprise fields." : "Select a tenant / organization before creating this enterprise.");
       setCurrentStep(0);
       return;
     }
@@ -499,6 +537,7 @@ export default function CreateEnterprisePage() {
 
       await createEnterprise(
         buildCreateEnterprisePayload({
+          tenantId: trimmedTenantId,
           enterpriseName: trimmedName,
           tradingName: trimmedTradingName,
           description: trimmedDescription,
@@ -607,6 +646,29 @@ export default function CreateEnterprisePage() {
               </p>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
+              <label className="block md:col-span-2">
+                <FieldLabel>Tenant / Organization*</FieldLabel>
+                <select
+                  ref={registerFieldRef("tenantId")}
+                  value={selectedTenantId}
+                  onChange={(event) => {
+                    setSelectedTenantId(event.target.value);
+                    setError(null);
+                  }}
+                  disabled={isLoadingTenants || Boolean(tenantLoadError)}
+                  className={selectClass()}
+                >
+                  <option value="">
+                    {isLoadingTenants ? "Loading tenants..." : tenantLoadError ? "Unable to load tenants" : "Select tenant / organization"}
+                  </option>
+                  {tenants.map((tenant) => (
+                    <option key={tenant.id} value={tenant.id}>
+                      {tenant.slug ? `${tenant.name} (${tenant.slug})` : tenant.name}
+                    </option>
+                  ))}
+                </select>
+                {tenantLoadError ? <p className="mt-1.5 text-sm text-[#b42318]">{tenantLoadError}</p> : null}
+              </label>
               <label className="block">
                 <FieldLabel>Enterprise Name*</FieldLabel>
                 <input
@@ -1058,6 +1120,7 @@ export default function CreateEnterprisePage() {
                 <div className="grid gap-4 md:grid-cols-2">
                   {[
                     ["Enterprise Name", enterpriseName.trim() || "N/A"],
+                    ["Tenant / Organization", tenants.find((tenant) => tenant.id === selectedTenantId)?.name ?? "N/A"],
                     ["Trading / DBA Name", tradingName.trim() || "N/A"],
                     ["Description", description.trim() || "N/A"],
                     ["Email", businessEmail.trim() || "N/A"],
@@ -1101,7 +1164,7 @@ export default function CreateEnterprisePage() {
         <div className="mt-6 flex flex-col gap-3 border-t border-[#edf3f0] pt-5 sm:flex-row sm:items-center sm:justify-between">
           <button
             type="button"
-            disabled={isSubmitting || !isLastStep}
+            disabled={isSubmitting || !isLastStep || !selectedTenantId}
             onClick={() => void handleSubmit("draft")}
             className="h-12 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a] disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -1117,7 +1180,7 @@ export default function CreateEnterprisePage() {
             </button>
             <button
               type="button"
-              disabled={isSubmitting}
+              disabled={isSubmitting || (isLastStep && !selectedTenantId)}
               onClick={() =>
                 isLastStep
                   ? void handleSubmit("active")

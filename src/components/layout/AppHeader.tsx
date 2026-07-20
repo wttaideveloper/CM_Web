@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useAdminSocket } from "@/contexts/AdminSocketContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { updatePresenceStatus } from "@/services/chat.service";
 import { clearMarketplaceDemoSession } from "@/services/marketplace-demo-auth.service";
 
@@ -120,6 +121,7 @@ type AppHeaderProps = {
 export default function AppHeader({ onMenuClick }: AppHeaderProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const { logout } = useAuth();
   const headerRef = useRef<HTMLElement | null>(null);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const isAdminRoute = pathname.startsWith("/admin");
@@ -179,9 +181,21 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
         await updatePresenceStatus("offline");
       } catch {
         // Logout must continue even if presence update fails.
-      } finally {
-        clearMarketplaceDemoSession();
+      }
+
+      clearMarketplaceDemoSession();
+
+      if (!isAdminRoute) {
         router.replace("/auth/login");
+        return;
+      }
+
+      try {
+        await logout();
+      } catch {
+        // The browser still leaves the protected UI if Web Auth logout fails.
+      } finally {
+        window.location.assign("/auth/login");
       }
       return;
     }
