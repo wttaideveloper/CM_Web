@@ -114,6 +114,19 @@ function clampBadge(value: number) {
   return value > 99 ? "99+" : String(value);
 }
 
+function getInitials(name: string | undefined, email: string | undefined) {
+  const initials = (name ?? "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+
+  return initials || email?.trim().slice(0, 2).toUpperCase() || "IH";
+}
+
 type AppHeaderProps = {
   onMenuClick: () => void;
 };
@@ -121,7 +134,7 @@ type AppHeaderProps = {
 export default function AppHeader({ onMenuClick }: AppHeaderProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const headerRef = useRef<HTMLElement | null>(null);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const isAdminRoute = pathname.startsWith("/admin");
@@ -175,6 +188,12 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
   const closeMenu = () => setOpenMenu(null);
 
   const handleProfileItemClick = async (item: string) => {
+    if (item === "View Profile" && isAdminRoute) {
+      closeMenu();
+      router.push("/admin/profile");
+      return;
+    }
+
     if (item === "Logout") {
       closeMenu();
       try {
@@ -432,7 +451,7 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
             aria-label="Profile"
             aria-expanded={openMenu === "profile"}
           >
-            IH
+            {isAdminRoute ? getInitials(user?.fullName, user?.email) : "IH"}
           </button>
 
           <div

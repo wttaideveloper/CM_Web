@@ -9,7 +9,6 @@ import { getEnterpriseLocations } from "@/services/enterprise-location.service";
 import { createDynamicAttribute } from "@/services/attribute.service";
 import { getEnterprises } from "@/services/enterprise.service";
 import { createService } from "@/services/service.service";
-import { CURRENT_ENTERPRISE } from "@/lib/current-enterprise";
 import type { EnterpriseDto } from "@/types/enterprise.types";
 import type { EnterpriseLocationDto } from "@/types/location.types";
 import type { AvailabilityScheduleItem } from "@/types/service.types";
@@ -163,6 +162,8 @@ type CustomAttributeRow = {
 type ServiceCreatePageProps = {
   mode?: "super-admin" | "enterprise-admin";
   redirectTo?: string;
+  enterpriseId?: string;
+  enterpriseName?: string;
 };
 
 function createAttributeRow(): CustomAttributeRow {
@@ -174,13 +175,18 @@ function createAttributeRow(): CustomAttributeRow {
   };
 }
 
-export function ServiceCreatePage({ mode = "super-admin", redirectTo }: ServiceCreatePageProps = {}) {
+export function ServiceCreatePage({
+  mode = "super-admin",
+  redirectTo,
+  enterpriseId: ownerEnterpriseId,
+  enterpriseName: ownerEnterpriseName,
+}: ServiceCreatePageProps = {}) {
   const router = useRouter();
   const isEnterpriseAdmin = mode === "enterprise-admin";
   const [activeTab, setActiveTab] = useState(tabs[0]);
   const [weekdays, setWeekdays] = useState(initialWeekdays);
   const [enterpriseId, setEnterpriseId] = useState(() =>
-    isEnterpriseAdmin ? CURRENT_ENTERPRISE.id : "",
+    isEnterpriseAdmin ? ownerEnterpriseId ?? "" : "",
   );
   const [serviceName, setServiceName] = useState("");
   const [serviceDescription, setServiceDescription] = useState("");
@@ -221,7 +227,7 @@ export function ServiceCreatePage({ mode = "super-admin", redirectTo }: ServiceC
 
   const reviewEnterpriseName =
     (isEnterpriseAdmin
-      ? CURRENT_ENTERPRISE.name
+      ? ownerEnterpriseName || "Unnamed Enterprise"
       : selectedEnterprise?.business_legal_name ||
         selectedEnterprise?.business_short_name ||
         selectedEnterprise?.name ||
@@ -245,15 +251,23 @@ export function ServiceCreatePage({ mode = "super-admin", redirectTo }: ServiceC
 
   async function fetchEnterprises() {
     if (isEnterpriseAdmin) {
+      if (!ownerEnterpriseId) {
+        setEnterpriseOptions([]);
+        setEnterpriseId("");
+        setError("No enterprise is linked to this organization yet.");
+        setIsLoadingEnterprises(false);
+        return;
+      }
+
       setEnterpriseOptions([
         {
-          id: CURRENT_ENTERPRISE.id,
-          business_legal_name: CURRENT_ENTERPRISE.name,
-          business_short_name: CURRENT_ENTERPRISE.name,
-          name: CURRENT_ENTERPRISE.name,
+          id: ownerEnterpriseId,
+          business_legal_name: ownerEnterpriseName ?? "",
+          business_short_name: ownerEnterpriseName ?? "",
+          name: ownerEnterpriseName ?? "",
         },
       ]);
-      setEnterpriseId(CURRENT_ENTERPRISE.id);
+      setEnterpriseId(ownerEnterpriseId);
       setIsLoadingEnterprises(false);
       return;
     }
@@ -300,7 +314,7 @@ export function ServiceCreatePage({ mode = "super-admin", redirectTo }: ServiceC
 
   useEffect(() => {
     void fetchEnterprises();
-  }, [isEnterpriseAdmin]);
+  }, [isEnterpriseAdmin, ownerEnterpriseId, ownerEnterpriseName]);
 
   useEffect(() => {
     setLocationId("");
@@ -355,7 +369,7 @@ export function ServiceCreatePage({ mode = "super-admin", redirectTo }: ServiceC
       setError(null);
 
       const createdService = await createService({
-        enterprise_id: trimmedEnterpriseId || CURRENT_ENTERPRISE.id,
+        enterprise_id: trimmedEnterpriseId,
         ...(locationId.trim() ? { location_id: locationId.trim() } : {}),
         service_name: trimmedServiceName,
         service_description: trimmedServiceDescription,
@@ -487,7 +501,7 @@ export function ServiceCreatePage({ mode = "super-admin", redirectTo }: ServiceC
                 {isEnterpriseAdmin ? (
                   <input
                     type="text"
-                    value={CURRENT_ENTERPRISE.name}
+                    value={ownerEnterpriseName || "Unnamed Enterprise"}
                     readOnly
                     className={selectClass()}
                   />

@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "@/lib/api";
+import { requestResponse } from "@/services/api-client";
 import type {
   CreateEnterprisePayload,
   EnterpriseDto,
@@ -6,6 +7,7 @@ import type {
 } from "@/types/enterprise.types";
 
 type EnterpriseListResponse = EnterpriseDto[] | { items?: EnterpriseDto[] };
+type EnterpriseSearchResponse = EnterpriseDto[] | { data?: EnterpriseDto[]; items?: EnterpriseDto[]; results?: EnterpriseDto[] };
 type EnterpriseApiError = Error & {
   status?: number;
   fieldErrors?: Record<string, string[]>;
@@ -200,6 +202,23 @@ export async function getEnterpriseById(id: string): Promise<EnterpriseDto> {
   return response.json();
 }
 
+export async function searchEnterprisesByTenantId(tenantId: string): Promise<EnterpriseDto[]> {
+  const searchParams = new URLSearchParams({ tenant_id: tenantId });
+  const response = await requestResponse(`/search/enterprises?${searchParams.toString()}`, { method: "GET" }, false);
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new Error(errorText || `Unable to search enterprises (${response.status} ${response.statusText}).`);
+  }
+
+  const data = (await response.json()) as EnterpriseSearchResponse;
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  return data.data ?? data.items ?? data.results ?? [];
+}
+
 export async function createEnterprise(
   payload: CreateEnterprisePayload,
 ): Promise<EnterpriseDto> {
@@ -238,9 +257,9 @@ export async function updateEnterprise(
 }
 
 export async function deactivateEnterprise(id: string): Promise<EnterpriseDto> {
-  return updateEnterprise(id, { status: false });
+  return updateEnterprise(id, { status: "inactive" });
 }
 
 export async function activateEnterprise(id: string): Promise<EnterpriseDto> {
-  return updateEnterprise(id, { status: true });
+  return updateEnterprise(id, { status: "active" });
 }

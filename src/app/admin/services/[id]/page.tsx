@@ -1,14 +1,10 @@
 "use client";
 
 import { ServiceDetailsPage } from "@/app/services/[id]/page";
-import { CURRENT_ENTERPRISE } from "@/lib/current-enterprise";
+import CurrentEnterpriseGuard from "@/components/enterprise/CurrentEnterpriseGuard";
 
 export default function AdminServiceDetailsPage() {
-  return (
-    <ServiceDetailsPage
-      enterpriseFilterId={CURRENT_ENTERPRISE.id}
-      listHref="/admin/services"
-      editHrefBase="/admin/services"
-    />
-  );
+  return <CurrentEnterpriseGuard>{({ enterpriseId }) => (
+    <ServiceDetailsPage enterpriseFilterId={enterpriseId} listHref="/admin/services" editHrefBase="/admin/services" />
+  )}</CurrentEnterpriseGuard>;
 }

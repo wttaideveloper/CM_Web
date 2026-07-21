@@ -3,218 +3,214 @@
 import { useState } from "react";
 
 import AppShell from "@/components/layout/AppShell";
+import InviteUserModal from "@/components/profile/InviteUserModal";
+import ProfileEditModal from "@/components/profile/ProfileEditModal";
+import PasswordResetModal from "@/components/profile/PasswordResetModal";
+import { useAuth } from "@/contexts/AuthContext";
+import { useTenant } from "@/contexts/TenantContext";
 
-const notificationDefaults: Array<{ label: string; enabled: boolean }> = [
-  { label: "New bookings", enabled: true },
-  { label: "Customer reviews", enabled: true },
-  { label: "Payment confirmations", enabled: true },
-  { label: "Platform announcements", enabled: false },
-  { label: "Marketing tips", enabled: false },
-];
-
-function LockIcon() {
-  return (
-    <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M7 11V8a5 5 0 0 1 10 0v3M6 11h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1Z"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+function emptyToNotProvided(value: string | null | undefined) {
+  return value?.trim() || "Not provided";
 }
 
-function InputLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <label className="block text-sm font-medium text-[#16332b]">
-      {children}
-    </label>
-  );
+function formatValue(value: string | null | undefined) {
+  if (!value?.trim()) {
+    return "Not provided";
+  }
+
+  return value
+    .replace(/[_-]/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function TextInput({
-  defaultValue,
-  placeholder,
-  type = "text",
-}: {
-  defaultValue?: string;
-  placeholder?: string;
-  type?: "text" | "email" | "password";
-}) {
+function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <input
-      type={type}
-      defaultValue={defaultValue}
-      placeholder={placeholder}
-      className="h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f7fbf8] px-3 text-sm text-[#06201c] outline-none transition focus:border-[#1f6a58]"
-    />
-  );
-}
-
-function ToggleRow({
-  label,
-  enabled,
-  onToggle,
-  isLast,
-}: {
-  label: string;
-  enabled: boolean;
-  onToggle: () => void;
-  isLast: boolean;
-}) {
-  return (
-    <div className={`flex items-center justify-between gap-3 py-3 ${isLast ? "" : "border-b border-[#edf3f0]"}`}>
-      <span className="text-sm font-medium text-[#16332b]">{label}</span>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-pressed={enabled}
-        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${
-          enabled ? "bg-[#1f6a58]" : "bg-[#d7dfdb]"
-        }`}
-      >
-        <span
-          className={`inline-block h-5 w-5 rounded-full bg-white shadow-sm transition ${
-            enabled ? "translate-x-5" : "translate-x-0.5"
-          }`}
-        />
-      </button>
+    <div className="min-w-0 border-b border-[#edf3f0] py-3 last:border-b-0">
+      <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#7f9d94]">{label}</p>
+      <p className="mt-1 break-words text-sm font-semibold text-[#16332b]">{value}</p>
     </div>
   );
 }
 
-function Card({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
       <h2 className="text-base font-bold text-[#06201c]">{title}</h2>
-      <div className="mt-4">{children}</div>
+      <div className="mt-3">{children}</div>
     </section>
   );
 }
 
 export default function AdminSettingsPage() {
-  const [notifications, setNotifications] = useState(notificationDefaults);
+  const { user } = useAuth();
+  const { tenant, isLoadingTenant, tenantError } = useTenant();
+  const [isEditing, setIsEditing] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [isInviting, setIsInviting] = useState(false);
+  const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+  const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
+  const tenantRole = user?.membership?.tenantRole ?? user?.roles?.tenantRole;
+  const canInviteUsers = user?.membership?.canInviteUsers ?? user?.roles?.canInviteUsers;
+  const canManageInvitations =
+    (tenantRole === "tenant_owner" || tenantRole === "tenant_admin") && canInviteUsers !== false;
 
   return (
     <AppShell>
-      <div className="min-h-[calc(100vh-72px)] bg-[#f7fbf8] px-6 py-6">
-        <div className="mx-auto w-full max-w-7xl space-y-5">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">
-              ENTERPRISE OWNER · SETTINGS
-            </p>
-            <h1 className="mt-1 text-2xl font-bold text-[#06201c]">Enterprise Settings</h1>
-            <p className="mt-1 text-sm text-[#5f7a71]">
-              Manage your enterprise profile, billing, and preferences
-            </p>
-          </div>
+      <div className="mx-auto w-full max-w-6xl space-y-5">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">ENTERPRISE OWNER</p>
+          <h1 className="mt-1 text-2xl font-bold text-[#06201c]">Enterprise Settings</h1>
+          <p className="mt-1 text-sm text-[#5f7a71]">Manage your account and organization settings</p>
+        </div>
 
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-            <Card title="Profile Settings">
+        {profileSuccess ? (
+          <div className="rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-medium text-[#167550]" role="status">
+            {profileSuccess}
+          </div>
+        ) : null}
+        {passwordSuccess ? (
+          <div className="rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-medium text-[#167550]" role="status">
+            {passwordSuccess}
+          </div>
+        ) : null}
+        {inviteSuccess ? (
+          <div className="rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-medium text-[#167550]" role="status">
+            {inviteSuccess}
+          </div>
+        ) : null}
+
+        <div className={`grid grid-cols-1 gap-5 ${canManageInvitations ? "xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]" : ""}`}>
+          <Card title="Personal Information">
+            {user ? (
+              <>
+                <div className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
+                  <DetailRow label="Full Name" value={emptyToNotProvided(user.fullName)} />
+                  <DetailRow label="Phone" value={emptyToNotProvided(user.phone)} />
+                  <DetailRow label="Email" value={emptyToNotProvided(user.email)} />
+                  <DetailRow label="Country" value={emptyToNotProvided(user.country)} />
+                  <DetailRow label="Address" value={emptyToNotProvided(user.address)} />
+                  <DetailRow label="Preferred Language" value={emptyToNotProvided(user.preferredLocale)} />
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProfileSuccess(null);
+                      setIsEditing(true);
+                    }}
+                    className="inline-flex h-10 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-semibold text-white transition hover:bg-[#195646]"
+                  >
+                    Edit Profile
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="py-2 text-sm text-[#52736a]">Loading personal information...</p>
+            )}
+          </Card>
+
+          {canManageInvitations ? (
+            <Card title="Team &amp; Invitations">
               <div className="space-y-4">
-                <div className="space-y-2">
-                  <InputLabel>Enterprise Name</InputLabel>
-                  <TextInput defaultValue="Pinnacle Wellness Co." />
-                </div>
-                <div className="space-y-2">
-                  <InputLabel>Contact Email</InputLabel>
-                  <TextInput type="email" defaultValue="hello@pinnacle.com" />
-                </div>
-                <div className="space-y-2">
-                  <InputLabel>Phone</InputLabel>
-                  <TextInput defaultValue="+1 (415) 555-0192" />
-                </div>
-                <div className="space-y-2">
-                  <InputLabel>Business Description</InputLabel>
-                  <textarea
-                    placeholder="Share a short description about your enterprise..."
-                    className="h-28 w-full rounded-xl border border-[#d7e5df] bg-[#f7fbf8] px-3 py-2.5 text-sm text-[#06201c] outline-none transition focus:border-[#1f6a58]"
-                  />
-                </div>
+                <p className="text-sm text-[#52736a]">
+                  {tenantRole === "tenant_owner"
+                    ? "Invite administrators and team members."
+                    : "Invite team members to your organization."}
+                </p>
                 <button
                   type="button"
-                  className="inline-flex h-10 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-semibold text-white transition hover:bg-[#195646]"
+                  onClick={() => {
+                    setInviteSuccess(null);
+                    setIsInviting(true);
+                  }}
+                  className="inline-flex h-10 w-full items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-semibold text-white transition hover:bg-[#195646]"
                 >
-                  Save Changes
+                  Invite User
                 </button>
               </div>
             </Card>
+          ) : null}
+        </div>
 
-            <Card title="Notifications">
-              <div>
-                {notifications.map((item, index) => (
-                  <ToggleRow
-                    key={item.label}
-                    label={item.label}
-                    enabled={item.enabled}
-                    isLast={index === notifications.length - 1}
-                    onToggle={() => {
-                      setNotifications((current) =>
-                        current.map((entry, entryIndex) =>
-                          entryIndex === index
-                            ? { ...entry, enabled: !entry.enabled }
-                            : entry,
-                        ),
-                      );
-                    }}
-                  />
-                ))}
-              </div>
-            </Card>
-
-            <Card title="Subscription & Billing">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          <Card title="Subscription &amp; Billing">
+            {isLoadingTenant ? (
+              <p className="py-2 text-sm text-[#52736a]">Loading subscription information...</p>
+            ) : tenantError ? (
+              <p className="py-2 text-sm text-[#b42318]">Unable to load subscription information: {tenantError}</p>
+            ) : tenant ? (
               <div className="space-y-4">
-                <div className="rounded-2xl border border-[#dceae2] bg-[#eef6f2] p-4">
-                  <p className="text-sm font-semibold text-[#06201c]">Professional Plan</p>
-                  <p className="mt-1 text-sm text-[#52736a]">$149/month · Renews Jun 24, 2026</p>
+                <div>
+                  <DetailRow label="Current Plan" value={formatValue(tenant.plan)} />
+                  <DetailRow label="Subscription Status" value={formatValue(tenant.status)} />
+                  <DetailRow label="Organization" value={emptyToNotProvided(tenant.name)} />
                 </div>
-                <div className="space-y-2.5">
+                <p className="text-xs text-[#7f9d94]">Billing actions will be available soon.</p>
+                <div className="flex flex-col gap-2 sm:flex-row">
                   <button
                     type="button"
-                    className="flex h-10 w-full items-center justify-center rounded-full bg-[#e8f6ee] px-4 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#dbf0e5]"
+                    disabled
+                    className="inline-flex h-10 flex-1 cursor-not-allowed items-center justify-center rounded-full bg-[#e8f6ee] px-4 text-sm font-semibold text-[#7f9d94] opacity-70"
                   >
                     Upgrade Plan
                   </button>
                   <button
                     type="button"
-                    className="flex h-10 w-full items-center justify-center rounded-full border border-[#d7e5df] bg-white px-4 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#f7fbf8]"
+                    disabled
+                    className="inline-flex h-10 flex-1 cursor-not-allowed items-center justify-center rounded-full border border-[#d7e5df] bg-white px-4 text-sm font-semibold text-[#7f9d94] opacity-70"
                   >
                     Download Invoice
                   </button>
                 </div>
               </div>
-            </Card>
+            ) : (
+              <p className="py-2 text-sm text-[#52736a]">Subscription information is not available.</p>
+            )}
+          </Card>
 
-            <Card title="Account Security">
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <InputLabel>Current Password</InputLabel>
-                  <TextInput type="password" placeholder="••••••••••••" />
-                </div>
-                <div className="space-y-2">
-                  <InputLabel>New Password</InputLabel>
-                  <TextInput type="password" placeholder="••••••••••••" />
-                </div>
-                <button
-                  type="button"
-                  className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-full bg-[#1f6a58] px-5 text-sm font-semibold text-white transition hover:bg-[#195646]"
-                >
-                  <LockIcon />
-                  Update Password
-                </button>
+          <Card title="Account Security">
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm font-semibold text-[#16332b]">Password</p>
+                <p className="mt-1 text-sm text-[#52736a]">Reset your account password securely using email verification.</p>
               </div>
-            </Card>
-          </div>
+              <button
+                type="button"
+                disabled={!user}
+                onClick={() => {
+                  setPasswordSuccess(null);
+                  setIsResettingPassword(true);
+                }}
+                className="inline-flex h-10 w-full items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-semibold text-white transition hover:bg-[#195646] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Reset Password
+              </button>
+            </div>
+          </Card>
         </div>
       </div>
+
+      {isEditing && user ? (
+        <ProfileEditModal
+          user={user}
+          onClose={() => setIsEditing(false)}
+          onProfileUpdated={() => setProfileSuccess("Profile updated successfully.")}
+        />
+      ) : null}
+      {isResettingPassword && user ? (
+        <PasswordResetModal
+          email={user.email}
+          onClose={() => setIsResettingPassword(false)}
+          onSuccess={() => setPasswordSuccess("Password updated successfully.")}
+        />
+      ) : null}
+      {isInviting ? (
+        <InviteUserModal
+          onClose={() => setIsInviting(false)}
+          onSuccess={() => setInviteSuccess("Invitation sent successfully.")}
+        />
+      ) : null}
     </AppShell>
   );
 }

@@ -9,7 +9,6 @@ import { getEnterpriseLocations } from "@/services/enterprise-location.service";
 import { createDynamicAttribute } from "@/services/attribute.service";
 import { getEnterprises } from "@/services/enterprise.service";
 import { createProduct } from "@/services/product.service";
-import { CURRENT_ENTERPRISE } from "@/lib/current-enterprise";
 
 const tabs = ["Product Info", "Pricing", "Images", "Review"];
 
@@ -36,6 +35,8 @@ type CustomAttributeRow = {
 type ProductCreatePageProps = {
   mode?: "super-admin" | "enterprise-admin";
   redirectTo?: string;
+  enterpriseId?: string;
+  enterpriseName?: string;
 };
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
@@ -112,12 +113,17 @@ function createAttributeRow(): CustomAttributeRow {
   };
 }
 
-export function ProductCreatePage({ mode = "super-admin", redirectTo }: ProductCreatePageProps = {}) {
+export function ProductCreatePage({
+  mode = "super-admin",
+  redirectTo,
+  enterpriseId: ownerEnterpriseId,
+  enterpriseName: ownerEnterpriseName,
+}: ProductCreatePageProps = {}) {
   const router = useRouter();
   const isEnterpriseAdmin = mode === "enterprise-admin";
   const [activeTab, setActiveTab] = useState(tabs[0]);
   const [enterpriseId, setEnterpriseId] = useState(() =>
-    isEnterpriseAdmin ? CURRENT_ENTERPRISE.id : "",
+    isEnterpriseAdmin ? ownerEnterpriseId ?? "" : "",
   );
   const [productName, setProductName] = useState("");
   const [productDescription, setProductDescription] = useState("");
@@ -167,7 +173,7 @@ export function ProductCreatePage({ mode = "super-admin", redirectTo }: ProductC
       : "Not provided";
   const reviewEnterpriseName =
     (isEnterpriseAdmin
-      ? CURRENT_ENTERPRISE.name
+      ? ownerEnterpriseName || "Unnamed Enterprise"
       : selectedEnterprise?.business_legal_name ||
         selectedEnterprise?.business_short_name ||
         "Unnamed Enterprise");
@@ -182,14 +188,22 @@ export function ProductCreatePage({ mode = "super-admin", redirectTo }: ProductC
 
   async function fetchEnterprises() {
     if (isEnterpriseAdmin) {
+      if (!ownerEnterpriseId) {
+        setEnterpriseOptions([]);
+        setEnterpriseId("");
+        setError("No enterprise is linked to this organization yet.");
+        setIsLoadingEnterprises(false);
+        return;
+      }
+
       setEnterpriseOptions([
         {
-          id: CURRENT_ENTERPRISE.id,
-          business_legal_name: CURRENT_ENTERPRISE.name,
-          business_short_name: CURRENT_ENTERPRISE.name,
+          id: ownerEnterpriseId,
+          business_legal_name: ownerEnterpriseName,
+          business_short_name: ownerEnterpriseName,
         },
       ]);
-      setEnterpriseId(CURRENT_ENTERPRISE.id);
+      setEnterpriseId(ownerEnterpriseId);
       setIsLoadingEnterprises(false);
       return;
     }
@@ -236,7 +250,7 @@ export function ProductCreatePage({ mode = "super-admin", redirectTo }: ProductC
 
   useEffect(() => {
     void fetchEnterprises();
-  }, [isEnterpriseAdmin]);
+  }, [isEnterpriseAdmin, ownerEnterpriseId, ownerEnterpriseName]);
 
   useEffect(() => {
     setLocationId("");
@@ -282,7 +296,7 @@ export function ProductCreatePage({ mode = "super-admin", redirectTo }: ProductC
       setError(null);
 
       const createdProduct = await createProduct({
-        enterprise_id: trimmedEnterpriseId || CURRENT_ENTERPRISE.id,
+        enterprise_id: trimmedEnterpriseId,
         ...(locationId.trim() ? { location_id: locationId.trim() } : {}),
         product_name: trimmedProductName,
         product_description: trimmedProductDescription,
@@ -415,7 +429,7 @@ export function ProductCreatePage({ mode = "super-admin", redirectTo }: ProductC
                 {isEnterpriseAdmin ? (
                   <input
                     type="text"
-                    value={CURRENT_ENTERPRISE.name}
+                    value={ownerEnterpriseName || "Unnamed Enterprise"}
                     readOnly
                     className={inputClass()}
                   />

@@ -27,10 +27,6 @@ function statusClass(status: string) {
     return "bg-[#e8f6ee] text-[#16825b]";
   }
 
-  if (status === "Pending") {
-    return "bg-[#fff7e5] text-[#b7791f]";
-  }
-
   if (status === "Draft") {
     return "bg-[#f7f0ff] text-[#7a4b00]";
   }
@@ -174,7 +170,6 @@ export default function EnterprisesPage() {
           total: data.length,
           inactive: data.filter((enterprise) => normalizeEnterpriseStatus(enterprise.status) === "Inactive").length,
           draft: data.filter((enterprise) => normalizeEnterpriseStatus(enterprise.status) === "Draft").length,
-          pending: data.filter((enterprise) => normalizeEnterpriseStatus(enterprise.status) === "Pending").length,
         });
       }
       setEnterprises(sortEnterprisesByCreatedAt(data.map(mapEnterpriseToListItem)));

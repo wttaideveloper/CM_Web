@@ -1,5 +1,8 @@
+export type EnterpriseStatus = "draft" | "active" | "inactive";
+
 export type EnterpriseDto = {
   id: string;
+  tenant_id?: string;
   business_short_name: string;
   business_legal_name: string;
   business_description: string;
@@ -10,7 +13,7 @@ export type EnterpriseDto = {
   communication_address: string;
   logo_url: string;
   business_images: string;
-  status: boolean;
+  status: EnterpriseStatus;
   registration_number?: string;
   business_category?: string;
   website_url?: string;
@@ -27,44 +30,16 @@ export type EnterpriseDto = {
   description?: string;
 };
 
-export type EnterpriseStatusLabel = "Active" | "Inactive" | "Draft" | "Pending";
+export type EnterpriseStatusLabel = "Active" | "Inactive" | "Draft";
 
-export function normalizeEnterpriseStatus(status: unknown): EnterpriseStatusLabel {
-  if (status === true) {
-    return "Active";
-  }
+const enterpriseStatusLabels: Record<EnterpriseStatus, EnterpriseStatusLabel> = {
+  draft: "Draft",
+  active: "Active",
+  inactive: "Inactive",
+};
 
-  if (status === false) {
-    return "Inactive";
-  }
-
-  if (typeof status !== "string") {
-    return "Inactive";
-  }
-
-  const normalized = status.trim().toLowerCase();
-
-  if (normalized === "active") {
-    return "Active";
-  }
-
-  if (normalized === "inactive" || normalized === "deactivated") {
-    return "Inactive";
-  }
-
-  if (normalized === "draft") {
-    return "Draft";
-  }
-
-  if (normalized === "pending") {
-    return "Pending";
-  }
-
-  return normalized.length > 0 ? (normalized.charAt(0).toUpperCase() + normalized.slice(1)) as EnterpriseStatusLabel : "Inactive";
-}
-
-export function normalizeEnterpriseStatusFlag(status: unknown): boolean {
-  return normalizeEnterpriseStatus(status) === "Active";
+export function normalizeEnterpriseStatus(status: EnterpriseStatus): EnterpriseStatusLabel {
+  return enterpriseStatusLabels[status];
 }
 
 export type CreateEnterprisePayload = {
@@ -90,7 +65,7 @@ export type CreateEnterprisePayload = {
   suite_unit?: string;
   brand_color?: string;
   tagline?: string;
-  status: "draft" | "active";
+  status: EnterpriseStatus;
 };
 
 export type UpdateEnterprisePayload = Partial<{
@@ -115,7 +90,7 @@ export type UpdateEnterprisePayload = Partial<{
   suite_unit: string;
   brand_color: string;
   tagline: string;
-  status: boolean;
+  status: EnterpriseStatus;
 }>;
 
 export type EnterpriseListItem = {

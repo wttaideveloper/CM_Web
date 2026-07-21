@@ -28,6 +28,7 @@ type AuthContextValue = {
   hasActiveTenant: boolean;
   needsOrganizationSetup: boolean;
   refreshSession: () => Promise<void>;
+  updateUser: (user: AuthUser) => void;
   logout: () => Promise<void>;
 };
 
@@ -72,6 +73,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [applySession]);
 
+  const updateUser = useCallback((nextUser: AuthUser) => {
+    setUser(nextUser);
+  }, []);
+
   useEffect(() => {
     // Session restoration intentionally initializes provider state after mount.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -97,6 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       hasActiveTenant,
       needsOrganizationSetup,
       refreshSession,
+      updateUser,
       logout,
     }),
     [
@@ -106,6 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       needsOrganizationSetup,
       refreshSession,
+      updateUser,
       user,
     ],
   );

@@ -16,7 +16,7 @@ import { getEnterpriseById, getEnterprises } from "@/services/enterprise.service
 import { formatCurrency } from "@/lib/format-currency";
 import { getProducts } from "@/services/product.service";
 import { getServices } from "@/services/service.service";
-import type { EnterpriseDto } from "@/types/enterprise.types";
+import { normalizeEnterpriseStatus, type EnterpriseDto } from "@/types/enterprise.types";
 import type { EnterpriseLocationDto } from "@/types/location.types";
 import type { ProductDto } from "@/types/product.types";
 import type { ServiceDto } from "@/types/service.types";
@@ -661,7 +661,7 @@ export function EnterpriseDetailsPage({
 
   const currentId = resolvedEnterpriseId;
   const enterpriseName = enterprise ? resolveEnterpriseName(enterprise) : "Unnamed Enterprise";
-  const enterpriseStatus = enterprise?.status === false ? "Inactive" : "Active";
+  const enterpriseStatus = enterprise ? normalizeEnterpriseStatus(enterprise.status) : "Inactive";
   const selectedCountry = findCountryOption(locationDraft.country);
   const selectedCountryCode = selectedCountry?.isoCode ?? "";
   const selectedPhoneCode = selectedCountry ? formatPhoneCode(selectedCountry.phonecode) : "";

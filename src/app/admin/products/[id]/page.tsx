@@ -1,14 +1,10 @@
 "use client";
 
 import { ProductDetailsPage } from "@/app/products/[id]/page";
-import { CURRENT_ENTERPRISE } from "@/lib/current-enterprise";
+import CurrentEnterpriseGuard from "@/components/enterprise/CurrentEnterpriseGuard";
 
 export default function AdminProductDetailsPage() {
-  return (
-    <ProductDetailsPage
-      enterpriseFilterId={CURRENT_ENTERPRISE.id}
-      listHref="/admin/products"
-      editHrefBase="/admin/products"
-    />
-  );
+  return <CurrentEnterpriseGuard>{({ enterpriseId }) => (
+    <ProductDetailsPage enterpriseFilterId={enterpriseId} listHref="/admin/products" editHrefBase="/admin/products" />
+  )}</CurrentEnterpriseGuard>;
 }

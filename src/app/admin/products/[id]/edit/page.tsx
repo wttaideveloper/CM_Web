@@ -1,14 +1,10 @@
 "use client";
 
 import { EditProductPage } from "@/app/products/[id]/edit/page";
-import { CURRENT_ENTERPRISE } from "@/lib/current-enterprise";
+import CurrentEnterpriseGuard from "@/components/enterprise/CurrentEnterpriseGuard";
 
 export default function AdminEditProductPage() {
-  return (
-    <EditProductPage
-      enterpriseFilterId={CURRENT_ENTERPRISE.id}
-      listHref="/admin/products"
-      detailHrefBase="/admin/products"
-    />
-  );
+  return <CurrentEnterpriseGuard>{({ enterpriseId }) => (
+    <EditProductPage enterpriseFilterId={enterpriseId} listHref="/admin/products" detailHrefBase="/admin/products" />
+  )}</CurrentEnterpriseGuard>;
 }

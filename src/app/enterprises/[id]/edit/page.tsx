@@ -7,8 +7,8 @@ import { useParams, useRouter } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { getEnterpriseById, updateEnterprise } from "@/services/enterprise.service";
 import {
-  normalizeEnterpriseStatusFlag,
   type EnterpriseDto,
+  type EnterpriseStatus,
 } from "@/types/enterprise.types";
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
@@ -162,7 +162,7 @@ export function EditEnterprisePage({
   const [businessImages, setBusinessImages] = useState("");
   const [brandColor, setBrandColor] = useState("");
   const [tagline, setTagline] = useState("");
-  const [status, setStatus] = useState(true);
+  const [status, setStatus] = useState<EnterpriseStatus>("active");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isNotFound, setIsNotFound] = useState(false);
@@ -221,7 +221,7 @@ export function EditEnterprisePage({
       setBusinessImages(formatText(data.business_images));
       setBrandColor(formatText(data.brand_color));
       setTagline(formatText(data.tagline));
-      setStatus(normalizeEnterpriseStatusFlag(data.status));
+      setStatus(data.status);
     } catch (fetchError) {
       const nextError =
         fetchError instanceof Error ? fetchError.message : "Unable to load enterprise.";
@@ -328,7 +328,7 @@ export function EditEnterprisePage({
       }
 
       setEnterprise(updatedEnterprise);
-      setStatus(normalizeEnterpriseStatusFlag(updatedEnterprise.status));
+      setStatus(updatedEnterprise.status);
 
       router.push(resolvedSuccessRedirect);
     } catch (submitError) {
@@ -681,12 +681,13 @@ export function EditEnterprisePage({
             <label className="block md:col-span-2">
               <FieldLabel>Status</FieldLabel>
               <select
-                value={String(status)}
-                onChange={(event) => setStatus(event.target.value === "true")}
+                value={status}
+                onChange={(event) => setStatus(event.target.value as EnterpriseStatus)}
                 className={selectClass()}
               >
-                <option value="true">Active</option>
-                <option value="false">Inactive</option>
+                <option value="draft">Draft</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
               </select>
             </label>
           </div>
