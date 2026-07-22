@@ -164,6 +164,7 @@ type ServiceCreatePageProps = {
   redirectTo?: string;
   enterpriseId?: string;
   enterpriseName?: string;
+  tenantId?: string;
 };
 
 function createAttributeRow(): CustomAttributeRow {
@@ -180,6 +181,7 @@ export function ServiceCreatePage({
   redirectTo,
   enterpriseId: ownerEnterpriseId,
   enterpriseName: ownerEnterpriseName,
+  tenantId: ownerTenantId,
 }: ServiceCreatePageProps = {}) {
   const router = useRouter();
   const isEnterpriseAdmin = mode === "enterprise-admin";
@@ -336,6 +338,7 @@ export function ServiceCreatePage({
 
   async function handleCreate() {
     const trimmedEnterpriseId = enterpriseId.trim();
+    const trimmedTenantId = ownerTenantId?.trim();
     const trimmedServiceName = serviceName.trim();
     const trimmedServiceDescription = serviceDescription.trim();
     const trimmedServiceCategory = serviceCategory.trim();
@@ -354,7 +357,8 @@ export function ServiceCreatePage({
       !trimmedServiceDescription ||
       !trimmedServiceCategory ||
       !isValidServicePrice(servicePrice) ||
-      !isValidServiceDuration(duration)
+      !isValidServiceDuration(duration) ||
+      (isEnterpriseAdmin && !trimmedTenantId)
     ) {
       setError("Please complete all required service fields before creating.");
       return;
@@ -369,6 +373,7 @@ export function ServiceCreatePage({
       setError(null);
 
       const createdService = await createService({
+        ...(isEnterpriseAdmin && trimmedTenantId ? { tenant_id: trimmedTenantId } : {}),
         enterprise_id: trimmedEnterpriseId,
         ...(locationId.trim() ? { location_id: locationId.trim() } : {}),
         service_name: trimmedServiceName,

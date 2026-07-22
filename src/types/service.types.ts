@@ -28,6 +28,7 @@ export type ServiceDto = {
 };
 
 export type CreateServicePayload = {
+  tenant_id?: string;
   enterprise_id: string;
   location_id?: string;
   service_name: string;

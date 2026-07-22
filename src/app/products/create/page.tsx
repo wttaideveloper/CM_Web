@@ -37,6 +37,7 @@ type ProductCreatePageProps = {
   redirectTo?: string;
   enterpriseId?: string;
   enterpriseName?: string;
+  tenantId?: string;
 };
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
@@ -118,6 +119,7 @@ export function ProductCreatePage({
   redirectTo,
   enterpriseId: ownerEnterpriseId,
   enterpriseName: ownerEnterpriseName,
+  tenantId: ownerTenantId,
 }: ProductCreatePageProps = {}) {
   const router = useRouter();
   const isEnterpriseAdmin = mode === "enterprise-admin";
@@ -259,6 +261,7 @@ export function ProductCreatePage({
 
   async function handleSubmit() {
     const trimmedEnterpriseId = enterpriseId.trim();
+    const trimmedTenantId = ownerTenantId?.trim();
     const trimmedProductName = productName.trim();
     const trimmedProductDescription = productDescription.trim();
     const trimmedProductCategory = productCategory.trim();
@@ -281,7 +284,8 @@ export function ProductCreatePage({
       !trimmedProductName ||
       !trimmedProductDescription ||
       !trimmedProductCategory ||
-      !Number.isFinite(parsedProductPrice)
+      !Number.isFinite(parsedProductPrice) ||
+      (isEnterpriseAdmin && !trimmedTenantId)
     ) {
       setError("Please complete all required product fields.");
       return;
@@ -296,6 +300,7 @@ export function ProductCreatePage({
       setError(null);
 
       const createdProduct = await createProduct({
+        ...(isEnterpriseAdmin && trimmedTenantId ? { tenant_id: trimmedTenantId } : {}),
         enterprise_id: trimmedEnterpriseId,
         ...(locationId.trim() ? { location_id: locationId.trim() } : {}),
         product_name: trimmedProductName,

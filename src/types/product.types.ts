@@ -23,6 +23,7 @@ export type ProductDto = {
 };
 
 export type CreateProductPayload = {
+  tenant_id?: string;
   enterprise_id: string;
   location_id?: string;
   product_name: string;
