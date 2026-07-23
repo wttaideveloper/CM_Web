@@ -13,6 +13,7 @@ import {
 } from "@/services/attribute.service";
 import { getEnterpriseLocations } from "@/services/enterprise-location.service";
 import { getServiceById, updateService } from "@/services/service.service";
+import { getTenantMembers, type TenantMember } from "@/services/tenant.service";
 import type { DynamicAttributeDto } from "@/types/attribute.types";
 import type { EnterpriseLocationDto } from "@/types/location.types";
 import type { AvailabilityScheduleItem, ServiceDto } from "@/types/service.types";
@@ -211,6 +212,7 @@ export function EditServicePage({
   const [duration, setDuration] = useState("");
   const [maxParticipants, setMaxParticipants] = useState("");
   const [providerName, setProviderName] = useState("");
+  const [providerUserId, setProviderUserId] = useState("");
   const [deliveryFormat, setDeliveryFormat] = useState("");
   const [packagePrice, setPackagePrice] = useState("");
   const [currency, setCurrency] = useState("");
@@ -221,6 +223,8 @@ export function EditServicePage({
   const [locationId, setLocationId] = useState("");
   const [locationOptions, setLocationOptions] = useState<EnterpriseLocationDto[]>([]);
   const [isLoadingLocations, setIsLoadingLocations] = useState(false);
+  const [providerMembers, setProviderMembers] = useState<TenantMember[]>([]);
+  const [isLoadingProviders, setIsLoadingProviders] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -282,6 +286,7 @@ export function EditServicePage({
       setDuration(String(data.duration ?? ""));
       setMaxParticipants(String(data.max_participants ?? ""));
       setProviderName(data.provider_name || "");
+      setProviderUserId(data.provider_user_id || "");
       setDeliveryFormat(resolveOptionValue(data.delivery_format, deliveryFormatOptions));
       setPackagePrice(String(data.package_price ?? ""));
       setCurrency(resolveOptionValue(data.currency, currencyOptions));
@@ -313,6 +318,42 @@ export function EditServicePage({
     void fetchService();
   }, [params.id]);
 
+  useEffect(() => {
+    if (!enterpriseFilterId) {
+      return;
+    }
+
+    let active = true;
+    setIsLoadingProviders(true);
+
+    void getTenantMembers()
+      .then((members) => {
+        if (active) {
+          setProviderMembers(
+            members.filter(
+              (member) =>
+                member.status.trim().toLowerCase() === "active" &&
+                member.role.trim().toLowerCase() === "internal_user",
+            ),
+          );
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setProviderMembers([]);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setIsLoadingProviders(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [enterpriseFilterId]);
+
   async function handleSave() {
     const trimmedName = serviceName.trim();
     const trimmedDescription = serviceDescription.trim();
@@ -321,6 +362,7 @@ export function EditServicePage({
     const parsedDuration = Number(duration);
     const parsedMaxParticipants = optionalNumber(maxParticipants);
     const trimmedProviderName = optionalText(providerName);
+    const trimmedProviderUserId = optionalText(providerUserId);
     const trimmedDeliveryFormat = optionalText(deliveryFormat);
     const parsedPackagePrice = optionalNumber(packagePrice);
     const trimmedCurrency = optionalText(currency);
@@ -372,6 +414,7 @@ export function EditServicePage({
         ...(locationId.trim() ? { location_id: locationId.trim() } : {}),
         ...(parsedMaxParticipants !== undefined ? { max_participants: parsedMaxParticipants } : {}),
         ...(trimmedProviderName ? { provider_name: trimmedProviderName } : {}),
+        ...(trimmedProviderUserId ? { provider_user_id: trimmedProviderUserId } : {}),
         ...(trimmedDeliveryFormat ? { delivery_format: trimmedDeliveryFormat } : {}),
         ...(parsedPackagePrice !== undefined ? { package_price: parsedPackagePrice } : {}),
         ...(trimmedCurrency ? { currency: trimmedCurrency } : {}),
@@ -635,12 +678,38 @@ export function EditServicePage({
           </label>
           <label className="block">
             <FieldLabel>Provider/Instructor</FieldLabel>
-            <input
-              type="text"
-              value={providerName}
-              onChange={(event) => setProviderName(event.target.value)}
-              className={inputClass()}
-            />
+            {enterpriseFilterId ? (
+              <select
+                value={providerUserId}
+                onChange={(event) => {
+                  const selectedMember = providerMembers.find((member) => member.userId === event.target.value);
+                  setProviderUserId(event.target.value);
+                  setProviderName(selectedMember?.fullName ?? "");
+                }}
+                className={inputClass()}
+                disabled={isLoadingProviders || providerMembers.length === 0}
+              >
+                <option value="">
+                  {isLoadingProviders
+                    ? "Loading providers..."
+                    : providerMembers.length === 0
+                      ? "No internal users available"
+                      : "Select provider/instructor"}
+                </option>
+                {providerMembers.map((member) => (
+                  <option key={member.id} value={member.userId}>
+                    {member.fullName}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={providerName}
+                onChange={(event) => setProviderName(event.target.value)}
+                className={inputClass()}
+              />
+            )}
           </label>
           <label className="block">
             <FieldLabel>Delivery Format</FieldLabel>

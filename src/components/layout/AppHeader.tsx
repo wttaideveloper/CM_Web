@@ -210,11 +210,11 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
       }
 
       try {
-        await logout();
+        const logoutUrl = await logout();
+        // eslint-disable-next-line react-hooks/immutability
+        window.location.href = logoutUrl;
       } catch {
-        // The browser still leaves the protected UI if Web Auth logout fails.
-      } finally {
-        window.location.assign("/auth/login");
+        // Keep the protected UI in place if Web Auth logout fails.
       }
       return;
     }

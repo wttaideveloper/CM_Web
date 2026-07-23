@@ -29,7 +29,7 @@ type AuthContextValue = {
   needsOrganizationSetup: boolean;
   refreshSession: () => Promise<void>;
   updateUser: (user: AuthUser) => void;
-  logout: () => Promise<void>;
+  logout: () => Promise<string>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -84,11 +84,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refreshSession]);
 
   const logout = useCallback(async () => {
-    await logoutWebAuth();
+    const logoutUrl = await logoutWebAuth();
     setUser(null);
     setAuthenticated(false);
     setHasActiveTenant(false);
     setNeedsOrganizationSetup(false);
+    return logoutUrl;
   }, []);
 
   const value = useMemo<AuthContextValue>(

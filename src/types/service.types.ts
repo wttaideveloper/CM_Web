@@ -19,6 +19,7 @@ export type ServiceDto = {
   service_status: boolean;
   max_participants?: number;
   provider_name?: string;
+  provider_user_id?: string;
   instructor_name?: string;
   delivery_format?: string;
   package_price?: number;
@@ -40,6 +41,7 @@ export type CreateServicePayload = {
   service_status: boolean;
   max_participants?: number;
   provider_name?: string;
+  provider_user_id?: string;
   instructor_name?: string;
   delivery_format?: string;
   package_price?: number;
@@ -60,6 +62,7 @@ export type UpdateServicePayload = Partial<{
   service_status: boolean;
   max_participants: number;
   provider_name: string;
+  provider_user_id: string;
   instructor_name: string;
   delivery_format: string;
   package_price: number;

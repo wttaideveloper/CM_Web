@@ -20,12 +20,16 @@ function ValidateLoginContent() {
       : null;
 
   useEffect(() => {
-    if (isLoading || hasStartedRef.current) {
+    if (isLoading) {
       return;
     }
 
     if (authenticated) {
       router.replace("/admin/dashboard");
+      return;
+    }
+
+    if (hasStartedRef.current) {
       return;
     }
 
@@ -46,7 +50,6 @@ function ValidateLoginContent() {
 
         // Phase 1 keeps chat on its existing temporary bearer-token authentication.
         await loginMarketplaceDemoUser().catch(() => undefined);
-        router.replace("/admin/dashboard");
       } catch (loginError) {
         setError(loginError instanceof Error ? loginError.message : "Unable to complete login.");
       }

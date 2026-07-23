@@ -88,6 +88,13 @@ export type CompleteLoginResponse = AuthSessionResponse & {
   };
 };
 
+export type LogoutResponse = {
+  logout_url?: string;
+  data?: {
+    logout_url?: string;
+  };
+};
+
 export type AuthTenant = {
   id: string;
   name: string;
@@ -159,7 +166,6 @@ export function startLogin() {
     frontend_origin: window.location.origin,
     return_to: "/auth/validate",
     rememberMe: "false",
-    fresh: "true",
   });
 
   window.location.assign(`${WEB_AUTH_BASE_URL}/login?${params.toString()}`);
@@ -297,7 +303,10 @@ export async function getAuthTenants(): Promise<AuthTenant[]> {
 }
 
 export async function logoutWebAuth() {
-  const response = await fetch(`${WEB_AUTH_BASE_URL}/logout`, {
+  const params = new URLSearchParams({
+    frontend_origin: window.location.origin,
+  });
+  const response = await fetch(`${WEB_AUTH_BASE_URL}/logout?${params.toString()}`, {
     method: "POST",
     credentials: "include",
     cache: "no-store",
@@ -307,4 +316,13 @@ export async function logoutWebAuth() {
     const errorText = await response.text().catch(() => "");
     throw new Error(errorText || `Logout failed with status ${response.status}`);
   }
+
+  const result = await response.json() as LogoutResponse;
+  const logoutUrl = result.logout_url ?? result.data?.logout_url;
+
+  if (!logoutUrl) {
+    throw new Error("Logout response did not include a Keycloak logout URL.");
+  }
+
+  return logoutUrl;
 }

@@ -9,6 +9,7 @@ import { getEnterpriseLocations } from "@/services/enterprise-location.service";
 import { createDynamicAttribute } from "@/services/attribute.service";
 import { getEnterprises } from "@/services/enterprise.service";
 import { createService } from "@/services/service.service";
+import { getTenantMembers, type TenantMember } from "@/services/tenant.service";
 import type { EnterpriseDto } from "@/types/enterprise.types";
 import type { EnterpriseLocationDto } from "@/types/location.types";
 import type { AvailabilityScheduleItem } from "@/types/service.types";
@@ -197,6 +198,7 @@ export function ServiceCreatePage({
   const [duration, setDuration] = useState("");
   const [maxParticipants, setMaxParticipants] = useState("");
   const [providerName, setProviderName] = useState("");
+  const [providerUserId, setProviderUserId] = useState("");
   const [deliveryFormat, setDeliveryFormat] = useState("");
   const [packagePrice, setPackagePrice] = useState("");
   const [currency, setCurrency] = useState("");
@@ -206,6 +208,8 @@ export function ServiceCreatePage({
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
   const [isLoadingEnterprises, setIsLoadingEnterprises] = useState(true);
   const [isLoadingLocations, setIsLoadingLocations] = useState(false);
+  const [providerMembers, setProviderMembers] = useState<TenantMember[]>([]);
+  const [isLoadingProviders, setIsLoadingProviders] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [locationId, setLocationId] = useState("");
@@ -324,6 +328,42 @@ export function ServiceCreatePage({
   }, [enterpriseId]);
 
   useEffect(() => {
+    if (!isEnterpriseAdmin) {
+      return;
+    }
+
+    let active = true;
+    setIsLoadingProviders(true);
+
+    void getTenantMembers()
+      .then((members) => {
+        if (active) {
+          setProviderMembers(
+            members.filter(
+              (member) =>
+                member.status.trim().toLowerCase() === "active" &&
+                member.role.trim().toLowerCase() === "internal_user",
+            ),
+          );
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setProviderMembers([]);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setIsLoadingProviders(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isEnterpriseAdmin]);
+
+  useEffect(() => {
     if (!serviceDurationOptions.includes(duration as (typeof serviceDurationOptions)[number])) {
       return;
     }
@@ -346,6 +386,7 @@ export function ServiceCreatePage({
     const parsedMinutes = Number(duration.trim());
     const parsedMaxParticipants = optionalNumber(maxParticipants);
     const trimmedProviderName = optionalText(providerName);
+    const trimmedProviderUserId = optionalText(providerUserId);
     const trimmedDeliveryFormat = optionalText(deliveryFormat);
     const parsedPackagePrice = optionalNumber(packagePrice);
     const trimmedCurrency = optionalText(currency);
@@ -385,6 +426,7 @@ export function ServiceCreatePage({
         service_status: true,
         ...(parsedMaxParticipants !== undefined ? { max_participants: parsedMaxParticipants } : {}),
         ...(trimmedProviderName ? { provider_name: trimmedProviderName } : {}),
+        ...(trimmedProviderUserId ? { provider_user_id: trimmedProviderUserId } : {}),
         ...(trimmedDeliveryFormat ? { delivery_format: trimmedDeliveryFormat } : {}),
         ...(parsedPackagePrice !== undefined ? { package_price: parsedPackagePrice } : {}),
         ...(trimmedCurrency ? { currency: trimmedCurrency } : {}),
@@ -592,13 +634,39 @@ export function ServiceCreatePage({
               </label>
               <label className="block">
                 <FieldLabel>Provider/Instructor</FieldLabel>
-                <input
-                  type="text"
-                  placeholder="Sarah Jones"
-                  value={providerName}
-                  onChange={(event) => setProviderName(event.target.value)}
-                  className={inputClass()}
-                />
+                {isEnterpriseAdmin ? (
+                  <select
+                    className={selectClass()}
+                    value={providerUserId}
+                    onChange={(event) => {
+                      const selectedMember = providerMembers.find((member) => member.userId === event.target.value);
+                      setProviderUserId(event.target.value);
+                      setProviderName(selectedMember?.fullName ?? "");
+                    }}
+                    disabled={isLoadingProviders || providerMembers.length === 0}
+                  >
+                    <option value="">
+                      {isLoadingProviders
+                        ? "Loading providers..."
+                        : providerMembers.length === 0
+                          ? "No internal users available"
+                          : "Select provider/instructor"}
+                    </option>
+                    {providerMembers.map((member) => (
+                      <option key={member.id} value={member.userId}>
+                        {member.fullName}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    placeholder="Sarah Jones"
+                    value={providerName}
+                    onChange={(event) => setProviderName(event.target.value)}
+                    className={inputClass()}
+                  />
+                )}
               </label>
               <label className="block">
                 <FieldLabel>Delivery Format</FieldLabel>

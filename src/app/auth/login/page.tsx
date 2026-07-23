@@ -2,13 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { startLogin } from "@/services/auth.service";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { authenticated, isLoading } = useAuth();
+  const { isLoading } = useAuth();
   const [loginType, setLoginType] = useState<"super-admin" | "admin">("super-admin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -25,12 +25,6 @@ export default function LoginPage() {
   const canSubmit = isSuperAdmin
     ? Boolean(trimmedEmail) && Boolean(password) && !isSubmitting
     : !isSubmitting && !isLoading;
-
-  useEffect(() => {
-    if (!isSuperAdmin && !isLoading && authenticated) {
-      router.replace("/admin/dashboard");
-    }
-  }, [authenticated, isLoading, isSuperAdmin, router]);
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
