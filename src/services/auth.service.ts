@@ -95,6 +95,15 @@ export type LogoutResponse = {
   };
 };
 
+export type ChatTokenResponse = {
+  access_token: string;
+  token_type: "bearer";
+  expires_in: number;
+  scope: "chat";
+  user_id: string;
+  tenant_id: string;
+};
+
 export type AuthTenant = {
   id: string;
   name: string;
@@ -192,6 +201,16 @@ export async function getSession() {
   });
 
   return parseAuthResponse<AuthSessionResponse>(response);
+}
+
+export async function getChatToken() {
+  const response = await fetch(`${WEB_AUTH_BASE_URL}/chat-token`, {
+    method: "POST",
+    credentials: "include",
+    cache: "no-store",
+  });
+
+  return parseAuthResponse<ChatTokenResponse>(response);
 }
 
 export async function getAuthMe() {

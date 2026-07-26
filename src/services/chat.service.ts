@@ -1,4 +1,4 @@
-import { request, requestJson, requestResponse } from "@/services/api-client";
+import { chatRequest as request, chatRequestJson as requestJson, chatRequestResponse as requestResponse } from "@/services/chat-api-client";
 
 type ProviderConversationsParams = {
   status?: string;
@@ -8,7 +8,6 @@ type ProviderConversationsParams = {
 
 type SearchConversationsParams = {
   q: string;
-  providerId?: string;
   page?: number;
   pageSize?: number;
 };
@@ -16,7 +15,6 @@ type SearchConversationsParams = {
 type SearchMessagesParams = {
   q: string;
   conversationId?: string;
-  providerId?: string;
   page?: number;
   pageSize?: number;
 };
@@ -102,10 +100,6 @@ export function searchConversations(params: SearchConversationsParams) {
   searchParams.set("page", String(params.page ?? 1));
   searchParams.set("page_size", String(params.pageSize ?? 20));
 
-  if (params.providerId) {
-    searchParams.set("provider_id", params.providerId);
-  }
-
   return requestJson<unknown>(`/conversations/search?${searchParams.toString()}`);
 }
 
@@ -118,10 +112,6 @@ export function searchMessages<T = unknown>(params: SearchMessagesParams) {
 
   if (params.conversationId) {
     searchParams.set("conversation_id", params.conversationId);
-  }
-
-  if (params.providerId) {
-    searchParams.set("provider_id", params.providerId);
   }
 
   return requestJson<T>(`/messages/search?${searchParams.toString()}`);

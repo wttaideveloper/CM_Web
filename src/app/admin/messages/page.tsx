@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import AppShell from "@/components/layout/AppShell";
 import { useAdminSocket } from "@/contexts/AdminSocketContext";
+import { useChatAuth } from "@/contexts/ChatAuthContext";
 import EmojiPicker from "emoji-picker-react";
 import { useSearchParams } from "next/navigation";
 import {
@@ -30,6 +31,7 @@ import {
   updateTypingStatus,
 } from "@/services/chat.service";
 import { type ChatSocket } from "@/services/chat-socket.service";
+import { getChatTokenUserId } from "@/services/chat-token.service";
 import {
   Suspense,
   useCallback,
@@ -247,7 +249,9 @@ function ConversationUrlSync({
   return null;
 }
 
-const DEV_CHAT_USER_ID = "550e8400-e29b-41d4-a716-446655440020"; // TODO: replace with the real logged-in user id later.
+function getCurrentChatUserId() {
+  return getChatTokenUserId() ?? "";
+}
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const emojiOptions = ["😀", "😊", "👍", "🙏", "❤️", "👋", "✅", "🩺", "💬", "📎"];
 
@@ -902,12 +906,12 @@ function mapConversationDetail(data: BackendConversation): Conversation {
 }
 
 function mapMessage(data: BackendMessage): ChatMessage {
-  const isMine = data.sender_id === DEV_CHAT_USER_ID;
+  const isMine = data.sender_id === getCurrentChatUserId();
   const readByUserIds = Array.isArray(data.read_by)
     ? data.read_by.filter((value): value is string => typeof value === "string")
     : [];
   const hasBeenReadByOtherParticipant = readByUserIds.some(
-    (value) => typeof value === "string" && value !== DEV_CHAT_USER_ID,
+    (value) => typeof value === "string" && value !== getCurrentChatUserId(),
   );
   const attachment = data.attachment;
 
@@ -950,7 +954,7 @@ function mapMessage(data: BackendMessage): ChatMessage {
 
 function updateMessageReadStatus(message: ChatMessage, userId: string, readAt?: string) {
   const readByUserIds = Array.from(new Set([...(message.readByUserIds ?? []), userId]));
-  const hasBeenReadByOtherParticipant = readByUserIds.some((value) => value !== DEV_CHAT_USER_ID);
+  const hasBeenReadByOtherParticipant = readByUserIds.some((value) => value !== getCurrentChatUserId());
 
   return {
     ...message,
@@ -1597,7 +1601,7 @@ function getVisibleTypingUsers(value: unknown) {
   return typingUsers
     .filter((entry) => {
       if (typeof entry === "string") {
-        return entry !== DEV_CHAT_USER_ID;
+        return entry !== getCurrentChatUserId();
       }
 
       if (!isRecord(entry)) {
@@ -1618,10 +1622,12 @@ function getVisibleTypingUsers(value: unknown) {
 
       return firstString(entry.user_id, entry.userId, entry.id, entry.participant_id) ?? "";
     })
-    .filter((userId) => userId !== "" && userId !== DEV_CHAT_USER_ID);
+    .filter((userId) => userId !== "" && userId !== getCurrentChatUserId());
 }
 
 export default function AdminMessagesPage() {
+  const { canUseProviderChat, isReady: isChatAuthReady } = useChatAuth();
+  const canInitializeProviderChat = canUseProviderChat && isChatAuthReady;
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterKind>("ALL");
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
@@ -1800,6 +1806,10 @@ export default function AdminMessagesPage() {
   }, [selectedConversationId]);
 
   useEffect(() => {
+    if (!canInitializeProviderChat) {
+      return;
+    }
+
     const conversationId = selectedConversationId;
 
     if (!conversationId || !conversationMediaPanelOpen) {
@@ -2758,7 +2768,7 @@ export default function AdminMessagesPage() {
         });
       }
 
-      if (userId === DEV_CHAT_USER_ID || selectedConversationIdRef.current !== conversationId) {
+      if (userId === getCurrentChatUserId() || selectedConversationIdRef.current !== conversationId) {
         return;
       }
 
@@ -3016,6 +3026,10 @@ export default function AdminMessagesPage() {
   );
 
   const refreshConversationList = useCallback(async () => {
+    if (!canInitializeProviderChat) {
+      setIsConversationsLoading(false);
+      return;
+    }
     setIsConversationsLoading(true);
     setConversationsError(null);
 
@@ -3086,10 +3100,14 @@ export default function AdminMessagesPage() {
     } finally {
       setIsConversationsLoading(false);
     }
-  }, [applyDeletedPreviewOverride, clearAttachmentUploadState, clearEditMode, resetMessagePaginationState, stopTypingTimers]);
+  }, [applyDeletedPreviewOverride, canInitializeProviderChat, clearAttachmentUploadState, clearEditMode, resetMessagePaginationState, stopTypingTimers]);
 
   const runConversationSearch = useCallback(
     async (query: string) => {
+      if (!canInitializeProviderChat) {
+        return;
+      }
+
       setIsSearchingConversations(true);
       setConversationsError(null);
 
@@ -3113,20 +3131,28 @@ export default function AdminMessagesPage() {
         setIsSearchingConversations(false);
       }
     },
-    [applyDeletedPreviewOverride, archivedConversationIds],
+    [applyDeletedPreviewOverride, archivedConversationIds, canInitializeProviderChat],
   );
 
   const normalizedSearch = search.trim();
 
   useEffect(() => {
+    if (!canInitializeProviderChat) {
+      return;
+    }
+
     const timer = window.setTimeout(() => {
       void refreshConversationList();
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [refreshConversationList]);
+  }, [canInitializeProviderChat, refreshConversationList]);
 
   useEffect(() => {
+    if (!canInitializeProviderChat) {
+      return;
+    }
+
     if (filter !== "ARCHIVED" && normalizedSearch !== "") {
       return;
     }
@@ -3136,9 +3162,13 @@ export default function AdminMessagesPage() {
     }, 60000);
 
     return () => window.clearInterval(timer);
-  }, [filter, normalizedSearch, refreshConversationList]);
+  }, [canInitializeProviderChat, filter, normalizedSearch, refreshConversationList]);
 
   useEffect(() => {
+    if (!canInitializeProviderChat) {
+      return;
+    }
+
     if (filter === "ARCHIVED") {
       const timer = window.setTimeout(() => {
         setIsSearchingConversations(false);
@@ -3174,12 +3204,17 @@ export default function AdminMessagesPage() {
   }, [
     filter,
     normalizedSearch,
+    canInitializeProviderChat,
     refreshConversationList,
     runConversationSearch,
   ]);
 
   const runMessageSearch = useCallback(
     async (query: string, conversationId: string) => {
+      if (!canInitializeProviderChat) {
+        return;
+      }
+
       setMessageSearchLoading(true);
       setMessageSearchError(null);
 
@@ -3187,7 +3222,6 @@ export default function AdminMessagesPage() {
         const response = await searchMessages<unknown>({
           q: query,
           conversationId,
-          providerId: DEV_CHAT_USER_ID,
           page: 1,
           pageSize: 20,
         });
@@ -3236,10 +3270,14 @@ export default function AdminMessagesPage() {
         }
       }
     },
-    [],
+    [canInitializeProviderChat],
   );
 
   useEffect(() => {
+    if (!canInitializeProviderChat) {
+      return;
+    }
+
     const conversationId = selectedConversationId;
     const query = messageSearchQuery.trim();
 
@@ -3258,7 +3296,7 @@ export default function AdminMessagesPage() {
     }, 300);
 
     return () => window.clearTimeout(timer);
-  }, [isMessageSearchOpen, messageSearchQuery, runMessageSearch, selectedConversationId]);
+  }, [canInitializeProviderChat, isMessageSearchOpen, messageSearchQuery, runMessageSearch, selectedConversationId]);
 
   useEffect(() => {
     const conversationId = selectedConversationId;
@@ -3332,7 +3370,7 @@ export default function AdminMessagesPage() {
             !message.isMine &&
             message.isDeleted !== true &&
             Boolean(message.id) &&
-            !(message.readByUserIds ?? []).includes(DEV_CHAT_USER_ID),
+            !(message.readByUserIds ?? []).includes(getCurrentChatUserId()),
         );
 
         const socketConnected = Boolean(socketRef.current?.connected);
@@ -3408,7 +3446,7 @@ export default function AdminMessagesPage() {
                 ? {
                     ...message,
                     readByUserIds: Array.from(
-                      new Set([...(message.readByUserIds ?? []), DEV_CHAT_USER_ID]),
+                        new Set([...(message.readByUserIds ?? []), getCurrentChatUserId()]),
                     ),
                     deliveryState:
                       message.isMine && message.deliveryState !== "read"
@@ -3468,7 +3506,7 @@ export default function AdminMessagesPage() {
       window.clearTimeout(timer);
       pendingInitialScrollToBottomRef.current = false;
     };
-  }, [selectedConversationId, emitMarkRead, markConversationNotificationsAsRead]);
+  }, [canInitializeProviderChat, selectedConversationId, emitMarkRead, markConversationNotificationsAsRead]);
 
   useEffect(() => {
     const conversationId = selectedConversationDetail?.id ?? null;
@@ -5282,6 +5320,26 @@ export default function AdminMessagesPage() {
   function handleEmojiPick(emoji: string) {
     setDraftMessage((current) => `${current}${current ? " " : ""}${emoji}`);
     setShowEmojiPicker(false);
+  }
+
+  if (!canUseProviderChat) {
+    return (
+      <AppShell>
+        <div className="mx-auto w-full max-w-[1480px] rounded-2xl border border-[#e1ebe6] bg-white p-6 text-sm text-[#52736a] shadow-sm">
+          Chat is available only for internal users assigned as service providers.
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (!isChatAuthReady) {
+    return (
+      <AppShell>
+        <div className="mx-auto w-full max-w-[1480px] rounded-2xl border border-[#e1ebe6] bg-white p-6 text-sm text-[#52736a] shadow-sm">
+          Preparing chat...
+        </div>
+      </AppShell>
+    );
   }
 
   return (
