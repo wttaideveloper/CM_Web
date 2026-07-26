@@ -5,7 +5,6 @@ import {
   getMarketplaceDemoSession,
   isMarketplaceTokenNearExpiry,
   refreshMarketplaceDemoToken,
-  redirectToMarketplaceLogin,
 } from "@/services/marketplace-demo-auth.service";
 
 function createAuthError(message: string) {
@@ -69,7 +68,6 @@ async function performFetch(
 
 function handleAuthFailure(): never {
   clearMarketplaceDemoSession();
-  redirectToMarketplaceLogin();
   throw createAuthError("Marketplace demo session expired. Please sign in again.");
 }
 
