@@ -1,3 +1,5 @@
+import { CHAT_API_BASE_URL } from "@/lib/chat-api";
+
 const WEB_AUTH_BASE_URL = "/api/v1/auth";
 
 export type AuthMembership = {
@@ -204,7 +206,7 @@ export async function getSession() {
 }
 
 export async function getChatToken() {
-  const response = await fetch(`${WEB_AUTH_BASE_URL}/chat-token`, {
+  const response = await fetch(`${CHAT_API_BASE_URL}/auth/chat-token`, {
     method: "POST",
     credentials: "include",
     cache: "no-store",

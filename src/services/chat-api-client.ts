@@ -1,4 +1,4 @@
-import { API_BASE_URL } from "@/lib/api";
+import { CHAT_API_BASE_URL } from "@/lib/chat-api";
 import { getChatAccessToken } from "@/services/chat-token.service";
 
 function buildHeaders(initHeaders?: HeadersInit, includeJsonContentType = true, token?: string) {
@@ -26,7 +26,7 @@ export async function chatRequestResponse(
     headers.delete("Content-Type");
   }
 
-  return fetch(`${API_BASE_URL}${path}`, {
+  return fetch(`${CHAT_API_BASE_URL}${path}`, {
     ...init,
     cache: "no-store",
     headers,
