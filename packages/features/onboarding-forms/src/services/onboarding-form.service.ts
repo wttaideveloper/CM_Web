@@ -1,4 +1,3 @@
-import { API_BASE_URL } from "@/lib/api";
 import type {
   CreateOnboardingFormPayload,
   FormStatus,
@@ -7,7 +6,9 @@ import type {
   OnboardingFormListResponse,
   RegistrationType,
   UpdateOnboardingFormPayload,
-} from "@/types/onboarding-form.types";
+} from "../types/onboarding-form.types";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "/api/v1";
 
 type UpdateOnboardingFormResponse = {
   id: string;

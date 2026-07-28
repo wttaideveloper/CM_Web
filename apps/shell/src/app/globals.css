@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source "../../../../packages/features/onboarding-forms/src";
 :root {
   --background: #ffffff;
   --foreground: #06201c;
