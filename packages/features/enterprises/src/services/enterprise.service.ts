@@ -1,9 +1,9 @@
-import { API_BASE_URL } from "@/lib/api";
+import { API_BASE_URL } from "@ihp/shared";
 import type {
   CreateEnterprisePayload,
   EnterpriseDto,
   UpdateEnterprisePayload,
-} from "@/types/enterprise.types";
+} from "../types/enterprise.types";
 
 type EnterpriseListResponse = EnterpriseDto[] | { items?: EnterpriseDto[] };
 type EnterpriseSearchResponse = EnterpriseDto[] | { data?: EnterpriseDto[]; items?: EnterpriseDto[]; results?: EnterpriseDto[] };

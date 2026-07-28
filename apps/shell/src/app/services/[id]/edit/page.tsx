@@ -10,12 +10,11 @@ import {
   deleteDynamicAttribute,
   getDynamicAttributes,
   updateDynamicAttribute,
-} from "@/services/attribute.service";
-import { getEnterpriseLocations } from "@/services/enterprise-location.service";
+  type DynamicAttributeDto,
+} from "@ihp/attributes";
+import { getEnterpriseLocations, type EnterpriseLocationDto } from "@ihp/enterprises";
 import { getServiceById, updateService } from "@/services/service.service";
 import { getTenantMembers, type TenantMember } from "@/services/tenant.service";
-import type { DynamicAttributeDto } from "@/types/attribute.types";
-import type { EnterpriseLocationDto } from "@/types/location.types";
 import type { AvailabilityScheduleItem, ServiceDto } from "@/types/service.types";
 
 type ServiceAttributeRow = {

@@ -3,7 +3,13 @@ import type { NextConfig } from "next";
 const authApiBaseUrl = process.env.AUTH_API_BASE_URL;
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["@ihp/onboarding-forms"],
+  transpilePackages: [
+    "@ihp/attributes",
+    "@ihp/enterprises",
+    "@ihp/onboarding-forms",
+    "@ihp/products",
+    "@ihp/shared",
+  ],
   async rewrites() {
     return {
       fallback: [

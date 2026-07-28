@@ -1,10 +1,21 @@
 "use client";
 
-import { EditProductPage } from "@/app/products/[id]/edit/page";
 import CurrentEnterpriseGuard from "@/components/enterprise/CurrentEnterpriseGuard";
+import AppShell from "@/components/layout/AppShell";
+import { ProductEditScreen } from "@ihp/products";
 
 export default function AdminEditProductPage() {
-  return <CurrentEnterpriseGuard>{({ enterpriseId }) => (
-    <EditProductPage enterpriseFilterId={enterpriseId} listHref="/admin/products" detailHrefBase="/admin/products" />
-  )}</CurrentEnterpriseGuard>;
+  return (
+    <CurrentEnterpriseGuard>
+      {({ enterpriseId }) => (
+        <AppShell>
+          <ProductEditScreen
+            enterpriseFilterId={enterpriseId}
+            listHref="/admin/products"
+            detailHrefBase="/admin/products"
+          />
+        </AppShell>
+      )}
+    </CurrentEnterpriseGuard>
+  );
 }

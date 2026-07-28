@@ -9,7 +9,11 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@ihp/attributes": "0.1.0",
+    "@ihp/enterprises": "0.1.0",
     "@ihp/onboarding-forms": "0.1.0",
+    "@ihp/products": "0.1.0",
+    "@ihp/shared": "0.1.0",
     "country-state-city": "^3.2.1",
     "emoji-picker-react": "^4.19.1",
     "next": "16.2.9",

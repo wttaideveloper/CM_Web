@@ -1,5 +1,5 @@
-import { API_BASE_URL } from "@/lib/api";
-import type { CreateProductPayload, ProductDto, UpdateProductPayload } from "@/types/product.types";
+import { API_BASE_URL } from "@ihp/shared";
+import type { CreateProductPayload, ProductDto, UpdateProductPayload } from "../types/product.types";
 
 type ProductListResponse = ProductDto[] | { items?: ProductDto[] };
 

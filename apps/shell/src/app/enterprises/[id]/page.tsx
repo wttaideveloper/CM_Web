@@ -10,15 +10,16 @@ import {
   createEnterpriseLocation,
   deleteLocation,
   getEnterpriseLocations,
+  getEnterpriseById,
+  getEnterprises,
+  normalizeEnterpriseStatus,
+  type EnterpriseDto,
+  type EnterpriseLocationDto,
   updateLocation,
-} from "@/services/enterprise-location.service";
-import { getEnterpriseById, getEnterprises } from "@/services/enterprise.service";
-import { formatCurrency } from "@/lib/format-currency";
-import { getProducts } from "@/services/product.service";
+} from "@ihp/enterprises";
+import { getProducts, type ProductDto } from "@ihp/products";
+import { formatCurrency } from "@ihp/shared";
 import { getServices } from "@/services/service.service";
-import { normalizeEnterpriseStatus, type EnterpriseDto } from "@/types/enterprise.types";
-import type { EnterpriseLocationDto } from "@/types/location.types";
-import type { ProductDto } from "@/types/product.types";
 import type { ServiceDto } from "@/types/service.types";
 
 const tabs = ["Overview", "Products", "Services", "Events", "Trainings"];

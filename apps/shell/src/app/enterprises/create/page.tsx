@@ -6,7 +6,7 @@ import { City, Country, State } from "country-state-city";
 
 import AppShell from "@/components/layout/AppShell";
 import { getAuthTenants, type AuthTenant } from "@/services/auth.service";
-import { createEnterprise } from "@/services/enterprise.service";
+import { createEnterprise } from "@ihp/enterprises";
 
 const steps = ["Business Info", "Contact", "Address", "Branding", "Review"];
 const countryOptions = Country.getAllCountries().sort((left, right) =>

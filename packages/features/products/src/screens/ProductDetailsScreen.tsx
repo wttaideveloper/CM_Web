@@ -4,12 +4,17 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
-import AppShell from "@/components/layout/AppShell";
-import { activateService, deactivateService, getServiceById } from "@/services/service.service";
-import type { ServiceDto } from "@/types/service.types";
 import { getDynamicAttributes, type DynamicAttributeDto } from "@ihp/attributes";
 import { getEnterprises, getLocationById, type EnterpriseDto, type EnterpriseLocationDto } from "@ihp/enterprises";
 import { formatCurrency } from "@ihp/shared";
+
+import { activateProduct, deactivateProduct, getProductById } from "../services/product.service";
+import type { ProductDto } from "../types/product.types";
+import type { ProductDetailsScreenProps } from "../types/product-screen-config.types";
+
+function statusLabel(status: boolean) {
+  return status === false ? "Inactive" : "Active";
+}
 
 function resolveEnterpriseName(enterprise: EnterpriseDto) {
   return (
@@ -18,6 +23,16 @@ function resolveEnterpriseName(enterprise: EnterpriseDto) {
     enterprise.name ||
     "Unnamed Enterprise"
   );
+}
+
+function fallbackEnterpriseName(enterpriseId: string, enterpriseMap: Record<string, EnterpriseDto>) {
+  const enterprise = enterpriseMap[enterpriseId];
+
+  if (!enterprise) {
+    return "Unknown Enterprise";
+  }
+
+  return resolveEnterpriseName(enterprise);
 }
 
 function resolveLocationSummary(location: EnterpriseLocationDto) {
@@ -39,6 +54,38 @@ function formatMaybeNumber(value: number | undefined, suffix = "") {
   return `${value}${suffix}`;
 }
 
+function ProductImagePreview({ src, alt }: { src: string; alt: string }) {
+  const [hasError, setHasError] = useState(false);
+  const hasImage = Boolean(src.trim()) && !hasError;
+
+  if (!hasImage) {
+    return (
+      <div
+        className="flex h-full min-h-[260px] w-full items-center justify-center rounded-2xl border border-[#dcebe2] bg-[linear-gradient(180deg,#eff8f2,#e3f2e8)] shadow-sm"
+        style={{
+          backgroundImage:
+            "radial-gradient(rgba(255,255,255,0.18) 1px, transparent 1px), linear-gradient(180deg,#eff8f2,#e3f2e8)",
+          backgroundSize: "24px 24px, 100% 100%",
+        }}
+      >
+        <div className="rounded-2xl border border-[#cfe3d7] bg-white/70 px-5 py-4 text-center text-[#1f6a58] shadow-sm backdrop-blur-sm">
+          <span className="text-sm font-bold">No image available</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      className="max-h-[300px] w-full rounded-2xl border border-[#e1ebe6] object-cover shadow-sm"
+      onError={() => setHasError(true)}
+    />
+  );
+}
+
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] p-4">
@@ -48,21 +95,15 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-type ServiceDetailsPageProps = {
-  enterpriseFilterId?: string;
-  listHref?: string;
-  editHrefBase?: string;
-};
-
-export function ServiceDetailsPage({
+export default function ProductDetailsScreen({
   enterpriseFilterId,
-  listHref = "/services",
-  editHrefBase = "/services",
-}: ServiceDetailsPageProps = {}) {
+  listHref = "/products",
+  editHrefBase = "/products",
+}: ProductDetailsScreenProps = {}) {
   const params = useParams<{ id: string }>();
-  const [service, setService] = useState<ServiceDto | null>(null);
+  const [product, setProduct] = useState<ProductDto | null>(null);
   const [enterpriseMap, setEnterpriseMap] = useState<Record<string, EnterpriseDto>>({});
-  const [locationSummary, setLocationSummary] = useState("Not provided");
+  const [locationSummary, setLocationSummary] = useState<string>("Not provided");
   const [dynamicAttributes, setDynamicAttributes] = useState<DynamicAttributeDto[]>([]);
   const [attributesError, setAttributesError] = useState<string | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
@@ -72,9 +113,9 @@ export function ServiceDetailsPage({
   const [error, setError] = useState<string | null>(null);
   const [isTogglingStatus, setIsTogglingStatus] = useState(false);
 
-  async function fetchService() {
+  async function fetchProduct() {
     if (!params.id) {
-      setError("Missing service id.");
+      setError("Missing product id.");
       setIsLoading(false);
       return;
     }
@@ -84,20 +125,17 @@ export function ServiceDetailsPage({
       setError(null);
       setAccessDenied(null);
 
-      const [serviceData, enterpriseData] = await Promise.all([
-        getServiceById(params.id),
-        getEnterprises(),
-      ]);
+      const [productData, enterpriseData] = await Promise.all([getProductById(params.id), getEnterprises()]);
 
-      if (enterpriseFilterId && serviceData.enterprise_id !== enterpriseFilterId) {
-        setService(null);
+      if (enterpriseFilterId && productData.enterprise_id !== enterpriseFilterId) {
+        setProduct(null);
         setEnterpriseMap({});
         setLocationSummary("Not provided");
         setLocationError(null);
         setIsLoadingLocation(false);
         setDynamicAttributes([]);
         setAttributesError(null);
-        setAccessDenied("This service belongs to another enterprise.");
+        setAccessDenied("This product belongs to another enterprise.");
         return;
       }
 
@@ -106,19 +144,19 @@ export function ServiceDetailsPage({
         return acc;
       }, {});
 
-      setService(serviceData);
+      setProduct(productData);
       setEnterpriseMap(nextEnterpriseMap);
       setDynamicAttributes([]);
       setAttributesError(null);
       setLocationSummary("Not provided");
       setLocationError(null);
-      const serviceLocationId = serviceData.location_id?.trim();
-      setIsLoadingLocation(Boolean(serviceLocationId));
+      const productLocationId = productData.location_id?.trim();
+      setIsLoadingLocation(Boolean(productLocationId));
 
-      if (serviceLocationId) {
+      if (productLocationId) {
         void (async () => {
           try {
-            const locationData = await getLocationById(serviceLocationId);
+            const locationData = await getLocationById(productLocationId);
             setLocationSummary(resolveLocationSummary(locationData));
           } catch {
             setLocationError("Unable to load location");
@@ -131,7 +169,7 @@ export function ServiceDetailsPage({
 
       void (async () => {
         try {
-          const attributesData = await getDynamicAttributes("service", serviceData.id);
+          const attributesData = await getDynamicAttributes("product", productData.id);
           setDynamicAttributes(attributesData);
         } catch {
           setDynamicAttributes([]);
@@ -139,8 +177,8 @@ export function ServiceDetailsPage({
         }
       })();
     } catch (fetchError) {
-      setError(fetchError instanceof Error ? fetchError.message : "Unable to load service.");
-      setService(null);
+      setError(fetchError instanceof Error ? fetchError.message : "Unable to load product.");
+      setProduct(null);
       setEnterpriseMap({});
       setLocationSummary("Not provided");
       setLocationError(null);
@@ -153,46 +191,45 @@ export function ServiceDetailsPage({
   }
 
   useEffect(() => {
-    void fetchService();
+    void fetchProduct();
   }, [params.id]);
 
-
   async function handleDeactivate() {
-    if (!service || isTogglingStatus) {
+    if (!product || isTogglingStatus) {
       return;
     }
 
-    const confirmed = window.confirm("Are you sure you want to deactivate this service?");
+    const confirmed = window.confirm("Are you sure you want to deactivate this product?");
     if (!confirmed) {
       return;
     }
 
     try {
       setIsTogglingStatus(true);
-      const updatedService = await deactivateService(service.id);
-      setService(updatedService);
+      const updatedProduct = await deactivateProduct(product.id);
+      setProduct(updatedProduct);
     } catch {
-      window.alert("Unable to deactivate service.");
+      window.alert("Unable to deactivate product.");
     } finally {
       setIsTogglingStatus(false);
     }
   }
   async function handleActivate() {
-    if (!service || isTogglingStatus) {
+    if (!product || isTogglingStatus) {
       return;
     }
 
-    const confirmed = window.confirm("Are you sure you want to activate this service?");
+    const confirmed = window.confirm("Are you sure you want to activate this product?");
     if (!confirmed) {
       return;
     }
 
     try {
       setIsTogglingStatus(true);
-      const updatedService = await activateService(service.id);
-      setService(updatedService);
+      const updatedProduct = await activateProduct(product.id);
+      setProduct(updatedProduct);
     } catch {
-      window.alert("Unable to activate service.");
+      window.alert("Unable to activate product.");
     } finally {
       setIsTogglingStatus(false);
     }
@@ -200,89 +237,78 @@ export function ServiceDetailsPage({
 
   if (isLoading) {
     return (
-      <AppShell>
-        <section className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
-          <p className="text-base font-bold text-[#06201c]">Loading service...</p>
+      <section className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
+          <p className="text-base font-bold text-[#06201c]">Loading product...</p>
           <p className="mt-2 text-sm text-[#52736a]">Please wait while we fetch the latest data.</p>
-        </section>
-      </AppShell>
+      </section>
     );
   }
 
   if (error) {
     return (
-      <AppShell>
-        <section className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
-          <p className="text-base font-bold text-[#06201c]">Unable to load service.</p>
-          <p className="mt-2 text-sm text-[#52736a]">Please try again.</p>
+      <section className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
+          <p className="text-base font-bold text-[#06201c]">Unable to load product.</p>
+          <p className="mt-2 text-sm text-[#52736a]">{error}</p>
           <button
             type="button"
-            onClick={() => void fetchService()}
+            onClick={() => void fetchProduct()}
             className="mt-5 h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
           >
             Retry
           </button>
-        </section>
-      </AppShell>
+      </section>
     );
   }
 
   if (accessDenied) {
     return (
-      <AppShell>
-        <section className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
+      <section className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
           <p className="text-base font-bold text-[#06201c]">Access denied.</p>
           <p className="mt-2 text-sm text-[#52736a]">{accessDenied}</p>
           <Link
             href={listHref}
             className="mt-5 inline-flex h-11 items-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
           >
-            Back to Services
+            Back to Products
           </Link>
-        </section>
-      </AppShell>
+      </section>
     );
   }
 
-  if (!service) {
+  if (!product) {
     return (
-      <AppShell>
-        <section className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
-          <p className="text-base font-bold text-[#06201c]">Unable to load service.</p>
-        </section>
-      </AppShell>
+      <section className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
+          <p className="text-base font-bold text-[#06201c]">Unable to load product.</p>
+      </section>
     );
   }
 
-  const enterpriseName =
-    enterpriseMap[service.enterprise_id]
-      ? resolveEnterpriseName(enterpriseMap[service.enterprise_id])
-      : "Unknown Enterprise";
+  const productStatus = statusLabel(product.product_status);
+  const enterpriseName = fallbackEnterpriseName(product.enterprise_id, enterpriseMap);
   const locationValue = locationError
     ? locationError
     : isLoadingLocation
       ? "Loading location..."
       : locationSummary;
-  const serviceStatus = service.service_status === false ? "Inactive" : "Active";
-  const availabilityStatus = service.availability_status === false ? "Unavailable" : "Available";
+  const productImage = product.product_images?.trim() || "";
 
   return (
-    <AppShell>
+    <>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold text-[#06201c]">
-            {service.service_name || "Unnamed Service"}
+            {product.product_name || "Unnamed Product"}
           </h2>
-          <p className="mt-1 text-sm text-[#52736a]">Service details</p>
+          <p className="mt-1 text-sm text-[#52736a]">Product details</p>
         </div>
         <div className="flex flex-wrap gap-3">
           <Link
-            href={`${editHrefBase}/${service.id}/edit`}
+            href={`${editHrefBase}/${product.id}/edit`}
             className="inline-flex h-12 items-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-bold text-[#1f6a58] shadow-sm"
           >
-            Edit Service
+            Edit Product
           </Link>
-          {serviceStatus !== "Active" ? (
+          {productStatus !== "Active" ? (
             <button
               type="button"
               onClick={() => void handleActivate()}
@@ -305,7 +331,7 @@ export function ServiceDetailsPage({
             href={listHref}
             className="inline-flex h-12 items-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-bold text-[#1f6a58] shadow-sm"
           >
-            Back to Services
+            Back to Products
           </Link>
         </div>
       </div>
@@ -314,54 +340,59 @@ export function ServiceDetailsPage({
         <div className="flex flex-wrap items-center gap-3">
           <span
             className={`rounded-full px-3 py-1 text-xs font-bold ${
-              serviceStatus === "Active"
+              productStatus === "Active"
                 ? "bg-[#e8f6ee] text-[#16825b]"
                 : "bg-[#fff1f0] text-[#b42318]"
             }`}
           >
-            {serviceStatus}
-          </span>
-          <span
-            className={`rounded-full px-3 py-1 text-xs font-bold ${
-              availabilityStatus === "Available"
-                ? "bg-[#e8f6ee] text-[#16825b]"
-                : "bg-[#fff7e5] text-[#b7791f]"
-            }`}
-          >
-            {availabilityStatus}
+            {productStatus}
           </span>
           <span className="rounded-full bg-[#f1f4f3] px-3 py-1 text-xs font-bold text-[#6b7f79]">
-            {service.service_category || "N/A"}
+            {product.product_category || "N/A"}
           </span>
         </div>
 
         <div className="mt-6 grid gap-4 md:grid-cols-2">
-          <DetailRow label="Service Name" value={service.service_name || "N/A"} />
-          <DetailRow label="Category" value={service.service_category || "N/A"} />
-          <DetailRow label="Price" value={formatCurrency(service.service_price, service.currency)} />
-          <DetailRow label="Duration" value={`${service.duration || 0} min`} />
+          <DetailRow label="Product Name" value={product.product_name || "N/A"} />
+          <DetailRow label="Category" value={product.product_category || "N/A"} />
+          <DetailRow label="Price" value={formatCurrency(product.product_price, product.currency)} />
           <DetailRow label="Enterprise" value={enterpriseName} />
           <DetailRow label="Location" value={locationValue} />
-          <DetailRow label="Status" value={serviceStatus} />
         </div>
 
         <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <DetailRow label="SKU" value={product.sku || "N/A"} />
+          <DetailRow label="Barcode / UPC" value={product.barcode_upc || "N/A"} />
+          <DetailRow label="Weight" value={formatMaybeNumber(product.weight, " kg")} />
+          <DetailRow label="Dimensions" value={product.dimensions || "N/A"} />
           <DetailRow
-            label="Max Participants"
-            value={formatMaybeNumber(service.max_participants)}
-          />
-          <DetailRow label="Provider / Instructor" value={service.provider_name || "N/A"} />
-          <DetailRow label="Delivery Format" value={service.delivery_format || "N/A"} />
-          <DetailRow
-            label="Package Price"
+            label="Sale Price"
             value={
-              service.package_price !== undefined
-                ? formatCurrency(service.package_price, service.currency)
+              product.sale_price !== undefined
+                ? formatCurrency(product.sale_price, product.currency)
                 : "N/A"
             }
           />
-          <DetailRow label="Currency" value={service.currency || "N/A"} />
-          <DetailRow label="Cancellation Policy" value={service.cancellation_policy || "N/A"} />
+          <DetailRow
+            label="Cost Price"
+            value={
+              product.cost_price !== undefined
+                ? formatCurrency(product.cost_price, product.currency)
+                : "N/A"
+            }
+          />
+          <DetailRow
+            label="Stock Quantity"
+            value={formatMaybeNumber(product.stock_quantity)}
+          />
+          <DetailRow
+            label="Low Stock Alert"
+            value={formatMaybeNumber(product.low_stock_alert_threshold)}
+          />
+          <DetailRow label="Tax Class" value={product.tax_class || "N/A"} />
+          <DetailRow label="Stock Management" value={product.stock_management || "N/A"} />
+          <DetailRow label="Currency" value={product.currency || "N/A"} />
+          <DetailRow label="Publish Status" value={product.publish_status || "N/A"} />
         </div>
 
         <div className="mt-4 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] p-4">
@@ -369,17 +400,28 @@ export function ServiceDetailsPage({
             Description
           </p>
           <p className="mt-2 text-sm leading-6 text-[#52736a]">
-            {service.service_description || "N/A"}
+            {product.product_description || "N/A"}
           </p>
+        </div>
+
+        <div className="mt-4">
+          <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
+            Product Image
+          </p>
+          <div className="mt-2">
+            <ProductImagePreview src={productImage} alt={product.product_name || "Product image"} />
+          </div>
         </div>
       </section>
 
       <section className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
-        <div>
-          <h3 className="text-lg font-bold text-[#06201c]">Additional Attributes</h3>
-          <p className="mt-1 text-sm text-[#52736a]">
-            Extra service details supplied through dynamic attributes.
-          </p>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-bold text-[#06201c]">Additional Attributes</h3>
+            <p className="mt-1 text-sm text-[#52736a]">
+              Extra product details supplied through dynamic attributes.
+            </p>
+          </div>
         </div>
 
         {attributesError ? (
@@ -411,10 +453,6 @@ export function ServiceDetailsPage({
           </div>
         )}
       </section>
-    </AppShell>
+    </>
   );
-}
-
-export default function PublicServiceDetailsPage() {
-  return <ServiceDetailsPage />;
 }

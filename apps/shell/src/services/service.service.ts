@@ -1,4 +1,4 @@
-import { API_BASE_URL } from "@/lib/api";
+import { API_BASE_URL } from "@ihp/shared";
 import type {
   CreateServicePayload,
   ServiceDto,

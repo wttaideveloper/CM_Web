@@ -9,12 +9,10 @@ import {
   activateEnterprise,
   deactivateEnterprise,
   getEnterprises,
-} from "@/services/enterprise.service";
-import {
   normalizeEnterpriseStatus,
   type EnterpriseDto,
   type EnterpriseListItem,
-} from "@/types/enterprise.types";
+} from "@ihp/enterprises";
 
 const filters = ["Category", "Status", "Location"];
 

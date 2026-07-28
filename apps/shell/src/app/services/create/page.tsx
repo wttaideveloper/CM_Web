@@ -4,15 +4,12 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import AppShell from "@/components/layout/AppShell";
-import { formatCurrency } from "@/lib/format-currency";
-import { getEnterpriseLocations } from "@/services/enterprise-location.service";
-import { createDynamicAttribute } from "@/services/attribute.service";
-import { getEnterprises } from "@/services/enterprise.service";
 import { createService } from "@/services/service.service";
 import { getTenantMembers, type TenantMember } from "@/services/tenant.service";
-import type { EnterpriseDto } from "@/types/enterprise.types";
-import type { EnterpriseLocationDto } from "@/types/location.types";
 import type { AvailabilityScheduleItem } from "@/types/service.types";
+import { createDynamicAttribute } from "@ihp/attributes";
+import { getEnterpriseLocations, getEnterprises, type EnterpriseDto, type EnterpriseLocationDto } from "@ihp/enterprises";
+import { formatCurrency } from "@ihp/shared";
 
 const tabs = ["Service Info", "Pricing", "Availability", "Review"];
 

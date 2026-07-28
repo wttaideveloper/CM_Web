@@ -4,11 +4,10 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import AppShell from "@/components/layout/AppShell";
-import { formatCurrency } from "@/lib/format-currency";
-import { getEnterprises } from "@/services/enterprise.service";
 import { getServices } from "@/services/service.service";
-import type { EnterpriseDto } from "@/types/enterprise.types";
 import type { ServiceDto, ServiceListItem } from "@/types/service.types";
+import { getEnterprises, type EnterpriseDto } from "@ihp/enterprises";
+import { formatCurrency } from "@ihp/shared";
 
 const filters = ["Category", "Enterprise", "Status"];
 

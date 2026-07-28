@@ -1,0 +1,11 @@
+{
+  "name": "@ihp/enterprises",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ihp/shared": "0.1.0"
+  }
+}

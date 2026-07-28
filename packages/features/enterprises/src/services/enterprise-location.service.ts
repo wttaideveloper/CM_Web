@@ -1,9 +1,9 @@
-import { API_BASE_URL } from "@/lib/api";
+import { API_BASE_URL } from "@ihp/shared";
 import type {
   CreateEnterpriseLocationPayload,
   EnterpriseLocationDto,
   UpdateEnterpriseLocationPayload,
-} from "@/types/location.types";
+} from "../types/location.types";
 
 type EnterpriseLocationListResponse =
   | EnterpriseLocationDto[]

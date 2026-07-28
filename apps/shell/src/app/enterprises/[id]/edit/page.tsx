@@ -5,11 +5,12 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 import AppShell from "@/components/layout/AppShell";
-import { getEnterpriseById, updateEnterprise } from "@/services/enterprise.service";
 import {
+  getEnterpriseById,
+  updateEnterprise,
   type EnterpriseDto,
   type EnterpriseStatus,
-} from "@/types/enterprise.types";
+} from "@ihp/enterprises";
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return <span className="text-sm font-bold text-[#06201c]">{children}</span>;

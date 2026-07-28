@@ -4,8 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 
 import { useAuth } from "@/contexts/AuthContext";
 import { useTenant } from "@/contexts/TenantContext";
-import { searchEnterprisesByTenantId } from "@/services/enterprise.service";
-import type { EnterpriseDto } from "@/types/enterprise.types";
+import { searchEnterprisesByTenantId, type EnterpriseDto } from "@ihp/enterprises";
 
 type CurrentEnterpriseContextValue = {
   currentEnterprise: EnterpriseDto | null;

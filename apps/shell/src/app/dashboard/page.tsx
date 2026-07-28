@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import AppShell from "@/components/layout/AppShell";
-import { getEnterprises } from "@/services/enterprise.service";
-import { getProducts } from "@/services/product.service";
+import { getEnterprises } from "@ihp/enterprises";
+import { getProducts } from "@ihp/products";
 
 type KpiState = {
   enterprises: number | null;
