@@ -1,9 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 import AppShell from "@/components/layout/AppShell";
-import { CURRENT_ENTERPRISE } from "@/lib/current-enterprise";
+import { useCurrentEnterprise } from "@/contexts/CurrentEnterpriseContext";
+import { getProducts } from "@/services/product.service";
+import { getServices } from "@/services/service.service";
+import { normalizeEnterpriseStatus } from "@/types/enterprise.types";
 
 const quickActions = [
   "Create Product",
@@ -14,29 +18,8 @@ const quickActions = [
   "Manage Integrations",
 ];
 
-const activities = [
-  "New product draft created",
-  "Service availability updated",
-  "Training course content updated",
-];
-
-const notifications = [
-  {
-    title: "Pending Profile Review",
-    description: "Your enterprise profile is awaiting verification",
-    tone: "warning",
-  },
-  {
-    title: "Product Visibility",
-    description: "A product is ready to be listed",
-    tone: "success",
-  },
-  {
-    title: "Event Reminder",
-    description: "Upcoming event schedule needs confirmation",
-    tone: "info",
-  },
-] as const;
+const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const monthlyRevenue = Array.from({ length: 12 }, () => 0);
 
 function RevenueIcon() {
   return (
@@ -167,11 +150,64 @@ function ActivityIcon({ kind }: { kind: "package" | "service" | "grad" }) {
 }
 
 export default function AdminDashboardPage() {
+  const { currentEnterprise, enterpriseId, isLoadingEnterprise } = useCurrentEnterprise();
+  const [productCount, setProductCount] = useState<number | null>(null);
+  const [serviceCount, setServiceCount] = useState<number | null>(null);
+  const [isLoadingInventory, setIsLoadingInventory] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadInventoryCounts = async () => {
+      if (!enterpriseId) {
+        if (active) {
+          setProductCount(null);
+          setServiceCount(null);
+          setIsLoadingInventory(false);
+        }
+        return;
+      }
+
+      setIsLoadingInventory(true);
+      const [productsResult, servicesResult] = await Promise.allSettled([getProducts(), getServices()]);
+
+      if (!active) {
+        return;
+      }
+
+      setProductCount(
+        productsResult.status === "fulfilled"
+          ? productsResult.value.filter((product) => product.enterprise_id === enterpriseId).length
+          : null,
+      );
+      setServiceCount(
+        servicesResult.status === "fulfilled"
+          ? servicesResult.value.filter((service) => service.enterprise_id === enterpriseId).length
+          : null,
+      );
+      setIsLoadingInventory(false);
+    };
+
+    void loadInventoryCounts();
+
+    return () => {
+      active = false;
+    };
+  }, [enterpriseId]);
+
+  const enterpriseName = currentEnterprise
+    ? currentEnterprise.business_legal_name || currentEnterprise.business_short_name || currentEnterprise.name || "Unnamed Enterprise"
+    : isLoadingEnterprise
+      ? "Loading enterprise..."
+      : "Enterprise unavailable";
+  const enterpriseStatus = currentEnterprise ? normalizeEnterpriseStatus(currentEnterprise.status) : null;
+  const productCountValue = isLoadingInventory || productCount === null ? "—" : String(productCount);
+  const serviceCountValue = isLoadingInventory || serviceCount === null ? "—" : String(serviceCount);
   const stats = [
-    { label: "My Products", value: "6", change: "+3" },
-    { label: "My Services", value: "4", change: "+1" },
-    { label: "Bookings This Month", value: "156", change: "+22" },
-    { label: "My Revenue", value: "$0", change: "+8.2%" },
+    { label: "My Products", value: productCountValue },
+    { label: "My Services", value: serviceCountValue },
+    { label: "Bookings This Month", value: "0" },
+    { label: "My Revenue", value: "$0" },
   ];
 
   return (
@@ -180,7 +216,7 @@ export default function AdminDashboardPage() {
         <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">
-              ENTERPRISE OWNER &middot; {CURRENT_ENTERPRISE.name.toUpperCase()}
+              ENTERPRISE OWNER &middot; {enterpriseName.toUpperCase()}
             </p>
             <h2 className="mt-1 text-2xl font-bold text-[#06201c]">
               My Business Dashboard
@@ -188,9 +224,11 @@ export default function AdminDashboardPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="inline-flex items-center rounded-full bg-[#e8f6ee] px-4 py-2 text-sm font-semibold text-[#1f6a58]">
-              Active &amp; Verified
-            </span>
+            {enterpriseStatus ? (
+              <span className="inline-flex items-center rounded-full bg-[#e8f6ee] px-4 py-2 text-sm font-semibold text-[#1f6a58]">
+                {enterpriseStatus}
+              </span>
+            ) : null}
             <Link
               href="/admin/products/create"
               className="rounded-full bg-[#1f6a58] px-5 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#195646]"
@@ -218,10 +256,6 @@ export default function AdminDashboardPage() {
                     <RevenueIcon />
                   )}
                 </div>
-                <span className="flex items-center gap-1 text-xs font-bold text-[#08a36b] transition-all duration-200 group-hover:text-white">
-                  <MiniArrow />
-                  {item.change}
-                </span>
               </div>
               <h3 className="text-2xl font-bold text-[#06201c] transition-colors duration-200 group-hover:text-white">
                 {item.value}
@@ -250,16 +284,16 @@ export default function AdminDashboardPage() {
             </div>
 
             <div className="flex h-36 items-end gap-1.5 sm:h-48 sm:gap-3">
-              {[38, 52, 46, 68, 61, 77, 73, 88, 80, 94, 90, 102].map((height, index) => (
+              {monthlyRevenue.map((value, index) => (
                 <div key={index} className="flex min-w-0 flex-1 flex-col items-center gap-1.5 sm:gap-2">
                   <div
                     className={`w-full rounded-t-xl transition-colors duration-200 hover:bg-[#8fb0a8] ${
                       index === 11 ? "bg-[#1f6a58]" : "bg-[#c8d8d3]"
                     }`}
-                    style={{ height: `${Math.max(24, Math.round(height * 0.7))}px` }}
+                    style={{ height: `${Math.round(value * 0.7)}px` }}
                   />
                   <span className="text-[10px] leading-none text-[#52736a] sm:text-xs">
-                    {["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][index]}
+                    {months[index]}
                   </span>
                 </div>
               ))}
@@ -323,18 +357,7 @@ export default function AdminDashboardPage() {
               </button>
             </div>
             <div>
-              {activities.map((item, index) => (
-                <div
-                  key={item}
-                  className="flex cursor-pointer gap-3 border-b border-[#edf3f0] p-4 transition-colors duration-200 hover:bg-[#f4faf7] last:border-0"
-                >
-                  <ActivityIcon kind={index === 0 ? "package" : index === 1 ? "service" : "grad"} />
-                  <div>
-                    <p className="text-sm font-medium text-[#06201c]">{item}</p>
-                    <p className="text-xs text-[#52736a]">{index + 2} min ago</p>
-                  </div>
-                </div>
-              ))}
+              <div className="p-4 text-sm text-[#52736a]">No recent activity.</div>
             </div>
           </section>
 
@@ -342,35 +365,11 @@ export default function AdminDashboardPage() {
             <div className="flex items-center justify-between border-b border-[#edf3f0] p-5">
               <h3 className="text-lg font-bold text-[#06201c]">Notifications</h3>
               <span className="rounded-full bg-[#eef4ff] px-3 py-1 text-xs font-bold text-[#2563eb]">
-                3 unread
+                0 unread
               </span>
             </div>
             <div>
-              {notifications.map((item) => (
-                <div
-                  key={item.title}
-                  className="flex cursor-pointer items-start justify-between gap-4 border-b border-[#edf3f0] p-4 transition-colors duration-200 hover:bg-[#f4faf7] last:border-0"
-                >
-                  <div className="flex items-start gap-3">
-                    <span
-                      className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
-                        item.tone === "warning"
-                          ? "bg-[#eab308]"
-                          : item.tone === "success"
-                            ? "bg-[#22c55e]"
-                            : "bg-[#3b82f6]"
-                      }`}
-                    />
-                    <div>
-                      <p className="text-sm font-semibold text-[#06201c]">{item.title}</p>
-                      <p className="mt-1 text-xs text-[#52736a]">{item.description}</p>
-                    </div>
-                  </div>
-                  <span className="rounded-full bg-[#1f6a58] px-3 py-1 text-xs font-bold text-white">
-                    New
-                  </span>
-                </div>
-              ))}
+              <div className="p-4 text-sm text-[#52736a]">No notifications.</div>
             </div>
           </section>
         </div>

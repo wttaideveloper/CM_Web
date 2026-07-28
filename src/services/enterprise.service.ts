@@ -1,5 +1,4 @@
 import { API_BASE_URL } from "@/lib/api";
-import { requestResponse } from "@/services/api-client";
 import type {
   CreateEnterprisePayload,
   EnterpriseDto,
@@ -204,7 +203,10 @@ export async function getEnterpriseById(id: string): Promise<EnterpriseDto> {
 
 export async function searchEnterprisesByTenantId(tenantId: string): Promise<EnterpriseDto[]> {
   const searchParams = new URLSearchParams({ tenant_id: tenantId });
-  const response = await requestResponse(`/search/enterprises?${searchParams.toString()}`, { method: "GET" }, false);
+  const response = await fetch(`${API_BASE_URL}/search/enterprises?${searchParams.toString()}`, {
+    method: "GET",
+    cache: "no-store",
+  });
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
