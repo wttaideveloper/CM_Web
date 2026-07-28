@@ -23,6 +23,7 @@ const DEMO_LOGIN_ENDPOINT = "/internal/demo-auth/login";
 const MARKETPLACE_CHAT_TOKEN_KEY = "marketplace_chat_token";
 const MARKETPLACE_CHAT_TOKEN_EXPIRES_AT_KEY = "marketplace_chat_token_expires_at";
 const MARKETPLACE_CHAT_USER_KEY = "marketplace_chat_user";
+export const MARKETPLACE_DEMO_AUTH_CHANGED_EVENT = "marketplace-demo-auth-changed";
 const MARKETPLACE_SHARED_DEMO_USER = {
   email: "provider@test.com",
   role: "provider",
@@ -74,6 +75,14 @@ function removeStoredString(key: string) {
   } catch {
     // ignore storage failures
   }
+}
+
+function notifyMarketplaceDemoAuthChanged() {
+  if (!isBrowser()) {
+    return;
+  }
+
+  window.dispatchEvent(new Event(MARKETPLACE_DEMO_AUTH_CHANGED_EVENT));
 }
 
 function readStoredUser(): MarketplaceDemoUser | null {
@@ -130,6 +139,7 @@ function persistMarketplaceDemoSession(session: MarketplaceDemoSession) {
   writeStoredString(MARKETPLACE_CHAT_TOKEN_KEY, session.accessToken);
   writeStoredString(MARKETPLACE_CHAT_TOKEN_EXPIRES_AT_KEY, String(session.expiresAt));
   writeStoredString(MARKETPLACE_CHAT_USER_KEY, JSON.stringify(session.user));
+  notifyMarketplaceDemoAuthChanged();
 }
 
 function buildMarketplaceDemoSession(response: MarketplaceDemoTokenResponse): MarketplaceDemoSession {
@@ -298,6 +308,7 @@ export function clearMarketplaceDemoSession() {
   removeStoredString(MARKETPLACE_CHAT_TOKEN_KEY);
   removeStoredString(MARKETPLACE_CHAT_TOKEN_EXPIRES_AT_KEY);
   removeStoredString(MARKETPLACE_CHAT_USER_KEY);
+  notifyMarketplaceDemoAuthChanged();
 }
 
 export function redirectToMarketplaceLogin() {

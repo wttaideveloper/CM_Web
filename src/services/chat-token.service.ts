@@ -1,4 +1,8 @@
 import { getChatToken } from "@/services/auth.service";
+import {
+  getMarketplaceChatToken,
+  getMarketplaceDemoSession,
+} from "@/services/marketplace-demo-auth.service";
 
 type ChatTokenSession = {
   accessToken: string;
@@ -10,6 +14,7 @@ type ChatTokenSession = {
 let chatTokenSession: ChatTokenSession | null = null;
 let chatTokenRequest: Promise<ChatTokenSession> | null = null;
 let chatSessionEnabled = false;
+const useDemoChatToken = process.env.NEXT_PUBLIC_USE_DEMO_CHAT_TOKEN === "true";
 
 export function setChatSessionEnabled(enabled: boolean) {
   chatSessionEnabled = enabled;
@@ -25,11 +30,31 @@ export function clearChatTokenSession() {
 }
 
 export function getChatTokenUserId() {
+  if (useDemoChatToken) {
+    return getMarketplaceDemoSession()?.user.id ?? null;
+  }
+
   return chatTokenSession?.userId ?? null;
 }
 
 function isTokenUsable(session: ChatTokenSession) {
   return session.expiresAt - Date.now() > 30_000;
+}
+
+async function getDemoChatTokenSession(): Promise<ChatTokenSession> {
+  const accessToken = await getMarketplaceChatToken();
+  const demoSession = getMarketplaceDemoSession();
+
+  if (!demoSession) {
+    throw new Error("Marketplace demo session is missing or expired.");
+  }
+
+  return {
+    accessToken,
+    expiresAt: demoSession.expiresAt,
+    userId: demoSession.user.id,
+    tenantId: "",
+  };
 }
 
 export async function getChatAccessToken() {
@@ -42,14 +67,15 @@ export async function getChatAccessToken() {
   }
 
   if (!chatTokenRequest) {
-    chatTokenRequest = getChatToken()
-      .then((response) => {
-        const session = {
+    chatTokenRequest = (useDemoChatToken
+      ? getDemoChatTokenSession()
+      : getChatToken().then((response) => ({
           accessToken: response.access_token,
           expiresAt: Date.now() + response.expires_in * 1000,
           userId: response.user_id,
           tenantId: response.tenant_id,
-        };
+        })))
+      .then((session) => {
         chatTokenSession = session;
         return session;
       })

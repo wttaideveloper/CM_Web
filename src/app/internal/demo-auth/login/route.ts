@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { CHAT_API_BASE_URL } from "@/lib/chat-api";
+
 const MARKETPLACE_SHARED_DEMO_USER = {
   email: "provider@test.com",
   role: "provider",
@@ -7,8 +9,10 @@ const MARKETPLACE_SHARED_DEMO_USER = {
 };
 
 export async function POST() {
-  const apiBaseUrl =
-    process.env.MARKETPLACE_API_BASE_URL ?? "http://13.207.85.164/api/v1";
+  const useDemoChatToken = process.env.NEXT_PUBLIC_USE_DEMO_CHAT_TOKEN === "true";
+  const apiBaseUrl = useDemoChatToken
+    ? CHAT_API_BASE_URL
+    : process.env.MARKETPLACE_API_BASE_URL ?? "http://13.207.85.164/api/v1";
 
   const response = await fetch(`${apiBaseUrl}/auth/dev-token`, {
     method: "POST",

@@ -18,6 +18,7 @@ import {
   clearMarketplaceDemoSession,
   getMarketplaceChatToken,
   getMarketplaceDemoSession,
+  MARKETPLACE_DEMO_AUTH_CHANGED_EVENT,
 } from "@/services/marketplace-demo-auth.service";
 import { updatePresenceStatus } from "@/services/chat.service";
 import {
@@ -318,10 +319,28 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function AdminSocketProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const [demoSessionVersion, setDemoSessionVersion] = useState(0);
+  const demoSession = useMemo(
+    () => getMarketplaceDemoSession(),
+    [demoSessionVersion],
+  );
+
+  useEffect(() => {
+    const handleMarketplaceDemoAuthChanged = () => {
+      setDemoSessionVersion((current) => current + 1);
+    };
+
+    window.addEventListener(MARKETPLACE_DEMO_AUTH_CHANGED_EVENT, handleMarketplaceDemoAuthChanged);
+
+    return () => {
+      window.removeEventListener(MARKETPLACE_DEMO_AUTH_CHANGED_EVENT, handleMarketplaceDemoAuthChanged);
+    };
+  }, []);
+
   // Temporary demo/staging authentication using a shared seeded Marketplace provider account.
   // Not production multi-user authentication.
   const shouldConnect =
-    Boolean(getMarketplaceDemoSession()) && pathname !== "/" && !pathname.startsWith("/auth");
+    Boolean(demoSession) && pathname !== "/" && !pathname.startsWith("/auth");
   const socketRef = useRef<ChatSocket | null>(null);
   const socketTokenRef = useRef<string | null>(null);
   const [socket, setSocket] = useState<ChatSocket | null>(null);
