@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { AppFrame } from "@ihp/ui";
 
 import AppHeader from "./AppHeader";
 import AppSidebar from "./AppSidebar";
@@ -13,15 +14,16 @@ export default function AppShell({ children }: AppShellProps) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   return (
-    <main className="min-h-screen bg-white text-[#06201c] transition-colors">
-      <AppSidebar
+    <AppFrame
+      sidebar={(
+        <AppSidebar
         mobileOpen={mobileSidebarOpen}
         onClose={() => setMobileSidebarOpen(false)}
-      />
-      <AppHeader onMenuClick={() => setMobileSidebarOpen((current) => !current)} />
-      <section className="px-5 py-5 lg:ml-[240px] lg:px-6 lg:py-6">
-        {children}
-      </section>
-    </main>
+        />
+      )}
+      header={<AppHeader onMenuClick={() => setMobileSidebarOpen((current) => !current)} />}
+    >
+      {children}
+    </AppFrame>
   );
 }

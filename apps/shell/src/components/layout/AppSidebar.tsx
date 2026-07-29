@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
+import { SidebarFrame } from "@ihp/ui";
 
 type NavItem = {
   label: string;
@@ -316,46 +317,26 @@ export default function AppSidebar({ mobileOpen, onClose }: AppSidebarProps) {
   }, [mobileOpen]);
 
   return (
-    <>
-      <aside className="fixed left-0 top-[72px] hidden h-[calc(100vh-72px)] w-[240px] flex-col overflow-hidden border-r border-[#e3eee9] bg-white transition-colors lg:flex">
-        <SidebarContent pathname={pathname} />
-      </aside>
-
-      <div
-        className={`fixed inset-0 z-40 lg:hidden ${mobileOpen ? "pointer-events-auto" : "pointer-events-none"}`}
-        aria-hidden={!mobileOpen}
-      >
-        <button
-          type="button"
-          aria-label="Close sidebar backdrop"
-          onClick={onClose}
-          className={`absolute inset-0 top-[72px] bg-slate-900/45 backdrop-blur-sm transition-opacity ${
-            mobileOpen ? "opacity-100" : "opacity-0"
-          }`}
-        />
-
-        <aside
-          className={`absolute left-0 top-[72px] flex h-[calc(100vh-72px)] w-[280px] max-w-[86vw] flex-col overflow-hidden border-r border-[#e3eee9] bg-white shadow-[0_20px_40px_rgba(7,53,45,0.18)] transition-transform duration-200 ${
-            mobileOpen ? "translate-x-0" : "-translate-x-full"
-          }`}
-        >
-          <div className="flex items-center justify-between border-b border-[#edf3f0] px-4 py-4">
-            <p className="text-sm font-bold text-[#06201c]">Menu</p>
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f4faf7]"
-              aria-label="Close sidebar"
-            >
-              <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none">
-                <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              </svg>
-            </button>
-          </div>
-
-          <SidebarContent pathname={pathname} onNavigate={onClose} />
-        </aside>
-      </div>
-    </>
+    <SidebarFrame
+      desktopContent={<SidebarContent pathname={pathname} />}
+      mobileHeader={(
+        <>
+          <p className="text-sm font-bold text-[#06201c]">Menu</p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f4faf7]"
+            aria-label="Close sidebar"
+          >
+            <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none">
+              <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </button>
+        </>
+      )}
+      mobileContent={<SidebarContent pathname={pathname} onNavigate={onClose} />}
+      mobileOpen={mobileOpen}
+      onMobileSidebarClose={onClose}
+    />
   );
 }

@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
     "@ihp/products",
     "@ihp/services",
     "@ihp/shared",
+    "@ihp/ui",
   ],
   async rewrites() {
     return {

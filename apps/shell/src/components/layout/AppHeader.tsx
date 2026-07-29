@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { HeaderFrame } from "@ihp/ui";
 
 import { useAdminSocket } from "@/contexts/AdminSocketContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -235,11 +236,10 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
   };
 
   return (
-    <header
-      ref={headerRef}
-      className="sticky top-0 z-30 flex h-[72px] items-center justify-between border-b border-[#e3eee9] bg-white/95 px-6 backdrop-blur transition-colors lg:px-8"
-    >
-      <div className="flex items-center gap-2">
+    <HeaderFrame
+      headerRef={headerRef}
+      left={(
+        <>
         <button
           type="button"
           onClick={onMenuClick}
@@ -277,9 +277,10 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
           </div>
           <h1 className="text-lg font-bold text-[#07352d]">Invigorate Health</h1>
         </Link>
-      </div>
-
-      <div className="flex items-center gap-3">
+        </>
+      )}
+      right={(
+        <>
         <div className="relative">
           <button
             type="button"
@@ -474,7 +475,8 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
             ))}
           </div>
         </div>
-      </div>
-    </header>
+        </>
+      )}
+    />
   );
 }

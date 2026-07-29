@@ -4,6 +4,7 @@
 @source "../../../../packages/features/enterprises/src";
 @source "../../../../packages/features/products/src";
 @source "../../../../packages/features/services/src";
+@source "../../../../packages/ui/src";
 :root {
   --background: #ffffff;
   --foreground: #06201c;

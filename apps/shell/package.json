@@ -15,6 +15,7 @@
     "@ihp/products": "0.1.0",
     "@ihp/services": "0.1.0",
     "@ihp/shared": "0.1.0",
+    "@ihp/ui": "0.1.0",
     "emoji-picker-react": "^4.19.1",
     "next": "16.2.9",
     "react": "19.2.4",
