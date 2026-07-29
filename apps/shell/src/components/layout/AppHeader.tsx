@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { HeaderFrame } from "@ihp/ui";
 
 import { useAdminSocket } from "@/contexts/AdminSocketContext";
@@ -132,7 +132,35 @@ type AppHeaderProps = {
   onMenuClick: () => void;
 };
 
+type HeaderRealtimeState = Pick<
+  ReturnType<typeof useAdminSocket>,
+  | "notifications"
+  | "unreadNotificationCount"
+  | "unreadMessageCount"
+  | "isLoadingNotifications"
+  | "notificationError"
+  | "notificationPagination"
+  | "loadMoreNotifications"
+  | "markAllNotificationsAsRead"
+  | "markNotificationAsRead"
+>;
+
+const noOpRealtimeAction = async () => undefined;
+
 export default function AppHeader({ onMenuClick }: AppHeaderProps) {
+  return <AppHeaderContent onMenuClick={onMenuClick} />;
+}
+
+export function RealtimeAppHeader({ onMenuClick }: AppHeaderProps) {
+  const realtime = useAdminSocket();
+
+  return <AppHeaderContent onMenuClick={onMenuClick} realtime={realtime} />;
+}
+
+function AppHeaderContent({
+  onMenuClick,
+  realtime,
+}: AppHeaderProps & { realtime?: HeaderRealtimeState }) {
   const router = useRouter();
   const pathname = usePathname();
   const { logout, user } = useAuth();
@@ -141,19 +169,16 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
   const isAdminRoute = pathname.startsWith("/admin");
   const notificationsRoute = isAdminRoute ? "/admin/notifications" : "/notifications";
   const messagesRoute = isAdminRoute ? "/admin/messages" : null;
-  const {
-    notifications,
-    unreadNotificationCount,
-    unreadMessageCount,
-    isLoadingNotifications,
-    notificationError,
-    notificationPagination,
-    loadMoreNotifications,
-    markAllNotificationsAsRead,
-    markNotificationAsRead,
-  } = useAdminSocket();
+  const unreadNotificationCount = realtime?.unreadNotificationCount ?? 0;
+  const unreadMessageCount = realtime?.unreadMessageCount ?? 0;
+  const isLoadingNotifications = realtime?.isLoadingNotifications ?? false;
+  const notificationError = realtime?.notificationError ?? null;
+  const notificationPagination = realtime?.notificationPagination ?? null;
+  const loadMoreNotifications = realtime?.loadMoreNotifications ?? noOpRealtimeAction;
+  const markAllNotificationsAsRead = realtime?.markAllNotificationsAsRead ?? noOpRealtimeAction;
+  const markNotificationAsRead = realtime?.markNotificationAsRead ?? noOpRealtimeAction;
 
-  const visibleNotifications = useMemo(() => notifications.slice(0, 6), [notifications]);
+  const visibleNotifications = (realtime?.notifications ?? []).slice(0, 6);
   const unreadNotificationBadge = clampBadge(unreadNotificationCount);
   const unreadMessageBadge = clampBadge(unreadMessageCount);
   const hasMoreNotifications =

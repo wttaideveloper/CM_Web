@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import AppShell from "@/components/layout/AppShell";
+import { RealtimeCompatibilityShell as AppShell } from "@/components/layout/AppShell";
 import { useAdminSocket } from "@/contexts/AdminSocketContext";
 import { useChatAuth } from "@/contexts/ChatAuthContext";
 import EmojiPicker from "emoji-picker-react";
