@@ -3,8 +3,7 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
-import { startLogin } from "@/services/auth.service";
+import { startLogin, useAuth } from "@ihp/auth";
 
 export default function LoginPage() {
   const router = useRouter();

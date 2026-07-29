@@ -4,6 +4,7 @@ const authApiBaseUrl = process.env.AUTH_API_BASE_URL;
 
 const nextConfig: NextConfig = {
   transpilePackages: [
+    "@ihp/auth",
     "@ihp/attributes",
     "@ihp/enterprises",
     "@ihp/onboarding-forms",

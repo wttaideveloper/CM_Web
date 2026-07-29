@@ -3,8 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 
-import { useAuth } from "@/contexts/AuthContext";
-import { completeLogin } from "@/services/auth.service";
+import { completeLogin, useAuth } from "@ihp/auth";
 import { loginMarketplaceDemoUser } from "@/services/marketplace-demo-auth.service";
 
 function ValidateLoginContent() {

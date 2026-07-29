@@ -1,51 +1,22 @@
 import { CHAT_API_BASE_URL } from "@/lib/chat-api";
+import type { AuthUser } from "@ihp/auth";
+
+export {
+  completeLogin,
+  getSession,
+  logoutWebAuth,
+  startLogin,
+} from "@ihp/auth";
+export type {
+  AuthMembership,
+  AuthRoles,
+  AuthSessionResponse,
+  AuthUser,
+  CompleteLoginResponse,
+  LogoutResponse,
+} from "@ihp/auth";
 
 const WEB_AUTH_BASE_URL = "/api/v1/auth";
-
-export type AuthMembership = {
-  tenantRole: string;
-  tenantSlug: string;
-  tenantName: string;
-  knowledgeRoles: string[];
-  canInviteUsers: boolean;
-  userRole: string;
-  tenantRbacRoles: string[];
-  tenantPermissions: string[];
-};
-
-export type AuthRoles = {
-  tenantRole: string;
-  tenantSlug: string;
-  tenantName: string;
-  userRole: string;
-  tenantRbacRoles: string[];
-  tenantPermissions: string[];
-  knowledgeRoles: string[];
-  canInviteUsers: boolean;
-};
-
-export type AuthUser = {
-  id?: string;
-  userId?: string;
-  email: string;
-  fullName: string;
-  phone?: string;
-  address?: string;
-  country?: string;
-  preferredLocale?: string;
-  emailVerified: boolean;
-  groups: string[];
-  membership: AuthMembership;
-  roles: AuthRoles;
-};
-
-export type AuthSessionResponse = {
-  message?: string;
-  data?: AuthUser | null;
-  authenticated?: boolean;
-  hasActiveTenant?: boolean;
-  needsOrganizationSetup?: boolean;
-};
 
 export type AuthMeResponse = {
   message?: string;
@@ -78,23 +49,6 @@ export type InviteUserPayload = {
   full_name: string;
   email: string;
   role_slug: string;
-};
-
-export type CompleteLoginResponse = AuthSessionResponse & {
-  tokens?: {
-    access_token: string;
-    refresh_token: string;
-    token_type: "Bearer";
-    expires_in: number;
-    refresh_expires_in: number;
-  };
-};
-
-export type LogoutResponse = {
-  logout_url?: string;
-  data?: {
-    logout_url?: string;
-  };
 };
 
 export type ChatTokenResponse = {
@@ -170,39 +124,6 @@ function getInviteRoleList(value: unknown): unknown[] {
   }
 
   return [];
-}
-
-export function startLogin() {
-  const params = new URLSearchParams({
-    frontend_origin: window.location.origin,
-    return_to: "/auth/validate",
-    rememberMe: "false",
-  });
-
-  window.location.assign(`${WEB_AUTH_BASE_URL}/login?${params.toString()}`);
-}
-
-export async function completeLogin(sessionCode: string) {
-  const searchParams = new URLSearchParams({ sessionCode });
-  const response = await fetch(`${WEB_AUTH_BASE_URL}/complete-login?${searchParams.toString()}`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ sessionCode }),
-  });
-
-  return parseAuthResponse<CompleteLoginResponse>(response);
-}
-
-export async function getSession() {
-  const response = await fetch(`${WEB_AUTH_BASE_URL}/session`, {
-    method: "GET",
-    credentials: "include",
-  });
-
-  return parseAuthResponse<AuthSessionResponse>(response);
 }
 
 export async function getChatToken() {
@@ -321,29 +242,4 @@ export async function getAuthTenants(): Promise<AuthTenant[]> {
   }
 
   return tenants;
-}
-
-export async function logoutWebAuth() {
-  const params = new URLSearchParams({
-    frontend_origin: window.location.origin,
-  });
-  const response = await fetch(`${WEB_AUTH_BASE_URL}/logout?${params.toString()}`, {
-    method: "POST",
-    credentials: "include",
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => "");
-    throw new Error(errorText || `Logout failed with status ${response.status}`);
-  }
-
-  const result = await response.json() as LogoutResponse;
-  const logoutUrl = result.logout_url ?? result.data?.logout_url;
-
-  if (!logoutUrl) {
-    throw new Error("Logout response did not include a Keycloak logout URL.");
-  }
-
-  return logoutUrl;
 }

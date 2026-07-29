@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 
-import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthProvider } from "@ihp/auth";
 import { AdminSocketProvider } from "@/contexts/AdminSocketContext";
 import { ChatAuthProvider } from "@/contexts/ChatAuthContext";
 import { CurrentEnterpriseProvider } from "@/contexts/CurrentEnterpriseContext";
