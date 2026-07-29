@@ -19,8 +19,7 @@ import {
 } from "@ihp/enterprises";
 import { getProducts, type ProductDto } from "@ihp/products";
 import { formatCurrency } from "@ihp/shared";
-import { getServices } from "@/services/service.service";
-import type { ServiceDto } from "@/types/service.types";
+import { getServices, type ServiceDto } from "@ihp/services";
 
 const tabs = ["Overview", "Products", "Services", "Events", "Trainings"];
 

@@ -3,7 +3,7 @@ import type {
   CreateServicePayload,
   ServiceDto,
   UpdateServicePayload,
-} from "@/types/service.types";
+} from "../types/service.types";
 
 type ServiceListResponse = ServiceDto[] | { items?: ServiceDto[] };
 

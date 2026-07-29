@@ -3,8 +3,6 @@
 import { useEffect, useState } from "react";
 
 import AppShell from "@/components/layout/AppShell";
-import { getServices } from "@/services/service.service";
-import type { ServiceDto } from "@/types/service.types";
 import {
   createDynamicAttribute,
   deleteDynamicAttribute,
@@ -14,6 +12,7 @@ import {
 } from "@ihp/attributes";
 import { getEnterprises, type EnterpriseDto } from "@ihp/enterprises";
 import { getProducts, type ProductDto } from "@ihp/products";
+import { getServices, type ServiceDto } from "@ihp/services";
 
 const tabs = ["Enterprise", "Product", "Service"] as const;
 type Tab = (typeof tabs)[number];

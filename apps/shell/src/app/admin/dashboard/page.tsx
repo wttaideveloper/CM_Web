@@ -5,9 +5,9 @@ import { useEffect, useState } from "react";
 
 import AppShell from "@/components/layout/AppShell";
 import { useCurrentEnterprise } from "@/contexts/CurrentEnterpriseContext";
-import { getServices } from "@/services/service.service";
 import { normalizeEnterpriseStatus } from "@ihp/enterprises";
 import { getProducts } from "@ihp/products";
+import { getServices } from "@ihp/services";
 
 const quickActions = [
   "Create Product",

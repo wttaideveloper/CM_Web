@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
     "@ihp/enterprises",
     "@ihp/onboarding-forms",
     "@ihp/products",
+    "@ihp/services",
     "@ihp/shared",
   ],
   async rewrites() {
