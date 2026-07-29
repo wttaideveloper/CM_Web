@@ -1,27 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
 import { useEffect } from "react";
 import { SidebarFrame } from "@ihp/ui";
 
-type NavItem = {
-  label: string;
-  href: string;
-  icon: ReactNode;
-  child?: boolean;
-  badge?: string;
-  disabled?: boolean;
-  activeMatch?: "prefix" | "exact" | "never";
-};
-
-type NavGroup = {
-  title: string;
-  items: NavItem[];
-};
+import type {
+  NavigationIcon,
+  ShellLayoutConfig,
+  ShellNavigationItem,
+} from "./shell-layout.config";
 
 type AppSidebarProps = {
+  layout: ShellLayoutConfig;
+  pathname: string;
   mobileOpen: boolean;
   onClose: () => void;
 };
@@ -147,64 +138,23 @@ function SettingsIcon() {
   );
 }
 
-const superAdminNavGroups: NavGroup[] = [
-  {
-    title: "OVERVIEW",
-    items: [{ label: "Dashboard", href: "/dashboard", icon: <DashboardIcon /> }],
-  },
-  {
-    title: "APPROVALS & CONFIG",
-    items: [
-      { label: "Approval Queue", href: "/approval-queue", icon: <QueueIcon />, badge: "4" },
-      { label: "Form Builder", href: "/onboarding-forms", icon: <FormsIcon /> },
-      { label: "Enterprise Types", href: "/enterprise-types", icon: <BuildingIcon /> },
-      { label: "Categories", href: "/categories", icon: <TagIcon /> },
-      { label: "Sub-Admins", href: "/sub-admins", icon: <SettingsIcon /> },
-      { label: "Attributes", href: "/attributes", icon: <TagIcon /> },
-    ],
-  },
-  {
-    title: "MARKETPLACE",
-    items: [
-      { label: "Enterprises", href: "/enterprises", icon: <BuildingIcon /> },
-      { label: "Products", href: "/products", icon: <PackageIcon /> },
-      { label: "Services", href: "/services", icon: <ServiceIcon /> },
-      { label: "Events", href: "/events", icon: <CalendarIcon /> },
-      { label: "Trainings", href: "/trainings", icon: <TrainingIcon /> },
-      { label: "Integrations", href: "/integrations", icon: <IntegrationIcon /> },
-    ],
-  },
-];
+const navigationIcons: Record<NavigationIcon, () => React.JSX.Element> = {
+  dashboard: DashboardIcon,
+  building: BuildingIcon,
+  details: DetailsIcon,
+  package: PackageIcon,
+  service: ServiceIcon,
+  calendar: CalendarIcon,
+  training: TrainingIcon,
+  chart: ChartIcon,
+  integration: IntegrationIcon,
+  tag: TagIcon,
+  forms: FormsIcon,
+  queue: QueueIcon,
+  settings: SettingsIcon,
+};
 
-const adminNavGroups: NavGroup[] = [
-  {
-    title: "MY ENTERPRISE",
-    items: [
-      { label: "Dashboard", href: "/admin/dashboard", icon: <DashboardIcon /> },
-      { label: "Enterprise Setup", href: "/admin/enterprise", icon: <BuildingIcon />, activeMatch: "exact" },
-      { label: "Analytics", href: "/admin/analytics", icon: <ChartIcon /> },
-    ],
-  },
-  {
-    title: "MY LISTINGS",
-    items: [
-      { label: "My Products", href: "/admin/products", icon: <PackageIcon /> },
-      { label: "My Services", href: "/admin/services", icon: <ServiceIcon /> },
-      { label: "My Events", href: "/admin/events", icon: <CalendarIcon /> },
-      { label: "My Trainings", href: "/admin/trainings", icon: <TrainingIcon /> },
-    ],
-  },
-  {
-    title: "ACCOUNT",
-    items: [
-      { label: "Settings", href: "/admin/settings", icon: <SettingsIcon /> },
-      { label: "My Enterprise", href: "/admin/enterprise", icon: <BuildingIcon />, activeMatch: "never" },
-      { label: "Edit Enterprise", href: "/admin/enterprise/edit", icon: <DetailsIcon />, activeMatch: "exact" },
-    ],
-  },
-];
-
-function isActive(pathname: string, item: NavItem) {
+function isActive(pathname: string, item: ShellNavigationItem) {
   if (item.disabled) {
     return false;
   }
@@ -225,30 +175,24 @@ function isActive(pathname: string, item: NavItem) {
 }
 
 function SidebarContent({
+  layout,
   pathname,
   onNavigate,
 }: {
+  layout: ShellLayoutConfig;
   pathname: string;
   onNavigate?: () => void;
 }) {
-  const navGroups = pathname.startsWith("/admin") ? adminNavGroups : superAdminNavGroups;
+  const navGroups = layout.navigationGroups;
 
   return (
     <nav className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 pb-6">
       <div className="space-y-6">
-        {!pathname.startsWith("/admin") ? (
-          <div className="px-3 pt-1">
-            <p className="text-sm font-bold uppercase tracking-[0.22em] text-[#06201c]">
-              Super Admin
-            </p>
-          </div>
-        ) : (
-          <div className="px-3 pt-1">
-            <p className="text-sm font-bold uppercase tracking-[0.22em] text-[#6b4fd3]">
-              Enterprise Owner
-            </p>
-          </div>
-        )}
+        <div className="px-3 pt-1">
+          <p className={`text-sm font-bold uppercase tracking-[0.22em] ${layout.sidebarLabelClassName}`}>
+            {layout.sidebarLabel}
+          </p>
+        </div>
         {navGroups.map((group) => (
           <div key={group.title}>
             <p className="mb-2 px-3 text-[11px] font-bold uppercase tracking-[0.22em] text-[#8ca69e]">
@@ -259,6 +203,7 @@ function SidebarContent({
               {group.items.map((item) => {
                 const active = isActive(pathname, item);
                 const isPlaceholder = item.disabled || item.href === "#";
+                const Icon = navigationIcons[item.icon];
 
                 return (
                   <Link
@@ -284,7 +229,7 @@ function SidebarContent({
                     }`}
                   >
                     <span className="flex w-4 shrink-0 items-center justify-center text-current">
-                      {item.icon}
+                      <Icon />
                     </span>
                     <span className="flex min-w-0 flex-1 items-center gap-2">
                       <span>{item.label}</span>
@@ -305,9 +250,7 @@ function SidebarContent({
   );
 }
 
-export default function AppSidebar({ mobileOpen, onClose }: AppSidebarProps) {
-  const pathname = usePathname();
-
+export default function AppSidebar({ layout, pathname, mobileOpen, onClose }: AppSidebarProps) {
   useEffect(() => {
     document.body.style.overflow = mobileOpen ? "hidden" : "";
 
@@ -318,7 +261,7 @@ export default function AppSidebar({ mobileOpen, onClose }: AppSidebarProps) {
 
   return (
     <SidebarFrame
-      desktopContent={<SidebarContent pathname={pathname} />}
+      desktopContent={<SidebarContent layout={layout} pathname={pathname} />}
       mobileHeader={(
         <>
           <p className="text-sm font-bold text-[#06201c]">Menu</p>
@@ -334,7 +277,7 @@ export default function AppSidebar({ mobileOpen, onClose }: AppSidebarProps) {
           </button>
         </>
       )}
-      mobileContent={<SidebarContent pathname={pathname} onNavigate={onClose} />}
+      mobileContent={<SidebarContent layout={layout} pathname={pathname} onNavigate={onClose} />}
       mobileOpen={mobileOpen}
       onMobileSidebarClose={onClose}
     />

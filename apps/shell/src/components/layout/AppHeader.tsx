@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { HeaderFrame } from "@ihp/ui";
 
@@ -9,6 +9,8 @@ import { useAdminSocket } from "@/contexts/AdminSocketContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { updatePresenceStatus } from "@/services/chat.service";
 import { clearMarketplaceDemoSession } from "@/services/marketplace-demo-auth.service";
+
+import type { HeaderMenuItem, ShellHeaderConfig } from "./shell-layout.config";
 
 type OpenMenu = "notifications" | "settings" | "profile" | null;
 
@@ -21,15 +23,6 @@ type NotificationLike = {
   is_read: boolean;
   created_at: string | null;
 };
-
-const settingsItems = [
-  "Account Settings",
-  "Platform Preferences",
-  "Billing Settings",
-  "Integrations",
-];
-
-const profileItems = ["View Profile", "My Enterprise", "Help Center", "Logout"];
 
 function BellIcon() {
   return (
@@ -130,6 +123,7 @@ function getInitials(name: string | undefined, email: string | undefined) {
 
 type AppHeaderProps = {
   onMenuClick: () => void;
+  header: ShellHeaderConfig;
 };
 
 type HeaderRealtimeState = Pick<
@@ -147,28 +141,27 @@ type HeaderRealtimeState = Pick<
 
 const noOpRealtimeAction = async () => undefined;
 
-export default function AppHeader({ onMenuClick }: AppHeaderProps) {
-  return <AppHeaderContent onMenuClick={onMenuClick} />;
+export default function AppHeader({ onMenuClick, header }: AppHeaderProps) {
+  return <AppHeaderContent onMenuClick={onMenuClick} header={header} />;
 }
 
-export function RealtimeAppHeader({ onMenuClick }: AppHeaderProps) {
+export function RealtimeAppHeader({ onMenuClick, header }: AppHeaderProps) {
   const realtime = useAdminSocket();
 
-  return <AppHeaderContent onMenuClick={onMenuClick} realtime={realtime} />;
+  return <AppHeaderContent onMenuClick={onMenuClick} header={header} realtime={realtime} />;
 }
 
 function AppHeaderContent({
   onMenuClick,
+  header,
   realtime,
 }: AppHeaderProps & { realtime?: HeaderRealtimeState }) {
   const router = useRouter();
-  const pathname = usePathname();
   const { logout, user } = useAuth();
   const headerRef = useRef<HTMLElement | null>(null);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
-  const isAdminRoute = pathname.startsWith("/admin");
-  const notificationsRoute = isAdminRoute ? "/admin/notifications" : "/notifications";
-  const messagesRoute = isAdminRoute ? "/admin/messages" : null;
+  const notificationsRoute = header.notificationsHref;
+  const messagesRoute = header.messagesHref;
   const unreadNotificationCount = realtime?.unreadNotificationCount ?? 0;
   const unreadMessageCount = realtime?.unreadMessageCount ?? 0;
   const isLoadingNotifications = realtime?.isLoadingNotifications ?? false;
@@ -213,14 +206,14 @@ function AppHeaderContent({
 
   const closeMenu = () => setOpenMenu(null);
 
-  const handleProfileItemClick = async (item: string) => {
-    if (item === "View Profile" && isAdminRoute) {
+  const handleProfileItemClick = async (item: HeaderMenuItem) => {
+    if (item.href) {
       closeMenu();
-      router.push("/admin/profile");
+      router.push(item.href);
       return;
     }
 
-    if (item === "Logout") {
+    if (item.action === "logout") {
       closeMenu();
       try {
         await updatePresenceStatus("offline");
@@ -230,8 +223,8 @@ function AppHeaderContent({
 
       clearMarketplaceDemoSession();
 
-      if (!isAdminRoute) {
-        router.replace("/auth/login");
+      if (header.localLogoutHref) {
+        router.replace(header.localLogoutHref);
         return;
       }
 
@@ -276,7 +269,7 @@ function AppHeaderContent({
           </svg>
         </button>
 
-        <Link href="/dashboard" className="flex items-center gap-3 transition-opacity hover:opacity-90">
+        <Link href={header.homeHref} className="flex items-center gap-3 transition-opacity hover:opacity-90">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#1f6a58] text-white">
             <svg
               aria-hidden="true"
@@ -455,14 +448,14 @@ function AppHeaderContent({
                 : "pointer-events-none scale-95 opacity-0"
             }`}
           >
-            {settingsItems.map((item) => (
+            {header.settingsItems.map((item) => (
               <button
-                key={item}
+                key={item.label}
                 type="button"
                 onClick={closeMenu}
                 className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]"
               >
-                <span>{item}</span>
+                <span>{item.label}</span>
                 <ChevronRightIcon />
               </button>
             ))}
@@ -477,7 +470,7 @@ function AppHeaderContent({
             aria-label="Profile"
             aria-expanded={openMenu === "profile"}
           >
-            {isAdminRoute ? getInitials(user?.fullName, user?.email) : "IH"}
+            {header.profileInitials === "authenticated-user" ? getInitials(user?.fullName, user?.email) : "IH"}
           </button>
 
           <div
@@ -487,14 +480,14 @@ function AppHeaderContent({
                 : "pointer-events-none scale-95 opacity-0"
             }`}
           >
-            {profileItems.map((item) => (
+            {header.profileItems.map((item) => (
               <button
-                key={item}
+                key={item.label}
                 type="button"
                 onClick={() => void handleProfileItemClick(item)}
                 className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]"
               >
-                <span>{item}</span>
+                <span>{item.label}</span>
                 <ChevronRightIcon />
               </button>
             ))}

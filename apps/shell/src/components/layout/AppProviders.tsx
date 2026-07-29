@@ -9,16 +9,12 @@ import { ChatAuthProvider } from "@/contexts/ChatAuthContext";
 import { CurrentEnterpriseProvider } from "@/contexts/CurrentEnterpriseContext";
 import { RegistrationProvider } from "@/contexts/RegistrationContext";
 import { TenantProvider } from "@/contexts/TenantContext";
-
-const REALTIME_COMPATIBILITY_PATHS = new Set([
-  "/admin/messages",
-  "/admin/notifications",
-  "/notifications",
-]);
-
-function isRealtimeCompatibilityRoute(pathname: string) {
-  return REALTIME_COMPATIBILITY_PATHS.has(pathname);
-}
+import {
+  isEnterpriseRoute,
+  isPublicAuthRoute,
+  isRealtimeCompatibilityRoute,
+  isRegistrationRoute,
+} from "@/routing/route-ownership";
 
 export function PublicAuthProviders({ children }: { children: ReactNode }) {
   return <AuthProvider>{children}</AuthProvider>;
@@ -57,7 +53,7 @@ export function RealtimeCompatibilityProviders({ children }: { children: ReactNo
 function RouteScopedProviders({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
-  if (pathname === "/auth/register") {
+  if (isRegistrationRoute(pathname)) {
     return <RegistrationRouteProviders>{children}</RegistrationRouteProviders>;
   }
 
@@ -65,11 +61,11 @@ function RouteScopedProviders({ children }: { children: ReactNode }) {
     return <RealtimeCompatibilityProviders>{children}</RealtimeCompatibilityProviders>;
   }
 
-  if (pathname.startsWith("/admin")) {
+  if (isEnterpriseRoute(pathname)) {
     return <EnterpriseProviders>{children}</EnterpriseProviders>;
   }
 
-  if (pathname.startsWith("/auth") || pathname === "/" || pathname.startsWith("/internal")) {
+  if (isPublicAuthRoute(pathname)) {
     return <PublicAuthProviders>{children}</PublicAuthProviders>;
   }
 

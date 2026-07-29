@@ -1,31 +1,40 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { AppFrame } from "@ihp/ui";
 
 import AppHeader, { RealtimeAppHeader } from "./AppHeader";
 import AppSidebar from "./AppSidebar";
+import {
+  resolveShellLayoutConfig,
+  type ShellLayoutAdapter,
+} from "./shell-layout.config";
 
-export type AppShellVariant = "platform" | "enterprise" | "realtime";
+export type AppShellVariant = ShellLayoutAdapter;
 
 type AppShellProps = {
   children: React.ReactNode;
   variant?: AppShellVariant;
 };
 
-export default function AppShell({ children, variant = "platform" }: AppShellProps) {
+export default function AppShell({ children, variant = "auto" }: AppShellProps) {
+  const pathname = usePathname();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const Header = variant === "realtime" ? RealtimeAppHeader : AppHeader;
+  const layout = resolveShellLayoutConfig(pathname, variant);
+  const Header = layout.header.realtime ? RealtimeAppHeader : AppHeader;
 
   return (
     <AppFrame
       sidebar={(
         <AppSidebar
-        mobileOpen={mobileSidebarOpen}
-        onClose={() => setMobileSidebarOpen(false)}
+          layout={layout}
+          pathname={pathname}
+          mobileOpen={mobileSidebarOpen}
+          onClose={() => setMobileSidebarOpen(false)}
         />
       )}
-      header={<Header onMenuClick={() => setMobileSidebarOpen((current) => !current)} />}
+      header={<Header header={layout.header} onMenuClick={() => setMobileSidebarOpen((current) => !current)} />}
     >
       {children}
     </AppFrame>
