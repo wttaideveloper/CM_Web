@@ -1,6 +1,10 @@
 "use client";
 
-import { EnterpriseDetailsPage } from "@/app/enterprises/[id]/page";
+import { EnterpriseDetailsScreen } from "@ihp/enterprises";
+import {
+  loadEnterpriseProductSummaries,
+  loadEnterpriseServiceSummaries,
+} from "@/adapters/enterprise-screen-loaders";
 import AppShell from "@/components/layout/AppShell";
 import { useCurrentEnterprise } from "@/contexts/CurrentEnterpriseContext";
 
@@ -32,13 +36,17 @@ export default function AdminEnterprisePage() {
   }
 
   return (
-    <EnterpriseDetailsPage
-      enterpriseId={enterpriseId}
-      editHref="/admin/enterprise/edit"
-      productCreateHref="/admin/products/create"
-      serviceCreateHref="/admin/services/create"
-      allowEnterpriseSelector={false}
-      emptyValue="—"
-    />
+    <AppShell>
+      <EnterpriseDetailsScreen
+        enterpriseId={enterpriseId}
+        editHref="/admin/enterprise/edit"
+        productCreateHref="/admin/products/create"
+        serviceCreateHref="/admin/services/create"
+        allowEnterpriseSelector={false}
+        enterpriseProductsLoader={loadEnterpriseProductSummaries}
+        enterpriseServicesLoader={loadEnterpriseServiceSummaries}
+        emptyValue="—"
+      />
+    </AppShell>
   );
 }

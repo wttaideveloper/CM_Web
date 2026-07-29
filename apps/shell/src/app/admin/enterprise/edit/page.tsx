@@ -1,6 +1,6 @@
 "use client";
 
-import { EditEnterprisePage } from "@/app/enterprises/[id]/edit/page";
+import { EnterpriseEditScreen } from "@ihp/enterprises";
 import AppShell from "@/components/layout/AppShell";
 import { useCurrentEnterprise } from "@/contexts/CurrentEnterpriseContext";
 
@@ -31,10 +31,12 @@ export default function AdminEnterpriseEditPage() {
   }
 
   return (
-    <EditEnterprisePage
-      enterpriseId={enterpriseId}
-      successRedirect="/admin/enterprise"
-      backHref="/admin/enterprise"
-    />
+    <AppShell>
+      <EnterpriseEditScreen
+        enterpriseId={enterpriseId}
+        successRedirect="/admin/enterprise"
+        backHref="/admin/enterprise"
+      />
+    </AppShell>
   );
 }
