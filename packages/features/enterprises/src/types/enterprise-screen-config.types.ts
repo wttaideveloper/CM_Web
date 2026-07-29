@@ -50,3 +50,16 @@ export type EnterpriseEditScreenProps = {
   successRedirect?: string;
   backHref?: string;
 };
+
+export type EnterpriseTenantOption = {
+  id: string;
+  name: string;
+  slug: string | null;
+};
+
+export type EnterpriseTenantOptionsLoader = () => Promise<EnterpriseTenantOption[]>;
+
+export type EnterpriseCreateScreenProps = {
+  tenantOptionsLoader: EnterpriseTenantOptionsLoader;
+  successRedirect?: string;
+};

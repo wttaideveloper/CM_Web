@@ -1,9 +1,21 @@
 import type {
   EnterpriseProductSummariesLoader,
   EnterpriseServiceSummariesLoader,
+  EnterpriseTenantOptionsLoader,
 } from "@ihp/enterprises";
 import { getProducts } from "@ihp/products";
 import { getServices } from "@ihp/services";
+import { getAuthTenants } from "@/services/auth.service";
+
+export const loadEnterpriseTenantOptions: EnterpriseTenantOptionsLoader = async () => {
+  const tenants = await getAuthTenants();
+
+  return tenants.map((tenant) => ({
+    id: tenant.id,
+    name: tenant.name,
+    slug: tenant.slug,
+  }));
+};
 
 export const loadEnterpriseProductSummaries: EnterpriseProductSummariesLoader = async (
   enterpriseId,
