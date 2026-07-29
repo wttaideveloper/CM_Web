@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @source "../../../../packages/features/onboarding-forms/src";
+@source "../../../../packages/features/attributes/src";
 @source "../../../../packages/features/products/src";
 @source "../../../../packages/features/services/src";
 :root {
