@@ -9,8 +9,11 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace=@ihp/shell",
+    "dev:enterprise": "npm run dev --workspace=@ihp/enterprise-admin",
     "build": "npm run build --workspace=@ihp/shell",
+    "build:enterprise": "npm run build --workspace=@ihp/enterprise-admin",
     "start": "npm run start --workspace=@ihp/shell",
-    "lint": "npm run lint --workspace=@ihp/shell"
+    "lint": "npm run lint --workspace=@ihp/shell",
+    "lint:enterprise": "npm run lint --workspace=@ihp/enterprise-admin"
   }
 }
