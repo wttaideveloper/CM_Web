@@ -4,6 +4,8 @@
 @source "../../../../packages/features/enterprises/src";
 @source "../../../../packages/features/products/src";
 @source "../../../../packages/features/services/src";
+@source "../../../../packages/enterprise-layout/src";
+@source "../../../../packages/enterprise-runtime/src";
 @source "../../../../packages/ui/src";
 
 :root {

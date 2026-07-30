@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 
-import { completeLogin, useAuth } from "@ihp/auth";
+import { completeLogin, getSafeEnterpriseAdminReturnUrl, useAuth } from "@ihp/auth";
 import { loginMarketplaceDemoUser } from "@/services/marketplace-demo-auth.service";
 
 function ValidateLoginContent() {
@@ -13,6 +13,7 @@ function ValidateLoginContent() {
   const hasStartedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const sessionCode = searchParams.get("he_session_code")?.trim() ?? "";
+  const enterpriseAdminReturnUrl = getSafeEnterpriseAdminReturnUrl(searchParams.get("return_to"));
   const missingCodeError =
     !isLoading && !authenticated && !sessionCode
       ? "The login link is missing its session code. Please start the login again."
@@ -24,7 +25,11 @@ function ValidateLoginContent() {
     }
 
     if (authenticated) {
-      router.replace("/admin/dashboard");
+      if (enterpriseAdminReturnUrl) {
+        window.location.replace(enterpriseAdminReturnUrl);
+      } else {
+        router.replace("/admin/dashboard");
+      }
       return;
     }
 
@@ -55,7 +60,7 @@ function ValidateLoginContent() {
     };
 
     void finishLogin();
-  }, [authenticated, isLoading, refreshSession, router, sessionCode]);
+  }, [authenticated, enterpriseAdminReturnUrl, isLoading, refreshSession, router, sessionCode]);
 
   const visibleError = error ?? missingCodeError;
 

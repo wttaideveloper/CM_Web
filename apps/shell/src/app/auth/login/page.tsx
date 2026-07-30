@@ -1,12 +1,13 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { useState } from "react";
-import { startLogin, useAuth } from "@ihp/auth";
+import { Suspense, useState } from "react";
+import { buildAuthCallbackPath, startLogin, useAuth } from "@ihp/auth";
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { isLoading } = useAuth();
   const [loginType, setLoginType] = useState<"super-admin" | "admin">("super-admin");
   const [email, setEmail] = useState("");
@@ -51,7 +52,8 @@ export default function LoginPage() {
         return;
       }
 
-      startLogin();
+      const callbackPath = buildAuthCallbackPath(searchParams.get("return_to"));
+      startLogin(callbackPath === "/auth/validate" ? undefined : { callbackPath });
     } catch (error) {
       setLoginError(error instanceof Error ? error.message : "Unable to start secure login.");
     } finally {
@@ -359,5 +361,19 @@ export default function LoginPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={(
+        <main className="flex min-h-screen items-center justify-center bg-white text-sm font-semibold text-[#52736a]">
+          Preparing secure sign in...
+        </main>
+      )}
+    >
+      <LoginPageContent />
+    </Suspense>
   );
 }

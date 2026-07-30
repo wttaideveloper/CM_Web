@@ -6,6 +6,8 @@ const nextConfig: NextConfig = {
   transpilePackages: [
     "@ihp/auth",
     "@ihp/attributes",
+    "@ihp/enterprise-layout",
+    "@ihp/enterprise-runtime",
     "@ihp/enterprises",
     "@ihp/onboarding-forms",
     "@ihp/products",

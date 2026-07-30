@@ -1,0 +1,20 @@
+{
+  "name": "@ihp/enterprise-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ihp/auth": "0.1.0",
+    "@ihp/enterprises": "0.1.0"
+  },
+  "peerDependencies": {
+    "react": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "react": "19.2.4",
+    "typescript": "^5"
+  }
+}

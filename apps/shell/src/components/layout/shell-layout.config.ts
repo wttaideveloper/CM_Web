@@ -1,4 +1,5 @@
 import { ROUTE_PATHS, getRouteArea, isEnterpriseRoute } from "@/routing/route-ownership";
+import { enterpriseNavigationGroups as sharedEnterpriseNavigationGroups } from "@ihp/enterprise-layout";
 
 export type NavigationIcon =
   | "dashboard"
@@ -109,48 +110,7 @@ const platformNavigationGroups: readonly ShellNavigationGroup[] = [
   },
 ];
 
-const enterpriseNavigationGroups: readonly ShellNavigationGroup[] = [
-  {
-    title: "MY ENTERPRISE",
-    items: [
-      { label: "Dashboard", href: ROUTE_PATHS.enterprise.dashboard, icon: "dashboard" },
-      {
-        label: "Enterprise Setup",
-        href: ROUTE_PATHS.enterprise.enterprise,
-        icon: "building",
-        activeMatch: "exact",
-      },
-      { label: "Analytics", href: ROUTE_PATHS.enterprise.analytics, icon: "chart" },
-    ],
-  },
-  {
-    title: "MY LISTINGS",
-    items: [
-      { label: "My Products", href: ROUTE_PATHS.enterprise.products, icon: "package" },
-      { label: "My Services", href: ROUTE_PATHS.enterprise.services, icon: "service" },
-      { label: "My Events", href: ROUTE_PATHS.enterprise.events, icon: "calendar" },
-      { label: "My Trainings", href: ROUTE_PATHS.enterprise.trainings, icon: "training" },
-    ],
-  },
-  {
-    title: "ACCOUNT",
-    items: [
-      { label: "Settings", href: ROUTE_PATHS.enterprise.settings, icon: "settings" },
-      {
-        label: "My Enterprise",
-        href: ROUTE_PATHS.enterprise.enterprise,
-        icon: "building",
-        activeMatch: "never",
-      },
-      {
-        label: "Edit Enterprise",
-        href: ROUTE_PATHS.enterprise.enterpriseEdit,
-        icon: "details",
-        activeMatch: "exact",
-      },
-    ],
-  },
-];
+const enterpriseNavigationGroups: readonly ShellNavigationGroup[] = sharedEnterpriseNavigationGroups;
 
 const platformHeaderConfig: ShellHeaderConfig = {
   homeHref: ROUTE_PATHS.platform.dashboard,

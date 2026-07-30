@@ -11,6 +11,8 @@
   "dependencies": {
     "@ihp/auth": "0.1.0",
     "@ihp/attributes": "0.1.0",
+    "@ihp/enterprise-layout": "0.1.0",
+    "@ihp/enterprise-runtime": "0.1.0",
     "@ihp/enterprises": "0.1.0",
     "@ihp/onboarding-forms": "0.1.0",
     "@ihp/products": "0.1.0",
