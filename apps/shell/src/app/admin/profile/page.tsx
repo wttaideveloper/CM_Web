@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 import AppShell from "@/components/layout/AppShell";
-import ProfileEditModal from "@/components/profile/ProfileEditModal";
+import { ProfileEditModal } from "@ihp/auth";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   getAuthMe,

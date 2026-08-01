@@ -11,11 +11,8 @@ export type CreatedTenant = {
   country: string;
 };
 
-export type PasswordRequirementsResponse = {
-  message: string | null;
-  data: unknown;
-  raw: unknown;
-};
+export { getPasswordRequirements } from "@ihp/auth";
+export type { PasswordRequirementsResponse } from "@ihp/auth";
 
 export type RegisterOwnerAccountPayload = {
   email: string;
@@ -171,18 +168,6 @@ function isCreatedTenant(value: unknown): value is CreatedTenant {
     typeof value.id === "string" && typeof value.slug === "string" && typeof value.name === "string" &&
     typeof value.plan === "string" && typeof value.status === "string" && typeof value.industryType === "string" &&
     typeof value.companySize === "string" && typeof value.country === "string";
-}
-
-export async function getPasswordRequirements(): Promise<PasswordRequirementsResponse | null> {
-  try {
-    const response = await fetch("/api/v1/auth/password-requirements", { method: "GET", credentials: "include" });
-    const { text, json } = await readResponseBody(response);
-    if (!response.ok || !isRecord(json ?? text)) return null;
-    const value = json as Record<string, unknown>;
-    return { message: typeof value.message === "string" ? value.message : null, data: "data" in value ? value.data : value, raw: value };
-  } catch {
-    return null;
-  }
 }
 
 export async function registerOwnerAccount(payload: RegisterOwnerAccountPayload): Promise<RegisterOwnerAccountResponse> {
