@@ -7,7 +7,6 @@ import {
   loadEnterpriseServiceSummaries,
 } from "@/adapters/enterprise-screen-loaders";
 import CurrentEnterpriseGuard from "@/components/CurrentEnterpriseGuard";
-import { getShellRoute } from "@/lib/shell-route";
 
 export default function EnterprisePage() {
   return (
@@ -17,8 +16,8 @@ export default function EnterprisePage() {
           enterpriseId={enterpriseId}
           allowEnterpriseSelector={false}
           editHref="/admin/enterprise/edit"
-          productCreateHref={getShellRoute("/admin/products/create")}
-          serviceCreateHref={getShellRoute("/admin/services/create")}
+          productCreateHref="/admin/products/create"
+          serviceCreateHref="/admin/services/create"
           enterpriseProductsLoader={loadEnterpriseProductSummaries}
           enterpriseServicesLoader={loadEnterpriseServiceSummaries}
           emptyValue="—"

@@ -2,7 +2,6 @@
 
 import { ServicesListScreen } from "@ihp/services";
 import CurrentEnterpriseGuard from "@/components/CurrentEnterpriseGuard";
-import { getShellRoute } from "@/lib/shell-route";
 
 export default function EnterpriseServicesPage() {
   return (
@@ -11,7 +10,7 @@ export default function EnterpriseServicesPage() {
         <ServicesListScreen
           enterpriseFilterId={enterpriseId}
           enterpriseName={enterpriseName}
-          createHref={getShellRoute("/admin/services/create")}
+          createHref="/admin/services/create"
           detailHrefBase="/admin/services"
           editHrefBase="/admin/services"
         />
