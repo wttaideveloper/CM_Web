@@ -3,7 +3,9 @@
 @source "../../../../packages/auth/src";
 @source "../../../../packages/features/attributes/src";
 @source "../../../../packages/features/enterprise-dashboard/src";
+@source "../../../../packages/features/enterprise-events/src";
 @source "../../../../packages/features/enterprise-settings/src";
+@source "../../../../packages/features/enterprise-trainings/src";
 @source "../../../../packages/features/enterprises/src";
 @source "../../../../packages/features/products/src";
 @source "../../../../packages/features/services/src";

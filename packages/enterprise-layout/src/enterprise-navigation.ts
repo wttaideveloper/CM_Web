@@ -44,8 +44,8 @@ export const enterpriseNavigationGroups: readonly EnterpriseNavigationGroup[] = 
     items: [
       { label: "My Products", href: "/admin/products", icon: "package", owner: "enterprise-admin" },
       { label: "My Services", href: "/admin/services", icon: "service", owner: "enterprise-admin" },
-      { label: "My Events", href: "/admin/events", icon: "calendar", owner: "shell" },
-      { label: "My Trainings", href: "/admin/trainings", icon: "training", owner: "shell" },
+      { label: "My Events", href: "/admin/events", icon: "calendar", owner: "enterprise-admin" },
+      { label: "My Trainings", href: "/admin/trainings", icon: "training", owner: "enterprise-admin" },
     ],
   },
   {

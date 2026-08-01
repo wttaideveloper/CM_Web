@@ -11,8 +11,8 @@ export default function EnterpriseDashboardPage() {
         servicesHref: "/admin/services",
         createProductHref: "/admin/products/create",
         createServiceHref: "/admin/services/create",
-        eventsHref: getShellRoute("/admin/events"),
-        trainingsHref: getShellRoute("/admin/trainings"),
+        eventsHref: "/admin/events",
+        trainingsHref: "/admin/trainings",
         integrationsHref: getShellRoute("/integrations"),
         analyticsHref: "#",
       }}
