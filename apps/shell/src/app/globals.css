@@ -2,6 +2,7 @@
 @source "../../../../packages/auth/src";
 @source "../../../../packages/features/onboarding-forms/src";
 @source "../../../../packages/features/attributes/src";
+@source "../../../../packages/features/enterprise-analytics/src";
 @source "../../../../packages/features/enterprise-dashboard/src";
 @source "../../../../packages/features/enterprise-events/src";
 @source "../../../../packages/features/enterprise-settings/src";

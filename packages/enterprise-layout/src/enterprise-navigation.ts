@@ -36,7 +36,7 @@ export const enterpriseNavigationGroups: readonly EnterpriseNavigationGroup[] = 
         owner: "enterprise-admin",
         activeMatch: "exact",
       },
-      { label: "Analytics", href: "/admin/analytics", icon: "chart", owner: "shell" },
+      { label: "Analytics", href: "/admin/analytics", icon: "chart", owner: "enterprise-admin" },
     ],
   },
   {
