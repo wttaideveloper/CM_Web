@@ -29,8 +29,8 @@ export default function EnterpriseAdminShell({ children }: { children: ReactNode
   const layout = (
     <EnterpriseAdminLayout
       profileHref="/admin/profile"
-      notificationsHref={getShellRoute("/admin/notifications")}
-      messagesHref={getShellRoute("/admin/messages")}
+      notificationsHref="/admin/notifications"
+      messagesHref="/admin/messages"
       resolveNavigationHref={resolveNavigationHref}
       user={user}
       onLogout={handleLogout}
