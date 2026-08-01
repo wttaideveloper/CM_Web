@@ -5,10 +5,12 @@
 @source "../../../../packages/features/enterprise-analytics/src";
 @source "../../../../packages/features/enterprise-dashboard/src";
 @source "../../../../packages/features/enterprise-events/src";
+@source "../../../../packages/features/enterprise-notifications/src";
 @source "../../../../packages/features/enterprise-profile/src";
 @source "../../../../packages/features/enterprise-settings/src";
 @source "../../../../packages/features/enterprise-trainings/src";
 @source "../../../../packages/features/enterprises/src";
+@source "../../../../packages/features/messaging/src";
 @source "../../../../packages/features/products/src";
 @source "../../../../packages/features/services/src";
 @source "../../../../packages/enterprise-layout/src";
