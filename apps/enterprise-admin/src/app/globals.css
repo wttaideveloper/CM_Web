@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @source "../";
 @source "../../../../packages/features/attributes/src";
+@source "../../../../packages/features/enterprise-dashboard/src";
 @source "../../../../packages/features/enterprises/src";
 @source "../../../../packages/features/products/src";
 @source "../../../../packages/features/services/src";

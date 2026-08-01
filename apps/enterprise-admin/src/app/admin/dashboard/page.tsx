@@ -1,10 +1,21 @@
-import PhaseA1Placeholder from "@/components/PhaseA1Placeholder";
+import { EnterpriseDashboardScreen } from "@ihp/enterprise-dashboard";
+
+import { getShellRoute } from "@/lib/shell-route";
 
 export default function EnterpriseDashboardPage() {
   return (
-    <PhaseA1Placeholder
-      title="Enterprise dashboard route wired"
-      description="This A1 route proves independent application routing. The existing Shell dashboard remains the source of runtime behavior until its dedicated extraction is approved."
+    <EnterpriseDashboardScreen
+      routes={{
+        enterpriseHref: "/admin/enterprise",
+        productsHref: "/admin/products",
+        servicesHref: "/admin/services",
+        createProductHref: getShellRoute("/admin/products/create"),
+        createServiceHref: getShellRoute("/admin/services/create"),
+        eventsHref: getShellRoute("/admin/events"),
+        trainingsHref: getShellRoute("/admin/trainings"),
+        integrationsHref: getShellRoute("/integrations"),
+        analyticsHref: "#",
+      }}
     />
   );
 }
