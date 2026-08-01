@@ -1,5 +1,1 @@
-export const CHAT_API_BASE_URL =
-  process.env.NEXT_PUBLIC_CHAT_API_BASE_URL || "https://chat.wisdomtooth.tech/api/v1";
-
-export const CHAT_SOCKET_URL =
-  process.env.NEXT_PUBLIC_CHAT_SOCKET_URL || "https://chat.wisdomtooth.tech";
+export { CHAT_API_BASE_URL, CHAT_SOCKET_URL } from "@ihp/chat-runtime";
