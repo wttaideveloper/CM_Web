@@ -25,7 +25,7 @@ export default function EnterpriseAdminShell({ children }: { children: ReactNode
 
   return (
     <EnterpriseAdminLayout
-      profileHref={getShellRoute("/admin/profile")}
+      profileHref="/admin/profile"
       notificationsHref={getShellRoute("/admin/notifications")}
       messagesHref={getShellRoute("/admin/messages")}
       resolveNavigationHref={resolveNavigationHref}

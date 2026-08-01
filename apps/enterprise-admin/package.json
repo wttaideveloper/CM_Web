@@ -14,6 +14,7 @@
     "@ihp/enterprise-dashboard": "0.1.0",
     "@ihp/enterprise-events": "0.1.0",
     "@ihp/enterprise-layout": "0.1.0",
+    "@ihp/enterprise-profile": "0.1.0",
     "@ihp/enterprise-runtime": "0.1.0",
     "@ihp/enterprise-settings": "0.1.0",
     "@ihp/enterprise-trainings": "0.1.0",
