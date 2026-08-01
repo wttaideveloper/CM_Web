@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
     "@ihp/enterprise-analytics",
     "@ihp/enterprise-dashboard",
     "@ihp/enterprise-events",
+    "@ihp/enterprise-notifications",
     "@ihp/enterprise-layout",
     "@ihp/enterprise-profile",
     "@ihp/enterprise-runtime",

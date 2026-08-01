@@ -1,10 +1,10 @@
 import { RealtimeCompatibilityShell as AppShell } from "@/components/layout/AppShell";
-import NotificationHistoryView from "@/components/notifications/NotificationHistoryView";
+import { EnterpriseNotificationHistoryScreen } from "@ihp/enterprise-notifications";
 
 export default function NotificationsPage() {
   return (
     <AppShell>
-      <NotificationHistoryView />
+      <EnterpriseNotificationHistoryScreen />
     </AppShell>
   );
 }

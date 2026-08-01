@@ -1,14 +1,12 @@
 {
-  "name": "@ihp/messaging",
+  "name": "@ihp/enterprise-notifications",
   "version": "0.1.0",
   "private": true,
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@ihp/chat-runtime": "0.1.0",
-    "@ihp/realtime": "0.1.0",
-    "emoji-picker-react": "^4.19.1"
+    "@ihp/realtime": "0.1.0"
   },
   "peerDependencies": {
     "next": "^16.2.9",
