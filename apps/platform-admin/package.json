@@ -16,6 +16,7 @@
     "@ihp/platform-enterprises": "0.1.0",
     "@ihp/platform-attributes": "0.1.0",
     "@ihp/platform-layout": "0.1.0",
+    "@ihp/platform-marketplace-static": "0.1.0",
     "@ihp/products": "0.1.0",
     "@ihp/services": "0.1.0",
     "@ihp/ui": "0.1.0",

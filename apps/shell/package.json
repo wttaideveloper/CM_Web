@@ -29,6 +29,7 @@
     "@ihp/platform-attributes": "0.1.0",
     "@ihp/products": "0.1.0",
     "@ihp/platform-enterprises": "0.1.0",
+    "@ihp/platform-marketplace-static": "0.1.0",
     "@ihp/realtime": "0.1.0",
     "@ihp/services": "0.1.0",
     "@ihp/shared": "0.1.0",

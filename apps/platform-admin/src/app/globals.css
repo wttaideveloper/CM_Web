@@ -5,6 +5,7 @@
 @source "../../../../packages/features/platform-configuration/src";
 @source "../../../../packages/features/platform-attributes/src";
 @source "../../../../packages/features/platform-enterprises/src";
+@source "../../../../packages/features/platform-marketplace-static/src";
 @source "../../../../packages/features/attributes/src";
 @source "../../../../packages/features/enterprises/src";
 @source "../../../../packages/features/products/src";

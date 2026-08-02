@@ -23,6 +23,7 @@ const nextConfig: NextConfig = {
     "@ihp/platform-configuration",
     "@ihp/platform-attributes",
     "@ihp/platform-enterprises",
+    "@ihp/platform-marketplace-static",
     "@ihp/products",
     "@ihp/realtime",
     "@ihp/services",
