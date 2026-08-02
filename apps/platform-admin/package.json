@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@ihp/auth": "0.1.0",
+    "@ihp/onboarding-forms": "0.1.0",
     "@ihp/platform-layout": "0.1.0",
     "@ihp/ui": "0.1.0",
     "next": "16.2.9",
