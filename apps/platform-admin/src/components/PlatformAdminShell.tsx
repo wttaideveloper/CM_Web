@@ -34,6 +34,14 @@ export default function PlatformAdminShell({ children }: { children: ReactNode }
   const pathname = usePathname();
   const homeHref = useMemo(() => "/dashboard", []);
   const notificationsHref = useMemo(() => getShellRoute("/notifications"), []);
+  const handleLogout = useCallback(() => {
+    const shellOrigin = getShellAppOrigin();
+    if (!shellOrigin) {
+      return;
+    }
+
+    window.location.assign(new URL("/auth/login", shellOrigin).toString());
+  }, []);
   const resolveNavigationHref = useCallback(
     (item: PlatformNavigationItem) =>
       platformOwnedNavigationRoutes.has(item.href) ? item.href : getShellRoute(item.href),
@@ -45,6 +53,7 @@ export default function PlatformAdminShell({ children }: { children: ReactNode }
       currentPath={pathname}
       homeHref={homeHref}
       notificationsHref={notificationsHref}
+      onLogout={handleLogout}
       resolveNavigationHref={resolveNavigationHref}
     >
       {children}
