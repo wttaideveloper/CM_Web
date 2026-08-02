@@ -21,6 +21,7 @@ const nextConfig: NextConfig = {
     "@ihp/messaging",
     "@ihp/platform-layout",
     "@ihp/platform-configuration",
+    "@ihp/platform-attributes",
     "@ihp/products",
     "@ihp/realtime",
     "@ihp/services",

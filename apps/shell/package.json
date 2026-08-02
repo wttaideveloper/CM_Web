@@ -26,6 +26,7 @@
     "@ihp/messaging": "0.1.0",
     "@ihp/platform-layout": "0.1.0",
     "@ihp/platform-configuration": "0.1.0",
+    "@ihp/platform-attributes": "0.1.0",
     "@ihp/products": "0.1.0",
     "@ihp/realtime": "0.1.0",
     "@ihp/services": "0.1.0",
