@@ -20,6 +20,7 @@ const nextConfig: NextConfig = {
     "@ihp/onboarding-forms",
     "@ihp/messaging",
     "@ihp/platform-layout",
+    "@ihp/platform-configuration",
     "@ihp/products",
     "@ihp/realtime",
     "@ihp/services",

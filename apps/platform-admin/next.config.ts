@@ -5,7 +5,7 @@ const onboardingFormsApiBaseUrl =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://chat.wisdomtooth.tech/api/v1";
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["@ihp/auth", "@ihp/onboarding-forms", "@ihp/platform-layout", "@ihp/ui"],
+  transpilePackages: ["@ihp/auth", "@ihp/onboarding-forms", "@ihp/platform-configuration", "@ihp/platform-layout", "@ihp/ui"],
   async rewrites() {
     const fallback = [
       {
