@@ -14,12 +14,21 @@ function getShellRoute(pathname: string) {
   return shellOrigin ? new URL(pathname, shellOrigin).toString() : pathname;
 }
 
+const platformOwnedNavigationRoutes = new Set([
+  "/approval-queue",
+  "/onboarding-forms",
+  "/enterprise-types",
+  "/categories",
+  "/sub-admins",
+]);
+
 export default function PlatformAdminShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const homeHref = useMemo(() => getShellRoute("/dashboard"), []);
   const notificationsHref = useMemo(() => getShellRoute("/notifications"), []);
   const resolveNavigationHref = useCallback(
-    (item: PlatformNavigationItem) => getShellRoute(item.href),
+    (item: PlatformNavigationItem) =>
+      platformOwnedNavigationRoutes.has(item.href) ? item.href : getShellRoute(item.href),
     [],
   );
 

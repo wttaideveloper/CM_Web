@@ -1,10 +1,10 @@
-import AppShell from "@/components/layout/AppShell";
+import PlatformAdminShell from "@/components/PlatformAdminShell";
 import { PlatformEnterpriseTypesScreen } from "@ihp/platform-configuration";
 
-export default function EnterpriseTypesPage() {
+export default function PlatformEnterpriseTypesPage() {
   return (
-    <AppShell>
+    <PlatformAdminShell>
       <PlatformEnterpriseTypesScreen onboardingFormsHref="/onboarding-forms" />
-    </AppShell>
+    </PlatformAdminShell>
   );
 }
