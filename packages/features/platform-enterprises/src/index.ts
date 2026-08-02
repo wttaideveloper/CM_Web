@@ -2,4 +2,4 @@ export {
   loadEnterpriseProductSummaries,
   loadEnterpriseServiceSummaries,
   loadEnterpriseTenantOptions,
-} from "@ihp/platform-enterprises";
+} from "./enterprise-screen-loaders";

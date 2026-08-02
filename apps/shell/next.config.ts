@@ -22,6 +22,7 @@ const nextConfig: NextConfig = {
     "@ihp/platform-layout",
     "@ihp/platform-configuration",
     "@ihp/platform-attributes",
+    "@ihp/platform-enterprises",
     "@ihp/products",
     "@ihp/realtime",
     "@ihp/services",

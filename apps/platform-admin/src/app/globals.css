@@ -4,7 +4,9 @@
 @source "../../../../packages/features/onboarding-forms/src";
 @source "../../../../packages/features/platform-configuration/src";
 @source "../../../../packages/features/platform-attributes/src";
+@source "../../../../packages/features/platform-enterprises/src";
 @source "../../../../packages/features/attributes/src";
+@source "../../../../packages/features/enterprises/src";
 @source "../../../../packages/features/products/src";
 @source "../../../../packages/features/services/src";
 @source "../../../../packages/platform-layout/src";
