@@ -2,6 +2,7 @@
 @source "../../../../packages/auth/src";
 @source "../../../../packages/features/onboarding-forms/src";
 @source "../../../../packages/features/platform-configuration/src";
+@source "../../../../packages/features/platform-dashboard/src";
 @source "../../../../packages/features/platform-attributes/src";
 @source "../../../../packages/features/platform-marketplace-static/src";
 @source "../../../../packages/features/attributes/src";

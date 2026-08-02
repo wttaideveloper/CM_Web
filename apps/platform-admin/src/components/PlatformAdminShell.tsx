@@ -15,6 +15,7 @@ function getShellRoute(pathname: string) {
 }
 
 const platformOwnedNavigationRoutes = new Set([
+  "/dashboard",
   "/approval-queue",
   "/onboarding-forms",
   "/enterprise-types",
@@ -31,7 +32,7 @@ const platformOwnedNavigationRoutes = new Set([
 
 export default function PlatformAdminShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const homeHref = useMemo(() => getShellRoute("/dashboard"), []);
+  const homeHref = useMemo(() => "/dashboard", []);
   const notificationsHref = useMemo(() => getShellRoute("/notifications"), []);
   const resolveNavigationHref = useCallback(
     (item: PlatformNavigationItem) =>
