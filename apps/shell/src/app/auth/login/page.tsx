@@ -3,7 +3,12 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Suspense, useState } from "react";
-import { buildAuthCallbackPath, startLogin, useAuth } from "@ihp/auth";
+import {
+  buildAuthCallbackPath,
+  getPlatformAdminAppOrigin,
+  startLogin,
+  useAuth,
+} from "@ihp/auth";
 
 function LoginPageContent() {
   const router = useRouter();
@@ -48,7 +53,12 @@ function LoginPageContent() {
           return;
         }
 
-        router.push("/dashboard");
+        const platformAdminOrigin = getPlatformAdminAppOrigin();
+        if (!platformAdminOrigin) {
+          throw new Error("Platform Admin origin is not configured.");
+        }
+
+        window.location.assign(new URL("/dashboard", platformAdminOrigin).toString());
         return;
       }
 
