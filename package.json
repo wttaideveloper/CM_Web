@@ -11,6 +11,7 @@
     "dev": "npm run dev --workspace=@ihp/shell",
     "dev:enterprise": "npm run dev --workspace=@ihp/enterprise-admin",
     "dev:platform": "npm run dev --workspace=@ihp/platform-admin",
+    "dev:all": "concurrently -n shell,enterprise,platform -c blue,green,magenta \"npm run dev\" \"npm run dev:enterprise\" \"npm run dev:platform\"",
     "build": "npm run build --workspace=@ihp/shell",
     "build:enterprise": "npm run build --workspace=@ihp/enterprise-admin",
     "build:platform": "npm run build --workspace=@ihp/platform-admin",
@@ -18,5 +19,8 @@
     "lint": "npm run lint --workspace=@ihp/shell",
     "lint:enterprise": "npm run lint --workspace=@ihp/enterprise-admin",
     "lint:platform": "npm run lint --workspace=@ihp/platform-admin"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.4"
   }
 }
