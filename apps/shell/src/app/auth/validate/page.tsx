@@ -3,7 +3,12 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 
-import { completeLogin, getSafeEnterpriseAdminReturnUrl, useAuth } from "@ihp/auth";
+import {
+  completeLogin,
+  getSafeEnterpriseAdminReturnUrl,
+  getSafePlatformAdminReturnUrl,
+  useAuth,
+} from "@ihp/auth";
 import { loginMarketplaceDemoUser } from "@/services/marketplace-demo-auth.service";
 
 function ValidateLoginContent() {
@@ -14,6 +19,8 @@ function ValidateLoginContent() {
   const [error, setError] = useState<string | null>(null);
   const sessionCode = searchParams.get("he_session_code")?.trim() ?? "";
   const enterpriseAdminReturnUrl = getSafeEnterpriseAdminReturnUrl(searchParams.get("return_to"));
+  const platformAdminReturnUrl = getSafePlatformAdminReturnUrl(searchParams.get("return_to"));
+  const crossAppReturnUrl = enterpriseAdminReturnUrl ?? platformAdminReturnUrl;
   const missingCodeError =
     !isLoading && !authenticated && !sessionCode
       ? "The login link is missing its session code. Please start the login again."
@@ -25,8 +32,8 @@ function ValidateLoginContent() {
     }
 
     if (authenticated) {
-      if (enterpriseAdminReturnUrl) {
-        window.location.replace(enterpriseAdminReturnUrl);
+      if (crossAppReturnUrl) {
+        window.location.replace(crossAppReturnUrl);
       } else {
         router.replace("/admin/dashboard");
       }
@@ -60,7 +67,7 @@ function ValidateLoginContent() {
     };
 
     void finishLogin();
-  }, [authenticated, enterpriseAdminReturnUrl, isLoading, refreshSession, router, sessionCode]);
+  }, [authenticated, crossAppReturnUrl, isLoading, refreshSession, router, sessionCode]);
 
   const visibleError = error ?? missingCodeError;
 

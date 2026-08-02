@@ -29,8 +29,11 @@ export { default as ProfileEditModal } from "./components/ProfileEditModal";
 export {
   buildAuthCallbackPath,
   buildShellLoginUrl,
+  buildShellLoginUrlForPlatform,
   getEnterpriseAdminAppOrigin,
   getSafeEnterpriseAdminReturnUrl,
+  getPlatformAdminAppOrigin,
+  getSafePlatformAdminReturnUrl,
   getShellAppOrigin,
 } from "./cross-app";
 export type {

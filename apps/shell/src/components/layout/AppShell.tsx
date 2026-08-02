@@ -6,6 +6,7 @@ import { AppFrame } from "@ihp/ui";
 
 import AppHeader, { RealtimeAppHeader } from "./AppHeader";
 import AppSidebar from "./AppSidebar";
+import PlatformAdminShellAdapter from "./PlatformAdminShellAdapter";
 import {
   resolveShellLayoutConfig,
   type ShellLayoutAdapter,
@@ -20,8 +21,25 @@ type AppShellProps = {
 
 export default function AppShell({ children, variant = "auto" }: AppShellProps) {
   const pathname = usePathname();
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const layout = resolveShellLayoutConfig(pathname, variant);
+
+  if (layout.id === "platform-admin") {
+    return <PlatformAdminShellAdapter currentPath={pathname}>{children}</PlatformAdminShellAdapter>;
+  }
+
+  return <ConfiguredAppShell pathname={pathname} layout={layout}>{children}</ConfiguredAppShell>;
+}
+
+function ConfiguredAppShell({
+  children,
+  pathname,
+  layout,
+}: {
+  children: React.ReactNode;
+  pathname: string;
+  layout: ReturnType<typeof resolveShellLayoutConfig>;
+}) {
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const Header = layout.header.realtime ? RealtimeAppHeader : AppHeader;
 
   return (

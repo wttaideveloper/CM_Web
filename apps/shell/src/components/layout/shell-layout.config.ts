@@ -1,5 +1,6 @@
 import { ROUTE_PATHS, getRouteArea, isEnterpriseRoute } from "@/routing/route-ownership";
 import { enterpriseNavigationGroups as sharedEnterpriseNavigationGroups } from "@ihp/enterprise-layout";
+import { platformNavigationGroups } from "@ihp/platform-layout";
 
 export type NavigationIcon =
   | "dashboard"
@@ -77,37 +78,6 @@ const enterpriseProfileItems: readonly HeaderMenuItem[] = [
   { label: "My Enterprise" },
   { label: "Help Center" },
   { label: "Logout", action: "logout" },
-];
-
-const platformNavigationGroups: readonly ShellNavigationGroup[] = [
-  {
-    title: "OVERVIEW",
-    items: [
-      { label: "Dashboard", href: ROUTE_PATHS.platform.dashboard, icon: "dashboard" },
-    ],
-  },
-  {
-    title: "APPROVALS & CONFIG",
-    items: [
-      { label: "Approval Queue", href: ROUTE_PATHS.platform.approvalQueue, icon: "queue", badge: "4" },
-      { label: "Form Builder", href: ROUTE_PATHS.platform.onboardingForms, icon: "forms" },
-      { label: "Enterprise Types", href: ROUTE_PATHS.platform.enterpriseTypes, icon: "building" },
-      { label: "Categories", href: ROUTE_PATHS.platform.categories, icon: "tag" },
-      { label: "Sub-Admins", href: ROUTE_PATHS.platform.subAdmins, icon: "settings" },
-      { label: "Attributes", href: ROUTE_PATHS.platform.attributes, icon: "tag" },
-    ],
-  },
-  {
-    title: "MARKETPLACE",
-    items: [
-      { label: "Enterprises", href: ROUTE_PATHS.platform.enterprises, icon: "building" },
-      { label: "Products", href: ROUTE_PATHS.platform.products, icon: "package" },
-      { label: "Services", href: ROUTE_PATHS.platform.services, icon: "service" },
-      { label: "Events", href: ROUTE_PATHS.platform.events, icon: "calendar" },
-      { label: "Trainings", href: ROUTE_PATHS.platform.trainings, icon: "training" },
-      { label: "Integrations", href: ROUTE_PATHS.platform.integrations, icon: "integration" },
-    ],
-  },
 ];
 
 const enterpriseNavigationGroups: readonly ShellNavigationGroup[] = sharedEnterpriseNavigationGroups;

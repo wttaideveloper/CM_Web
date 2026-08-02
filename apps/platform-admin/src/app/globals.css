@@ -1,5 +1,8 @@
 @import "tailwindcss";
 @source "../";
+@source "../../../../packages/auth/src";
+@source "../../../../packages/platform-layout/src";
+@source "../../../../packages/ui/src";
 
 :root {
   --background: #ffffff;

@@ -13,6 +13,7 @@
 @source "../../../../packages/features/messaging/src";
 @source "../../../../packages/features/products/src";
 @source "../../../../packages/features/services/src";
+@source "../../../../packages/platform-layout/src";
 @source "../../../../packages/ui/src";
 :root {
   --background: #ffffff;
