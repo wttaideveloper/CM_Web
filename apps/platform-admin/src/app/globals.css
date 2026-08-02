@@ -6,6 +6,7 @@
 @source "../../../../packages/features/platform-attributes/src";
 @source "../../../../packages/features/attributes/src";
 @source "../../../../packages/features/products/src";
+@source "../../../../packages/features/services/src";
 @source "../../../../packages/platform-layout/src";
 @source "../../../../packages/ui/src";
 
