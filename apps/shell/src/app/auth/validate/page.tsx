@@ -5,6 +5,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 
 import {
   completeLogin,
+  getEnterpriseAdminAppOrigin,
   getSafeEnterpriseAdminReturnUrl,
   getSafePlatformAdminReturnUrl,
   useAuth,
@@ -35,7 +36,13 @@ function ValidateLoginContent() {
       if (crossAppReturnUrl) {
         window.location.replace(crossAppReturnUrl);
       } else {
-        router.replace("/admin/dashboard");
+        const enterpriseAdminOrigin = getEnterpriseAdminAppOrigin();
+        if (!enterpriseAdminOrigin) {
+          setError("Enterprise Admin origin is not configured.");
+          return;
+        }
+
+        window.location.replace(new URL("/admin/dashboard", enterpriseAdminOrigin).toString());
       }
       return;
     }
