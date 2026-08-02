@@ -21,6 +21,10 @@ const nextConfig: NextConfig = {
         destination: `${platformApiBaseUrl}/enterprises/:path*`,
       },
       {
+        source: "/api/v1/locations/:path*",
+        destination: `${platformApiBaseUrl}/locations/:path*`,
+      },
+      {
         source: "/api/v1/products/:path*",
         destination: `${platformApiBaseUrl}/products/:path*`,
       },

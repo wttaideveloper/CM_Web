@@ -21,6 +21,7 @@ const platformOwnedNavigationRoutes = new Set([
   "/categories",
   "/sub-admins",
   "/attributes",
+  "/products",
 ]);
 
 export default function PlatformAdminShell({ children }: { children: ReactNode }) {
