@@ -492,6 +492,7 @@ export default function OwnerDetailsStep() {
         fullName: trimmedFullName,
         phone: combinedPhone,
         country: trimmedCountry,
+        module: "enterprise",
       });
 
       const resumedExistingSession =

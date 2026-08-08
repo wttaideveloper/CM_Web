@@ -99,6 +99,7 @@ export default function PlanStep({ onBack, onCompleted }: PlanStepProps) {
         industryType,
         companySize,
         plan,
+        module: "enterprise",
       });
 
       updateRegistration({

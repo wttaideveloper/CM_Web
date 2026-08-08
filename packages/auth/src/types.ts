@@ -7,6 +7,23 @@ export type AuthMembership = {
   userRole: string;
   tenantRbacRoles: string[];
   tenantPermissions: string[];
+  module?: string;
+  moduleId?: string;
+  moduleName?: string;
+};
+
+export type AuthUserModule = {
+  id: string;
+  code: string;
+  name: string;
+};
+
+export type AuthImpersonation = {
+  active: boolean;
+  actorId?: string;
+  actorEmail?: string;
+  tenantSlug?: string;
+  tenantName?: string;
 };
 
 export type AuthRoles = {
@@ -31,8 +48,11 @@ export type AuthUser = {
   preferredLocale?: string;
   emailVerified: boolean;
   groups: string[];
+  modules?: string[];
+  userModules?: AuthUserModule[];
   membership: AuthMembership;
   roles: AuthRoles;
+  impersonation?: AuthImpersonation;
 };
 
 export type AuthSessionResponse = {

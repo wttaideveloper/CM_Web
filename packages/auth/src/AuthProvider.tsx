@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -26,6 +27,7 @@ export function AuthProvider({ children, config }: AuthProviderProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [hasActiveTenant, setHasActiveTenant] = useState(false);
   const [needsOrganizationSetup, setNeedsOrganizationSetup] = useState(false);
+  const sessionRequestVersion = useRef(0);
 
   const applySession = useCallback((session: Awaited<ReturnType<typeof getSession>>) => {
     const nextUser = session.data ?? null;
@@ -44,18 +46,25 @@ export function AuthProvider({ children, config }: AuthProviderProps) {
   }, []);
 
   const refreshSession = useCallback(async () => {
+    const requestVersion = ++sessionRequestVersion.current;
     setIsLoading(true);
 
     try {
       const session = await getSession(config);
-      applySession(session);
+      if (requestVersion === sessionRequestVersion.current) {
+        applySession(session);
+      }
     } catch {
-      setUser(null);
-      setAuthenticated(false);
-      setHasActiveTenant(false);
-      setNeedsOrganizationSetup(false);
+      if (requestVersion === sessionRequestVersion.current) {
+        setUser(null);
+        setAuthenticated(false);
+        setHasActiveTenant(false);
+        setNeedsOrganizationSetup(false);
+      }
     } finally {
-      setIsLoading(false);
+      if (requestVersion === sessionRequestVersion.current) {
+        setIsLoading(false);
+      }
     }
   }, [applySession, config]);
 
@@ -70,6 +79,7 @@ export function AuthProvider({ children, config }: AuthProviderProps) {
   }, [refreshSession]);
 
   const logout = useCallback(async () => {
+    sessionRequestVersion.current += 1;
     const logoutUrl = await logoutWebAuth(config);
     setUser(null);
     setAuthenticated(false);

@@ -3,6 +3,7 @@ import { resolveAuthClientConfig, resolveFrontendOrigin, type AuthClientConfig }
 export function startLogin(config?: AuthClientConfig) {
   const clientConfig = resolveAuthClientConfig(config);
   const params = new URLSearchParams({
+    module: "enterprise",
     frontend_origin: resolveFrontendOrigin(config),
     return_to: clientConfig.callbackPath,
     rememberMe: "false",

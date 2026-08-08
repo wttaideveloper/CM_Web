@@ -21,6 +21,7 @@ export type RegisterOwnerAccountPayload = {
   fullName: string;
   phone: string;
   country: string;
+  module: "enterprise";
 };
 
 export type RegisterOwnerAccountResponse = {
@@ -45,6 +46,7 @@ export type RegisterOrganizationPayload = {
   industryType: string;
   companySize: string;
   plan: RegistrationPlan;
+  module: "enterprise";
 };
 
 export type RegisterOrganizationResponse = {
