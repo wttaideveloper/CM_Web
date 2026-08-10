@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 
 import { useAuth } from "@ihp/auth";
 
@@ -16,39 +17,32 @@ type TenantContextValue = {
 
 const TenantContext = createContext<TenantContextValue | null>(null);
 
-export function TenantProvider({ children }: { children: ReactNode }) {
-  const { authenticated } = useAuth();
-  const [tenant, setTenant] = useState<TenantDetails | null>(null);
-  const [isLoadingTenant, setIsLoadingTenant] = useState(false);
-  const [tenantError, setTenantError] = useState<string | null>(null);
+function TenantProviderContent({ children }: { children: ReactNode }) {
+  const { authenticated, user } = useAuth();
+  const tenantQuery = useQuery({
+    queryKey: ["tenant", "me", user?.id ?? user?.userId ?? "unauthenticated"],
+    queryFn: getTenantMe,
+    enabled: authenticated,
+    staleTime: 30_000,
+    retry: 1,
+  });
+  const tenant = authenticated ? tenantQuery.data?.data ?? null : null;
+  const isLoadingTenant = authenticated && tenantQuery.isFetching;
+  const tenantError =
+    authenticated && tenantQuery.isError
+      ? tenantQuery.error instanceof Error
+        ? tenantQuery.error.message
+        : "Unable to load tenant."
+      : null;
+  const { refetch: refetchTenant } = tenantQuery;
 
   const refreshTenant = useCallback(async () => {
     if (!authenticated) {
-      setTenant(null);
-      setTenantError(null);
-      setIsLoadingTenant(false);
       return;
     }
 
-    setIsLoadingTenant(true);
-    setTenantError(null);
-
-    try {
-      const response = await getTenantMe();
-      setTenant(response.data);
-    } catch (error) {
-      setTenant(null);
-      setTenantError(error instanceof Error ? error.message : "Unable to load tenant.");
-    } finally {
-      setIsLoadingTenant(false);
-    }
-  }, [authenticated]);
-
-  useEffect(() => {
-    // Tenant loading intentionally synchronizes after Web Auth session restoration.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void refreshTenant();
-  }, [refreshTenant]);
+    await refetchTenant();
+  }, [authenticated, refetchTenant]);
 
   const value = useMemo<TenantContextValue>(
     () => ({
@@ -62,6 +56,16 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   );
 
   return <TenantContext.Provider value={value}>{children}</TenantContext.Provider>;
+}
+
+export function TenantProvider({ children }: { children: ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient());
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TenantProviderContent>{children}</TenantProviderContent>
+    </QueryClientProvider>
+  );
 }
 
 export function useTenant() {

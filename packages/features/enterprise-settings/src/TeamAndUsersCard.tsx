@@ -1,6 +1,6 @@
 "use client";
 
-import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { InviteUserModal, useAuth } from "@ihp/auth";
 import {
   getTenantMembers,
@@ -8,7 +8,7 @@ import {
   getTenantRoles,
   type TenantMember,
 } from "@ihp/enterprise-runtime";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type KeyboardEvent } from "react";
 
 type TeamTab = "members" | "invite" | "roles";
 
@@ -17,10 +17,11 @@ type TeamAndUsersCardProps = {
 };
 
 const TENANT_QUERY_STALE_TIME_MS = 30_000;
+const TEAM_TABS = ["members", "invite", "roles"] as const;
 
 function LoadingRows() {
   return (
-    <div className="space-y-2" aria-label="Loading team information">
+    <div className="space-y-2" role="status" aria-live="polite" aria-label="Loading team information">
       {["first", "second", "third"].map((key) => (
         <div key={key} className="animate-pulse rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] px-3 py-3">
           <div className="h-3 w-2/5 rounded bg-[#e1ebe6]" />
@@ -52,15 +53,14 @@ function MemberList({ members }: { members: TenantMember[] }) {
   );
 }
 
-function TeamAndUsersContent({ onInviteSuccess }: TeamAndUsersCardProps) {
+/** Renders the Enterprise Settings Team & Users card. */
+export default function TeamAndUsersCard({ onInviteSuccess }: TeamAndUsersCardProps) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [teamTab, setTeamTab] = useState<TeamTab>("members");
   const [isInviting, setIsInviting] = useState(false);
-  const tenantRole = user?.membership?.tenantRole ?? user?.roles?.tenantRole;
   const canInviteUsers = user?.membership?.canInviteUsers ?? user?.roles?.canInviteUsers;
-  const canManageInvitations =
-    (tenantRole === "tenant_owner" || tenantRole === "tenant_admin") && canInviteUsers !== false;
+  const canManageInvitations = canInviteUsers === true;
   const membersQuery = useQuery({
     queryKey: ["tenant", "members"],
     queryFn: getTenantMembers,
@@ -90,6 +90,30 @@ function TeamAndUsersContent({ onInviteSuccess }: TeamAndUsersCardProps) {
     setIsInviting(true);
   };
 
+  const selectTab = (tab: TeamTab) => {
+    setTeamTab(tab);
+    window.requestAnimationFrame(() => document.getElementById(`team-${tab}-tab`)?.focus());
+  };
+
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, currentTab: TeamTab) => {
+    const currentIndex = TEAM_TABS.indexOf(currentTab);
+    const nextTab =
+      event.key === "ArrowRight"
+        ? TEAM_TABS[(currentIndex + 1) % TEAM_TABS.length]
+        : event.key === "ArrowLeft"
+          ? TEAM_TABS[(currentIndex - 1 + TEAM_TABS.length) % TEAM_TABS.length]
+          : event.key === "Home"
+            ? TEAM_TABS[0]
+            : event.key === "End"
+              ? TEAM_TABS[TEAM_TABS.length - 1]
+              : null;
+
+    if (nextTab) {
+      event.preventDefault();
+      selectTab(nextTab);
+    }
+  };
+
   return (
     <>
       <section className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
@@ -103,12 +127,15 @@ function TeamAndUsersContent({ onInviteSuccess }: TeamAndUsersCardProps) {
             ] as const).map(([tab, label]) => (
               <button
                 key={tab}
+                id={`team-${tab}-tab`}
                 type="button"
                 role="tab"
                 aria-selected={teamTab === tab}
                 aria-controls={`team-${tab}-panel`}
-                onClick={() => setTeamTab(tab)}
-                className={`border-b-2 pb-2 text-sm font-semibold transition ${teamTab === tab ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#6b8980] hover:text-[#16332b]"}`}
+                tabIndex={teamTab === tab ? 0 : -1}
+                onClick={() => selectTab(tab)}
+                onKeyDown={(event) => handleTabKeyDown(event, tab)}
+                className={`border-b-2 pb-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1f6a58] ${teamTab === tab ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#6b8980] hover:text-[#16332b]"}`}
               >
                 {label}
               </button>
@@ -116,25 +143,20 @@ function TeamAndUsersContent({ onInviteSuccess }: TeamAndUsersCardProps) {
           </div>
         </div>
 
-        {teamTab === "members" ? (
-          <div id="team-members-panel" role="tabpanel" className="pt-4">
+        <div id="team-members-panel" role="tabpanel" aria-labelledby="team-members-tab" hidden={teamTab !== "members"} className="pt-4">
             {membersQuery.isPending ? (
               <LoadingRows />
             ) : membersQuery.isError ? (
-              <p className="py-2 text-sm text-[#b42318]">Unable to load team members. Please try again.</p>
+              <p role="alert" className="py-2 text-sm text-[#b42318]">Unable to load team members. Please try again.</p>
             ) : (
               <MemberList members={membersQuery.data} />
             )}
-          </div>
-        ) : null}
+        </div>
 
-        {teamTab === "invite" ? (
-          <div id="team-invite-panel" role="tabpanel" className="space-y-4 pt-4">
+        <div id="team-invite-panel" role="tabpanel" aria-labelledby="team-invite-tab" hidden={teamTab !== "invite"} className="space-y-4 pt-4">
             <p className="text-sm text-[#52736a]">
               {canManageInvitations
-                ? tenantRole === "tenant_owner"
-                  ? "Invite administrators and team members."
-                  : "Invite team members to your organization."
+                ? "Invite team members to your organization."
                 : "Your available team actions are determined by your organization permissions."}
             </p>
             {canManageInvitations ? (
@@ -146,15 +168,13 @@ function TeamAndUsersContent({ onInviteSuccess }: TeamAndUsersCardProps) {
                 Invite User
               </button>
             ) : null}
-          </div>
-        ) : null}
+        </div>
 
-        {teamTab === "roles" ? (
-          <div id="team-roles-panel" role="tabpanel" className="pt-4">
+        <div id="team-roles-panel" role="tabpanel" aria-labelledby="team-roles-tab" hidden={teamTab !== "roles"} className="pt-4">
             {rolesQuery.isPending || permissionsQuery.isPending ? (
               <LoadingRows />
             ) : rolesQuery.isError || permissionsQuery.isError ? (
-              <p className="py-2 text-sm text-[#b42318]">Unable to load roles and permissions. Please try again.</p>
+              <p role="alert" className="py-2 text-sm text-[#b42318]">Unable to load roles and permissions. Please try again.</p>
             ) : rolesQuery.data.data.length === 0 ? (
               <p className="py-2 text-sm text-[#52736a]">No roles are available for this organization.</p>
             ) : (
@@ -179,7 +199,7 @@ function TeamAndUsersContent({ onInviteSuccess }: TeamAndUsersCardProps) {
                             <li key={code} className="rounded-lg border border-[#e7efeb] bg-white px-2.5 py-2">
                               <p className="text-xs font-semibold text-[#16332b]">{code}</p>
                               {permission?.name ? <p className="mt-0.5 text-xs text-[#52736a]">{permission.name}</p> : null}
-                              {permission?.description ? <p className="mt-0.5 text-xs text-[#7f9d94]">{permission.description}</p> : null}
+                              {permission?.description ? <p className="mt-0.5 text-xs text-[#52736a]">{permission.description}</p> : null}
                             </li>
                           );
                         })}
@@ -191,8 +211,7 @@ function TeamAndUsersContent({ onInviteSuccess }: TeamAndUsersCardProps) {
                 ))}
               </div>
             )}
-          </div>
-        ) : null}
+        </div>
       </section>
 
       {isInviting ? (
@@ -205,18 +224,5 @@ function TeamAndUsersContent({ onInviteSuccess }: TeamAndUsersCardProps) {
         />
       ) : null}
     </>
-  );
-}
-
-/** Renders the Enterprise Settings Team & Users card with scoped tenant queries. */
-export default function TeamAndUsersCard({ onInviteSuccess }: TeamAndUsersCardProps) {
-  const [queryClient] = useState(
-    () => new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: TENANT_QUERY_STALE_TIME_MS } } }),
-  );
-
-  return (
-    <QueryClientProvider client={queryClient}>
-      <TeamAndUsersContent onInviteSuccess={onInviteSuccess} />
-    </QueryClientProvider>
   );
 }

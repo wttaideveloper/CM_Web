@@ -1,3 +1,4 @@
+/** Details for the authenticated user's server-derived tenant. */
 export interface TenantDetails {
   id: string;
   slug: string;
@@ -7,6 +8,7 @@ export interface TenantDetails {
   settings: Record<string, unknown>;
 }
 
+/** A member returned by the current tenant's members API. */
 export interface TenantMember {
   id: string;
   userId: string;
@@ -63,6 +65,7 @@ type TenantRoleResponseItem = {
   permissions: string[];
 };
 
+/** The authenticated tenant response envelope. */
 export type TenantMeResponse = {
   message: string;
   data: TenantDetails;
@@ -135,6 +138,7 @@ function isOptionalNumber(value: unknown): value is number | null | undefined {
   return value === undefined || value === null || typeof value === "number";
 }
 
+/** Loads the authenticated user's current tenant. */
 export async function getTenantMe(): Promise<TenantMeResponse> {
   const response = await fetch("/api/v1/tenant/me", {
     method: "GET",
@@ -142,8 +146,7 @@ export async function getTenantMe(): Promise<TenantMeResponse> {
   });
 
   if (!response.ok) {
-    const errorText = await response.text().catch(() => "");
-    throw new Error(errorText || `Unable to load tenant (${response.status} ${response.statusText}).`);
+    throw new Error(`Unable to load tenant (HTTP ${response.status}).`);
   }
 
   const payload = (await response.json()) as unknown;
@@ -165,8 +168,7 @@ export async function getTenantMembers(): Promise<TenantMember[]> {
   });
 
   if (!response.ok) {
-    const errorText = await response.text().catch(() => "");
-    throw new Error(errorText || `Unable to load tenant members (${response.status} ${response.statusText}).`);
+    throw new Error(`Unable to load tenant members (HTTP ${response.status}).`);
   }
 
   const payload = (await response.json()) as unknown;
@@ -191,8 +193,7 @@ export async function getTenantRoles(): Promise<TenantRolesResponse> {
   });
 
   if (!response.ok) {
-    const errorText = await response.text().catch(() => "");
-    throw new Error(errorText || `Unable to load tenant roles (${response.status} ${response.statusText}).`);
+    throw new Error(`Unable to load tenant roles (HTTP ${response.status}).`);
   }
 
   const payload = (await response.json()) as unknown;
@@ -231,8 +232,7 @@ export async function getTenantPermissions(): Promise<TenantPermissionsResponse>
   });
 
   if (!response.ok) {
-    const errorText = await response.text().catch(() => "");
-    throw new Error(errorText || `Unable to load tenant permissions (${response.status} ${response.statusText}).`);
+    throw new Error(`Unable to load tenant permissions (HTTP ${response.status}).`);
   }
 
   const payload = (await response.json()) as unknown;

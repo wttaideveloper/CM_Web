@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useState, type FormEvent } from "react";
 
 import { getInviteRoles, inviteUser, type InviteRole } from "../account.service";
 
@@ -42,38 +43,17 @@ export default function InviteUserModal({ onClose, onSuccess }: InviteUserModalP
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [roleSlug, setRoleSlug] = useState("");
-  const [roles, setRoles] = useState<InviteRole[]>([]);
-  const [isLoadingRoles, setIsLoadingRoles] = useState(true);
-  const [rolesError, setRolesError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  useEffect(() => {
-    let isActive = true;
-
-    void getInviteRoles()
-      .then((nextRoles) => {
-        if (!isActive) {
-          return;
-        }
-
-        setRoles(nextRoles);
-      })
-      .catch((error) => {
-        if (isActive) {
-          setRolesError(getApiErrorMessage(error, "Unable to load invitation roles."));
-        }
-      })
-      .finally(() => {
-        if (isActive) {
-          setIsLoadingRoles(false);
-        }
-      });
-
-    return () => {
-      isActive = false;
-    };
-  }, []);
+  const inviteRolesQuery = useQuery({
+    queryKey: ["auth", "invite", "roles"],
+    queryFn: getInviteRoles,
+    staleTime: 30_000,
+    retry: 1,
+  });
+  const roles: InviteRole[] = inviteRolesQuery.data ?? [];
+  const isLoadingRoles = inviteRolesQuery.isPending;
+  const rolesError = inviteRolesQuery.isError ? "Unable to load invitation roles." : null;
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -128,8 +108,8 @@ export default function InviteUserModal({ onClose, onSuccess }: InviteUserModalP
               {roles.map((role) => <option key={role.slug} value={role.slug}>{role.name || formatRoleSlug(role.slug)}</option>)}
             </select>
           </label>
-          {rolesError ? <p className="text-sm font-medium text-[#b42318]">{rolesError}</p> : null}
-          {submitError ? <p className="text-sm font-medium text-[#b42318]">{submitError}</p> : null}
+            {rolesError ? <p role="alert" className="text-sm font-medium text-[#b42318]">{rolesError}</p> : null}
+            {submitError ? <p role="alert" className="text-sm font-medium text-[#b42318]">{submitError}</p> : null}
           <div className="flex justify-end gap-3 pt-1">
             <button type="button" onClick={onClose} disabled={isSubmitting} className="inline-flex h-10 items-center justify-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#f7fbf8] disabled:cursor-not-allowed disabled:opacity-60">Cancel</button>
             <button type="submit" disabled={isSubmitting || isLoadingRoles || Boolean(rolesError)} className="inline-flex h-10 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-semibold text-white transition hover:bg-[#195646] disabled:cursor-not-allowed disabled:opacity-60">{isSubmitting ? "Sending..." : "Send Invitation"}</button>
@@ -139,4 +119,3 @@ export default function InviteUserModal({ onClose, onSuccess }: InviteUserModalP
     </div>
   );
 }
-
