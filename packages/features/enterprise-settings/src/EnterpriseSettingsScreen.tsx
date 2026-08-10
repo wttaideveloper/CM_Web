@@ -2,13 +2,10 @@
 
 import { useState, type ReactNode } from "react";
 
-import {
-  InviteUserModal,
-  PasswordResetModal,
-  ProfileEditModal,
-  useAuth,
-} from "@ihp/auth";
+import { PasswordResetModal, ProfileEditModal, useAuth } from "@ihp/auth";
 import { useTenant } from "@ihp/enterprise-runtime";
+
+import TeamAndUsersCard from "./TeamAndUsersCard";
 
 function emptyToNotProvided(value: string | null | undefined) {
   return value?.trim() || "Not provided";
@@ -47,14 +44,9 @@ export default function EnterpriseSettingsScreen() {
   const { tenant, isLoadingTenant, tenantError } = useTenant();
   const [isEditing, setIsEditing] = useState(false);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
-  const [isInviting, setIsInviting] = useState(false);
   const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
-  const tenantRole = user?.membership?.tenantRole ?? user?.roles?.tenantRole;
-  const canInviteUsers = user?.membership?.canInviteUsers ?? user?.roles?.canInviteUsers;
-  const canManageInvitations =
-    (tenantRole === "tenant_owner" || tenantRole === "tenant_admin") && canInviteUsers !== false;
 
   return (
     <>
@@ -81,7 +73,7 @@ export default function EnterpriseSettingsScreen() {
           </div>
         ) : null}
 
-        <div className={`grid grid-cols-1 gap-5 ${canManageInvitations ? "xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]" : ""}`}>
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
           <Card title="Personal Information">
             {user ? (
               <>
@@ -111,27 +103,7 @@ export default function EnterpriseSettingsScreen() {
             )}
           </Card>
 
-          {canManageInvitations ? (
-            <Card title="Team &amp; Invitations">
-              <div className="space-y-4">
-                <p className="text-sm text-[#52736a]">
-                  {tenantRole === "tenant_owner"
-                    ? "Invite administrators and team members."
-                    : "Invite team members to your organization."}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setInviteSuccess(null);
-                    setIsInviting(true);
-                  }}
-                  className="inline-flex h-10 w-full items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-semibold text-white transition hover:bg-[#195646]"
-                >
-                  Invite User
-                </button>
-              </div>
-            </Card>
-          ) : null}
+          <TeamAndUsersCard onInviteSuccess={() => setInviteSuccess("Invitation sent successfully.")} />
         </div>
 
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
@@ -204,12 +176,6 @@ export default function EnterpriseSettingsScreen() {
           email={user.email}
           onClose={() => setIsResettingPassword(false)}
           onSuccess={() => setPasswordSuccess("Password updated successfully.")}
-        />
-      ) : null}
-      {isInviting ? (
-        <InviteUserModal
-          onClose={() => setIsInviting(false)}
-          onSuccess={() => setInviteSuccess("Invitation sent successfully.")}
         />
       ) : null}
     </>

@@ -18,6 +18,51 @@ export interface TenantMember {
   roleSlug: string;
 }
 
+/** A tenant RBAC role returned by the tenant roles API. */
+export interface TenantRole {
+  slug: string;
+  name: string;
+  description?: string | null;
+  membershipTenantRole?: string | null;
+  knowledgeRoleLabel?: string | null;
+  isAssignable?: boolean | null;
+  inviteRequiresOwner?: boolean | null;
+  displayOrder?: number | null;
+  permissions: string[];
+}
+
+/** A permission definition returned by the tenant permissions API. */
+export interface TenantPermission {
+  code: string;
+  name?: string | null;
+  description?: string | null;
+}
+
+/** A typed collection response returned by tenant APIs. */
+export type TenantListResponse<T> = {
+  message: string;
+  data: T[];
+  total: number;
+};
+
+/** The tenant roles collection response. */
+export type TenantRolesResponse = TenantListResponse<TenantRole>;
+
+/** The tenant permissions collection response. */
+export type TenantPermissionsResponse = TenantListResponse<TenantPermission>;
+
+type TenantRoleResponseItem = {
+  slug: string;
+  name: string;
+  description?: string | null;
+  membership_tenant_role?: string | null;
+  knowledge_role_label?: string | null;
+  is_assignable?: boolean | null;
+  invite_requires_owner?: boolean | null;
+  display_order?: number | null;
+  permissions: string[];
+};
+
 export type TenantMeResponse = {
   message: string;
   data: TenantDetails;
@@ -53,6 +98,43 @@ function isTenantDetails(value: unknown): value is TenantDetails {
   );
 }
 
+function isTenantRole(value: unknown): value is TenantRoleResponseItem {
+  return (
+    isRecord(value) &&
+    typeof value.slug === "string" &&
+    typeof value.name === "string" &&
+    isOptionalString(value.description) &&
+    isOptionalString(value.membership_tenant_role) &&
+    isOptionalString(value.knowledge_role_label) &&
+    isOptionalBoolean(value.is_assignable) &&
+    isOptionalBoolean(value.invite_requires_owner) &&
+    isOptionalNumber(value.display_order) &&
+    Array.isArray(value.permissions) &&
+    value.permissions.every((permission) => typeof permission === "string")
+  );
+}
+
+function isTenantPermission(value: unknown): value is TenantPermission {
+  return (
+    isRecord(value) &&
+    typeof value.code === "string" &&
+    isOptionalString(value.name) &&
+    isOptionalString(value.description)
+  );
+}
+
+function isOptionalString(value: unknown): value is string | null | undefined {
+  return value === undefined || value === null || typeof value === "string";
+}
+
+function isOptionalBoolean(value: unknown): value is boolean | null | undefined {
+  return value === undefined || value === null || typeof value === "boolean";
+}
+
+function isOptionalNumber(value: unknown): value is number | null | undefined {
+  return value === undefined || value === null || typeof value === "number";
+}
+
 export async function getTenantMe(): Promise<TenantMeResponse> {
   const response = await fetch("/api/v1/tenant/me", {
     method: "GET",
@@ -75,6 +157,7 @@ export async function getTenantMe(): Promise<TenantMeResponse> {
   };
 }
 
+/** Loads the current tenant's members from the documented list response envelope. */
 export async function getTenantMembers(): Promise<TenantMember[]> {
   const response = await fetch("/api/v1/tenant/members", {
     method: "GET",
@@ -87,15 +170,85 @@ export async function getTenantMembers(): Promise<TenantMember[]> {
   }
 
   const payload = (await response.json()) as unknown;
-  const members = Array.isArray(payload)
-    ? payload
-    : isRecord(payload) && Array.isArray(payload.data)
-      ? payload.data
-      : [];
-
-  if (!members.every(isTenantMember)) {
+  if (
+    !isRecord(payload) ||
+    typeof payload.message !== "string" ||
+    typeof payload.total !== "number" ||
+    !Array.isArray(payload.data) ||
+    !payload.data.every(isTenantMember)
+  ) {
     throw new Error("Invalid tenant members response.");
   }
 
-  return members;
+  return payload.data;
+}
+
+/** Loads the current tenant's complete RBAC role catalogue. */
+export async function getTenantRoles(): Promise<TenantRolesResponse> {
+  const response = await fetch("/api/v1/tenant/roles", {
+    method: "GET",
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new Error(errorText || `Unable to load tenant roles (${response.status} ${response.statusText}).`);
+  }
+
+  const payload = (await response.json()) as unknown;
+  if (
+    !isRecord(payload) ||
+    typeof payload.message !== "string" ||
+    typeof payload.total !== "number" ||
+    !Array.isArray(payload.data) ||
+    !payload.data.every(isTenantRole)
+  ) {
+    throw new Error("Invalid tenant roles response.");
+  }
+
+  return {
+    message: payload.message,
+    data: payload.data.map((role) => ({
+      slug: role.slug,
+      name: role.name,
+      description: role.description,
+      membershipTenantRole: role.membership_tenant_role,
+      knowledgeRoleLabel: role.knowledge_role_label,
+      isAssignable: role.is_assignable,
+      inviteRequiresOwner: role.invite_requires_owner,
+      displayOrder: role.display_order,
+      permissions: role.permissions,
+    })),
+    total: payload.total,
+  };
+}
+
+/** Loads the current tenant's permission definitions. */
+export async function getTenantPermissions(): Promise<TenantPermissionsResponse> {
+  const response = await fetch("/api/v1/tenant/permissions", {
+    method: "GET",
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new Error(errorText || `Unable to load tenant permissions (${response.status} ${response.statusText}).`);
+  }
+
+  const payload = (await response.json()) as unknown;
+  if (
+    !isRecord(payload) ||
+    typeof payload.message !== "string" ||
+    typeof payload.total !== "number" ||
+    !Array.isArray(payload.data) ||
+    !payload.data.every(isTenantPermission)
+  ) {
+    throw new Error("Invalid tenant permissions response.");
+  }
+
+  return {
+    message: payload.message,
+    data: payload.data,
+    total: payload.total,
+  };
 }

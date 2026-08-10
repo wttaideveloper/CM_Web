@@ -6,6 +6,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.90.21",
     "@ihp/auth": "0.1.0",
     "@ihp/enterprise-runtime": "0.1.0"
   },
