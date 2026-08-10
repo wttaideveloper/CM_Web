@@ -28,6 +28,18 @@ function ValidateLoginContent() {
       : null;
 
   useEffect(() => {
+    if (process.env.NODE_ENV !== "development") {
+      return;
+    }
+
+    console.log("[AUTH DEBUG] Validate callback loaded", {
+      origin: window.location.origin,
+      path: window.location.pathname,
+      queryParameterNames: Array.from(new Set(searchParams.keys())),
+    });
+  }, [searchParams]);
+
+  useEffect(() => {
     if (isLoading) {
       return;
     }

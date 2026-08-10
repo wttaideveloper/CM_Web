@@ -31,13 +31,7 @@ export function AuthProvider({ children, config }: AuthProviderProps) {
 
   const applySession = useCallback((session: Awaited<ReturnType<typeof getSession>>) => {
     const nextUser = session.data ?? null;
-    const hasUserId = Boolean(nextUser?.userId ?? nextUser?.id);
-    const isAuthenticated =
-      session.authenticated === false
-        ? false
-        : session.authenticated === true
-          ? nextUser !== null
-          : hasUserId;
+    const isAuthenticated = session.authenticated !== false && nextUser !== null;
 
     setUser(isAuthenticated ? nextUser : null);
     setAuthenticated(isAuthenticated);

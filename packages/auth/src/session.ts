@@ -1,6 +1,33 @@
 import { resolveAuthClientConfig, resolveFrontendOrigin, type AuthClientConfig } from "./client";
 import type { AuthSessionResponse, CompleteLoginResponse, LogoutResponse } from "./types";
 
+function logAuthDebug(message: string, details: Record<string, string | number | boolean | undefined>) {
+  if (process.env.NODE_ENV === "development") {
+    console.log(`[AUTH DEBUG] ${message}`, details);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function logSessionStructure(result: AuthSessionResponse) {
+  if (process.env.NODE_ENV !== "development") {
+    return;
+  }
+
+  const body = isRecord(result) ? result : null;
+  const dataCandidate: unknown = body?.data;
+  const data = isRecord(dataCandidate) ? dataCandidate : null;
+  const topLevelAuthenticated = typeof body?.authenticated === "boolean" ? body.authenticated : undefined;
+  const dataAuthenticated = typeof data?.authenticated === "boolean" ? data.authenticated : undefined;
+
+  console.log("[AUTH DEBUG] session body top-level keys:", body ? Object.keys(body) : []);
+  console.log("[AUTH DEBUG] session data keys:", data ? Object.keys(data) : []);
+  console.log("[AUTH DEBUG] authenticated at top level:", topLevelAuthenticated);
+  console.log("[AUTH DEBUG] authenticated inside data:", dataAuthenticated);
+}
+
 async function parseAuthResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
@@ -13,6 +40,11 @@ async function parseAuthResponse<T>(response: Response): Promise<T> {
 export async function completeLogin(sessionCode: string, config?: AuthClientConfig) {
   const clientConfig = resolveAuthClientConfig(config);
   const searchParams = new URLSearchParams({ sessionCode });
+  logAuthDebug("complete-login request", {
+    method: "POST",
+    endpoint: clientConfig.completeLoginEndpoint,
+    credentials: "include",
+  });
   const response = await fetch(`${clientConfig.completeLoginEndpoint}?${searchParams.toString()}`, {
     method: "POST",
     credentials: "include",
@@ -22,17 +54,29 @@ export async function completeLogin(sessionCode: string, config?: AuthClientConf
     body: JSON.stringify({ sessionCode }),
   });
 
-  return parseAuthResponse<CompleteLoginResponse>(response);
+  logAuthDebug("complete-login response", { status: response.status });
+  const result = await parseAuthResponse<CompleteLoginResponse>(response);
+  logAuthDebug("complete-login authenticated", { authenticated: result.authenticated });
+  return result;
 }
 
 export async function getSession(config?: AuthClientConfig) {
   const clientConfig = resolveAuthClientConfig(config);
+  logAuthDebug("session request", {
+    method: "GET",
+    endpoint: clientConfig.sessionEndpoint,
+    credentials: "include",
+  });
   const response = await fetch(clientConfig.sessionEndpoint, {
     method: "GET",
     credentials: "include",
   });
 
-  return parseAuthResponse<AuthSessionResponse>(response);
+  logAuthDebug("session response", { status: response.status });
+  const result = await parseAuthResponse<AuthSessionResponse>(response);
+  logSessionStructure(result);
+  logAuthDebug("session authenticated", { authenticated: result.authenticated });
+  return result;
 }
 
 export async function logoutWebAuth(config?: AuthClientConfig) {

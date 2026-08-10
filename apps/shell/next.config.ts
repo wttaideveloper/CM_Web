@@ -1,6 +1,13 @@
 import type { NextConfig } from "next";
 
 const authApiBaseUrl = process.env.AUTH_API_BASE_URL;
+const resolvedAuthApiBaseUrl = authApiBaseUrl ?? "https://p6wvqog202.execute-api.us-east-1.amazonaws.com";
+
+if (process.env.NODE_ENV === "development") {
+  console.log("[AUTH PROXY DEBUG] AUTH_API_BASE_URL:", authApiBaseUrl ?? "(unset; using default)");
+  console.log("[AUTH PROXY DEBUG] /api/v1/auth/:path* ->", `${resolvedAuthApiBaseUrl}/api/v1/auth/:path*`);
+  console.log("[AUTH PROXY DEBUG] /api/v1/tenant/:path* ->", `${resolvedAuthApiBaseUrl}/api/v1/tenant/:path*`);
+}
 
 const nextConfig: NextConfig = {
   transpilePackages: [
@@ -36,11 +43,11 @@ const nextConfig: NextConfig = {
       fallback: [
         {
           source: "/api/v1/auth/:path*",
-          destination: `${authApiBaseUrl ?? "https://p6wvqog202.execute-api.us-east-1.amazonaws.com"}/api/v1/auth/:path*`,
+          destination: `${resolvedAuthApiBaseUrl}/api/v1/auth/:path*`,
         },
         {
           source: "/api/v1/tenant/:path*",
-          destination: `${authApiBaseUrl ?? "https://p6wvqog202.execute-api.us-east-1.amazonaws.com"}/api/v1/tenant/:path*`,
+          destination: `${resolvedAuthApiBaseUrl}/api/v1/tenant/:path*`,
         },
       ],
     };
