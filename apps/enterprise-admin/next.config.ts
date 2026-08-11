@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const authApiBaseUrl = process.env.AUTH_API_BASE_URL;
+const workflowApiBaseUrl = process.env.WORKFLOW_API_BASE_URL;
 
 const nextConfig: NextConfig = {
   transpilePackages: [
@@ -25,12 +26,10 @@ const nextConfig: NextConfig = {
     "@ihp/ui",
   ],
   async rewrites() {
-    if (!authApiBaseUrl) {
-      return { fallback: [] };
-    }
+    const fallback = [];
 
-    return {
-      fallback: [
+    if (authApiBaseUrl) {
+      fallback.push(
         {
           source: "/api/v1/auth/:path*",
           destination: `${authApiBaseUrl}/api/v1/auth/:path*`,
@@ -39,8 +38,23 @@ const nextConfig: NextConfig = {
           source: "/api/v1/tenant/:path*",
           destination: `${authApiBaseUrl}/api/v1/tenant/:path*`,
         },
-      ],
-    };
+      );
+    }
+
+    if (workflowApiBaseUrl) {
+      fallback.push(
+        {
+          source: "/api/v1/forms/:path*",
+          destination: `${workflowApiBaseUrl}/api/v1/forms/:path*`,
+        },
+        {
+          source: "/api/v1/workflows/:path*",
+          destination: `${workflowApiBaseUrl}/api/v1/workflows/:path*`,
+        },
+      );
+    }
+
+    return { fallback };
   },
 };
 
