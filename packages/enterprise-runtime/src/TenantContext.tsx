@@ -58,6 +58,7 @@ function TenantProviderContent({ children }: { children: ReactNode }) {
   return <TenantContext.Provider value={value}>{children}</TenantContext.Provider>;
 }
 
+/** Provides the authenticated user's server-derived tenant state and scoped query cache. */
 export function TenantProvider({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
 
@@ -68,6 +69,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/** Returns the server-derived tenant state; consumers must render beneath TenantProvider. */
 export function useTenant() {
   const context = useContext(TenantContext);
 

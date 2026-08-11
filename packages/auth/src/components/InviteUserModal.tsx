@@ -1,10 +1,11 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 
 import { getInviteRoles, inviteUser, type InviteRole } from "../account.service";
 
+/** Callbacks used to close the invite dialog and refresh its owning member list after success. */
 type InviteUserModalProps = {
   onClose: () => void;
   onSuccess: () => void;
@@ -39,12 +40,12 @@ function getApiErrorMessage(error: unknown, fallback: string) {
   }
 }
 
+/** Collects one invitation and submits it through the existing Web Auth invite endpoint. */
 export default function InviteUserModal({ onClose, onSuccess }: InviteUserModalProps) {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [roleSlug, setRoleSlug] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const inviteRolesQuery = useQuery({
     queryKey: ["auth", "invite", "roles"],
     queryFn: getInviteRoles,
@@ -54,8 +55,19 @@ export default function InviteUserModal({ onClose, onSuccess }: InviteUserModalP
   const roles: InviteRole[] = inviteRolesQuery.data ?? [];
   const isLoadingRoles = inviteRolesQuery.isPending;
   const rolesError = inviteRolesQuery.isError ? "Unable to load invitation roles." : null;
+  const inviteUserMutation = useMutation({
+    mutationFn: inviteUser,
+    onSuccess: () => {
+      onSuccess();
+      onClose();
+    },
+    onError: (error) => {
+      setSubmitError(getApiErrorMessage(error, "Unable to send the invitation. Please try again."));
+    },
+  });
+  const isSubmitting = inviteUserMutation.isPending;
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmedName = fullName.trim();
     const trimmedEmail = email.trim();
@@ -65,18 +77,8 @@ export default function InviteUserModal({ onClose, onSuccess }: InviteUserModalP
       return;
     }
 
-    setIsSubmitting(true);
     setSubmitError(null);
-
-    try {
-      await inviteUser({ full_name: trimmedName, email: trimmedEmail, role_slug: roleSlug });
-      onSuccess();
-      onClose();
-    } catch (error) {
-      setSubmitError(getApiErrorMessage(error, "Unable to send the invitation. Please try again."));
-    } finally {
-      setIsSubmitting(false);
-    }
+    inviteUserMutation.mutate({ full_name: trimmedName, email: trimmedEmail, role_slug: roleSlug });
   };
 
   return (

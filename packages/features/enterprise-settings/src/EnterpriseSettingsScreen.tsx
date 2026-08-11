@@ -39,6 +39,7 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+/** Renders the authenticated Enterprise owner's account, tenant, and team settings. */
 export default function EnterpriseSettingsScreen() {
   const { user } = useAuth();
   const { tenant, isLoadingTenant, tenantError } = useTenant();

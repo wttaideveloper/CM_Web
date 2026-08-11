@@ -7,11 +7,15 @@ import {
   getTenantPermissions,
   getTenantRoles,
   type TenantMember,
+  useTenant,
 } from "@ihp/enterprise-runtime";
 import { useMemo, useState, type KeyboardEvent } from "react";
 
+import { settingsQueryKeys } from "./settings-query-keys";
+
 type TeamTab = "members" | "invite" | "roles";
 
+/** Callbacks the Team & Users card invokes after a successful invitation. */
 type TeamAndUsersCardProps = {
   onInviteSuccess: () => void;
 };
@@ -53,33 +57,36 @@ function MemberList({ members }: { members: TenantMember[] }) {
   );
 }
 
-/** Renders the Enterprise Settings Team & Users card. */
+/** Renders tenant-scoped member, invitation, and read-only RBAC information for Enterprise Settings. */
 export default function TeamAndUsersCard({ onInviteSuccess }: TeamAndUsersCardProps) {
   const { user } = useAuth();
+  const { tenantId } = useTenant();
   const queryClient = useQueryClient();
   const [teamTab, setTeamTab] = useState<TeamTab>("members");
   const [isInviting, setIsInviting] = useState(false);
   const canInviteUsers = user?.membership?.canInviteUsers ?? user?.roles?.canInviteUsers;
   const canManageInvitations = canInviteUsers === true;
+  const canLoadTenantResources = tenantId !== null;
   const membersQuery = useQuery({
-    queryKey: ["tenant", "members"],
+    queryKey: settingsQueryKeys.members(tenantId ?? "unavailable"),
     queryFn: getTenantMembers,
     staleTime: TENANT_QUERY_STALE_TIME_MS,
     retry: 1,
+    enabled: canLoadTenantResources,
   });
   const rolesQuery = useQuery({
-    queryKey: ["tenant", "roles"],
+    queryKey: settingsQueryKeys.roles(tenantId ?? "unavailable"),
     queryFn: getTenantRoles,
     staleTime: TENANT_QUERY_STALE_TIME_MS,
     retry: 1,
-    enabled: teamTab === "roles",
+    enabled: canLoadTenantResources && teamTab === "roles",
   });
   const permissionsQuery = useQuery({
-    queryKey: ["tenant", "permissions"],
+    queryKey: settingsQueryKeys.permissions(tenantId ?? "unavailable"),
     queryFn: getTenantPermissions,
     staleTime: TENANT_QUERY_STALE_TIME_MS,
     retry: 1,
-    enabled: teamTab === "roles",
+    enabled: canLoadTenantResources && teamTab === "roles",
   });
   const permissionsByCode = useMemo(
     () => new Map((permissionsQuery.data?.data ?? []).map((permission) => [permission.code, permission])),
@@ -147,7 +154,10 @@ export default function TeamAndUsersCard({ onInviteSuccess }: TeamAndUsersCardPr
             {membersQuery.isPending ? (
               <LoadingRows />
             ) : membersQuery.isError ? (
-              <p role="alert" className="py-2 text-sm text-[#b42318]">Unable to load team members. Please try again.</p>
+              <div className="py-2">
+                <p role="alert" className="text-sm text-[#b42318]">Unable to load team members. Please try again.</p>
+                <button type="button" onClick={() => void membersQuery.refetch()} className="mt-2 text-sm font-semibold text-[#1f6a58] hover:text-[#16332b]">Retry</button>
+              </div>
             ) : (
               <MemberList members={membersQuery.data} />
             )}
@@ -174,7 +184,23 @@ export default function TeamAndUsersCard({ onInviteSuccess }: TeamAndUsersCardPr
             {rolesQuery.isPending || permissionsQuery.isPending ? (
               <LoadingRows />
             ) : rolesQuery.isError || permissionsQuery.isError ? (
-              <p role="alert" className="py-2 text-sm text-[#b42318]">Unable to load roles and permissions. Please try again.</p>
+              <div className="py-2">
+                <p role="alert" className="text-sm text-[#b42318]">Unable to load roles and permissions. Please try again.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (rolesQuery.isError) {
+                      void rolesQuery.refetch();
+                    }
+                    if (permissionsQuery.isError) {
+                      void permissionsQuery.refetch();
+                    }
+                  }}
+                  className="mt-2 text-sm font-semibold text-[#1f6a58] hover:text-[#16332b]"
+                >
+                  Retry
+                </button>
+              </div>
             ) : rolesQuery.data.data.length === 0 ? (
               <p className="py-2 text-sm text-[#52736a]">No roles are available for this organization.</p>
             ) : (
@@ -218,7 +244,9 @@ export default function TeamAndUsersCard({ onInviteSuccess }: TeamAndUsersCardPr
         <InviteUserModal
           onClose={() => setIsInviting(false)}
           onSuccess={() => {
-            void queryClient.invalidateQueries({ queryKey: ["tenant", "members"] });
+            if (tenantId) {
+              void queryClient.invalidateQueries({ queryKey: settingsQueryKeys.members(tenantId) });
+            }
             onInviteSuccess();
           }}
         />
