@@ -43,6 +43,22 @@ async function parseAuthResponse<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
 }
 
+function getLogoutUrl(result: LogoutResponse) {
+  const logoutUrl = result.logout_url ?? result.data?.logout_url;
+
+  if (!logoutUrl) {
+    throw new Error("Logout response did not include a Keycloak logout URL.");
+  }
+
+  return logoutUrl;
+}
+
+export type GetWebAuthLogoutOptions = {
+  config?: AuthClientConfig;
+  local?: boolean;
+  json?: boolean;
+};
+
 export async function completeLogin(sessionCode: string, config?: AuthClientConfig) {
   const clientConfig = resolveAuthClientConfig(config);
   const searchParams = new URLSearchParams({ sessionCode });
@@ -133,11 +149,37 @@ export async function logoutWebAuth(config?: AuthClientConfig) {
   }
 
   const result = await response.json() as LogoutResponse;
-  const logoutUrl = result.logout_url ?? result.data?.logout_url;
+  return getLogoutUrl(result);
+}
 
-  if (!logoutUrl) {
-    throw new Error("Logout response did not include a Keycloak logout URL.");
+/** Starts GET Web Auth logout in browser or SPA JSON mode, then navigates to Keycloak logout. */
+export async function startWebAuthGetLogout(
+  options?: GetWebAuthLogoutOptions,
+): Promise<void> {
+  const clientConfig = resolveAuthClientConfig(options?.config);
+  const params = new URLSearchParams({
+    frontend_origin: resolveFrontendOrigin(options?.config),
+  });
+
+  if (options?.local) {
+    params.set("local", "1");
   }
 
-  return logoutUrl;
+  if (!options?.json) {
+    window.location.assign(`${clientConfig.logoutEndpoint}?${params.toString()}`);
+    return;
+  }
+
+  params.set("json", "1");
+  const response = await fetch(`${clientConfig.logoutEndpoint}?${params.toString()}`, {
+    method: "GET",
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+    },
+    cache: "no-store",
+  });
+  const result = await parseAuthResponse<LogoutResponse>(response);
+
+  window.location.assign(getLogoutUrl(result));
 }

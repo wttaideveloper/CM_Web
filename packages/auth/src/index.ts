@@ -16,7 +16,9 @@ export {
   getSession,
   logoutWebAuth,
   refreshAuthSession,
+  startWebAuthGetLogout,
 } from "./session";
+export type { GetWebAuthLogoutOptions } from "./session";
 export { useAuth } from "./useAuth";
 export {
   getAuthMe,

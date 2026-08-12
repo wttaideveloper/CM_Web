@@ -1,8 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { useAuth } from "@ihp/auth";
 import { PlatformAdminLayout } from "@ihp/platform-layout";
 
 import { ROUTE_PATHS } from "@/routing/route-ownership";
@@ -18,7 +18,7 @@ export default function PlatformAdminShellAdapter({
   children,
   currentPath,
 }: PlatformAdminShellAdapterProps) {
-  const router = useRouter();
+  const { logout } = useAuth();
 
   const handleLogout = async () => {
     try {
@@ -28,7 +28,13 @@ export default function PlatformAdminShellAdapter({
     }
 
     clearMarketplaceDemoSession();
-    router.replace(ROUTE_PATHS.public.auth.login);
+
+    try {
+      const logoutUrl = await logout();
+      window.location.assign(logoutUrl);
+    } catch {
+      // Preserve the protected screen if the existing Web Auth logout request fails.
+    }
   };
 
   return (

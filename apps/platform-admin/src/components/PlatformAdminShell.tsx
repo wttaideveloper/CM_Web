@@ -1,6 +1,6 @@
 "use client";
 
-import { getShellAppOrigin } from "@ihp/auth";
+import { getShellAppOrigin, logoutWebAuth } from "@ihp/auth";
 import {
   PlatformAdminLayout,
   type PlatformNavigationItem,
@@ -34,13 +34,18 @@ export default function PlatformAdminShell({ children }: { children: ReactNode }
   const pathname = usePathname();
   const homeHref = useMemo(() => "/dashboard", []);
   const notificationsHref = useMemo(() => getShellRoute("/notifications"), []);
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback(async () => {
     const shellOrigin = getShellAppOrigin();
     if (!shellOrigin) {
       return;
     }
 
-    window.location.assign(new URL("/auth/login", shellOrigin).toString());
+    try {
+      const logoutUrl = await logoutWebAuth({ frontendOrigin: shellOrigin });
+      window.location.assign(logoutUrl);
+    } catch {
+      // Preserve the protected screen if the existing Web Auth logout request fails.
+    }
   }, []);
   const resolveNavigationHref = useCallback(
     (item: PlatformNavigationItem) =>
