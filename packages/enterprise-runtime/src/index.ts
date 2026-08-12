@@ -3,9 +3,17 @@ export { TenantProvider, useTenant } from "./TenantContext";
 export {
   getTenantMe,
   getTenantMembers,
+  getTenantMember,
   getTenantPermissions,
   getTenantRoles,
+  activateTenantMember,
+  archiveTenantMember,
+  softDeleteTenantMember,
+  updateTenantMemberProfile,
+  updateTenantMemberStatus,
   type GetTenantMembersOptions,
+  type TenantMemberActionResponse,
+  type TenantMemberResponse,
   type TenantDetails,
   type TenantMember,
   type TenantListResponse,
@@ -14,4 +22,5 @@ export {
   type TenantPermissionsResponse,
   type TenantRole,
   type TenantRolesResponse,
+  type UpdateTenantMemberProfilePayload,
 } from "./tenant.service";

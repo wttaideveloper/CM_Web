@@ -11,9 +11,12 @@ import {
 } from "@ihp/enterprise-runtime";
 import { useMemo, useState, type KeyboardEvent } from "react";
 
+import MemberDetailsModal from "./MemberDetailsModal";
+import MemberList from "./MemberList";
 import { settingsQueryKeys } from "./settings-query-keys";
 
 type TeamTab = "members" | "invite" | "roles";
+type MemberStatusFilter = "active" | "archived" | "all";
 
 /** Callbacks the Team & Users card invokes after a successful invitation. */
 type TeamAndUsersCardProps = {
@@ -36,40 +39,21 @@ function LoadingRows() {
   );
 }
 
-function MemberList({ members }: { members: TenantMember[] }) {
-  if (members.length === 0) {
-    return <p className="py-2 text-sm text-[#52736a]">No members are available for this organization.</p>;
-  }
-
-  return (
-    <ul className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
-      {members.map((member) => (
-        <li key={member.id} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] px-3 py-2.5">
-          <p className="text-sm font-bold text-[#16332b]">{member.fullName}</p>
-          <p className="mt-0.5 break-words text-xs text-[#52736a]">{member.email}</p>
-          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[#52736a]">
-            <span>{member.roleName || member.roleSlug || member.role}</span>
-            <span className="font-semibold text-[#16332b]">{member.status}</span>
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 /** Renders tenant-scoped member, invitation, and read-only RBAC information for Enterprise Settings. */
 export default function TeamAndUsersCard({ onInviteSuccess }: TeamAndUsersCardProps) {
   const { user } = useAuth();
   const { tenantId } = useTenant();
   const queryClient = useQueryClient();
   const [teamTab, setTeamTab] = useState<TeamTab>("members");
+  const [memberStatusFilter, setMemberStatusFilter] = useState<MemberStatusFilter>("active");
+  const [selectedMember, setSelectedMember] = useState<TenantMember | null>(null);
   const [isInviting, setIsInviting] = useState(false);
   const canInviteUsers = user?.membership?.canInviteUsers ?? user?.roles?.canInviteUsers;
   const canManageInvitations = canInviteUsers === true;
   const canLoadTenantResources = tenantId !== null;
   const membersQuery = useQuery({
-    queryKey: settingsQueryKeys.members(tenantId ?? "unavailable"),
-    queryFn: () => getTenantMembers(),
+    queryKey: [...settingsQueryKeys.members(tenantId ?? "unavailable"), memberStatusFilter],
+    queryFn: () => memberStatusFilter === "active" ? getTenantMembers() : getTenantMembers({ includeArchived: true }),
     staleTime: TENANT_QUERY_STALE_TIME_MS,
     retry: 1,
     enabled: canLoadTenantResources,
@@ -79,7 +63,7 @@ export default function TeamAndUsersCard({ onInviteSuccess }: TeamAndUsersCardPr
     queryFn: getTenantRoles,
     staleTime: TENANT_QUERY_STALE_TIME_MS,
     retry: 1,
-    enabled: canLoadTenantResources && teamTab === "roles",
+    enabled: canLoadTenantResources && (teamTab === "roles" || selectedMember !== null),
   });
   const permissionsQuery = useQuery({
     queryKey: settingsQueryKeys.permissions(tenantId ?? "unavailable"),
@@ -92,6 +76,19 @@ export default function TeamAndUsersCard({ onInviteSuccess }: TeamAndUsersCardPr
     () => new Map((permissionsQuery.data?.data ?? []).map((permission) => [permission.code, permission])),
     [permissionsQuery.data],
   );
+  const visibleMembers = useMemo(() => {
+    const members = membersQuery.data ?? [];
+
+    if (memberStatusFilter === "archived") {
+      return members.filter((member) => member.status.trim().toLowerCase() === "archived");
+    }
+
+    return memberStatusFilter === "active"
+      ? members.filter((member) => member.status.trim().toLowerCase() !== "archived")
+      : members;
+  }, [memberStatusFilter, membersQuery.data]);
+  const actorRole = user?.membership?.tenantRole ?? user?.roles?.tenantRole;
+  const actorUserId = user?.userId ?? user?.id;
 
   const inviteUser = () => {
     setIsInviting(true);
@@ -151,6 +148,13 @@ export default function TeamAndUsersCard({ onInviteSuccess }: TeamAndUsersCardPr
         </div>
 
         <div id="team-members-panel" role="tabpanel" aria-labelledby="team-members-tab" hidden={teamTab !== "members"} className="pt-4">
+            <div className="mb-3 flex flex-wrap gap-2" aria-label="Member status filter">
+              {(["active", "archived", "all"] as const).map((filter) => (
+                <button key={filter} type="button" onClick={() => setMemberStatusFilter(filter)} aria-pressed={memberStatusFilter === filter} className={`rounded-full px-3 py-1.5 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1f6a58] ${memberStatusFilter === filter ? "bg-[#1f6a58] text-white" : "bg-[#edf3f0] text-[#52736a] hover:text-[#16332b]"}`}>
+                  {filter === "active" ? "Active" : filter === "archived" ? "Archived" : "All"}
+                </button>
+              ))}
+            </div>
             {membersQuery.isPending ? (
               <LoadingRows />
             ) : membersQuery.isError ? (
@@ -159,7 +163,7 @@ export default function TeamAndUsersCard({ onInviteSuccess }: TeamAndUsersCardPr
                 <button type="button" onClick={() => void membersQuery.refetch()} className="mt-2 text-sm font-semibold text-[#1f6a58] hover:text-[#16332b]">Retry</button>
               </div>
             ) : (
-              <MemberList members={membersQuery.data} />
+              <MemberList members={visibleMembers} onSelectMember={setSelectedMember} />
             )}
         </div>
 
@@ -249,6 +253,18 @@ export default function TeamAndUsersCard({ onInviteSuccess }: TeamAndUsersCardPr
             }
             onInviteSuccess();
           }}
+        />
+      ) : null}
+
+      {selectedMember && tenantId ? (
+        <MemberDetailsModal
+          membershipId={selectedMember.id}
+          tenantId={tenantId}
+          actorRole={actorRole}
+          actorUserId={actorUserId}
+          roles={rolesQuery.data?.data ?? []}
+          isLoadingRoles={rolesQuery.isPending}
+          onClose={() => setSelectedMember(null)}
         />
       ) : null}
     </>
