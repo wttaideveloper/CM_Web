@@ -21,6 +21,7 @@ export {
   getAuthMe,
   getAuthTenants,
   getInviteRoles,
+  getMyRoles,
   inviteUser,
   requestPasswordResetCode,
   resetPassword,
@@ -30,6 +31,7 @@ export {
 export type {
   AuthActionResponse,
   AuthMeResponse,
+  AuthRolesResponse,
   AuthTenant,
   InviteRole,
   InviteUserPayload,

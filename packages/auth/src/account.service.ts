@@ -1,10 +1,15 @@
-import type { AuthUser } from "./types";
+import type { AuthRoles, AuthUser } from "./types";
 
 const WEB_AUTH_BASE_URL = "/api/v1/auth";
 
 export type AuthMeResponse = {
   message?: string;
   data: AuthUser;
+};
+
+export type AuthRolesResponse = {
+  message?: string;
+  data: AuthRoles;
 };
 
 export type UpdateAuthProfilePayload = {
@@ -108,6 +113,17 @@ export async function getAuthMe() {
   });
 
   return parseAuthResponse<AuthMeResponse>(response);
+}
+
+/** Retrieves the current user's role and permission assignments. */
+export async function getMyRoles(): Promise<AuthRolesResponse> {
+  const response = await fetch(`${WEB_AUTH_BASE_URL}/me/roles`, {
+    method: "GET",
+    credentials: "include",
+    cache: "no-store",
+  });
+
+  return parseAuthResponse<AuthRolesResponse>(response);
 }
 
 export async function updateAuthProfile(payload: UpdateAuthProfilePayload) {
