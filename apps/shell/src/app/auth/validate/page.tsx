@@ -17,6 +17,7 @@ function ValidateLoginContent() {
   const searchParams = useSearchParams();
   const { authenticated, isLoading, membership, refreshSession } = useAuth();
   const hasStartedRef = useRef(false);
+  const [hasCompletedSessionCode, setHasCompletedSessionCode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sessionCode = searchParams.get("he_session_code")?.trim() ?? "";
   const enterpriseAdminReturnUrl = getSafeEnterpriseAdminReturnUrl(searchParams.get("return_to"));
@@ -25,7 +26,7 @@ function ValidateLoginContent() {
   const callbackError = searchParams.get("error")?.trim() || null;
   const isGoogleOwnerSignup = searchParams.get("owner_signup") === "google";
   const missingCodeError =
-    !isLoading && !authenticated && !sessionCode
+    !isLoading && !authenticated && (!sessionCode || hasCompletedSessionCode)
       ? "The login link is missing its session code. Please start the login again."
       : null;
 
@@ -43,6 +44,42 @@ function ValidateLoginContent() {
 
   useEffect(() => {
     if (isLoading) {
+      return;
+    }
+
+    if (callbackError) {
+      return;
+    }
+
+    if (sessionCode && !hasCompletedSessionCode) {
+      if (hasStartedRef.current) {
+        return;
+      }
+
+      hasStartedRef.current = true;
+
+      const finishLogin = async () => {
+        try {
+          const result = await completeLogin(sessionCode);
+          if (result.authenticated === false || !result.data) {
+            throw new Error("The login session could not be authenticated.");
+          }
+
+          const callbackUrl = new URL(window.location.href);
+          callbackUrl.searchParams.delete("he_session_code");
+          window.history.replaceState(window.history.state, "", `${callbackUrl.pathname}${callbackUrl.search}${callbackUrl.hash}`);
+
+          await refreshSession();
+
+          // Phase 1 keeps chat on its existing temporary bearer-token authentication.
+          await loginMarketplaceDemoUser().catch(() => undefined);
+          setHasCompletedSessionCode(true);
+        } catch (loginError) {
+          setError(loginError instanceof Error ? loginError.message : "Unable to complete login.");
+        }
+      };
+
+      void finishLogin();
       return;
     }
 
@@ -66,40 +103,12 @@ function ValidateLoginContent() {
 
         window.location.replace(new URL("/admin/dashboard", enterpriseAdminOrigin).toString());
       }
-      return;
     }
-
-    if (hasStartedRef.current) {
-      return;
-    }
-
-    if (callbackError || !sessionCode) {
-      return;
-    }
-
-    hasStartedRef.current = true;
-
-    const finishLogin = async () => {
-      try {
-        const result = await completeLogin(sessionCode);
-        if (result.authenticated === false || !result.data) {
-          throw new Error("The login session could not be authenticated.");
-        }
-
-        await refreshSession();
-
-        // Phase 1 keeps chat on its existing temporary bearer-token authentication.
-        await loginMarketplaceDemoUser().catch(() => undefined);
-      } catch (loginError) {
-        setError(loginError instanceof Error ? loginError.message : "Unable to complete login.");
-      }
-    };
-
-    void finishLogin();
   }, [
     authenticated,
     callbackError,
     crossAppReturnUrl,
+    hasCompletedSessionCode,
     isGoogleOwnerSignup,
     isLoading,
     membership,
