@@ -1,24 +1,52 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import {
   buildAuthCallbackPath,
+  getEnterpriseAdminAppOrigin,
+  getSafeEnterpriseAdminReturnUrl,
   getPlatformAdminAppOrigin,
+  getSafePlatformAdminReturnUrl,
   startLogin,
   useAuth,
 } from "@ihp/auth";
 
 function LoginPageContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const { isLoading } = useAuth();
+  const { authenticated, isLoading } = useAuth();
   const [loginType, setLoginType] = useState<"super-admin" | "admin">("super-admin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const enterpriseAdminReturnUrl = getSafeEnterpriseAdminReturnUrl(
+    searchParams.get("return_to"),
+  );
+  const platformAdminReturnUrl = getSafePlatformAdminReturnUrl(
+    searchParams.get("return_to"),
+  );
+  const crossAppReturnUrl = enterpriseAdminReturnUrl ?? platformAdminReturnUrl;
+
+  useEffect(() => {
+    if (isLoading || !authenticated) {
+      return;
+    }
+
+    if (crossAppReturnUrl) {
+      window.location.replace(crossAppReturnUrl);
+      return;
+    }
+
+    const enterpriseAdminOrigin = getEnterpriseAdminAppOrigin();
+    if (enterpriseAdminOrigin) {
+      window.location.replace(
+        new URL("/admin/dashboard", enterpriseAdminOrigin).toString(),
+      );
+    }
+  }, [authenticated, crossAppReturnUrl, isLoading]);
+
   const isSuperAdmin = loginType === "super-admin";
   const subtitle = isSuperAdmin
     ? "Sign in to the Super Admin portal"

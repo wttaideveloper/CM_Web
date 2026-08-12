@@ -63,6 +63,19 @@ export type AuthSessionResponse = {
   needsOrganizationSetup?: boolean;
 };
 
+/** Lightweight authentication state returned by the Web Auth status endpoint. */
+export type AuthStatusResponse = {
+  authenticated: boolean;
+  email_verified: boolean;
+  user_id: string | null;
+  tenant_role: string | null;
+  has_active_tenant: boolean;
+  needs_tenant_selection: boolean;
+  pending_invites: number;
+  should_redirect_to_login: boolean;
+  session_cookie: string | null;
+};
+
 export type CompleteLoginResponse = AuthSessionResponse & {
   tokens?: {
     access_token: string;

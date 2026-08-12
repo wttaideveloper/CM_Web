@@ -10,7 +10,12 @@ export type {
 export { buildGoogleOwnerSignupUrl, startGoogleOwnerSignup } from "./google-owner-signup";
 export type { GoogleOwnerSignupOptions } from "./google-owner-signup";
 export { restartLogin } from "./restart-login";
-export { completeLogin, getSession, logoutWebAuth } from "./session";
+export {
+  completeLogin,
+  getAuthStatus,
+  getSession,
+  logoutWebAuth,
+} from "./session";
 export { useAuth } from "./useAuth";
 export {
   getAuthMe,
@@ -54,6 +59,7 @@ export type {
   AuthMembership,
   AuthRoles,
   AuthSessionResponse,
+  AuthStatusResponse,
   AuthUser,
   CompleteLoginResponse,
   LogoutResponse,

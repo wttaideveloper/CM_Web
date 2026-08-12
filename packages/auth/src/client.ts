@@ -2,6 +2,7 @@ export type AuthClientConfig = {
   loginEndpoint?: string;
   googleOwnerSignupEndpoint?: string;
   completeLoginEndpoint?: string;
+  statusEndpoint?: string;
   sessionEndpoint?: string;
   logoutEndpoint?: string;
   restartLoginEndpoint?: string;
@@ -18,6 +19,7 @@ const DEFAULT_AUTH_CLIENT_CONFIG: ResolvedAuthClientConfig = {
   loginEndpoint: "/api/v1/auth/login",
   googleOwnerSignupEndpoint: "/api/v1/auth/signup/google",
   completeLoginEndpoint: "/api/v1/auth/complete-login",
+  statusEndpoint: "/api/v1/auth/status",
   sessionEndpoint: "/api/v1/auth/session",
   logoutEndpoint: "/api/v1/auth/logout",
   restartLoginEndpoint: "/api/v1/auth/restart-login",

@@ -1,5 +1,10 @@
 import { resolveAuthClientConfig, resolveFrontendOrigin, type AuthClientConfig } from "./client";
-import type { AuthSessionResponse, CompleteLoginResponse, LogoutResponse } from "./types";
+import type {
+  AuthSessionResponse,
+  AuthStatusResponse,
+  CompleteLoginResponse,
+  LogoutResponse,
+} from "./types";
 
 function logAuthDebug(message: string, details: Record<string, string | number | boolean | undefined>) {
   if (process.env.NODE_ENV === "development") {
@@ -77,6 +82,20 @@ export async function getSession(config?: AuthClientConfig) {
   logSessionStructure(result);
   logAuthDebug("session authenticated", { authenticated: result.authenticated });
   return result;
+}
+
+/** Retrieves the lightweight cookie-backed Web Auth status for route guards. */
+export async function getAuthStatus(
+  config?: AuthClientConfig,
+): Promise<AuthStatusResponse> {
+  const clientConfig = resolveAuthClientConfig(config);
+  const response = await fetch(clientConfig.statusEndpoint, {
+    method: "GET",
+    credentials: "include",
+    cache: "no-store",
+  });
+
+  return parseAuthResponse<AuthStatusResponse>(response);
 }
 
 export async function logoutWebAuth(config?: AuthClientConfig) {
