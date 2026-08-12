@@ -5,6 +5,7 @@ export {
   getTenantMembers,
   getTenantPermissions,
   getTenantRoles,
+  type GetTenantMembersOptions,
   type TenantDetails,
   type TenantMember,
   type TenantListResponse,

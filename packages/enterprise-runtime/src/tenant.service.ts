@@ -20,6 +20,12 @@ export interface TenantMember {
   roleSlug: string;
 }
 
+/** Optional filters supported by the current tenant members API. */
+export type GetTenantMembersOptions = {
+  includeRemoved?: boolean;
+  includeArchived?: boolean;
+};
+
 /** A tenant RBAC role returned by the tenant roles API. */
 export interface TenantRole {
   slug: string;
@@ -161,8 +167,21 @@ export async function getTenantMe(): Promise<TenantMeResponse> {
 }
 
 /** Loads the current tenant's members from the documented list response envelope. */
-export async function getTenantMembers(): Promise<TenantMember[]> {
-  const response = await fetch("/api/v1/tenant/members", {
+export async function getTenantMembers(
+  options?: GetTenantMembersOptions,
+): Promise<TenantMember[]> {
+  const searchParams = new URLSearchParams();
+
+  if (typeof options?.includeRemoved === "boolean") {
+    searchParams.set("include_removed", String(options.includeRemoved));
+  }
+
+  if (typeof options?.includeArchived === "boolean") {
+    searchParams.set("include_archived", String(options.includeArchived));
+  }
+
+  const query = searchParams.size > 0 ? `?${searchParams.toString()}` : "";
+  const response = await fetch(`/api/v1/tenant/members${query}`, {
     method: "GET",
     credentials: "include",
   });

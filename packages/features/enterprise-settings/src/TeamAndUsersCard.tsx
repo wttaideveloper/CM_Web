@@ -69,7 +69,7 @@ export default function TeamAndUsersCard({ onInviteSuccess }: TeamAndUsersCardPr
   const canLoadTenantResources = tenantId !== null;
   const membersQuery = useQuery({
     queryKey: settingsQueryKeys.members(tenantId ?? "unavailable"),
-    queryFn: getTenantMembers,
+    queryFn: () => getTenantMembers(),
     staleTime: TENANT_QUERY_STALE_TIME_MS,
     retry: 1,
     enabled: canLoadTenantResources,
