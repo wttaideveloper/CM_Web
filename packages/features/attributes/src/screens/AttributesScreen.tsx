@@ -8,6 +8,11 @@ import {
   getDynamicAttributes,
   updateDynamicAttribute,
 } from "../services/attribute.service";
+import {
+  AttributeForm,
+  type AttributeFormState,
+} from "../components/AttributeForm";
+import { AttributesTable } from "../components/AttributesTable";
 import type { DynamicAttributeDto } from "../types/attribute.types";
 import type {
   AttributeEntityOption,
@@ -18,70 +23,10 @@ const tabs = ["Enterprise", "Product", "Service"] as const;
 type Tab = (typeof tabs)[number];
 type EntityType = "enterprise" | "product" | "service";
 
-const attributeTypes = ["text", "number", "boolean", "date"] as const;
-
-type AttributeFormState = {
-  attribute_name: string;
-  attribute_value: string;
-  attribute_type: (typeof attributeTypes)[number];
-};
-
 type PageError = {
   message: string;
   retry: () => void;
 };
-
-function EditIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path
-        d="M4 20h4L18.5 9.5a2.8 2.8 0 0 0-4-4L4 16v4Z"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="m13.5 6.5 4 4"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function DeleteIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path
-        d="M4 7h16"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-      <path
-        d="M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 function getEntityType(tab: Tab): EntityType {
   if (tab === "Enterprise") return "enterprise";
@@ -93,60 +38,6 @@ function getEntityLabel(tab: Tab) {
   if (tab === "Enterprise") return "enterprise";
   if (tab === "Product") return "product";
   return "service";
-}
-
-function AttributeTableRow({
-  attribute,
-  usedWhere,
-  onEdit,
-  onDelete,
-}: {
-  attribute: DynamicAttributeDto;
-  usedWhere: string;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <tr className="h-[64px] text-sm transition-colors duration-150 hover:bg-emerald-50/60">
-      <td className="px-5 font-semibold text-[#06201c]">{attribute.attribute_name}</td>
-      <td className="px-5 text-[#52736a]">{attribute.attribute_value}</td>
-      <td className="px-5">
-        <span className="rounded-full bg-[#f1f4f3] px-3 py-1 text-xs font-bold text-[#52736a]">
-          {attribute.attribute_type}
-        </span>
-      </td>
-      <td className="px-5">
-        <span className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#16825b]">
-          {getEntityTypeFromAttribute(attribute)}
-        </span>
-      </td>
-      <td className="px-5 text-[#52736a]">{usedWhere}</td>
-      <td className="px-5">
-        <div className="flex gap-2 text-[#52736a]">
-          <button
-            type="button"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7]"
-            aria-label={`Edit ${attribute.attribute_name}`}
-            onClick={onEdit}
-          >
-            <EditIcon />
-          </button>
-          <button
-            type="button"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#fff1f0] hover:text-[#b42318]"
-            aria-label={`Delete ${attribute.attribute_name}`}
-            onClick={onDelete}
-          >
-            <DeleteIcon />
-          </button>
-        </div>
-      </td>
-    </tr>
-  );
-}
-
-function getEntityTypeFromAttribute(attribute: DynamicAttributeDto) {
-  return attribute.entity_type || "unknown";
 }
 
 export default function AttributesScreen({
@@ -469,83 +360,19 @@ export default function AttributesScreen({
         </div>
 
         {isFormOpen ? (
-          <div className="mt-5 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] p-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="block">
-                <span className="text-sm font-bold text-[#06201c]">Attribute Name</span>
-                <input
-                  type="text"
-                  value={formState.attribute_name}
-                  onChange={(event) =>
-                    setFormState((current) => ({ ...current, attribute_name: event.target.value }))
-                  }
-                  className="mt-1.5 h-[46px] w-full rounded-xl border border-[#d7e5df] bg-white px-3.5 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]"
-                />
-              </label>
-
-              <label className="block">
-                <span className="text-sm font-bold text-[#06201c]">Attribute Value</span>
-                <input
-                  type="text"
-                  value={formState.attribute_value}
-                  onChange={(event) =>
-                    setFormState((current) => ({ ...current, attribute_value: event.target.value }))
-                  }
-                  className="mt-1.5 h-[46px] w-full rounded-xl border border-[#d7e5df] bg-white px-3.5 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]"
-                />
-              </label>
-
-              <label className="block md:col-span-2 lg:col-span-1">
-                <span className="text-sm font-bold text-[#06201c]">Attribute Type</span>
-                <select
-                  className="mt-1.5 h-[46px] w-full rounded-xl border border-[#d7e5df] bg-white px-3.5 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]"
-                  value={formState.attribute_type}
-                  onChange={(event) =>
-                    setFormState((current) => ({
-                      ...current,
-                      attribute_type: event.target.value as AttributeFormState["attribute_type"],
-                    }))
-                  }
-                >
-                  {attributeTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            {formError ? (
-              <p className="mt-4 text-sm font-semibold text-[#b42318]">{formError}</p>
-            ) : null}
-
-            <div className="mt-4 flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsFormOpen(false);
-                  setFormError(null);
-                  setEditingAttributeId(null);
-                }}
-                className="h-[46px] rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a]"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleSaveAttribute()}
-                disabled={isSavingAttribute}
-                className="h-[46px] rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm disabled:opacity-60"
-              >
-                {isSavingAttribute
-                  ? "Saving..."
-                  : editingAttributeId
-                    ? "Update Attribute"
-                    : "Create Attribute"}
-              </button>
-            </div>
-          </div>
+          <AttributeForm
+            formState={formState}
+            formError={formError}
+            isSavingAttribute={isSavingAttribute}
+            editingAttributeId={editingAttributeId}
+            onFormStateChange={setFormState}
+            onCancel={() => {
+              setIsFormOpen(false);
+              setFormError(null);
+              setEditingAttributeId(null);
+            }}
+            onSave={() => void handleSaveAttribute()}
+          />
         ) : null}
       </section>
 
@@ -564,59 +391,14 @@ export default function AttributesScreen({
         </div>
       ) : null}
 
-      <section className="mt-5 overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[960px] text-left">
-            <thead className="bg-[#f8fbf9] text-xs uppercase tracking-[0.12em] text-[#7f9d94]">
-              <tr>
-                {[
-                  "Attribute Name",
-                  "Attribute Value",
-                  "Field Type",
-                  "Entity Type",
-                  "Used Where",
-                  "Actions",
-                ].map((heading) => (
-                  <th key={heading} className="px-5 py-3 font-bold">
-                    {heading}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#edf3f0]">
-              {isLoadingEntities || isLoadingAttributes ? (
-                <tr className="h-[64px] text-sm">
-                  <td className="px-5 text-[#52736a]" colSpan={6}>
-                    Loading {selectedEntityId ? "attributes" : "items"}...
-                  </td>
-                </tr>
-              ) : !selectedEntityId ? (
-                <tr className="h-[64px] text-sm">
-                  <td className="px-5 text-[#52736a]" colSpan={6}>
-                    Select an enterprise/product/service to view attributes.
-                  </td>
-                </tr>
-              ) : attributes.length === 0 ? (
-                <tr className="h-[64px] text-sm">
-                  <td className="px-5 text-[#52736a]" colSpan={6}>
-                    No attributes found for this item.
-                  </td>
-                </tr>
-              ) : (
-                attributes.map((attribute) => (
-                  <AttributeTableRow
-                    key={attribute.id}
-                    attribute={attribute}
-                    usedWhere={selectedEntityName}
-                    onEdit={() => openEditForm(attribute)}
-                    onDelete={() => void handleDeleteAttribute(attribute)}
-                  />
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <AttributesTable
+        attributes={attributes}
+        isLoading={isLoadingEntities || isLoadingAttributes}
+        selectedEntityId={selectedEntityId}
+        selectedEntityName={selectedEntityName}
+        onEdit={openEditForm}
+        onDelete={(attribute) => void handleDeleteAttribute(attribute)}
+      />
     </>
   );
 }
