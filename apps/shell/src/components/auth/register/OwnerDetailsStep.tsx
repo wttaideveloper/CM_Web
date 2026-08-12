@@ -194,6 +194,30 @@ function extractPasswordMinimumLength(response: PasswordRequirementsResponse | n
   return DEFAULT_PASSWORD_MIN_LENGTH;
 }
 
+function extractPasswordRequirement(response: PasswordRequirementsResponse | null, keys: string[]) {
+  const sources = response ? [response.data, response.raw] : [];
+
+  for (const source of sources) {
+    if (!isRecord(source)) {
+      continue;
+    }
+
+    for (const candidate of [source, source.policy, source.data, source.result, source.payload, source.requirements, source.rules]) {
+      if (!isRecord(candidate)) {
+        continue;
+      }
+
+      for (const key of keys) {
+        if (typeof candidate[key] === "boolean") {
+          return candidate[key];
+        }
+      }
+    }
+  }
+
+  return true;
+}
+
 function getPasswordStrengthLabel(passedRuleCount: number) {
   if (passedRuleCount <= 1) {
     return "Weak";
@@ -270,21 +294,37 @@ export default function OwnerDetailsStep() {
     () => extractPasswordMinimumLength(passwordRequirements),
     [passwordRequirements],
   );
+  const passwordRuleRequirements = useMemo(
+    () => ({
+      uppercase: extractPasswordRequirement(passwordRequirements, ["requireUppercase", "requiresUppercase", "uppercaseRequired", "uppercase"]),
+      lowercase: extractPasswordRequirement(passwordRequirements, ["requireLowercase", "requiresLowercase", "lowercaseRequired", "lowercase"]),
+      number: extractPasswordRequirement(passwordRequirements, ["requireNumber", "requiresNumber", "numberRequired", "number"]),
+      special: extractPasswordRequirement(passwordRequirements, ["requireSpecialCharacter", "requiresSpecialCharacter", "specialCharacterRequired", "special"]),
+    }),
+    [passwordRequirements],
+  );
 
   const passwordRules = useMemo<PasswordRuleState>(
     () => ({
       minLength: password.length >= passwordMinimumLength,
-      uppercase: /[A-Z]/.test(password),
-      lowercase: /[a-z]/.test(password),
-      number: /\d/.test(password),
-      special: /[^A-Za-z0-9]/.test(password),
+      uppercase: !passwordRuleRequirements.uppercase || /[A-Z]/.test(password),
+      lowercase: !passwordRuleRequirements.lowercase || /[a-z]/.test(password),
+      number: !passwordRuleRequirements.number || /\d/.test(password),
+      special: !passwordRuleRequirements.special || /[^A-Za-z0-9]/.test(password),
     }),
-    [password, passwordMinimumLength],
+    [password, passwordMinimumLength, passwordRuleRequirements],
   );
 
-  const passedPasswordRuleCount = Object.values(passwordRules).filter(Boolean).length;
+  const passwordRuleDefinitions = [
+    { key: "minLength" as const, label: `At least ${passwordMinimumLength} characters` },
+    ...(passwordRuleRequirements.uppercase ? [{ key: "uppercase" as const, label: "At least 1 uppercase letter" }] : []),
+    ...(passwordRuleRequirements.lowercase ? [{ key: "lowercase" as const, label: "At least 1 lowercase letter" }] : []),
+    ...(passwordRuleRequirements.number ? [{ key: "number" as const, label: "At least 1 number" }] : []),
+    ...(passwordRuleRequirements.special ? [{ key: "special" as const, label: "At least 1 special character" }] : []),
+  ];
+  const passedPasswordRuleCount = passwordRuleDefinitions.filter((rule) => passwordRules[rule.key]).length;
   const passwordStrengthLabel = getPasswordStrengthLabel(passedPasswordRuleCount);
-  const passwordStrengthWidth = `${(passedPasswordRuleCount / 5) * 100}%`;
+  const passwordStrengthWidth = `${(passedPasswordRuleCount / passwordRuleDefinitions.length) * 100}%`;
   const shouldShowPasswordPanel = isPasswordFocused || password.length > 0;
 
   useEffect(() => {
@@ -648,14 +688,8 @@ export default function OwnerDetailsStep() {
                   <span className="font-semibold text-[#06201c]">Strength:</span>
                   <span>{passwordStrengthLabel}</span>
                 </div>
-                {[
-                  { key: "minLength", label: "At least 8 characters" },
-                  { key: "uppercase", label: "At least 1 uppercase letter" },
-                  { key: "lowercase", label: "At least 1 lowercase letter" },
-                  { key: "number", label: "At least 1 number" },
-                  { key: "special", label: "At least 1 special character" },
-                ].map((rule) => {
-                  const passed = passwordRules[rule.key as PasswordRuleKey];
+                {passwordRuleDefinitions.map((rule) => {
+                  const passed = passwordRules[rule.key];
 
                   return (
                     <div
