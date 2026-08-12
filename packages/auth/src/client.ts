@@ -1,5 +1,6 @@
 export type AuthClientConfig = {
   loginEndpoint?: string;
+  googleOwnerSignupEndpoint?: string;
   completeLoginEndpoint?: string;
   sessionEndpoint?: string;
   logoutEndpoint?: string;
@@ -15,6 +16,7 @@ export type ResolvedAuthClientConfig = Required<Omit<AuthClientConfig, "frontend
 
 const DEFAULT_AUTH_CLIENT_CONFIG: ResolvedAuthClientConfig = {
   loginEndpoint: "/api/v1/auth/login",
+  googleOwnerSignupEndpoint: "/api/v1/auth/signup/google",
   completeLoginEndpoint: "/api/v1/auth/complete-login",
   sessionEndpoint: "/api/v1/auth/session",
   logoutEndpoint: "/api/v1/auth/logout",

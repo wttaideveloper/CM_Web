@@ -10,6 +10,7 @@ import {
   type PasswordRequirementsResponse,
   RegistrationApiError,
 } from "@/services/registration-ui.service";
+import { startGoogleOwnerSignup } from "@ihp/auth";
 import { countryDialOptions, type CountryDialOption } from "./register.constants";
 
 type PasswordRuleKey = "minLength" | "uppercase" | "lowercase" | "number" | "special";
@@ -227,6 +228,7 @@ export default function OwnerDetailsStep() {
     registeredEmail,
     updateRegistration,
     advanceToStep,
+    socialOwnerSignup,
   } = useRegistration();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -334,6 +336,10 @@ export default function OwnerDetailsStep() {
       delete next[key];
       return next;
     });
+  }
+
+  function handleGoogleOwnerSignup() {
+    startGoogleOwnerSignup({ returnTo: "/auth/validate?owner_signup=google" });
   }
 
   function handleTextChange(field: "fullName" | "email" | "password" | "confirmPassword") {
@@ -782,6 +788,23 @@ export default function OwnerDetailsStep() {
               ? "Confirm Email Change"
               : "Create Account"}
         </button>
+
+        {!socialOwnerSignup ? (
+          <>
+            <div className="my-4 flex items-center gap-3" aria-hidden="true">
+              <span className="h-px flex-1 bg-[#e5ece8]" />
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[#52736a]">Or</span>
+              <span className="h-px flex-1 bg-[#e5ece8]" />
+            </div>
+            <button
+              type="button"
+              onClick={handleGoogleOwnerSignup}
+              className="flex h-11 w-full items-center justify-center rounded-[14px] border border-[#d8e4df] bg-white text-sm font-bold text-[#06201c] transition hover:bg-[#f7fbf9]"
+            >
+              Continue with Google
+            </button>
+          </>
+        ) : null}
 
         <p className="mt-4 text-center text-sm text-[#52736a]">
           Already have an account?{" "}

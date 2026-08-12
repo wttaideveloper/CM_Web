@@ -40,7 +40,7 @@ export type ResendVerificationResponse = VerifyEmailResponse;
 
 export type RegisterOrganizationPayload = {
   userId: string;
-  password: string;
+  password?: string;
   tenantName: string;
   tenantSlug: string;
   industryType: string;

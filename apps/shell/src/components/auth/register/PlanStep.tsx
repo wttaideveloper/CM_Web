@@ -67,6 +67,7 @@ export default function PlanStep({ onBack, onCompleted }: PlanStepProps) {
   const {
     userId,
     password,
+    socialOwnerSignup,
     tenantName,
     tenantSlug,
     industryType,
@@ -93,7 +94,7 @@ export default function PlanStep({ onBack, onCompleted }: PlanStepProps) {
     try {
       const response = await registerOrganization({
         userId,
-        password,
+        ...(socialOwnerSignup ? {} : { password }),
         tenantName: tenantName.trim(),
         tenantSlug: tenantSlug.trim(),
         industryType,

@@ -1,9 +1,10 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useMemo } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo } from "react";
 
 import { useRegistration, type RegistrationStep } from "@/contexts/RegistrationContext";
+import { useAuth } from "@ihp/auth";
 import OwnerDetailsStep from "@/components/auth/register/OwnerDetailsStep";
 import VerifyEmailStep from "@/components/auth/register/VerifyEmailStep";
 import OrganizationStep from "@/components/auth/register/OrganizationStep";
@@ -151,10 +152,43 @@ function LeftPanel() {
   );
 }
 
-export default function AuthRegisterPage() {
+function AuthRegisterPageContent() {
   const router = useRouter();
-  const { currentStep, maxStepReached, goToStep, advanceToStep, clearRegistrationState, updateRegistration } =
+  const searchParams = useSearchParams();
+  const { authenticated, isLoading, membership, userId, user } = useAuth();
+  const { currentStep, maxStepReached, goToStep, advanceToStep, clearRegistrationState, updateRegistration, socialOwnerSignup } =
     useRegistration();
+
+  const isGoogleOwnerSignup = searchParams.get("owner_signup") === "google";
+
+  useEffect(() => {
+    if (!isGoogleOwnerSignup || isLoading || !authenticated || membership !== null || !userId) {
+      return;
+    }
+
+    updateRegistration({
+      socialOwnerSignup: true,
+      userId,
+      ownerAccountCreated: true,
+      emailVerified: true,
+      registeredEmail: user?.email ?? "",
+      email: user?.email ?? "",
+      fullName: user?.fullName ?? "",
+      password: "",
+      confirmPassword: "",
+    });
+    advanceToStep(3);
+  }, [
+    advanceToStep,
+    authenticated,
+    isGoogleOwnerSignup,
+    isLoading,
+    membership,
+    updateRegistration,
+    user?.email,
+    user?.fullName,
+    userId,
+  ]);
 
   const stepContent = useMemo(() => {
     switch (currentStep) {
@@ -173,7 +207,19 @@ export default function AuthRegisterPage() {
       case 3:
         return <OrganizationStep onBack={() => goToStep(2)} onContinue={() => advanceToStep(4)} />;
       case 4:
-        return <PlanStep onBack={() => goToStep(3)} onCompleted={() => advanceToStep(5)} />;
+        return (
+          <PlanStep
+            onBack={() => goToStep(3)}
+            onCompleted={() => {
+              if (socialOwnerSignup) {
+                window.location.assign("/auth/validate");
+                return;
+              }
+
+              advanceToStep(5);
+            }}
+          />
+        );
       case 5:
         return (
           <RegistrationSuccessStep
@@ -184,7 +230,7 @@ export default function AuthRegisterPage() {
           />
         );
     }
-  }, [advanceToStep, clearRegistrationState, currentStep, goToStep, router, updateRegistration]);
+  }, [advanceToStep, clearRegistrationState, currentStep, goToStep, router, socialOwnerSignup, updateRegistration]);
 
   return (
     <main className="min-h-screen bg-white text-[#06201c] lg:h-[100svh] lg:overflow-hidden">
@@ -205,5 +251,19 @@ export default function AuthRegisterPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+export default function AuthRegisterPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-white text-sm font-semibold text-[#52736a]">
+          Preparing registration...
+        </main>
+      }
+    >
+      <AuthRegisterPageContent />
+    </Suspense>
   );
 }

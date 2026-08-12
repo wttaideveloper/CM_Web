@@ -12,6 +12,7 @@ type RegistrationState = {
   userId: string;
   ownerAccountCreated: boolean;
   emailVerified: boolean;
+  socialOwnerSignup: boolean;
   registeredEmail: string;
   email: string;
   password: string;
@@ -34,6 +35,7 @@ type RegistrationUpdate = Partial<
     | "userId"
     | "ownerAccountCreated"
     | "emailVerified"
+    | "socialOwnerSignup"
     | "registeredEmail"
     | "email"
     | "password"
@@ -64,6 +66,7 @@ const INITIAL_REGISTRATION_STATE: RegistrationState = {
   userId: "",
   ownerAccountCreated: false,
   emailVerified: false,
+  socialOwnerSignup: false,
   registeredEmail: "",
   email: "",
   password: "",

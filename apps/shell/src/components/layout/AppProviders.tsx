@@ -21,7 +21,11 @@ export function PublicAuthProviders({ children }: { children: ReactNode }) {
 }
 
 export function RegistrationRouteProviders({ children }: { children: ReactNode }) {
-  return <RegistrationProvider>{children}</RegistrationProvider>;
+  return (
+    <AuthProvider>
+      <RegistrationProvider>{children}</RegistrationProvider>
+    </AuthProvider>
+  );
 }
 
 export function PlatformProviders({ children }: { children: ReactNode }) {

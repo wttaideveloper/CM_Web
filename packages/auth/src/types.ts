@@ -50,8 +50,8 @@ export type AuthUser = {
   groups: string[];
   modules?: string[];
   userModules?: AuthUserModule[];
-  membership: AuthMembership;
-  roles: AuthRoles;
+  membership: AuthMembership | null;
+  roles: AuthRoles | null;
   impersonation?: AuthImpersonation;
 };
 

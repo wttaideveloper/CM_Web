@@ -15,13 +15,15 @@ import { loginMarketplaceDemoUser } from "@/services/marketplace-demo-auth.servi
 
 function ValidateLoginContent() {
   const searchParams = useSearchParams();
-  const { authenticated, isLoading, refreshSession } = useAuth();
+  const { authenticated, isLoading, membership, refreshSession } = useAuth();
   const hasStartedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const sessionCode = searchParams.get("he_session_code")?.trim() ?? "";
   const enterpriseAdminReturnUrl = getSafeEnterpriseAdminReturnUrl(searchParams.get("return_to"));
   const platformAdminReturnUrl = getSafePlatformAdminReturnUrl(searchParams.get("return_to"));
   const crossAppReturnUrl = enterpriseAdminReturnUrl ?? platformAdminReturnUrl;
+  const callbackError = searchParams.get("error")?.trim() || null;
+  const isGoogleOwnerSignup = searchParams.get("owner_signup") === "google";
   const missingCodeError =
     !isLoading && !authenticated && !sessionCode
       ? "The login link is missing its session code. Please start the login again."
@@ -45,6 +47,14 @@ function ValidateLoginContent() {
     }
 
     if (authenticated) {
+      if (isGoogleOwnerSignup && membership === null) {
+        const organizationSetupUrl = new URL("/auth/register", window.location.origin);
+        if (isGoogleOwnerSignup) {
+          organizationSetupUrl.searchParams.set("owner_signup", "google");
+        }
+        window.location.replace(organizationSetupUrl.toString());
+        return;
+      }
       if (crossAppReturnUrl) {
         window.location.replace(crossAppReturnUrl);
       } else {
@@ -63,7 +73,7 @@ function ValidateLoginContent() {
       return;
     }
 
-    if (!sessionCode) {
+    if (callbackError || !sessionCode) {
       return;
     }
 
@@ -86,9 +96,18 @@ function ValidateLoginContent() {
     };
 
     void finishLogin();
-  }, [authenticated, crossAppReturnUrl, isLoading, refreshSession, sessionCode]);
+  }, [
+    authenticated,
+    callbackError,
+    crossAppReturnUrl,
+    isGoogleOwnerSignup,
+    isLoading,
+    membership,
+    refreshSession,
+    sessionCode,
+  ]);
 
-  const visibleError = error ?? missingCodeError;
+  const visibleError = error ?? callbackError ?? missingCodeError;
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-white px-6 text-[#06201c]">

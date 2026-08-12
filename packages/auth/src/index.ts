@@ -7,6 +7,8 @@ export type {
   AuthLoginModule,
   AuthLoginOptions,
 } from "./login";
+export { buildGoogleOwnerSignupUrl, startGoogleOwnerSignup } from "./google-owner-signup";
+export type { GoogleOwnerSignupOptions } from "./google-owner-signup";
 export { restartLogin } from "./restart-login";
 export { completeLogin, getSession, logoutWebAuth } from "./session";
 export { useAuth } from "./useAuth";
