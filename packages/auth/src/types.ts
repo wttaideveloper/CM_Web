@@ -76,14 +76,22 @@ export type AuthStatusResponse = {
   session_cookie: string | null;
 };
 
+export type AuthTokens = {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  expires_in: number;
+  refresh_expires_in: number;
+};
+
 export type CompleteLoginResponse = AuthSessionResponse & {
-  tokens?: {
-    access_token: string;
-    refresh_token: string;
-    token_type: "Bearer";
-    expires_in: number;
-    refresh_expires_in: number;
-  };
+  tokens?: AuthTokens;
+};
+
+export type RefreshAuthSessionResponse = {
+  message?: string;
+  data: AuthUser;
+  tokens: AuthTokens;
 };
 
 export type LogoutResponse = {

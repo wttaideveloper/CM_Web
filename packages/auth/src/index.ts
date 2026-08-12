@@ -15,6 +15,7 @@ export {
   getAuthStatus,
   getSession,
   logoutWebAuth,
+  refreshAuthSession,
 } from "./session";
 export { useAuth } from "./useAuth";
 export {
@@ -62,7 +63,9 @@ export type {
   AuthRoles,
   AuthSessionResponse,
   AuthStatusResponse,
+  AuthTokens,
   AuthUser,
   CompleteLoginResponse,
   LogoutResponse,
+  RefreshAuthSessionResponse,
 } from "./types";

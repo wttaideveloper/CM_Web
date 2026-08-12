@@ -2,6 +2,7 @@ import { resolveAuthClientConfig, resolveFrontendOrigin, type AuthClientConfig }
 import type {
   AuthSessionResponse,
   AuthStatusResponse,
+  RefreshAuthSessionResponse,
   CompleteLoginResponse,
   LogoutResponse,
 } from "./types";
@@ -96,6 +97,23 @@ export async function getAuthStatus(
   });
 
   return parseAuthResponse<AuthStatusResponse>(response);
+}
+
+/** Refreshes the browser's Web Auth session using its HttpOnly refresh cookie. */
+export async function refreshAuthSession(
+  config?: AuthClientConfig,
+): Promise<RefreshAuthSessionResponse> {
+  const clientConfig = resolveAuthClientConfig(config);
+  const response = await fetch(clientConfig.refreshEndpoint, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({}),
+  });
+
+  return parseAuthResponse<RefreshAuthSessionResponse>(response);
 }
 
 export async function logoutWebAuth(config?: AuthClientConfig) {
