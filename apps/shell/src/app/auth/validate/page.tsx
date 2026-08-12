@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 
 import {
@@ -8,12 +8,12 @@ import {
   getEnterpriseAdminAppOrigin,
   getSafeEnterpriseAdminReturnUrl,
   getSafePlatformAdminReturnUrl,
+  restartLogin,
   useAuth,
 } from "@ihp/auth";
 import { loginMarketplaceDemoUser } from "@/services/marketplace-demo-auth.service";
 
 function ValidateLoginContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { authenticated, isLoading, refreshSession } = useAuth();
   const hasStartedRef = useRef(false);
@@ -86,7 +86,7 @@ function ValidateLoginContent() {
     };
 
     void finishLogin();
-  }, [authenticated, crossAppReturnUrl, isLoading, refreshSession, router, sessionCode]);
+  }, [authenticated, crossAppReturnUrl, isLoading, refreshSession, sessionCode]);
 
   const visibleError = error ?? missingCodeError;
 
@@ -99,7 +99,7 @@ function ValidateLoginContent() {
             <p className="mt-3 text-sm text-[#b42318]">{visibleError}</p>
             <button
               type="button"
-              onClick={() => router.replace("/auth/login")}
+              onClick={() => restartLogin()}
               className="mt-6 rounded-xl bg-[#1f6a58] px-5 py-2.5 text-sm font-bold text-white"
             >
               Return to login

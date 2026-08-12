@@ -1,6 +1,13 @@
 export { AuthProvider } from "./AuthProvider";
 export { RequireAuthenticated } from "./RequireAuthenticated";
-export { startLogin } from "./login";
+export { buildLoginUrl, checkLogin, startLogin } from "./login";
+export type {
+  AuthLoginCheckOptions,
+  AuthLoginIdentityProvider,
+  AuthLoginModule,
+  AuthLoginOptions,
+} from "./login";
+export { restartLogin } from "./restart-login";
 export { completeLogin, getSession, logoutWebAuth } from "./session";
 export { useAuth } from "./useAuth";
 export {

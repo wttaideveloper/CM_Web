@@ -3,6 +3,7 @@ export type AuthClientConfig = {
   completeLoginEndpoint?: string;
   sessionEndpoint?: string;
   logoutEndpoint?: string;
+  restartLoginEndpoint?: string;
   frontendOrigin?: string | (() => string);
   callbackPath?: string;
   unauthenticatedRedirectPath?: string;
@@ -17,6 +18,7 @@ const DEFAULT_AUTH_CLIENT_CONFIG: ResolvedAuthClientConfig = {
   completeLoginEndpoint: "/api/v1/auth/complete-login",
   sessionEndpoint: "/api/v1/auth/session",
   logoutEndpoint: "/api/v1/auth/logout",
+  restartLoginEndpoint: "/api/v1/auth/restart-login",
   callbackPath: "/auth/validate",
   unauthenticatedRedirectPath: "/auth/login",
 };
