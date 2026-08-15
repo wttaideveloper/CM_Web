@@ -1,0 +1,9 @@
+"use client";
+
+import type { WorkflowFormVersion, WorkflowFormVersionSummary } from "@ihp/workflow-runtime";
+import { formatWorkspaceDate, WorkspaceCard, WorkspaceError, WorkspaceSkeleton } from "./WorkspacePrimitives";
+
+/** Displays read-only published form snapshots and their immutable definition. */
+export function FormVersions({ versions, selectedVersion, detail, isLoading, error, detailIsLoading, detailError, onSelect, onRetry, onRetryDetail }: { versions: WorkflowFormVersionSummary[]; selectedVersion: number | null; detail: WorkflowFormVersion | null; isLoading: boolean; error: unknown; detailIsLoading: boolean; detailError: unknown; onSelect: (version: number) => void; onRetry: () => void; onRetryDetail: () => void }) {
+  return <WorkspaceCard title="Version history">{isLoading ? <WorkspaceSkeleton rows={2} /> : error ? <WorkspaceError error={error} onRetry={onRetry} /> : versions.length === 0 ? <p className="text-sm text-[#52736a]">No published versions are available.</p> : <div className="space-y-2">{versions.map((version) => <button key={version.id} type="button" onClick={() => onSelect(version.version)} className={`w-full rounded-xl border p-3 text-left text-sm ${selectedVersion === version.version ? "border-[#1f6a58] bg-[#eef8f2]" : "border-[#e1ebe6]"}`}><strong>Version {version.version}</strong><span className="mt-1 block text-xs text-[#52736a]">Published {formatWorkspaceDate(version.publishedAt)} · {version.fieldCount} fields</span></button>)}{detailIsLoading ? <p role="status" className="text-sm text-[#52736a]">Loading selected version…</p> : detailError ? <WorkspaceError error={detailError} onRetry={onRetryDetail} /> : detail ? <pre className="max-h-52 overflow-auto rounded-xl bg-[#f4f8f6] p-3 text-xs">{JSON.stringify(detail.definition, null, 2)}</pre> : null}</div>}</WorkspaceCard>;
+}

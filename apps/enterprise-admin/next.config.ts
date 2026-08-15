@@ -24,6 +24,8 @@ const nextConfig: NextConfig = {
     "@ihp/services",
     "@ihp/shared",
     "@ihp/ui",
+    "@ihp/workflow-admin",
+    "@ihp/workflow-runtime",
   ],
   async rewrites() {
     const fallback = [];
@@ -50,6 +52,10 @@ const nextConfig: NextConfig = {
         {
           source: "/api/v1/workflows/:path*",
           destination: `${workflowApiBaseUrl}/api/v1/workflows/:path*`,
+        },
+        {
+          source: "/api/v1/media/:path*",
+          destination: `${workflowApiBaseUrl}/api/v1/media/:path*`,
         },
       );
     }
