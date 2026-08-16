@@ -1,5 +1,6 @@
 export { FormsWorkspace } from "./FormsWorkspace";
 export { ResponsesWorkspace } from "./ResponsesWorkspace";
+export { WorkflowAdminProvider } from "./WorkflowAdminProvider";
 export { WorkflowAdminWorkspace } from "./WorkflowAdminWorkspace";
 export { WorkflowsWorkspace } from "./WorkflowsWorkspace";
 export { ApiDebugPanel } from "./components/ApiDebugPanel";
