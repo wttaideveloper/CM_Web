@@ -29,6 +29,10 @@ function ValidateLoginContent() {
     !isLoading && !authenticated && (!sessionCode || hasCompletedSessionCode)
       ? "The login link is missing its session code. Please start the login again."
       : null;
+  const enterpriseAdminOriginError =
+    authenticated && !crossAppReturnUrl && !getEnterpriseAdminAppOrigin()
+      ? "Enterprise Admin origin is not configured."
+      : null;
 
   useEffect(() => {
     if (process.env.NODE_ENV !== "development") {
@@ -97,7 +101,6 @@ function ValidateLoginContent() {
       } else {
         const enterpriseAdminOrigin = getEnterpriseAdminAppOrigin();
         if (!enterpriseAdminOrigin) {
-          setError("Enterprise Admin origin is not configured.");
           return;
         }
 
@@ -116,7 +119,7 @@ function ValidateLoginContent() {
     sessionCode,
   ]);
 
-  const visibleError = error ?? callbackError ?? missingCodeError;
+  const visibleError = error ?? callbackError ?? missingCodeError ?? enterpriseAdminOriginError;
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-white px-6 text-[#06201c]">
