@@ -1,6 +1,11 @@
 const SHELL_ORIGIN_ENV = "NEXT_PUBLIC_SHELL_ORIGIN";
 const ENTERPRISE_ADMIN_ORIGIN_ENV = "NEXT_PUBLIC_ENTERPRISE_ADMIN_ORIGIN";
 const PLATFORM_ADMIN_ORIGIN_ENV = "NEXT_PUBLIC_PLATFORM_ADMIN_ORIGIN";
+const platformAdminSafeReturnPaths = new Set([
+  "/",
+  "/form-builder-new",
+  "/workflow-builder-new",
+]);
 
 function normalizeOrigin(value: string | undefined) {
   if (!value?.trim()) {
@@ -71,7 +76,7 @@ export function getSafePlatformAdminReturnUrl(value: string | null | undefined) 
       url.origin !== platformAdminOrigin ||
       url.username ||
       url.password ||
-      url.pathname !== "/"
+      !platformAdminSafeReturnPaths.has(url.pathname)
     ) {
       return null;
     }

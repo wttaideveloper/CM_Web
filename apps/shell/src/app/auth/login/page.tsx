@@ -17,8 +17,6 @@ function LoginPageContent() {
   const searchParams = useSearchParams();
   const { authenticated, isLoading } = useAuth();
   const [loginType, setLoginType] = useState<"super-admin" | "admin">("super-admin");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const enterpriseAdminReturnUrl = getSafeEnterpriseAdminReturnUrl(
@@ -28,9 +26,10 @@ function LoginPageContent() {
     searchParams.get("return_to"),
   );
   const crossAppReturnUrl = enterpriseAdminReturnUrl ?? platformAdminReturnUrl;
+  const isSuperAdmin = loginType === "super-admin";
 
   useEffect(() => {
-    if (isLoading || !authenticated) {
+    if (isLoading || !authenticated || isSuperAdmin) {
       return;
     }
 
@@ -45,19 +44,15 @@ function LoginPageContent() {
         new URL("/admin/dashboard", enterpriseAdminOrigin).toString(),
       );
     }
-  }, [authenticated, crossAppReturnUrl, isLoading]);
+  }, [authenticated, crossAppReturnUrl, isLoading, isSuperAdmin]);
 
-  const isSuperAdmin = loginType === "super-admin";
   const subtitle = isSuperAdmin
     ? "Sign in to the Super Admin portal"
     : "Sign in to your Enterprise Owner portal";
   const buttonLabel = isSuperAdmin
     ? "Sign In as Super Admin"
     : "Sign In as Enterprise Owner";
-  const trimmedEmail = email.trim().toLowerCase();
-  const canSubmit = isSuperAdmin
-    ? Boolean(trimmedEmail) && Boolean(password) && !isSubmitting
-    : !isSubmitting && !isLoading;
+  const canSubmit = !isSubmitting && (isSuperAdmin || !isLoading);
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -71,22 +66,19 @@ function LoginPageContent() {
 
     try {
       if (isSuperAdmin) {
-        const demoCredentialsError = "Please enter correct demo credentials.";
-
-        if (
-          trimmedEmail !== "superwis@gmail.com" ||
-          password !== "superpass"
-        ) {
-          setLoginError(demoCredentialsError);
-          return;
-        }
-
         const platformAdminOrigin = getPlatformAdminAppOrigin();
         if (!platformAdminOrigin) {
           throw new Error("Platform Admin origin is not configured.");
         }
 
-        window.location.assign(new URL("/dashboard", platformAdminOrigin).toString());
+        const platformBuilderReturnUrl = new URL(
+          "/form-builder-new",
+          platformAdminOrigin,
+        ).toString();
+        startLogin({
+          callbackPath: buildAuthCallbackPath(platformBuilderReturnUrl),
+          fresh: true,
+        });
         return;
       }
 
@@ -189,8 +181,6 @@ function LoginPageContent() {
                   type="button"
                   onClick={() => {
                     setLoginType("super-admin");
-                    setEmail("");
-                    setPassword("");
                     setLoginError(null);
                   }}
                   className={`rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition ${
@@ -223,8 +213,6 @@ function LoginPageContent() {
                   type="button"
                   onClick={() => {
                     setLoginType("admin");
-                    setEmail("");
-                    setPassword("");
                     setLoginError(null);
                   }}
                   className={`rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition ${
@@ -282,65 +270,9 @@ function LoginPageContent() {
 
             <form onSubmit={handleSubmit} className="mt-6 space-y-3.5">
               {isSuperAdmin ? (
-                <>
-                  <label className="block">
-                    <span className="text-[12px] font-bold text-[#051915]">Email Address</span>
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(event) => {
-                        setEmail(event.target.value);
-                        setLoginError(null);
-                      }}
-                      placeholder="admin@invigoratehealth.com"
-                      className="mt-1.5 h-10 w-full rounded-[13px] border border-[#c9ddd7] bg-[#f1f7f4] px-3.5 text-[14px] text-[#173b34] outline-none transition placeholder:text-[#8aa19a] focus:border-[#226b58] focus:ring-4 focus:ring-[#226b58]/10"
-                    />
-                  </label>
-
-                  <label className="block">
-                    <span className="flex items-center justify-between gap-4">
-                      <span className="text-[12px] font-bold text-[#051915]">Password</span>
-                      <a href="#" className="text-[12px] font-semibold text-[#0b5b4e]">
-                        Forgot?
-                      </a>
-                    </span>
-                    <span className="relative mt-2 block">
-                      <input
-                        type="password"
-                        value={password}
-                        onChange={(event) => {
-                          setPassword(event.target.value);
-                          setLoginError(null);
-                        }}
-                        placeholder="Enter your password"
-                        className="h-10 w-full rounded-[13px] border border-[#c9ddd7] bg-[#f1f7f4] px-3.5 pr-10 text-[14px] text-[#173b34] outline-none transition placeholder:text-[#8aa19a] focus:border-[#226b58] focus:ring-4 focus:ring-[#226b58]/10"
-                      />
-                      <svg
-                        aria-hidden="true"
-                        className="absolute right-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#6b8b83]"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
-                      >
-                        <rect
-                          x="5"
-                          y="10"
-                          width="14"
-                          height="10"
-                          rx="2"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                        />
-                        <path
-                          d="M8 10V7a4 4 0 0 1 8 0v3"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                    </span>
-                  </label>
-                </>
+                <p className="rounded-[13px] border border-[#c9ddd7] bg-[#f1f7f4] px-4 py-3 text-[13px] leading-5 text-[#55746b]">
+                  Continue to the secure Keycloak sign-in page.
+                </p>
               ) : (
                 <p className="rounded-[13px] border border-[#c9ddd7] bg-[#f1f7f4] px-4 py-3 text-[13px] leading-5 text-[#55746b]">
                   Continue to the secure Invigorate Health sign-in page.

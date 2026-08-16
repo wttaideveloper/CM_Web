@@ -12,6 +12,8 @@ export const platformNavigationGroups: readonly PlatformNavigationGroup[] = [
     items: [
       { label: "Approval Queue", href: "/approval-queue", icon: "queue", badge: "4" },
       { label: "Form Builder", href: "/onboarding-forms", icon: "forms" },
+      { label: "Form Builder New", href: "/form-builder-new", icon: "forms" },
+      { label: "Workflow Builder New", href: "/workflow-builder-new", icon: "forms" },
       { label: "Enterprise Types", href: "/enterprise-types", icon: "building" },
       { label: "Categories", href: "/categories", icon: "tag" },
       { label: "Sub-Admins", href: "/sub-admins", icon: "settings" },
