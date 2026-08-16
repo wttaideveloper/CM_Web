@@ -1,4 +1,4 @@
-export { CHAT_API_BASE_URL, CHAT_SOCKET_URL } from "./config";
+export { CHAT_API_BASE_URL, CHAT_GATEWAY_MODE, CHAT_SOCKET_URL } from "./config";
 export {
   clearChatTokenSession,
   getChatAccessToken,

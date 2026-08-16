@@ -1,9 +1,12 @@
-import { CHAT_API_BASE_URL } from "./config";
+import { CHAT_API_BASE_URL, CHAT_GATEWAY_MODE } from "./config";
 import { getChatAccessToken } from "./chat-token";
 
 function buildHeaders(initHeaders?: HeadersInit, includeJsonContentType = true, token?: string) {
   const headers = new Headers(initHeaders);
-  headers.set("Authorization", `Bearer ${token}`);
+
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
 
   if (includeJsonContentType && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -17,7 +20,7 @@ export async function chatRequestResponse(
   init?: RequestInit,
   includeJsonContentType = true,
 ): Promise<Response> {
-  const token = await getChatAccessToken();
+  const token = CHAT_GATEWAY_MODE ? undefined : await getChatAccessToken();
   const includeContentType =
     includeJsonContentType && !(init?.body instanceof FormData) && !(init?.body instanceof Blob);
   const headers = buildHeaders(init?.headers, includeContentType, token);
@@ -29,6 +32,7 @@ export async function chatRequestResponse(
   return fetch(`${CHAT_API_BASE_URL}${path}`, {
     ...init,
     cache: "no-store",
+    credentials: CHAT_GATEWAY_MODE ? "include" : undefined,
     headers,
   });
 }
