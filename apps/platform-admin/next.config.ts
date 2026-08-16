@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const authApiBaseUrl =
-  process.env.AUTH_API_BASE_URL ?? "https://p6wvqog202.execute-api.us-east-1.amazonaws.com";
+  process.env.AUTH_API_BASE_URL ?? "https://admin.apis.invigor8.app";
 const platformApiBaseUrl =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://chat.wisdomtooth.tech/api/v1";
 

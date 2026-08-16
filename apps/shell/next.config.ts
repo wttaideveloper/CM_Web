@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const authApiBaseUrl = process.env.AUTH_API_BASE_URL;
-const resolvedAuthApiBaseUrl = authApiBaseUrl ?? "https://p6wvqog202.execute-api.us-east-1.amazonaws.com";
+const resolvedAuthApiBaseUrl = authApiBaseUrl ?? "https://admin.apis.invigor8.app";
 
 if (process.env.NODE_ENV === "development") {
   console.log("[AUTH PROXY DEBUG] AUTH_API_BASE_URL:", authApiBaseUrl ?? "(unset; using default)");
