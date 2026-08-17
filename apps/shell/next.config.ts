@@ -39,18 +39,22 @@ const nextConfig: NextConfig = {
     "@ihp/ui",
   ],
   async rewrites() {
-    return {
-      fallback: [
-        {
-          source: "/api/v1/auth/:path*",
-          destination: `${resolvedAuthApiBaseUrl}/api/v1/auth/:path*`,
-        },
-        {
-          source: "/api/v1/tenant/:path*",
-          destination: `${resolvedAuthApiBaseUrl}/api/v1/tenant/:path*`,
-        },
-      ],
-    };
+    const fallback = [
+      {
+        source: "/api/v1/auth/:path*",
+        destination: `${resolvedAuthApiBaseUrl}/api/v1/auth/:path*`,
+      },
+      {
+        source: "/api/v1/tenant/:path*",
+        destination: `${resolvedAuthApiBaseUrl}/api/v1/tenant/:path*`,
+      },
+      {
+        source: "/chat-api/:path*",
+        destination: "https://chat.wisdomtooth.tech/api/v1/:path*",
+      },
+    ];
+
+    return { fallback };
   },
 };
 
