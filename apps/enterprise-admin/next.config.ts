@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const authApiBaseUrl = process.env.AUTH_API_BASE_URL;
+const chatApiBaseUrl = process.env.CHAT_API_BASE_URL;
+const eventsApiBaseUrl = process.env.EVENTS_API_BASE_URL;
 const workflowApiBaseUrl = process.env.WORKFLOW_API_BASE_URL;
 
 const nextConfig: NextConfig = {
@@ -42,6 +44,19 @@ const nextConfig: NextConfig = {
         },
       );
     }
+    if (chatApiBaseUrl) {
+      fallback.push(
+        {
+          source: "/api/v1/search/enterprises",
+          destination: `${chatApiBaseUrl}/search/enterprises`,
+        },
+        {
+          source: "/api/v1/locations/:path*",
+          destination: `${chatApiBaseUrl}/locations/:path*`,
+        },
+      );
+    }
+
 
     if (workflowApiBaseUrl) {
       fallback.push(
@@ -59,6 +74,19 @@ const nextConfig: NextConfig = {
         },
       );
     }
+    if (eventsApiBaseUrl) {
+      fallback.push(
+        {
+          source: "/api/v1/events",
+          destination: `${eventsApiBaseUrl}/api/v1/events/`,
+        },
+        {
+          source: "/api/v1/events/:path*",
+          destination: `${eventsApiBaseUrl}/api/v1/events/:path*`,
+        },
+      );
+    }
+
 
     return { fallback };
   },

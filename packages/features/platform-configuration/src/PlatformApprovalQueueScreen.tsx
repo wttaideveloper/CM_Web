@@ -1,383 +1,93 @@
 "use client";
 
-import { useState } from "react";
+import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import EventApprovalReviewPanel from "./EventApprovalReview";
+import { EnterpriseDisplayName } from "./EventOwnershipNames";
+import { approveEvent, getEventApprovalReview } from "./event-approval.service";
+import { isRecord, type EventApprovalReview } from "./event-approval-review.types";
 
-type ApplicationStatus = "Pending" | "Info Needed" | "Approved" | "Rejected";
-type FilterTab = "Pending" | "Info Requested" | "Approved" | "Rejected";
+type Status = "pending_approval" | "approved";
+type Item = Pick<EventApprovalReview, "id" | "enterprise_id" | "enterprise_name" | "title" | "category" | "start_date" | "end_date" | "venue" | "status">;
+type List = { items: Item[]; pagination: { total: number; page: number; page_size: number; total_pages: number } };
 
-type ApplicationItem = {
-  id: string;
-  name: string;
-  owner: string;
-  email: string;
-  type: "Enterprise" | "Individual";
-  category: string;
-  submitted: string;
-  status: ApplicationStatus;
-  docs: string[];
-};
-
-const tabs: FilterTab[] = ["Pending", "Info Requested", "Approved", "Rejected"];
-
-const applications: ApplicationItem[] = [
-  {
-    id: "APP-001",
-    name: "Sunrise Family Clinic",
-    owner: "Dr. Sarah Chen",
-    email: "sarah@sunriseclinic.com",
-    type: "Enterprise",
-    category: "Healthcare",
-    submitted: "Jun 15, 2026",
-    status: "Pending",
-    docs: ["Registration Cert", "Medical License", "GST Certificate"],
-  },
-  {
-    id: "APP-002",
-    name: "Dr. Alex Turner",
-    owner: "Dr. Alex Turner",
-    email: "alex@turner-physio.com",
-    type: "Individual",
-    category: "Physiotherapy",
-    submitted: "Jun 14, 2026",
-    status: "Pending",
-    docs: ["Professional License", "ID Proof"],
-  },
-  {
-    id: "APP-003",
-    name: "MindFlow Center",
-    owner: "Jordan Lee",
-    email: "jordan@mindflow.com",
-    type: "Enterprise",
-    category: "Mental Health",
-    submitted: "Jun 13, 2026",
-    status: "Info Needed",
-    docs: ["Business Registration", "Practice License"],
-  },
-];
-
-function QueueIcon() {
-  return (
-    <svg aria-hidden="true" className="h-7 w-7" viewBox="0 0 24 24" fill="none">
-      <path d="M5 7h14M5 12h14M5 17h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      <circle cx="8" cy="7" r="1.25" fill="currentColor" />
-      <circle cx="14" cy="12" r="1.25" fill="currentColor" />
-      <circle cx="10" cy="17" r="1.25" fill="currentColor" />
-    </svg>
-  );
+async function getEvents(status: Status, page: number, search: string): Promise<List> {
+  const parameters = new URLSearchParams({ status, page: String(page), page_size: "20" });
+  if (search) parameters.set("search", search);
+  const response = await fetch("/api/v1/events/?" + parameters.toString(), { credentials: "include" });
+  if (!response.ok) throw new Error();
+  const value = await response.json();
+  if (!isRecord(value) || !Array.isArray(value.items) || !isRecord(value.pagination) || typeof value.pagination.total !== "number" || typeof value.pagination.page !== "number" || typeof value.pagination.page_size !== "number" || typeof value.pagination.total_pages !== "number" || !value.items.every((item) => isRecord(item) && typeof item.id === "string" && typeof item.enterprise_id === "string" && typeof item.title === "string" && typeof item.category === "string" && item.status === status)) throw new Error();
+  return value as List;
 }
 
-function SearchIcon() {
-  return (
-    <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none">
-      <circle cx="11" cy="11" r="6" stroke="currentColor" strokeWidth="2" />
-      <path d="m20 20-3.5-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
+function date(value: string | null | undefined): string {
+  const match = value && /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  return match ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone: "UTC" }).format(new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])))) : "Not provided";
 }
 
-function FilterIcon() {
-  return (
-    <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M4 6h16M7 12h10M10 18h4"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function statusClass(status: ApplicationStatus) {
-  if (status === "Pending") {
-    return "bg-[#fff7e5] text-[#b7791f]";
-  }
-
-  if (status === "Info Needed") {
-    return "bg-[#eef4ff] text-[#2563eb]";
-  }
-
-  if (status === "Approved") {
-    return "bg-[#e8f6ee] text-[#16825b]";
-  }
-
-  return "bg-[#fff1f0] text-[#b42318]";
-}
-
-function matchesTab(status: ApplicationStatus, tab: FilterTab) {
-  if (tab === "Info Requested") {
-    return status === "Info Needed";
-  }
-
-  return status === tab;
-}
-
+/** Displays backend-authoritative pending and currently approved Event collections. */
 export default function PlatformApprovalQueueScreen() {
-  const [activeTab, setActiveTab] = useState<FilterTab>("Pending");
-  const [query, setQuery] = useState("");
+  const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30_000 } } }));
+  return <QueryClientProvider client={client}><Queue /></QueryClientProvider>;
+}
+
+function Queue() {
+  const client = useQueryClient();
+  const [status, setStatus] = useState<Status>("pending_approval");
+  const [input, setInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [pages, setPages] = useState<Record<Status, number>>({ pending_approval: 1, approved: 1 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
-  const normalizedQuery = query.trim().toLowerCase();
-  const filteredApplications = applications.filter((application) => {
-    const matchesStatus = matchesTab(application.status, activeTab);
-    const matchesSearch =
-      !normalizedQuery ||
-      application.name.toLowerCase().includes(normalizedQuery) ||
-      application.email.toLowerCase().includes(normalizedQuery) ||
-      application.category.toLowerCase().includes(normalizedQuery);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { setSearch(input.trim()); setPages({ pending_approval: 1, approved: 1 }); }, 300);
+    return () => window.clearTimeout(timer);
+  }, [input]);
 
-    return matchesStatus && matchesSearch;
+  const pending = useQuery({ queryKey: ["platform", "event-approval-list", "pending_approval", pages.pending_approval, search], queryFn: () => getEvents("pending_approval", pages.pending_approval, search) });
+  const approved = useQuery({ queryKey: ["platform", "event-approval-list", "approved", pages.approved, search], queryFn: () => getEvents("approved", pages.approved, search) });
+  const active = status === "pending_approval" ? pending : approved;
+  const list = active.data;
+  const label = status === "pending_approval" ? "Pending Approval" : "Approved";
+  const reviewQuery = useQuery({
+    queryKey: ["platform", "event-approval-detail", selectedId],
+    queryFn: () => getEventApprovalReview(selectedId ?? ""),
+    enabled: Boolean(selectedId),
   });
 
-  const selectedApplication =
-    filteredApplications.find((application) => application.id === selectedId) ?? null;
+  const approval = useMutation({
+    mutationFn: approveEvent,
+    onSuccess: async (_, eventId) => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["platform", "event-approval-list", "pending_approval"] }),
+        client.invalidateQueries({ queryKey: ["platform", "event-approval-list", "approved"] }),
+        client.invalidateQueries({ queryKey: ["platform", "event-approval-detail", eventId] }),
+      ]);
+      setSelectedId(null);
+      setSuccess("Event approved successfully.");
+    },
+  });
 
-  return (
-    <div className="w-full min-w-0 overflow-x-hidden">
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">
-            {"SUPER ADMIN \u00b7 APPROVALS"}
-          </p>
-          <h2 className="mt-1 text-2xl font-bold text-[#06201c]">Approval Queue</h2>
-          <p className="mt-1.5 max-w-2xl text-sm text-[#52736a]">
-            Review and approve new enterprise and individual registrations before they go live
-          </p>
-        </div>
+  const switchStatus = (next: Status) => { setStatus(next); setSelectedId(null); setSuccess(null); };
+  const emptyTitle = status === "pending_approval" ? "No events awaiting approval" : "No approved events";
+  const emptyText = status === "pending_approval" ? "Submitted events will appear here when they need review." : "Events approved and awaiting publication will appear here.";
 
-        <span className="inline-flex h-9 items-center rounded-full bg-[#fff7e5] px-3.5 text-sm font-bold text-[#b7791f]">
-          3 Pending
-        </span>
-      </div>
-
-      <div className="flex flex-wrap gap-1.5 rounded-2xl border border-[#e1ebe6] bg-white p-1 shadow-sm">
-        {tabs.map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => setActiveTab(tab)}
-            className={`inline-flex h-8 items-center rounded-xl px-3 text-sm font-bold transition ${
-              activeTab === tab
-                ? "bg-[#e9f4ee] text-[#0f5d4a]"
-                : "text-[#52736a] hover:bg-[#f4faf7]"
-            }`}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
-
-      <div className="mt-4 flex flex-col gap-2.5 sm:flex-row sm:items-center">
-        <label className="relative block w-full sm:max-w-[320px]">
-          <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#7f9d94]">
-            <SearchIcon />
-          </span>
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search applications..."
-            className="h-9 w-full rounded-2xl border border-[#d7e5df] bg-white pl-10 pr-3.5 text-sm text-[#06201c] outline-none transition placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
-          />
-        </label>
-
-        <button
-          type="button"
-          className="inline-flex h-9 items-center gap-2 rounded-full border border-[#d7e5df] bg-white px-3.5 text-sm font-semibold text-[#52736a] transition hover:bg-[#f4faf7]"
-        >
-          <FilterIcon />
-          Filter by Type
-        </button>
-      </div>
-
-      <div className="mt-4 grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <section className="space-y-3">
-          {filteredApplications.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-[#d7e5df] bg-white px-5 py-12 text-center shadow-sm">
-              <p className="text-sm font-bold text-[#06201c]">No applications found.</p>
-              <p className="mt-1.5 text-sm text-[#52736a]">Try adjusting the search or tab filter.</p>
-            </div>
-          ) : (
-            filteredApplications.map((application) => {
-              const isSelected = application.id === selectedApplication?.id;
-
-              return (
-                <article
-                  key={application.id}
-                  className={`rounded-[18px] border bg-white p-3.5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${
-                    isSelected
-                      ? "border-[#1f6a58] shadow-[0_10px_24px_rgba(31,106,88,0.12)]"
-                      : "border-[#e1ebe6]"
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setSelectedId(application.id)}
-                    className="w-full text-left"
-                  >
-                    <div className="flex items-start justify-between gap-2.5">
-                      <div className="flex min-w-0 items-start gap-2.5">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#e8f6ee] text-xs font-bold text-[#1f6a58]">
-                          {application.type === "Enterprise" ? "EN" : "IN"}
-                        </div>
-                        <div className="min-w-0">
-                          <h3 className="truncate text-sm font-bold text-[#06201c]">{application.name}</h3>
-                          <p className="mt-0.5 text-xs text-[#52736a]">{application.owner}</p>
-                          <p className="text-xs text-[#52736a]">{application.email}</p>
-                        </div>
-                      </div>
-
-                      <span
-                        className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${statusClass(application.status)}`}
-                      >
-                        {application.status === "Info Needed" ? "Info Requested" : application.status}
-                      </span>
-                    </div>
-
-                    <div className="mt-2.5 flex flex-wrap gap-1.5">
-                      {[application.type, application.category, application.submitted].map((chip) => (
-                        <span
-                          key={chip}
-                          className="rounded-full bg-[#f4faf7] px-2.5 py-1 text-[11px] font-semibold text-[#52736a]"
-                        >
-                          {chip}
-                        </span>
-                      ))}
-                    </div>
-
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {application.docs.map((doc) => (
-                        <span
-                          key={doc}
-                          className="rounded-full border border-[#e1ebe6] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#52736a]"
-                        >
-                          {doc}
-                        </span>
-                      ))}
-                    </div>
-                  </button>
-
-                  <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[#edf3f0] pt-2.5">
-                    <button
-                      type="button"
-                      className="rounded-full bg-[#1f6a58] px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-[#185746]"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-full bg-[#fff7e5] px-3 py-1.5 text-[11px] font-bold text-[#b7791f] transition hover:bg-[#fdf0cf]"
-                    >
-                      Request Info
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-full bg-[#fff1f0] px-3 py-1.5 text-[11px] font-bold text-[#b42318] transition hover:bg-[#fde5e2]"
-                    >
-                      Reject
-                    </button>
-                  </div>
-                </article>
-              );
-            })
-          )}
-        </section>
-
-        <aside className="rounded-[18px] border border-[#e1ebe6] bg-white p-4 shadow-sm xl:sticky xl:top-[92px] xl:h-fit xl:max-w-[380px]">
-          {!selectedApplication ? (
-            <div className="flex min-h-[300px] flex-col items-center justify-center px-6 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#e8f6ee] text-[#1f6a58]">
-                <QueueIcon />
-              </div>
-              <h3 className="mt-4 text-lg font-bold text-[#06201c]">Select an Application</h3>
-              <p className="mt-1.5 max-w-sm text-sm text-[#52736a]">
-                Click any application to review its details and submitted documents
-              </p>
-            </div>
-          ) : (
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#7f9d94]">
-                {selectedApplication.id}
-              </p>
-              <h3 className="mt-1.5 text-lg font-bold text-[#06201c]">{selectedApplication.name}</h3>
-
-              <div className="mt-3 divide-y divide-[#edf3f0] rounded-xl border border-[#edf3f0] bg-[#f9fcfa] px-3">
-                {[
-                  ["Type", selectedApplication.type],
-                  ["Category", selectedApplication.category],
-                  ["Owner", selectedApplication.owner],
-                  ["Email", selectedApplication.email],
-                  ["Submitted", selectedApplication.submitted],
-                  [
-                    "Status",
-                    selectedApplication.status === "Info Needed"
-                      ? "Info Requested"
-                      : selectedApplication.status,
-                  ],
-                ].map(([label, value]) => (
-                  <div key={label} className="flex items-center justify-between gap-3 py-2">
-                    <span className="text-xs font-semibold text-[#52736a]">{label}</span>
-                    <span className="text-right text-xs font-bold text-[#06201c]">{value}</span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-4">
-                <h4 className="text-sm font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
-                  Submitted Documents
-                </h4>
-                <div className="mt-2 space-y-1.5">
-                  {selectedApplication.docs.map((doc) => (
-                    <div
-                      key={doc}
-                      className="flex items-center justify-between rounded-xl border border-[#edf3f0] px-3 py-2"
-                    >
-                      <span className="text-xs font-medium text-[#06201c]">{doc}</span>
-                      <button
-                        type="button"
-                        className="rounded-full border border-[#d7e5df] px-2.5 py-1 text-[10px] font-bold text-[#1f6a58] transition hover:bg-[#f4faf7]"
-                      >
-                        View
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="mt-4 space-y-1.5">
-                <button
-                  type="button"
-                  className="w-full rounded-full bg-[#1f6a58] px-3 py-2 text-xs font-bold text-white transition hover:bg-[#185746]"
-                >
-                  Approve & Activate
-                </button>
-                <button
-                  type="button"
-                  className="w-full rounded-full bg-[#fff7e5] px-3 py-2 text-xs font-bold text-[#b7791f] transition hover:bg-[#fdf0cf]"
-                >
-                  Request More Info
-                </button>
-                <button
-                  type="button"
-                  className="w-full rounded-full bg-[#fff1f0] px-3 py-2 text-xs font-bold text-[#b42318] transition hover:bg-[#fde5e2]"
-                >
-                  Reject Application
-                </button>
-              </div>
-
-              <div className="mt-4">
-                <label className="block">
-                  <span className="text-xs font-bold text-[#06201c]">Admin Notes</span>
-                  <textarea
-                    placeholder="Add notes or reason for decision..."
-                    className="mt-2 h-20 w-full resize-none rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-3 py-2 text-xs text-[#06201c] outline-none transition placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
-                  />
-                </label>
-              </div>
-            </div>
-          )}
-        </aside>
-      </div>
+  return <section className="mx-auto w-full max-w-6xl">
+    <p className="text-xs font-bold uppercase tracking-[.18em] text-[#7f9d94]">SUPER ADMIN · APPROVALS</p>
+    <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h1 className="text-3xl font-bold text-[#06201c]">Approval Queue</h1><p className="mt-2 text-sm text-[#52736a]">{status === "pending_approval" ? "Review events submitted by enterprises for approval." : "Events approved and awaiting publication."}</p></div>{list ? <p className="font-bold text-[#1f6a58]">{list.pagination.total} {status === "pending_approval" ? "Pending" : "Approved"}</p> : null}</div>
+    <div role="tablist" aria-label="Event approval status" className="mt-7 flex gap-2 border-b border-[#d7e5df]"><button id="pending-tab" type="button" role="tab" aria-selected={status === "pending_approval"} aria-controls="approval-events" onClick={() => switchStatus("pending_approval")} onKeyDown={(event) => { if (event.key === "ArrowRight") switchStatus("approved"); }} className={status === "pending_approval" ? "border-b-2 border-[#1f6a58] px-4 py-3 font-bold text-[#1f6a58]" : "px-4 py-3 font-bold text-[#52736a]"}>Pending Approval</button><button id="approved-tab" type="button" role="tab" aria-selected={status === "approved"} aria-controls="approval-events" onClick={() => switchStatus("approved")} onKeyDown={(event) => { if (event.key === "ArrowLeft") switchStatus("pending_approval"); }} className={status === "approved" ? "border-b-2 border-[#1f6a58] px-4 py-3 font-bold text-[#1f6a58]" : "px-4 py-3 font-bold text-[#52736a]"}>Approved</button></div>
+    <label className="mt-5 block max-w-md"><span className="sr-only">Search events</span><input type="search" value={input} onChange={(event) => setInput(event.target.value)} placeholder="Search events..." className="h-11 w-full rounded-xl border border-[#d7e5df] px-4" /></label>
+    {success ? <p role="status" className="mt-5 rounded-xl bg-[#e9f4ee] p-4 font-semibold text-[#1f6a58]">{success}</p> : null}
+    <div id="approval-events" role="tabpanel" aria-labelledby={status === "pending_approval" ? "pending-tab" : "approved-tab"}>
+      {active.isLoading ? <div role="status" className="mt-6 space-y-3">{[1, 2, 3].map((number) => <div key={number} className="h-32 animate-pulse rounded-2xl bg-[#edf3f0]" />)}</div> : null}
+      {active.isError ? <div className="mt-6 rounded-2xl bg-white p-6 shadow-sm"><p role="alert" className="font-semibold text-[#b42318]">Unable to load {label.toLowerCase()} events.</p><button type="button" onClick={() => active.refetch()} className="mt-3 font-semibold text-[#1f6a58] underline">Retry</button></div> : null}
+      {!active.isLoading && !active.isError && list?.items.length === 0 ? <div className="mt-6 rounded-2xl bg-white p-10 text-center shadow-sm"><p className="font-bold">{emptyTitle}</p><p className="mt-2 text-sm text-[#52736a]">{emptyText}</p></div> : null}
+      {!active.isLoading && !active.isError && list?.items.length ? <><div className="mt-6 space-y-4">{list.items.map((event) => <article key={event.id} className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm"><div className="flex flex-col gap-4 sm:flex-row sm:justify-between"><div><div className="flex flex-wrap gap-2"><h2 className="text-lg font-bold">{event.title}</h2><span className={status === "approved" ? "rounded-full bg-[#e9f4ee] px-3 py-1 text-xs font-bold text-[#1f6a58]" : "rounded-full bg-[#fff4d6] px-3 py-1 text-xs font-bold text-[#8a5a00]"}>{label}</span></div><dl className="mt-3 grid gap-2 text-sm text-[#52736a] sm:grid-cols-2"><div><dt className="font-semibold text-[#06201c]">Enterprise</dt><dd><EnterpriseDisplayName enterpriseId={event.enterprise_id} eventEnterpriseName={event.enterprise_name} /></dd></div><div><dt className="font-semibold text-[#06201c]">Category</dt><dd>{event.category}</dd></div><div><dt className="font-semibold text-[#06201c]">Schedule</dt><dd>{date(event.start_date)} — {date(event.end_date)}</dd></div><div><dt className="font-semibold text-[#06201c]">Location</dt><dd>{event.venue?.name || event.venue?.city || "Not provided"}</dd></div></dl></div><button type="button" onClick={() => setSelectedId(event.id)} className="h-10 rounded-full border border-[#1f6a58] px-4 text-sm font-bold text-[#1f6a58]">Review</button></div></article>)}</div>
+        {selectedId ? <section aria-labelledby="event-review-title" className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.14em] text-[#7f9d94]">READ-ONLY EVENT REVIEW</p><h2 id="event-review-title" className="mt-1 text-xl font-bold text-[#06201c]">{reviewQuery.data?.title ?? "Event review"}</h2></div><button type="button" onClick={() => setSelectedId(null)} className="font-semibold text-[#1f6a58] underline">Close</button></div>{reviewQuery.isLoading ? <div role="status" className="mt-5 space-y-3"><div className="h-8 animate-pulse rounded bg-[#edf3f0]" /><div className="h-24 animate-pulse rounded bg-[#edf3f0]" /></div> : reviewQuery.isError ? <div className="mt-5"><p role="alert" className="font-semibold text-[#b42318]">Unable to load event details.</p><button type="button" onClick={() => void reviewQuery.refetch()} className="mt-3 font-semibold text-[#1f6a58] underline">Retry</button></div> : reviewQuery.data ? <EventApprovalReviewPanel event={reviewQuery.data} approvalPending={approval.isPending} approvalError={approval.isError ? "Unable to approve this Event. Please try again." : null} onApprove={() => approval.mutate(reviewQuery.data.id)} /> : null}</section> : null}
+        {list.pagination.total_pages > 1 ? <nav aria-label={label + " Event pages"} className="mt-6 flex justify-between"><button type="button" disabled={list.pagination.page <= 1} onClick={() => setPages((current) => ({ ...current, [status]: current[status] - 1 }))}>Previous</button><span>Page {list.pagination.page} of {list.pagination.total_pages}</span><button type="button" disabled={list.pagination.page >= list.pagination.total_pages} onClick={() => setPages((current) => ({ ...current, [status]: current[status] + 1 }))}>Next</button></nav> : null}
+      </> : null}
     </div>
-  );
+  </section>;
 }

@@ -34,6 +34,14 @@ const nextConfig: NextConfig = {
         source: "/api/v1/services/:path*",
         destination: `${platformApiBaseUrl}/services/:path*`,
       },
+      {
+        source: "/api/v1/events",
+        destination: `${platformApiBaseUrl}/events/`,
+      },
+      {
+        source: "/api/v1/events/:path*",
+        destination: `${platformApiBaseUrl}/events/:path*`,
+      },
     ];
 
     if (authApiBaseUrl) {

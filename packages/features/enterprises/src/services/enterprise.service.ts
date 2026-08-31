@@ -1,4 +1,3 @@
-import { API_BASE_URL } from "@ihp/shared";
 import type {
   CreateEnterprisePayload,
   EnterpriseDto,
@@ -13,8 +12,10 @@ type EnterpriseApiError = Error & {
   details?: unknown;
 };
 
+const ENTERPRISES_API_BASE = "/api/v1";
+
 function getEnterprisesApiBase(): string {
-  return `${API_BASE_URL}/enterprises/`;
+  return `${ENTERPRISES_API_BASE}/enterprises/`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -169,6 +170,7 @@ export async function getEnterprises(): Promise<EnterpriseDto[]> {
   const response = await fetch(getEnterprisesApiBase(), {
     method: "GET",
     cache: "no-store",
+    credentials: "include",
   });
 
   if (!response.ok) {
@@ -192,6 +194,7 @@ export async function getEnterpriseById(id: string): Promise<EnterpriseDto> {
   const response = await fetch(`${getEnterprisesApiBase()}${id}`, {
     method: "GET",
     cache: "no-store",
+    credentials: "include",
   });
 
   if (!response.ok) {
@@ -203,9 +206,10 @@ export async function getEnterpriseById(id: string): Promise<EnterpriseDto> {
 
 export async function searchEnterprisesByTenantId(tenantId: string): Promise<EnterpriseDto[]> {
   const searchParams = new URLSearchParams({ tenant_id: tenantId });
-  const response = await fetch(`${API_BASE_URL}/search/enterprises?${searchParams.toString()}`, {
+  const response = await fetch(`${ENTERPRISES_API_BASE}/search/enterprises?${searchParams.toString()}`, {
     method: "GET",
     cache: "no-store",
+    credentials: "include",
   });
 
   if (!response.ok) {
@@ -226,6 +230,7 @@ export async function createEnterprise(
 ): Promise<EnterpriseDto> {
   const response = await fetch(getEnterprisesApiBase(), {
     method: "POST",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
     },
@@ -245,6 +250,7 @@ export async function updateEnterprise(
 ): Promise<EnterpriseDto> {
   const response = await fetch(`${getEnterprisesApiBase()}${id}`, {
     method: "PUT",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
     },

@@ -1,106 +1,25 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useCurrentEnterprise, useTenant } from "@ihp/enterprise-runtime";
+import Link from "next/link";
 
-type EventStatus = "Upcoming" | "Scheduled" | "Completed" | "Draft";
+import EventActionsMenu from "./EventActionsMenu";
+import EventTemplatesDialog from "./EventTemplatesDialog";
+import { PRODUCT_EVENT_STATUSES, getEventStatusBadgeClass, getEventStatusLabel } from "./event-status";
+import { listEvents, type Event } from "./events.service";
+
 type SortOption = "newest" | "oldest" | "az" | "status";
-
-type EventItem = {
-  title: string;
-  type: string;
-  status: EventStatus;
-  date: string;
-  location: string;
-  registrations: number;
-  description: string;
-  createdAt: string;
-};
-
-const statusChips: Array<"All" | EventStatus | "Scheduled/In Progress"> = [
-  "All",
-  "Upcoming",
-  "Scheduled/In Progress",
-  "Completed",
-  "Draft",
-];
-
-const events: EventItem[] = [
-  {
-    title: "Wellness Weekend Camp",
-    date: "Jun 18, 2026",
-    location: "Chennai Wellness Center",
-    status: "Upcoming",
-    registrations: 84,
-    type: "Community Event",
-    description:
-      "A weekend wellness camp with movement sessions, nutrition talks, and guided health screenings.",
-    createdAt: "2026-06-18T09:00:00Z",
-  },
-  {
-    title: "Nutrition Awareness Meet",
-    date: "Jun 24, 2026",
-    location: "Anna Nagar, Chennai",
-    status: "Scheduled",
-    registrations: 42,
-    type: "Awareness Session",
-    description: "A small group session focused on practical nutrition habits for families.",
-    createdAt: "2026-06-24T09:00:00Z",
-  },
-  {
-    title: "Fitness Checkup Drive",
-    date: "Jun 30, 2026",
-    location: "T. Nagar, Chennai",
-    status: "Completed",
-    registrations: 128,
-    type: "Health Drive",
-    description: "A public checkup drive with basic fitness assessments and wellness guidance.",
-    createdAt: "2026-06-30T09:00:00Z",
-  },
-  {
-    title: "Corporate Wellness Day",
-    date: "Jul 08, 2026",
-    location: "Remote / Online",
-    status: "Draft",
-    registrations: 0,
-    type: "Corporate Event",
-    description: "A planned corporate wellness event for partner teams and employees.",
-    createdAt: "2026-07-08T09:00:00Z",
-  },
-];
-
-function statusPillClass(status: string) {
-  if (status === "Upcoming" || status === "Open") {
-    return "bg-[#e8f6ee] text-[#16825b]";
-  }
-
-  if (status === "Scheduled" || status === "In Progress") {
-    return "bg-[#eef4ff] text-[#2563eb]";
-  }
-
-  if (status === "Completed") {
-    return "bg-[#f1f4f3] text-[#6b7f79]";
-  }
-
-  return "bg-[#fff7e5] text-[#b7791f]";
-}
+const statusFilters = ["all", ...PRODUCT_EVENT_STATUSES] as const;
+type StatusFilter = (typeof statusFilters)[number];
+const EVENTS_PAGE_SIZE = 20;
 
 function isValidDate(value: string) {
   return Number.isFinite(Date.parse(value));
 }
 
-function matchesStatusFilter(status: EventStatus, filter: string) {
-  if (filter === "All") {
-    return true;
-  }
-
-  if (filter === "Scheduled/In Progress") {
-    return status === "Scheduled";
-  }
-
-  return status === filter;
-}
-
-function sortEvents(items: EventItem[], sort: SortOption) {
+function sortEvents(items: Event[], sort: SortOption) {
   return [...items].sort((left, right) => {
     if (sort === "az") {
       return left.title.localeCompare(right.title);
@@ -110,13 +29,13 @@ function sortEvents(items: EventItem[], sort: SortOption) {
       return left.status.localeCompare(right.status) || left.title.localeCompare(right.title);
     }
 
-    const leftValid = isValidDate(left.createdAt);
-    const rightValid = isValidDate(right.createdAt);
+    const leftValid = isValidDate(left.created_at);
+    const rightValid = isValidDate(right.created_at);
 
     if (leftValid && rightValid) {
       return sort === "oldest"
-        ? Date.parse(left.createdAt) - Date.parse(right.createdAt)
-        : Date.parse(right.createdAt) - Date.parse(left.createdAt);
+        ? Date.parse(left.created_at) - Date.parse(right.created_at)
+        : Date.parse(right.created_at) - Date.parse(left.created_at);
     }
 
     if (leftValid) {
@@ -131,64 +50,97 @@ function sortEvents(items: EventItem[], sort: SortOption) {
   });
 }
 
-function EventCard({ event }: { event: EventItem }) {
+function formatEventDate(value: string): string {
+  if (!isValidDate(value)) {
+    return "—";
+  }
+
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value));
+}
+
+function EventCard({ event, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess }: { event: Event; onStatusSuccess: () => void; onDuplicateSuccess: () => void; onDeleteSuccess: () => void }) {
   return (
     <article className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-[#c6ddd3] hover:shadow-md">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
-            {event.type}
+            {event.category || "—"}
           </p>
           <h3 className="mt-2 text-lg font-bold text-[#06201c]">{event.title}</h3>
         </div>
-        <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${statusPillClass(event.status)}`}>
-          {event.status}
-        </span>
+        <div className="flex shrink-0 items-center gap-2"><span className={`rounded-full px-3 py-1 text-[11px] font-bold ${getEventStatusBadgeClass(event.status)}`}>{getEventStatusLabel(event.status)}</span><EventActionsMenu event={event} onStatusSuccess={onStatusSuccess} onDuplicateSuccess={onDuplicateSuccess} onDeleteSuccess={onDeleteSuccess} /></div>
       </div>
 
-      <p className="mt-4 text-sm leading-6 text-[#52736a]">{event.description}</p>
+      <p className="mt-4 text-sm leading-6 text-[#52736a]">{event.description || "—"}</p>
 
       <div className="mt-4 grid gap-3 border-t border-[#edf3f0] pt-4 text-sm sm:grid-cols-2">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Date</p>
-          <p className="mt-1 font-semibold text-[#06201c]">{event.date}</p>
+          <p className="mt-1 font-semibold text-[#06201c]">{formatEventDate(event.start_date)}</p>
         </div>
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Location</p>
-          <p className="mt-1 font-semibold text-[#06201c]">{event.location}</p>
+          <p className="mt-1 font-semibold text-[#06201c]">{event.delivery_mode || "—"}</p>
         </div>
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Registrations</p>
-          <p className="mt-1 font-semibold text-[#06201c]">{event.registrations}</p>
+          <p className="mt-1 font-semibold text-[#06201c]">—</p>
         </div>
       </div>
 
-      <div className="mt-4 border-t border-[#edf3f0] pt-4 text-sm font-semibold text-[#1f6a58]">
+      <Link href={`/admin/events/${event.id}`} className="mt-4 block border-t border-[#edf3f0] pt-4 text-sm font-semibold text-[#1f6a58]">
         View event details
-      </div>
+      </Link>
     </article>
   );
 }
 
+/** Renders the authenticated enterprise's paginated Events list. */
 export default function EnterpriseEventsScreen() {
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [sort, setSort] = useState<SortOption>("newest");
-  const [statusFilter, setStatusFilter] = useState<(typeof statusChips)[number]>("All");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [page, setPage] = useState(1);
+  const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
+  const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
+
+  const { tenantId } = useTenant();
+  const { enterpriseId } = useCurrentEnterprise();
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedQuery(query.trim());
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(timeoutId);
+  }, [query]);
+
+  const eventsQuery = useQuery({
+    queryKey: ["events", "list", tenantId, enterpriseId, debouncedQuery, statusFilter, page, EVENTS_PAGE_SIZE],
+    queryFn: () =>
+      listEvents({
+        tenant_id: tenantId ?? undefined,
+        enterprise_id: enterpriseId ?? undefined,
+        search: debouncedQuery || undefined,
+        status: statusFilter === "all" ? undefined : statusFilter,
+        page,
+        page_size: EVENTS_PAGE_SIZE,
+      }),
+    enabled: Boolean(tenantId),
+    staleTime: 30_000,
+    retry: 1,
+    placeholderData: keepPreviousData,
+  });
 
   const visibleEvents = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+    return sortEvents(eventsQuery.data?.items ?? [], sort);
+  }, [eventsQuery.data?.items, sort]);
+  const pagination = eventsQuery.data?.pagination;
 
-    const filtered = events.filter((event) => {
-      const searchable = [event.title, event.location, event.status, event.type]
-        .join(" ")
-        .toLowerCase();
-
-      const matchesQuery = !normalizedQuery || searchable.includes(normalizedQuery);
-      return matchesQuery && matchesStatusFilter(event.status, statusFilter);
-    });
-
-    return sortEvents(filtered, sort);
-  }, [query, sort, statusFilter]);
+  const showStatusFeedback = () => setStatusFeedback("Event status updated.");
+  const showDuplicateFeedback = () => setStatusFeedback("Event duplicated.");
+  const showDeleteFeedback = () => setStatusFeedback("Event deleted.");
 
   return (
     <div className="w-full">
@@ -203,12 +155,37 @@ export default function EnterpriseEventsScreen() {
           </p>
         </div>
 
-        <button
-          type="button"
-          className="inline-flex h-12 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm transition hover:bg-[#195646]"
-        >
-          + Create Event
-        </button>
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() => setIsTemplatesOpen(true)}
+            className="inline-flex h-12 items-center justify-center rounded-full border border-[#b9d6cb] bg-white px-5 text-sm font-bold text-[#1f6a58] shadow-sm transition hover:bg-[#f4faf7]"
+          >
+            Templates
+          </button>
+          {enterpriseId ? (
+            <Link
+              href="/admin/events/create"
+              className="inline-flex h-12 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm transition hover:bg-[#195646]"
+            >
+              + Create Event
+            </Link>
+          ) : (
+            <div>
+              <button
+                type="button"
+                disabled
+                aria-describedby="events-create-enterprise-note"
+                className="inline-flex h-12 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm opacity-60 disabled:cursor-not-allowed"
+              >
+                + Create Event
+              </button>
+              <p id="events-create-enterprise-note" className="mt-2 max-w-xs text-xs text-[#52736a]">
+                Creating an Event requires a linked Enterprise under the current backend contract.
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
       <section className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm">
@@ -221,7 +198,7 @@ export default function EnterpriseEventsScreen() {
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search by name, title, location, or status"
+              placeholder="Search by title, description, or category"
               className="mt-2 h-12 w-full rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
             />
           </label>
@@ -244,39 +221,76 @@ export default function EnterpriseEventsScreen() {
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
-          {statusChips.map((chip) => {
+          {statusFilters.map((chip) => {
             const active = statusFilter === chip;
 
             return (
               <button
                 key={chip}
                 type="button"
-                onClick={() => setStatusFilter(chip)}
+                onClick={() => {
+                  setStatusFilter(chip);
+                  setPage(1);
+                }}
                 className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
                   active
                     ? "bg-[#e8f6ee] text-[#1f6a58]"
                     : "border border-[#d7e5df] bg-white text-[#52736a] hover:bg-[#f4faf7]"
                 }`}
               >
-                {chip}
+                {chip === "all" ? "All" : getEventStatusLabel(chip)}
               </button>
             );
           })}
         </div>
       </section>
 
-      {visibleEvents.length === 0 ? (
+      {statusFeedback ? <p role="status" className="mt-4 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">{statusFeedback}</p> : null}
+      {isTemplatesOpen ? <EventTemplatesDialog events={eventsQuery.data?.items ?? []} onClose={() => setIsTemplatesOpen(false)} /> : null}
+
+      {eventsQuery.isLoading ? (
+        <section className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
+          <p className="text-base font-bold text-[#06201c]">Loading events...</p>
+        </section>
+      ) : eventsQuery.isError ? (
+        <section className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
+          <p className="text-base font-bold text-[#06201c]">Unable to load events.</p>
+          <button
+            type="button"
+            onClick={() => void eventsQuery.refetch()}
+            className="mt-3 text-sm font-semibold text-[#1f6a58] underline"
+          >
+            Try again
+          </button>
+        </section>
+      ) : !pagination || visibleEvents.length === 0 ? (
         <section className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
           <p className="text-base font-bold text-[#06201c]">No events found.</p>
           <p className="mt-2 text-sm text-[#52736a]">Try a different search or filter.</p>
         </section>
       ) : (
-        <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-2">
-          {visibleEvents.map((event) => (
-            <EventCard key={event.title} event={event} />
-          ))}
-        </section>
+        <>
+          <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-2" aria-busy={eventsQuery.isFetching}>
+            {visibleEvents.map((event) => (
+              <EventCard key={event.id} event={event} onStatusSuccess={showStatusFeedback} onDuplicateSuccess={showDuplicateFeedback} onDeleteSuccess={showDeleteFeedback} />
+            ))}
+          </section>
+          <EventPagination
+            currentPage={pagination.page}
+            isChangingPage={eventsQuery.isPlaceholderData}
+            onNext={() => setPage((currentPage) => currentPage + 1)}
+            onPrevious={() => setPage((currentPage) => Math.max(1, currentPage - 1))}
+            totalPages={pagination.total_pages}
+          />
+        </>
       )}
     </div>
   );
+}
+
+/** Renders numeric-page navigation from the Events list response metadata. */
+function EventPagination({ currentPage, isChangingPage, onNext, onPrevious, totalPages }: { currentPage: number; isChangingPage: boolean; onNext: () => void; onPrevious: () => void; totalPages: number }) {
+  const hasPreviousPage = currentPage > 1;
+  const hasNextPage = currentPage < totalPages;
+  return <nav aria-label="Events pagination" className="mt-6 flex flex-col gap-3 rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"><p aria-live="polite" className="text-sm font-semibold text-[#52736a]">Page {currentPage} of {totalPages}</p><div className="flex gap-3"><button type="button" onClick={onPrevious} disabled={!hasPreviousPage || isChangingPage} className="h-10 rounded-full border border-[#d7e5df] px-4 text-sm font-semibold text-[#52736a] transition hover:bg-[#f4faf7] disabled:cursor-not-allowed disabled:opacity-50">Previous</button><button type="button" onClick={onNext} disabled={!hasNextPage || isChangingPage} className="h-10 rounded-full border border-[#1f6a58] bg-[#1f6a58] px-4 text-sm font-bold text-white transition hover:bg-[#195646] disabled:cursor-not-allowed disabled:opacity-50">Next</button></div></nav>;
 }

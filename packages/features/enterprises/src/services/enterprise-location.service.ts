@@ -1,9 +1,10 @@
-import { API_BASE_URL } from "@ihp/shared";
 import type {
   CreateEnterpriseLocationPayload,
   EnterpriseLocationDto,
   UpdateEnterpriseLocationPayload,
 } from "../types/location.types";
+
+const ENTERPRISES_API_BASE = "/api/v1";
 
 type EnterpriseLocationListResponse =
   | EnterpriseLocationDto[]
@@ -20,11 +21,11 @@ function isEnterpriseLocationListResponse(
 }
 
 function getEnterpriseLocationsBaseUrl(enterpriseId: string): string {
-  return `${API_BASE_URL}/enterprises/${enterpriseId}/locations`;
+  return `${ENTERPRISES_API_BASE}/enterprises/${enterpriseId}/locations`;
 }
 
 function getLocationBaseUrl(locationId: string): string {
-  return `${API_BASE_URL}/locations/${locationId}`;
+  return `${ENTERPRISES_API_BASE}/locations/${locationId}`;
 }
 
 export async function getEnterpriseLocations(
@@ -33,6 +34,7 @@ export async function getEnterpriseLocations(
   const response = await fetch(getEnterpriseLocationsBaseUrl(enterpriseId), {
     method: "GET",
     cache: "no-store",
+    credentials: "include",
   });
 
   if (!response.ok) {
@@ -60,6 +62,7 @@ export async function createEnterpriseLocation(
 ): Promise<EnterpriseLocationDto> {
   const response = await fetch(getEnterpriseLocationsBaseUrl(enterpriseId), {
     method: "POST",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
     },
@@ -79,6 +82,7 @@ export async function getLocationById(locationId: string): Promise<EnterpriseLoc
   const response = await fetch(getLocationBaseUrl(locationId), {
     method: "GET",
     cache: "no-store",
+    credentials: "include",
   });
 
   if (!response.ok) {
@@ -94,6 +98,7 @@ export async function updateLocation(
 ): Promise<EnterpriseLocationDto> {
   const response = await fetch(getLocationBaseUrl(locationId), {
     method: "PUT",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
     },
@@ -110,6 +115,7 @@ export async function updateLocation(
 export async function deleteLocation(locationId: string): Promise<void> {
   const response = await fetch(getLocationBaseUrl(locationId), {
     method: "DELETE",
+    credentials: "include",
   });
 
   if (!response.ok) {
