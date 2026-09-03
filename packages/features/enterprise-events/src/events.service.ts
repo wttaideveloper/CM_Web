@@ -2,7 +2,7 @@
 export interface Event {
   id: string;
   tenant_id: string;
-  enterprise_id: string;
+  enterprise_id: string | null;
   location_id: string | null;
   title: string;
   description: string;
@@ -15,7 +15,7 @@ export interface Event {
   end_date: string;
   time_zone: string;
   registration_cutoff: string;
-  primary_image: string;
+  primary_image: string | null;
   gallery_images: string[];
   videos: string[];
   documents: string[];
@@ -31,6 +31,8 @@ export interface Event {
   max_participants: string;
   registration_open_at: string;
   registration_close_at: string;
+  available_seats: number | null;
+  is_full: boolean | null;
   custom_fields: EventCustomField[];
   sessions: EventSessionRecord[];
   status: EventStatus;
@@ -38,6 +40,7 @@ export interface Event {
   created_at: string;
   updated_at: string;
   enterprise_name?: string | null;
+  last_admin_notes: string | null;
 }
 
 /** Pagination metadata returned with an Events list response. */
@@ -114,26 +117,49 @@ export interface EventOrder {
   created_at: string;
 }
 
+/** Exact optional fields accepted by both Event registration and order refund endpoints. */
+export interface EventRefundPayload {
+  reason?: string;
+  amount?: string;
+}
+
 /** Runtime-confirmed top-level orders response for one Event. */
 export type EventOrdersResponse = readonly EventOrder[];
 
 /** Persisted Event template returned by the backend-authoritative templates API. */
 export interface EventTemplate {
   id: string;
-  tenant_id: string | null;
-  enterprise_id: string | null;
+  tenant_id?: string | null;
+  enterprise_id?: string | null;
   name: string;
   template_data: Record<string, unknown>;
-  created_at: string;
+  created_at?: string | null;
 }
 
 /** Runtime-confirmed top-level template collection response. */
 export type EventTemplatesResponse = readonly EventTemplate[];
 
-/** Request contract for creating a reusable Event template. Scope is derived from the authenticated backend context. */
+/** Request contract for creating a reusable Event template with an optional resolved Enterprise owner. */
 export interface CreateEventTemplatePayload {
+  enterprise_id?: string;
   name: string;
   template_data: Record<string, unknown>;
+}
+
+/** Request contract for applying a reusable Event template with an optional resolved Enterprise owner. */
+export interface ApplyEventTemplatePayload {
+  enterprise_id?: string;
+}
+
+/** Request contract for changing supported Event template fields. Enterprise ownership is ignored by the backend. */
+export interface UpdateEventTemplatePayload {
+  name?: string | null;
+  template_data?: Record<string, unknown> | null;
+}
+
+/** Response returned after a successful Event template deletion. */
+export interface DeleteEventTemplateResponse {
+  message: string;
 }
 
 /** Swagger defines GET /feedback with an empty response schema; preserve it as unknown. */
@@ -171,6 +197,56 @@ export interface EventAttendanceReport {
   total_no_show: number;
   attendance_by_session?: unknown | null;
   participants: readonly EventAttendanceParticipant[];
+}
+
+/** Backend-supported status filters for the Event batch check-in preview. */
+export type EventBatchCheckInStatus = "confirmed" | "attended" | "cancelled" | "no_show";
+
+/** One backend-authoritative participant row eligible for review before a batch check-in. */
+export interface EventBatchCheckInPreviewItem {
+  registration_id: string;
+  participant_name: string;
+  participant_email: string;
+  status: EventBatchCheckInStatus;
+  qr_code: string | null;
+  session_id: string | null;
+  ticket_type_id: string | null;
+  checked_in_at: string | null;
+  checked_out_at: string | null;
+  can_check_in: boolean;
+  eligibility_reason: string;
+}
+
+/** The backend-authoritative collection returned by the Event batch check-in preview endpoint. */
+export type EventBatchCheckInPreviewResponse = readonly EventBatchCheckInPreviewItem[];
+
+/** One selected participant supplied to the Event batch check-in endpoint. */
+export interface EventBatchCheckInParticipantPayload {
+  registration_id?: string;
+  qr_code?: string;
+  session_id?: string;
+}
+
+/** Request body accepted by the Event batch check-in endpoint. */
+export interface BatchCheckInEventParticipantsPayload {
+  participants: readonly EventBatchCheckInParticipantPayload[];
+}
+
+/** One backend result returned for a participant in a batch check-in operation. */
+export interface EventBatchCheckInResult {
+  registration_id: string;
+  participant_name: string;
+  status: string;
+  checked_in_at: string | null;
+  message: string;
+}
+
+/** Summary returned by a batch check-in, including partial-success results. */
+export interface EventBatchCheckInResponse {
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: readonly EventBatchCheckInResult[];
 }
 
 /** The focused payload accepted by the manual Event check-in endpoint. */
@@ -509,16 +585,21 @@ function isEvent(value: unknown): value is Event {
     return false;
   }
 
-  const stringFields: Array<keyof Omit<Event, "location_id" | "venue" | "meeting_link" | "meeting_provider" | "tags" | "gallery_images" | "videos" | "documents" | "ticket_types" | "custom_fields" | "sessions" | "is_deleted">> = [
-    "id", "tenant_id", "enterprise_id", "title", "description", "category", "subcategory",
+  const stringFields: Array<keyof Omit<Event, "enterprise_id" | "location_id" | "venue" | "meeting_link" | "meeting_provider" | "primary_image" | "available_seats" | "is_full" | "last_admin_notes" | "tags" | "gallery_images" | "videos" | "documents" | "ticket_types" | "custom_fields" | "sessions" | "is_deleted">> = [
+    "id", "tenant_id", "title", "description", "category", "subcategory",
     "organiser_name", "organiser_contact", "start_date", "end_date", "time_zone", "registration_cutoff",
-    "primary_image", "delivery_mode", "price", "currency", "capacity",
+    "delivery_mode", "price", "currency", "capacity",
     "min_participants", "max_participants", "registration_open_at", "registration_close_at", "created_at", "updated_at",
   ];
   const stringArrayFields = ["tags", "gallery_images", "videos", "documents"];
 
   return (
     stringFields.every((field) => typeof value[field] === "string") &&
+    (value.enterprise_id === null || typeof value.enterprise_id === "string") &&
+    (value.primary_image === null || typeof value.primary_image === "string") &&
+    (value.available_seats === null || (typeof value.available_seats === "number" && Number.isFinite(value.available_seats))) &&
+    (value.is_full === null || typeof value.is_full === "boolean") &&
+    (value.last_admin_notes === null || typeof value.last_admin_notes === "string") &&
     stringArrayFields.every((field) => isStringArray(value[field])) &&
     (value.location_id === null || typeof value.location_id === "string") &&
     (value.meeting_link === null || typeof value.meeting_link === "string") &&
@@ -608,11 +689,15 @@ function parseEventOrdersResponse(value: unknown): EventOrdersResponse {
 function isEventTemplate(value: unknown): value is EventTemplate {
   return isRecord(value) &&
     typeof value.id === "string" &&
-    (value.tenant_id === null || typeof value.tenant_id === "string") &&
-    (value.enterprise_id === null || typeof value.enterprise_id === "string") &&
+    (value.tenant_id === undefined || value.tenant_id === null || typeof value.tenant_id === "string") &&
+    (value.enterprise_id === undefined || value.enterprise_id === null || typeof value.enterprise_id === "string") &&
     typeof value.name === "string" &&
     isRecord(value.template_data) &&
-    typeof value.created_at === "string";
+    (value.created_at === undefined || value.created_at === null || typeof value.created_at === "string");
+}
+
+function isDeleteEventTemplateResponse(value: unknown): value is DeleteEventTemplateResponse {
+  return isRecord(value) && typeof value.message === "string";
 }
 
 function parseEventTemplatesResponse(value: unknown): EventTemplatesResponse {
@@ -666,6 +751,50 @@ function parseEventAttendanceReport(value: unknown): EventAttendanceReport {
   }
   const attendanceBySession = "attendance_by_session" in value ? value.attendance_by_session ?? null : undefined;
   return { event_id: value.event_id, total_registered: value.total_registered, total_attended: value.total_attended, total_no_show: value.total_no_show, attendance_by_session: attendanceBySession, participants: value.participants };
+}
+
+function isEventBatchCheckInStatus(value: unknown): value is EventBatchCheckInStatus {
+  return value === "confirmed" || value === "attended" || value === "cancelled" || value === "no_show";
+}
+
+function isEventBatchCheckInPreviewItem(value: unknown): value is EventBatchCheckInPreviewItem {
+  return isRecord(value) &&
+    typeof value.registration_id === "string" &&
+    typeof value.participant_name === "string" &&
+    typeof value.participant_email === "string" &&
+    isEventBatchCheckInStatus(value.status) &&
+    (value.qr_code === null || typeof value.qr_code === "string") &&
+    (value.session_id === null || typeof value.session_id === "string") &&
+    (value.ticket_type_id === null || typeof value.ticket_type_id === "string") &&
+    (value.checked_in_at === null || typeof value.checked_in_at === "string") &&
+    (value.checked_out_at === null || typeof value.checked_out_at === "string") &&
+    typeof value.can_check_in === "boolean" &&
+    typeof value.eligibility_reason === "string";
+}
+
+function parseEventBatchCheckInPreviewResponse(value: unknown): EventBatchCheckInPreviewResponse {
+  if (!Array.isArray(value) || !value.every(isEventBatchCheckInPreviewItem)) {
+    throw new Error("Events API returned an invalid batch check-in preview response.");
+  }
+
+  return value;
+}
+
+function isEventBatchCheckInResult(value: unknown): value is EventBatchCheckInResult {
+  return isRecord(value) &&
+    typeof value.registration_id === "string" &&
+    typeof value.participant_name === "string" &&
+    typeof value.status === "string" &&
+    (value.checked_in_at === null || typeof value.checked_in_at === "string") &&
+    typeof value.message === "string";
+}
+
+function isEventBatchCheckInResponse(value: unknown): value is EventBatchCheckInResponse {
+  return isRecord(value) &&
+    typeof value.total === "number" && Number.isFinite(value.total) &&
+    typeof value.succeeded === "number" && Number.isFinite(value.succeeded) &&
+    typeof value.failed === "number" && Number.isFinite(value.failed) &&
+    Array.isArray(value.results) && value.results.every(isEventBatchCheckInResult);
 }
 
 function parseEventWaitlistResponse(value: unknown): EventWaitlistResponse {
@@ -861,6 +990,29 @@ export async function getEventOrders(eventId: string): Promise<EventOrdersRespon
   return parseEventOrdersResponse((await response.json()) as unknown);
 }
 
+/** Requests a financial refund for one Event registration. */
+export async function refundEventRegistration(eventId: string, registrationId: string, payload: EventRefundPayload): Promise<void> {
+  await postEventRefund(`${eventsBasePath}${encodeURIComponent(eventId)}/registrations/${encodeURIComponent(registrationId)}/refund`, payload, "refund this registration");
+}
+
+/** Requests a financial refund for one Event order. */
+export async function refundEventOrder(eventId: string, orderId: string, payload: EventRefundPayload): Promise<void> {
+  await postEventRefund(`${eventsBasePath}${encodeURIComponent(eventId)}/orders/${encodeURIComponent(orderId)}/refund`, payload, "refund this order");
+}
+
+async function postEventRefund(path: string, payload: EventRefundPayload, operation: string): Promise<void> {
+  const response = await fetch(path, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw await createEventsApiError(response, operation);
+  }
+}
+
 /** Lists reusable Event templates through the authenticated same-origin Events proxy. */
 export async function getEventTemplates(): Promise<EventTemplatesResponse> {
   const response = await fetch(`${eventsBasePath}templates`, {
@@ -874,7 +1026,7 @@ export async function getEventTemplates(): Promise<EventTemplatesResponse> {
   return parseEventTemplatesResponse((await response.json()) as unknown);
 }
 
-/** Creates an Event template while allowing the backend to derive tenant and enterprise scope. */
+/** Creates an Event template while retaining the currently resolved Enterprise owner when present. */
 export async function createEventTemplate(
   payload: CreateEventTemplatePayload,
 ): Promise<EventTemplate> {
@@ -897,13 +1049,59 @@ export async function createEventTemplate(
   return value;
 }
 
+/** Updates supported Event template fields through the authenticated same-origin proxy. */
+export async function updateEventTemplate(
+  templateId: string,
+  payload: UpdateEventTemplatePayload,
+): Promise<EventTemplate> {
+  const response = await fetch(`${eventsBasePath}templates/${encodeURIComponent(templateId)}`, {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw await createEventsApiError(response, "update this event template");
+  }
+
+  const value = (await response.json()) as unknown;
+  if (!isEventTemplate(value)) {
+    throw new Error("Events API returned an invalid updated template response.");
+  }
+
+  return value;
+}
+
+/** Deletes one Event template through the authenticated same-origin proxy. */
+export async function deleteEventTemplate(templateId: string): Promise<DeleteEventTemplateResponse> {
+  const response = await fetch(`${eventsBasePath}templates/${encodeURIComponent(templateId)}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw await createEventsApiError(response, "delete this event template");
+  }
+
+  const value = (await response.json()) as unknown;
+  if (!isDeleteEventTemplateResponse(value)) {
+    throw new Error("Events API returned an invalid template deletion response.");
+  }
+
+  return value;
+}
+
 /** Applies a template and returns the independently editable draft Event created by the backend. */
-export async function applyEventTemplate(templateId: string): Promise<Event> {
+export async function applyEventTemplate(
+  templateId: string,
+  payload: ApplyEventTemplatePayload,
+): Promise<Event> {
   const response = await fetch(`${eventsBasePath}templates/${encodeURIComponent(templateId)}/apply`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
@@ -925,6 +1123,56 @@ export async function getEventAttendance(eventId: string): Promise<EventAttendan
   });
   if (!response.ok) throw await createEventsApiError(response, "load attendance");
   return parseEventAttendanceReport((await response.json()) as unknown);
+}
+
+/** Loads selectable Event participants using the backend-authoritative batch check-in eligibility rules. */
+export async function getEventBatchCheckInPreview(
+  eventId: string,
+  status?: EventBatchCheckInStatus,
+): Promise<EventBatchCheckInPreviewResponse> {
+  const searchParams = new URLSearchParams();
+  if (status) {
+    searchParams.set("status", status);
+  }
+
+  const query = searchParams.size > 0 ? `?${searchParams.toString()}` : "";
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/batch-check-in${query}`, {
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw await createEventsApiError(response, "load batch check-in participants");
+  }
+
+  return parseEventBatchCheckInPreviewResponse((await response.json()) as unknown);
+}
+
+/** Checks in a non-empty set of Event participants in one backend-authoritative operation. */
+export async function batchCheckInEventParticipants(
+  eventId: string,
+  payload: BatchCheckInEventParticipantsPayload,
+): Promise<EventBatchCheckInResponse> {
+  if (payload.participants.length === 0) {
+    throw new Error("Select at least one eligible participant before batch check-in.");
+  }
+
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/batch-check-in`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw await createEventsApiError(response, "check in the selected participants");
+  }
+
+  const value = (await response.json()) as unknown;
+  if (!isEventBatchCheckInResponse(value)) {
+    throw new Error("Events API returned an invalid batch check-in response.");
+  }
+
+  return value;
 }
 
 /** Checks in one confirmed Event participant using their backend registration identifier. */
@@ -1230,6 +1478,25 @@ export async function updateEventStatus(eventId: string, payload: EventStatusUpd
   const value = (await response.json()) as unknown;
   if (!isEvent(value)) {
     throw new Error("Events API returned an invalid updated event status response.");
+  }
+
+  return value;
+}
+
+/** Resubmits an Event after a Super Admin rejection or request for revision. */
+export async function resubmitEvent(eventId: string): Promise<Event> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/resubmit`, {
+    method: "POST",
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw await createEventsApiError(response, "resubmit this event for approval");
+  }
+
+  const value = (await response.json()) as unknown;
+  if (!isEvent(value)) {
+    throw new Error("Events API returned an invalid resubmitted event response.");
   }
 
   return value;

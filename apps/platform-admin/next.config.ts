@@ -4,12 +4,16 @@ const authApiBaseUrl =
   process.env.AUTH_API_BASE_URL ?? "https://admin.apis.invigor8.app";
 const workflowApiBaseUrl = process.env.WORKFLOW_API_BASE_URL;
 const platformApiBaseUrl =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://chat.wisdomtooth.tech/api/v1";
+  process.env.CHAT_API_BASE_URL ?? "https://chat.wisdomtooth.tech/api/v1";
 
 const nextConfig: NextConfig = {
   transpilePackages: ["@ihp/attributes", "@ihp/auth", "@ihp/enterprises", "@ihp/onboarding-forms", "@ihp/platform-attributes", "@ihp/platform-configuration", "@ihp/platform-dashboard", "@ihp/platform-enterprises", "@ihp/platform-layout", "@ihp/platform-marketplace-static", "@ihp/products", "@ihp/services", "@ihp/shared", "@ihp/ui", "@ihp/workflow-admin", "@ihp/workflow-runtime"],
   async rewrites() {
     const fallback = [
+      {
+        source: "/api/v1/onboarding-forms",
+        destination: `${platformApiBaseUrl}/onboarding-forms/`,
+      },
       {
         source: "/api/v1/onboarding-forms/:path*",
         destination: `${platformApiBaseUrl}/onboarding-forms/:path*`,
@@ -17,6 +21,10 @@ const nextConfig: NextConfig = {
       {
         source: "/api/v1/attributes/:path*",
         destination: `${platformApiBaseUrl}/attributes/:path*`,
+      },
+      {
+        source: "/api/v1/enterprises",
+        destination: `${platformApiBaseUrl}/enterprises/`,
       },
       {
         source: "/api/v1/enterprises/:path*",
@@ -27,8 +35,16 @@ const nextConfig: NextConfig = {
         destination: `${platformApiBaseUrl}/locations/:path*`,
       },
       {
+        source: "/api/v1/products",
+        destination: `${platformApiBaseUrl}/products/`,
+      },
+      {
         source: "/api/v1/products/:path*",
         destination: `${platformApiBaseUrl}/products/:path*`,
+      },
+      {
+        source: "/api/v1/services",
+        destination: `${platformApiBaseUrl}/services/`,
       },
       {
         source: "/api/v1/services/:path*",
@@ -41,6 +57,14 @@ const nextConfig: NextConfig = {
       {
         source: "/api/v1/events/:path*",
         destination: `${platformApiBaseUrl}/events/:path*`,
+      },
+      {
+        source: "/api/v1/admin/events/:path*",
+        destination: `${platformApiBaseUrl}/admin/events/:path*`,
+      },
+      {
+        source: "/api/v1/admin/event-audits/:path*",
+        destination: `${platformApiBaseUrl}/admin/event-audits/:path*`,
       },
     ];
 

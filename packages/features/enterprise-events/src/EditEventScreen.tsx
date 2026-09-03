@@ -45,7 +45,7 @@ function EditEventError({ error, retry }: { error: Error; retry: () => void }) {
   return <section className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm"><p className="text-base font-bold text-[#06201c]">{message}</p><div className="mt-4 flex justify-center gap-4"><Link href="/admin/events" className="text-sm font-semibold text-[#1f6a58] underline">Back to Events</Link><button type="button" onClick={retry} className="text-sm font-semibold text-[#1f6a58] underline">Try again</button></div></section>;
 }
 
-/** Explains why direct navigation cannot bypass the draft-only edit policy. */
+/** Explains why direct navigation cannot bypass the Event edit lifecycle policy. */
 function EditEventUnavailable({ eventId }: { eventId: string }) {
-  return <section className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm"><p className="text-base font-bold text-[#06201c]">Only draft events can be edited.</p><Link href={`/admin/events/${eventId}`} className="mt-4 inline-block text-sm font-semibold text-[#1f6a58] underline">Back to Event</Link></section>;
+  return <section className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm"><p className="text-base font-bold text-[#06201c]">This Event cannot be edited in its current lifecycle state.</p><Link href={`/admin/events/${eventId}`} className="mt-4 inline-block text-sm font-semibold text-[#1f6a58] underline">Back to Event</Link></section>;
 }

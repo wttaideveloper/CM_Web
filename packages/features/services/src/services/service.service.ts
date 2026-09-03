@@ -1,4 +1,3 @@
-import { API_BASE_URL } from "@ihp/shared";
 import type {
   CreateServicePayload,
   ServiceDto,
@@ -6,11 +5,13 @@ import type {
 } from "../types/service.types";
 
 type ServiceListResponse = ServiceDto[] | { items?: ServiceDto[] };
+const SERVICES_API_BASE = "/api/v1/services";
 
 export async function getServices(): Promise<ServiceDto[]> {
-  const response = await fetch(`${API_BASE_URL}/services/`, {
+  const response = await fetch(`${SERVICES_API_BASE}/`, {
     method: "GET",
     cache: "no-store",
+    credentials: "include",
   });
 
   if (!response.ok) {
@@ -31,9 +32,10 @@ export async function getServices(): Promise<ServiceDto[]> {
 }
 
 export async function getServiceById(id: string): Promise<ServiceDto> {
-  const response = await fetch(`${API_BASE_URL}/services/${id}`, {
+  const response = await fetch(`${SERVICES_API_BASE}/${id}`, {
     method: "GET",
     cache: "no-store",
+    credentials: "include",
   });
 
   if (!response.ok) {
@@ -44,8 +46,9 @@ export async function getServiceById(id: string): Promise<ServiceDto> {
 }
 
 export async function createService(payload: CreateServicePayload): Promise<ServiceDto> {
-  const response = await fetch(`${API_BASE_URL}/services/`, {
+  const response = await fetch(`${SERVICES_API_BASE}/`, {
     method: "POST",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
     },
@@ -63,8 +66,9 @@ export async function updateService(
   id: string,
   payload: UpdateServicePayload,
 ): Promise<ServiceDto> {
-  const response = await fetch(`${API_BASE_URL}/services/${id}`, {
+  const response = await fetch(`${SERVICES_API_BASE}/${id}`, {
     method: "PUT",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
     },

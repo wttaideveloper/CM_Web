@@ -37,7 +37,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const isCreateBlockedByEnterprise = mode === "create" && !enterpriseId;
   const saveMutation = useMutation({
     mutationFn: () => {
-      if (mode === "edit") { if (!initialEvent) throw new Error("The event could not be loaded."); if (!canEditEvent(initialEvent.status)) throw new Error("Only draft events can be edited."); return updateEvent(initialEvent.id, buildUpdateEventPayload(values, initialValues, locationId, initialLocationId)); }
+      if (mode === "edit") { if (!initialEvent) throw new Error("The event could not be loaded."); if (!canEditEvent(initialEvent.status)) throw new Error("This Event cannot be edited in its current lifecycle state."); return updateEvent(initialEvent.id, buildUpdateEventPayload(values, initialValues, locationId, initialLocationId)); }
       if (!tenantId || !enterpriseId || !locationId) throw new Error("A tenant, enterprise, and location are required.");
       return createEvent(buildCreateEventPayload(values, tenantId, enterpriseId, locationId));
     },

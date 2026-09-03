@@ -7,6 +7,8 @@ export const EVENT_STATUSES = [
   "cancelled",
   "completed",
   "suspended",
+  "rejected",
+  "needs_revision",
   "active",
   "inactive",
 ] as const;
@@ -23,6 +25,8 @@ export const PRODUCT_EVENT_STATUSES = [
   "cancelled",
   "completed",
   "suspended",
+  "rejected",
+  "needs_revision",
 ] as const;
 
 /** A product-facing Event lifecycle status. */
@@ -53,6 +57,8 @@ const statusLabels: Record<ProductEventStatus, string> = {
   cancelled: "Cancelled",
   completed: "Completed",
   suspended: "Suspended",
+  rejected: "Rejected",
+  needs_revision: "Needs revision",
 };
 
 const statusBadgeClasses: Record<ProductEventStatus, string> = {
@@ -63,6 +69,8 @@ const statusBadgeClasses: Record<ProductEventStatus, string> = {
   cancelled: "bg-[#fff1ef] text-[#b42318]",
   completed: "bg-[#f1f4f3] text-[#6b7f79]",
   suspended: "bg-[#fff1ef] text-[#b42318]",
+  rejected: "bg-[#fff1ef] text-[#b42318]",
+  needs_revision: "bg-[#fff7e5] text-[#b7791f]",
 };
 
 const submitForApprovalAction: EventStatusAction = {
@@ -170,7 +178,7 @@ export function getEventStatusActions(status: EventStatus): readonly EventStatus
 
 /** Returns whether the current product workflow permits Enterprise Admin editing. */
 export function canEditEvent(status: EventStatus): boolean {
-  return status === "draft";
+  return status === "draft" || status === "rejected" || status === "needs_revision";
 }
 
 /** Returns whether the current Enterprise Admin policy permits destructive deletion. */

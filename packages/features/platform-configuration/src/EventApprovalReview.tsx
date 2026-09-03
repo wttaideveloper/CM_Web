@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import EventApprovalDialog from "./EventApprovalDialog";
+import type { EventApprovalDecision } from "./event-approval.service";
 import type { EventApprovalReview, EventSession } from "./event-approval-review.types";
 import { EnterpriseDisplayName, TenantDisplayName } from "./EventOwnershipNames";
 
@@ -82,17 +83,17 @@ export default function EventApprovalReview({
   event,
   approvalPending,
   approvalError,
-  onApprove,
+  onDecision,
 }: {
   event: EventApprovalReview;
   approvalPending: boolean;
   approvalError: string | null;
-  onApprove: () => void;
+  onDecision: (action: EventApprovalDecision, reason?: string) => void;
 }) {
-  const [confirmationOpen, setConfirmationOpen] = useState(false);
+  const [decision, setDecision] = useState<EventApprovalDecision | null>(null);
   const approveButtonRef = useRef<HTMLButtonElement>(null);
   const closeConfirmation = () => {
-    setConfirmationOpen(false);
+    setDecision(null);
     window.setTimeout(() => approveButtonRef.current?.focus(), 0);
   };
   const basePrice = priceLabel(event.price, event.currency);
@@ -109,7 +110,7 @@ export default function EventApprovalReview({
     {hasMedia ? <ReviewSection title="Media"><div className="space-y-4">{hasText(event.primary_image) ? <div><p className="text-xs font-bold uppercase tracking-[.08em] text-[#7f9d94]">Primary image</p><img src={event.primary_image} alt={`${event.title} primary`} className="mt-2 max-h-72 max-w-full rounded-xl border border-[#e1ebe6] object-contain" /></div> : null}{event.gallery_images?.filter(hasText).length ? <div><p className="text-xs font-bold uppercase tracking-[.08em] text-[#7f9d94]">Gallery</p><div className="mt-2 grid gap-3 sm:grid-cols-2">{event.gallery_images.filter(hasText).map((image) => <img key={image} src={image} alt={`${event.title} gallery image`} className="max-h-60 w-full rounded-xl border border-[#e1ebe6] object-contain" />)}</div></div> : null}{event.videos?.filter(hasText).length ? <div><p className="text-xs font-bold uppercase tracking-[.08em] text-[#7f9d94]">Videos</p><ul className="mt-2 space-y-2">{event.videos.filter(hasText).map((video) => <li key={video}>{mediaUrl(video)}</li>)}</ul></div> : null}{event.documents?.filter(hasText).length ? <div><p className="text-xs font-bold uppercase tracking-[.08em] text-[#7f9d94]">Documents</p><ul className="mt-2 space-y-2">{event.documents.filter(hasText).map((document) => <li key={document}>{mediaUrl(document)}</li>)}</ul></div> : null}</div></ReviewSection> : null}
     {event.custom_fields?.length ? <ReviewSection title="Registration Configuration"><div className="space-y-3">{event.custom_fields.map((field, index) => <article key={`${field.label}-${index}`} className="rounded-xl bg-[#f4faf7] p-4"><p className="font-bold text-[#06201c]">{field.label}</p><p className="mt-1">Type: {enumLabel(field.type)}</p>{field.options.length ? <p className="mt-1">Options: {field.options.join(", ")}</p> : null}</article>)}</div></ReviewSection> : null}
     <ReviewSection title="Record Information"><DetailGrid rows={[{ label: "Current status", value: enumLabel(event.status) }, ...(hasText(event.created_at) ? [{ label: "Created", value: wallClockDateTime(event.created_at) }] : []), ...(hasText(event.updated_at) ? [{ label: "Last updated", value: wallClockDateTime(event.updated_at) }] : [])]} /></ReviewSection>
-    {event.status === "pending_approval" ? <section className="rounded-2xl border border-[#cde5db] bg-[#f4faf7] p-5"><h3 className="text-lg font-bold text-[#06201c]">Ready to approve this Event?</h3><p className="mt-2">Approving confirms this Event for publication. It does not publish the Event.</p><button ref={approveButtonRef} type="button" onClick={() => setConfirmationOpen(true)} disabled={approvalPending} className="mt-4 h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm hover:bg-[#175245] focus:outline-none focus:ring-2 focus:ring-[#1f6a58] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60">{approvalPending ? "Approving..." : "Approve Event"}</button></section> : null}
-    <EventApprovalDialog open={confirmationOpen} eventTitle={event.title} pending={approvalPending} error={approvalError} onCancel={closeConfirmation} onConfirm={onApprove} />
+    {event.status === "pending_approval" ? <section className="rounded-2xl border border-[#cde5db] bg-[#f4faf7] p-5"><h3 className="text-lg font-bold text-[#06201c]">Review this Event</h3><p className="mt-2">Approve it, request a revision, or reject it using the backend approval workflow.</p><div className="mt-4 flex flex-wrap gap-3"><button ref={approveButtonRef} type="button" onClick={() => setDecision("approve")} disabled={approvalPending} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60">Approve Event</button><button type="button" onClick={() => setDecision("request_changes")} disabled={approvalPending} className="h-11 rounded-full border border-[#b7791f] px-5 text-sm font-bold text-[#8a5a00] disabled:cursor-not-allowed disabled:opacity-60">Request Changes</button><button type="button" onClick={() => setDecision("reject")} disabled={approvalPending} className="h-11 rounded-full border border-[#b42318] px-5 text-sm font-bold text-[#b42318] disabled:cursor-not-allowed disabled:opacity-60">Reject Event</button></div></section> : null}
+    <EventApprovalDialog action={decision} eventTitle={event.title} pending={approvalPending} error={approvalError} onCancel={closeConfirmation} onConfirm={(reason) => { if (decision) onDecision(decision, reason); }} />
   </div>;
 }

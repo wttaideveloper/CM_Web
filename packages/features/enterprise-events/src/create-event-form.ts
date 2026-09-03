@@ -130,7 +130,7 @@ export function eventToFormValues(event: Event): CreateEventFormValues {
     venue_latitude: event.venue?.coordinates?.lat?.toString() ?? "", venue_longitude: event.venue?.coordinates?.lng?.toString() ?? "",
     meeting_link: event.meeting_link ?? "", meeting_provider: event.meeting_provider ?? "", price: event.price,
     currency: event.currency, ticket_types: event.ticket_types, capacity: event.capacity,
-    min_participants: event.min_participants, max_participants: event.max_participants, primary_image: event.primary_image,
+    min_participants: event.min_participants, max_participants: event.max_participants, primary_image: event.primary_image ?? "",
     gallery_images: event.gallery_images, videos: event.videos, documents: event.documents,
     custom_fields: event.custom_fields, sessions: event.sessions.map(({ session_date, title, speaker, start_time, end_time, location }) => ({ session_date: session_date ?? "", title, speaker: speaker ?? "", start_time: start_time ?? "", end_time: end_time ?? "", location: location ?? "" })),
   };

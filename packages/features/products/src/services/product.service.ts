@@ -1,7 +1,7 @@
-import { API_BASE_URL } from "@ihp/shared";
 import type { CreateProductPayload, ProductDto, UpdateProductPayload } from "../types/product.types";
 
 type ProductListResponse = ProductDto[] | { items?: ProductDto[] };
+const PRODUCTS_API_BASE = "/api/v1/products";
 
 function isProductArray(value: unknown): value is ProductDto[] {
   return Array.isArray(value);
@@ -12,9 +12,10 @@ function isProductListResponse(value: unknown): value is { items?: ProductDto[] 
 }
 
 export async function getProducts(): Promise<ProductDto[]> {
-  const response = await fetch(`${API_BASE_URL}/products/`, {
+  const response = await fetch(`${PRODUCTS_API_BASE}/`, {
     method: "GET",
     cache: "no-store",
+    credentials: "include",
   });
 
   if (!response.ok) {
@@ -35,9 +36,10 @@ export async function getProducts(): Promise<ProductDto[]> {
 }
 
 export async function getProductById(id: string): Promise<ProductDto> {
-  const response = await fetch(`${API_BASE_URL}/products/${id}`, {
+  const response = await fetch(`${PRODUCTS_API_BASE}/${id}`, {
     method: "GET",
     cache: "no-store",
+    credentials: "include",
   });
 
   if (!response.ok) {
@@ -48,8 +50,9 @@ export async function getProductById(id: string): Promise<ProductDto> {
 }
 
 export async function createProduct(payload: CreateProductPayload): Promise<ProductDto> {
-  const response = await fetch(`${API_BASE_URL}/products/`, {
+  const response = await fetch(`${PRODUCTS_API_BASE}/`, {
     method: "POST",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
     },
@@ -67,8 +70,9 @@ export async function updateProduct(
   id: string,
   payload: UpdateProductPayload,
 ): Promise<ProductDto> {
-  const response = await fetch(`${API_BASE_URL}/products/${id}`, {
+  const response = await fetch(`${PRODUCTS_API_BASE}/${id}`, {
     method: "PUT",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
     },

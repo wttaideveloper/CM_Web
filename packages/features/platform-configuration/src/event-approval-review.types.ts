@@ -32,7 +32,7 @@ export type EventCustomField = {
 export type EventApprovalReview = {
   id: string;
   tenant_id?: string | null;
-  enterprise_id: string;
+  enterprise_id: string | null;
   location_id?: string | null;
   enterprise_name?: string | null;
   title: string;
@@ -68,6 +68,7 @@ export type EventApprovalReview = {
   is_deleted?: boolean | null;
   created_at?: string | null;
   updated_at?: string | null;
+  last_admin_notes?: string | null;
 };
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -104,5 +105,5 @@ function isOptionalArray<T>(value: unknown, guard: (item: unknown) => item is T)
 
 /** Validates the runtime Event detail fields used by the read-only approval dossier. */
 export function isEventApprovalReview(value: unknown): value is EventApprovalReview {
-  return isRecord(value) && typeof value.id === "string" && typeof value.enterprise_id === "string" && typeof value.title === "string" && typeof value.category === "string" && typeof value.status === "string" && isOptionalString(value.tenant_id) && isOptionalString(value.location_id) && isOptionalString(value.enterprise_name) && isOptionalString(value.description) && isOptionalString(value.subcategory) && isOptionalStringArray(value.tags) && isOptionalString(value.organiser_name) && isOptionalString(value.organiser_contact) && isOptionalString(value.start_date) && isOptionalString(value.end_date) && isOptionalString(value.time_zone) && isOptionalString(value.registration_cutoff) && isOptionalString(value.primary_image) && isOptionalStringArray(value.gallery_images) && isOptionalStringArray(value.videos) && isOptionalStringArray(value.documents) && isOptionalString(value.delivery_mode) && isVenue(value.venue) && isOptionalString(value.meeting_link) && isOptionalString(value.meeting_provider) && isOptionalString(value.price) && isOptionalString(value.currency) && isOptionalArray(value.ticket_types, isTicketType) && isOptionalString(value.capacity) && isOptionalString(value.min_participants) && isOptionalString(value.max_participants) && isOptionalString(value.registration_open_at) && isOptionalString(value.registration_close_at) && isOptionalArray(value.custom_fields, isCustomField) && isOptionalArray(value.sessions, isSession) && (value.is_deleted === undefined || value.is_deleted === null || typeof value.is_deleted === "boolean") && isOptionalString(value.created_at) && isOptionalString(value.updated_at);
+  return isRecord(value) && typeof value.id === "string" && (value.enterprise_id === null || typeof value.enterprise_id === "string") && typeof value.title === "string" && typeof value.category === "string" && typeof value.status === "string" && isOptionalString(value.tenant_id) && isOptionalString(value.location_id) && isOptionalString(value.enterprise_name) && isOptionalString(value.description) && isOptionalString(value.subcategory) && isOptionalStringArray(value.tags) && isOptionalString(value.organiser_name) && isOptionalString(value.organiser_contact) && isOptionalString(value.start_date) && isOptionalString(value.end_date) && isOptionalString(value.time_zone) && isOptionalString(value.registration_cutoff) && isOptionalString(value.primary_image) && isOptionalStringArray(value.gallery_images) && isOptionalStringArray(value.videos) && isOptionalStringArray(value.documents) && isOptionalString(value.delivery_mode) && isVenue(value.venue) && isOptionalString(value.meeting_link) && isOptionalString(value.meeting_provider) && isOptionalString(value.price) && isOptionalString(value.currency) && isOptionalArray(value.ticket_types, isTicketType) && isOptionalString(value.capacity) && isOptionalString(value.min_participants) && isOptionalString(value.max_participants) && isOptionalString(value.registration_open_at) && isOptionalString(value.registration_close_at) && isOptionalArray(value.custom_fields, isCustomField) && isOptionalArray(value.sessions, isSession) && (value.is_deleted === undefined || value.is_deleted === null || typeof value.is_deleted === "boolean") && isOptionalString(value.created_at) && isOptionalString(value.updated_at) && isOptionalString(value.last_admin_notes);
 }

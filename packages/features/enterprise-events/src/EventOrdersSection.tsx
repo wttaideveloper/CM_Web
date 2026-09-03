@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { formatEventDateTime } from "./event-detail-formatters";
+import EventRefundAction from "./EventRefundAction";
 import { EventsApiError, getEventOrders, type EventOrder } from "./events.service";
 
 /** Lazy Event-detail view for backend-authoritative order records. */
@@ -52,26 +53,27 @@ export default function EventOrdersSection({
               <th scope="col" className="px-3 py-3">Payment provider</th>
               <th scope="col" className="px-3 py-3">Ticket type</th>
               <th scope="col" className="px-3 py-3">Created at</th>
+              <th scope="col" className="px-3 py-3"><span className="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#edf3f0]">
-            {ordersQuery.data.map((order) => <OrderTableRow key={order.id} order={order} timeZone={timeZone} />)}
+            {ordersQuery.data.map((order) => <OrderTableRow key={order.id} eventId={eventId} order={order} timeZone={timeZone} />)}
           </tbody>
         </table>
       </div>
       <ul className="mt-5 space-y-3 md:hidden">
-        {ordersQuery.data.map((order) => <OrderCard key={order.id} order={order} timeZone={timeZone} />)}
+        {ordersQuery.data.map((order) => <OrderCard key={order.id} eventId={eventId} order={order} timeZone={timeZone} />)}
       </ul>
     </section>
   );
 }
 
-function OrderTableRow({ order, timeZone }: { order: EventOrder; timeZone: string }) {
-  return <tr className="align-top text-[#31594d]"><td className="px-3 py-4 font-semibold text-[#06201c]">{displayOrDash(order.participant_name)}</td><td className="px-3 py-4 break-all">{displayOrDash(order.participant_email)}</td><td className="px-3 py-4">{displayOrDash(order.quantity)}</td><td className="px-3 py-4 font-semibold text-[#06201c]">{formatAmount(order.amount)}</td><td className="px-3 py-4">{displayOrDash(order.currency)}</td><td className="px-3 py-4"><StatusWithRefund status={order.payment_status} refundReason={order.refund_reason} /></td><td className="px-3 py-4">{formatStatus(order.status)}</td><td className="px-3 py-4">{displayOrDash(order.payment_provider)}</td><td className="px-3 py-4 break-all">{displayOrDash(order.ticket_type_id)}</td><td className="px-3 py-4 whitespace-nowrap">{formatEventDateTime(order.created_at, timeZone)}</td></tr>;
+function OrderTableRow({ eventId, order, timeZone }: { eventId: string; order: EventOrder; timeZone: string }) {
+  return <tr className="align-top text-[#31594d]"><td className="px-3 py-4 font-semibold text-[#06201c]">{displayOrDash(order.participant_name)}</td><td className="px-3 py-4 break-all">{displayOrDash(order.participant_email)}</td><td className="px-3 py-4">{displayOrDash(order.quantity)}</td><td className="px-3 py-4 font-semibold text-[#06201c]">{formatAmount(order.amount)}</td><td className="px-3 py-4">{displayOrDash(order.currency)}</td><td className="px-3 py-4"><StatusWithRefund status={order.payment_status} refundReason={order.refund_reason} /></td><td className="px-3 py-4">{formatStatus(order.status)}</td><td className="px-3 py-4">{displayOrDash(order.payment_provider)}</td><td className="px-3 py-4 break-all">{displayOrDash(order.ticket_type_id)}</td><td className="px-3 py-4 whitespace-nowrap">{formatEventDateTime(order.created_at, timeZone)}</td><td className="px-3 py-4"><EventRefundAction eventId={eventId} target="order" targetId={order.id} refundState={getRefundState(order.status, order.payment_status)} /></td></tr>;
 }
 
-function OrderCard({ order, timeZone }: { order: EventOrder; timeZone: string }) {
-  return <li className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-4"><p className="font-bold text-[#06201c]">{displayOrDash(order.participant_name)}</p><p className="mt-1 break-all text-sm text-[#52736a]">{displayOrDash(order.participant_email)}</p><dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm"><OrderField label="Quantity" value={displayOrDash(order.quantity)} /><OrderField label="Amount" value={formatAmount(order.amount)} /><OrderField label="Currency" value={displayOrDash(order.currency)} /><OrderField label="Payment status" value={<StatusWithRefund status={order.payment_status} refundReason={order.refund_reason} />} /><OrderField label="Order status" value={formatStatus(order.status)} /><OrderField label="Payment provider" value={displayOrDash(order.payment_provider)} /><OrderField label="Ticket type" value={displayOrDash(order.ticket_type_id)} /><OrderField label="Created at" value={formatEventDateTime(order.created_at, timeZone)} /></dl></li>;
+function OrderCard({ eventId, order, timeZone }: { eventId: string; order: EventOrder; timeZone: string }) {
+  return <li className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-bold text-[#06201c]">{displayOrDash(order.participant_name)}</p><p className="mt-1 break-all text-sm text-[#52736a]">{displayOrDash(order.participant_email)}</p></div><EventRefundAction eventId={eventId} target="order" targetId={order.id} refundState={getRefundState(order.status, order.payment_status)} /></div><dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm"><OrderField label="Quantity" value={displayOrDash(order.quantity)} /><OrderField label="Amount" value={formatAmount(order.amount)} /><OrderField label="Currency" value={displayOrDash(order.currency)} /><OrderField label="Payment status" value={<StatusWithRefund status={order.payment_status} refundReason={order.refund_reason} />} /><OrderField label="Order status" value={formatStatus(order.status)} /><OrderField label="Payment provider" value={displayOrDash(order.payment_provider)} /><OrderField label="Ticket type" value={displayOrDash(order.ticket_type_id)} /><OrderField label="Created at" value={formatEventDateTime(order.created_at, timeZone)} /></dl></li>;
 }
 
 function OrderField({ label, value }: { label: string; value: React.ReactNode }) {
@@ -79,7 +81,13 @@ function OrderField({ label, value }: { label: string; value: React.ReactNode })
 }
 
 function StatusWithRefund({ status, refundReason }: { status: string; refundReason: string | null }) {
-  return <><span>{formatStatus(status)}</span>{refundReason ? <span className="mt-1 block text-xs text-[#52736a]">Refund: {refundReason}</span> : null}</>;
+  return <><span>{formatStatus(status)}</span>{refundReason ? <span className="mt-1 block text-xs text-[#52736a]">Refund reason: {refundReason}</span> : null}</>;
+}
+
+function getRefundState(orderStatus: string, paymentStatus: string): "refund_requested" | "refunded" | undefined {
+  if (orderStatus === "refunded" || paymentStatus === "refunded") return "refunded";
+  if (orderStatus === "refund_requested" || paymentStatus === "refund_requested") return "refund_requested";
+  return undefined;
 }
 
 function OrdersLoadingState() {

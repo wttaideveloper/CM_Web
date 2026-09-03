@@ -44,6 +44,7 @@ const nextConfig: NextConfig = {
         },
       );
     }
+
     if (chatApiBaseUrl) {
       fallback.push(
         {
@@ -51,12 +52,43 @@ const nextConfig: NextConfig = {
           destination: `${chatApiBaseUrl}/search/enterprises`,
         },
         {
+          source: "/api/v1/enterprises",
+          destination: `${chatApiBaseUrl}/enterprises/`,
+        },
+        {
+          source: "/api/v1/enterprises/:path*",
+          destination: `${chatApiBaseUrl}/enterprises/:path*`,
+        },
+        {
           source: "/api/v1/locations/:path*",
           destination: `${chatApiBaseUrl}/locations/:path*`,
         },
+        {
+          source: "/api/v1/products",
+          destination: `${chatApiBaseUrl}/products/`,
+        },
+        {
+          source: "/api/v1/products/:path*",
+          destination: `${chatApiBaseUrl}/products/:path*`,
+        },
+        {
+          source: "/api/v1/services",
+          destination: `${chatApiBaseUrl}/services/`,
+        },
+        {
+          source: "/api/v1/services/:path*",
+          destination: `${chatApiBaseUrl}/services/:path*`,
+        },
+        {
+          source: "/api/v1/attributes",
+          destination: `${chatApiBaseUrl}/attributes`,
+        },
+        {
+          source: "/api/v1/attributes/:path*",
+          destination: `${chatApiBaseUrl}/attributes/:path*`,
+        },
       );
     }
-
 
     if (workflowApiBaseUrl) {
       fallback.push(
@@ -74,6 +106,7 @@ const nextConfig: NextConfig = {
         },
       );
     }
+
     if (eventsApiBaseUrl) {
       fallback.push(
         {
@@ -86,7 +119,6 @@ const nextConfig: NextConfig = {
         },
       );
     }
-
 
     return { fallback };
   },

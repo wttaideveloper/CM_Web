@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getEnterpriseById, type EnterpriseDto } from "@ihp/enterprises";
 
 type NameProps = {
-  enterpriseId: string;
+  enterpriseId: string | null;
   eventEnterpriseName?: string | null;
 };
 
@@ -44,13 +44,15 @@ async function getTenantName(tenantId: string): Promise<string | null> {
 export function EnterpriseDisplayName({ enterpriseId, eventEnterpriseName }: NameProps) {
   const enterpriseQuery = useQuery({
     queryKey: ["platform", "enterprise-display-name", enterpriseId],
-    queryFn: () => getEnterpriseById(enterpriseId),
+    queryFn: () => getEnterpriseById(enterpriseId ?? ""),
+    enabled: Boolean(enterpriseId),
     staleTime: 5 * 60_000,
     retry: 1,
   });
   const resolvedName = enterpriseQuery.data ? enterpriseDisplayName(enterpriseQuery.data) : null;
   if (resolvedName) return <>{resolvedName}</>;
   if (hasText(eventEnterpriseName)) return <>{eventEnterpriseName}</>;
+  if (!enterpriseId) return <>Tenant-owned</>;
   if (enterpriseQuery.isPending) return <span className="text-[#7f9d94]">Loading enterprise…</span>;
   return <>Enterprise information unavailable</>;
 }

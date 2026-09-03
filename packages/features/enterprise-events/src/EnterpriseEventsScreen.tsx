@@ -58,39 +58,80 @@ function formatEventDate(value: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value));
 }
 
+function formatSeatAvailability(event: Event): string {
+  if (event.is_full === true) return "Full";
+  if (typeof event.available_seats === "number") {
+    return `${event.available_seats} ${event.available_seats === 1 ? "seat" : "seats"} left`;
+  }
+  return "—";
+}
+
 function EventCard({ event, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess }: { event: Event; onStatusSuccess: () => void; onDuplicateSuccess: () => void; onDeleteSuccess: () => void }) {
+  const primaryImage = event.primary_image?.trim() ?? "";
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
+  const hasPrimaryImage = primaryImage.length > 0 && failedImageUrl !== primaryImage;
+
+  useEffect(() => {
+    if (!primaryImage) {
+      setFailedImageUrl(null);
+      return;
+    }
+
+    const image = new Image();
+    image.onerror = () => setFailedImageUrl(primaryImage);
+    image.src = primaryImage;
+
+    return () => {
+      image.onerror = null;
+    };
+  }, [primaryImage]);
+  const labelClass = hasPrimaryImage ? "text-white/75" : "text-[#7f9d94]";
+  const primaryTextClass = hasPrimaryImage ? "text-white" : "text-[#06201c]";
+  const secondaryTextClass = hasPrimaryImage ? "text-white/85" : "text-[#52736a]";
+  const dividerClass = hasPrimaryImage ? "border-white/25" : "border-[#edf3f0]";
+  const interactionClass = hasPrimaryImage
+    ? "hover:-translate-y-0.5 hover:border-[#4f9f76] hover:shadow-lg focus-within:border-[#1f6a58] focus-within:ring-2 focus-within:ring-[#1f6a58]/20"
+    : "hover:-translate-y-0.5 hover:border-[#4f9f76] hover:bg-[#edf8f1] hover:shadow-lg focus-within:border-[#1f6a58] focus-within:bg-[#f4faf7] focus-within:ring-2 focus-within:ring-[#1f6a58]/20";
+
   return (
-    <article className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-[#c6ddd3] hover:shadow-md">
+    <article className={`group relative rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-200 ${interactionClass}`}>
+      {hasPrimaryImage ? <div aria-hidden="true" className="absolute inset-0 overflow-hidden rounded-[inherit] bg-cover bg-center" style={{ backgroundImage: `url(${JSON.stringify(primaryImage)})` }}><div className="absolute inset-0 bg-gradient-to-br from-[#06201c]/60 via-[#0c382e]/48 to-[#1f6a58]/38" /></div> : null}
+      <div className="relative z-10">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
+          <p className={`text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>
             {event.category || "—"}
           </p>
-          <h3 className="mt-2 text-lg font-bold text-[#06201c]">{event.title}</h3>
+          <h3 className={`mt-2 text-lg font-bold ${primaryTextClass}`}>{event.title}</h3>
         </div>
-        <div className="flex shrink-0 items-center gap-2"><span className={`rounded-full px-3 py-1 text-[11px] font-bold ${getEventStatusBadgeClass(event.status)}`}>{getEventStatusLabel(event.status)}</span><EventActionsMenu event={event} onStatusSuccess={onStatusSuccess} onDuplicateSuccess={onDuplicateSuccess} onDeleteSuccess={onDeleteSuccess} /></div>
+        <div className="flex shrink-0 items-center gap-2"><span className={`rounded-full px-3 py-1 text-[11px] font-bold shadow-sm ${getEventStatusBadgeClass(event.status)}`}>{getEventStatusLabel(event.status)}</span><div className={hasPrimaryImage ? "rounded-full bg-white/90 shadow-sm" : undefined}><EventActionsMenu event={event} onStatusSuccess={onStatusSuccess} onDuplicateSuccess={onDuplicateSuccess} onDeleteSuccess={onDeleteSuccess} /></div></div>
       </div>
 
-      <p className="mt-4 text-sm leading-6 text-[#52736a]">{event.description || "—"}</p>
+      <p className={`mt-2 line-clamp-2 min-h-10 text-sm leading-5 ${secondaryTextClass}`}>{event.description || "—"}</p>
 
-      <div className="mt-4 grid gap-3 border-t border-[#edf3f0] pt-4 text-sm sm:grid-cols-2">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Date</p>
-          <p className="mt-1 font-semibold text-[#06201c]">{formatEventDate(event.start_date)}</p>
+      <div className={`mt-3 grid grid-cols-1 gap-x-8 gap-y-4 border-t pt-3 text-sm sm:grid-cols-2 lg:grid-cols-4 ${dividerClass}`}>
+        <div className="min-w-0">
+          <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Date</p>
+          <p className={`mt-1 font-semibold ${primaryTextClass}`}>{formatEventDate(event.start_date)}</p>
         </div>
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Location</p>
-          <p className="mt-1 font-semibold text-[#06201c]">{event.delivery_mode || "—"}</p>
+        <div className="min-w-0">
+          <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Location</p>
+          <p className={`mt-1 font-semibold ${primaryTextClass}`}>{event.delivery_mode || "—"}</p>
         </div>
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Registrations</p>
-          <p className="mt-1 font-semibold text-[#06201c]">—</p>
+        <div className="min-w-0">
+          <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Registrations</p>
+          <p className={`mt-1 font-semibold ${primaryTextClass}`}>—</p>
+        </div>
+        <div className="min-w-0">
+          <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Availability</p>
+          <p className={`mt-1 font-semibold ${primaryTextClass}`}>{formatSeatAvailability(event)}</p>
         </div>
       </div>
 
-      <Link href={`/admin/events/${event.id}`} className="mt-4 block border-t border-[#edf3f0] pt-4 text-sm font-semibold text-[#1f6a58]">
+      <Link href={`/admin/events/${event.id}`} className={`mt-3 block border-t pt-3 text-sm font-semibold outline-none transition-colors hover:underline focus-visible:rounded focus-visible:ring-2 focus-visible:ring-offset-2 ${hasPrimaryImage ? "border-white/25 text-white hover:text-white focus-visible:ring-white focus-visible:ring-offset-[#1f6a58]" : "border-[#edf3f0] text-[#1f6a58] hover:text-[#195646] focus-visible:ring-[#1f6a58]"}`}>
         View event details
       </Link>
+      </div>
     </article>
   );
 }
@@ -188,7 +229,7 @@ export default function EnterpriseEventsScreen() {
         </div>
       </div>
 
-      <section className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm">
+      <section className="mt-6 rounded-2xl border border-[#b9d6cb] bg-[#f4faf7] p-4 shadow-sm">
         <div className="grid gap-3 xl:grid-cols-[1fr_auto]">
           <label className="block">
             <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
@@ -199,7 +240,7 @@ export default function EnterpriseEventsScreen() {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search by title, description, or category"
-              className="mt-2 h-12 w-full rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
+              className="mt-2 h-12 w-full rounded-2xl border border-[#8fc9a8] bg-[#e8f6ee] px-4 text-sm text-[#06201c] outline-none placeholder:text-[#52736a] focus:border-[#1f6a58] focus:ring-2 focus:ring-[#1f6a58]/20"
             />
           </label>
 
@@ -210,7 +251,7 @@ export default function EnterpriseEventsScreen() {
             <select
               value={sort}
               onChange={(event) => setSort(event.target.value as SortOption)}
-              className="mt-2 h-12 w-full rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]"
+              className="mt-2 h-12 w-full rounded-2xl border border-[#b9d6cb] bg-white px-4 text-sm text-[#06201c] outline-none focus:border-[#1f6a58] focus:ring-2 focus:ring-[#1f6a58]/20"
             >
               <option value="newest">Newest first</option>
               <option value="oldest">Oldest first</option>
@@ -246,7 +287,7 @@ export default function EnterpriseEventsScreen() {
       </section>
 
       {statusFeedback ? <p role="status" className="mt-4 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">{statusFeedback}</p> : null}
-      {isTemplatesOpen ? <EventTemplatesDialog events={eventsQuery.data?.items ?? []} onClose={() => setIsTemplatesOpen(false)} /> : null}
+      {isTemplatesOpen ? <EventTemplatesDialog events={eventsQuery.data?.items ?? []} tenantId={tenantId} enterpriseId={enterpriseId} onClose={() => setIsTemplatesOpen(false)} /> : null}
 
       {eventsQuery.isLoading ? (
         <section className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">

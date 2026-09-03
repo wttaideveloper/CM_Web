@@ -12,6 +12,7 @@ import {
   SessionCalendarDownloadAction,
 } from "./EventCalendarDownloadActions";
 import EventCommunicationsActions from "./EventCommunicationsActions";
+import EventRefundAction from "./EventRefundAction";
 import EventOrdersSection from "./EventOrdersSection";
 import EventReportsSection from "./EventReportsSection";
 import {
@@ -40,6 +41,7 @@ import {
   getEventRegistrations,
   getEventSessions,
   getEventWaitlist,
+  resubmitEvent,
   updateEventSession,
   type AddEventSessionPayload,
   type Event,
@@ -77,6 +79,7 @@ const registrationsSubviews: ReadonlyArray<{
 export default function EventDetailsScreen() {
   const { eventId } = useParams<{ eventId: string }>();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<EventDetailsTab>("details");
   const eventQuery = useQuery({
@@ -85,6 +88,17 @@ export default function EventDetailsScreen() {
     enabled: Boolean(eventId),
     staleTime: 30_000,
     retry: 1,
+  });
+  const resubmitMutation = useMutation({
+    mutationFn: () => resubmitEvent(eventId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["events", "detail", eventId] }),
+        queryClient.invalidateQueries({ queryKey: ["events", "list"] }),
+      ]);
+      setStatusFeedback("Event resubmitted for approval.");
+    },
+    onError: () => setStatusFeedback("Unable to resubmit this Event for approval. Please try again."),
   });
 
   if (eventQuery.isLoading) return <EventDetailsSkeleton />;
@@ -119,7 +133,7 @@ export default function EventDetailsScreen() {
             <p className="mt-2 text-sm text-[#52736a]">
               {formatEventDateTime(event.start_date, event.time_zone)} ·{" "}
               {displayValue(event.delivery_mode)} ·{" "}
-              {displayValue(event.enterprise_name)}
+              {displayValue(event.enterprise_name ?? "Tenant-owned")}
             </p>
           </div>
           <span
@@ -139,6 +153,12 @@ export default function EventDetailsScreen() {
               {statusFeedback}
             </p>
           ) : null}
+          {(event.status === "needs_revision" || event.status === "rejected") ? (
+            <section className="mt-3 max-w-2xl rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-3">
+              <p className="text-sm font-bold text-[#735c1e]">Admin feedback</p>
+              <p className="mt-1 text-sm text-[#735c1e]">{event.last_admin_notes?.trim() || "No additional notes were provided."}</p>
+            </section>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-3">
           {canEditEvent(event.status) ? (
@@ -148,6 +168,11 @@ export default function EventDetailsScreen() {
             >
               Edit Event
             </Link>
+          ) : null}
+          {(event.status === "needs_revision" || event.status === "rejected") ? (
+            <button type="button" onClick={() => resubmitMutation.mutate()} disabled={resubmitMutation.isPending} className="inline-flex h-11 items-center justify-center rounded-full border border-[#1f6a58] px-5 text-sm font-bold text-[#1f6a58] disabled:cursor-not-allowed disabled:opacity-60">
+              {resubmitMutation.isPending ? "Resubmitting..." : "Resubmit for approval"}
+            </button>
           ) : null}
           <EventActionsMenu
             event={event}
@@ -179,7 +204,7 @@ export default function EventDetailsScreen() {
               { label: "Category", value: event.category },
               { label: "Subcategory", value: event.subcategory },
               { label: "Status", value: event.status },
-              { label: "Enterprise Name", value: event.enterprise_name },
+              { label: "Enterprise Name", value: event.enterprise_name ?? "Tenant-owned" },
               { label: "Organizer / Business", value: event.organiser_name },
               { label: "Organizer Contact", value: event.organiser_contact },
             ]}
@@ -260,6 +285,7 @@ export default function EventDetailsScreen() {
           <DetailGrid
             items={[
               { label: "Overall Capacity", value: event.capacity },
+              { label: "Availability", value: formatSeatAvailability(event) },
               { label: "Minimum Participants", value: event.min_participants },
               { label: "Maximum Participants", value: event.max_participants },
             ]}
@@ -293,7 +319,7 @@ export default function EventDetailsScreen() {
             items={[
               { label: "Event ID", value: event.id },
               { label: "Tenant ID", value: event.tenant_id },
-              { label: "Enterprise ID", value: event.enterprise_id },
+              { label: "Enterprise ID", value: event.enterprise_id ?? "Tenant-owned" },
               { label: "Location ID", value: event.location_id },
               {
                 label: "Created At",
@@ -343,6 +369,14 @@ export default function EventDetailsScreen() {
       ) : null}
     </div>
   );
+}
+
+function formatSeatAvailability(event: Event): string {
+  if (event.is_full === true) return "Full";
+  if (typeof event.available_seats === "number") {
+    return `${event.available_seats} ${event.available_seats === 1 ? "seat" : "seats"} left`;
+  }
+  return "—";
 }
 
 function FeedbackSection({ eventId }: { eventId: string }) {
@@ -630,6 +664,7 @@ function RegistrationsSection({ eventId }: { eventId: string }) {
       error={exportError}
     >
       <RegistrationTable
+        eventId={eventId}
         registrations={filteredRegistrations}
         totalRegistrations={registrationsQuery.data.length}
         search={registrationSearch}
@@ -644,19 +679,27 @@ function humanizeRegistrationStatus(value: string): string {
   return normalized ? normalized.replace(/\b\w/g, (character) => character.toUpperCase()) : "Status unavailable";
 }
 
+function getRegistrationRefundState(status: string): "refund_requested" | "refunded" | undefined {
+  if (status === "refunded") return "refunded";
+  if (status === "refund_requested") return "refund_requested";
+  return undefined;
+}
+
 function RegistrationTable({
+  eventId,
   registrations,
   totalRegistrations,
   search,
   onSearchChange,
 }: {
+  eventId: string;
   registrations: readonly EventRegistration[];
   totalRegistrations: number;
   search: string;
   onSearchChange: (value: string) => void;
 }) {
   const countLabel = registrations.length === 1 ? "registered participant" : "registered participants";
-  return <section className="space-y-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><label className="w-full sm:max-w-sm"><span className="sr-only">Search registrations</span><input type="search" value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search registrations..." className="h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]" /></label><p aria-live="polite" className="text-sm text-[#52736a]">{search.trim() ? registrations.length + " of " + totalRegistrations + " registrations" : registrations.length + " " + countLabel}</p></div>{registrations.length === 0 ? <div className="rounded-xl border border-dashed border-[#d7e5df] bg-[#f9fcfa] px-4 py-8 text-center"><p className="text-sm font-bold text-[#06201c]">No registrations found.</p></div> : <div className="overflow-x-auto"><table className="min-w-[660px] w-full table-fixed text-left text-sm"><thead className="border-y border-[#e1ebe6] bg-[#f9fcfa] text-xs font-bold uppercase tracking-[.08em] text-[#52736a]"><tr><th scope="col" className="w-12 px-3 py-2">#</th><th scope="col" className="w-[28%] px-3 py-2">Name</th><th scope="col" className="w-[46%] px-3 py-2">Email</th><th scope="col" className="w-[18%] px-3 py-2">Status</th></tr></thead><tbody>{registrations.map((registration, index) => <tr key={registration.id} className="border-b border-[#edf3f0] text-[#06201c] last:border-b-0"><td className="px-3 py-2.5 text-[#52736a]">{index + 1}</td><td className="truncate px-3 py-2.5 font-semibold" title={registration.participant_name}>{registration.participant_name}</td><td className="truncate px-3 py-2.5 text-[#52736a]" title={registration.participant_email}>{registration.participant_email}</td><td className="px-3 py-2.5"><span className="inline-flex rounded-full bg-[#edf3f0] px-2.5 py-1 text-xs font-semibold text-[#31594d]">{humanizeRegistrationStatus(registration.status)}</span></td></tr>)}</tbody></table></div>}</section>;
+  return <section className="space-y-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><label className="w-full sm:max-w-sm"><span className="sr-only">Search registrations</span><input type="search" value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search registrations..." className="h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]" /></label><p aria-live="polite" className="text-sm text-[#52736a]">{search.trim() ? registrations.length + " of " + totalRegistrations + " registrations" : registrations.length + " " + countLabel}</p></div>{registrations.length === 0 ? <div className="rounded-xl border border-dashed border-[#d7e5df] bg-[#f9fcfa] px-4 py-8 text-center"><p className="text-sm font-bold text-[#06201c]">No registrations found.</p></div> : <div className="overflow-x-auto"><table className="min-w-[760px] w-full table-fixed text-left text-sm"><thead className="border-y border-[#e1ebe6] bg-[#f9fcfa] text-xs font-bold uppercase tracking-[.08em] text-[#52736a]"><tr><th scope="col" className="w-12 px-3 py-2">#</th><th scope="col" className="w-[25%] px-3 py-2">Name</th><th scope="col" className="w-[38%] px-3 py-2">Email</th><th scope="col" className="w-[17%] px-3 py-2">Status</th><th scope="col" className="w-[120px] px-3 py-2"><span className="sr-only">Actions</span></th></tr></thead><tbody>{registrations.map((registration, index) => <tr key={registration.id} className="border-b border-[#edf3f0] text-[#06201c] last:border-b-0"><td className="px-3 py-2.5 text-[#52736a]">{index + 1}</td><td className="truncate px-3 py-2.5 font-semibold" title={registration.participant_name}>{registration.participant_name}</td><td className="truncate px-3 py-2.5 text-[#52736a]" title={registration.participant_email}>{registration.participant_email}</td><td className="px-3 py-2.5"><span className="inline-flex rounded-full bg-[#edf3f0] px-2.5 py-1 text-xs font-semibold text-[#31594d]">{humanizeRegistrationStatus(registration.status)}</span></td><td className="px-3 py-2.5"><EventRefundAction eventId={eventId} target="registration" targetId={registration.id} refundState={getRegistrationRefundState(registration.status)} /></td></tr>)}</tbody></table></div>}</section>;
 }
 
 function RegistrationsHeader({
