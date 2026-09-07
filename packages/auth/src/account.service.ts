@@ -44,6 +44,8 @@ export type AuthTenant = {
   id: string;
   name: string;
   slug: string | null;
+  /** UUID accepted by assignment APIs when the discovery response provides one. */
+  assignmentTenantId?: string | null;
 };
 
 async function parseAuthResponse<T>(response: Response): Promise<T> {
@@ -86,6 +88,10 @@ function readTenantString(value: Record<string, unknown>, keys: string[]): strin
   }
 
   return null;
+}
+
+function isUuid(value: string | null): value is string {
+  return value !== null && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
 function getInviteRoleList(value: unknown): unknown[] {
@@ -211,15 +217,18 @@ export async function getAuthTenants(): Promise<AuthTenant[]> {
       return [];
     }
 
-    const id = readTenantString(item, ["id", "tenantId", "tenant_id"]);
-    const name = readTenantString(item, ["name", "tenantName", "tenant_name", "organizationName"]);
     const slug = readTenantString(item, ["slug", "tenantSlug", "tenant_slug"]);
+    const tenantId = readTenantString(item, ["tenant_id", "tenantId"]);
+    const rawId = readTenantString(item, ["id"]);
+    const assignmentTenantId = isUuid(tenantId) ? tenantId : isUuid(rawId) ? rawId : null;
+    const id = assignmentTenantId ?? rawId ?? slug;
+    const name = readTenantString(item, ["name", "tenantName", "tenant_name", "organizationName", "business_short_name", "business_legal_name"]);
 
-    return id && (name || slug) ? [{ id, name: name ?? slug!, slug }] : [];
+    return id && (name || slug) ? [{ id, name: name ?? slug!, slug, assignmentTenantId }] : [];
   });
 
   if (tenantItems.length > 0 && tenants.length === 0) {
-    throw new Error("Tenant list did not include tenant IDs required to create an enterprise.");
+    throw new Error("Tenant list did not include usable tenant display records.");
   }
 
   return tenants;

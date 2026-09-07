@@ -14,6 +14,7 @@ export const platformNavigationGroups: readonly PlatformNavigationGroup[] = [
       { label: "Form Builder", href: "/onboarding-forms", icon: "forms" },
       { label: "Form Builder New", href: "/form-builder-new", icon: "forms" },
       { label: "Workflow Builder New", href: "/workflow-builder-new", icon: "forms" },
+      { label: "Form Configurations", href: "/form-configurations", icon: "forms" },
       { label: "Enterprise Types", href: "/enterprise-types", icon: "building" },
       { label: "Categories", href: "/categories", icon: "tag" },
       { label: "Sub-Admins", href: "/sub-admins", icon: "settings" },

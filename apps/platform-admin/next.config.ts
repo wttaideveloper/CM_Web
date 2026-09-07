@@ -3,11 +3,22 @@ import type { NextConfig } from "next";
 const authApiBaseUrl =
   process.env.AUTH_API_BASE_URL ?? "https://admin.apis.invigor8.app";
 const workflowApiBaseUrl = process.env.WORKFLOW_API_BASE_URL;
-const platformApiBaseUrl =
-  process.env.CHAT_API_BASE_URL ?? "https://chat.wisdomtooth.tech/api/v1";
+function normalizePlatformApiBaseUrl(value: string): string {
+  const url = new URL(value);
+
+  if (url.hostname === "chat.wisdomtooth.tech") {
+    url.protocol = "https:";
+  }
+
+  return url.toString().replace(/\/$/, "");
+}
+
+const platformApiBaseUrl = normalizePlatformApiBaseUrl(
+  process.env.CHAT_API_BASE_URL ?? "https://chat.wisdomtooth.tech/api/v1",
+);
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["@ihp/attributes", "@ihp/auth", "@ihp/enterprises", "@ihp/onboarding-forms", "@ihp/platform-attributes", "@ihp/platform-configuration", "@ihp/platform-dashboard", "@ihp/platform-enterprises", "@ihp/platform-layout", "@ihp/platform-marketplace-static", "@ihp/products", "@ihp/services", "@ihp/shared", "@ihp/ui", "@ihp/workflow-admin", "@ihp/workflow-runtime"],
+  transpilePackages: ["@ihp/attributes", "@ihp/auth", "@ihp/enterprises", "@ihp/onboarding-forms", "@ihp/platform-attributes", "@ihp/platform-configuration", "@ihp/platform-dashboard", "@ihp/platform-enterprises", "@ihp/platform-form-configurations", "@ihp/platform-layout", "@ihp/platform-marketplace-static", "@ihp/products", "@ihp/services", "@ihp/shared", "@ihp/ui", "@ihp/workflow-admin", "@ihp/workflow-runtime"],
   async rewrites() {
     const fallback = [
       {
@@ -57,6 +68,14 @@ const nextConfig: NextConfig = {
       {
         source: "/api/v1/events/:path*",
         destination: `${platformApiBaseUrl}/events/:path*`,
+      },
+      {
+        source: "/api/v1/admin/event-form-configurations",
+        destination: `${platformApiBaseUrl}/admin/event-form-configurations/`,
+      },
+      {
+        source: "/api/v1/admin/event-form-configurations/:path*",
+        destination: `${platformApiBaseUrl}/admin/event-form-configurations/:path*`,
       },
       {
         source: "/api/v1/admin/events/:path*",

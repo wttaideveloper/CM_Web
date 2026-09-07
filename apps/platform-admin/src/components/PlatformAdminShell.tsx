@@ -22,6 +22,7 @@ const platformOwnedNavigationRoutes = new Set([
   "/onboarding-forms",
   "/form-builder-new",
   "/workflow-builder-new",
+  "/form-configurations",
   "/enterprise-types",
   "/categories",
   "/sub-admins",
