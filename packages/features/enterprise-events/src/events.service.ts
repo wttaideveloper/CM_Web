@@ -64,13 +64,26 @@ export interface ActiveEventFormFieldOption { value: string; label: string; posi
 export interface ActiveEventFormFieldValidation { min_length?: number | null; max_length?: number | null; min?: number | null; max?: number | null; pattern?: string | null; }
 
 /** One field in a backend-resolved active Event form configuration. */
-export interface ActiveEventFormField { id: string; source: "core" | "custom"; core_key: string | null; stable_key: string | null; label: string; renderer: string; value_type: string; required: boolean; position: number; placeholder: string | null; help_text: string | null; options: ActiveEventFormFieldOption[]; validation: ActiveEventFormFieldValidation; }
+export interface ActiveEventFormCompositeConfig { enabled_fields?: string[]; required_fields?: string[]; }
+export interface ActiveEventFormField { id: string; source: "core" | "custom"; core_key: string | null; stable_key: string | null; label: string; renderer: string; value_type: string; required: boolean; position: number; placeholder: string | null; help_text: string | null; options: ActiveEventFormFieldOption[]; validation: ActiveEventFormFieldValidation; composite_config: ActiveEventFormCompositeConfig | null; }
 
 /** One ordered section in a backend-resolved active Event form configuration. */
 export interface ActiveEventFormSection { id: string; stable_key: string; label: string; description: string | null; position: number; is_enabled: boolean; fields: ActiveEventFormField[]; }
 
 /** The authenticated Enterprise Admin's resolved active Event form configuration. */
 export interface ActiveEventFormConfiguration { configuration_id: string; version_id: string; name: string; scope: "global" | "selective"; version: number; sections: ActiveEventFormSection[]; }
+
+/** One backend-authoritative Event taxonomy entry. Parent categories have no parent_id. */
+export interface EventCategory {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  description: string | null;
+  created_at: string;
+}
+
+/** The Event Categories API returns a plain, ordered collection. */
+export type EventCategoriesResponse = readonly EventCategory[];
 
 /** Backend-supported query parameters for listing Events. */
 export interface EventListParams {
@@ -456,6 +469,8 @@ export interface CreateEventPayload {
   custom_fields: CreateEventCustomField[];
   sessions: EventSessionInput[];
   status: "draft";
+  form_configuration_version_id?: string;
+  custom_values?: Array<{ field_id: string; value: string | string[] | boolean | number | null }>;
 }
 
 /**
@@ -527,9 +542,11 @@ function isNullableString(value: unknown): value is string | null { return value
 function isNullableFiniteNumber(value: unknown): value is number | null | undefined { return value === undefined || value === null || (typeof value === "number" && Number.isFinite(value)); }
 function isActiveEventFormFieldOption(value: unknown): value is ActiveEventFormFieldOption { return isRecord(value) && typeof value.value === "string" && typeof value.label === "string" && Number.isInteger(value.position); }
 function isActiveEventFormFieldValidation(value: unknown): value is ActiveEventFormFieldValidation { return isRecord(value) && isNullableFiniteNumber(value.min_length) && isNullableFiniteNumber(value.max_length) && isNullableFiniteNumber(value.min) && isNullableFiniteNumber(value.max) && (value.pattern === undefined || isNullableString(value.pattern)); }
-function isActiveEventFormField(value: unknown): value is ActiveEventFormField { return isRecord(value) && typeof value.id === "string" && (value.source === "core" || value.source === "custom") && isNullableString(value.core_key) && isNullableString(value.stable_key) && typeof value.label === "string" && typeof value.renderer === "string" && typeof value.value_type === "string" && typeof value.required === "boolean" && Number.isInteger(value.position) && isNullableString(value.placeholder) && isNullableString(value.help_text) && Array.isArray(value.options) && value.options.every(isActiveEventFormFieldOption) && isActiveEventFormFieldValidation(value.validation); }
+function isActiveEventFormCompositeConfig(value: unknown): value is ActiveEventFormCompositeConfig | null { return value === null || (isRecord(value) && (value.enabled_fields === undefined || isStringArray(value.enabled_fields)) && (value.required_fields === undefined || isStringArray(value.required_fields))); }
+function isActiveEventFormField(value: unknown): value is ActiveEventFormField { return isRecord(value) && typeof value.id === "string" && (value.source === "core" || value.source === "custom") && isNullableString(value.core_key) && isNullableString(value.stable_key) && typeof value.label === "string" && typeof value.renderer === "string" && typeof value.value_type === "string" && typeof value.required === "boolean" && Number.isInteger(value.position) && isNullableString(value.placeholder) && isNullableString(value.help_text) && Array.isArray(value.options) && value.options.every(isActiveEventFormFieldOption) && isActiveEventFormFieldValidation(value.validation) && isActiveEventFormCompositeConfig(value.composite_config ?? null); }
 function isActiveEventFormSection(value: unknown): value is ActiveEventFormSection { return isRecord(value) && typeof value.id === "string" && typeof value.stable_key === "string" && typeof value.label === "string" && isNullableString(value.description) && Number.isInteger(value.position) && typeof value.is_enabled === "boolean" && Array.isArray(value.fields) && value.fields.every(isActiveEventFormField); }
 function isActiveEventFormConfiguration(value: unknown): value is ActiveEventFormConfiguration { return isRecord(value) && typeof value.configuration_id === "string" && typeof value.version_id === "string" && typeof value.name === "string" && (value.scope === "global" || value.scope === "selective") && Number.isInteger(value.version) && Array.isArray(value.sections) && value.sections.every(isActiveEventFormSection); }
+function isEventCategory(value: unknown): value is EventCategory { return isRecord(value) && typeof value.id === "string" && typeof value.name === "string" && isNullableString(value.parent_id) && isNullableString(value.description) && typeof value.created_at === "string"; }
 
 function isEventVenueCoordinates(value: unknown): value is EventVenueCoordinates {
   return (
@@ -925,6 +942,17 @@ export async function getActiveEventFormConfiguration(): Promise<ActiveEventForm
   if (!response.ok) throw await createEventsApiError(response, "resolve the active Event form configuration");
   const value = (await response.json()) as unknown;
   if (!isActiveEventFormConfiguration(value)) throw new EventsApiError("Events API returned an invalid active Event form configuration.", response.status);
+  return value;
+}
+
+/** Reads the backend-owned Event taxonomy through the authenticated same-origin Events proxy. */
+export async function getEventCategories(): Promise<EventCategoriesResponse> {
+  const response = await fetch("/api/v1/event-categories", { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw await createEventsApiError(response, "load Event categories");
+  const value = (await response.json()) as unknown;
+  if (!Array.isArray(value) || !value.every(isEventCategory)) {
+    throw new EventsApiError("Events API returned invalid Event categories.", response.status);
+  }
   return value;
 }
 

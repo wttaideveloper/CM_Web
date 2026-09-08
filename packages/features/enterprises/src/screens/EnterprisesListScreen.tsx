@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -152,6 +152,10 @@ export default function EnterprisesListScreen({
   createHref = "/enterprises/create",
   detailHrefBase = "/enterprises",
   editHrefBase = "/enterprises",
+  enterprisesLoader = getEnterprises,
+  errorMessageForLoadFailure,
+  activateEnterpriseAction = activateEnterprise,
+  deactivateEnterpriseAction = deactivateEnterprise,
 }: EnterprisesListScreenProps = {}) {
   const router = useRouter();
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
@@ -163,12 +167,12 @@ export default function EnterprisesListScreen({
   const listSectionRef = useRef<HTMLElement | null>(null);
   const actionsMenuRef = useRef<HTMLDivElement | null>(null);
 
-  async function fetchEnterprises() {
+  const fetchEnterprises = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
 
-      const data = await getEnterprises();
+      const data = await enterprisesLoader();
       if (process.env.NODE_ENV !== "production") {
         console.log("[Enterprises] list response status snapshot", {
           total: data.length,
@@ -178,12 +182,12 @@ export default function EnterprisesListScreen({
       }
       setEnterprises(sortEnterprisesByCreatedAt(data.map(mapEnterpriseToListItem)));
     } catch (fetchError) {
-      setError(fetchError instanceof Error ? fetchError.message : "Unable to load enterprises.");
+      setError(errorMessageForLoadFailure?.(fetchError) ?? (fetchError instanceof Error ? fetchError.message : "Unable to load enterprises."));
       setEnterprises([]);
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [enterprisesLoader, errorMessageForLoadFailure]);
 
   async function handleDeactivateEnterprise(id: string) {
     const confirmed = window.confirm("Are you sure you want to deactivate this enterprise?");
@@ -193,7 +197,7 @@ export default function EnterprisesListScreen({
     }
 
     try {
-      const updatedEnterprise = await deactivateEnterprise(id);
+      const updatedEnterprise = await deactivateEnterpriseAction(id);
       setEnterprises((current) =>
         current.map((enterprise) =>
           enterprise.id === id ? { ...enterprise, status: normalizeEnterpriseStatus(updatedEnterprise.status) } : enterprise,
@@ -217,7 +221,7 @@ export default function EnterprisesListScreen({
     }
 
     try {
-      const updatedEnterprise = await activateEnterprise(id);
+      const updatedEnterprise = await activateEnterpriseAction(id);
       setEnterprises((current) =>
         current.map((enterprise) =>
           enterprise.id === id ? { ...enterprise, status: normalizeEnterpriseStatus(updatedEnterprise.status) } : enterprise,
@@ -284,7 +288,7 @@ export default function EnterprisesListScreen({
 
   useEffect(() => {
     void fetchEnterprises();
-  }, []);
+  }, [fetchEnterprises]);
 
   const enterprisesCount = enterprises.length;
   const paginationText =
@@ -365,7 +369,7 @@ export default function EnterprisesListScreen({
             </div>
           ) : error ? (
             <div className="px-5 py-16 text-center">
-              <p className="text-base font-bold text-[#06201c]">Unable to load enterprises.</p>
+              <p className="text-base font-bold text-[#06201c]">{error ?? "Unable to load enterprises."}</p>
               <p className="mt-2 text-sm text-[#52736a]">Please try again.</p>
               <button
                 type="button"
@@ -530,7 +534,7 @@ export default function EnterprisesListScreen({
             </div>
           ) : error ? (
             <div className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
-              <p className="text-base font-bold text-[#06201c]">Unable to load enterprises.</p>
+              <p className="text-base font-bold text-[#06201c]">{error ?? "Unable to load enterprises."}</p>
               <p className="mt-2 text-sm text-[#52736a]">Please try again.</p>
               <button
                 type="button"

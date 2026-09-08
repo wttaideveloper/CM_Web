@@ -35,9 +35,12 @@
     "@ihp/services": "0.1.0",
     "@ihp/shared": "0.1.0",
     "@ihp/ui": "0.1.0",
+    "@tanstack/react-query": "^5.90.21",
+    "i18next": "^26.4.2",
     "next": "16.2.9",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "react-i18next": "^17.0.13"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

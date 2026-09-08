@@ -1,10 +1,10 @@
 import PlatformAdminShell from "@/components/PlatformAdminShell";
-import { ServiceCreateScreen } from "@ihp/services";
+import { PlatformServiceCreateWithEnterpriseData } from "@/components/PlatformEnterpriseDataClients";
 
 export default function PlatformCreateServicePage() {
   return (
     <PlatformAdminShell>
-      <ServiceCreateScreen />
+      <PlatformServiceCreateWithEnterpriseData />
     </PlatformAdminShell>
   );
 }

@@ -350,6 +350,7 @@ function StepCircle({
 export default function EnterpriseCreateScreen({
   tenantOptionsLoader,
   successRedirect = "/enterprises",
+  enterpriseCreator = createEnterprise,
 }: EnterpriseCreateScreenProps) {
   const router = useRouter();
   const fieldRefs = useRef<Partial<Record<EnterpriseFieldKey, HTMLElement | null>>>({});
@@ -537,7 +538,7 @@ export default function EnterpriseCreateScreen({
         ? combinePhone(secondaryPhoneCode, trimmedSecondaryPhoneNumber)
         : "";
 
-      await createEnterprise(
+      await enterpriseCreator(
         buildCreateEnterprisePayload({
           tenantId: trimmedTenantId,
           enterpriseName: trimmedName,

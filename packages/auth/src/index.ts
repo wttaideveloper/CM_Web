@@ -20,6 +20,8 @@ export {
 } from "./session";
 export type { GetWebAuthLogoutOptions } from "./session";
 export { useAuth } from "./useAuth";
+export { loginSuperAdmin, SuperAdminAuthError } from "./super-admin-auth";
+export type { SuperAdminIdentity, SuperAdminLoginInput } from "./super-admin-auth";
 export {
   getAuthMe,
   getAuthTenants,

@@ -4,8 +4,9 @@ import {
 } from "./event-approval-review.types";
 
 export class EventApprovalError extends Error {
-  constructor() {
-    super("Unable to approve this Event. Please try again.");
+  constructor(readonly status?: number, message = "Unable to approve this Event. Please try again.") {
+    super(message);
+    this.name = "EventApprovalError";
   }
 }
 
@@ -34,16 +35,32 @@ export interface EventAuditRecord {
 export type EventApprovalHistoryResponse = readonly EventAuditRecord[];
 
 async function parseEvent(response: Response): Promise<EventApprovalReview> {
-  if (!response.ok) throw new EventApprovalError();
+  if (!response.ok) throw await createEventApprovalError(response);
   const value = await response.json();
   if (!isEventApprovalReview(value)) throw new EventApprovalError();
   return value;
 }
 
+/** Creates a client-safe Event approval error from the Platform BFF response. */
+async function createEventApprovalError(response: Response): Promise<EventApprovalError> {
+  const body: unknown = await response.json().catch(() => null);
+  if (response.status === 401) return new EventApprovalError(401, "Super Admin authentication is required.");
+  if (response.status === 403) return new EventApprovalError(403, "You do not have permission to manage Events.");
+  const detail = typeof body === "object" && body !== null && "detail" in body && typeof body.detail === "string"
+    ? body.detail
+    : undefined;
+  return new EventApprovalError(response.status, detail);
+}
+
+/** Selects client-safe approval feedback without presenting failed requests as empty data. */
+export function eventApprovalErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof EventApprovalError ? error.message : fallback;
+}
+
 /** Loads the validated Event dossier used by the Platform Admin approval review. */
 export async function getEventApprovalReview(eventId: string): Promise<EventApprovalReview> {
   const response = await fetch(
-    `/api/v1/events/${encodeURIComponent(eventId)}`,
+    `/api/platform-super-admin/events/${encodeURIComponent(eventId)}`,
     { credentials: "include" },
   );
   return parseEvent(response);
@@ -52,7 +69,7 @@ export async function getEventApprovalReview(eventId: string): Promise<EventAppr
 /** Approves one pending Event, then verifies the persisted lifecycle state. */
 export async function approveEvent(eventId: string): Promise<EventApprovalReview> {
   const response = await fetch(
-    `/api/v1/events/${encodeURIComponent(eventId)}/status`,
+    `/api/platform-super-admin/events/${encodeURIComponent(eventId)}/status`,
     {
       method: "PATCH",
       credentials: "include",
@@ -79,21 +96,21 @@ export async function rejectEvent(eventId: string, reason?: string): Promise<Eve
 
 /** Loads validated Event approval audit history through the authenticated same-origin proxy. */
 export async function getEventApprovalHistory(eventId: string): Promise<EventApprovalHistoryResponse> {
-  const response = await fetch(`/api/v1/admin/event-audits/${encodeURIComponent(eventId)}`, { credentials: "include" });
-  if (!response.ok) throw new EventApprovalError();
+  const response = await fetch(`/api/platform-super-admin/events/${encodeURIComponent(eventId)}/audit`, { credentials: "include" });
+  if (!response.ok) throw await createEventApprovalError(response);
   const value = await response.json() as unknown;
   if (!Array.isArray(value) || !value.every(isEventAuditRecord)) throw new EventApprovalError();
   return value;
 }
 
 async function decideEventApproval(eventId: string, path: "request-changes" | "reject", payload: { reason?: string }, expectedStatus: "needs_revision" | "rejected"): Promise<EventApprovalReview> {
-  const response = await fetch(`/api/v1/admin/events/${encodeURIComponent(eventId)}/${path}`, {
+  const response = await fetch(`/api/platform-super-admin/events/${encodeURIComponent(eventId)}/${path}`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!response.ok) throw new EventApprovalError();
+  if (!response.ok) throw await createEventApprovalError(response);
 
   const persistedEvent = await getEventApprovalReview(eventId);
   if (persistedEvent.status !== expectedStatus) throw new EventApprovalError();

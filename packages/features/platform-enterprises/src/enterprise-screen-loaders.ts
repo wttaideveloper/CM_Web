@@ -1,4 +1,3 @@
-import { getAuthTenants } from "@ihp/auth";
 import type {
   EnterpriseProductSummariesLoader,
   EnterpriseServiceSummariesLoader,
@@ -7,8 +6,10 @@ import type {
 import { getProducts } from "@ihp/products";
 import { getServices } from "@ihp/services";
 
+import { getPlatformEnterpriseTenants } from "./tenant.service";
+
 export const loadEnterpriseTenantOptions: EnterpriseTenantOptionsLoader = async () => {
-  const tenants = await getAuthTenants();
+  const { items: tenants } = await getPlatformEnterpriseTenants();
 
   return tenants.map((tenant) => ({
     id: tenant.id,

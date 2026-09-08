@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { HeaderFrame } from "@ihp/ui";
 
@@ -9,7 +10,15 @@ import type { PlatformAdminHeaderProps } from "./types";
 
 type OpenMenu = "notifications" | "settings" | "profile" | null;
 
-const settingsItems = ["Account Settings", "Platform Preferences", "Billing Settings", "Integrations"] as const;
+type SettingsMenuItem = { key: string; href?: string };
+
+const settingsItems: readonly SettingsMenuItem[] = [
+  { key: "settingsMenu.accountSettings" },
+  { key: "settingsMenu.platformPreferences" },
+  { key: "settingsMenu.superAdmins", href: "/super-admins" },
+  { key: "settingsMenu.billingSettings" },
+  { key: "settingsMenu.integrations" },
+];
 const profileItems = ["View Profile", "My Enterprise", "Help Center"] as const;
 
 function BellIcon() {
@@ -53,6 +62,7 @@ export function PlatformAdminHeader({
 }: PlatformAdminHeaderProps) {
   const headerRef = useRef<HTMLElement | null>(null);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
+  const { t } = useTranslation("platform");
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -126,10 +136,17 @@ export function PlatformAdminHeader({
             </button>
             <div className={`absolute right-0 top-[calc(100%+10px)] w-64 origin-top-right rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 ${openMenu === "settings" ? "pointer-events-auto scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"}`}>
               {settingsItems.map((item) => (
-                <button key={item} type="button" onClick={closeMenu} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]">
-                  <span>{item}</span>
-                  <ChevronRightIcon />
-                </button>
+                item.href ? (
+                  <Link key={item.key} href={item.href} onClick={closeMenu} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]">
+                    <span>{t(item.key)}</span>
+                    <ChevronRightIcon />
+                  </Link>
+                ) : (
+                  <button key={item.key} type="button" onClick={closeMenu} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]">
+                    <span>{t(item.key)}</span>
+                    <ChevronRightIcon />
+                  </button>
+                )
               ))}
             </div>
           </div>

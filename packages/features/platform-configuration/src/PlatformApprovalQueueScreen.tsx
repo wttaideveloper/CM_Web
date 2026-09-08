@@ -5,11 +5,12 @@ import { useEffect, useState } from "react";
 
 import EventApprovalReviewPanel from "./EventApprovalReview";
 import { EnterpriseDisplayName } from "./EventOwnershipNames";
-import { approveEvent, getEventApprovalHistory, getEventApprovalReview, rejectEvent, requestEventChanges, type EventApprovalDecision, type EventApprovalHistoryResponse, type EventAuditRecord } from "./event-approval.service";
+import { approveEvent, eventApprovalErrorMessage, getEventApprovalHistory, getEventApprovalReview, rejectEvent, requestEventChanges, type EventApprovalDecision, type EventApprovalHistoryResponse, type EventAuditRecord } from "./event-approval.service";
 import type { EventApprovalReview } from "./event-approval-review.types";
 import {
   eventApprovalListQueryKey,
   getEventApprovalList,
+  platformEventApprovalErrorMessage,
   type EventApprovalListItem,
   type EventApprovalStatus,
 } from "./event-approval-queries";
@@ -157,7 +158,7 @@ function Queue() {
 
         <div id="event-approval-events" role="tabpanel" aria-labelledby={status === "pending_approval" ? "event-pending-tab" : status === "needs_revision" ? "event-requested-changes-tab" : "event-approved-tab"}>
           {active.isLoading ? <div role="status" className="mt-6 space-y-3">{[1, 2, 3].map((number) => <div key={number} className="h-32 animate-pulse rounded-2xl bg-[#edf3f0]" />)}</div> : null}
-          {active.isError ? <div className="mt-6 rounded-2xl bg-white p-6 shadow-sm"><p role="alert" className="font-semibold text-[#b42318]">Unable to load {label.toLowerCase()} events.</p><button type="button" onClick={() => void active.refetch()} className="mt-3 font-semibold text-[#1f6a58] underline">Retry</button></div> : null}
+          {active.isError ? <div className="mt-6 rounded-2xl bg-white p-6 shadow-sm"><p role="alert" className="font-semibold text-[#b42318]">{platformEventApprovalErrorMessage(active.error, `Unable to load ${label.toLowerCase()} events.`)}</p><button type="button" onClick={() => void active.refetch()} className="mt-3 font-semibold text-[#1f6a58] underline">Retry</button></div> : null}
           {!active.isLoading && !active.isError && list?.items.length === 0 ? <div className="mt-6 rounded-2xl bg-white p-10 text-center shadow-sm"><p className="font-bold">{emptyTitle}</p><p className="mt-2 text-sm text-[#52736a]">{emptyText}</p></div> : null}
           {!active.isLoading && !active.isError && list?.items.length ? <>
             <div className="mt-6 space-y-4">{list.items.map((event) => <ApprovalEventCard key={event.id} event={event} label={label} onReview={() => setSelectedId(event.id)} />)}</div>
@@ -204,13 +205,13 @@ function ApprovalField({ label, children }: { label: string; children: React.Rea
   return <div className="min-w-0"><dt className="font-semibold text-[#06201c]">{label}</dt><dd className="mt-0.5 break-words">{children}</dd></div>;
 }
 
-function ReviewPanel({ selectedId, reviewQuery, approval, onClose }: { selectedId: string; reviewQuery: { data?: EventApprovalReview; isLoading: boolean; isError: boolean; refetch: () => Promise<unknown> }; approval: { isPending: boolean; isError: boolean; mutate: (variables: ApprovalMutationVariables) => void }; onClose: () => void }) {
+function ReviewPanel({ selectedId, reviewQuery, approval, onClose }: { selectedId: string; reviewQuery: { data?: EventApprovalReview; error?: unknown; isLoading: boolean; isError: boolean; refetch: () => Promise<unknown> }; approval: { isPending: boolean; isError: boolean; error?: unknown; mutate: (variables: ApprovalMutationVariables) => void }; onClose: () => void }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const historyQuery = useQuery({ queryKey: ["platform", "event-approval-history", selectedId], queryFn: () => getEventApprovalHistory(selectedId), enabled: historyOpen, retry: 1 });
   return <section aria-labelledby="event-review-title" className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.14em] text-[#7f9d94]">READ-ONLY EVENT REVIEW</p><h2 id="event-review-title" className="mt-1 text-xl font-bold text-[#06201c]">{reviewQuery.data?.title ?? "Event review"}</h2></div><button type="button" onClick={onClose} className="font-semibold text-[#1f6a58] underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2">Close</button></div>{reviewQuery.isLoading ? <div role="status" className="mt-5 space-y-3"><div className="h-8 animate-pulse rounded bg-[#edf3f0]" /><div className="h-24 animate-pulse rounded bg-[#edf3f0]" /></div> : reviewQuery.isError ? <div className="mt-5"><p role="alert" className="font-semibold text-[#b42318]">Unable to load event details.</p><button type="button" onClick={() => void reviewQuery.refetch()} className="mt-3 font-semibold text-[#1f6a58] underline">Retry</button></div> : reviewQuery.data ? <><EventApprovalReviewPanel event={reviewQuery.data} approvalPending={approval.isPending} approvalError={approval.isError ? "Unable to apply this Event approval decision. Please try again." : null} onDecision={(action, reason) => approval.mutate({ eventId: selectedId, action, reason })} /><section className="mt-6 border-t border-[#e1ebe6] pt-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-bold text-[#06201c]">Approval History</h3><p className="mt-1 text-sm text-[#52736a]">Backend audit history for this Event.</p></div><button type="button" onClick={() => setHistoryOpen((open) => !open)} className="h-10 rounded-full border border-[#1f6a58] px-4 text-sm font-bold text-[#1f6a58]">{historyOpen ? "Hide history" : "Show history"}</button></div>{historyOpen ? <ApprovalHistory query={historyQuery} /> : null}</section></> : null}</section>;
 }
 
-function ApprovalHistory({ query }: { query: { data?: EventApprovalHistoryResponse; isLoading: boolean; isError: boolean; refetch: () => Promise<unknown> } }) {
+function ApprovalHistory({ query }: { query: { data?: EventApprovalHistoryResponse; error?: unknown; isLoading: boolean; isError: boolean; refetch: () => Promise<unknown> } }) {
   if (query.isLoading) return <p role="status" className="mt-4 text-sm text-[#52736a]">Loading approval history...</p>;
   if (query.isError) return <div className="mt-4"><p role="alert" className="text-sm font-semibold text-[#b42318]">Unable to load approval history.</p><button type="button" onClick={() => void query.refetch()} className="mt-2 text-sm font-semibold text-[#1f6a58] underline">Retry</button></div>;
   if (!query.data || query.data.length === 0) return <p className="mt-4 text-sm text-[#52736a]">No approval history is available.</p>;

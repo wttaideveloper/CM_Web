@@ -1,0 +1,31 @@
+const shellEnglish = {
+  superAdminReset: {
+    forgotPassword: "Forgot password?",
+    backToLogin: "Back to Super Admin login",
+    emailTitle: "Reset your password",
+    emailDescription: "Enter your Super Admin email address to receive a verification code.",
+    email: "Email",
+    sendCode: "Send verification code",
+    sendingCode: "Sending code...",
+    neutralSent: "If the account is eligible, a verification code has been sent.",
+    otpTitle: "Verify your code",
+    otpDescription: "Enter the six-digit verification code sent to your email.",
+    verificationCode: "Verification code",
+    verifyCode: "Verify code",
+    verifyingCode: "Verifying code...",
+    invalidCode: "Enter the six-digit verification code.",
+    resetTitle: "Choose a new password",
+    resetDescription: "Set a new password for your Super Admin account.",
+    newPassword: "New password",
+    confirmPassword: "Confirm new password",
+    passwordsDoNotMatch: "Passwords do not match.",
+    resetPassword: "Reset password",
+    resettingPassword: "Resetting password...",
+    successTitle: "Password reset complete",
+    successDescription: "Your password has been reset. Return to login to continue.",
+    returnToLogin: "Return to login",
+    genericError: "Unable to complete this password-reset step. Please try again.",
+  },
+} as const;
+
+export default shellEnglish;

@@ -1,7 +1,18 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { createContext, useContext, type ReactNode } from "react";
 import { getEnterpriseById, type EnterpriseDto } from "@ihp/enterprises";
+import { getPlatformEnterpriseTenants } from "@ihp/platform-enterprises";
+
+type EnterpriseLoader = (enterpriseId: string) => Promise<EnterpriseDto>;
+
+const EnterpriseLoaderContext = createContext<EnterpriseLoader>(getEnterpriseById);
+
+/** Lets the Platform host inject its authenticated Enterprise reader while preserving the shared default. */
+export function PlatformEnterpriseReadProvider({ enterpriseLoader, children }: { enterpriseLoader: EnterpriseLoader; children: ReactNode }) {
+  return <EnterpriseLoaderContext.Provider value={enterpriseLoader}>{children}</EnterpriseLoaderContext.Provider>;
+}
 
 type NameProps = {
   enterpriseId: string | null;
@@ -16,35 +27,17 @@ function enterpriseDisplayName(enterprise: EnterpriseDto): string | null {
   return enterprise.business_legal_name || enterprise.business_short_name || enterprise.name || null;
 }
 
-function tenantItems(value: unknown): unknown[] {
-  if (Array.isArray(value)) return value;
-  if (!value || typeof value !== "object") return [];
-  const record = value as Record<string, unknown>;
-  return Array.isArray(record.data) ? record.data : Array.isArray(record.items) ? record.items : Array.isArray(record.tenants) ? record.tenants : [];
-}
-
-function tenantNameFromResponse(value: unknown, tenantId: string): string | null {
-  for (const item of tenantItems(value)) {
-    if (!item || typeof item !== "object") continue;
-    const tenant = item as Record<string, unknown>;
-    const id = tenant.id ?? tenant.tenant_id ?? tenant.tenantId;
-    const name = tenant.name ?? tenant.tenant_name ?? tenant.tenantName ?? tenant.organizationName;
-    if (id === tenantId && typeof name === "string" && name.trim()) return name;
-  }
-  return null;
-}
-
 async function getTenantName(tenantId: string): Promise<string | null> {
-  const response = await fetch("/api/v1/auth/tenants", { credentials: "include" });
-  if (!response.ok) return null;
-  return tenantNameFromResponse(await response.json(), tenantId);
+  const response = await getPlatformEnterpriseTenants();
+  return response.items.find((tenant) => tenant.id === tenantId)?.name ?? null;
 }
 
 /** Displays the authoritative legal Enterprise name, with a safe backend-name fallback. */
 export function EnterpriseDisplayName({ enterpriseId, eventEnterpriseName }: NameProps) {
+  const enterpriseLoader = useContext(EnterpriseLoaderContext);
   const enterpriseQuery = useQuery({
     queryKey: ["platform", "enterprise-display-name", enterpriseId],
-    queryFn: () => getEnterpriseById(enterpriseId ?? ""),
+    queryFn: () => enterpriseLoader(enterpriseId ?? ""),
     enabled: Boolean(enterpriseId),
     staleTime: 5 * 60_000,
     retry: 1,

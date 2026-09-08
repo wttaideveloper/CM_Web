@@ -421,6 +421,12 @@ export default function EnterpriseDetailsScreen({
   serviceCreateHref = "/services/create",
   allowEnterpriseSelector = true,
   emptyValue = "N/A",
+  enterpriseLoader = getEnterpriseById,
+  enterprisesLoader = getEnterprises,
+  enterpriseLocationsLoader = getEnterpriseLocations,
+  createLocationAction = createEnterpriseLocation,
+  updateLocationAction = updateLocation,
+  deleteLocationAction = deleteLocation,
   enterpriseProductsLoader,
   enterpriseServicesLoader,
 }: EnterpriseDetailsScreenProps) {
@@ -454,7 +460,7 @@ export default function EnterpriseDetailsScreen({
       setIsLoading(true);
       setError(null);
 
-      const data = await getEnterprises();
+      const data = await enterprisesLoader();
       setEnterpriseOptions(data);
       setShowSelector(true);
     } catch (fetchError) {
@@ -483,7 +489,7 @@ export default function EnterpriseDetailsScreen({
       setError(null);
       setIsNotFound(false);
 
-      const data = await getEnterpriseById(resolvedEnterpriseId);
+      const data = await enterpriseLoader(resolvedEnterpriseId);
       setEnterprise(data);
       setShowSelector(false);
     } catch (fetchError) {
@@ -493,7 +499,7 @@ export default function EnterpriseDetailsScreen({
 
       if (allowEnterpriseSelector) {
         try {
-          const data = await getEnterprises();
+          const data = await enterprisesLoader();
           setEnterpriseOptions(data);
           setShowSelector(true);
           setError(null);
@@ -552,7 +558,7 @@ export default function EnterpriseDetailsScreen({
     try {
       setIsLoadingLocations(true);
       setLocationsError(null);
-      const data = await getEnterpriseLocations(enterpriseId);
+      const data = await enterpriseLocationsLoader(enterpriseId);
       setLocations(data);
     } catch (fetchError) {
       setLocations([]);
@@ -617,8 +623,8 @@ export default function EnterpriseDetailsScreen({
       setLocationsError(null);
 
       const savedLocation = editingLocationId
-        ? await updateLocation(editingLocationId, payload)
-        : await createEnterpriseLocation(enterpriseId, payload);
+        ? await updateLocationAction(editingLocationId, payload)
+        : await createLocationAction(enterpriseId, payload);
 
       setLocations((current) => {
         if (editingLocationId) {
@@ -641,7 +647,7 @@ export default function EnterpriseDetailsScreen({
     try {
       setLocationError(null);
       setLocationsError(null);
-      await deleteLocation(locationId);
+      await deleteLocationAction(locationId);
       setLocations((current) => current.filter((location) => location.id !== locationId));
     } catch (deleteError) {
       setLocationError(deleteError instanceof Error ? deleteError.message : "Unable to delete location.");

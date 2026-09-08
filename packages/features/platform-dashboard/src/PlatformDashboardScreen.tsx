@@ -80,23 +80,24 @@ function ActivityIcon({ kind }: { kind: "package" | "video" | "building" | "tren
 export default function PlatformDashboardScreen({
   newEnterpriseHref = "/enterprises/create",
   approvalQueueHref = "/admin/enterprise",
+  enterprisesLoader = getEnterprises,
 }: PlatformDashboardScreenProps) {
   const [kpis, setKpis] = useState<KpiState>({ enterprises: null, products: null, loading: true });
 
   async function loadDashboardCounts() {
     setKpis((current) => ({ ...current, loading: true }));
     try {
-      const [enterpriseData, productData] = await Promise.all([getEnterprises(), getProducts()]);
+      const [enterpriseData, productData] = await Promise.all([enterprisesLoader(), getProducts()]);
       setKpis({ enterprises: enterpriseData.length, products: productData.length, loading: false });
     } catch {
       setKpis({ enterprises: null, products: null, loading: false });
     }
   }
 
-  useEffect(() => { void loadDashboardCounts(); }, []);
+  useEffect(() => { void loadDashboardCounts(); }, [enterprisesLoader]);
 
   const stats = [
-    { label: "Total Enterprises", value: kpis.loading ? "Loading" : String(kpis.enterprises ?? 0), change: "+7" },
+    { label: "Total Enterprises", value: kpis.loading ? "Loading" : kpis.enterprises === null ? "Unavailable" : String(kpis.enterprises), change: "+7" },
     { label: "Platform Revenue", value: "$284,521", subtitle: "Platform Revenue", change: "+18.4%" },
     { label: "Active Users", value: "8,294", subtitle: "Active Users", change: "+12.3%" },
     { label: "Pending Approvals", value: "4", subtitle: "Needs your attention", change: "" },

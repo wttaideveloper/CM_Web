@@ -3,22 +3,31 @@
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import ShellI18nProvider from "@/i18n/ShellI18nProvider";
+import SuperAdminPasswordResetFlow from "@/components/auth/SuperAdminPasswordResetFlow";
 import {
   buildAuthCallbackPath,
   getEnterpriseAdminAppOrigin,
   getSafeEnterpriseAdminReturnUrl,
   getPlatformAdminAppOrigin,
   getSafePlatformAdminReturnUrl,
+  loginSuperAdmin,
   startLogin,
   useAuth,
 } from "@ihp/auth";
 
 function LoginPageContent() {
+  const { t } = useTranslation("shell");
   const searchParams = useSearchParams();
   const { authenticated, isLoading } = useAuth();
   const [loginType, setLoginType] = useState<"super-admin" | "admin">("super-admin");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [superAdminEmail, setSuperAdminEmail] = useState("");
+  const [superAdminPassword, setSuperAdminPassword] = useState("");
+  const [superAdminRememberMe, setSuperAdminRememberMe] = useState(false);
+  const [superAdminResetOpen, setSuperAdminResetOpen] = useState(false);
   const enterpriseAdminReturnUrl = getSafeEnterpriseAdminReturnUrl(
     searchParams.get("return_to"),
   );
@@ -54,7 +63,7 @@ function LoginPageContent() {
     : "Sign In as Enterprise Owner";
   const canSubmit = !isSubmitting && (isSuperAdmin || !isLoading);
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (isSubmitting) {
@@ -70,15 +79,8 @@ function LoginPageContent() {
         if (!platformAdminOrigin) {
           throw new Error("Platform Admin origin is not configured.");
         }
-
-        const platformBuilderReturnUrl = new URL(
-          "/form-builder-new",
-          platformAdminOrigin,
-        ).toString();
-        startLogin({
-          callbackPath: buildAuthCallbackPath(platformBuilderReturnUrl),
-          fresh: true,
-        });
+        await loginSuperAdmin({ email: superAdminEmail.trim(), password: superAdminPassword, rememberMe: superAdminRememberMe });
+        window.location.assign(platformAdminReturnUrl ?? new URL("/dashboard", platformAdminOrigin).toString());
         return;
       }
 
@@ -262,18 +264,20 @@ function LoginPageContent() {
             </div>
 
             <div>
+              {isSuperAdmin && superAdminResetOpen ? <SuperAdminPasswordResetFlow onBackToLogin={() => setSuperAdminResetOpen(false)} /> : <>
               <h2 className="text-[24px] font-extrabold tracking-tight text-[#041a16] sm:text-[26px]">
                 Welcome back
               </h2>
               <p className="mt-1.5 text-[14px] text-[#55746b]">{subtitle}</p>
-            </div>
+              </>}
 
-            <form onSubmit={handleSubmit} className="mt-6 space-y-3.5">
-              {isSuperAdmin ? (
-                <p className="rounded-[13px] border border-[#c9ddd7] bg-[#f1f7f4] px-4 py-3 text-[13px] leading-5 text-[#55746b]">
-                  Continue to the secure Keycloak sign-in page.
-                </p>
-              ) : (
+            {!superAdminResetOpen ? <form onSubmit={handleSubmit} className="mt-6 space-y-3.5">
+              {isSuperAdmin ? <>
+                <label className="block text-[13px] font-semibold text-[#35544b]">Email<input required type="email" autoComplete="email" value={superAdminEmail} onChange={(event) => setSuperAdminEmail(event.target.value)} className="mt-1.5 h-10 w-full rounded-[13px] border border-[#c9ddd7] px-3 text-[14px]" /></label>
+                <label className="block text-[13px] font-semibold text-[#35544b]">Password<input required type="password" autoComplete="current-password" value={superAdminPassword} onChange={(event) => setSuperAdminPassword(event.target.value)} className="mt-1.5 h-10 w-full rounded-[13px] border border-[#c9ddd7] px-3 text-[14px]" /></label>
+                <label className="flex items-center gap-2 text-[13px] text-[#55746b]"><input type="checkbox" checked={superAdminRememberMe} onChange={(event) => setSuperAdminRememberMe(event.target.checked)} />Remember me</label>
+                <button type="button" onClick={() => { setLoginError(null); setSuperAdminResetOpen(true); }} className="text-left text-[13px] font-semibold text-[#0b5b4e] underline">{t("superAdminReset.forgotPassword")}</button>
+              </> : (
                 <p className="rounded-[13px] border border-[#c9ddd7] bg-[#f1f7f4] px-4 py-3 text-[13px] leading-5 text-[#55746b]">
                   Continue to the secure Invigorate Health sign-in page.
                 </p>
@@ -285,13 +289,13 @@ function LoginPageContent() {
               >
                 {isSubmitting ? "Signing in..." : buttonLabel}
               </button>
-            </form>
+            </form> : null}
 
-            {loginError ? (
+            {!superAdminResetOpen && loginError ? (
               <p className="mt-3 text-sm font-medium text-[#b42318]">{loginError}</p>
             ) : null}
 
-            <div className="mt-5">
+            {!superAdminResetOpen ? <div className="mt-5">
               {isSuperAdmin ? (
                 <div className="rounded-[13px] border border-[#f0c36a] bg-[#fff8e6] px-3.5 py-3 text-[12px] text-[#7a4b00]">
                   <p className="flex items-center gap-2 font-bold">
@@ -326,6 +330,7 @@ function LoginPageContent() {
                   </Link>
                 </p>
               )}
+            </div> : null}
             </div>
           </div>
         </section>
@@ -336,7 +341,7 @@ function LoginPageContent() {
 
 export default function LoginPage() {
   return (
-    <Suspense
+    <ShellI18nProvider><Suspense
       fallback={(
         <main className="flex min-h-screen items-center justify-center bg-white text-sm font-semibold text-[#52736a]">
           Preparing secure sign in...
@@ -344,6 +349,6 @@ export default function LoginPage() {
       )}
     >
       <LoginPageContent />
-    </Suspense>
+    </Suspense></ShellI18nProvider>
   );
 }

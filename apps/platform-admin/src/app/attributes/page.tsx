@@ -1,10 +1,10 @@
 import PlatformAdminShell from "@/components/PlatformAdminShell";
-import { PlatformAttributesScreen } from "@ihp/platform-attributes";
+import { PlatformAttributesWithEnterpriseData } from "@/components/PlatformEnterpriseDataClients";
 
 export default function PlatformAttributesPage() {
   return (
     <PlatformAdminShell>
-      <PlatformAttributesScreen />
+      <PlatformAttributesWithEnterpriseData />
     </PlatformAdminShell>
   );
 }

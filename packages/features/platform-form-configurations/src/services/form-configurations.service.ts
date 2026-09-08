@@ -1,6 +1,6 @@
 import type { CreateEventFormConfigurationRequest, EventCoreFieldRegistryEntry, EventFormAssignment, EventFormAuditEntry, EventFormCompositeConfig, EventFormConfiguration, EventFormConfigurationCreateResponse, EventFormConfigurationSummary, EventFormConfigurationVersion, EventFormPublishResponse, UpdateEventFormConfigurationAssignmentsRequest, UpdateEventFormConfigurationRequest } from "../model/event-form-configuration-api.types";
 
-const eventFormConfigurationsPath = "/api/v1/admin/event-form-configurations";
+const eventFormConfigurationsPath = "/api/platform-super-admin/form-configurations";
 
 /** Represents an HTTP failure without exposing backend response bodies. */
 export class FormConfigurationsApiError extends Error {
@@ -42,8 +42,9 @@ function errorMessages(value: unknown): string[] {
   if (messages.length || nested.length) return [...messages, ...nested];
   return Object.entries(value).flatMap(([key, item]) => errorMessages(item).map((message) => `${key}: ${message}`));
 }
-async function errorMessage(response: Response): Promise<string> { const body = await response.json().catch(() => null) as unknown; const messages = errorMessages(body); return messages.length ? messages.join("\n") : `Event Form Configurations request failed (HTTP ${response.status}).`; }
-async function requestJson(path: string, init?: RequestInit): Promise<unknown> { let response: Response; try { response = await fetch(path, { credentials: "include", ...init }); } catch { throw new FormConfigurationsApiError(null, "Unable to reach Event Form Configurations."); } if (!response.ok) throw new FormConfigurationsApiError(response.status, await errorMessage(response)); return response.json().catch(() => { throw new FormConfigurationsApiError(response.status, "Event Form Configurations returned invalid JSON."); }); }
+async function errorMessage(response: Response): Promise<string> { if (response.status === 401) return "Super Admin authentication is required."; if (response.status === 403) return "You do not have permission to manage form configurations."; const body = await response.json().catch(() => null) as unknown; const messages = errorMessages(body); return messages.length ? messages.join("\n") : `Event Form Configurations request failed (HTTP ${response.status}).`; }
+async function request(path: string, init?: RequestInit): Promise<Response> { let response: Response; try { response = await fetch(path, init); } catch { throw new FormConfigurationsApiError(null, "Unable to reach Event Form Configurations."); } if (!response.ok) throw new FormConfigurationsApiError(response.status, await errorMessage(response)); return response; }
+async function requestJson(path: string, init?: RequestInit): Promise<unknown> { const response = await request(path, init); if (response.status === 204) return undefined; return response.json().catch(() => { throw new FormConfigurationsApiError(response.status, "Event Form Configurations returned invalid JSON."); }); }
 function jsonRequest(method: "POST" | "PATCH" | "PUT", body?: object): RequestInit { return { method, headers: { "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) }; }
 function configurationPath(configurationId: string, suffix = ""): string { return `${eventFormConfigurationsPath}/${encodeURIComponent(configurationId)}${suffix}`; }
 function expect<T>(value: unknown, predicate: (candidate: unknown) => boolean, label: string): T { if (!predicate(value)) throw new FormConfigurationsApiError(null, `Event Form Configurations returned invalid ${label}.`); return value as T; }
@@ -59,7 +60,7 @@ export async function getEventFormConfiguration(configurationId: string): Promis
 /** Updates one Event form configuration. */
 export async function updateEventFormConfiguration(configurationId: string, payload: UpdateEventFormConfigurationRequest): Promise<EventFormConfiguration> { return expect(await requestJson(configurationPath(configurationId), jsonRequest("PATCH", payload)), isConfiguration, "updated configuration"); }
 /** Deletes one Event form configuration. */
-export async function deleteEventFormConfiguration(configurationId: string): Promise<void> { await requestJson(configurationPath(configurationId), { method: "DELETE" }); }
+export async function deleteEventFormConfiguration(configurationId: string): Promise<void> { await request(configurationPath(configurationId), { method: "DELETE" }); }
 /** Lists immutable versions for one Event form configuration. */
 export async function listEventFormConfigurationVersions(configurationId: string): Promise<EventFormConfigurationVersion[]> { const value = await requestJson(configurationPath(configurationId, "/versions")); return expect(value, (candidate) => Array.isArray(candidate) && candidate.every(isVersion), "versions"); }
 /** Retrieves one immutable Event form configuration version. */
@@ -71,7 +72,7 @@ export async function activateEventFormConfiguration(configurationId: string): P
 /** Deactivates one Event form configuration. */
 export async function deactivateEventFormConfiguration(configurationId: string): Promise<EventFormConfiguration> { return expect(await requestJson(configurationPath(configurationId, "/deactivate"), jsonRequest("POST")), isConfiguration, "deactivated configuration"); }
 /** Retires one published Event form configuration through the Events lifecycle endpoint. */
-export async function retireEventFormConfiguration(configurationId: string): Promise<EventFormConfiguration> { return expect(await requestJson(`/api/v1/events/form-configuration/admin/${encodeURIComponent(configurationId)}/retire`, jsonRequest("POST")), isConfiguration, "retired configuration"); }
+export async function retireEventFormConfiguration(configurationId: string): Promise<EventFormConfiguration> { return expect(await requestJson(configurationPath(configurationId, "/retire"), jsonRequest("POST")), isConfiguration, "retired configuration"); }
 /** Retrieves persisted tenant assignments for one Event form configuration. */
 export async function getEventFormConfigurationAssignments(configurationId: string): Promise<EventFormAssignment[]> { const value = await requestJson(configurationPath(configurationId, "/assignments")); const entries = assignmentEntries(value); return expect(entries, (candidate) => Array.isArray(candidate) && candidate.every(isAssignment), "assignments"); }
 /** Replaces tenant assignments for one Event form configuration. */

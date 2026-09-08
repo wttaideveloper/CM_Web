@@ -1,10 +1,10 @@
 import PlatformAdminShell from "@/components/PlatformAdminShell";
-import { EnterpriseEditScreen } from "@ihp/enterprises";
+import { PlatformEnterpriseEditWithEnterpriseData } from "@/components/PlatformEnterpriseDataClients";
 
 export default function PlatformEditEnterprisePage() {
   return (
     <PlatformAdminShell>
-      <EnterpriseEditScreen />
+      <PlatformEnterpriseEditWithEnterpriseData />
     </PlatformAdminShell>
   );
 }

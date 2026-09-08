@@ -1,10 +1,10 @@
 import PlatformAdminShell from "@/components/PlatformAdminShell";
-import { ProductDetailsScreen } from "@ihp/products";
+import { PlatformProductDetailsWithEnterpriseData } from "@/components/PlatformEnterpriseDataClients";
 
 export default function PlatformProductDetailsPage() {
   return (
     <PlatformAdminShell>
-      <ProductDetailsScreen />
+      <PlatformProductDetailsWithEnterpriseData />
     </PlatformAdminShell>
   );
 }

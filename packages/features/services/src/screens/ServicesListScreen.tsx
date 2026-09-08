@@ -111,6 +111,7 @@ export default function ServicesListScreen({
   detailHrefBase = "/services",
   editHrefBase = "/services",
   enterpriseName,
+  enterprisesLoader = getEnterprises,
 }: ServicesListScreenProps = {}) {
   const [services, setServices] = useState<ServiceListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -125,7 +126,7 @@ export default function ServicesListScreen({
       let enterpriseData: EnterpriseDto[] | { items?: EnterpriseDto[] } | null = [];
 
       try {
-        enterpriseData = await getEnterprises();
+        enterpriseData = await enterprisesLoader();
       } catch {
         enterpriseData = [];
       }

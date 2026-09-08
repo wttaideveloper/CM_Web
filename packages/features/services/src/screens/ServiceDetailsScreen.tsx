@@ -53,6 +53,8 @@ export default function ServiceDetailsScreen({
   enterpriseFilterId,
   listHref = "/services",
   editHrefBase = "/services",
+  enterprisesLoader = getEnterprises,
+  enterpriseLocationLoader = getLocationById,
 }: ServiceDetailsScreenProps = {}) {
   const params = useParams<{ id: string }>();
   const [service, setService] = useState<ServiceDto | null>(null);
@@ -81,7 +83,7 @@ export default function ServiceDetailsScreen({
 
       const [serviceData, enterpriseData] = await Promise.all([
         getServiceById(params.id),
-        getEnterprises(),
+        enterprisesLoader(),
       ]);
 
       if (enterpriseFilterId && serviceData.enterprise_id !== enterpriseFilterId) {
@@ -113,7 +115,7 @@ export default function ServiceDetailsScreen({
       if (serviceLocationId) {
         void (async () => {
           try {
-            const locationData = await getLocationById(serviceLocationId);
+            const locationData = await enterpriseLocationLoader(serviceLocationId);
             setLocationSummary(resolveLocationSummary(locationData));
           } catch {
             setLocationError("Unable to load location");

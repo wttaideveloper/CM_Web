@@ -150,6 +150,7 @@ export default function ProductsListScreen({
   detailHrefBase = "/products",
   editHrefBase = "/products",
   enterpriseName,
+  enterprisesLoader = getEnterprises,
 }: ProductsListScreenProps = {}) {
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [products, setProducts] = useState<ProductListItem[]>([]);
@@ -165,7 +166,7 @@ export default function ProductsListScreen({
       let enterpriseData: EnterpriseDto[] | { items?: EnterpriseDto[] } | null = [];
 
       try {
-        enterpriseData = await getEnterprises();
+        enterpriseData = await enterprisesLoader();
       } catch {
         enterpriseData = [];
       }

@@ -7,7 +7,9 @@
   },
   "dependencies": {
     "@ihp/enterprises": "0.1.0",
-    "@tanstack/react-query": "^5.90.21"
+    "@ihp/platform-enterprises": "0.1.0",
+    "@tanstack/react-query": "^5.90.21",
+    "react-i18next": "^17.0.13"
   },
   "peerDependencies": {
     "next": "^16.2.9",

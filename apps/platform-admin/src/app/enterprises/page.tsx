@@ -1,10 +1,10 @@
 import PlatformAdminShell from "@/components/PlatformAdminShell";
-import { EnterprisesListScreen } from "@ihp/enterprises";
+import { PlatformEnterprisesManagementScreen } from "@ihp/platform-enterprises";
 
 export default function PlatformEnterprisesPage() {
   return (
     <PlatformAdminShell>
-      <EnterprisesListScreen />
+      <PlatformEnterprisesManagementScreen />
     </PlatformAdminShell>
   );
 }

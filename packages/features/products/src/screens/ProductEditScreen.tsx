@@ -125,6 +125,7 @@ export default function ProductEditScreen({
   enterpriseFilterId,
   listHref = "/products",
   detailHrefBase = "/products",
+  enterpriseLocationsLoader = getEnterpriseLocations,
 }: ProductEditScreenProps = {}) {
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -169,7 +170,7 @@ export default function ProductEditScreen({
       setIsLoadingLocations(true);
       setLocationError(null);
 
-      const data = await getEnterpriseLocations(enterpriseId);
+      const data = await enterpriseLocationsLoader(enterpriseId);
       setLocationOptions(data);
       setLocationId(nextLocationId ?? "");
     } catch (fetchError) {

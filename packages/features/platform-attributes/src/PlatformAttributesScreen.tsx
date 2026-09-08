@@ -25,12 +25,15 @@ function getServiceName(service: ServiceDto) {
   return service.service_name || "Unnamed Service";
 }
 
-async function loadEnterpriseOptions(): Promise<AttributeEntityOption[]> {
-  const enterprises = await getEnterprises();
-  return enterprises.map((enterprise) => ({
-    id: enterprise.id,
-    label: getEnterpriseName(enterprise),
-  }));
+function loadEnterpriseOptions(
+  enterprisesLoader: () => Promise<EnterpriseDto[]>,
+): Promise<AttributeEntityOption[]> {
+  return enterprisesLoader().then((enterprises) =>
+    enterprises.map((enterprise) => ({
+      id: enterprise.id,
+      label: getEnterpriseName(enterprise),
+    })),
+  );
 }
 
 async function loadProductOptions(): Promise<AttributeEntityOption[]> {
@@ -49,10 +52,14 @@ async function loadServiceOptions(): Promise<AttributeEntityOption[]> {
   }));
 }
 
-export default function PlatformAttributesScreen() {
+export default function PlatformAttributesScreen({
+  enterprisesLoader = getEnterprises,
+}: {
+  enterprisesLoader?: () => Promise<EnterpriseDto[]>;
+}) {
   return (
     <AttributesScreen
-      enterpriseOptionsLoader={loadEnterpriseOptions}
+      enterpriseOptionsLoader={() => loadEnterpriseOptions(enterprisesLoader)}
       productOptionsLoader={loadProductOptions}
       serviceOptionsLoader={loadServiceOptions}
     />

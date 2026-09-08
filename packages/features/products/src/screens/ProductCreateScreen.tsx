@@ -112,6 +112,8 @@ export default function ProductCreateScreen({
   enterpriseId: ownerEnterpriseId,
   enterpriseName: ownerEnterpriseName,
   tenantId: ownerTenantId,
+  enterprisesLoader = getEnterprises,
+  enterpriseLocationsLoader = getEnterpriseLocations,
 }: ProductCreateScreenProps = {}) {
   const router = useRouter();
   const isEnterpriseAdmin = mode === "enterprise-admin";
@@ -206,7 +208,7 @@ export default function ProductCreateScreen({
       setIsLoadingEnterprises(true);
       setError(null);
 
-      const data = await getEnterprises();
+      const data = await enterprisesLoader();
       setEnterpriseOptions(data);
       setEnterpriseId((current) => current || data[0]?.id || "");
     } catch (fetchError) {
@@ -230,7 +232,7 @@ export default function ProductCreateScreen({
       setLocationError(null);
       setLocationOptions([]);
 
-      const data = await getEnterpriseLocations(nextEnterpriseId);
+      const data = await enterpriseLocationsLoader(nextEnterpriseId);
       setLocationOptions(data);
     } catch (fetchError) {
       setLocationOptions([]);

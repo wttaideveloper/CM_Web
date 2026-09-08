@@ -117,6 +117,10 @@ const nextConfig: NextConfig = {
           source: "/api/v1/events/:path*",
           destination: `${eventsApiBaseUrl}/api/v1/events/:path*`,
         },
+        {
+          source: "/api/v1/event-categories",
+          destination: `${eventsApiBaseUrl}/api/v1/event-categories/`,
+        },
       );
     }
 

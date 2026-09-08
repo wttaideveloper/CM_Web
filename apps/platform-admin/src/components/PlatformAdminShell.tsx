@@ -1,12 +1,13 @@
 "use client";
 
-import { getShellAppOrigin, logoutWebAuth } from "@ihp/auth";
+import { getShellAppOrigin } from "@ihp/auth";
 import {
   PlatformAdminLayout,
   platformNavigationGroups,
   type PlatformNavigationItem,
 } from "@ihp/platform-layout";
-import { PlatformApprovalDataProvider, usePendingEventApprovalCount } from "@ihp/platform-configuration";
+import { PlatformApprovalDataProvider, PlatformEnterpriseReadProvider, usePendingEventApprovalCount } from "@ihp/platform-configuration";
+import { getPlatformEnterpriseById } from "@ihp/platform-enterprises";
 import { usePathname } from "next/navigation";
 import { useCallback, useMemo, type ReactNode } from "react";
 
@@ -30,13 +31,20 @@ const platformOwnedNavigationRoutes = new Set([
   "/products",
   "/services",
   "/enterprises",
+  "/users",
   "/events",
   "/trainings",
   "/integrations",
 ]);
 
 export default function PlatformAdminShell({ children }: { children: ReactNode }) {
-  return <PlatformApprovalDataProvider><PlatformAdminShellContent>{children}</PlatformAdminShellContent></PlatformApprovalDataProvider>;
+  return (
+    <PlatformEnterpriseReadProvider enterpriseLoader={getPlatformEnterpriseById}>
+      <PlatformApprovalDataProvider>
+        <PlatformAdminShellContent>{children}</PlatformAdminShellContent>
+      </PlatformApprovalDataProvider>
+    </PlatformEnterpriseReadProvider>
+  );
 }
 
 function PlatformAdminShellContent({ children }: { children: ReactNode }) {
@@ -46,15 +54,17 @@ function PlatformAdminShellContent({ children }: { children: ReactNode }) {
   const notificationsHref = useMemo(() => getShellRoute("/notifications"), []);
   const handleLogout = useCallback(async () => {
     const shellOrigin = getShellAppOrigin();
-    if (!shellOrigin) {
-      return;
-    }
 
     try {
-      const logoutUrl = await logoutWebAuth({ frontendOrigin: shellOrigin });
-      window.location.assign(logoutUrl);
-    } catch {
-      // Preserve the protected screen if the existing Web Auth logout request fails.
+      await fetch("/api/platform-super-admin/logout", {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+      });
+    } finally {
+      if (shellOrigin) {
+        window.location.assign(new URL("/auth/login", shellOrigin).toString());
+      }
     }
   }, []);
   const resolveNavigationHref = useCallback(

@@ -99,6 +99,8 @@ export default function ProductDetailsScreen({
   enterpriseFilterId,
   listHref = "/products",
   editHrefBase = "/products",
+  enterprisesLoader = getEnterprises,
+  enterpriseLocationLoader = getLocationById,
 }: ProductDetailsScreenProps = {}) {
   const params = useParams<{ id: string }>();
   const [product, setProduct] = useState<ProductDto | null>(null);
@@ -125,7 +127,7 @@ export default function ProductDetailsScreen({
       setError(null);
       setAccessDenied(null);
 
-      const [productData, enterpriseData] = await Promise.all([getProductById(params.id), getEnterprises()]);
+      const [productData, enterpriseData] = await Promise.all([getProductById(params.id), enterprisesLoader()]);
 
       if (enterpriseFilterId && productData.enterprise_id !== enterpriseFilterId) {
         setProduct(null);
@@ -156,7 +158,7 @@ export default function ProductDetailsScreen({
       if (productLocationId) {
         void (async () => {
           try {
-            const locationData = await getLocationById(productLocationId);
+            const locationData = await enterpriseLocationLoader(productLocationId);
             setLocationSummary(resolveLocationSummary(locationData));
           } catch {
             setLocationError("Unable to load location");

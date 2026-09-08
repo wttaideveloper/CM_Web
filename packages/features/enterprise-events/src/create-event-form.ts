@@ -72,6 +72,9 @@ export function buildCreateEventPayload(
   tenantId: string,
   enterpriseId: string,
   locationId: string,
+  formConfigurationVersionId?: string,
+  customValues?: Array<{ field_id: string; value: string | string[] | boolean | number | null }>,
+  configuredCoreKeys?: ReadonlySet<string>,
 ): CreateEventPayload {
   const coordinates = buildCoordinates(values.venue_latitude, values.venue_longitude);
   const venue: CreateEventVenue = {
@@ -81,7 +84,7 @@ export function buildCreateEventPayload(
     ...(coordinates ? { coordinates } : {}),
   };
 
-  return {
+  const payload: CreateEventPayload = {
     tenant_id: tenantId,
     enterprise_id: enterpriseId,
     location_id: locationId,
@@ -115,7 +118,23 @@ export function buildCreateEventPayload(
     custom_fields: values.custom_fields as CreateEventCustomField[],
     sessions: values.sessions,
     status: "draft",
+    ...(formConfigurationVersionId ? { form_configuration_version_id: formConfigurationVersionId } : {}),
+    ...(customValues ? { custom_values: customValues } : {}),
   };
+  if (configuredCoreKeys) {
+    const payloadFields: Record<string, keyof CreateEventPayload> = { title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", start_date: "start_date", start_datetime: "start_date", end_date: "end_date", end_datetime: "end_date", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", timezone: "time_zone", time_zone: "time_zone", event_type: "delivery_mode", delivery_mode: "delivery_mode", venue: "venue", price: "price", currency: "currency", ticket_types: "ticket_types", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents", media: "primary_image", sessions: "sessions", custom_fields: "custom_fields", registration_questions: "custom_fields" };
+    const configuredPayloadFields = new Set(
+      Object.entries(payloadFields)
+        .filter(([configurationKey]) => configuredCoreKeys.has(configurationKey))
+        .map(([, payloadKey]) => payloadKey),
+    );
+    for (const payloadKey of new Set(Object.values(payloadFields))) {
+      if (!configuredPayloadFields.has(payloadKey)) {
+        delete (payload as Partial<CreateEventPayload>)[payloadKey];
+      }
+    }
+  }
+  return payload;
 }
 
 /** Converts a real Event response into usable editable controls without literal null values. */

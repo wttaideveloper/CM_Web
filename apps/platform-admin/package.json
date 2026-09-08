@@ -19,14 +19,17 @@
     "@ihp/platform-attributes": "0.1.0",
     "@ihp/platform-layout": "0.1.0",
     "@ihp/platform-marketplace-static": "0.1.0",
+    "@ihp/platform-users": "0.1.0",
     "@ihp/products": "0.1.0",
     "@ihp/services": "0.1.0",
     "@ihp/ui": "0.1.0",
     "@ihp/workflow-admin": "0.1.0",
     "@ihp/workflow-runtime": "0.1.0",
+    "i18next": "^26.4.2",
     "next": "16.2.9",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "react-i18next": "^17.0.13"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

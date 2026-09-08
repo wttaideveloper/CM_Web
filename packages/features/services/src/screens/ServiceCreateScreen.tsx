@@ -176,6 +176,8 @@ export default function ServiceCreateScreen({
   enterpriseName: ownerEnterpriseName,
   tenantId: ownerTenantId,
   providerOptionsLoader,
+  enterprisesLoader = getEnterprises,
+  enterpriseLocationsLoader = getEnterpriseLocations,
 }: ServiceCreateScreenProps = {}) {
   const router = useRouter();
   const isEnterpriseAdmin = mode === "enterprise-admin";
@@ -275,7 +277,7 @@ export default function ServiceCreateScreen({
       setIsLoadingEnterprises(true);
       setError(null);
 
-      const data = await getEnterprises();
+      const data = await enterprisesLoader();
       setEnterpriseOptions(data);
       setEnterpriseId((current) => current || data[0]?.id || "");
     } catch (fetchError) {
@@ -299,7 +301,7 @@ export default function ServiceCreateScreen({
       setLocationError(null);
       setLocationOptions([]);
 
-      const data = await getEnterpriseLocations(nextEnterpriseId);
+      const data = await enterpriseLocationsLoader(nextEnterpriseId);
       setLocationOptions(data);
     } catch (fetchError) {
       setLocationOptions([]);

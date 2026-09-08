@@ -127,6 +127,8 @@ export default function EnterpriseEditScreen({
   enterpriseId,
   successRedirect,
   backHref,
+  enterpriseLoader = getEnterpriseById,
+  enterpriseUpdater = updateEnterprise,
 }: EnterpriseEditScreenProps = {}) {
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -178,7 +180,7 @@ export default function EnterpriseEditScreen({
       setError(null);
       setIsNotFound(false);
 
-      const data = await getEnterpriseById(resolvedEnterpriseId);
+      const data = await enterpriseLoader(resolvedEnterpriseId);
       if (process.env.NODE_ENV !== "production") {
         console.log("[Enterprise edit] GET status", {
           enterprise_id: resolvedEnterpriseId,
@@ -288,7 +290,7 @@ export default function EnterpriseEditScreen({
         });
       }
 
-      const updatedEnterprise = await updateEnterprise(resolvedEnterpriseId, {
+      const updatedEnterprise = await enterpriseUpdater(resolvedEnterpriseId, {
         business_short_name: trimmedTradingName,
         business_legal_name: trimmedName,
         business_description: trimmedDescription,

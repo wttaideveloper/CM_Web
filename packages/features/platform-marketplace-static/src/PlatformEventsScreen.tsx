@@ -7,6 +7,13 @@ type TemporalFilter = "all" | "upcoming" | "ongoing" | "finished";
 type EventItem = { id: string; enterprise_id: string; enterprise_name?: string | null; title: string; category: string; organiser_name?: string | null; start_date?: string | null; end_date?: string | null; time_zone?: string | null; primary_image?: string | null; delivery_mode?: string | null; venue?: { name?: string | null; address?: string | null; city?: string | null } | null; capacity?: string | null; status: "published" };
 type EventsResponse = { items: EventItem[]; pagination: { total: number; page: number; page_size: number; total_pages: number } };
 
+class PlatformEventsApiError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+    this.name = "PlatformEventsApiError";
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 function parseEvents(value: unknown): EventsResponse {
   if (!isRecord(value) || !Array.isArray(value.items) || !isRecord(value.pagination) || typeof value.pagination.total !== "number" || typeof value.pagination.page !== "number" || typeof value.pagination.page_size !== "number" || typeof value.pagination.total_pages !== "number" || !value.items.every((item) => isRecord(item) && typeof item.id === "string" && typeof item.enterprise_id === "string" && typeof item.title === "string" && typeof item.category === "string" && item.status === "published")) throw new Error();
@@ -15,9 +22,16 @@ function parseEvents(value: unknown): EventsResponse {
 async function getPublishedEvents(page: number, search: string): Promise<EventsResponse> {
   const query = new URLSearchParams({ status: "published", page: String(page), page_size: "20" });
   if (search) query.set("search", search);
-  const response = await fetch("/api/v1/events/?" + query.toString(), { credentials: "include" });
-  if (!response.ok) throw new Error();
+  const response = await fetch("/api/platform-super-admin/events?" + query.toString(), { credentials: "include" });
+  if (!response.ok) throw await createPlatformEventsApiError(response);
   return parseEvents(await response.json());
+}
+async function createPlatformEventsApiError(response: Response): Promise<PlatformEventsApiError> {
+  const body: unknown = await response.json().catch(() => null);
+  if (response.status === 401) return new PlatformEventsApiError(401, "Super Admin authentication is required.");
+  if (response.status === 403) return new PlatformEventsApiError(403, "You do not have permission to manage Events.");
+  const detail = isRecord(body) && typeof body.detail === "string" ? body.detail : null;
+  return new PlatformEventsApiError(response.status, detail ?? "Unable to load published events.");
 }
 function dateLabel(value: string | null | undefined): string {
   const match = value && /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
@@ -76,7 +90,7 @@ function PublishedEvents() {
   const emptyTitle = filter === "all" ? "No published events" : "No " + filter + " events";
   return <><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-2xl font-bold text-[#06201c]">Event Management</h2><p className="mt-1 text-sm text-[#52736a]">Browse published events across all enterprises.</p></div></div>
     <div className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><label className="w-full lg:max-w-sm"><span className="sr-only">Search published events</span><input type="search" value={input} onChange={(event) => setInput(event.target.value)} placeholder="Search events..." className="h-12 w-full rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]" /></label><div className="flex flex-wrap gap-2">{(["all", "upcoming", "ongoing", "finished"] as const).map((item) => <button key={item} type="button" aria-pressed={filter === item} onClick={() => setFilter(item)} className={filter === item ? "h-10 rounded-full bg-[#e8f6ee] px-4 text-sm font-semibold text-[#1f6a58]" : "h-10 rounded-full border border-[#d7e5df] px-4 text-sm font-semibold text-[#52736a]"}>{item[0].toUpperCase() + item.slice(1)}</button>)}</div></div></div>
-    {eventsQuery.isLoading ? <div role="status" className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{[1, 2, 3].map((item) => <div key={item} className="h-[290px] animate-pulse rounded-2xl bg-[#edf3f0]" />)}</div> : eventsQuery.isError ? <div className="mt-5 rounded-2xl bg-white p-6 shadow-sm"><p role="alert" className="font-semibold text-[#b42318]">Unable to load published events.</p><button type="button" onClick={() => void eventsQuery.refetch()} className="mt-3 font-semibold text-[#1f6a58] underline">Retry</button></div> : visible.length === 0 ? <div className="mt-5 rounded-2xl bg-white p-10 text-center shadow-sm"><p className="font-bold">{emptyTitle}</p><p className="mt-2 text-sm text-[#52736a]">{filter === "all" ? "Published events will appear here once they have been approved and published." : "Try another temporal filter."}</p></div> : <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{visible.map((event) => <PublishedEventCard key={event.id} event={event} />)}</div>}
+    {eventsQuery.isLoading ? <div role="status" className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{[1, 2, 3].map((item) => <div key={item} className="h-[290px] animate-pulse rounded-2xl bg-[#edf3f0]" />)}</div> : eventsQuery.isError ? <div className="mt-5 rounded-2xl bg-white p-6 shadow-sm"><p role="alert" className="font-semibold text-[#b42318]">{eventsQuery.error instanceof PlatformEventsApiError ? eventsQuery.error.message : "Unable to load published events."}</p><button type="button" onClick={() => void eventsQuery.refetch()} className="mt-3 font-semibold text-[#1f6a58] underline">Retry</button></div> : visible.length === 0 ? <div className="mt-5 rounded-2xl bg-white p-10 text-center shadow-sm"><p className="font-bold">{emptyTitle}</p><p className="mt-2 text-sm text-[#52736a]">{filter === "all" ? "Published events will appear here once they have been approved and published." : "Try another temporal filter."}</p></div> : <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{visible.map((event) => <PublishedEventCard key={event.id} event={event} />)}</div>}
     {eventsQuery.data && eventsQuery.data.pagination.total_pages > 1 ? <nav aria-label="Published Event pages" className="mt-6 flex justify-between"><button type="button" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>Previous</button><span>Page {eventsQuery.data.pagination.page} of {eventsQuery.data.pagination.total_pages}</span><button type="button" disabled={page >= eventsQuery.data.pagination.total_pages} onClick={() => setPage((current) => current + 1)}>Next</button></nav> : null}
   </>;
 }

@@ -24,7 +24,8 @@ export const platformNavigationGroups: readonly PlatformNavigationGroup[] = [
   {
     title: "MARKETPLACE",
     items: [
-      { label: "Enterprises", href: "/enterprises", icon: "building" },
+      { label: "Enterprises / Tenants", href: "/enterprises", icon: "building" },
+      { label: "Users", href: "/users", icon: "settings" },
       { label: "Products", href: "/products", icon: "package" },
       { label: "Services", href: "/services", icon: "service" },
       { label: "Events", href: "/events", icon: "calendar" },

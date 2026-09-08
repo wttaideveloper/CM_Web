@@ -1,419 +1,56 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
-type CategoryNode = {
-  id: string;
-  name: string;
-  emoji: string;
-  subtitle: string;
-  listings: number;
-  expanded?: boolean;
-  children?: Array<{
-    id: string;
-    name: string;
-    subtitle: string;
-    listings?: number;
-    expanded?: boolean;
-    children?: Array<{
-      id: string;
-      name: string;
-    }>;
-  }>;
-};
+import { useCreateEventTaxonomyCategory, useDeleteEventTaxonomyCategory, useEventTaxonomyCategories, useUpdateEventTaxonomyCategory } from "./event-category-taxonomy.queries";
+import { EventTaxonomyApiError, type EventTaxonomyCategory, type EventTaxonomyCategoryInput } from "./event-category-taxonomy.service";
 
-const categories: CategoryNode[] = [
-  {
-    id: "home-services",
-    name: "Home Services",
-    emoji: "🏠",
-    subtitle: "2 subcategories · 24 listings",
-    listings: 24,
-    expanded: true,
-    children: [
-      {
-        id: "plumbing",
-        name: "Plumbing",
-        subtitle: "3 types · 8 listings",
-        listings: 8,
-        expanded: true,
-        children: [
-          { id: "emergency-plumbing", name: "Emergency Plumbing" },
-          { id: "pipe-repair", name: "Pipe Repair" },
-          { id: "drain-cleaning", name: "Drain Cleaning" },
-        ],
-      },
-      {
-        id: "electrical",
-        name: "Electrical",
-        subtitle: "3 types · 6 listings",
-        listings: 6,
-        expanded: false,
-      },
-    ],
-  },
-  {
-    id: "fitness-wellness",
-    name: "Fitness & Wellness",
-    emoji: "💪",
-    subtitle: "2 subcategories · 42 listings",
-    listings: 42,
-    expanded: true,
-    children: [
-      {
-        id: "personal-training",
-        name: "Personal Training",
-        subtitle: "4 types · 18 listings",
-        listings: 18,
-      },
-      {
-        id: "group-classes",
-        name: "Group Classes",
-        subtitle: "4 types · 12 listings",
-        listings: 12,
-      },
-    ],
-  },
-  {
-    id: "healthcare",
-    name: "Healthcare",
-    emoji: "🏥",
-    subtitle: "2 subcategories · 31 listings",
-    listings: 31,
-    expanded: false,
-  },
-  {
-    id: "electronics",
-    name: "Electronics",
-    emoji: "📱",
-    subtitle: "1 subcategories · 15 listings",
-    listings: 15,
-    expanded: false,
-  },
-  {
-    id: "nutrition",
-    name: "Nutrition",
-    emoji: "🥗",
-    subtitle: "2 subcategories · 19 listings",
-    listings: 19,
-    expanded: false,
-  },
-];
+type Module = "products-services" | "events" | "programs" | "trainings";
+type Editor = { mode: "create" | "edit"; parent: EventTaxonomyCategory | null; category?: EventTaxonomyCategory } | null;
+const modules: Module[] = ["products-services", "events", "programs", "trainings"];
 
-const emojiChoices = ["🏠", "💪", "🏥", "📱", "🥗", "🎓", "🚗", "🐕", "🏆", "🧑‍⚕️"] as const;
+function moduleLabel(module: Module, t: (key: string) => string): string { return module === "products-services" ? t("categories.productsServices") : t(`categories.${module}`); }
+function kindLabel(category: EventTaxonomyCategory, t: (key: string) => string): string { return category.parent_id === null ? t("categories.category") : t("categories.subcategory"); }
+function errorMessage(error: unknown, fallback: string): string { return error instanceof EventTaxonomyApiError ? error.message : fallback; }
 
-function ChevronIcon({ open }: { open: boolean }) {
-  return (
-    <svg
-      aria-hidden="true"
-      className={`h-4 w-4 transition ${open ? "rotate-90" : ""}`}
-      viewBox="0 0 24 24"
-      fill="none"
-    >
-      <path d="m9 6 6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function FolderIcon() {
-  return (
-    <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M3.5 7.5A1.5 1.5 0 0 1 5 6h4l1.5 2H19A1.5 1.5 0 0 1 20.5 9.5v7A1.5 1.5 0 0 1 19 18H5A1.5 1.5 0 0 1 3.5 16.5v-9Z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function TagIcon() {
-  return (
-    <svg aria-hidden="true" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M4 12V5a1 1 0 0 1 1-1h7l8 8-8 8-8-8Z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <circle cx="8.25" cy="8.25" r="1" fill="currentColor" />
-    </svg>
-  );
-}
-
-function SearchIcon() {
-  return (
-    <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none">
-      <circle cx="11" cy="11" r="6" stroke="currentColor" strokeWidth="2" />
-      <path d="m20 20-3.5-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
+/** Module-based taxonomy management. Only Event categories have a current backend contract. */
 export default function PlatformCategoriesScreen() {
-  const [query, setQuery] = useState("");
-  const [selectedEmoji, setSelectedEmoji] = useState<(typeof emojiChoices)[number]>("🏠");
-  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
-    "home-services": true,
-    "fitness-wellness": true,
-  });
-  const [expandedChildren, setExpandedChildren] = useState<Record<string, boolean>>({
-    plumbing: true,
-  });
+  const { t } = useTranslation("platform");
+  const [module, setModule] = useState<Module>("events");
+  const [search, setSearch] = useState("");
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [editor, setEditor] = useState<Editor>(null);
+  const [deleting, setDeleting] = useState<EventTaxonomyCategory | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const query = useEventTaxonomyCategories(module === "events");
+  const create = useCreateEventTaxonomyCategory();
+  const update = useUpdateEventTaxonomyCategory();
+  const remove = useDeleteEventTaxonomyCategory();
+  const pending = create.isPending || update.isPending || remove.isPending;
+  const entries = query.data ?? [];
+  const matches = (entry: EventTaxonomyCategory) => [entry.name, entry.description ?? ""].some((value) => value.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
+  const parents = useMemo(() => entries.filter((entry) => entry.parent_id === null).filter((parent) => !search.trim() || matches(parent) || entries.some((child) => child.parent_id === parent.id && matches(child))), [entries, search]);
+  const childrenFor = (parentId: string) => entries.filter((entry) => entry.parent_id === parentId);
+  const save = (input: EventTaxonomyCategoryInput) => {
+    if (!editor) return;
+    const onSuccess = () => { setSuccess(t("categories.createSuccess")); setEditor(null); };
+    if (editor.mode === "edit" && editor.category) update.mutate({ categoryId: editor.category.id, input }, { onSuccess });
+    else create.mutate(input, { onSuccess });
+  };
+  const confirmDelete = () => { if (deleting) remove.mutate(deleting.id, { onSuccess: () => { setSuccess(t("categories.deleteSuccess")); setDeleting(null); } }); };
 
-  const filteredCategories = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) {
-      return categories;
-    }
-
-    return categories.filter((category) => {
-      if (
-        category.name.toLowerCase().includes(normalized) ||
-        category.subtitle.toLowerCase().includes(normalized)
-      ) {
-        return true;
-      }
-
-      return category.children?.some((child) => {
-        if (
-          child.name.toLowerCase().includes(normalized) ||
-          child.subtitle.toLowerCase().includes(normalized)
-        ) {
-          return true;
-        }
-
-        return child.children?.some((leaf) => leaf.name.toLowerCase().includes(normalized));
-      });
-    });
-  }, [query]);
-
-  return (
-      <div className="mx-auto w-full max-w-[1220px]">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-1.5">
-            <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">
-              SUPER ADMIN · CONFIGURATION
-            </p>
-            <h2 className="text-2xl font-bold text-[#06201c] sm:text-3xl">
-              Category & Subcategory Management
-            </h2>
-            <p className="max-w-3xl text-sm text-[#52736a]">
-              Organize all products and services into a hierarchical category structure
-            </p>
-          </div>
-
-          <button
-            type="button"
-            className="inline-flex h-9 items-center justify-center rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white shadow-sm transition hover:bg-[#175245]"
-          >
-            + Add Category
-          </button>
-        </div>
-
-        <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <section className="rounded-[20px] border border-[#e1ebe6] bg-white shadow-[0_8px_24px_rgba(15,61,51,0.06)]">
-            <div className="flex flex-col gap-3 border-b border-[#edf3f0] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm font-semibold text-[#355a51]">5 Categories · 8 Subcategories</p>
-              <label className="relative block w-full sm:w-auto">
-                <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8ca69e]">
-                  <SearchIcon />
-                </span>
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search categories..."
-                  className="h-10 w-full rounded-full border border-[#d7e5df] bg-[#f8fbf9] pl-10 pr-4 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58] sm:w-[300px]"
-                />
-              </label>
-            </div>
-
-            <div className="bg-[#fcfefd]">
-              {filteredCategories.map((category, categoryIndex) => {
-                const categoryOpen = expandedCategories[category.id] ?? !!category.expanded;
-                return (
-                  <div key={category.id}>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setExpandedCategories((current) => ({
-                          ...current,
-                          [category.id]: !categoryOpen,
-                        }))
-                      }
-                      className={`flex h-16 w-full items-center justify-between gap-4 px-5 text-left transition hover:bg-[#f4faf7] ${
-                        categoryIndex < filteredCategories.length - 1 || categoryOpen ? "border-b border-[#edf3f0]" : ""
-                      }`}
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <span className="text-[#6c877f]">
-                          <ChevronIcon open={categoryOpen} />
-                        </span>
-                        <span className="text-xl">{category.emoji}</span>
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-bold text-[#06201c]">{category.name}</p>
-                          <p className="mt-0.5 text-xs text-[#7f9d94]">{category.subtitle}</p>
-                        </div>
-                      </div>
-                      <span className="shrink-0 rounded-full bg-[#eef6f2] px-2.5 py-1 text-[11px] font-semibold text-[#1f6a58]">
-                        {category.listings} listings
-                      </span>
-                    </button>
-
-                    {categoryOpen && category.children?.length ? (
-                      <div className="border-b border-[#edf3f0] bg-[#f8fbf9]">
-                        {category.children.map((child) => {
-                          const childHasChildren = !!child.children?.length;
-                          const childOpen = expandedChildren[child.id] ?? !!child.expanded;
-                          return (
-                            <div key={child.id}>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (!childHasChildren) {
-                                    return;
-                                  }
-                                  setExpandedChildren((current) => ({
-                                    ...current,
-                                    [child.id]: !childOpen,
-                                  }));
-                                }}
-                                className="flex h-12 w-full items-center justify-between gap-4 border-b border-[#edf3f0] pl-14 pr-5 text-left transition hover:bg-[#f2f7f4]"
-                              >
-                                <div className="flex min-w-0 items-center gap-3">
-                                  <span className="text-[#90a59d]">
-                                    {childHasChildren ? <ChevronIcon open={childOpen} /> : <span className="block w-4" />}
-                                  </span>
-                                  <span className="text-[#789088]">
-                                    <FolderIcon />
-                                  </span>
-                                  <div className="min-w-0">
-                                    <p className="truncate text-sm font-semibold text-[#17372f]">{child.name}</p>
-                                    <p className="mt-0.5 text-xs text-[#7f9d94]">{child.subtitle}</p>
-                                  </div>
-                                </div>
-                                {typeof child.listings === "number" ? (
-                                  <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-[#5d7069]">
-                                    {child.listings} listings
-                                  </span>
-                                ) : null}
-                              </button>
-
-                              {childOpen && child.children?.length ? (
-                                <div className="bg-[#f8fbf9] pb-1">
-                                  {child.children.map((leaf) => (
-                                    <div
-                                      key={leaf.id}
-                                      className="flex h-9 items-center gap-3 pl-[92px] pr-5 text-sm text-[#4d655d]"
-                                    >
-                                      <span className="text-[#9bb0a8]">
-                                        <TagIcon />
-                                      </span>
-                                      <span>{leaf.name}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          <aside className="space-y-5">
-            <section className="rounded-[20px] border border-[#e1ebe6] bg-white p-5 shadow-[0_8px_24px_rgba(15,61,51,0.06)]">
-              <h3 className="text-base font-bold text-[#06201c]">Add New Category</h3>
-
-              <div className="mt-4 space-y-4">
-                <label className="block">
-                  <span className="text-sm font-bold text-[#06201c]">Category Name *</span>
-                  <input
-                    type="text"
-                    placeholder="e.g. Home Services"
-                    className="mt-1.5 h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f4faf7] px-3.5 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
-                  />
-                </label>
-
-                <div>
-                  <span className="text-sm font-bold text-[#06201c]">Icon / Emoji</span>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {emojiChoices.map((emoji) => {
-                      const selected = emoji === selectedEmoji;
-                      return (
-                        <button
-                          key={emoji}
-                          type="button"
-                          onClick={() => setSelectedEmoji(emoji)}
-                          className={`flex h-9 w-9 items-center justify-center rounded-full text-base transition ${
-                            selected
-                              ? "bg-[#e8f6ee] ring-2 ring-[#c6ddd3]"
-                              : "bg-[#f5f8f6] hover:bg-[#eef6f2]"
-                          }`}
-                        >
-                          {emoji}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <label className="block">
-                  <span className="text-sm font-bold text-[#06201c]">Description</span>
-                  <textarea
-                    placeholder="Describe this category..."
-                    className="mt-1.5 h-20 w-full resize-none rounded-xl border border-[#d7e5df] bg-[#f4faf7] px-3.5 py-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]"
-                  />
-                </label>
-
-                <button
-                  type="button"
-                  className="inline-flex h-10 w-full items-center justify-center rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white shadow-sm transition hover:bg-[#175245]"
-                >
-                  Add Category
-                </button>
-              </div>
-            </section>
-
-            <section className="rounded-[20px] border border-[#e1ebe6] bg-white p-5 shadow-[0_8px_24px_rgba(15,61,51,0.06)]">
-              <h3 className="text-base font-bold text-[#06201c]">Category Stats</h3>
-
-              <div className="mt-4 space-y-3.5">
-                {[
-                  { emoji: "🏠", label: "Home Services", value: 24, width: "57%" },
-                  { emoji: "💪", label: "Fitness & Wellness", value: 42, width: "100%" },
-                  { emoji: "🏥", label: "Healthcare", value: 31, width: "74%" },
-                  { emoji: "📱", label: "Electronics", value: 15, width: "36%" },
-                  { emoji: "🥗", label: "Nutrition", value: 19, width: "45%" },
-                ].map((item) => (
-                  <div key={item.label}>
-                    <div className="flex items-center justify-between gap-3 text-sm">
-                      <div className="flex min-w-0 items-center gap-2.5">
-                        <span className="text-base">{item.emoji}</span>
-                        <span className="truncate font-medium text-[#17372f]">{item.label}</span>
-                      </div>
-                      <span className="shrink-0 font-semibold text-[#355a51]">{item.value}</span>
-                    </div>
-                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#e8f1ed]">
-                      <div
-                        className="h-full rounded-full bg-[#1f6a58]"
-                        style={{ width: item.width }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </aside>
-        </div>
-      </div>
-  );
+  return <section className="mx-auto w-full max-w-6xl"><p className="text-xs font-bold uppercase tracking-[.18em] text-[#7f9d94]">{t("categories.eyebrow")}</p><h1 className="mt-2 text-3xl font-bold text-[#06201c]">{t("categories.title")}</h1><p className="mt-2 text-sm text-[#52736a]">{t("categories.description")}</p>
+    <div role="tablist" aria-label={t("categories.title")} className="mt-7 flex flex-wrap gap-2 border-b border-[#d7e5df]">{modules.map((item) => <button key={item} id={`category-module-${item}`} type="button" role="tab" aria-selected={module === item} onClick={() => { setModule(item); setSearch(""); setSuccess(null); }} className={module === item ? "border-b-2 border-[#1f6a58] px-4 py-3 text-sm font-bold text-[#1f6a58]" : "px-4 py-3 text-sm font-bold text-[#52736a] hover:text-[#1f6a58]"}>{moduleLabel(item, t)}</button>)}</div>
+    {module !== "events" ? <div role="tabpanel" className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white p-8 text-center shadow-sm"><p className="font-bold text-[#06201c]">{moduleLabel(module, t)}</p><p className="mt-2 text-sm text-[#52736a]">{t("categories.notConfigured")}</p></div> : <section role="tabpanel" className="mt-6"><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-xl font-bold text-[#06201c]">{t("categories.events")}</h2><p className="mt-1 text-sm text-[#52736a]">{t("categories.eventsDescription")}</p></div><button type="button" onClick={() => { setEditor({ mode: "create", parent: null }); setSuccess(null); }} className="h-10 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white hover:bg-[#175245]">+ {t("categories.addCategory")}</button></div><label className="mt-5 block max-w-md"><span className="sr-only">{t("categories.search")}</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("categories.search")} className="h-11 w-full rounded-xl border border-[#d7e5df] bg-white px-4 text-sm outline-none focus:border-[#1f6a58]" /></label>{success ? <p role="status" className="mt-4 rounded-xl bg-[#e9f4ee] px-4 py-3 text-sm font-semibold text-[#1f6a58]">{success}</p> : null}
+      {query.isLoading ? <div role="status" className="mt-6 space-y-3">{[1, 2, 3].map((item) => <div key={item} className="h-16 animate-pulse rounded-xl bg-[#edf3f0]" />)}</div> : null}
+      {query.isError ? <div className="mt-6 rounded-2xl border border-[#f3d0cb] bg-white p-6"><p role="alert" className="font-semibold text-[#b42318]">{errorMessage(query.error, t("categories.loadError"))}</p><button type="button" onClick={() => void query.refetch()} className="mt-3 font-semibold text-[#1f6a58] underline">{t("categories.retry")}</button></div> : null}
+      {!query.isLoading && !query.isError && parents.length === 0 ? <div className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white p-8 text-center shadow-sm"><p className="font-bold text-[#06201c]">{search ? t("categories.noMatches") : t("categories.empty")}</p>{!search ? <button type="button" onClick={() => setEditor({ mode: "create", parent: null })} className="mt-4 font-semibold text-[#1f6a58] underline">+ {t("categories.addCategory")}</button> : null}</div> : null}
+      {!query.isLoading && !query.isError && parents.length > 0 ? <div className="mt-6 overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-sm">{parents.map((parent) => { const children = childrenFor(parent.id); const searching = Boolean(search.trim()); const visibleChildren = searching ? children.filter(matches) : children; const open = expanded[parent.id] ?? (searching && visibleChildren.length > 0); return <article key={parent.id} className="border-b border-[#edf3f0] last:border-b-0"><div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-start gap-3"><button type="button" onClick={() => setExpanded((current) => ({ ...current, [parent.id]: !open }))} aria-label={open ? t("categories.collapse", { name: parent.name }) : t("categories.expand", { name: parent.name })} className="mt-0.5 h-7 w-7 rounded-full text-[#1f6a58] hover:bg-[#e8f6ee]">{open ? "−" : "+"}</button><div className="min-w-0"><h3 className="font-bold text-[#06201c]">{parent.name}</h3>{parent.description ? <p className="mt-1 text-sm text-[#52736a]">{parent.description}</p> : null}<p className="mt-1 text-xs font-semibold text-[#7f9d94]">{children.length} {t("categories.subcategories")}</p></div></div><div className="flex flex-wrap gap-2"><button type="button" disabled={pending} onClick={() => setEditor({ mode: "create", parent })} className="h-9 rounded-full border border-[#1f6a58] px-3 text-sm font-bold text-[#1f6a58] disabled:opacity-60">+ {t("categories.addSubcategory")}</button><button type="button" disabled={pending} onClick={() => setEditor({ mode: "edit", parent: null, category: parent })} className="h-9 rounded-full border border-[#d7e5df] px-3 text-sm font-bold text-[#31594d] disabled:opacity-60">{t("categories.editCategory")}</button><button type="button" disabled={pending} onClick={() => setDeleting(parent)} className="h-9 rounded-full border border-[#f0c6c0] px-3 text-sm font-bold text-[#b42318] disabled:opacity-60">{t("categories.delete")}</button></div></div>{open ? <div className="border-t border-[#edf3f0] bg-[#f8fbf9]">{visibleChildren.map((child) => <div key={child.id} className="flex flex-col gap-3 border-b border-[#edf3f0] px-6 py-3 last:border-b-0 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="font-semibold text-[#17372f]">{child.name}</p>{child.description ? <p className="mt-1 text-sm text-[#52736a]">{child.description}</p> : null}</div><div className="flex gap-2"><button type="button" disabled={pending} onClick={() => setEditor({ mode: "edit", parent, category: child })} className="text-sm font-bold text-[#1f6a58] disabled:opacity-60">{t("categories.editSubcategory")}</button><button type="button" disabled={pending} onClick={() => setDeleting(child)} className="text-sm font-bold text-[#b42318] disabled:opacity-60">{t("categories.delete")}</button></div></div>)}{visibleChildren.length === 0 && searching ? <p className="px-6 py-3 text-sm text-[#52736a]">{t("categories.noMatches")}</p> : null}</div> : null}</article>; })}</div> : null}
+    </section>}
+    {editor ? <CategoryEditor editor={editor} pending={create.isPending || update.isPending} error={create.error ?? update.error} onClose={() => !pending && setEditor(null)} onSave={save} /> : null}{deleting ? <DeleteDialog category={deleting} pending={remove.isPending} error={remove.error} onCancel={() => !remove.isPending && setDeleting(null)} onConfirm={confirmDelete} /> : null}
+  </section>;
 }
 
+function CategoryEditor({ editor, pending, error, onClose, onSave }: { editor: Exclude<Editor, null>; pending: boolean; error: unknown; onClose: () => void; onSave: (input: EventTaxonomyCategoryInput) => void }) { const { t } = useTranslation("platform"); const category = editor.category; const [name, setName] = useState(category?.name ?? ""); const [description, setDescription] = useState(category?.description ?? ""); const child = editor.parent !== null || Boolean(category?.parent_id); const parentId = editor.parent?.id ?? category?.parent_id ?? null; const title = editor.mode === "edit" ? child ? t("categories.editSubcategory") : t("categories.editCategory") : child ? t("categories.addSubcategory") : t("categories.addCategory"); return <div className="fixed inset-0 z-50 flex items-end bg-[#06201c]/35 sm:items-center sm:justify-center sm:p-5" role="presentation"><form role="dialog" aria-modal="true" aria-labelledby="taxonomy-editor-title" onSubmit={(event) => { event.preventDefault(); if (name.trim()) onSave({ name: name.trim(), parent_id: parentId, description: description.trim() || null }); }} className="w-full rounded-t-2xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-2xl"><h2 id="taxonomy-editor-title" className="text-lg font-bold text-[#06201c]">{title}</h2><label className="mt-5 block text-sm font-bold text-[#06201c]">{t("categories.nameField")} *<input autoFocus required value={name} onChange={(event) => setName(event.target.value)} className="mt-1.5 h-10 w-full rounded-xl border border-[#d7e5df] px-3 outline-none focus:border-[#1f6a58]" /></label><label className="mt-4 block text-sm font-bold text-[#06201c]">{t("categories.descriptionField")}<textarea value={description} onChange={(event) => setDescription(event.target.value)} className="mt-1.5 h-24 w-full resize-y rounded-xl border border-[#d7e5df] p-3 outline-none focus:border-[#1f6a58]" /></label>{error ? <p role="alert" className="mt-4 text-sm font-semibold text-[#b42318]">{errorMessage(error, t("categories.mutationError"))}</p> : null}<div className="mt-6 flex justify-end gap-3"><button type="button" disabled={pending} onClick={onClose} className="h-10 rounded-full border border-[#d7e5df] px-4 text-sm font-semibold text-[#52736a] disabled:opacity-60">{t("categories.cancel")}</button><button type="submit" disabled={pending || !name.trim()} className="h-10 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white disabled:opacity-60">{editor.mode === "edit" ? t("categories.save") : t("categories.create")}</button></div></form></div>; }
+function DeleteDialog({ category, pending, error, onCancel, onConfirm }: { category: EventTaxonomyCategory; pending: boolean; error: unknown; onCancel: () => void; onConfirm: () => void }) { const { t } = useTranslation("platform"); return <div className="fixed inset-0 z-50 flex items-end bg-[#06201c]/35 sm:items-center sm:justify-center sm:p-5" role="presentation"><div role="dialog" aria-modal="true" aria-labelledby="taxonomy-delete-title" className="w-full rounded-t-2xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-2xl"><h2 id="taxonomy-delete-title" className="text-lg font-bold text-[#06201c]">{t("categories.deleteTitle", { kind: kindLabel(category, t) })}</h2><p className="mt-2 text-sm text-[#52736a]">{t("categories.deleteDescription", { name: category.name })}</p>{error ? <p role="alert" className="mt-4 text-sm font-semibold text-[#b42318]">{errorMessage(error, t("categories.deleteError"))}</p> : null}<div className="mt-6 flex justify-end gap-3"><button type="button" disabled={pending} onClick={onCancel} className="h-10 rounded-full border border-[#d7e5df] px-4 text-sm font-semibold text-[#52736a] disabled:opacity-60">{t("categories.cancel")}</button><button type="button" disabled={pending} onClick={onConfirm} className="h-10 rounded-full bg-[#b42318] px-4 text-sm font-bold text-white disabled:opacity-60">{t("categories.delete")}</button></div></div></div>; }
