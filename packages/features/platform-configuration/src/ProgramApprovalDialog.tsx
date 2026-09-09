@@ -1,0 +1,23 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
+import type { ProgramApprovalDecision } from "./program-approval.service";
+
+type ProgramApprovalDialogProps = { action: ProgramApprovalDecision | null; programTitle: string; pending: boolean; error: string | null; onCancel: () => void; onConfirm: (reason?: string) => void };
+const dialogCopy: Record<ProgramApprovalDecision, { title: string; description: string; confirm: string; pending: string; reasonRequired: boolean; destructive: boolean }> = {
+  approve: { title: "Approve program?", description: "This Program will be marked as Approved. The Enterprise Admin will still need to publish it separately.", confirm: "Approve Program", pending: "Approving...", reasonRequired: false, destructive: false },
+  reject: { title: "Reject program?", description: "The Enterprise Admin can review any notes and edit the Program before resubmitting it for approval.", confirm: "Reject Program", pending: "Rejecting...", reasonRequired: false, destructive: true },
+};
+
+/** Requires a deliberate, keyboard-accessible confirmation before a Super Admin program approval decision. */
+export default function ProgramApprovalDialog({ action, programTitle, pending, error, onCancel, onConfirm }: ProgramApprovalDialogProps) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const [reason, setReason] = useState("");
+  const copy = action ? dialogCopy[action] : null;
+  useEffect(() => { if (!action) return; setReason(""); cancelRef.current?.focus(); const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape" && !pending) onCancel(); }; window.addEventListener("keydown", onKeyDown); return () => window.removeEventListener("keydown", onKeyDown); }, [action, onCancel, pending]);
+  if (!action || !copy || typeof document === "undefined") return null;
+  return createPortal(<div className="fixed inset-0 z-[120] flex items-end bg-[#06201c]/35 p-0 sm:items-center sm:justify-center sm:p-5" role="presentation"><div role="dialog" aria-modal="true" aria-labelledby="program-approval-title" aria-describedby="program-approval-description" onKeyDown={trapDialogFocus} className="w-full rounded-t-2xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-2xl"><h3 id="program-approval-title" className="text-xl font-bold text-[#06201c]">{copy.title}</h3><p id="program-approval-description" className="mt-3 text-sm text-[#52736a]"><span className="font-semibold text-[#284940]">{programTitle}</span>. {copy.description}</p>{action !== "approve" ? <label className="mt-4 block text-sm font-semibold text-[#06201c]">Reason <span className="font-normal text-[#52736a]">(optional)</span><textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={4} disabled={pending} className="mt-1.5 w-full rounded-xl border border-[#d7e5df] p-3 font-normal text-[#06201c] outline-none focus:border-[#1f6a58] focus:ring-2 focus:ring-[#1f6a58]/20 disabled:opacity-60" /></label> : null}{error ? <p role="alert" className="mt-4 rounded-xl bg-[#fff1f0] p-3 text-sm font-semibold text-[#b42318]">{error}</p> : null}<div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button ref={cancelRef} type="button" disabled={pending} onClick={onCancel} className="h-11 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a] disabled:cursor-not-allowed disabled:opacity-60">Cancel</button><button type="button" disabled={pending || (copy.reasonRequired && !reason.trim())} onClick={() => onConfirm(reason.trim() || undefined)} className={`h-11 rounded-full px-5 text-sm font-bold text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${copy.destructive ? "bg-[#b42318] focus:ring-[#b42318]" : "bg-[#1f6a58] focus:ring-[#1f6a58]"}`}>{pending ? copy.pending : copy.confirm}</button></div></div></div>, document.body);
+}
+function trapDialogFocus(event: React.KeyboardEvent<HTMLDivElement>) { if (event.key !== "Tab") return; const focusableElements = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not([disabled]), textarea:not([disabled])')); const currentIndex = focusableElements.findIndex((element) => element === document.activeElement); const nextIndex = event.shiftKey ? (currentIndex - 1 + focusableElements.length) % focusableElements.length : (currentIndex + 1) % focusableElements.length; focusableElements[nextIndex]?.focus(); event.preventDefault(); }

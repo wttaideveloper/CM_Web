@@ -10,6 +10,7 @@ export type NavigationIcon =
   | "service"
   | "calendar"
   | "training"
+  | "program"
   | "chart"
   | "integration"
   | "tag"

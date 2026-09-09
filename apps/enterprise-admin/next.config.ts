@@ -46,10 +46,19 @@ const nextConfig: NextConfig = {
     }
 
     if (chatApiBaseUrl) {
+      const chatBaseHttps = chatApiBaseUrl.replace(/^http:/, "https:");
       fallback.push(
         {
+          source: "/api/v1/trainings/form-configuration/:path*",
+          destination: `${chatBaseHttps}/trainings/form-configuration/:path*`,
+        },
+        {
+          source: "/api/v1/admin/training-form-configurations/:path*",
+          destination: `${chatBaseHttps}/admin/training-form-configurations/:path*`,
+        },
+        {
           source: "/api/v1/search/enterprises",
-          destination: `${chatApiBaseUrl}/search/enterprises`,
+          destination: `${chatBaseHttps}/search/enterprises`,
         },
         {
           source: "/api/v1/enterprises",
@@ -86,6 +95,38 @@ const nextConfig: NextConfig = {
         {
           source: "/api/v1/attributes/:path*",
           destination: `${chatApiBaseUrl}/attributes/:path*`,
+        },
+        {
+          source: "/api/v1/trainings",
+          destination: `${chatApiBaseUrl}/trainings/`,
+        },
+        {
+          source: "/api/v1/trainings/:path*",
+          destination: `${chatApiBaseUrl}/trainings/:path*`,
+        },
+        {
+          source: "/api/v1/search/trainings",
+          destination: `${chatApiBaseUrl}/search/trainings`,
+        },
+        {
+          source: "/api/v1/admin/trainings/:path*",
+          destination: `${chatBaseHttps}/admin/trainings/:path*`,
+        },
+        {
+          source: "/api/v1/programs",
+          destination: `${chatApiBaseUrl}/programs/`,
+        },
+        {
+          source: "/api/v1/programs/:path*",
+          destination: `${chatApiBaseUrl}/programs/:path*`,
+        },
+        {
+          source: "/api/v1/search/programs",
+          destination: `${chatApiBaseUrl}/search/programs`,
+        },
+        {
+          source: "/api/v1/admin/programs/:path*",
+          destination: `${chatApiBaseUrl}/admin/programs/:path*`,
         },
       );
     }

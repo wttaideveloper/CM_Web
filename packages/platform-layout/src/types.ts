@@ -8,6 +8,7 @@ export type PlatformNavigationIcon =
   | "service"
   | "calendar"
   | "training"
+  | "program"
   | "chart"
   | "integration"
   | "tag"

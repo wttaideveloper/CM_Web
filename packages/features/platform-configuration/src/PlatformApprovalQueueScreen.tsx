@@ -14,8 +14,10 @@ import {
   type EventApprovalListItem,
   type EventApprovalStatus,
 } from "./event-approval-queries";
+import TrainingApprovalQueue from "./TrainingApprovalQueue";
+import ProgramApprovalQueue from "./ProgramApprovalQueue";
 
-type ApprovalType = "events";
+type ApprovalType = "events" | "trainings" | "programs";
 type Status = EventApprovalStatus;
 type ApprovalMutationVariables = { eventId: string; action: EventApprovalDecision; reason?: string };
 
@@ -53,14 +55,30 @@ function auditDescription(record: EventAuditRecord): string {
   return "Status changed";
 }
 
-/** Displays the generic Platform approval workspace with the currently available Event approval type. */
+/** Displays the generic Platform approval workspace with the currently available approval types. */
 export default function PlatformApprovalQueueScreen() {
-  return <Queue />;
+  const [approvalType, setApprovalType] = useState<ApprovalType>("events");
+  return (
+    <section className="mx-auto w-full max-w-6xl">
+      <p className="text-xs font-bold uppercase tracking-[.18em] text-[#7f9d94]">SUPER ADMIN · APPROVALS</p>
+      <div className="mt-2">
+        <h1 className="text-3xl font-bold text-[#06201c]">Approval Queue</h1>
+        <p className="mt-2 text-sm text-[#52736a]">Review and manage pending platform approvals.</p>
+      </div>
+
+      <div role="tablist" aria-label="Approval types" className="mt-7 flex gap-2 border-b border-[#d7e5df]">
+        <button id="approval-type-events-tab" type="button" role="tab" aria-selected={approvalType === "events"} aria-controls="approval-type-events-panel" onClick={() => setApprovalType("events")} className="border-b-2 border-[#1f6a58] px-4 py-3 font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2">Events</button>
+        <button id="approval-type-trainings-tab" type="button" role="tab" aria-selected={approvalType === "trainings"} aria-controls="approval-type-trainings-panel" onClick={() => setApprovalType("trainings")} className={approvalType === "trainings" ? "border-b-2 border-[#1f6a58] px-4 py-3 font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2" : "px-4 py-3 font-bold text-[#52736a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2"}>Trainings</button>
+        <button id="approval-type-programs-tab" type="button" role="tab" aria-selected={approvalType === "programs"} aria-controls="approval-type-programs-panel" onClick={() => setApprovalType("programs")} className={approvalType === "programs" ? "border-b-2 border-[#1f6a58] px-4 py-3 font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2" : "px-4 py-3 font-bold text-[#52736a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2"}>Programs</button>
+      </div>
+
+      {approvalType === "events" ? <EventsQueue /> : approvalType === "trainings" ? <TrainingApprovalQueue /> : <ProgramApprovalQueue />}
+    </section>
+  );
 }
 
-function Queue() {
+function EventsQueue() {
   const client = useQueryClient();
-  const [approvalType, setApprovalType] = useState<ApprovalType>("events");
   const [status, setStatus] = useState<Status>("pending_approval");
   const [input, setInput] = useState("");
   const [search, setSearch] = useState("");
@@ -124,49 +142,37 @@ function Queue() {
   const emptyText = status === "pending_approval" ? "Submitted events will appear here when they need review." : status === "needs_revision" ? "Events with requested changes will appear here until they are resubmitted." : "Events approved and awaiting publication will appear here.";
 
   return (
-    <section className="mx-auto w-full max-w-6xl">
-      <p className="text-xs font-bold uppercase tracking-[.18em] text-[#7f9d94]">SUPER ADMIN · APPROVALS</p>
-      <div className="mt-2">
-        <h1 className="text-3xl font-bold text-[#06201c]">Approval Queue</h1>
-        <p className="mt-2 text-sm text-[#52736a]">Review and manage pending platform approvals.</p>
+    <section id="approval-type-events-panel" role="tabpanel" aria-labelledby="approval-type-events-tab">
+      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[.14em] text-[#7f9d94]">EVENT APPROVALS</p>
+          <h2 className="mt-1 text-xl font-bold text-[#06201c]">Event approvals</h2>
+          <p className="mt-1 text-sm text-[#52736a]">{status === "pending_approval" ? "Review events submitted by enterprises for approval." : status === "needs_revision" ? "Review Events waiting for Enterprise Admin revisions." : "Events approved and awaiting publication."}</p>
+        </div>
+        {list ? <p className="font-bold text-[#1f6a58]">{list.pagination.total} {label}</p> : null}
       </div>
 
-      <div role="tablist" aria-label="Approval types" className="mt-7 flex gap-2 border-b border-[#d7e5df]">
-        <button id="approval-type-events-tab" type="button" role="tab" aria-selected={approvalType === "events"} aria-controls="approval-type-events-panel" onClick={() => setApprovalType("events")} className="border-b-2 border-[#1f6a58] px-4 py-3 font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2">Events</button>
+      <div role="tablist" aria-label="Event approval status" className="mt-5 flex gap-2 border-b border-[#d7e5df]">
+        <StatusTab id="event-pending-tab" active={status === "pending_approval"} onClick={() => switchStatus("pending_approval")}>Pending Approval</StatusTab>
+        <StatusTab id="event-requested-changes-tab" active={status === "needs_revision"} onClick={() => switchStatus("needs_revision")}>Requested Changes</StatusTab>
+        <StatusTab id="event-approved-tab" active={status === "approved"} onClick={() => switchStatus("approved")}>Approved</StatusTab>
       </div>
+      <label className="mt-5 block max-w-md">
+        <span className="sr-only">Search events</span>
+        <input type="search" value={input} onChange={(event) => setInput(event.target.value)} placeholder="Search events..." className="h-11 w-full rounded-xl border border-[#d7e5df] px-4 outline-none focus:border-[#1f6a58] focus:ring-2 focus:ring-[#1f6a58]/20" />
+      </label>
+      {success ? <p role="status" className="mt-5 rounded-xl bg-[#e9f4ee] p-4 font-semibold text-[#1f6a58]">{success}</p> : null}
 
-      {approvalType === "events" ? <section id="approval-type-events-panel" role="tabpanel" aria-labelledby="approval-type-events-tab">
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[.14em] text-[#7f9d94]">EVENT APPROVALS</p>
-            <h2 className="mt-1 text-xl font-bold text-[#06201c]">Event approvals</h2>
-            <p className="mt-1 text-sm text-[#52736a]">{status === "pending_approval" ? "Review events submitted by enterprises for approval." : status === "needs_revision" ? "Review Events waiting for Enterprise Admin revisions." : "Events approved and awaiting publication."}</p>
-          </div>
-          {list ? <p className="font-bold text-[#1f6a58]">{list.pagination.total} {label}</p> : null}
-        </div>
-
-        <div role="tablist" aria-label="Event approval status" className="mt-5 flex gap-2 border-b border-[#d7e5df]">
-          <StatusTab id="event-pending-tab" active={status === "pending_approval"} onClick={() => switchStatus("pending_approval")}>Pending Approval</StatusTab>
-          <StatusTab id="event-requested-changes-tab" active={status === "needs_revision"} onClick={() => switchStatus("needs_revision")}>Requested Changes</StatusTab>
-          <StatusTab id="event-approved-tab" active={status === "approved"} onClick={() => switchStatus("approved")}>Approved</StatusTab>
-        </div>
-        <label className="mt-5 block max-w-md">
-          <span className="sr-only">Search events</span>
-          <input type="search" value={input} onChange={(event) => setInput(event.target.value)} placeholder="Search events..." className="h-11 w-full rounded-xl border border-[#d7e5df] px-4 outline-none focus:border-[#1f6a58] focus:ring-2 focus:ring-[#1f6a58]/20" />
-        </label>
-        {success ? <p role="status" className="mt-5 rounded-xl bg-[#e9f4ee] p-4 font-semibold text-[#1f6a58]">{success}</p> : null}
-
-        <div id="event-approval-events" role="tabpanel" aria-labelledby={status === "pending_approval" ? "event-pending-tab" : status === "needs_revision" ? "event-requested-changes-tab" : "event-approved-tab"}>
-          {active.isLoading ? <div role="status" className="mt-6 space-y-3">{[1, 2, 3].map((number) => <div key={number} className="h-32 animate-pulse rounded-2xl bg-[#edf3f0]" />)}</div> : null}
-          {active.isError ? <div className="mt-6 rounded-2xl bg-white p-6 shadow-sm"><p role="alert" className="font-semibold text-[#b42318]">{platformEventApprovalErrorMessage(active.error, `Unable to load ${label.toLowerCase()} events.`)}</p><button type="button" onClick={() => void active.refetch()} className="mt-3 font-semibold text-[#1f6a58] underline">Retry</button></div> : null}
-          {!active.isLoading && !active.isError && list?.items.length === 0 ? <div className="mt-6 rounded-2xl bg-white p-10 text-center shadow-sm"><p className="font-bold">{emptyTitle}</p><p className="mt-2 text-sm text-[#52736a]">{emptyText}</p></div> : null}
-          {!active.isLoading && !active.isError && list?.items.length ? <>
-            <div className="mt-6 space-y-4">{list.items.map((event) => <ApprovalEventCard key={event.id} event={event} label={label} onReview={() => setSelectedId(event.id)} />)}</div>
-            {selectedId ? <ReviewPanel selectedId={selectedId} reviewQuery={reviewQuery} approval={approval} onClose={() => setSelectedId(null)} /> : null}
-            {list.pagination.total_pages > 1 ? <nav aria-label={`${label} Event pages`} className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><button type="button" disabled={list.pagination.page <= 1} onClick={() => setPages((current) => ({ ...current, [status]: current[status] - 1 }))}>Previous</button><span>Page {list.pagination.page} of {list.pagination.total_pages}</span><button type="button" disabled={list.pagination.page >= list.pagination.total_pages} onClick={() => setPages((current) => ({ ...current, [status]: current[status] + 1 }))}>Next</button></nav> : null}
-          </> : null}
-        </div>
-      </section> : null}
+      <div id="event-approval-events" role="tabpanel" aria-labelledby={status === "pending_approval" ? "event-pending-tab" : status === "needs_revision" ? "event-requested-changes-tab" : "event-approved-tab"}>
+        {active.isLoading ? <div role="status" className="mt-6 space-y-3">{[1, 2, 3].map((number) => <div key={number} className="h-32 animate-pulse rounded-2xl bg-[#edf3f0]" />)}</div> : null}
+        {active.isError ? <div className="mt-6 rounded-2xl bg-white p-6 shadow-sm"><p role="alert" className="font-semibold text-[#b42318]">{platformEventApprovalErrorMessage(active.error, `Unable to load ${label.toLowerCase()} events.`)}</p><button type="button" onClick={() => void active.refetch()} className="mt-3 font-semibold text-[#1f6a58] underline">Retry</button></div> : null}
+        {!active.isLoading && !active.isError && list?.items.length === 0 ? <div className="mt-6 rounded-2xl bg-white p-10 text-center shadow-sm"><p className="font-bold">{emptyTitle}</p><p className="mt-2 text-sm text-[#52736a]">{emptyText}</p></div> : null}
+        {!active.isLoading && !active.isError && list?.items.length ? <>
+          <div className="mt-6 space-y-4">{list.items.map((event) => <ApprovalEventCard key={event.id} event={event} label={label} onReview={() => setSelectedId(event.id)} />)}</div>
+          {selectedId ? <ReviewPanel selectedId={selectedId} reviewQuery={reviewQuery} approval={approval} onClose={() => setSelectedId(null)} /> : null}
+          {list.pagination.total_pages > 1 ? <nav aria-label={`${label} Event pages`} className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><button type="button" disabled={list.pagination.page <= 1} onClick={() => setPages((current) => ({ ...current, [status]: current[status] - 1 }))}>Previous</button><span>Page {list.pagination.page} of {list.pagination.total_pages}</span><button type="button" disabled={list.pagination.page >= list.pagination.total_pages} onClick={() => setPages((current) => ({ ...current, [status]: current[status] + 1 }))}>Next</button></nav> : null}
+        </> : null}
+      </div>
     </section>
   );
 }

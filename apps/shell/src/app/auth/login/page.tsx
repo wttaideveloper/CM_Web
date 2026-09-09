@@ -79,7 +79,18 @@ function LoginPageContent() {
         if (!platformAdminOrigin) {
           throw new Error("Platform Admin origin is not configured.");
         }
-        await loginSuperAdmin({ email: superAdminEmail.trim(), password: superAdminPassword, rememberMe: superAdminRememberMe });
+        // Read from the submitted form as well as React state: browser
+        // autofill does not always fire change events, leaving state empty
+        // while the fields look filled (which the API rejects with 400).
+        const formData = new FormData(event.currentTarget);
+        const email = ((formData.get("email") as string | null) ?? superAdminEmail).trim() || superAdminEmail.trim();
+        const password = (formData.get("password") as string | null) ?? superAdminPassword;
+        if (!email || !password) {
+          throw new Error("Enter your Super Admin email and password.");
+        }
+        setSuperAdminEmail(email);
+        setSuperAdminPassword(password);
+        await loginSuperAdmin({ email, password, rememberMe: superAdminRememberMe });
         window.location.assign(platformAdminReturnUrl ?? new URL("/dashboard", platformAdminOrigin).toString());
         return;
       }
@@ -273,8 +284,8 @@ function LoginPageContent() {
 
             {!superAdminResetOpen ? <form onSubmit={handleSubmit} className="mt-6 space-y-3.5">
               {isSuperAdmin ? <>
-                <label className="block text-[13px] font-semibold text-[#35544b]">Email<input required type="email" autoComplete="email" value={superAdminEmail} onChange={(event) => setSuperAdminEmail(event.target.value)} className="mt-1.5 h-10 w-full rounded-[13px] border border-[#c9ddd7] px-3 text-[14px]" /></label>
-                <label className="block text-[13px] font-semibold text-[#35544b]">Password<input required type="password" autoComplete="current-password" value={superAdminPassword} onChange={(event) => setSuperAdminPassword(event.target.value)} className="mt-1.5 h-10 w-full rounded-[13px] border border-[#c9ddd7] px-3 text-[14px]" /></label>
+                <label className="block text-[13px] font-semibold text-[#35544b]">Email<input required name="email" type="email" autoComplete="email" value={superAdminEmail} onChange={(event) => setSuperAdminEmail(event.target.value)} className="mt-1.5 h-10 w-full rounded-[13px] border border-[#c9ddd7] px-3 text-[14px]" /></label>
+                <label className="block text-[13px] font-semibold text-[#35544b]">Password<input required name="password" type="password" autoComplete="current-password" value={superAdminPassword} onChange={(event) => setSuperAdminPassword(event.target.value)} className="mt-1.5 h-10 w-full rounded-[13px] border border-[#c9ddd7] px-3 text-[14px]" /></label>
                 <label className="flex items-center gap-2 text-[13px] text-[#55746b]"><input type="checkbox" checked={superAdminRememberMe} onChange={(event) => setSuperAdminRememberMe(event.target.checked)} />Remember me</label>
                 <button type="button" onClick={() => { setLoginError(null); setSuperAdminResetOpen(true); }} className="text-left text-[13px] font-semibold text-[#0b5b4e] underline">{t("superAdminReset.forgotPassword")}</button>
               </> : (

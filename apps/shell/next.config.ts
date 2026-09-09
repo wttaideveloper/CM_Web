@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const authApiBaseUrl = process.env.AUTH_API_BASE_URL;
 const resolvedAuthApiBaseUrl = authApiBaseUrl ?? "https://admin.apis.invigor8.app";
+const chatApiBaseUrl = process.env.CHAT_API_BASE_URL ?? "https://chat.wisdomtooth.tech/api/v1";
 
 if (process.env.NODE_ENV === "development") {
   console.log("[AUTH PROXY DEBUG] AUTH_API_BASE_URL:", authApiBaseUrl ?? "(unset; using default)");
@@ -24,8 +25,8 @@ const nextConfig: NextConfig = {
     "@ihp/enterprise-settings",
     "@ihp/enterprise-trainings",
     "@ihp/enterprises",
-    "@ihp/onboarding-forms",
     "@ihp/messaging",
+    "@ihp/onboarding-forms",
     "@ihp/platform-layout",
     "@ihp/platform-configuration",
     "@ihp/platform-dashboard",
@@ -39,6 +40,7 @@ const nextConfig: NextConfig = {
     "@ihp/ui",
   ],
   async rewrites() {
+    const chatBaseHttps = chatApiBaseUrl.replace(/^http:/, "https:");
     return {
       fallback: [
         {
@@ -48,6 +50,46 @@ const nextConfig: NextConfig = {
         {
           source: "/api/v1/tenant/:path*",
           destination: `${resolvedAuthApiBaseUrl}/api/v1/tenant/:path*`,
+        },
+        {
+          source: "/api/v1/trainings/form-configuration/:path*",
+          destination: `${chatBaseHttps}/trainings/form-configuration/:path*`,
+        },
+        {
+          source: "/api/v1/admin/training-form-configurations/:path*",
+          destination: `${chatBaseHttps}/admin/training-form-configurations/:path*`,
+        },
+        {
+          source: "/api/v1/trainings",
+          destination: `${chatBaseHttps}/trainings/`,
+        },
+        {
+          source: "/api/v1/trainings/:path*",
+          destination: `${chatBaseHttps}/trainings/:path*`,
+        },
+        {
+          source: "/api/v1/search/trainings",
+          destination: `${chatBaseHttps}/search/trainings`,
+        },
+        {
+          source: "/api/v1/admin/trainings/:path*",
+          destination: `${chatBaseHttps}/admin/trainings/:path*`,
+        },
+        {
+          source: "/api/v1/programs",
+          destination: `${chatApiBaseUrl}/programs/`,
+        },
+        {
+          source: "/api/v1/programs/:path*",
+          destination: `${chatApiBaseUrl}/programs/:path*`,
+        },
+        {
+          source: "/api/v1/search/programs",
+          destination: `${chatApiBaseUrl}/search/programs`,
+        },
+        {
+          source: "/api/v1/admin/programs/:path*",
+          destination: `${chatApiBaseUrl}/admin/programs/:path*`,
         },
       ],
     };
