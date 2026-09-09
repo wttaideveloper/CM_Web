@@ -57,6 +57,14 @@ const nextConfig: NextConfig = {
           destination: `${chatBaseHttps}/admin/training-form-configurations/:path*`,
         },
         {
+          source: "/api/v1/programs/form-configuration/:path*",
+          destination: `${chatBaseHttps}/programs/form-configuration/:path*`,
+        },
+        {
+          source: "/api/v1/admin/program-form-configurations/:path*",
+          destination: `${chatBaseHttps}/admin/program-form-configurations/:path*`,
+        },
+        {
           source: "/api/v1/search/enterprises",
           destination: `${chatBaseHttps}/search/enterprises`,
         },

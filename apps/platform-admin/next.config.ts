@@ -31,6 +31,14 @@ const nextConfig: NextConfig = {
         destination: `${platformApiBaseUrl}/admin/training-form-configurations/:path*`,
       },
       {
+        source: "/api/v1/programs/form-configuration/:path*",
+        destination: `${platformApiBaseUrl}/programs/form-configuration/:path*`,
+      },
+      {
+        source: "/api/v1/admin/program-form-configurations/:path*",
+        destination: `${platformApiBaseUrl}/admin/program-form-configurations/:path*`,
+      },
+      {
         source: "/api/v1/onboarding-forms",
         destination: `${platformApiBaseUrl}/onboarding-forms/`,
       },

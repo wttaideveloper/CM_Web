@@ -20,4 +20,6 @@ export { ParticipantEnrolmentsScreen } from "./ParticipantEnrolmentsScreen";
 export { TrainingSectionsTab, TrainingEnrolmentsTab, TrainingLiveTab, TrainingContentTab, TrainingAssessmentsTab, TrainingAssignmentsTab } from "./TrainingDetailsSections";
 export * from "./training-form-config.service";
 export * from "./training-form-configuration.queries";
+export * from "./program-form-config.service";
+export * from "./program-form-configuration.queries";
 export { default as TrainingFormBuilderScreen } from "./TrainingFormBuilderScreen";

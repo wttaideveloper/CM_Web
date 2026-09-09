@@ -10,6 +10,7 @@ import { ProgramBasicsSection, ProgramDeliverySection, ProgramPricingSection, Pr
 import { buildCreateProgramPayload, buildUpdateProgramPayload, createEmptyProgramForm, programToFormValues, validateProgramForm, type CreateProgramFormValues } from "./create-program-form";
 import { createProgram, ProgramsApiError, updateProgram, updateProgramStatus, type Program } from "./programs.service";
 import { canEditProgram } from "./program-status";
+import { useActiveProgramFormConfiguration } from "./program-form-configuration.queries";
 
 const steps = ["Basic Information", "Delivery & Enrolment", "Schedule", "Pricing & Capacity"] as const;
 const stepFields: ReadonlyArray<readonly string[]> = [
@@ -27,6 +28,9 @@ export default function CreateProgramScreen({ mode = "create", initialProgram }:
   const queryClient = useQueryClient();
   const { tenantId } = useTenant();
   const { enterpriseId } = useCurrentEnterprise();
+  const activeFormQ = useActiveProgramFormConfiguration();
+  const activeForm = activeFormQ.data ?? null;
+  const [customValues, setCustomValues] = useState<Record<string, unknown>>({});
   const [activeStep, setActiveStep] = useState(0);
   const [initialValues] = useState(() => (initialProgram ? programToFormValues(initialProgram) : createEmptyProgramForm()));
   const [values, setValues] = useState<CreateProgramFormValues>(() => (initialProgram ? programToFormValues(initialProgram) : createEmptyProgramForm()));
@@ -48,7 +52,11 @@ export default function CreateProgramScreen({ mode = "create", initialProgram }:
       if (!tenantId || !enterpriseId) throw new Error("A tenant and enterprise are required.");
       // Create as draft first, then submit via the status endpoint — mirrors the
       // events lifecycle (create-with-status is unreliable on the live backend).
-      const created = await createProgram(buildCreateProgramPayload(values, tenantId, enterpriseId));
+      const basePayload = buildCreateProgramPayload(values, tenantId, enterpriseId);
+      const payload = activeForm
+        ? ({ ...basePayload, form_configuration_version_id: activeForm.version_id ?? activeForm.id, custom_values: { ...customValues, ...values } } as unknown as Parameters<typeof createProgram>[0])
+        : basePayload;
+      const created = await createProgram(payload);
       if (submitForApprovalMode) {
         await updateProgramStatus(created.id, { status: "pending_approval" });
       }
