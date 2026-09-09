@@ -326,14 +326,14 @@ export default function TrainingDetailsScreen() {
               <DetailItem label="Price" value={formatTrainingPrice(training.price, training.currency)} />
               <DetailItem label="Capacity" value={displayValue(training.capacity)} />
               <DetailItem label="Instructor" value={displayValue(training.instructor_id)} />
-              <DetailItem label="Prerequisites" value={displayValue((training as Record<string, unknown>).prerequisites as string)} />
-              <DetailItem label="Release rule" value={displayValue((training as Record<string, unknown>).release_rule as string)} />
-              <DetailItem label="Randomise" value={String((training as Record<string, unknown>).randomise ?? (training as Record<string, unknown>).randomize ?? "—")} />
-              <DetailItem label="Scheduled publication" value={displayValue((training as Record<string, unknown>).scheduled_publication as string)} />
-              <DetailItem label="Mandatory" value={String((training as Record<string, unknown>).is_mandatory ?? "—")} />
-              <DetailItem label="Group enrolment" value={String((training as Record<string, unknown>).group_enrolment ?? "—")} />
-              <DetailItem label="Max group size" value={displayValue((training as Record<string, unknown>).max_group_size as string)} />
-              <DetailItem label="Access expiry" value={displayValue((training as Record<string, unknown>).access_expiry_type as string) + " " + displayValue((training as Record<string, unknown>).access_expiry_days as string)} />
+              <DetailItem label="Prerequisites" value={displayValue((training as unknown as Record<string, unknown>).prerequisites as string)} />
+              <DetailItem label="Release rule" value={displayValue((training as unknown as Record<string, unknown>).release_rule as string)} />
+              <DetailItem label="Randomise" value={String((training as unknown as Record<string, unknown>).randomise ?? (training as unknown as Record<string, unknown>).randomize ?? "—")} />
+              <DetailItem label="Scheduled publication" value={displayValue((training as unknown as Record<string, unknown>).scheduled_publication as string)} />
+              <DetailItem label="Mandatory" value={String((training as unknown as Record<string, unknown>).is_mandatory ?? "—")} />
+              <DetailItem label="Group enrolment" value={String((training as unknown as Record<string, unknown>).group_enrolment ?? "—")} />
+              <DetailItem label="Max group size" value={displayValue((training as unknown as Record<string, unknown>).max_group_size as string)} />
+              <DetailItem label="Access expiry" value={displayValue((training as unknown as Record<string, unknown>).access_expiry_type as string) + " " + displayValue((training as unknown as Record<string, unknown>).access_expiry_days as string)} />
               <DetailItem label="Created" value={formatTrainingDate(training.created_at)} />
               <DetailItem label="Updated" value={formatTrainingDate(training.updated_at)} />
             </div>
