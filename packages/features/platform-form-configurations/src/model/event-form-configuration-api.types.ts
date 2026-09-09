@@ -44,8 +44,11 @@ export interface EventFormConfigurationCreateResponse extends EventFormConfigura
 /** Authoritative metadata for one core Event field. */
 export interface EventCoreFieldRegistryEntry { key: string; display_name: string; value_type: EventFormValueType; allowed_renderers: EventFormRenderer[]; default_renderer: EventFormRenderer; required_by_domain: boolean; removable: boolean; hideable: boolean; configurable: { label: boolean; section: boolean; position: boolean; required: boolean; renderer: boolean; placeholder: boolean; help_text: boolean; validation: boolean; }; }
 
-/** One tenant assignment returned by the configuration assignment endpoint. */
-export interface EventFormAssignment { id: string; configuration_id: string; tenant_id: string; created_at: string | null; updated_at: string | null; }
+/** One tenant-to-enterprise assignment returned by the configuration assignment endpoint. */
+export interface EventFormAssignment { tenant_id: string; enterprise_id: string; }
+
+/** Runtime-verified envelope returned by both assignment GET and PUT operations. */
+export interface EventFormAssignmentsResponse { configuration_id: string; assignments: EventFormAssignment[]; }
 
 /** One immutable audit entry for a configuration change. */
 export interface EventFormAuditEntry { id: string; configuration_id: string; action: string; actor_id: string | null; created_at: string; metadata: Record<string, unknown> | null; }
@@ -65,5 +68,5 @@ export interface UpdateEventFormConfigurationRequest { name: string; description
 /** Request body for replacing a configuration's tenant assignments. */
 export interface UpdateEventFormConfigurationAssignmentsRequest { tenant_ids: string[]; }
 
-/** Response returned after publishing a configuration. */
-export interface EventFormPublishResponse { configuration: EventFormConfiguration; version: EventFormConfigurationVersion; }
+/** Runtime-verified publication receipt returned by the Event Form Configuration publish endpoint. */
+export interface EventFormPublishResponse { configuration_id: string; version_id: string; version: number; status: "published"; published_at: string; }

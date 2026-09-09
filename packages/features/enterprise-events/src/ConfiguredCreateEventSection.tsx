@@ -9,7 +9,7 @@ import type { ActiveEventFormField, ActiveEventFormSection, EventCategory } from
 import type { EventSessionInput } from "./events.service";
 
 type UpdateForm = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => void;
-type Props = { section: ActiveEventFormSection; values: CreateEventFormValues; update: UpdateForm; errors: Record<string, string[]>; customValues: Record<string, string | string[] | boolean | number | null>; setCustomValues: (next: Record<string, string | string[] | boolean | number | null>) => void; locations: EnterpriseLocationDto[]; locationId: string; setLocationId: (value: string) => void; categories: readonly EventCategory[]; categoriesLoading: boolean; categoriesError: boolean; };
+type Props = { section: ActiveEventFormSection; values: CreateEventFormValues; update: UpdateForm; errors: Record<string, string[]>; customValues: Record<string, string | string[] | boolean | number | null>; setCustomValues: (next: Record<string, string | string[] | boolean | number | null>) => void; locations: EnterpriseLocationDto[]; locationId: string; setLocationId: (value: string) => void; categories: readonly EventCategory[]; categoriesLoading: boolean; categoriesError: boolean; allowPastTemporalValues?: boolean; };
 
 const inputClass = "mt-1.5 h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]";
 const CORE_FIELDS: Record<string, keyof CreateEventFormValues> = { title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", start_date: "start_date", start_datetime: "start_date", end_date: "end_date", end_datetime: "end_date", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", timezone: "time_zone", time_zone: "time_zone", event_type: "delivery_mode", delivery_mode: "delivery_mode", meeting_provider: "meeting_provider", meeting_link: "meeting_link", price: "price", currency: "currency", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents" };
@@ -29,11 +29,11 @@ function fieldType(field: ActiveEventFormField, key: string): string {
   return "text";
 }
 function toDateTimeLocalNow(): string { const now = new Date(); now.setSeconds(0, 0); const offset = now.getTimezoneOffset() * 60_000; return new Date(now.getTime() - offset).toISOString().slice(0, 16); }
-function temporalBounds(key: string, type: string, values: CreateEventFormValues): { min?: string; max?: string } {
+function temporalBounds(key: string, type: string, values: CreateEventFormValues, allowPastTemporalValues: boolean): { min?: string; max?: string } {
   if (type !== "datetime-local") return {};
-  if (["start_date", "start_datetime", "registration_open_at"].includes(key)) return { min: toDateTimeLocalNow() };
-  if (["end_date", "end_datetime"].includes(key)) return { min: values.start_date || toDateTimeLocalNow() };
-  if (key === "registration_close_at") return { min: values.registration_open_at || toDateTimeLocalNow(), ...(values.start_date ? { max: values.start_date } : {}) };
+  if (["start_date", "start_datetime", "registration_open_at"].includes(key)) return allowPastTemporalValues ? {} : { min: toDateTimeLocalNow() };
+  if (["end_date", "end_datetime"].includes(key)) return { min: values.start_date || (allowPastTemporalValues ? undefined : toDateTimeLocalNow()) };
+  if (key === "registration_close_at") return { min: values.registration_open_at || (allowPastTemporalValues ? undefined : toDateTimeLocalNow()), ...(values.start_date ? { max: values.start_date } : {}) };
   if (key === "registration_cutoff") {
     const maximum = [values.start_date, values.registration_close_at].filter(Boolean).sort()[0];
     return { ...(values.registration_open_at ? { min: values.registration_open_at } : {}), ...(maximum ? { max: maximum } : {}) };
@@ -42,13 +42,13 @@ function temporalBounds(key: string, type: string, values: CreateEventFormValues
 }
 
 /** Renders one server-authoritative Event form section in configured field order. */
-export default function ConfiguredCreateEventSection({ section, values, update, errors, customValues, setCustomValues, locations, locationId, setLocationId, categories, categoriesLoading, categoriesError }: Props) {
+export default function ConfiguredCreateEventSection({ section, values, update, errors, customValues, setCustomValues, locations, locationId, setLocationId, categories, categoriesLoading, categoriesError, allowPastTemporalValues = false }: Props) {
   const fields = [...section.fields].sort((left, right) => left.position - right.position);
-  return <section className="space-y-4"><div><h2 className="text-xl font-bold text-[#06201c]">{section.label}</h2>{section.description ? <p className="mt-1 text-sm text-[#52736a]">{section.description}</p> : null}</div><div className="grid gap-4 md:grid-cols-2">{fields.map((field) => <ConfiguredField key={field.id} field={field} values={values} update={update} errors={errors} customValues={customValues} setCustomValues={setCustomValues} locations={locations} locationId={locationId} setLocationId={setLocationId} categories={categories} categoriesLoading={categoriesLoading} categoriesError={categoriesError} />)}</div></section>;
+  return <section className="space-y-4"><div><h2 className="text-xl font-bold text-[#06201c]">{section.label}</h2>{section.description ? <p className="mt-1 text-sm text-[#52736a]">{section.description}</p> : null}</div><div className="grid gap-4 md:grid-cols-2">{fields.map((field) => <ConfiguredField key={field.id} field={field} values={values} update={update} errors={errors} customValues={customValues} setCustomValues={setCustomValues} locations={locations} locationId={locationId} setLocationId={setLocationId} categories={categories} categoriesLoading={categoriesLoading} categoriesError={categoriesError} allowPastTemporalValues={allowPastTemporalValues} />)}</div></section>;
 }
 
 function ConfiguredField(props: Omit<Props, "section"> & { field: ActiveEventFormField }) {
-  const { field, values, update, errors, customValues, setCustomValues, locations, locationId, setLocationId, categories, categoriesLoading, categoriesError } = props;
+  const { field, values, update, errors, customValues, setCustomValues, locations, locationId, setLocationId, categories, categoriesLoading, categoriesError, allowPastTemporalValues = false } = props;
   const key = keyFor(field); const required = field.required ? " *" : ""; const error = errors[key]?.[0];
   if (field.source === "core" && (key === "location" || key === "location_id")) return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}<select value={locationId} onChange={(event) => setLocationId(event.target.value)} className={inputClass}><option value="">Select a location</option>{locations.map((location) => <option key={location.id} value={location.id}>{location.location_name} — {location.city}</option>)}</select>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
   if (field.source === "core" && (key === "category" || key === "subcategory")) return <CategoryTaxonomySelect field={field} keyName={key} values={values} update={update} error={error} categories={categories} loading={categoriesLoading} hasError={categoriesError} />;
@@ -63,7 +63,7 @@ function ConfiguredField(props: Omit<Props, "section"> & { field: ActiveEventFor
   const setValue = (next: string) => { if (coreField) { if (coreField === "tags") update("tags", next.split(",").map((item) => item.trim()).filter(Boolean)); else if (["gallery_images", "videos", "documents"].includes(coreField)) update(coreField, next.split(",").map((item) => item.trim()).filter(Boolean) as CreateEventFormValues[typeof coreField]); else update(coreField, next as CreateEventFormValues[typeof coreField]); } else setCustomValues({ ...customValues, [key]: isBoolean ? next === "true" : isNumber ? Number(next) : next }); };
   const options = [...field.options].sort((left, right) => left.position - right.position);
   const type = fieldType(field, key);
-  const bounds = temporalBounds(key, type, values);
+  const bounds = temporalBounds(key, type, values, allowPastTemporalValues);
   if (isBoolean) return <label className="flex items-center gap-2 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={coreField ? value === "true" : customValues[key] === true} onChange={(event) => setValue(String(event.target.checked))} />{field.label}{required}</label>;
   return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}{field.help_text ? <span className="ml-1 font-normal text-[#52736a]">{field.help_text}</span> : null}{options.length || field.value_type === "enum" || key === "currency" ? <select value={value} onChange={(event) => setValue(event.target.value)} className={inputClass}><option value="">Select an option</option>{options.length ? options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>) : <option value={value}>{value}</option>}</select> : type === "textarea" ? <textarea value={value} required={field.required} placeholder={field.placeholder ?? undefined} minLength={field.validation.min_length ?? undefined} maxLength={field.validation.max_length ?? undefined} onChange={(event) => setValue(event.target.value)} className={`${inputClass} h-24 resize-y py-2`} /> : <input type={type} value={value} required={field.required} placeholder={field.placeholder ?? undefined} minLength={field.validation.min_length ?? undefined} maxLength={field.validation.max_length ?? undefined} min={bounds.min ?? field.validation.min ?? undefined} max={bounds.max ?? field.validation.max ?? undefined} pattern={field.validation.pattern ?? undefined} onChange={(event) => setValue(event.target.value)} className={inputClass} />}{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
 }
@@ -87,6 +87,8 @@ function CategoryTaxonomySelect({ field, keyName, values, update, error, categor
           : "No categories available";
   const queryError = hasError ? "Unable to load Event categories." : undefined;
 
+  const options = isSubcategory ? children : parents;
+  const valueIsUnavailable = Boolean(value) && !options.some((category) => category.name === value);
   return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{field.required ? " *" : ""}{field.help_text ? <span className="ml-1 font-normal text-[#52736a]">{field.help_text}</span> : null}<select value={value} required={field.required} disabled={disabled} onChange={(event) => {
     const next = event.target.value;
     if (isSubcategory) {
@@ -97,7 +99,7 @@ function CategoryTaxonomySelect({ field, keyName, values, update, error, categor
     const keepsSubcategory = nextParent !== undefined && categories.some((category) => category.parent_id === nextParent.id && category.name === values.subcategory);
     update("category", next);
     if (!keepsSubcategory) update("subcategory", "");
-  }} className={inputClass}><option value="">{placeholder}</option>{(isSubcategory ? children : parents).map((category) => <option key={category.id} value={category.name}>{category.name}</option>)}</select>{error || queryError ? <p className="mt-1 text-xs text-[#b42318]">{error ?? queryError}</p> : null}</label>;
+  }} className={inputClass}><option value="">{placeholder}</option>{valueIsUnavailable ? <option value={value}>{value} (no longer available)</option> : null}{options.map((category) => <option key={category.id} value={category.name}>{category.name}</option>)}</select>{error || queryError ? <p className="mt-1 text-xs text-[#b42318]">{error ?? queryError}</p> : null}</label>;
 }
 
 function TagsEditor({ field, values, update, error }: { field: ActiveEventFormField; values: CreateEventFormValues; update: UpdateForm; error?: string }) {

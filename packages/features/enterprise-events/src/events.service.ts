@@ -41,7 +41,13 @@ export interface Event {
   updated_at: string;
   enterprise_name?: string | null;
   last_admin_notes: string | null;
+  form_configuration_id?: string | null;
+  form_configuration_version_id?: string | null;
+  custom_values?: EventCustomValue[];
 }
+
+/** One typed value captured for a configuration-owned custom Event field. */
+export interface EventCustomValue { field_id: string; value: string | string[] | boolean | number | null; }
 
 /** Pagination metadata returned with an Events list response. */
 export interface EventListPagination {
@@ -510,6 +516,7 @@ export interface UpdateEventPayload {
   registration_close_at?: string | null;
   custom_fields?: EventCustomField[] | null;
   sessions?: EventSessionInput[] | null;
+  custom_values?: EventCustomValue[] | null;
 }
 
 /** Runtime-confirmed JSON response returned after a successful Event deletion. */
@@ -546,6 +553,7 @@ function isActiveEventFormCompositeConfig(value: unknown): value is ActiveEventF
 function isActiveEventFormField(value: unknown): value is ActiveEventFormField { return isRecord(value) && typeof value.id === "string" && (value.source === "core" || value.source === "custom") && isNullableString(value.core_key) && isNullableString(value.stable_key) && typeof value.label === "string" && typeof value.renderer === "string" && typeof value.value_type === "string" && typeof value.required === "boolean" && Number.isInteger(value.position) && isNullableString(value.placeholder) && isNullableString(value.help_text) && Array.isArray(value.options) && value.options.every(isActiveEventFormFieldOption) && isActiveEventFormFieldValidation(value.validation) && isActiveEventFormCompositeConfig(value.composite_config ?? null); }
 function isActiveEventFormSection(value: unknown): value is ActiveEventFormSection { return isRecord(value) && typeof value.id === "string" && typeof value.stable_key === "string" && typeof value.label === "string" && isNullableString(value.description) && Number.isInteger(value.position) && typeof value.is_enabled === "boolean" && Array.isArray(value.fields) && value.fields.every(isActiveEventFormField); }
 function isActiveEventFormConfiguration(value: unknown): value is ActiveEventFormConfiguration { return isRecord(value) && typeof value.configuration_id === "string" && typeof value.version_id === "string" && typeof value.name === "string" && (value.scope === "global" || value.scope === "selective") && Number.isInteger(value.version) && Array.isArray(value.sections) && value.sections.every(isActiveEventFormSection); }
+function isEventCustomValue(value: unknown): value is EventCustomValue { return isRecord(value) && typeof value.field_id === "string" && (value.value === null || typeof value.value === "string" || typeof value.value === "number" || typeof value.value === "boolean" || isStringArray(value.value)); }
 function isEventCategory(value: unknown): value is EventCategory { return isRecord(value) && typeof value.id === "string" && typeof value.name === "string" && isNullableString(value.parent_id) && isNullableString(value.description) && typeof value.created_at === "string"; }
 
 function isEventVenueCoordinates(value: unknown): value is EventVenueCoordinates {
@@ -640,6 +648,9 @@ function isEvent(value: unknown): value is Event {
     (value.available_seats === null || (typeof value.available_seats === "number" && Number.isFinite(value.available_seats))) &&
     (value.is_full === null || typeof value.is_full === "boolean") &&
     (value.last_admin_notes === null || typeof value.last_admin_notes === "string") &&
+    (value.form_configuration_id === undefined || value.form_configuration_id === null || typeof value.form_configuration_id === "string") &&
+    (value.form_configuration_version_id === undefined || value.form_configuration_version_id === null || typeof value.form_configuration_version_id === "string") &&
+    (value.custom_values === undefined || Array.isArray(value.custom_values) && value.custom_values.every(isEventCustomValue)) &&
     stringArrayFields.every((field) => isStringArray(value[field])) &&
     (value.location_id === null || typeof value.location_id === "string") &&
     (value.meeting_link === null || typeof value.meeting_link === "string") &&
@@ -942,6 +953,17 @@ export async function getActiveEventFormConfiguration(): Promise<ActiveEventForm
   if (!response.ok) throw await createEventsApiError(response, "resolve the active Event form configuration");
   const value = (await response.json()) as unknown;
   if (!isActiveEventFormConfiguration(value)) throw new EventsApiError("Events API returned an invalid active Event form configuration.", response.status);
+  return value;
+}
+
+/** Retrieves the immutable form version associated with one Event, never the current active form. */
+export async function getEventHistoricalFormConfiguration(eventId: string): Promise<ActiveEventFormConfiguration | null> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/form-configuration`, { credentials: "include", cache: "no-store" });
+  if (response.status === 404 || response.status === 204) return null;
+  if (!response.ok) throw await createEventsApiError(response, "resolve this Event's historical form configuration");
+  const value = (await response.json()) as unknown;
+  if (value === null) return null;
+  if (!isActiveEventFormConfiguration(value)) throw new EventsApiError("Events API returned an invalid historical Event form configuration.", response.status);
   return value;
 }
 

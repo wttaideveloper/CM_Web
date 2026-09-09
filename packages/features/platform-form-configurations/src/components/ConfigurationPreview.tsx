@@ -2,16 +2,19 @@
 
 import { formConfigurationCopy as copy } from "../constants/form-configuration-copy";
 import { getEventCompositeFieldDefinition } from "../model/event-composite-field-definitions";
+import { getEventCoreFieldSemantic } from "../model/event-core-field-semantics";
 import type { ConfiguredField, FormConfiguration } from "../model/form-configuration.types";
 
 function PreviewField({ field }: { field: ConfiguredField }) {
   const base = "mt-1.5 w-full rounded-lg border border-[#cfe0d8] bg-white px-3 py-2 text-sm";
   const compositeDefinition = field.source === "core" ? getEventCompositeFieldDefinition(field.coreKey) : undefined;
+  const taxonomySemantic = field.source === "core" ? getEventCoreFieldSemantic(field.coreKey) : undefined;
   if (compositeDefinition) {
     const enabledFields = field.compositeConfig?.enabled_fields ?? compositeDefinition.subfields.map((subfield) => subfield.key);
     const labels = compositeDefinition.subfields.filter((subfield) => enabledFields.includes(subfield.key)).map((subfield) => subfield.label);
     return <span className="mt-1.5 block rounded-lg border border-[#cfe0d8] bg-[#f7fbf8] p-3 font-normal"><span className="block font-semibold text-[#06201c]">{compositeDefinition.title}</span><span className="mt-1 block text-xs text-[#52736a]">{labels.length ? `${compositeDefinition.fieldNoun[0]?.toUpperCase()}${compositeDefinition.fieldNoun.slice(1)} fields: ${labels.join(", ")}` : compositeDefinition.description}</span></span>;
   }
+  if (taxonomySemantic) return <select aria-label={field.label} disabled className={base}><option>{copy.taxonomyOptionsAtRuntime}</option></select>;
   if (field.renderer === "textarea") return <textarea aria-label={field.label} placeholder={field.placeholder} className={`${base} min-h-20`} />;
   if (field.renderer === "select" || field.renderer === "multi_select") return <select aria-label={field.label} multiple={field.renderer === "multi_select"} className={base}><option>{field.placeholder}</option>{field.options.map((option) => <option key={option.value}>{option.label}</option>)}</select>;
   if (field.renderer === "checkbox") return <input aria-label={field.label} type="checkbox" className="mt-2 h-4 w-4" />;

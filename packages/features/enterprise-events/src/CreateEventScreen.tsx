@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCurrentEnterprise, useTenant } from "@ihp/enterprise-runtime";
 import { getEnterpriseLocations } from "@ihp/enterprises";
@@ -11,7 +11,7 @@ import { AdditionalConfigurationSection, CapacityAndRegistrationSection, MediaSe
 import { BasicInformationSection, LocationAndHostSection, ScheduleSection } from "./CreateEventDetailsSections";
 import { buildCreateEventPayload, buildUpdateEventPayload, createEmptyEventForm, eventToFormValues, validateEventForm, type CreateEventFormValues } from "./create-event-form";
 import { useEventCategories } from "./event-categories.queries";
-import { useActiveEventFormConfiguration } from "./event-form-configuration.queries";
+import { useActiveEventFormConfiguration, useEventHistoricalFormConfiguration } from "./event-form-configuration.queries";
 import { createEvent, EventsApiError, updateEvent, type ActiveEventFormConfiguration, type ActiveEventFormField, type Event, type EventCategory } from "./events.service";
 import { canEditEvent } from "./event-status";
 import ConfiguredCreateEventSection from "./ConfiguredCreateEventSection";
@@ -51,20 +51,35 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [customValues, setCustomValues] = useState<Record<string, string | string[] | boolean | number | null>>({});
+  const [initialCustomValues, setInitialCustomValues] = useState<Record<string, string | string[] | boolean | number | null>>({});
+  const historicalCustomValuesHydrated = useRef(false);
   const enterpriseName = currentEnterprise?.business_legal_name || currentEnterprise?.business_short_name || currentEnterprise?.name || "";
   const organiserContact = [currentEnterprise?.business_email, currentEnterprise?.business_phone].filter(Boolean).join(" | ");
   useEffect(() => { if (mode === "create") setValues((current) => ({ ...current, organiser_name: current.organiser_name || enterpriseName, organiser_contact: current.organiser_contact || organiserContact })); }, [enterpriseName, mode, organiserContact]);
   const locationsQuery = useQuery({ queryKey: ["enterprise", enterpriseId, "locations"], queryFn: () => getEnterpriseLocations(enterpriseId ?? ""), enabled: Boolean(enterpriseId), staleTime: 30_000, retry: 1 });
   const activeFormConfiguration = useActiveEventFormConfiguration(mode === "create");
-  const configuredSections = useMemo(() => [...(activeFormConfiguration.data?.sections ?? [])].filter((section) => section.is_enabled).sort((left, right) => left.position - right.position), [activeFormConfiguration.data]);
+  const historicalFormConfiguration = useEventHistoricalFormConfiguration(initialEvent?.id, mode === "edit" && Boolean(initialEvent));
+  const formConfiguration = mode === "create" ? activeFormConfiguration.data : historicalFormConfiguration.data;
+  const configuredSections = useMemo(() => [...(formConfiguration?.sections ?? [])].filter((section) => section.is_enabled).sort((left, right) => left.position - right.position), [formConfiguration]);
   const requiresEventCategories = configuredSections.some((section) => section.fields.some((field) => field.source === "core" && (field.core_key === "category" || field.core_key === "subcategory")));
-  const eventCategoriesQuery = useEventCategories(mode === "create" && requiresEventCategories);
-  const editorSteps = mode === "create" && activeFormConfiguration.data ? [...configuredSections.map((section) => section.label), "Review & Submit"] : steps;
+  const eventCategoriesQuery = useEventCategories(Boolean(formConfiguration) && requiresEventCategories);
+  const editorSteps = formConfiguration ? [...configuredSections.map((section) => section.label), "Review & Submit"] : steps;
+  useEffect(() => {
+    if (mode !== "edit" || !initialEvent || !formConfiguration || historicalCustomValuesHydrated.current) return;
+    const valuesByFieldId = new Map(initialEvent.custom_values?.map((entry) => [entry.field_id, entry.value]) ?? []);
+    const hydrated = Object.fromEntries(formConfiguration.sections.flatMap((section) => section.fields).filter((field) => field.source === "custom").flatMap((field) => {
+      const value = valuesByFieldId.get(field.id);
+      return value === undefined ? [] : [[field.stable_key ?? field.id, value]];
+    }));
+    historicalCustomValuesHydrated.current = true;
+    setCustomValues(hydrated);
+    setInitialCustomValues(hydrated);
+  }, [formConfiguration, initialEvent, mode]);
   const selectedLocation = locationsQuery.data?.find((location) => location.id === locationId);
   const isCreateBlockedByEnterprise = mode === "create" && !enterpriseId;
   const saveMutation = useMutation({
     mutationFn: () => {
-      if (mode === "edit") { if (!initialEvent) throw new Error("The event could not be loaded."); if (!canEditEvent(initialEvent.status)) throw new Error("This Event cannot be edited in its current lifecycle state."); return updateEvent(initialEvent.id, buildUpdateEventPayload(values, initialValues, locationId, initialLocationId)); }
+      if (mode === "edit") { if (!initialEvent) throw new Error("The event could not be loaded."); if (!canEditEvent(initialEvent.status)) throw new Error("This Event cannot be edited in its current lifecycle state."); const payload = buildUpdateEventPayload(values, initialValues, locationId, initialLocationId); if (formConfiguration && JSON.stringify(customValues) !== JSON.stringify(initialCustomValues)) payload.custom_values = formConfiguration.sections.flatMap((section) => section.fields).filter((field) => field.source === "custom").map((field) => { const key = field.stable_key ?? field.id; return { field_id: field.id, value: serializeCustomFieldValue(field, customValues[key] ?? null) }; }); return updateEvent(initialEvent.id, payload); }
       if (!tenantId || !enterpriseId || !locationId) throw new Error("A tenant, enterprise, and location are required.");
       if (!activeFormConfiguration.data) throw new Error("An active Event form configuration is required.");
       const configuredCoreKeys = new Set(activeFormConfiguration.data.sections.flatMap((section) => section.fields.filter((field) => field.source === "core").map((field) => field.core_key ?? field.stable_key ?? field.id)));
@@ -75,20 +90,42 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     onError: (error) => { if (error instanceof EventsApiError) { setErrors((current) => ({ ...current, ...error.fieldErrors })); setSubmitError(error.status === 401 || error.status === 403 ? "Your session cannot save this event. Please sign in again." : error.message); } else setSubmitError(error instanceof Error ? error.message : "Unable to save event."); },
   });
   const update = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => { setValues((current) => ({ ...current, [key]: value })); setErrors((current) => ({ ...current, [key]: [] })); setSubmitError(null); };
-  const allErrors = useMemo(() => mode === "create" && activeFormConfiguration.data ? validateConfiguredEventForm(activeFormConfiguration.data, values, customValues, Boolean(locationId), eventCategoriesQuery.data ?? []) : validateEventForm(values, Boolean(locationId), mode), [activeFormConfiguration.data, customValues, eventCategoriesQuery.data, locationId, mode, values]);
-  const isDirty = JSON.stringify(values) !== JSON.stringify(initialValues) || locationId !== initialLocationId;
-  const continueToNext = () => { const currentFields = mode === "create" && activeFormConfiguration.data ? configuredSections[activeStep]?.fields.map((field) => field.source === "core" ? field.core_key ?? field.stable_key ?? field.id : field.stable_key ?? field.id) ?? [] : stepFields[activeStep] ?? []; const currentErrors = Object.fromEntries(Object.entries(allErrors).filter(([field]) => currentFields.includes(field))); if (Object.keys(currentErrors).length > 0) { setErrors(currentErrors); return; } setErrors({}); setActiveStep((current) => Math.min(current + 1, editorSteps.length - 1)); };
+  const allErrors = useMemo(() => formConfiguration ? validateConfiguredEventForm(formConfiguration, values, customValues, Boolean(locationId), eventCategoriesQuery.data ?? [], mode) : validateEventForm(values, Boolean(locationId), mode), [customValues, eventCategoriesQuery.data, formConfiguration, locationId, mode, values]);
+  const isDirty = JSON.stringify(values) !== JSON.stringify(initialValues) || locationId !== initialLocationId || JSON.stringify(customValues) !== JSON.stringify(initialCustomValues);
+  const continueToNext = () => { const currentFields = formConfiguration ? configuredSections[activeStep]?.fields.map((field) => field.source === "core" ? field.core_key ?? field.stable_key ?? field.id : field.stable_key ?? field.id) ?? [] : stepFields[activeStep] ?? []; const currentErrors = Object.fromEntries(Object.entries(allErrors).filter(([field]) => currentFields.includes(field))); if (Object.keys(currentErrors).length > 0) { setErrors(currentErrors); return; } setErrors({}); setActiveStep((current) => Math.min(current + 1, editorSteps.length - 1)); };
   const submit = () => { if (mode === "edit" && !isDirty) return; if (Object.keys(allErrors).length > 0) { setErrors(allErrors); setSubmitError("Review the highlighted fields before saving."); return; } setSubmitError(null); saveMutation.mutate(); };
   const sharedProps = { values, update, errors };
   const locationProps = { ...sharedProps, locations: locationsQuery.data ?? [], selectedLocationId: locationId, setSelectedLocationId: setLocationId, isLoadingLocations: locationsQuery.isLoading, locationError: locationsQuery.isError ? "Unable to load enterprise locations." : null };
   const backHref = initialEvent ? `/admin/events/${initialEvent.id}` : "/admin/events";
   const title = mode === "edit" ? "Edit Event" : "Create Event";
 
+  if (mode === "edit" && historicalFormConfiguration.isLoading) {
+    return <HistoricalFormStatus>Loading this Event&apos;s historical form configuration…</HistoricalFormStatus>;
+  }
+
+  if (mode === "edit" && historicalFormConfiguration.isError) {
+    return <HistoricalFormStatus error onRetry={() => void historicalFormConfiguration.refetch()}>Unable to load this Event&apos;s historical form configuration. The Event was not opened with the current active form.</HistoricalFormStatus>;
+  }
+
+  if (mode === "edit" && formConfiguration) {
+    return <div className="w-full">
+      <header className="flex flex-col gap-4 border-b border-[#edf3f0] pb-6 sm:flex-row sm:items-start sm:justify-between"><div><Link href={backHref} className="text-sm font-semibold text-[#1f6a58]">Back to Event</Link><p className="mt-4 text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">{initialEvent?.status ?? "EVENT"}</p><h1 className="mt-2 text-2xl font-bold text-[#06201c] sm:text-3xl">{title}</h1><p className="mt-2 text-sm text-[#52736a] sm:text-base">{initialEvent?.title}</p></div><Link href={backHref} className="inline-flex h-11 items-center justify-center rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a]">Cancel</Link></header>
+      <div className="mt-6 grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]"><nav aria-label="Event editor sections" className="rounded-2xl border border-[#e1ebe6] bg-white p-3 shadow-sm">{editorSteps.map((step, index) => <button key={`${step}-${index}`} type="button" onClick={() => setActiveStep(index)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${activeStep === index ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f9fcfa]"}`}><span className="flex h-6 w-6 items-center justify-center rounded-full border border-current text-xs">{index + 1}</span>{step}</button>)}</nav>
+        <main className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm sm:p-6">{activeStep < configuredSections.length ? <ConfiguredCreateEventSection section={configuredSections[activeStep]} {...sharedProps} customValues={customValues} setCustomValues={setCustomValues} locations={locationsQuery.data ?? []} locationId={locationId} setLocationId={setLocationId} categories={eventCategoriesQuery.data ?? []} categoriesLoading={eventCategoriesQuery.isLoading} categoriesError={eventCategoriesQuery.isError} allowPastTemporalValues /> : <ConfiguredCreateEventReview configuration={formConfiguration} values={values} customValues={customValues} locationName={selectedLocation ? `${selectedLocation.location_name} - ${selectedLocation.city}` : ""} />}{submitError ? <div role="alert" className="mt-6 rounded-xl border border-[#f3d0cb] bg-[#fff6f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{submitError}</div> : null}
+          <div className="mt-8 flex flex-col-reverse gap-3 border-t border-[#edf3f0] pt-5 sm:flex-row sm:justify-between"><button type="button" onClick={() => setActiveStep((current) => Math.max(current - 1, 0))} disabled={activeStep === 0 || saveMutation.isPending} className="h-11 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a] disabled:opacity-50">Back</button>{activeStep === editorSteps.length - 1 ? <button type="button" onClick={submit} disabled={saveMutation.isPending || !locationId || !isDirty} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm disabled:opacity-60">{saveMutation.isPending ? "Saving..." : "Save Changes"}</button> : <button type="button" onClick={continueToNext} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm">Continue</button>}</div>
+        </main></div>
+    </div>;
+  }
+
   return <div className="w-full"><header className="flex flex-col gap-4 border-b border-[#edf3f0] pb-6 sm:flex-row sm:items-start sm:justify-between"><div><Link href={backHref} className="text-sm font-semibold text-[#1f6a58]">Back to {mode === "edit" ? "Event" : "Events"}</Link><p className="mt-4 text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">{mode === "edit" ? initialEvent?.status ?? "EVENT" : "DRAFT EVENT"}</p><h1 className="mt-2 text-2xl font-bold text-[#06201c] sm:text-3xl">{title}</h1><p className="mt-2 text-sm text-[#52736a] sm:text-base">{mode === "edit" ? initialEvent?.title : "Build and review a new event for your enterprise."}</p></div><Link href={backHref} className="inline-flex h-11 items-center justify-center rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a]">Cancel</Link></header>
     {mode === "create" && (activeFormConfiguration.isLoading || activeFormConfiguration.isError || !activeFormConfiguration.data) ? <ActiveEventFormVerification query={activeFormConfiguration} /> : <div className="mt-6 grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]"><nav aria-label="Event editor sections" className="rounded-2xl border border-[#e1ebe6] bg-white p-3 shadow-sm">{editorSteps.map((step, index) => <button key={`${step}-${index}`} type="button" onClick={() => setActiveStep(index)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${activeStep === index ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f9fcfa]"}`}><span className="flex h-6 w-6 items-center justify-center rounded-full border border-current text-xs">{index + 1}</span>{step}</button>)}</nav>
       <main className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm sm:p-6">{mode === "create" && activeFormConfiguration.data && activeStep < configuredSections.length ? <ConfiguredCreateEventSection section={configuredSections[activeStep]} {...sharedProps} customValues={customValues} setCustomValues={setCustomValues} locations={locationsQuery.data ?? []} locationId={locationId} setLocationId={setLocationId} categories={eventCategoriesQuery.data ?? []} categoriesLoading={eventCategoriesQuery.isLoading} categoriesError={eventCategoriesQuery.isError} /> : null}{mode === "create" && activeFormConfiguration.data && activeStep === configuredSections.length ? <ConfiguredCreateEventReview configuration={activeFormConfiguration.data} values={values} customValues={customValues} locationName={selectedLocation ? `${selectedLocation.location_name} - ${selectedLocation.city}` : ""} /> : null}{mode === "edit" && activeStep === 0 ? <BasicInformationSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 1 ? <ScheduleSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 2 ? <LocationAndHostSection {...locationProps} /> : null}{mode === "edit" && activeStep === 3 ? <PricingAndTicketsSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 4 ? <CapacityAndRegistrationSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 5 ? <MediaSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 6 ? <AdditionalConfigurationSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 7 ? <ReviewSection values={values} selectedLocationName={selectedLocation ? `${selectedLocation.location_name} - ${selectedLocation.city}` : ""} /> : null}{isCreateBlockedByEnterprise ? <div role="status" className="mt-6 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-3 text-sm font-semibold text-[#735c1e]">Creating an Event is unavailable until an Enterprise is linked. The current backend EventCreate contract requires an enterprise_id.</div> : null}{submitError ? <div role="alert" className="mt-6 rounded-xl border border-[#f3d0cb] bg-[#fff6f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{submitError}</div> : null}
         <div className="mt-8 flex flex-col-reverse gap-3 border-t border-[#edf3f0] pt-5 sm:flex-row sm:justify-between"><button type="button" onClick={() => setActiveStep((current) => Math.max(current - 1, 0))} disabled={activeStep === 0 || saveMutation.isPending} className="h-11 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a] disabled:opacity-50">Back</button>{activeStep === editorSteps.length - 1 ? <button type="button" onClick={submit} disabled={saveMutation.isPending || !locationId || isCreateBlockedByEnterprise || (mode === "edit" && !isDirty)} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm disabled:opacity-60">{saveMutation.isPending ? mode === "edit" ? "Saving..." : "Creating..." : mode === "edit" ? "Save Changes" : "Create Event"}</button> : <button type="button" onClick={continueToNext} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm">Continue</button>}</div>
       </main></div>}</div>;
+}
+
+function HistoricalFormStatus({ children, error = false, onRetry }: { children: React.ReactNode; error?: boolean; onRetry?: () => void }) {
+  return <section role={error ? "alert" : "status"} className={`rounded-2xl border px-5 py-12 text-center text-sm font-semibold ${error ? "border-[#eadbb8] bg-[#fffaf0] text-[#735c1e]" : "border-[#d7e5df] bg-[#f9fcfa] text-[#52736a]"}`}><p>{children}</p>{onRetry ? <button type="button" onClick={onRetry} className="mt-4 rounded-full border border-current px-4 py-2 text-sm font-bold">Retry</button> : null}</section>;
 }
 
 /** Displays non-sensitive active-form resolution metadata during this read-only integration phase. */
@@ -99,7 +136,7 @@ function ActiveEventFormVerification({ query }: { query: ReturnType<typeof useAc
   return <aside role="status" className="mb-6 rounded-xl border border-[#cde5db] bg-[#f4faf7] p-4 text-sm text-[#355a51]"><p className="font-bold text-[#06201c]">Active Event Form</p><p className="mt-1 font-semibold text-[#1f6a58]">{query.data.name}</p><dl className="mt-3 grid gap-1 text-xs sm:grid-cols-2"><div><dt className="inline font-semibold">Scope: </dt><dd className="inline">{query.data.scope}</dd></div><div><dt className="inline font-semibold">Version: </dt><dd className="inline">{query.data.version}</dd></div><div><dt className="inline font-semibold">Configuration ID: </dt><dd className="inline break-all">{query.data.configuration_id}</dd></div><div><dt className="inline font-semibold">Version ID: </dt><dd className="inline break-all">{query.data.version_id}</dd></div><div><dt className="inline font-semibold">Sections: </dt><dd className="inline">{query.data.sections.length}</dd></div></dl></aside>;
 }
 
-function validateConfiguredEventForm(configuration: ActiveEventFormConfiguration, values: CreateEventFormValues, customValues: Record<string, string | string[] | boolean | number | null>, hasLocation: boolean, categories: readonly EventCategory[]): Record<string, string[]> {
+function validateConfiguredEventForm(configuration: ActiveEventFormConfiguration, values: CreateEventFormValues, customValues: Record<string, string | string[] | boolean | number | null>, hasLocation: boolean, categories: readonly EventCategory[], mode: "create" | "edit"): Record<string, string[]> {
   const errors: Record<string, string[]> = {};
   for (const section of configuration.sections.filter((item) => item.is_enabled)) for (const field of section.fields) {
     const key = field.source === "core" ? field.core_key ?? field.stable_key ?? field.id : field.stable_key ?? field.id;
@@ -110,12 +147,12 @@ function validateConfiguredEventForm(configuration: ActiveEventFormConfiguration
     const value = coreKey ? values[coreKey] : customValues[key];
     if ((Array.isArray(value) && value.length === 0) || value === null || value === undefined || String(value).trim() === "") errors[key] = [`${field.label} is required.`];
   }
-  validateConfiguredCategories(configuration, values, categories, errors);
-  validateConfiguredDateTimes(configuration, values, errors);
+  validateConfiguredCategories(configuration, values, categories, errors, mode);
+  validateConfiguredDateTimes(configuration, values, errors, mode);
   return errors;
 }
 
-function validateConfiguredCategories(configuration: ActiveEventFormConfiguration, values: CreateEventFormValues, categories: readonly EventCategory[], errors: Record<string, string[]>): void {
+function validateConfiguredCategories(configuration: ActiveEventFormConfiguration, values: CreateEventFormValues, categories: readonly EventCategory[], errors: Record<string, string[]>, mode: "create" | "edit"): void {
   const keys = configuredCoreKeys(configuration);
   const categoryEnabled = isConfigured(keys, "category");
   const subcategoryEnabled = isConfigured(keys, "subcategory");
@@ -123,14 +160,14 @@ function validateConfiguredCategories(configuration: ActiveEventFormConfiguratio
   const parents = categories.filter((category) => category.parent_id === null);
   const selectedCategory = parents.find((category) => category.name === values.category);
 
-  if (categoryEnabled && values.category && !selectedCategory) errors.category = ["Select a valid category."];
+  if (mode === "create" && categoryEnabled && values.category && !selectedCategory) errors.category = ["Select a valid category."];
   if (!subcategoryEnabled) return;
   if (!categoryEnabled) {
     if (subcategoryField?.required) errors.subcategory = ["A configured Category is required before selecting a subcategory."];
     return;
   }
   const subcategories = selectedCategory ? categories.filter((category) => category.parent_id === selectedCategory.id) : [];
-  if (values.subcategory && !subcategories.some((category) => category.name === values.subcategory)) errors.subcategory = ["Select a valid subcategory."];
+  if (mode === "create" && values.subcategory && !subcategories.some((category) => category.name === values.subcategory)) errors.subcategory = ["Select a valid subcategory."];
 }
 
 function configuredCoreKeys(configuration: ActiveEventFormConfiguration): Set<string> {
@@ -146,7 +183,7 @@ function asLocalTimestamp(value: string): number | null {
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
-function validateConfiguredDateTimes(configuration: ActiveEventFormConfiguration, values: CreateEventFormValues, errors: Record<string, string[]>): void {
+function validateConfiguredDateTimes(configuration: ActiveEventFormConfiguration, values: CreateEventFormValues, errors: Record<string, string[]>, mode: "create" | "edit"): void {
   const keys = configuredCoreKeys(configuration);
   const startKey = isConfigured(keys, "start_datetime") ? "start_datetime" : "start_date";
   const endKey = isConfigured(keys, "end_datetime") ? "end_datetime" : "end_date";
@@ -159,9 +196,9 @@ function validateConfiguredDateTimes(configuration: ActiveEventFormConfiguration
   nowDate.setSeconds(0, 0);
   const now = nowDate.getTime();
 
-  if (isConfigured(keys, "start_date", "start_datetime") && start !== null && start < now) errors[startKey] = ["Start date cannot be in the past."];
+  if (mode === "create" && isConfigured(keys, "start_date", "start_datetime") && start !== null && start < now) errors[startKey] = ["Start date cannot be in the past."];
   if (isConfigured(keys, "start_date", "start_datetime") && isConfigured(keys, "end_date", "end_datetime") && start !== null && end !== null && end <= start) errors[endKey] = ["End date and time must be after the start date and time."];
-  if (isConfigured(keys, "registration_open_at") && opens !== null && opens < now) errors.registration_open_at = ["Registration opening time cannot be in the past."];
+  if (mode === "create" && isConfigured(keys, "registration_open_at") && opens !== null && opens < now) errors.registration_open_at = ["Registration opening time cannot be in the past."];
   if (isConfigured(keys, "registration_open_at") && isConfigured(keys, "registration_close_at") && opens !== null && closes !== null && closes <= opens) errors.registration_close_at = ["Registration closing time must be after registration opening time."];
   if (isConfigured(keys, "registration_close_at") && isConfigured(keys, "start_date", "start_datetime") && closes !== null && start !== null && closes > start) errors.registration_close_at = ["Registration closing time must be on or before the Event start."];
   if (isConfigured(keys, "registration_cutoff") && isConfigured(keys, "registration_open_at") && cutoff !== null && opens !== null && cutoff <= opens) errors.registration_cutoff = ["Registration cutoff must be after registration opening time."];

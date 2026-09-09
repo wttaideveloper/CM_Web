@@ -4,6 +4,7 @@ import { DndContext, KeyboardSensor, PointerSensor, closestCenter, type Collisio
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { formConfigurationCopy as copy } from "../constants/form-configuration-copy";
+import { getEventCoreFieldSemantic } from "../model/event-core-field-semantics";
 import type { ConfiguredField, FormSection } from "../model/form-configuration.types";
 
 export type BuilderSelection = { kind: "section" | "field"; id: string } | null;
@@ -14,7 +15,9 @@ function Handle() { return <span aria-hidden="true" className="select-none text-
 
 function FieldRow({ field, selected, onSelect }: { field: ConfiguredField; selected: boolean; onSelect: () => void }) {
   const sortable = useSortable({ id: `field-${field.localId}`, data: { dragKind: "field" satisfies DragKind } });
-  return <button ref={sortable.setNodeRef} {...sortable.attributes} type="button" onPointerDown={(event) => event.stopPropagation()} onClick={onSelect} style={{ transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition }} className={`flex w-full items-center gap-3 rounded-xl border p-2.5 text-left transition ${selected ? "border-[#1f6a58] bg-[#e9f4ee]" : "border-[#edf3f0] bg-white hover:border-[#b9d4c8]"}`}><span {...sortable.listeners} onClick={(event) => event.stopPropagation()} aria-label={copy.moveUp} className="cursor-grab touch-none"><Handle /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-[#06201c]">{field.label}</span><span className="block text-xs text-[#52736a]">{copy.fieldTypes[field.renderer as keyof typeof copy.fieldTypes] ?? field.renderer} · {field.required ? copy.required : copy.optional}</span></span><span className="rounded-full bg-[#eef6f2] px-2 py-0.5 text-[10px] font-bold uppercase text-[#176347]">{field.source === "core" ? copy.core : copy.custom}</span></button>;
+  const taxonomySemantic = field.source === "core" ? getEventCoreFieldSemantic(field.coreKey) : undefined;
+  const rendererLabel = taxonomySemantic ? copy.taxonomySelect : copy.fieldTypes[field.renderer as keyof typeof copy.fieldTypes] ?? field.renderer;
+  return <button ref={sortable.setNodeRef} {...sortable.attributes} type="button" onPointerDown={(event) => event.stopPropagation()} onClick={onSelect} style={{ transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition }} className={`flex w-full items-center gap-3 rounded-xl border p-2.5 text-left transition ${selected ? "border-[#1f6a58] bg-[#e9f4ee]" : "border-[#edf3f0] bg-white hover:border-[#b9d4c8]"}`}><span {...sortable.listeners} onClick={(event) => event.stopPropagation()} aria-label={copy.moveUp} className="cursor-grab touch-none"><Handle /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-[#06201c]">{field.label}</span><span className="block text-xs text-[#52736a]">{rendererLabel} · {field.required ? copy.required : copy.optional}</span></span><span className="rounded-full bg-[#eef6f2] px-2 py-0.5 text-[10px] font-bold uppercase text-[#176347]">{field.source === "core" ? copy.core : copy.custom}</span></button>;
 }
 
 function EmptyDropZone({ sectionLocalId }: { sectionLocalId: string }) { const drop = useDroppable({ id: `drop-${sectionLocalId}`, data: { dragKind: "field-drop" satisfies DragKind } }); return <div ref={drop.setNodeRef} onPointerDown={(event) => event.stopPropagation()} className="rounded-xl border border-dashed border-[#cfe0d8] px-3 py-3 text-center text-xs text-[#7f9d94]">{copy.noFields}</div>; }
