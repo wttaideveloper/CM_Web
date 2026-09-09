@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { City, Country, State } from "country-state-city";
 
 import { createEnterprise } from "../services/enterprise.service";
+import { BUSINESS_CATEGORY_OPTIONS } from "../constants/business-category-options";
 import type { EnterpriseCreateScreenProps, EnterpriseTenantOption } from "../types/enterprise-screen-config.types";
 
 const steps = ["Business Info", "Contact", "Address", "Branding", "Review"];
@@ -714,14 +715,7 @@ export default function EnterpriseCreateScreen({
                   onChange={(event) => setBusinessCategory(event.target.value)}
                 >
                   <option value="">Select business category</option>
-                  {[
-                    "Fitness & Wellness",
-                    "Nutrition",
-                    "Mental Health",
-                    "Physical Therapy",
-                    "Sports Medicine",
-                    "Mindfulness",
-                  ].map((option) => (
+                  {BUSINESS_CATEGORY_OPTIONS.map((option) => (
                     <option key={option}>{option}</option>
                   ))}
                 </select>

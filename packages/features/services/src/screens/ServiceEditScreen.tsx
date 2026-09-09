@@ -14,6 +14,7 @@ import {
 import { getEnterpriseLocations, type EnterpriseLocationDto } from "@ihp/enterprises";
 
 import { getServiceById, updateService } from "../services/service.service";
+import { SERVICE_CATEGORY_OPTIONS } from "../constants/service-category-options";
 import type { AvailabilityScheduleItem, ServiceDto } from "../types/service.types";
 import type {
   ServiceEditScreenProps,
@@ -36,7 +37,7 @@ type WeekdaySchedule = {
   slotLength: string;
 };
 
-const categoryOptions = ["IT Services", "Training", "Coaching", "Classes", "Recovery", "Therapy", "Mindfulness"];
+const categoryOptions = SERVICE_CATEGORY_OPTIONS;
 
 const weekdayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
@@ -118,7 +119,7 @@ function resolveOptionValue(value: string | undefined, options: { value: string;
 }
 
 function hasCategoryOption(value: string) {
-  return categoryOptions.includes(value);
+  return categoryOptions.some((option) => option === value);
 }
 
 function resolveLocationLabel(location: EnterpriseLocationDto) {

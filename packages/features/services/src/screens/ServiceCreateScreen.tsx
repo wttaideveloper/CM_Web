@@ -8,6 +8,7 @@ import { getEnterpriseLocations, getEnterprises, type EnterpriseDto, type Enterp
 import { formatCurrency } from "@ihp/shared";
 
 import { createService } from "../services/service.service";
+import { SERVICE_CATEGORY_OPTIONS } from "../constants/service-category-options";
 import type { AvailabilityScheduleItem } from "../types/service.types";
 import type {
   ServiceCreateScreenProps,
@@ -525,7 +526,7 @@ export default function ServiceCreateScreen({
                   value={serviceCategory}
                   onChange={(event) => setServiceCategory(event.target.value)}
                 >
-                  {["IT Services", "Training", "Coaching", "Classes", "Recovery", "Therapy", "Mindfulness"].map(
+                  {SERVICE_CATEGORY_OPTIONS.map(
                     (option) => (
                       <option key={option}>{option}</option>
                     ),

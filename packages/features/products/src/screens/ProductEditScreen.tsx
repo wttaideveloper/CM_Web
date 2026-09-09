@@ -14,6 +14,7 @@ import {
 import { getEnterpriseLocations, type EnterpriseLocationDto } from "@ihp/enterprises";
 
 import { getProductById, updateProduct } from "../services/product.service";
+import { PRODUCT_CATEGORY_OPTIONS } from "../constants/product-category-options";
 import type { ProductDto } from "../types/product.types";
 import type { ProductEditScreenProps } from "../types/product-screen-config.types";
 
@@ -76,7 +77,7 @@ const publishStatusOptions = [
   { value: "scheduled", label: "Schedule for later" },
 ];
 
-const categoryOptions = ["Equipment", "Supplements", "Recovery", "Digital", "Accessories"];
+const categoryOptions = PRODUCT_CATEGORY_OPTIONS;
 
 function normalizeOptionValue(value: string | undefined, options: { value: string; label: string }[]) {
   if (!value) {
@@ -97,7 +98,7 @@ function normalizeOptionValue(value: string | undefined, options: { value: strin
   }
 
 function hasCategoryOption(value: string) {
-  return categoryOptions.includes(value);
+  return categoryOptions.some((option) => option === value);
 }
 
 function resolveLocationLabel(location: EnterpriseLocationDto) {

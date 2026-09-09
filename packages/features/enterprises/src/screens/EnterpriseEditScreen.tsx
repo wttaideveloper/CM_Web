@@ -8,6 +8,7 @@ import {
   getEnterpriseById,
   updateEnterprise,
 } from "../services/enterprise.service";
+import { BUSINESS_CATEGORY_OPTIONS } from "../constants/business-category-options";
 import type {
   EnterpriseDto,
   EnterpriseStatus,
@@ -26,15 +27,7 @@ function selectClass() {
   return inputClass();
 }
 
-const businessCategoryOptions = [
-  "Fitness & Wellness",
-  "Nutrition",
-  "Mental Health",
-  "Preventive Care",
-  "Rehabilitation",
-  "Corporate Wellness",
-  "Other",
-];
+const businessCategoryOptions = BUSINESS_CATEGORY_OPTIONS;
 
 const yearFoundedOptions = ["2026", "2025", "2024", "2023", "2022", "2021", "2020", "2019", "2018"];
 
@@ -51,7 +44,7 @@ function optionalText(value: string) {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-function hasOption(value: string, options: string[]) {
+function hasOption(value: string, options: readonly string[]) {
   return options.includes(value);
 }
 

@@ -8,6 +8,7 @@ import { getEnterpriseLocations, getEnterprises } from "@ihp/enterprises";
 import { formatCurrency } from "@ihp/shared";
 
 import { createProduct } from "../services/product.service";
+import { PRODUCT_CATEGORY_OPTIONS } from "../constants/product-category-options";
 import type { ProductCreateScreenProps } from "../types/product-screen-config.types";
 
 const tabs = ["Product Info", "Pricing", "Images", "Review"];
@@ -416,7 +417,7 @@ export default function ProductCreateScreen({
                   value={productCategory}
                   onChange={(event) => setProductCategory(event.target.value)}
                 >
-                  {["Equipment", "Supplements", "Recovery", "Digital", "Accessories"].map(
+                  {PRODUCT_CATEGORY_OPTIONS.map(
                     (option) => (
                       <option key={option}>{option}</option>
                     ),
