@@ -31,6 +31,15 @@ export interface CreateTrainingFormValues {
   coupon_code: string;
   requires_approval: boolean;
   access_duration_days: string;
+  prerequisites: string;
+  release_rule: string;
+  randomise: boolean;
+  scheduled_publication: string;
+  is_mandatory: boolean;
+  group_enrolment: boolean;
+  max_group_size: string;
+  access_expiry_type: string;
+  access_expiry_days: string;
 }
 
 /** Returns blank values for a newly opened Training editor workspace. */
@@ -61,6 +70,15 @@ export function createEmptyTrainingForm(): CreateTrainingFormValues {
     coupon_code: "",
     requires_approval: false,
     access_duration_days: "",
+    prerequisites: "",
+    release_rule: "immediate",
+    randomise: false,
+    scheduled_publication: "",
+    is_mandatory: false,
+    group_enrolment: false,
+    max_group_size: "",
+    access_expiry_type: "never",
+    access_expiry_days: "",
   };
 }
 
@@ -97,6 +115,15 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
     coupon_code: stringValue("coupon_code"),
     requires_approval: record.requires_approval === true,
     access_duration_days: stringValue("access_duration_days"),
+    prerequisites: stringValue("prerequisites"),
+    release_rule: stringValue("release_rule", "immediate"),
+    randomise: record.randomise === true || record.randomize === true,
+    scheduled_publication: stringValue("scheduled_publication"),
+    is_mandatory: record.is_mandatory === true || record.mandatory === true,
+    group_enrolment: record.group_enrolment === true || record.group_enrollment === true,
+    max_group_size: stringValue("max_group_size"),
+    access_expiry_type: stringValue("access_expiry_type", "never"),
+    access_expiry_days: stringValue("access_expiry_days"),
   };
 }
 
@@ -130,7 +157,16 @@ export function buildCreateTrainingPayload(values: CreateTrainingFormValues, ten
     coupon_code: values.coupon_code.trim() || null,
     requires_approval: values.requires_approval,
     access_duration_days: values.access_duration_days.trim() || null,
-  };
+    prerequisites: values.prerequisites.trim() || null,
+    release_rule: values.release_rule || null,
+    randomise: values.randomise,
+    scheduled_publication: values.scheduled_publication || null,
+    is_mandatory: values.is_mandatory,
+    group_enrolment: values.group_enrolment,
+    max_group_size: values.max_group_size.trim() || null,
+    access_expiry_type: values.access_expiry_type || null,
+    access_expiry_days: values.access_expiry_days.trim() || null,
+  } as unknown as CreateTrainingPayload;
 }
 
 /** Builds a partial Update payload from changed form values. */
@@ -161,7 +197,16 @@ export function buildUpdateTrainingPayload(values: CreateTrainingFormValues): Up
     coupon_code: values.coupon_code.trim() || null,
     requires_approval: values.requires_approval,
     access_duration_days: values.access_duration_days.trim() || null,
-  };
+    prerequisites: values.prerequisites.trim() || null,
+    release_rule: values.release_rule || null,
+    randomise: values.randomise,
+    scheduled_publication: values.scheduled_publication || null,
+    is_mandatory: values.is_mandatory,
+    group_enrolment: values.group_enrolment,
+    max_group_size: values.max_group_size.trim() || null,
+    access_expiry_type: values.access_expiry_type || null,
+    access_expiry_days: values.access_expiry_days.trim() || null,
+  } as unknown as UpdateTrainingPayload;
 }
 
 /** Validates the current form values, returning per-field messages. */

@@ -27,6 +27,7 @@ const platformOwnedNavigationRoutes = new Set([
   "/training-forms",
   "/training-form-configurations",
   "/program-form-configurations",
+  "/course-form-configurations",
   "/enterprise-types",
   "/categories",
   "/sub-admins",

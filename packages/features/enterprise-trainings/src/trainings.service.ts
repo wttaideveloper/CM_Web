@@ -1399,5 +1399,43 @@ export async function resubmitTraining(trainingId: string): Promise<unknown> {
   return value;
 }
 
+/** Gets training reports — `GET /trainings/{id}/reports`. */
+export async function getTrainingReports(trainingId: string, params: Record<string, unknown> = {}): Promise<unknown> {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== "") sp.set(k, String(v));
+  const qs = sp.toString() ? `?${sp.toString()}` : "";
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/reports${qs}`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load training reports");
+  return (await res.json()) as unknown;
+}
+
+/** Gets trainings report summary — `GET /trainings/reports/summary`. */
+export async function getTrainingsReportSummary(): Promise<unknown> {
+  const res = await fetch(`/api/v1/trainings/reports/summary`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load trainings summary");
+  return (await res.json()) as unknown;
+}
+
+/** Participant dashboard — `GET /trainings/{id}/dashboards/participant`. */
+export async function getTrainingParticipantDashboard(trainingId: string): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/dashboards/participant`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load participant dashboard");
+  return (await res.json()) as unknown;
+}
+
+/** Provider dashboard — `GET /trainings/{id}/dashboards/provider`. */
+export async function getTrainingProviderDashboard(trainingId: string): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/dashboards/provider`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load provider dashboard");
+  return (await res.json()) as unknown;
+}
+
+/** Exports enrolments CSV — `GET /trainings/{id}/enrolments/export`. */
+export async function exportTrainingEnrolments(trainingId: string): Promise<{ blob: Blob; filename: string | null }> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/enrolments/export`, { credentials: "include" });
+  if (!res.ok) throw await createTrainingsApiError(res, "export enrolments");
+  return { blob: await res.blob(), filename: getAttachmentFilename(res.headers.get("Content-Disposition")) };
+}
+
 // Re-export helper for filename parsing (used for cert/calendar exports).
 export { getAttachmentFilename };

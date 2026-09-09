@@ -65,6 +65,14 @@ const nextConfig: NextConfig = {
           destination: `${chatBaseHttps}/admin/program-form-configurations/:path*`,
         },
         {
+          source: "/api/v1/courses/form-configuration/:path*",
+          destination: `${chatBaseHttps}/courses/form-configuration/:path*`,
+        },
+        {
+          source: "/api/v1/admin/course-form-configurations/:path*",
+          destination: `${chatBaseHttps}/admin/course-form-configurations/:path*`,
+        },
+        {
           source: "/api/v1/search/enterprises",
           destination: `${chatBaseHttps}/search/enterprises`,
         },
@@ -135,6 +143,22 @@ const nextConfig: NextConfig = {
         {
           source: "/api/v1/admin/programs/:path*",
           destination: `${chatApiBaseUrl}/admin/programs/:path*`,
+        },
+        {
+          source: "/api/v1/courses",
+          destination: `${chatApiBaseUrl}/courses/`,
+        },
+        {
+          source: "/api/v1/courses/:path*",
+          destination: `${chatApiBaseUrl}/courses/:path*`,
+        },
+        {
+          source: "/api/v1/search/courses",
+          destination: `${chatApiBaseUrl}/search/courses`,
+        },
+        {
+          source: "/api/v1/admin/courses/:path*",
+          destination: `${chatBaseHttps}/admin/courses/:path*`,
         },
       );
     }

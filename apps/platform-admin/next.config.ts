@@ -39,6 +39,14 @@ const nextConfig: NextConfig = {
         destination: `${platformApiBaseUrl}/admin/program-form-configurations/:path*`,
       },
       {
+        source: "/api/v1/courses/form-configuration/:path*",
+        destination: `${platformApiBaseUrl}/courses/form-configuration/:path*`,
+      },
+      {
+        source: "/api/v1/admin/course-form-configurations/:path*",
+        destination: `${platformApiBaseUrl}/admin/course-form-configurations/:path*`,
+      },
+      {
         source: "/api/v1/onboarding-forms",
         destination: `${platformApiBaseUrl}/onboarding-forms/`,
       },
@@ -133,6 +141,22 @@ const nextConfig: NextConfig = {
       {
         source: "/api/v1/admin/programs/:path*",
         destination: `${platformApiBaseUrl}/admin/programs/:path*`,
+      },
+      {
+        source: "/api/v1/courses",
+        destination: `${platformApiBaseUrl}/courses/`,
+      },
+      {
+        source: "/api/v1/courses/:path*",
+        destination: `${platformApiBaseUrl}/courses/:path*`,
+      },
+      {
+        source: "/api/v1/search/courses",
+        destination: `${platformApiBaseUrl}/search/courses`,
+      },
+      {
+        source: "/api/v1/admin/courses/:path*",
+        destination: `${platformApiBaseUrl}/admin/courses/:path*`,
       },
     ];
 

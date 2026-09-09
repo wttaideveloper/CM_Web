@@ -17,6 +17,7 @@ export const platformNavigationGroups: readonly PlatformNavigationGroup[] = [
       { label: "Form Configurations", href: "/form-configurations", icon: "forms" },
       { label: "Training Forms", href: "/training-form-configurations", icon: "forms" },
       { label: "Program Forms", href: "/program-form-configurations", icon: "forms" },
+      { label: "Course Forms", href: "/course-form-configurations", icon: "forms" },
       { label: "Enterprise Types", href: "/enterprise-types", icon: "building" },
       { label: "Categories", href: "/categories", icon: "tag" },
       { label: "Sub-Admins", href: "/sub-admins", icon: "settings" },

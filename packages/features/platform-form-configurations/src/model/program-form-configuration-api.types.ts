@@ -2,7 +2,7 @@
 export type ProgramFormConfigurationScope = "global" | "selective";
 
 /** Lifecycle state returned for a Program form configuration or version. */
-export type ProgramFormConfigurationStatus = "draft" | "published" | "retired";
+export type ProgramFormConfigurationStatus = "draft" | "published" | "retired" | "active" | "inactive" | "archived";
 
 /** Backend-defined renderer identifier. */
 export type ProgramFormRenderer = string;

@@ -12,7 +12,7 @@ function isString(value: unknown): value is string { return typeof value === "st
 function isNullableString(value: unknown): value is string | null | undefined { return value === undefined || value === null || isString(value); }
 function isNullableFiniteNumber(value: unknown): boolean { return value === undefined || value === null || (typeof value === "number" && Number.isFinite(value)); }
 function isScope(value: unknown): boolean { return value === "global" || value === "selective"; }
-function isStatus(value: unknown): boolean { return value === "draft" || value === "published" || value === "retired"; }
+function isStatus(value: unknown): boolean { return value === "draft" || value === "published" || value === "retired" || value === "active" || value === "inactive" || value === "archived"; }
 function isValidation(value: unknown): boolean { return isRecord(value) && isNullableFiniteNumber(value.min_length) && isNullableFiniteNumber(value.max_length) && isNullableFiniteNumber(value.min) && isNullableFiniteNumber(value.max) && isNullableString(value.pattern); }
 function isOption(value: unknown): boolean { return isRecord(value) && isString(value.value) && isString(value.label) && Number.isInteger(value.position); }
 function isStringArray(value: unknown): value is string[] { return Array.isArray(value) && value.every(isString); }
@@ -66,7 +66,24 @@ export async function listProgramFormConfigurationVersions(configurationId: stri
 /** Retrieves one immutable Program form configuration version. */
 export async function getProgramFormConfigurationVersion(configurationId: string, versionId: string): Promise<ProgramFormConfigurationVersion> { return expect(await requestJson(configurationPath(configurationId, `/versions/${encodeURIComponent(versionId)}`)), isVersion, "version"); }
 /** Publishes the current draft and returns its published version. */
-export async function publishProgramFormConfiguration(configurationId: string): Promise<ProgramFormPublishResponse> { const value = await requestJson(configurationPath(configurationId, "/publish"), jsonRequest("POST")); if (!isRecord(value) || !isConfiguration(value.configuration) || !isVersion(value.version)) throw new ProgramFormConfigurationsApiError(null, "Program Form Configurations returned invalid publish data."); return { configuration: value.configuration, version: value.version }; }
+export async function publishProgramFormConfiguration(configurationId: string): Promise<ProgramFormPublishResponse> {
+  const value = await requestJson(configurationPath(configurationId, "/publish"), jsonRequest("POST"));
+  const maybeWrapped = isRecord(value) && "data" in value && isRecord(value.data) ? value.data : value;
+  if (isConfiguration(maybeWrapped as unknown)) {
+    const cfg = maybeWrapped as unknown as ProgramFormConfiguration;
+    const ver = cfg.published_version ?? cfg.draft_version;
+    if (ver && isVersion(ver)) return { configuration: cfg, version: ver };
+  }
+  if (isRecord(maybeWrapped) && isRecord(maybeWrapped.configuration) && isRecord(maybeWrapped.version)) {
+    const cfg = maybeWrapped.configuration;
+    const ver = maybeWrapped.version;
+    if (typeof cfg.id === "string" && typeof cfg.name === "string" && typeof ver.id === "string" && typeof (ver as Record<string, unknown>).version === "number") {
+      return { configuration: cfg as unknown as ProgramFormConfiguration, version: ver as unknown as ProgramFormConfigurationVersion };
+    }
+  }
+  if (isRecord(value) && isConfiguration(value.configuration as unknown) && isVersion(value.version as unknown)) return { configuration: value.configuration as unknown as ProgramFormConfiguration, version: value.version as unknown as ProgramFormConfigurationVersion };
+  throw new ProgramFormConfigurationsApiError(null, "Program Form Configurations returned invalid publish data.");
+}
 /** Activates one published Program form configuration. */
 export async function activateProgramFormConfiguration(configurationId: string): Promise<ProgramFormConfiguration> { return expect(await requestJson(configurationPath(configurationId, "/activate"), jsonRequest("POST")), isConfiguration, "activated configuration"); }
 /** Deactivates one Program form configuration. */

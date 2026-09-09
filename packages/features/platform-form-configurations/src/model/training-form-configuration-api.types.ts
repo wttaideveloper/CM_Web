@@ -2,7 +2,7 @@
 export type TrainingFormConfigurationScope = "global" | "selective";
 
 /** Lifecycle state returned for a Training form configuration or version. */
-export type TrainingFormConfigurationStatus = "draft" | "published" | "retired";
+export type TrainingFormConfigurationStatus = "draft" | "published" | "retired" | "active" | "inactive" | "archived";
 
 /** Backend-defined renderer identifier. */
 export type TrainingFormRenderer = string;

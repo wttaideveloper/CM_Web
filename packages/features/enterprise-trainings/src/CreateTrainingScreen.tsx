@@ -6,18 +6,19 @@ import { useCurrentEnterprise, useTenant } from "@ihp/enterprise-runtime";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import { TrainingBasicsSection, TrainingDeliverySection, TrainingMediaSection, TrainingPricingSection, TrainingScheduleSection } from "./CreateTrainingSections";
+import { TrainingBasicsSection, TrainingCourseBuilderSection, TrainingDeliverySection, TrainingMediaSection, TrainingPricingSection, TrainingScheduleSection } from "./CreateTrainingSections";
 import { buildCreateTrainingPayload, buildUpdateTrainingPayload, createEmptyTrainingForm, trainingToFormValues, validateTrainingForm, type CreateTrainingFormValues } from "./create-training-form";
 import { createTraining, resubmitTraining, TrainingsApiError, updateTraining, updateTrainingStatus, type Training } from "./trainings.service";
 import { useActiveTrainingFormConfiguration } from "./training-form-configuration.queries";
 import { canEditTraining } from "./training-status";
 
-const steps = ["Basic Information", "Delivery & Instructor", "Schedule", "Pricing & Capacity"] as const;
+const steps = ["Basic Information", "Delivery & Instructor", "Schedule", "Pricing & Capacity", "Course Builder"] as const;
 const stepFields: ReadonlyArray<readonly string[]> = [
   ["title", "description", "category"],
   ["delivery_mode", "course_type", "duration", "instructor_id", "requirements"],
   ["start_date", "end_date", "enrolment_start", "enrolment_end"],
   [],
+  ["prerequisites", "release_rule", "randomise", "scheduled_publication", "is_mandatory", "group_enrolment", "max_group_size", "access_expiry_type", "access_expiry_days"],
 ];
 
 type TrainingEditorProps = { mode?: "create" | "edit"; initialTraining?: Training };
@@ -197,6 +198,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
                   <TrainingMediaSection {...sharedProps} />
                 </>
               ) : null}
+              {activeStep === 4 ? <TrainingCourseBuilderSection {...sharedProps} /> : null}
             </>
           )}
           {isCreateBlockedByEnterprise ? <div role="status" className="mt-6 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-3 text-sm font-semibold text-[#735c1e]">Creating a Training is unavailable until an Enterprise is linked. The current backend TrainingCreate contract requires an enterprise_id.</div> : null}

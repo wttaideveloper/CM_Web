@@ -432,12 +432,14 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
   );
 }
 
-/** Renders the Training enrolments with approve/cancel actions. */
+/** Renders the Training enrolments with approve/cancel + group & CSV export. */
 function EnrolmentsSection({ trainingId }: { trainingId: string }) {
   const queryClient = useQueryClient();
   const [feedback, setFeedback] = useState<string | null>(null);
   const [enrolName, setEnrolName] = useState("");
   const [enrolEmail, setEnrolEmail] = useState("");
+  const [isGroupEnrol, setIsGroupEnrol] = useState(false);
+  const [groupSize, setGroupSize] = useState("");
 
   const enrolmentsQuery = useQuery({
     queryKey: ["trainings", trainingId, "enrolments"],
@@ -446,9 +448,25 @@ function EnrolmentsSection({ trainingId }: { trainingId: string }) {
   });
 
   const enrolMutation = useMutation({
-    mutationFn: () => enrolInTraining(trainingId, { participant_name: enrolName.trim(), participant_email: enrolEmail.trim() }),
-    onSuccess: () => { setEnrolName(""); setEnrolEmail(""); setFeedback("Enrolment submitted."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "enrolments"] }); },
+    mutationFn: () => enrolInTraining(trainingId, { participant_name: enrolName.trim(), participant_email: enrolEmail.trim(), group_enrol: isGroupEnrol || undefined, max_group_size: groupSize.trim() || undefined }),
+    onSuccess: () => { setEnrolName(""); setEnrolEmail(""); setIsGroupEnrol(false); setGroupSize(""); setFeedback("Enrolment submitted."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "enrolments"] }); },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to enrol participant."),
+  });
+
+  const exportMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/v1/trainings/${encodeURIComponent(trainingId)}/enrolments/export`, { credentials: "include" });
+      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition");
+      const filename = disposition ? /filename=(?:"([^"]+)"|([^;\s]+))/.exec(disposition)?.[1] ?? disposition.split("filename=")[1] ?? `training-${trainingId}-enrolments.csv` : `training-${trainingId}-enrolments.csv`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename.replace(/"/g, ""); document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      return null;
+    },
+    onSuccess: () => setFeedback("CSV exported."),
+    onError: (error) => setFeedback(error instanceof Error ? error.message : "Unable to export CSV."),
   });
 
   const approveMutation = useMutation({
@@ -466,11 +484,20 @@ function EnrolmentsSection({ trainingId }: { trainingId: string }) {
   const enrolments = enrolmentsQuery.data ?? [];
 
   return (
-    <SectionCard title="Enrolments">
+    <SectionCard
+      title="Enrolments"
+      action={
+        <button type="button" onClick={() => void exportMutation.mutate()} disabled={exportMutation.isPending} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-xs font-semibold text-[#1f6a58] disabled:opacity-60">
+          {exportMutation.isPending ? "Exporting..." : "Export CSV"}
+        </button>
+      }
+    >
       {feedback ? <p role="status" className="mb-4 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">{feedback}</p> : null}
       <form className="mb-4 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); if (enrolName.trim() && enrolEmail.trim()) enrolMutation.mutate(); }}>
         <input value={enrolName} onChange={(e) => setEnrolName(e.target.value)} placeholder="Participant name" className="h-10 flex-1 min-w-[140px] rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm outline-none focus:border-[#1f6a58]" />
         <input value={enrolEmail} onChange={(e) => setEnrolEmail(e.target.value)} placeholder="Participant email" type="email" className="h-10 flex-1 min-w-[180px] rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm outline-none focus:border-[#1f6a58]" />
+        <label className="flex items-center gap-2 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={isGroupEnrol} onChange={(e) => setIsGroupEnrol(e.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Group</label>
+        {isGroupEnrol ? <input value={groupSize} onChange={(e) => setGroupSize(e.target.value)} placeholder="Group size" className="h-10 w-20 rounded-xl border border-[#d7e5df] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]" /> : null}
         <button type="submit" disabled={enrolMutation.isPending || !enrolName.trim() || !enrolEmail.trim()} className="h-10 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white disabled:opacity-60">{enrolMutation.isPending ? "Enrolling..." : "Enrol User"}</button>
       </form>
       {enrolmentsQuery.isLoading ? <p className="text-sm text-[#52736a]">Loading enrolments...</p> : null}

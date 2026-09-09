@@ -12,7 +12,7 @@ function isString(value: unknown): value is string { return typeof value === "st
 function isNullableString(value: unknown): value is string | null | undefined { return value === undefined || value === null || isString(value); }
 function isNullableFiniteNumber(value: unknown): boolean { return value === undefined || value === null || (typeof value === "number" && Number.isFinite(value)); }
 function isScope(value: unknown): boolean { return value === "global" || value === "selective"; }
-function isStatus(value: unknown): boolean { return value === "draft" || value === "published" || value === "retired"; }
+function isStatus(value: unknown): boolean { return value === "draft" || value === "published" || value === "retired" || value === "active" || value === "inactive" || value === "archived"; }
 function isValidation(value: unknown): boolean { return isRecord(value) && isNullableFiniteNumber(value.min_length) && isNullableFiniteNumber(value.max_length) && isNullableFiniteNumber(value.min) && isNullableFiniteNumber(value.max) && isNullableString(value.pattern); }
 function isOption(value: unknown): boolean { return isRecord(value) && isString(value.value) && isString(value.label) && Number.isInteger(value.position); }
 function isStringArray(value: unknown): value is string[] { return Array.isArray(value) && value.every(isString); }
@@ -66,7 +66,33 @@ export async function listTrainingFormConfigurationVersions(configurationId: str
 /** Retrieves one immutable Training form configuration version. */
 export async function getTrainingFormConfigurationVersion(configurationId: string, versionId: string): Promise<TrainingFormConfigurationVersion> { return expect(await requestJson(configurationPath(configurationId, `/versions/${encodeURIComponent(versionId)}`)), isVersion, "version"); }
 /** Publishes the current draft and returns its published version. */
-export async function publishTrainingFormConfiguration(configurationId: string): Promise<TrainingFormPublishResponse> { const value = await requestJson(configurationPath(configurationId, "/publish"), jsonRequest("POST")); if (!isRecord(value) || !isConfiguration(value.configuration) || !isVersion(value.version)) throw new TrainingFormConfigurationsApiError(null, "Training Form Configurations returned invalid publish data."); return { configuration: value.configuration, version: value.version }; }
+export async function publishTrainingFormConfiguration(configurationId: string): Promise<TrainingFormPublishResponse> {
+  const value = await requestJson(configurationPath(configurationId, "/publish"), jsonRequest("POST"));
+  // Backend for training has returned {configuration, version} (event shape) here,
+  // but some deploys return the configuration directly or {data: {configuration, version}}.
+  // Accept all three to avoid "invalid publish data" after a 200.
+  const maybeWrapped = isRecord(value) && "data" in value && isRecord(value.data) ? value.data : value;
+  if (isConfiguration(maybeWrapped as unknown)) {
+    const cfg = maybeWrapped as unknown as TrainingFormConfiguration;
+    const ver = cfg.published_version ?? cfg.draft_version;
+    if (ver && isVersion(ver)) return { configuration: cfg, version: ver };
+  }
+  if (isRecord(maybeWrapped) && isRecord(maybeWrapped.configuration) && isRecord(maybeWrapped.version)) {
+    const cfg = maybeWrapped.configuration;
+    const ver = maybeWrapped.version;
+    if (typeof cfg.id === "string" && typeof cfg.name === "string" && typeof ver.id === "string" && typeof (ver as Record<string, unknown>).version === "number") {
+      return { configuration: cfg as unknown as TrainingFormConfiguration, version: ver as unknown as TrainingFormConfigurationVersion };
+    }
+  }
+  if (!isRecord(value) || !isConfiguration((value as Record<string, unknown>).configuration ?? value) || !isVersion((value as Record<string, unknown>).version ?? (value as Record<string, unknown>).published_version ?? (value as Record<string, unknown>).draft_version)) {
+    // Fall through to original strict check for event-compatible backends
+    if (isRecord(value) && isConfiguration((value as Record<string, unknown>).configuration as unknown) && isVersion((value as Record<string, unknown>).version as unknown)) {
+      return { configuration: (value as Record<string, unknown>).configuration as unknown as TrainingFormConfiguration, version: (value as Record<string, unknown>).version as unknown as TrainingFormConfigurationVersion };
+    }
+  }
+  if (isRecord(value) && isConfiguration(value.configuration as unknown) && isVersion(value.version as unknown)) return { configuration: value.configuration as unknown as TrainingFormConfiguration, version: value.version as unknown as TrainingFormConfigurationVersion };
+  throw new TrainingFormConfigurationsApiError(null, "Training Form Configurations returned invalid publish data.");
+}
 /** Activates one published Training form configuration. */
 export async function activateTrainingFormConfiguration(configurationId: string): Promise<TrainingFormConfiguration> { return expect(await requestJson(configurationPath(configurationId, "/activate"), jsonRequest("POST")), isConfiguration, "activated configuration"); }
 /** Deactivates one Training form configuration. */

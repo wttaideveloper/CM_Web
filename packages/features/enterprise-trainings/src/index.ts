@@ -22,4 +22,6 @@ export * from "./training-form-config.service";
 export * from "./training-form-configuration.queries";
 export * from "./program-form-config.service";
 export * from "./program-form-configuration.queries";
+export * from "./course-form-config.service";
+export * from "./course-form-configuration.queries";
 export { default as TrainingFormBuilderScreen } from "./TrainingFormBuilderScreen";

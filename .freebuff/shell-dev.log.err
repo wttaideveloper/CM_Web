@@ -1,0 +1,79 @@
+⚠ Fast Refresh had to perform a full reload when ./packages/features/platform-configuration/src/event-approval-queries.tsx changed. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+Failed to proxy https://chat.wisdomtooth.tech/api/v1/programs/?status=needs_revision&page=1&page_size=20 Error: read ECONNRESET
+    at ignore-listed frames {
+  errno: -4077,
+  code: 'ECONNRESET',
+  syscall: 'read'
+}
+Error: read ECONNRESET
+    at ignore-listed frames {
+  errno: -4077,
+  code: 'ECONNRESET',
+  syscall: 'read'
+}
+Failed to proxy https://chat.wisdomtooth.tech/api/v1/programs/?status=approved&page=1&page_size=20 Error: read ECONNRESET
+    at ignore-listed frames {
+  errno: -4077,
+  code: 'ECONNRESET',
+  syscall: 'read'
+}
+Error: read ECONNRESET
+    at ignore-listed frames {
+  errno: -4077,
+  code: 'ECONNRESET',
+  syscall: 'read'
+}
+Failed to proxy https://chat.wisdomtooth.tech/api/v1/programs/?status=pending_approval&page=1&page_size=20 Error: read ECONNRESET
+    at ignore-listed frames {
+  errno: -4077,
+  code: 'ECONNRESET',
+  syscall: 'read'
+}
+Error: read ECONNRESET
+    at ignore-listed frames {
+  errno: -4077,
+  code: 'ECONNRESET',
+  syscall: 'read'
+}
+Failed to proxy https://admin.apis.invigor8.app/api/v1/auth/session Error: getaddrinfo ENOTFOUND admin.apis.invigor8.app
+    at ignore-listed frames {
+  errno: -3008,
+  code: 'ENOTFOUND',
+  syscall: 'getaddrinfo',
+  hostname: 'admin.apis.invigor8.app'
+}
+Error: getaddrinfo ENOTFOUND admin.apis.invigor8.app
+    at ignore-listed frames {
+  errno: -3008,
+  code: 'ENOTFOUND',
+  syscall: 'getaddrinfo',
+  hostname: 'admin.apis.invigor8.app'
+}
+Failed to proxy https://admin.apis.invigor8.app/api/v1/auth/login?module=enterprise&frontend_origin=http%3A%2F%2Flocalhost%3A3000&return_to=%2Fauth%2Fvalidate%3Freturn_to%3Dhttp%253A%252F%252Flocalhost%253A3001%252Fadmin%252Fprofile&rememberMe=false Error: getaddrinfo ENOTFOUND admin.apis.invigor8.app
+    at ignore-listed frames {
+  errno: -3008,
+  code: 'ENOTFOUND',
+  syscall: 'getaddrinfo',
+  hostname: 'admin.apis.invigor8.app'
+}
+Error: getaddrinfo ENOTFOUND admin.apis.invigor8.app
+    at ignore-listed frames {
+  errno: -3008,
+  code: 'ENOTFOUND',
+  syscall: 'getaddrinfo',
+  hostname: 'admin.apis.invigor8.app'
+}
+Failed to proxy https://admin.apis.invigor8.app/api/v1/auth/session Error: getaddrinfo ENOTFOUND admin.apis.invigor8.app
+    at ignore-listed frames {
+  errno: -3008,
+  code: 'ENOTFOUND',
+  syscall: 'getaddrinfo',
+  hostname: 'admin.apis.invigor8.app'
+}
+Error: getaddrinfo ENOTFOUND admin.apis.invigor8.app
+    at ignore-listed frames {
+  errno: -3008,
+  code: 'ENOTFOUND',
+  syscall: 'getaddrinfo',
+  hostname: 'admin.apis.invigor8.app'
+}

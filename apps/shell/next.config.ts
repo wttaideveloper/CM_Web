@@ -32,6 +32,7 @@ const nextConfig: NextConfig = {
     "@ihp/platform-dashboard",
     "@ihp/platform-attributes",
     "@ihp/platform-enterprises",
+    "@ihp/platform-form-configurations",
     "@ihp/platform-marketplace-static",
     "@ihp/products",
     "@ihp/realtime",
@@ -68,6 +69,14 @@ const nextConfig: NextConfig = {
           destination: `${chatBaseHttps}/admin/program-form-configurations/:path*`,
         },
         {
+          source: "/api/v1/courses/form-configuration/:path*",
+          destination: `${chatBaseHttps}/courses/form-configuration/:path*`,
+        },
+        {
+          source: "/api/v1/admin/course-form-configurations/:path*",
+          destination: `${chatBaseHttps}/admin/course-form-configurations/:path*`,
+        },
+        {
           source: "/api/v1/trainings",
           destination: `${chatBaseHttps}/trainings/`,
         },
@@ -98,6 +107,22 @@ const nextConfig: NextConfig = {
         {
           source: "/api/v1/admin/programs/:path*",
           destination: `${chatApiBaseUrl}/admin/programs/:path*`,
+        },
+        {
+          source: "/api/v1/courses",
+          destination: `${chatBaseHttps}/courses/`,
+        },
+        {
+          source: "/api/v1/courses/:path*",
+          destination: `${chatBaseHttps}/courses/:path*`,
+        },
+        {
+          source: "/api/v1/search/courses",
+          destination: `${chatBaseHttps}/search/courses`,
+        },
+        {
+          source: "/api/v1/admin/courses/:path*",
+          destination: `${chatBaseHttps}/admin/courses/:path*`,
         },
       ],
     };

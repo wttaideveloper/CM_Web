@@ -138,3 +138,29 @@ export function TrainingMediaSection({ values, update }: SectionProps) {
     </section>
   );
 }
+
+/** Course Builder prerequisites / release / randomise / mandatory + Group & Expiry. */
+export function TrainingCourseBuilderSection({ values, update }: SectionProps) {
+  return (
+    <section className="space-y-5">
+      <SectionHeading title="Course Builder" description="Prerequisites, release rules, randomisation, publication and completion." />
+      <label className={labelClass}>Prerequisites<textarea value={values.prerequisites} onChange={(e) => update("prerequisites", e.target.value)} placeholder="e.g. Complete Module 1" rows={2} className={`${inputClass} h-auto py-3`} /></label>
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className={labelClass}>Release rule<select value={values.release_rule} onChange={(e) => update("release_rule", e.target.value)} className={inputClass}><option value="immediate">Immediate</option><option value="date">By date</option><option value="enrolment_day">Enrolment day</option><option value="previous_lesson">Previous lesson</option></select></label>
+        <label className={labelClass}>Scheduled publication<input type="datetime-local" value={values.scheduled_publication} onChange={(e) => update("scheduled_publication", e.target.value)} className={inputClass} /></label>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="flex items-center gap-3 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={values.randomise} onChange={(e) => update("randomise", e.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Randomise questions/answers</label>
+        <label className="flex items-center gap-3 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={values.is_mandatory} onChange={(e) => update("is_mandatory", e.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Mandatory lessons</label>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="flex items-center gap-3 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={values.group_enrolment} onChange={(e) => update("group_enrolment", e.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Group enrolment</label>
+        <label className={labelClass}>Max group size<input value={values.max_group_size} onChange={(e) => update("max_group_size", e.target.value)} placeholder="e.g. 5" className={inputClass} /></label>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className={labelClass}>Access expiry<select value={values.access_expiry_type} onChange={(e) => update("access_expiry_type", e.target.value)} className={inputClass}><option value="never">Never</option><option value="date">By date</option><option value="days">After N days</option><option value="enrolment_day">Enrolment day + N</option></select></label>
+        <label className={labelClass}>Expiry days<input value={values.access_expiry_days} onChange={(e) => update("access_expiry_days", e.target.value)} placeholder="e.g. 90" className={inputClass} /></label>
+      </div>
+    </section>
+  );
+}

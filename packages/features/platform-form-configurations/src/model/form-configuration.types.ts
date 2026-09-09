@@ -1,8 +1,8 @@
 import type { EventFormCompositeConfig } from "./event-form-configuration-api.types";
 
-export type FormConfigurationType = "event" | "training" | "program";
+export type FormConfigurationType = "event" | "training" | "program" | "course";
 export type FormConfigurationScope = "global" | "selective";
-export type FormConfigurationStatus = "draft" | "published" | "retired";
+export type FormConfigurationStatus = "draft" | "published" | "retired" | "active" | "inactive" | "archived";
 export type FormRenderer = string;
 
 export type BuilderEntityIdentity = { localId: string; serverId: string | null };

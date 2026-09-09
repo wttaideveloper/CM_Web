@@ -6,17 +6,19 @@ import { useState } from "react";
 
 import ProgressSummaryCard from "./ProgressSummaryCard";
 import ProgramActionsMenu from "./ProgramActionsMenu";
+import ProgramBuilder from "./ProgramBuilder";
 import { ProgramCheckInsTab, ProgramContentTab, ProgramDashboardsTab, ProgramEnrolmentsTab, ProgramDetailsSidebar, ProgramPhasesTab, ProgramReportsTab, ProgramReviewsAndWaitlistTab, ProgramSurveysTab } from "./ProgramDetailsSections";
 import { displayValue, formatProgramDate, formatProgramPrice } from "./detail-formatters";
 import { getProgramStatusBadgeClass, getProgramStatusLabel } from "./program-status";
 import { getProgramById, getProgramProgress, listProgramEnrolments, listProgramPhases } from "./programs.service";
 
-type ProgramDetailsTab = "details" | "content" | "phases" | "enrolments" | "checkins" | "reviews" | "surveys" | "dashboards" | "reports";
+type ProgramDetailsTab = "details" | "content" | "phases" | "enrolments" | "checkins" | "reviews" | "surveys" | "dashboards" | "reports" | "builder";
 
 const programDetailsTabs: ReadonlyArray<{ id: ProgramDetailsTab; label: string }> = [
   { id: "details", label: "Details" },
   { id: "content", label: "Content" },
   { id: "phases", label: "Phases" },
+  { id: "builder", label: "Builder" },
   { id: "enrolments", label: "Enrolments" },
   { id: "checkins", label: "Check-ins" },
   { id: "reviews", label: "Reviews & Waitlist" },
@@ -139,6 +141,7 @@ export default function ProgramDetailsScreen() {
 
       {activeTab === "content" ? <div className="mt-6"><ProgramContentTab programId={programId} /></div> : null}
       {activeTab === "phases" ? <div className="mt-6"><ProgramPhasesTab programId={programId} /></div> : null}
+      {activeTab === "builder" ? <div className="mt-6"><ProgramBuilder programId={programId} /></div> : null}
       {activeTab === "enrolments" ? <div className="mt-6"><ProgramEnrolmentsTab programId={programId} /></div> : null}
       {activeTab === "checkins" ? <div className="mt-6"><ProgramCheckInsTab programId={programId} /></div> : null}
       {activeTab === "reviews" ? <div className="mt-6"><ProgramReviewsAndWaitlistTab programId={programId} /></div> : null}

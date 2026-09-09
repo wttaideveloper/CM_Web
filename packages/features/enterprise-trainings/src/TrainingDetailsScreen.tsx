@@ -9,9 +9,9 @@ import TrainingActionsMenu from "./TrainingActionsMenu";
 import { TrainingAssessmentsTab, TrainingAssignmentsTab, TrainingContentTab, TrainingEnrolmentsTab, TrainingLiveTab, TrainingSectionsTab } from "./TrainingDetailsSections";
 import { displayValue, formatTrainingDate, formatTrainingPrice, humanizeLabel } from "./detail-formatters";
 import { getTrainingStatusBadgeClass, getTrainingStatusLabel } from "./training-status";
-import { getTrainingAdminNotes, getTrainingById, getTrainingProgress, getTrainingSections, listTrainingEnrolments, getTrainingCertificate, downloadTrainingCalendar, getTrainingMeetingLink, getTrainingModerationHistory, checkoutTraining, publishTrainingEnterprise, TrainingsApiError } from "./trainings.service";
+import { getTrainingAdminNotes, getTrainingById, getTrainingProgress, getTrainingSections, listTrainingEnrolments, getTrainingCertificate, downloadTrainingCalendar, getTrainingMeetingLink, getTrainingModerationHistory, checkoutTraining, publishTrainingEnterprise, getTrainingParticipantDashboard, getTrainingProviderDashboard, getTrainingReports, getTrainingsReportSummary, TrainingsApiError } from "./trainings.service";
 
-type TrainingDetailsTab = "details" | "content" | "sections" | "enrolments" | "assessments" | "assignments" | "live";
+type TrainingDetailsTab = "details" | "content" | "sections" | "enrolments" | "assessments" | "assignments" | "live" | "dashboards" | "reports";
 
 const trainingDetailsTabs: ReadonlyArray<{ id: TrainingDetailsTab; label: string }> = [
   { id: "details", label: "Details" },
@@ -21,6 +21,8 @@ const trainingDetailsTabs: ReadonlyArray<{ id: TrainingDetailsTab; label: string
   { id: "assessments", label: "Assessments" },
   { id: "assignments", label: "Assignments" },
   { id: "live", label: "Live & Discussions" },
+  { id: "dashboards", label: "Dashboards" },
+  { id: "reports", label: "Reports" },
 ];
 
 /** Shows the latest super-admin reject / request-changes note on the Training detail page. */
@@ -324,6 +326,14 @@ export default function TrainingDetailsScreen() {
               <DetailItem label="Price" value={formatTrainingPrice(training.price, training.currency)} />
               <DetailItem label="Capacity" value={displayValue(training.capacity)} />
               <DetailItem label="Instructor" value={displayValue(training.instructor_id)} />
+              <DetailItem label="Prerequisites" value={displayValue((training as Record<string, unknown>).prerequisites as string)} />
+              <DetailItem label="Release rule" value={displayValue((training as Record<string, unknown>).release_rule as string)} />
+              <DetailItem label="Randomise" value={String((training as Record<string, unknown>).randomise ?? (training as Record<string, unknown>).randomize ?? "—")} />
+              <DetailItem label="Scheduled publication" value={displayValue((training as Record<string, unknown>).scheduled_publication as string)} />
+              <DetailItem label="Mandatory" value={String((training as Record<string, unknown>).is_mandatory ?? "—")} />
+              <DetailItem label="Group enrolment" value={String((training as Record<string, unknown>).group_enrolment ?? "—")} />
+              <DetailItem label="Max group size" value={displayValue((training as Record<string, unknown>).max_group_size as string)} />
+              <DetailItem label="Access expiry" value={displayValue((training as Record<string, unknown>).access_expiry_type as string) + " " + displayValue((training as Record<string, unknown>).access_expiry_days as string)} />
               <DetailItem label="Created" value={formatTrainingDate(training.created_at)} />
               <DetailItem label="Updated" value={formatTrainingDate(training.updated_at)} />
             </div>
@@ -366,6 +376,30 @@ export default function TrainingDetailsScreen() {
       {activeTab === "assessments" ? <div className="mt-6"><TrainingAssessmentsTab trainingId={trainingId} /></div> : null}
       {activeTab === "assignments" ? <div className="mt-6"><TrainingAssignmentsTab trainingId={trainingId} /></div> : null}
       {activeTab === "live" ? <div className="mt-6"><TrainingLiveTab trainingId={trainingId} /></div> : null}
+      {activeTab === "dashboards" ? <div className="mt-6"><TrainingDashboardsTab trainingId={trainingId} /></div> : null}
+      {activeTab === "reports" ? <div className="mt-6"><TrainingReportsTab trainingId={trainingId} /></div> : null}
+    </div>
+  );
+}
+
+function TrainingDashboardsTab({ trainingId }: { trainingId: string }) {
+  const participantQuery = useQuery({ queryKey: ["trainings", trainingId, "dashboard", "participant"], queryFn: () => getTrainingParticipantDashboard(trainingId), enabled: Boolean(trainingId), retry: false });
+  const providerQuery = useQuery({ queryKey: ["trainings", trainingId, "dashboard", "provider"], queryFn: () => getTrainingProviderDashboard(trainingId), enabled: Boolean(trainingId), retry: false });
+  return (
+    <div className="grid gap-5">
+      <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm"><p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Participant Dashboard</p>{participantQuery.isLoading ? <p className="mt-2 text-sm text-[#52736a]">Loading...</p> : participantQuery.isError ? <p className="mt-2 text-sm text-[#52736a]">Dashboard will be available once training has active participants.</p> : <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-xs text-[#52736a]">{JSON.stringify(participantQuery.data, null, 2)}</pre>}</section>
+      <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm"><p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Provider Dashboard</p>{providerQuery.isLoading ? <p className="mt-2 text-sm text-[#52736a]">Loading...</p> : providerQuery.isError ? <p className="mt-2 text-sm text-[#52736a]">Dashboard will be available once training has active participants.</p> : <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-xs text-[#52736a]">{JSON.stringify(providerQuery.data, null, 2)}</pre>}</section>
+    </div>
+  );
+}
+
+function TrainingReportsTab({ trainingId }: { trainingId: string }) {
+  const reportsQuery = useQuery({ queryKey: ["trainings", trainingId, "reports"], queryFn: () => getTrainingReports(trainingId), enabled: Boolean(trainingId), retry: false });
+  const summaryQuery = useQuery({ queryKey: ["trainings", "reports", "summary"], queryFn: () => getTrainingsReportSummary(), enabled: true, retry: false });
+  return (
+    <div className="grid gap-5">
+      <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm"><p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Training Reports</p>{reportsQuery.isLoading ? <p className="mt-2 text-sm text-[#52736a]">Loading...</p> : reportsQuery.isError ? <p className="mt-2 text-sm text-[#52736a]">Reports will be available once training has active participants.</p> : <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-xs text-[#52736a]">{JSON.stringify(reportsQuery.data, null, 2)}</pre>}</section>
+      <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm"><p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Report Summary</p>{summaryQuery.isLoading ? <p className="mt-2 text-sm text-[#52736a]">Loading...</p> : summaryQuery.isError ? <p className="mt-2 text-sm text-[#52736a]">Report summary will be available once there is training data.</p> : <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-xs text-[#52736a]">{JSON.stringify(summaryQuery.data, null, 2)}</pre>}</section>
     </div>
   );
 }

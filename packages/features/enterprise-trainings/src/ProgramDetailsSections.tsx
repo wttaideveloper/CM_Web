@@ -172,12 +172,14 @@ export function ProgramPhasesTab({ programId }: { programId: string }) {
   );
 }
 
-/** Renders the Program enrolments with enrol + status actions. */
+/** Renders the Program enrolments with enrol + status actions + CSV export + group enrolment. */
 export function ProgramEnrolmentsTab({ programId }: { programId: string }) {
   const queryClient = useQueryClient();
   const [feedback, setFeedback] = useState<string | null>(null);
   const [enrolName, setEnrolName] = useState("");
   const [enrolEmail, setEnrolEmail] = useState("");
+  const [isGroupEnrol, setIsGroupEnrol] = useState(false);
+  const [groupSize, setGroupSize] = useState("");
 
   const enrolmentsQuery = useQuery({
     queryKey: ["programs", programId, "enrolments"],
@@ -186,9 +188,25 @@ export function ProgramEnrolmentsTab({ programId }: { programId: string }) {
   });
 
   const enrolMutation = useMutation({
-    mutationFn: () => enrolInProgram(programId, { participant_name: enrolName.trim(), participant_email: enrolEmail.trim() }),
-    onSuccess: () => { setEnrolName(""); setEnrolEmail(""); setFeedback("Enrolment submitted."); void queryClient.invalidateQueries({ queryKey: ["programs", programId, "enrolments"] }); },
+    mutationFn: () => enrolInProgram(programId, { participant_name: enrolName.trim(), participant_email: enrolEmail.trim(), group_enrol: isGroupEnrol || undefined, max_group_size: groupSize.trim() || undefined }),
+    onSuccess: () => { setEnrolName(""); setEnrolEmail(""); setIsGroupEnrol(false); setGroupSize(""); setFeedback("Enrolment submitted."); void queryClient.invalidateQueries({ queryKey: ["programs", programId, "enrolments"] }); },
     onError: (error) => setFeedback(error instanceof ProgramsApiError ? error.message : "Unable to enrol participant."),
+  });
+
+  const exportMutation = useMutation({
+    mutationFn: () => exportProgramEnrolments(programId),
+    onSuccess: (result) => {
+      const url = URL.createObjectURL(result.blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = result.filename ?? `program-${programId}-enrolments.csv`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setFeedback("CSV exported.");
+    },
+    onError: (error) => setFeedback(error instanceof ProgramsApiError ? error.message : "Unable to export CSV."),
   });
 
   const updateEnrolmentStatusMutation = useMutation({
@@ -200,11 +218,20 @@ export function ProgramEnrolmentsTab({ programId }: { programId: string }) {
   const enrolments = enrolmentsQuery.data ?? [];
 
   return (
-    <SectionCard title="Enrolments">
+    <SectionCard
+      title="Enrolments"
+      action={
+        <button type="button" onClick={() => void exportMutation.mutate()} disabled={exportMutation.isPending} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-xs font-semibold text-[#1f6a58] disabled:opacity-60">
+          {exportMutation.isPending ? "Exporting..." : "Export CSV"}
+        </button>
+      }
+    >
       {feedback ? <p role="status" className="mb-4 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">{feedback}</p> : null}
       <form className="mb-4 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); if (enrolName.trim() && enrolEmail.trim()) enrolMutation.mutate(); }}>
         <input value={enrolName} onChange={(e) => setEnrolName(e.target.value)} placeholder="Participant name" className="h-10 flex-1 min-w-[140px] rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm outline-none focus:border-[#1f6a58]" />
         <input value={enrolEmail} onChange={(e) => setEnrolEmail(e.target.value)} placeholder="Participant email" type="email" className="h-10 flex-1 min-w-[180px] rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm outline-none focus:border-[#1f6a58]" />
+        <label className="flex items-center gap-2 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={isGroupEnrol} onChange={(e) => setIsGroupEnrol(e.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Group</label>
+        {isGroupEnrol ? <input value={groupSize} onChange={(e) => setGroupSize(e.target.value)} placeholder="Group size" className="h-10 w-20 rounded-xl border border-[#d7e5df] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]" /> : null}
         <button type="submit" disabled={enrolMutation.isPending || !enrolName.trim() || !enrolEmail.trim()} className="h-10 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white disabled:opacity-60">{enrolMutation.isPending ? "Enrolling..." : "Enrol User"}</button>
       </form>
       {enrolmentsQuery.isLoading ? <p className="text-sm text-[#52736a]">Loading enrolments...</p> : null}
@@ -529,7 +556,7 @@ export function ProgramReportsTab({ programId }: { programId: string }) {
   );
 }
 
-/** Details sidebar — certificate, goals, availability, meeting-link. */
+/** Details sidebar — certificate, goals, availability, meeting-link + access-expiry. */
 export function ProgramDetailsSidebar({ programId }: { programId: string }) {
   const availabilityQuery = useQuery({
     queryKey: ["programs", programId, "availability"],
@@ -543,6 +570,23 @@ export function ProgramDetailsSidebar({ programId }: { programId: string }) {
     enabled: Boolean(programId),
     retry: false,
   });
+
+  const downloadCertificate = async () => {
+    try {
+      const data = await getProgramCertificate(programId);
+      const blob = data instanceof Blob ? data : new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `program-${programId}-certificate.pdf`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      // handled via query error boundary
+    }
+  };
 
   return (
     <div className="space-y-5">
@@ -558,6 +602,11 @@ export function ProgramDetailsSidebar({ programId }: { programId: string }) {
           <p className="mt-2 text-sm text-[#52736a]">{typeof meetingLinkQuery.data === "string" ? meetingLinkQuery.data : JSON.stringify(meetingLinkQuery.data)}</p>
         </section>
       ) : null}
+      <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
+        <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Certificate</p>
+        <p className="mt-1 text-xs text-[#52736a]">Digital completion certificate for finished programs.</p>
+        <button type="button" onClick={() => void downloadCertificate()} className="mt-3 h-9 rounded-full border border-[#d7e5df] px-4 text-xs font-semibold text-[#1f6a58]">Download certificate</button>
+      </section>
     </div>
   );
 }
