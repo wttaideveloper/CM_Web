@@ -1,5 +1,10 @@
 export { FormConfigurationsScreen } from "./screens/FormConfigurationsScreen";
 export { FormConfigurationEditorScreen } from "./screens/FormConfigurationEditorScreen";
+export { TrainingFormConfigurationsScreen } from "./screens/TrainingFormConfigurationsScreen";
+export { TrainingFormConfigurationEditorScreen } from "./screens/TrainingFormConfigurationEditorScreen";
 export * from "./form-configurations.queries";
+export * from "./training-form-configurations.queries";
 export * from "./model/event-form-configuration-api.types";
+export * from "./model/training-form-configuration-api.types";
 export { toBuilderFormConfiguration, toEventFormConfigurationCreateCandidate, toEventFormConfigurationPatchCandidate } from "./model/form-configuration.mappers";
+export { toBuilderTrainingFormConfiguration, toTrainingFormConfigurationCreateCandidate, toTrainingFormConfigurationPatchCandidate } from "./model/training-form-configuration.mappers";

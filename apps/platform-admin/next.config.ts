@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const authApiBaseUrl =
   process.env.AUTH_API_BASE_URL ?? "https://admin.apis.invigor8.app";
 const workflowApiBaseUrl = process.env.WORKFLOW_API_BASE_URL;
+
 function normalizePlatformApiBaseUrl(value: string): string {
   const url = new URL(value);
 
@@ -18,9 +19,17 @@ const platformApiBaseUrl = normalizePlatformApiBaseUrl(
 );
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["@ihp/attributes", "@ihp/auth", "@ihp/enterprises", "@ihp/onboarding-forms", "@ihp/platform-attributes", "@ihp/platform-configuration", "@ihp/platform-dashboard", "@ihp/platform-enterprises", "@ihp/platform-form-configurations", "@ihp/platform-layout", "@ihp/platform-marketplace-static", "@ihp/platform-users", "@ihp/products", "@ihp/services", "@ihp/shared", "@ihp/ui", "@ihp/workflow-admin", "@ihp/workflow-runtime"],
+  transpilePackages: ["@ihp/attributes", "@ihp/auth", "@ihp/enterprise-trainings", "@ihp/enterprises", "@ihp/onboarding-forms", "@ihp/platform-attributes", "@ihp/platform-configuration", "@ihp/platform-dashboard", "@ihp/platform-enterprises", "@ihp/platform-form-configurations", "@ihp/platform-layout", "@ihp/platform-marketplace-static", "@ihp/platform-users", "@ihp/products", "@ihp/services", "@ihp/shared", "@ihp/ui", "@ihp/workflow-admin", "@ihp/workflow-runtime"],
   async rewrites() {
     const fallback = [
+      {
+        source: "/api/v1/trainings/form-configuration/:path*",
+        destination: `${platformApiBaseUrl}/trainings/form-configuration/:path*`,
+      },
+      {
+        source: "/api/v1/admin/training-form-configurations/:path*",
+        destination: `${platformApiBaseUrl}/admin/training-form-configurations/:path*`,
+      },
       {
         source: "/api/v1/onboarding-forms",
         destination: `${platformApiBaseUrl}/onboarding-forms/`,
@@ -84,6 +93,38 @@ const nextConfig: NextConfig = {
       {
         source: "/api/v1/admin/event-audits/:path*",
         destination: `${platformApiBaseUrl}/admin/event-audits/:path*`,
+      },
+      {
+        source: "/api/v1/trainings",
+        destination: `${platformApiBaseUrl}/trainings/`,
+      },
+      {
+        source: "/api/v1/trainings/:path*",
+        destination: `${platformApiBaseUrl}/trainings/:path*`,
+      },
+      {
+        source: "/api/v1/search/trainings",
+        destination: `${platformApiBaseUrl}/search/trainings`,
+      },
+      {
+        source: "/api/v1/admin/trainings/:path*",
+        destination: `${platformApiBaseUrl}/admin/trainings/:path*`,
+      },
+      {
+        source: "/api/v1/programs",
+        destination: `${platformApiBaseUrl}/programs/`,
+      },
+      {
+        source: "/api/v1/programs/:path*",
+        destination: `${platformApiBaseUrl}/programs/:path*`,
+      },
+      {
+        source: "/api/v1/search/programs",
+        destination: `${platformApiBaseUrl}/search/programs`,
+      },
+      {
+        source: "/api/v1/admin/programs/:path*",
+        destination: `${platformApiBaseUrl}/admin/programs/:path*`,
       },
     ];
 

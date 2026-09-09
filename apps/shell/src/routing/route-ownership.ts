@@ -23,6 +23,7 @@ export const ROUTE_PATHS = {
     services: "/services",
     events: "/events",
     trainings: "/trainings",
+    programs: "/programs",
     integrations: "/integrations",
   },
   enterprise: {
@@ -34,6 +35,7 @@ export const ROUTE_PATHS = {
     services: "/admin/services",
     events: "/admin/events",
     trainings: "/admin/trainings",
+    programs: "/admin/programs",
     settings: "/admin/settings",
     profile: "/admin/profile",
     messages: "/admin/messages",
@@ -60,6 +62,7 @@ const platformRouteRoots = [
   ROUTE_PATHS.platform.services,
   ROUTE_PATHS.platform.events,
   ROUTE_PATHS.platform.trainings,
+  ROUTE_PATHS.platform.programs,
   ROUTE_PATHS.platform.integrations,
 ] as const;
 

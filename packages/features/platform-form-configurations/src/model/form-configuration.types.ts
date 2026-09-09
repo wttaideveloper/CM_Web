@@ -1,6 +1,6 @@
 import type { EventFormCompositeConfig } from "./event-form-configuration-api.types";
 
-export type FormConfigurationType = "event";
+export type FormConfigurationType = "event" | "training";
 export type FormConfigurationScope = "global" | "selective";
 export type FormConfigurationStatus = "draft" | "published" | "retired";
 export type FormRenderer = string;

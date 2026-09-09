@@ -6,7 +6,7 @@ import {
   platformNavigationGroups,
   type PlatformNavigationItem,
 } from "@ihp/platform-layout";
-import { PlatformApprovalDataProvider, PlatformEnterpriseReadProvider, usePendingEventApprovalCount } from "@ihp/platform-configuration";
+import { PlatformApprovalDataProvider, PlatformEnterpriseReadProvider, usePendingEventApprovalCount, usePendingProgramApprovalCount, usePendingTrainingApprovalCount } from "@ihp/platform-configuration";
 import { getPlatformEnterpriseById } from "@ihp/platform-enterprises";
 import { usePathname } from "next/navigation";
 import { useCallback, useMemo, type ReactNode } from "react";
@@ -24,6 +24,8 @@ const platformOwnedNavigationRoutes = new Set([
   "/form-builder-new",
   "/workflow-builder-new",
   "/form-configurations",
+  "/training-forms",
+  "/training-form-configurations",
   "/enterprise-types",
   "/categories",
   "/sub-admins",
@@ -49,7 +51,9 @@ export default function PlatformAdminShell({ children }: { children: ReactNode }
 
 function PlatformAdminShellContent({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const pendingApprovals = usePendingEventApprovalCount();
+  const pendingEventApprovals = usePendingEventApprovalCount();
+  const pendingTrainingApprovals = usePendingTrainingApprovalCount();
+  const pendingProgramApprovals = usePendingProgramApprovalCount();
   const homeHref = useMemo(() => "/dashboard", []);
   const notificationsHref = useMemo(() => getShellRoute("/notifications"), []);
   const handleLogout = useCallback(async () => {
@@ -73,14 +77,14 @@ function PlatformAdminShellContent({ children }: { children: ReactNode }) {
     [],
   );
   const navigationGroups = useMemo(() => {
-    const approvalBadge = pendingApprovals.data?.pagination.total;
+    const approvalBadge = (pendingEventApprovals.data?.pagination.total ?? 0) + (pendingTrainingApprovals.data?.pagination.total ?? 0) + (pendingProgramApprovals.data?.pagination.total ?? 0);
     return platformNavigationGroups.map((group) => ({
       ...group,
       items: group.items.map((item) => item.href === "/approval-queue"
         ? { ...item, badge: approvalBadge && approvalBadge > 0 ? String(approvalBadge) : undefined }
         : item),
     }));
-  }, [pendingApprovals.data?.pagination.total]);
+  }, [pendingEventApprovals.data?.pagination.total, pendingTrainingApprovals.data?.pagination.total, pendingProgramApprovals.data?.pagination.total]);
 
   return (
     <PlatformAdminLayout

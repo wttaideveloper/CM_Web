@@ -1,10 +1,12 @@
 import AppShell from "@/components/layout/AppShell";
-import { PlatformApprovalQueueScreen } from "@ihp/platform-configuration";
+import { PlatformApprovalDataProvider, PlatformApprovalQueueScreen } from "@ihp/platform-configuration";
 
 export default function ApprovalQueuePage() {
   return (
     <AppShell>
-      <PlatformApprovalQueueScreen />
+      <PlatformApprovalDataProvider>
+        <PlatformApprovalQueueScreen />
+      </PlatformApprovalDataProvider>
     </AppShell>
   );
 }
