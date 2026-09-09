@@ -59,9 +59,10 @@ export function TrainingFormConfigurationEditorScreen({ id, mode }: { id?: strin
     const published = await publish.mutateAsync(id);
     return toBuilderTrainingFormConfiguration(published.configuration, published.version ?? undefined);
   };
-  const persistAssignments = async (tenantIds: string[]) => {
+  const persistAssignments = async (tenantIds: string[]): Promise<readonly string[]> => {
     if (!id) throw new Error("Save this configuration before assigning tenants.");
-    await saveAssignments.mutateAsync({ configurationId: id, payload: { tenant_ids: tenantIds } });
+    const saved = await saveAssignments.mutateAsync({ configurationId: id, payload: { tenant_ids: tenantIds } });
+    return saved.map((assignment) => assignment.tenant_id);
   };
   const runLifecycle = async (action: "activate" | "deactivate" | "delete") => {
     if (!id) return;
