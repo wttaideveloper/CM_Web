@@ -325,7 +325,21 @@ export default function TrainingDetailsScreen() {
               <DetailItem label="Course type" value={displayValue(training.course_type)} />
               <DetailItem label="Price" value={formatTrainingPrice(training.price, training.currency)} />
               <DetailItem label="Capacity" value={displayValue(training.capacity)} />
+              <DetailItem label="Enrolled" value={displayValue(String((training as unknown as Record<string, unknown>).enrolled_count ?? "—"))} />
+              <DetailItem label="Available slots" value={displayValue(String((training as unknown as Record<string, unknown>).available_slots ?? "—"))} />
               <DetailItem label="Instructor" value={displayValue(training.instructor_id)} />
+              <DetailItem label="Instructor name" value={displayValue((training as unknown as Record<string, unknown>).instructor_name as string)} />
+              <DetailItem label="Instructor bio" value={displayValue((training as unknown as Record<string, unknown>).instructor_bio as string)} />
+              <DetailItem label="Venue" value={displayValue((training as unknown as Record<string, unknown>).venue as string)} />
+              <DetailItem label="Address" value={displayValue((training as unknown as Record<string, unknown>).address as string)} />
+              <DetailItem label="Meeting link" value={displayValue((training as unknown as Record<string, unknown>).meeting_link as string)} />
+              <DetailItem label="Delivery instructions" value={displayValue((training as unknown as Record<string, unknown>).delivery_instructions as string)} />
+              <DetailItem label="Start date" value={displayValue(training.start_date as string)} />
+              <DetailItem label="Start time" value={displayValue((training as unknown as Record<string, unknown>).start_time as string)} />
+              <DetailItem label="End date" value={displayValue(training.end_date as string)} />
+              <DetailItem label="End time" value={displayValue((training as unknown as Record<string, unknown>).end_time as string)} />
+              <DetailItem label="Learning objectives" value={Array.isArray((training as unknown as Record<string, unknown>).learning_objectives) ? ((training as unknown as Record<string, unknown>).learning_objectives as string[]).join(", ") : "—"} />
+              <DetailItem label="Documents" value={Array.isArray((training as unknown as Record<string, unknown>).documents) ? ((training as unknown as Record<string, unknown>).documents as unknown[]).length + " files" : Array.isArray(training.documents) ? (training.documents as unknown[]).length + " files" : "—"} />
               <DetailItem label="Prerequisites" value={displayValue((training as unknown as Record<string, unknown>).prerequisites as string)} />
               <DetailItem label="Release rule" value={displayValue((training as unknown as Record<string, unknown>).release_rule as string)} />
               <DetailItem label="Randomise" value={String((training as unknown as Record<string, unknown>).randomise ?? (training as unknown as Record<string, unknown>).randomize ?? "—")} />

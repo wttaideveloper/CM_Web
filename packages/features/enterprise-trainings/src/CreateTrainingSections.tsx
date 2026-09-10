@@ -28,6 +28,10 @@ export function TrainingBasicsSection({ values, update, errors }: SectionProps) 
     const tag = value.trim();
     if (tag && !values.tags.includes(tag)) update("tags", [...values.tags, tag]);
   };
+  const addObjective = (value: string) => {
+    const obj = value.trim();
+    if (obj && !values.learning_objectives.includes(obj)) update("learning_objectives", [...values.learning_objectives, obj]);
+  };
 
   return (
     <section className="space-y-5">
@@ -40,6 +44,9 @@ export function TrainingBasicsSection({ values, update, errors }: SectionProps) 
       </div>
       <label className={labelClass}>Tags<input onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addTag(event.currentTarget.value); event.currentTarget.value = ""; } }} placeholder="Type a tag and press Enter" className={inputClass} /></label>
       <div className="flex flex-wrap gap-2">{values.tags.map((tag) => <button key={tag} type="button" onClick={() => update("tags", values.tags.filter((item) => item !== tag))} className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{tag} ×</button>)}</div>
+      <label className={labelClass}>Learning objectives<input onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addObjective(event.currentTarget.value); event.currentTarget.value = ""; } }} placeholder="Type objective and press Enter" className={inputClass} /></label>
+      <div className="flex flex-wrap gap-2">{values.learning_objectives.map((obj) => <button key={obj} type="button" onClick={() => update("learning_objectives", values.learning_objectives.filter((item) => item !== obj))} className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{obj} ×</button>)}</div>
+      <label className={labelClass}>Requirements<textarea value={values.requirements} onChange={(event) => update("requirements", event.target.value)} rows={3} className={`${inputClass} h-auto py-3`} placeholder="Prerequisites or requirements" /></label>
     </section>
   );
 }
@@ -54,11 +61,27 @@ export function TrainingDeliverySection({ values, update }: SectionProps) {
         <label className={labelClass}>Course type<input value={values.course_type} onChange={(event) => update("course_type", event.target.value)} placeholder="e.g. Workshop" className={inputClass} /></label>
       </div>
       {(values.delivery_mode === "physical" || values.delivery_mode === "hybrid" || values.delivery_mode === "in_person") ? (
-        <label className={labelClass}>Location ID<input value={values.location_id} onChange={(event) => update("location_id", event.target.value)} placeholder="Select or paste location ID" className={inputClass} /></label>
+        <>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className={labelClass}>Venue<input value={values.venue} onChange={(event) => update("venue", event.target.value)} placeholder="e.g. Main Hall" className={inputClass} /></label>
+            <label className={labelClass}>Address<input value={values.address} onChange={(event) => update("address", event.target.value)} placeholder="Full address" className={inputClass} /></label>
+          </div>
+          <label className={labelClass}>Location ID<input value={values.location_id} onChange={(event) => update("location_id", event.target.value)} placeholder="Select or paste location ID" className={inputClass} /></label>
+        </>
+      ) : null}
+      {(values.delivery_mode === "online" || values.delivery_mode === "hybrid") ? (
+        <>
+          <label className={labelClass}>Meeting link<input type="url" value={values.meeting_link} onChange={(event) => update("meeting_link", event.target.value)} placeholder="https://..." className={inputClass} /></label>
+          <label className={labelClass}>Delivery instructions<textarea value={values.delivery_instructions} onChange={(event) => update("delivery_instructions", event.target.value)} rows={2} placeholder="How to join, setup, etc." className={`${inputClass} h-auto py-3`} /></label>
+        </>
       ) : null}
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Duration<input value={values.duration} onChange={(event) => update("duration", event.target.value)} placeholder="e.g. 4 weeks" className={inputClass} /></label>
         <label className={labelClass}>Instructor ID<input value={values.instructor_id} onChange={(event) => update("instructor_id", event.target.value)} className={inputClass} /></label>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className={labelClass}>Instructor name<input value={values.instructor_name} onChange={(event) => update("instructor_name", event.target.value)} placeholder="Display name" className={inputClass} /></label>
+        <label className={labelClass}>Instructor bio<textarea value={values.instructor_bio} onChange={(event) => update("instructor_bio", event.target.value)} rows={2} placeholder="Short bio" className={`${inputClass} h-auto py-3`} /></label>
       </div>
       <label className={labelClass}>Requirements<textarea value={values.requirements} onChange={(event) => update("requirements", event.target.value)} rows={3} className={`${inputClass} h-auto py-3`} /></label>
       <p className="text-xs text-[#7f9d94]">Hybrid = venue + online link · Physical = venue only · Online = meeting link only (mirrors Event In Person/Online/Hybrid).</p>
@@ -74,6 +97,10 @@ export function TrainingScheduleSection({ values, update, errors }: SectionProps
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Start date<input type="datetime-local" value={values.start_date} onChange={(event) => update("start_date", event.target.value)} className={inputClass} /><FieldError error={errors.start_date} /></label>
         <label className={labelClass}>End date<input type="datetime-local" value={values.end_date} onChange={(event) => update("end_date", event.target.value)} className={inputClass} /><FieldError error={errors.end_date} /></label>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className={labelClass}>Start time<input type="time" value={values.start_time} onChange={(event) => update("start_time", event.target.value)} className={inputClass} /></label>
+        <label className={labelClass}>End time<input type="time" value={values.end_time} onChange={(event) => update("end_time", event.target.value)} className={inputClass} /></label>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Enrolment opens<input type="datetime-local" value={values.enrolment_start} onChange={(event) => update("enrolment_start", event.target.value)} className={inputClass} /><FieldError error={errors.enrolment_start} /></label>
@@ -156,6 +183,7 @@ export function TrainingMediaSection({ values, update }: SectionProps) {
       <label className={labelClass}>Primary image URL<input value={values.primary_image} onChange={(event) => update("primary_image", event.target.value)} className={inputClass} /></label>
       <p className="mt-1 text-xs text-[#7f9d94]">Shows on the training card and detail header when set.</p>
       <UrlList label="Gallery images" values={values.gallery_images} update={(next) => update("gallery_images", next)} />
+      <UrlList label="Documents" values={values.documents} update={(next) => update("documents", next)} />
       <UrlList label="Videos" values={[values.promotional_video]} update={(next) => update("promotional_video", next[0] || "")} />
     </section>
   );
