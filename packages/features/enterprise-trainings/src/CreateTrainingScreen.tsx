@@ -1,24 +1,27 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCurrentEnterprise, useTenant } from "@ihp/enterprise-runtime";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import { TrainingBasicsSection, TrainingCourseBuilderSection, TrainingDeliverySection, TrainingMediaSection, TrainingPricingSection, TrainingScheduleSection } from "./CreateTrainingSections";
+import { TrainingBasicsSection, TrainingCapacitySection, TrainingCourseBuilderSection, TrainingDeliverySection, TrainingMediaSection, TrainingPricingSection, TrainingScheduleSection } from "./CreateTrainingSections";
 import { buildCreateTrainingPayload, buildUpdateTrainingPayload, createEmptyTrainingForm, trainingToFormValues, validateTrainingForm, type CreateTrainingFormValues } from "./create-training-form";
 import { createTraining, resubmitTraining, TrainingsApiError, updateTraining, updateTrainingStatus, type Training } from "./trainings.service";
-import { useActiveTrainingFormConfiguration } from "./training-form-configuration.queries";
+import { useActiveTrainingFormConfiguration, useTrainingHistoricalFormConfiguration } from "./training-form-configuration.queries";
 import { canEditTraining } from "./training-status";
+import ConfiguredCreateTrainingSection from "./ConfiguredCreateTrainingSection";
 
-const steps = ["Basic Information", "Delivery & Instructor", "Schedule", "Pricing & Capacity", "Course Builder"] as const;
+const steps = ["Basic Information", "Schedule", "Location & Host", "Pricing & Tickets", "Capacity & Registration", "Images & Media", "Additional Configuration"] as const;
 const stepFields: ReadonlyArray<readonly string[]> = [
-  ["title", "description", "category"],
-  ["delivery_mode", "course_type", "duration", "instructor_id", "requirements"],
-  ["start_date", "end_date", "enrolment_start", "enrolment_end"],
-  [],
-  ["prerequisites", "release_rule", "randomise", "scheduled_publication", "is_mandatory", "group_enrolment", "max_group_size", "access_expiry_type", "access_expiry_days"],
+  ["title", "description", "category", "subcategory", "tags", "instructor_id", "requirements"],
+  ["start_date", "end_date", "enrolment_start", "enrolment_end", "time_zone", "duration"],
+  ["location_id", "delivery_mode", "course_type"],
+  ["price", "currency", "promo_price", "coupon_code"],
+  ["capacity", "requires_approval", "access_duration_days", "group_enrolment", "max_group_size", "access_expiry_type", "access_expiry_days"],
+  ["primary_image", "gallery_images", "promotional_video"],
+  ["prerequisites", "release_rule", "randomise", "scheduled_publication", "is_mandatory"],
 ];
 
 type TrainingEditorProps = { mode?: "create" | "edit"; initialTraining?: Training };
@@ -29,12 +32,35 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   const queryClient = useQueryClient();
   const { tenantId } = useTenant();
   const { enterpriseId } = useCurrentEnterprise();
-  const activeFormQ = useActiveTrainingFormConfiguration();
-  const activeForm = activeFormQ.data ?? null;
+  const activeFormQ = useActiveTrainingFormConfiguration(mode === "create");
+  const historicalFormQ = useTrainingHistoricalFormConfiguration(initialTraining?.id, mode === "edit" && Boolean(initialTraining));
+  const activeForm = (mode === "create" ? activeFormQ.data : historicalFormQ.data) ?? null;
+  const formConfigLoading = mode === "create" ? activeFormQ.isLoading : historicalFormQ.isLoading;
+  const formConfigError = mode === "create" ? activeFormQ.error : historicalFormQ.error;
   const [activeStep, setActiveStep] = useState(0);
   const [initialValues] = useState(() => (initialTraining ? trainingToFormValues(initialTraining) : createEmptyTrainingForm()));
   const [values, setValues] = useState<CreateTrainingFormValues>(() => (initialTraining ? trainingToFormValues(initialTraining) : createEmptyTrainingForm()));
   const [customValues, setCustomValues] = useState<Record<string, unknown>>({});
+  // Hydrate text (custom_values) when editing with an active global form — handles both {custom_values: {...}} and Event-style [{field_id, value}]
+  useEffect(() => {
+    if (!initialTraining || !activeForm || Object.keys(customValues).length > 0) return;
+    const raw = initialTraining as unknown as Record<string, unknown>;
+    const cv = (raw.custom_values ?? raw.customValues) as Record<string, unknown> | Array<{ field_id: string; value: unknown }> | undefined;
+    let hydrated: Record<string, unknown> = {};
+    if (Array.isArray(cv)) {
+      const byId = new Map(cv.map(e => [e.field_id, e.value]));
+      for (const sec of activeForm.sections) for (const fld of sec.fields) {
+        const v = byId.get(fld.id) ?? (cv as unknown as Record<string, unknown>)[fld.key];
+        if (v !== undefined) hydrated[fld.key] = v;
+      }
+    } else if (cv && typeof cv === "object") {
+      hydrated = cv as Record<string, unknown>;
+    } else {
+      const known = new Set(Object.keys(createEmptyTrainingForm()));
+      for (const [k, v] of Object.entries(raw)) if (!known.has(k) && v != null && v !== "") hydrated[k] = v as unknown;
+    }
+    if (Object.keys(hydrated).length > 0) setCustomValues(hydrated);
+  }, [activeForm, initialTraining]);
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitForApprovalMode, setSubmitForApprovalMode] = useState(false);
@@ -93,6 +119,10 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   const allErrors = useMemo(() => validateTrainingForm(values), [values]);
   const isDirty = JSON.stringify(values) !== JSON.stringify(initialValues);
   const continueToNext = () => {
+    if (activeForm) {
+      setActiveStep((current) => Math.min(current + 1, editorSteps.length - 1));
+      return;
+    }
     const currentFields = stepFields[activeStep] ?? [];
     const currentErrors = Object.fromEntries(Object.entries(allErrors).filter(([field]) => currentFields.includes(field)));
     if (Object.keys(currentErrors).length > 0) {
@@ -125,14 +155,23 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   };
   const canSubmitForApproval = mode === "create" || Boolean(initialTraining && ["draft", "rejected", "needs_revision"].includes(initialTraining.status));
 
+  const configuredSections = activeForm ? [...activeForm.sections].filter(s => s.fields.length > 0).sort((a, b) => a.order - b.order) : [];
+  const editorSteps = activeForm ? [...configuredSections.map(s => s.title || "Section"), "Review & Submit"] : [...steps];
   const sharedProps = { values, update, errors };
   const backHref = initialTraining ? `/admin/trainings/${initialTraining.id}` : "/admin/trainings";
   const title = mode === "edit" ? "Edit Training" : "Create Training";
   const isCreateBlockedByEnterprise = mode === "create" && !enterpriseId;
 
+  if (mode === "edit" && formConfigLoading) {
+    return <div role="status" className="rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-5 py-12 text-center text-sm font-semibold text-[#52736a]">Loading this Training&apos;s form configuration…</div>;
+  }
+  if (mode === "edit" && formConfigError) {
+    return <div role="alert" className="rounded-2xl border border-[#eadbb8] bg-[#fffaf0] px-5 py-12 text-center text-sm font-semibold text-[#735c1e]">Unable to load this Training&apos;s form configuration.<button type="button" onClick={() => void historicalFormQ.refetch()} className="mt-4 rounded-full border border-current px-4 py-2 text-sm font-bold">Retry</button></div>;
+  }
+
   return (
     <div className="w-full">
-      {activeForm ? <div className="mb-3 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-2 text-xs font-semibold text-[#167550]">Using Super Admin form: {activeForm.title} {activeForm.is_global ? "(Global)" : `(${activeForm.enterprise_ids.length} enterprises)`} — values map via custom_values.</div> : null}
+      {activeForm ? <div className="mb-3 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-2 text-xs font-semibold text-[#167550]">{mode === "edit" ? `Historical form: ${activeForm.title}` : `Using Super Admin form: ${activeForm.title}`} {activeForm.is_global ? "(Global)" : `(${activeForm.enterprise_ids.length} enterprises)`} — {configuredSections.length} sections, {configuredSections.reduce((sum, s) => sum + s.fields.length, 0)} fields.</div> : null}
       <header className="flex flex-col gap-4 border-b border-[#edf3f0] pb-6 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <Link href={backHref} className="text-sm font-semibold text-[#1f6a58]">Back to {mode === "edit" ? "Training" : "Trainings"}</Link>
@@ -146,8 +185,11 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
       <div className="mt-6 grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
         <nav aria-label="Training editor sections" className="rounded-2xl border border-[#e1ebe6] bg-white p-3 shadow-sm">
           {activeForm ? (
-            [...activeForm.sections].sort((a, b) => a.order - b.order).map((sec, i) => (
-              <div key={sec.id} className="rounded-xl bg-[#e8f6ee] px-3 py-2 text-sm font-semibold text-[#1f6a58]">{i + 1}. {sec.title}</div>
+            editorSteps.map((step, index) => (
+              <button key={`${step}-${index}`} type="button" onClick={() => setActiveStep(index)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${activeStep === index ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f9fcfa]"}`}>
+                <span className="flex h-6 w-6 items-center justify-center rounded-full border border-current text-xs">{index + 1}</span>
+                {step}
+              </button>
             ))
           ) : (
             steps.map((step, index) => (
@@ -160,52 +202,38 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
         </nav>
         <main className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm sm:p-7">
           {activeForm ? (
-            <div className="space-y-6">
-              {[...activeForm.sections].sort((a, b) => a.order - b.order).map((sec) => (
-                <section key={sec.id} className="space-y-4 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-4">
-                  <h2 className="text-sm font-bold text-[#06201c]">{sec.title}</h2>
-                  {sec.description ? <p className="text-xs text-[#52736a]">{sec.description}</p> : null}
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {[...sec.fields].sort((a, b) => a.order - b.order).map((fld) => {
-                      const val = (customValues[fld.key] ?? (values as unknown as Record<string, unknown>)[fld.key] ?? "") as string;
-                      const setVal = (v: string) => {
-                        if (fld.key in values) update(fld.key as keyof CreateTrainingFormValues, v as never);
-                        else setCustomValues((c) => ({ ...c, [fld.key]: v }));
-                      };
-                      return (
-                        <label key={fld.id} className="block text-xs font-semibold text-[#06201c]">
-                          {fld.label} {fld.required ? "*" : null}
-                          {fld.type === "textarea" ? <textarea value={val} onChange={(e) => setVal(e.target.value)} rows={3} className="mt-1.5 w-full rounded-xl border border-[#d7e5df] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f6a58]" placeholder={fld.placeholder} /> :
-                            fld.type === "select" ? <select value={val} onChange={(e) => setVal(e.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-[#d7e5df] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]"><option value="">Select</option>{(fld.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}</select> :
-                            fld.type === "checkbox" ? <input type="checkbox" checked={val === "true" || val === true as unknown as string} onChange={(e) => setVal(String(e.target.checked))} className="mt-1.5 h-4 w-4" /> :
-                            <input type={fld.type === "number" ? "number" : fld.type === "date" ? "date" : fld.type === "url" ? "url" : "text"} value={val} onChange={(e) => setVal(e.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-[#d7e5df] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]" placeholder={fld.placeholder} />}
-                          {errors[fld.key]?.[0] ? <p className="mt-1 text-xs font-medium text-[#b42318]">{errors[fld.key][0]}</p> : null}
-                        </label>
-                      );
-                    })}
-                  </div>
-                </section>
-              ))}
-            </div>
+            activeStep < configuredSections.length ? (
+              <ConfiguredCreateTrainingSection section={configuredSections[activeStep]} values={values} update={update} errors={errors} customValues={customValues} setCustomValues={setCustomValues} />
+            ) : (
+              <section className="space-y-4">
+                <h2 className="text-xl font-bold text-[#06201c]">Review & Submit</h2>
+                <p className="text-sm text-[#52736a]">Review all sections from the Super Admin global form before creating.</p>
+                <div className="grid gap-3">
+                  {configuredSections.map(sec => (
+                    <div key={sec.id} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] px-4 py-3">
+                      <p className="text-sm font-bold text-[#06201c]">{sec.title}</p>
+                      <p className="text-xs text-[#52736a]">{sec.fields.length} fields</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )
           ) : (
             <>
               {activeStep === 0 ? <TrainingBasicsSection {...sharedProps} /> : null}
-              {activeStep === 1 ? <TrainingDeliverySection {...sharedProps} /> : null}
-              {activeStep === 2 ? <TrainingScheduleSection {...sharedProps} /> : null}
-              {activeStep === 3 ? (
-                <>
-                  <TrainingPricingSection {...sharedProps} />
-                  <TrainingMediaSection {...sharedProps} />
-                </>
-              ) : null}
-              {activeStep === 4 ? <TrainingCourseBuilderSection {...sharedProps} /> : null}
+              {activeStep === 1 ? <TrainingScheduleSection {...sharedProps} /> : null}
+              {activeStep === 2 ? <TrainingDeliverySection {...sharedProps} /> : null}
+              {activeStep === 3 ? <TrainingPricingSection {...sharedProps} /> : null}
+              {activeStep === 4 ? <TrainingCapacitySection {...sharedProps} /> : null}
+              {activeStep === 5 ? <TrainingMediaSection {...sharedProps} /> : null}
+              {activeStep === 6 ? <TrainingCourseBuilderSection {...sharedProps} /> : null}
             </>
           )}
           {isCreateBlockedByEnterprise ? <div role="status" className="mt-6 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-3 text-sm font-semibold text-[#735c1e]">Creating a Training is unavailable until an Enterprise is linked. The current backend TrainingCreate contract requires an enterprise_id.</div> : null}
           {submitError ? <div role="alert" className="mt-6 rounded-xl border border-[#f3d0cb] bg-[#fff6f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{submitError}</div> : null}
           <div className="mt-8 flex flex-col-reverse gap-3 border-t border-[#edf3f0] pt-5 sm:flex-row sm:justify-between">
             <button type="button" onClick={() => setActiveStep((current) => Math.max(current - 1, 0))} disabled={activeStep === 0 || saveMutation.isPending} className="h-11 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a] disabled:opacity-50">Back</button>
-            {activeStep === steps.length - 1 ? (
+            {(activeForm ? activeStep === editorSteps.length - 1 : activeStep === steps.length - 1) ? (
               <div className="flex flex-col-reverse gap-3 sm:flex-row">
                 {canSubmitForApproval ? <button type="button" onClick={submitForApproval} disabled={saveMutation.isPending || isCreateBlockedByEnterprise} className="h-11 rounded-full border-2 border-[#d9a24a] bg-[#fffaf0] px-5 text-sm font-bold text-[#8a5a00] shadow-sm transition-colors hover:bg-[#fff4d6] disabled:cursor-not-allowed disabled:opacity-60">{saveMutation.isPending && submitForApprovalMode ? "Submitting..." : "Submit for approval"}</button> : null}
                 <button type="button" onClick={submit} disabled={saveMutation.isPending || isCreateBlockedByEnterprise || (mode === "edit" && !isDirty)} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm disabled:opacity-60">

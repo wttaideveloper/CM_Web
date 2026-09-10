@@ -38,16 +38,17 @@ export function ProgramBasicsSection({ values, update, errors }: SectionProps) {
   );
 }
 
-/** Renders delivery mode, enrolment type, and duration. */
+/** Renders delivery mode, enrolment type, and duration — hybrid/physical/online like Event/Training. */
 export function ProgramDeliverySection({ values, update }: SectionProps) {
   return (
     <section className="space-y-5">
       <SectionHeading title="Delivery & Enrolment" description="Choose how this program runs and how participants enrol." />
       <div className="grid gap-4 md:grid-cols-2">
-        <label className={labelClass}>Delivery mode<select value={values.delivery_mode} onChange={(event) => update("delivery_mode", event.target.value)} className={inputClass}><option value="in_person">In person</option><option value="online">Online</option><option value="hybrid">Hybrid</option></select></label>
+        <label className={labelClass}>Delivery mode<select value={values.delivery_mode} onChange={(event) => update("delivery_mode", event.target.value)} className={inputClass}><option value="hybrid">Hybrid</option><option value="physical">Physical (In Person)</option><option value="online">Online</option><option value="in_person">In person (legacy)</option></select></label>
         <label className={labelClass}>Enrolment type<select value={values.enrol_type} onChange={(event) => update("enrol_type", event.target.value)} className={inputClass}><option value="fixed_date">Fixed date</option><option value="enrol_anytime">Enrol anytime</option></select></label>
       </div>
       <label className={labelClass}>Duration (weeks)<input value={values.duration_weeks} onChange={(event) => update("duration_weeks", event.target.value)} placeholder="e.g. 12" className={inputClass} /></label>
+      <p className="text-xs text-[#7f9d94]">Hybrid = venue + online · Physical = venue only · Online = link only (mirrors Event/Training).</p>
     </section>
   );
 }

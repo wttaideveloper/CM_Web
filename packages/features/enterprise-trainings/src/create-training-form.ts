@@ -12,15 +12,25 @@ export interface CreateTrainingFormValues {
   subcategory: string;
   tags: string[];
   instructor_id: string;
+  instructor_name: string;
+  instructor_bio: string;
   requirements: string;
+  learning_objectives: string[];
   primary_image: string;
   gallery_images: string[];
   promotional_video: string;
+  documents: string[];
   delivery_mode: string;
   course_type: string;
   duration: string;
   start_date: string;
   end_date: string;
+  start_time: string;
+  end_time: string;
+  venue: string;
+  address: string;
+  meeting_link: string;
+  delivery_instructions: string;
   enrolment_start: string;
   enrolment_end: string;
   time_zone: string;
@@ -40,6 +50,7 @@ export interface CreateTrainingFormValues {
   max_group_size: string;
   access_expiry_type: string;
   access_expiry_days: string;
+  location_id: string;
 }
 
 /** Returns blank values for a newly opened Training editor workspace. */
@@ -51,15 +62,25 @@ export function createEmptyTrainingForm(): CreateTrainingFormValues {
     subcategory: "",
     tags: [],
     instructor_id: "",
+    instructor_name: "",
+    instructor_bio: "",
     requirements: "",
+    learning_objectives: [],
     primary_image: "",
     gallery_images: [],
     promotional_video: "",
-    delivery_mode: "self_paced",
+    documents: [],
+    delivery_mode: "hybrid",
     course_type: "",
     duration: "",
     start_date: "",
     end_date: "",
+    start_time: "",
+    end_time: "",
+    venue: "",
+    address: "",
+    meeting_link: "",
+    delivery_instructions: "",
     enrolment_start: "",
     enrolment_end: "",
     time_zone: "Asia/Kolkata",
@@ -79,6 +100,7 @@ export function createEmptyTrainingForm(): CreateTrainingFormValues {
     max_group_size: "",
     access_expiry_type: "never",
     access_expiry_days: "",
+    location_id: "",
   };
 }
 
@@ -124,6 +146,17 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
     max_group_size: stringValue("max_group_size"),
     access_expiry_type: stringValue("access_expiry_type", "never"),
     access_expiry_days: stringValue("access_expiry_days"),
+    location_id: stringValue("location_id"),
+    instructor_name: stringValue("instructor_name"),
+    instructor_bio: stringValue("instructor_bio"),
+    learning_objectives: Array.isArray(record.learning_objectives) ? record.learning_objectives.filter((v): v is string => typeof v === "string") : [],
+    documents: Array.isArray(record.documents) ? record.documents.filter((v): v is string => typeof v === "string") : [],
+    start_time: stringValue("start_time"),
+    end_time: stringValue("end_time"),
+    venue: stringValue("venue"),
+    address: stringValue("address"),
+    meeting_link: stringValue("meeting_link"),
+    delivery_instructions: stringValue("delivery_instructions"),
   };
 }
 
@@ -166,6 +199,17 @@ export function buildCreateTrainingPayload(values: CreateTrainingFormValues, ten
     max_group_size: values.max_group_size.trim() || null,
     access_expiry_type: values.access_expiry_type || null,
     access_expiry_days: values.access_expiry_days.trim() || null,
+    location_id: values.location_id.trim() || null,
+    instructor_name: values.instructor_name.trim() || null,
+    instructor_bio: values.instructor_bio.trim() || null,
+    learning_objectives: values.learning_objectives.length ? values.learning_objectives : null,
+    documents: values.documents.length ? values.documents : null,
+    start_time: values.start_time || null,
+    end_time: values.end_time || null,
+    venue: values.venue.trim() || null,
+    address: values.address.trim() || null,
+    meeting_link: values.meeting_link.trim() || null,
+    delivery_instructions: values.delivery_instructions.trim() || null,
   } as unknown as CreateTrainingPayload;
 }
 
@@ -206,6 +250,17 @@ export function buildUpdateTrainingPayload(values: CreateTrainingFormValues): Up
     max_group_size: values.max_group_size.trim() || null,
     access_expiry_type: values.access_expiry_type || null,
     access_expiry_days: values.access_expiry_days.trim() || null,
+    location_id: values.location_id.trim() || null,
+    instructor_name: values.instructor_name.trim() || null,
+    instructor_bio: values.instructor_bio.trim() || null,
+    learning_objectives: values.learning_objectives.length ? values.learning_objectives : null,
+    documents: values.documents.length ? values.documents : null,
+    start_time: values.start_time || null,
+    end_time: values.end_time || null,
+    venue: values.venue || null,
+    address: values.address || null,
+    meeting_link: values.meeting_link || null,
+    delivery_instructions: values.delivery_instructions || null,
   } as unknown as UpdateTrainingPayload;
 }
 

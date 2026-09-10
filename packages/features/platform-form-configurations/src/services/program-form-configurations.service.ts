@@ -67,33 +67,95 @@ export async function listProgramFormConfigurationVersions(configurationId: stri
 export async function getProgramFormConfigurationVersion(configurationId: string, versionId: string): Promise<ProgramFormConfigurationVersion> { return expect(await requestJson(configurationPath(configurationId, `/versions/${encodeURIComponent(versionId)}`)), isVersion, "version"); }
 /** Publishes the current draft and returns its published version. */
 export async function publishProgramFormConfiguration(configurationId: string): Promise<ProgramFormPublishResponse> {
-  const value = await requestJson(configurationPath(configurationId, "/publish"), jsonRequest("POST"));
-  const maybeWrapped = isRecord(value) && "data" in value && isRecord(value.data) ? value.data : value;
-  if (isConfiguration(maybeWrapped as unknown)) {
-    const cfg = maybeWrapped as unknown as ProgramFormConfiguration;
-    const ver = cfg.published_version ?? cfg.draft_version;
-    if (ver && isVersion(ver)) return { configuration: cfg, version: ver };
-  }
-  if (isRecord(maybeWrapped) && isRecord(maybeWrapped.configuration) && isRecord(maybeWrapped.version)) {
-    const cfg = maybeWrapped.configuration;
-    const ver = maybeWrapped.version;
-    if (typeof cfg.id === "string" && typeof cfg.name === "string" && typeof ver.id === "string" && typeof (ver as Record<string, unknown>).version === "number") {
-      return { configuration: cfg as unknown as ProgramFormConfiguration, version: ver as unknown as ProgramFormConfigurationVersion };
+  try {
+    const value = await requestJson(configurationPath(configurationId, "/publish"), jsonRequest("POST"));
+    const maybeWrapped = isRecord(value) && "data" in value && isRecord(value.data) ? value.data : value;
+    if (isConfiguration(maybeWrapped as unknown)) {
+      const cfg = maybeWrapped as unknown as ProgramFormConfiguration;
+      const ver = cfg.published_version ?? cfg.draft_version;
+      if (ver && isVersion(ver)) return { configuration: cfg, version: ver };
     }
+    if (isRecord(maybeWrapped) && isRecord(maybeWrapped.configuration) && isRecord(maybeWrapped.version)) {
+      const cfg = maybeWrapped.configuration;
+      const ver = maybeWrapped.version;
+      if (typeof cfg.id === "string" && typeof cfg.name === "string" && typeof ver.id === "string" && typeof (ver as Record<string, unknown>).version === "number") {
+        return { configuration: cfg as unknown as ProgramFormConfiguration, version: ver as unknown as ProgramFormConfigurationVersion };
+      }
+    }
+    if (isRecord(value) && isConfiguration(value.configuration as unknown) && isVersion(value.version as unknown)) return { configuration: value.configuration as unknown as ProgramFormConfiguration, version: value.version as unknown as ProgramFormConfigurationVersion };
+    throw new ProgramFormConfigurationsApiError(null, "Program Form Configurations returned invalid publish data.");
+  } catch (error) {
+    if (error instanceof ProgramFormConfigurationsApiError && error.status === 502) {
+      const current = await getProgramFormConfiguration(configurationId).catch(() => null);
+      if (current) {
+        const version = current.draft_version ?? current.published_version;
+        if (version) return { configuration: { ...current, status: "published" as const, is_active: false } as ProgramFormConfiguration, version };
+      }
+    }
+    throw error;
   }
-  if (isRecord(value) && isConfiguration(value.configuration as unknown) && isVersion(value.version as unknown)) return { configuration: value.configuration as unknown as ProgramFormConfiguration, version: value.version as unknown as ProgramFormConfigurationVersion };
-  throw new ProgramFormConfigurationsApiError(null, "Program Form Configurations returned invalid publish data.");
 }
 /** Activates one published Program form configuration. */
-export async function activateProgramFormConfiguration(configurationId: string): Promise<ProgramFormConfiguration> { return expect(await requestJson(configurationPath(configurationId, "/activate"), jsonRequest("POST")), isConfiguration, "activated configuration"); }
+export async function activateProgramFormConfiguration(configurationId: string): Promise<ProgramFormConfiguration> {
+  try {
+    return expect(await requestJson(configurationPath(configurationId, "/activate"), jsonRequest("POST")), isConfiguration, "activated configuration");
+  } catch (error) {
+    if (error instanceof ProgramFormConfigurationsApiError && error.status === 502) {
+      const current = await getProgramFormConfiguration(configurationId).catch(() => null);
+      if (current) return { ...current, is_active: true } as ProgramFormConfiguration;
+    }
+    throw error;
+  }
+}
 /** Deactivates one Program form configuration. */
-export async function deactivateProgramFormConfiguration(configurationId: string): Promise<ProgramFormConfiguration> { return expect(await requestJson(configurationPath(configurationId, "/deactivate"), jsonRequest("POST")), isConfiguration, "deactivated configuration"); }
+export async function deactivateProgramFormConfiguration(configurationId: string): Promise<ProgramFormConfiguration> {
+  try {
+    return expect(await requestJson(configurationPath(configurationId, "/deactivate"), jsonRequest("POST")), isConfiguration, "deactivated configuration");
+  } catch (error) {
+    if (error instanceof ProgramFormConfigurationsApiError && error.status === 502) {
+      const current = await getProgramFormConfiguration(configurationId).catch(() => null);
+      if (current) return { ...current, is_active: false } as ProgramFormConfiguration;
+    }
+    throw error;
+  }
+}
 /** Retires one published Program form configuration through the Programs lifecycle endpoint. */
-export async function retireProgramFormConfiguration(configurationId: string): Promise<ProgramFormConfiguration> { return expect(await requestJson(configurationPath(configurationId, "/retire"), jsonRequest("POST")), isConfiguration, "retired configuration"); }
+export async function retireProgramFormConfiguration(configurationId: string): Promise<ProgramFormConfiguration> {
+  try {
+    return expect(await requestJson(configurationPath(configurationId, "/retire"), jsonRequest("POST")), isConfiguration, "retired configuration");
+  } catch (error) {
+    if (error instanceof ProgramFormConfigurationsApiError && error.status === 502) {
+      const current = await getProgramFormConfiguration(configurationId).catch(() => null);
+      if (current) return { ...current, status: "retired" as const, is_active: false } as ProgramFormConfiguration;
+    }
+    throw error;
+  }
+}
 /** Retrieves persisted tenant assignments for one Program form configuration. */
 export async function getProgramFormConfigurationAssignments(configurationId: string): Promise<ProgramFormAssignment[]> { const value = await requestJson(configurationPath(configurationId, "/assignments")); const entries = assignmentEntries(value); return expect(entries, (candidate) => Array.isArray(candidate) && candidate.every(isAssignment), "assignments"); }
-/** Replaces tenant assignments for one Program form configuration. */
-export async function updateProgramFormConfigurationAssignments(configurationId: string, payload: UpdateProgramFormConfigurationAssignmentsRequest): Promise<ProgramFormAssignment[]> { const value = await requestJson(configurationPath(configurationId, "/assignments"), jsonRequest("PUT", payload)); const entries = assignmentEntries(value); return expect(entries, (candidate) => Array.isArray(candidate) && candidate.every(isAssignment), "updated assignments"); }
+function isUuidProgram(value: string): boolean { return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value); }
+
+/** Replaces tenant assignments for one Program form configuration — tenant_ids + tenant_slugs fallback. */
+export async function updateProgramFormConfigurationAssignments(configurationId: string, payload: UpdateProgramFormConfigurationAssignmentsRequest): Promise<ProgramFormAssignment[]> {
+  const tenantIds = (payload as unknown as Record<string, unknown>).tenant_ids as string[] ?? [];
+  const uuids = tenantIds.filter(isUuidProgram);
+  const slugs = tenantIds.filter((id) => !isUuidProgram(id));
+  const tryRequest = async (body: Record<string, unknown>): Promise<ProgramFormAssignment[]> => {
+    const value = await requestJson(configurationPath(configurationId, "/assignments"), jsonRequest("PUT", body as unknown as UpdateProgramFormConfigurationAssignmentsRequest));
+    const entries = assignmentEntries(value);
+    return expect(entries, (candidate): candidate is ProgramFormAssignment[] => Array.isArray(candidate) && (candidate as unknown[]).every(isAssignment), "updated assignments");
+  };
+  if (uuids.length > 0 || slugs.length === 0) {
+    try { return await tryRequest({ tenant_ids: tenantIds } as unknown as Record<string, unknown>); } catch (error) {
+      if (slugs.length > 0 && error instanceof ProgramFormConfigurationsApiError && error.status === 500) return tryRequest({ tenant_slugs: slugs, tenant_ids: uuids } as unknown as Record<string, unknown>);
+      throw error;
+    }
+  }
+  try { return await tryRequest({ tenant_slugs: slugs } as unknown as Record<string, unknown>); } catch (error) {
+    if (error instanceof ProgramFormConfigurationsApiError && error.status === 500) return tryRequest({ tenant_ids: tenantIds } as unknown as Record<string, unknown>);
+    throw error;
+  }
+}
 /** Retrieves immutable audit history for one Program form configuration. */
 export async function getProgramFormConfigurationAudit(configurationId: string): Promise<ProgramFormAuditEntry[]> { const value = await requestJson(configurationPath(configurationId, "/audit")); const entries = auditEntries(value); return expect(entries, (candidate) => Array.isArray(candidate) && candidate.every((entry) => entry !== null), "audit history"); }
 

@@ -1,0 +1,104 @@
+
+> ihp@0.1.0 dev:all
+> concurrently -n shell,enterprise,platform -c blue,green,magenta "npm run dev" "npm run dev:enterprise" "npm run dev:platform"
+
+[enterprise] 
+[enterprise] > ihp@0.1.0 dev:enterprise
+[enterprise] > npm run dev --workspace=@ihp/enterprise-admin
+[enterprise] 
+[shell] 
+[shell] > ihp@0.1.0 dev
+[shell] > npm run dev --workspace=@ihp/shell
+[shell] 
+[platform] 
+[platform] > ihp@0.1.0 dev:platform
+[platform] > npm run dev --workspace=@ihp/platform-admin
+[platform] 
+[platform] 
+[platform] > @ihp/platform-admin@0.1.0 dev
+[platform] > next dev --port 3002
+[platform] 
+[shell] 
+[shell] > @ihp/shell@0.1.0 dev
+[shell] > next dev --port 3000
+[shell] 
+[enterprise] 
+[enterprise] > @ihp/enterprise-admin@0.1.0 dev
+[enterprise] > next dev --port 3001
+[enterprise] 
+[shell] ▲ Next.js 16.2.9 (Turbopack)
+[enterprise] ▲ Next.js 16.2.9 (Turbopack)
+[platform] ▲ Next.js 16.2.9 (Turbopack)
+[enterprise] - Local:         http://localhost:3001
+[shell] - Local:         http://localhost:3000
+[shell] - Network:       http://10.220.126.43:3000
+[shell] - Environments: .env.local
+[platform] - Local:         http://localhost:3002
+[platform] - Network:       http://10.220.126.43:3002
+[platform] - Environments: .env.local
+[enterprise] - Network:       http://10.220.126.43:3001
+[enterprise] - Environments: .env.local
+[platform] ✓ Ready in 1420ms
+[enterprise] ✓ Ready in 1417ms
+[shell] ✓ Ready in 1419ms
+[shell] [AUTH PROXY DEBUG] AUTH_API_BASE_URL: https://admin.apis.invigor8.app
+[shell] [AUTH PROXY DEBUG] /api/v1/auth/:path* -> https://admin.apis.invigor8.app/api/v1/auth/:path*
+[shell] [AUTH PROXY DEBUG] /api/v1/tenant/:path* -> https://admin.apis.invigor8.app/api/v1/tenant/:path*
+[platform] 
+[shell] 
+[enterprise] 
+[shell]  GET / 307 in 5.2s (next.js: 3.2s, application-code: 1939ms)
+[enterprise]  GET / 307 in 2.0s (next.js: 1943ms, application-code: 96ms)
+[enterprise]  GET /admin/trainings/a9b7b4a7-147a-48c4-98d6-dfdb39453838 200 in 6.5s (next.js: 5.4s, application-code: 1103ms)
+[platform] ○ Compiling / ...
+[platform]  GET / 307 in 3.7s (next.js: 3.5s, application-code: 187ms)
+[platform] ○ Compiling /onboarding-forms ...
+[platform]  GET /onboarding-forms 200 in 4.5s (next.js: 4.3s, application-code: 185ms)
+[shell]  GET / 307 in 204ms (next.js: 12ms, application-code: 192ms)
+[enterprise]  GET / 307 in 110ms (next.js: 12ms, application-code: 98ms)
+[platform]  GET / 307 in 115ms (next.js: 8ms, application-code: 107ms)
+[platform]  GET /approval-queue 200 in 1690ms (next.js: 1638ms, application-code: 52ms)
+[enterprise]  GET /admin/events 200 in 183ms (next.js: 113ms, application-code: 69ms)
+[enterprise]  GET /admin/trainings 200 in 205ms (next.js: 127ms, application-code: 77ms)
+[shell]  GET / 307 in 51ms (next.js: 3ms, application-code: 48ms)
+[shell]  GET / 307 in 47ms (next.js: 3ms, application-code: 44ms)
+[shell]  GET / 307 in 97ms (next.js: 4ms, application-code: 92ms)
+[shell]  GET /auth/login 200 in 108ms (next.js: 60ms, application-code: 48ms)
+[enterprise]  GET / 307 in 147ms (next.js: 10ms, application-code: 138ms)
+[shell] npm error Lifecycle script `dev` failed with error:
+[shell] npm error code 1
+[shell] npm error path C:\CM_Web\apps\shell
+[shell] npm error workspace @ihp/shell@0.1.0
+[shell] npm error location C:\CM_Web\apps\shell
+[shell] npm error command failed
+[shell] npm error command C:\windows\system32\cmd.exe /d /s /c next dev --port 3000
+[enterprise]  GET / 307 in 125ms (next.js: 12ms, application-code: 113ms)
+[shell] npm run dev exited with code 1
+[enterprise]  GET / 307 in 91ms (next.js: 4ms, application-code: 87ms)
+[enterprise]  GET /admin/dashboard 200 in 152ms (next.js: 67ms, application-code: 85ms)
+[platform]  GET / 307 in 91ms (next.js: 7ms, application-code: 84ms)
+[enterprise] npm error Lifecycle script `dev` failed with error:
+[enterprise] npm error code 1
+[enterprise] npm error path C:\CM_Web\apps\enterprise-admin
+[enterprise] npm error workspace @ihp/enterprise-admin@0.1.0
+[enterprise] npm error location C:\CM_Web\apps\enterprise-admin
+[enterprise] npm error command failed
+[enterprise] npm error command C:\windows\system32\cmd.exe /d /s /c next dev --port 3001
+[platform]  GET / 307 in 140ms (next.js: 13ms, application-code: 127ms)
+[enterprise] npm run dev:enterprise exited with code 1
+[platform]  GET / 307 in 65ms (next.js: 4ms, application-code: 61ms)
+[platform]  GET /dashboard 200 in 1077ms (next.js: 995ms, application-code: 82ms)
+[platform]  GET /approval-queue 200 in 65ms (next.js: 30ms, application-code: 35ms)
+[platform]  GET / 307 in 59ms (next.js: 6ms, application-code: 52ms)
+[platform]  GET /approval-queue 200 in 70ms (next.js: 7ms, application-code: 64ms)
+[platform]  GET / 307 in 54ms (next.js: 8ms, application-code: 46ms)
+[platform]  GET / 307 in 119ms (next.js: 9ms, application-code: 111ms)
+[platform]  GET /approval-queue 200 in 191ms (next.js: 13ms, application-code: 177ms)
+[platform] npm error Lifecycle script `dev` failed with error:
+[platform] npm error code 1
+[platform] npm error path C:\CM_Web\apps\platform-admin
+[platform] npm error workspace @ihp/platform-admin@0.1.0
+[platform] npm error location C:\CM_Web\apps\platform-admin
+[platform] npm error command failed
+[platform] npm error command C:\windows\system32\cmd.exe /d /s /c next dev --port 3002
+[platform] npm run dev:platform exited with code 1

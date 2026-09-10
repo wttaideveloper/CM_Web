@@ -9,7 +9,9 @@ export interface TrainingFormField {
   type: TrainingFormFieldType;
   required?: boolean;
   placeholder?: string;
+  helpText?: string | null;
   options?: string[]; // for select/multiselect
+  validation?: { minLength?: number | null; maxLength?: number | null; min?: number | null; max?: number | null; pattern?: string | null } | null;
   order: number;
 }
 
@@ -79,14 +81,161 @@ export async function listTrainingFormConfigs(): Promise<TrainingFormConfig[]> {
   return handleRes<TrainingFormConfig[]>(res, "load training form configs");
 }
 
-/** Enterprise: active config resolves selective → global → legacy */
-export async function getTrainingFormConfigActive(): Promise<TrainingFormConfig | null> {
-  const res = await fetch(ACTIVE_PATH, { credentials: "include", cache: "no-store" });
-  if (res.status === 404) return null; // no config yet → static form fallback
-  if (!res.ok) throw new TrainingFormConfigApiError(`Unable to load active form (HTTP ${res.status})`, res.status);
+/** Enterprise: historical form for edit — immutable version used when training was created, never the current active. */
+export async function getTrainingHistoricalFormConfiguration(trainingId: string): Promise<TrainingFormConfig | null> {
+  const res = await fetch(`/api/v1/trainings/${encodeURIComponent(trainingId)}/form-configuration`, { credentials: "include", cache: "no-store" });
+  if (res.status === 404 || res.status === 204) return null;
+  if (!res.ok) throw new TrainingFormConfigApiError(`Unable to load historical form (HTTP ${res.status})`, res.status);
   const text = await res.text();
   if (!text) return null;
-  return JSON.parse(text) as TrainingFormConfig;
+  const raw = JSON.parse(text) as unknown;
+  if (raw === null) return null;
+  // Reuse active mapping for full shape
+  if (raw && typeof raw === "object" && "draft_version" in (raw as Record<string, unknown>)) {
+    const full = raw as Record<string, unknown>;
+    const draft = (full.draft_version ?? (full as Record<string, unknown>).published_version) as Record<string, unknown> | null | undefined;
+    if (draft && Array.isArray((draft as Record<string, unknown>).sections)) {
+      const sections = ((draft as Record<string, unknown>).sections as Array<Record<string, unknown>>).map((sec, sIdx) => ({
+        id: typeof sec.id === "string" ? sec.id : `sec-${sIdx}`,
+        title: (typeof sec.label === "string" && sec.label.trim() ? sec.label : typeof sec.title === "string" && sec.title.trim() ? sec.title : `Section ${sIdx + 1}`),
+        description: typeof sec.description === "string" && sec.description.trim() ? sec.description : null,
+        order: typeof sec.position === "number" ? sec.position : sIdx,
+        fields: Array.isArray(sec.fields) ? (sec.fields as Array<Record<string, unknown>>).map((fld, fIdx) => ({
+          id: typeof fld.id === "string" ? fld.id : `fld-${fIdx}`,
+          key: typeof fld.stable_key === "string" && fld.stable_key ? fld.stable_key.replace(/^core_/, "") : typeof fld.core_key === "string" && fld.core_key ? fld.core_key : `custom_field_${fIdx}`,
+          label: typeof fld.label === "string" ? fld.label : `Field ${fIdx + 1}`,
+          type: (typeof fld.renderer === "string" ? fld.renderer : typeof fld.type === "string" ? fld.type : "text") as TrainingFormFieldType,
+          required: Boolean(fld.required),
+          placeholder: typeof fld.placeholder === "string" ? fld.placeholder : undefined,
+          helpText: typeof fld.help_text === "string" ? fld.help_text : null,
+          options: Array.isArray(fld.options) ? (fld.options as Array<Record<string, unknown>>).map(o => typeof o.label === "string" ? o.label : String(o.value ?? "")) : undefined,
+          validation: fld.validation as TrainingFormField["validation"],
+          order: typeof fld.position === "number" ? fld.position : fIdx,
+        })) : [],
+      }));
+      return { id: typeof full.id === "string" ? full.id : trainingId, title: typeof full.name === "string" ? full.name : "Historical Training Form", description: null, status: "active", is_global: true, enterprise_ids: [], sections, version_id: draft && typeof (draft as Record<string, unknown>).id === "string" ? (draft as Record<string, unknown>).id as string : null, created_at: null, updated_at: null } as TrainingFormConfig;
+    }
+  }
+  return raw as TrainingFormConfig;
+}
+
+/** Enterprise: active config resolves selective → global → legacy — handles both simple and full platform shapes + global fallback. */
+export async function getTrainingFormConfigActive(): Promise<TrainingFormConfig | null> {
+  // 1) Try the dedicated active resolver (simple or full shape)
+  const res = await fetch(ACTIVE_PATH, { credentials: "include", cache: "no-store" });
+  if (res.status !== 404 && res.status !== 204) {
+    if (!res.ok) throw new TrainingFormConfigApiError(`Unable to load active form (HTTP ${res.status})`, res.status);
+    const text = await res.text();
+    if (text) {
+      const raw = JSON.parse(text) as unknown;
+      if (raw && typeof raw === "object" && "draft_version" in (raw as Record<string, unknown>)) {
+        const full = raw as Record<string, unknown>;
+        const draft = ((full as Record<string, unknown>).published_version ?? full.draft_version) as Record<string, unknown> | null | undefined;
+        if (draft && Array.isArray((draft as Record<string, unknown>).sections)) {
+          const sections = ((draft as Record<string, unknown>).sections as Array<Record<string, unknown>>).map((sec, sIdx) => {
+            const stableKey = typeof sec.stable_key === "string" ? sec.stable_key : typeof sec.stableKey === "string" ? sec.stableKey : "";
+            const seededFallback: Record<string, string> = { section_basic: "Basic Information", section_delivery: "Delivery & Instructor", section_schedule: "Schedule", section_pricing: "Pricing & Capacity", section_media: "Images & Media", section_additional: "Additional Configuration" };
+            const rawLabel = typeof sec.label === "string" ? sec.label.trim() : "";
+            const rawTitle = typeof sec.title === "string" ? sec.title.trim() : "";
+            const rawName = typeof sec.name === "string" ? sec.name.trim() : "";
+            let title = rawLabel || rawTitle || rawName || "";
+            if (!title || title === "Section" || /^Section \d+$/.test(title)) title = seededFallback[stableKey] ?? `Section ${sIdx + 1}`;
+            return {
+              id: typeof sec.id === "string" ? sec.id : `sec-${sIdx}`,
+              title,
+              description: typeof sec.description === "string" && sec.description.trim() ? sec.description : null,
+              order: typeof sec.position === "number" ? sec.position : typeof sec.order === "number" ? sec.order : sIdx,
+              fields: Array.isArray(sec.fields) ? (sec.fields as Array<Record<string, unknown>>).map((fld, fIdx) => ({
+                id: typeof fld.id === "string" ? fld.id : `fld-${fIdx}`,
+                key: typeof fld.stable_key === "string" && fld.stable_key ? fld.stable_key.replace(/^core_/, "") : typeof fld.core_key === "string" && fld.core_key ? fld.core_key : `custom_field_${fIdx}`,
+                label: typeof fld.label === "string" ? fld.label : `Field ${fIdx + 1}`,
+                type: (typeof fld.renderer === "string" ? fld.renderer : typeof fld.type === "string" ? fld.type : "text") as TrainingFormFieldType,
+                required: Boolean(fld.required),
+                placeholder: typeof fld.placeholder === "string" ? fld.placeholder : undefined,
+                helpText: typeof fld.help_text === "string" ? fld.help_text : typeof (fld as Record<string, unknown>).helpText === "string" ? (fld as Record<string, unknown>).helpText as string : null,
+                options: Array.isArray(fld.options) ? (fld.options as Array<Record<string, unknown>>).map(o => typeof o.label === "string" ? o.label : typeof o.value === "string" ? o.value : String(o.value ?? "")) : undefined,
+                validation: fld.validation as TrainingFormField["validation"],
+                order: typeof fld.position === "number" ? fld.position : fIdx,
+              })) : [],
+            };
+          });
+          return {
+            id: typeof full.id === "string" ? full.id : "active",
+            title: typeof full.name === "string" ? full.name : typeof (full as Record<string, unknown>).title === "string" ? (full as Record<string, unknown>).title as string : "Active Training Form",
+            description: typeof full.description === "string" ? full.description : null,
+            status: "active",
+            is_global: (full as Record<string, unknown>).scope === "global" ? true : true,
+            enterprise_ids: [],
+            sections,
+            version_id: draft && typeof (draft as Record<string, unknown>).id === "string" ? (draft as Record<string, unknown>).id as string : null,
+            created_at: typeof full.created_at === "string" ? full.created_at : null,
+            updated_at: typeof full.updated_at === "string" ? full.updated_at : null,
+          } as TrainingFormConfig;
+        }
+      }
+      // Check if raw itself is a simple TrainingFormConfig with sections at top level
+      if (raw && typeof raw === "object" && Array.isArray((raw as Record<string, unknown>).sections)) {
+        return raw as TrainingFormConfig;
+      }
+      if (raw && typeof raw === "object" && Object.keys(raw as Record<string, unknown>).length > 0) {
+        // Non-empty object without sections but with id — treat as config (empty sections will fallback)
+        if (typeof (raw as Record<string, unknown>).id === "string") return raw as TrainingFormConfig;
+      }
+    }
+  }
+  // 2) Fallback: fetch global active from the full platform list (super admin creates here)
+  try {
+    const listRes = await fetch(`/api/v1/admin/training-form-configurations/`, { credentials: "include", cache: "no-store" });
+    if (listRes.ok) {
+      const list = (await listRes.json()) as unknown;
+      const items = Array.isArray(list) ? list : Array.isArray((list as Record<string, unknown>).items) ? (list as Record<string, unknown>).items as unknown[] : [];
+      const activeGlobal = (items as Array<Record<string, unknown>>).find(i => i.is_active === true || i.is_global === true || (i.scope === "global" && (i.status === "published" || i.status === "active")));
+      if (activeGlobal && typeof activeGlobal.id === "string") {
+        const detailRes = await fetch(`/api/v1/admin/training-form-configurations/${encodeURIComponent(activeGlobal.id)}`, { credentials: "include", cache: "no-store" });
+        if (detailRes.ok) {
+          const detail = (await detailRes.json()) as unknown;
+          // Reuse the same full-shape mapping via recursive call by faking a raw with draft_version
+          const fakeRaw: Record<string, unknown> = { ...(detail as Record<string, unknown>), draft_version: (detail as Record<string, unknown>).published_version ?? (detail as Record<string, unknown>).draft_version };
+          if (fakeRaw.draft_version && typeof fakeRaw.draft_version === "object" && Array.isArray((fakeRaw.draft_version as Record<string, unknown>).sections)) {
+            const draft = fakeRaw.draft_version as Record<string, unknown>;
+            const sections = (draft.sections as Array<Record<string, unknown>>).map((sec, sIdx) => ({
+              id: typeof sec.id === "string" ? sec.id : `sec-${sIdx}`,
+              title: (typeof sec.label === "string" && sec.label.trim() ? sec.label : typeof sec.title === "string" && sec.title.trim() ? sec.title : typeof sec.name === "string" && sec.name.trim() ? sec.name : `Section ${sIdx + 1}`),
+              description: typeof sec.description === "string" && sec.description.trim() ? sec.description : null,
+              order: typeof sec.position === "number" ? sec.position : typeof sec.order === "number" ? sec.order : sIdx,
+              fields: Array.isArray(sec.fields) ? (sec.fields as Array<Record<string, unknown>>).map((fld, fIdx) => ({
+                id: typeof fld.id === "string" ? fld.id : `fld-${fIdx}`,
+                key: typeof fld.stable_key === "string" && fld.stable_key ? fld.stable_key.replace(/^core_/, "") : typeof fld.core_key === "string" && fld.core_key ? fld.core_key : `custom_field_${fIdx}`,
+                label: typeof fld.label === "string" ? fld.label : `Field ${fIdx + 1}`,
+                type: (typeof fld.renderer === "string" ? fld.renderer : typeof fld.type === "string" ? fld.type : "text") as TrainingFormFieldType,
+                required: Boolean(fld.required),
+                placeholder: typeof fld.placeholder === "string" ? fld.placeholder : undefined,
+                helpText: typeof fld.help_text === "string" ? fld.help_text : null,
+                options: Array.isArray(fld.options) ? (fld.options as Array<Record<string, unknown>>).map(o => typeof o.label === "string" ? o.label : String(o.value ?? "")) : undefined,
+                validation: fld.validation as TrainingFormField["validation"],
+                order: typeof fld.position === "number" ? fld.position : fIdx,
+              })) : [],
+            }));
+            return {
+              id: typeof fakeRaw.id === "string" ? fakeRaw.id : "active",
+              title: typeof fakeRaw.name === "string" ? fakeRaw.name : "Active Training Form",
+              description: typeof fakeRaw.description === "string" ? fakeRaw.description : null,
+              status: "active",
+              is_global: true,
+              enterprise_ids: [],
+              sections,
+              version_id: draft && typeof draft.id === "string" ? draft.id : null,
+              created_at: null,
+              updated_at: null,
+            } as TrainingFormConfig;
+          }
+        }
+      }
+    }
+  } catch {
+    // fallback failed — return null to show static form
+  }
+  return null;
 }
 
 export async function getTrainingFormConfig(configId: string): Promise<TrainingFormConfig> {

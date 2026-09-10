@@ -44,20 +44,24 @@ export function TrainingBasicsSection({ values, update, errors }: SectionProps) 
   );
 }
 
-/** Renders delivery mode, duration, and instructor. */
+/** Renders delivery mode, duration, and instructor — hybrid/physical/online like Event. */
 export function TrainingDeliverySection({ values, update }: SectionProps) {
   return (
     <section className="space-y-5">
       <SectionHeading title="Delivery & Instructor" description="Choose how participants experience this training." />
       <div className="grid gap-4 md:grid-cols-2">
-        <label className={labelClass}>Delivery mode<select value={values.delivery_mode} onChange={(event) => update("delivery_mode", event.target.value)} className={inputClass}><option value="self_paced">Self paced</option><option value="instructor_led">Instructor led</option><option value="blended">Blended</option></select></label>
+        <label className={labelClass}>Delivery mode<select value={values.delivery_mode} onChange={(event) => update("delivery_mode", event.target.value)} className={inputClass}><option value="hybrid">Hybrid</option><option value="physical">Physical (In Person)</option><option value="online">Online</option><option value="self_paced">Self paced</option><option value="instructor_led">Instructor led</option><option value="blended">Blended</option></select></label>
         <label className={labelClass}>Course type<input value={values.course_type} onChange={(event) => update("course_type", event.target.value)} placeholder="e.g. Workshop" className={inputClass} /></label>
       </div>
+      {(values.delivery_mode === "physical" || values.delivery_mode === "hybrid" || values.delivery_mode === "in_person") ? (
+        <label className={labelClass}>Location ID<input value={values.location_id} onChange={(event) => update("location_id", event.target.value)} placeholder="Select or paste location ID" className={inputClass} /></label>
+      ) : null}
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Duration<input value={values.duration} onChange={(event) => update("duration", event.target.value)} placeholder="e.g. 4 weeks" className={inputClass} /></label>
         <label className={labelClass}>Instructor ID<input value={values.instructor_id} onChange={(event) => update("instructor_id", event.target.value)} className={inputClass} /></label>
       </div>
       <label className={labelClass}>Requirements<textarea value={values.requirements} onChange={(event) => update("requirements", event.target.value)} rows={3} className={`${inputClass} h-auto py-3`} /></label>
+      <p className="text-xs text-[#7f9d94]">Hybrid = venue + online link · Physical = venue only · Online = meeting link only (mirrors Event In Person/Online/Hybrid).</p>
     </section>
   );
 }
@@ -107,21 +111,39 @@ function UrlList({ label, values, update }: { label: string; values: string[]; u
   );
 }
 
-/** Renders pricing, capacity, and access policy. */
+/** Renders pricing. */
 export function TrainingPricingSection({ values, update }: SectionProps) {
   return (
     <section className="space-y-5">
-      <SectionHeading title="Pricing & Capacity" description="Set the price, seats, and approval policy." />
-      <div className="grid gap-4 md:grid-cols-3">
+      <SectionHeading title="Pricing & Tickets" description="Set the price and ticket options." />
+      <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Price<input value={values.price} onChange={(event) => update("price", event.target.value)} className={inputClass} /></label>
         <label className={labelClass}>Currency<input value={values.currency} onChange={(event) => update("currency", event.target.value)} className={inputClass} /></label>
-        <label className={labelClass}>Capacity<input value={values.capacity} onChange={(event) => update("capacity", event.target.value)} className={inputClass} /></label>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Promo price<input value={values.promo_price} onChange={(event) => update("promo_price", event.target.value)} className={inputClass} /></label>
         <label className={labelClass}>Coupon code<input value={values.coupon_code} onChange={(event) => update("coupon_code", event.target.value)} className={inputClass} /></label>
       </div>
+    </section>
+  );
+}
+
+/** Renders capacity & registration. */
+export function TrainingCapacitySection({ values, update }: SectionProps) {
+  return (
+    <section className="space-y-5">
+      <SectionHeading title="Capacity & Registration" description="Set seats, approval and access window." />
+      <label className={labelClass}>Capacity<input value={values.capacity} onChange={(event) => update("capacity", event.target.value)} className={inputClass} /></label>
       <label className="flex items-center gap-3 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={values.requires_approval} onChange={(event) => update("requires_approval", event.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Require approval for enrolment</label>
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className={labelClass}>Access duration (days)<input value={values.access_duration_days} onChange={(event) => update("access_duration_days", event.target.value)} placeholder="e.g. 90" className={inputClass} /></label>
+        <label className={labelClass}>Access expiry<select value={values.access_expiry_type} onChange={(e) => update("access_expiry_type", e.target.value)} className={inputClass}><option value="never">Never</option><option value="date">By date</option><option value="days">After N days</option><option value="enrolment_day">Enrolment day + N</option></select></label>
+      </div>
+      <label className={labelClass}>Expiry days<input value={values.access_expiry_days} onChange={(event) => update("access_expiry_days", event.target.value)} placeholder="e.g. 90" className={inputClass} /></label>
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="flex items-center gap-3 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={values.group_enrolment} onChange={(e) => update("group_enrolment", e.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Group enrolment</label>
+        <label className={labelClass}>Max group size<input value={values.max_group_size} onChange={(e) => update("max_group_size", e.target.value)} placeholder="e.g. 5" className={inputClass} /></label>
+      </div>
     </section>
   );
 }
@@ -139,11 +161,11 @@ export function TrainingMediaSection({ values, update }: SectionProps) {
   );
 }
 
-/** Course Builder prerequisites / release / randomise / mandatory + Group & Expiry. */
+/** Additional Configuration — prerequisites, release, randomise, publication. */
 export function TrainingCourseBuilderSection({ values, update }: SectionProps) {
   return (
     <section className="space-y-5">
-      <SectionHeading title="Course Builder" description="Prerequisites, release rules, randomisation, publication and completion." />
+      <SectionHeading title="Additional Configuration" description="Prerequisites, release rules, randomisation and publication." />
       <label className={labelClass}>Prerequisites<textarea value={values.prerequisites} onChange={(e) => update("prerequisites", e.target.value)} placeholder="e.g. Complete Module 1" rows={2} className={`${inputClass} h-auto py-3`} /></label>
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Release rule<select value={values.release_rule} onChange={(e) => update("release_rule", e.target.value)} className={inputClass}><option value="immediate">Immediate</option><option value="date">By date</option><option value="enrolment_day">Enrolment day</option><option value="previous_lesson">Previous lesson</option></select></label>
@@ -152,14 +174,6 @@ export function TrainingCourseBuilderSection({ values, update }: SectionProps) {
       <div className="grid gap-4 md:grid-cols-2">
         <label className="flex items-center gap-3 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={values.randomise} onChange={(e) => update("randomise", e.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Randomise questions/answers</label>
         <label className="flex items-center gap-3 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={values.is_mandatory} onChange={(e) => update("is_mandatory", e.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Mandatory lessons</label>
-      </div>
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="flex items-center gap-3 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={values.group_enrolment} onChange={(e) => update("group_enrolment", e.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Group enrolment</label>
-        <label className={labelClass}>Max group size<input value={values.max_group_size} onChange={(e) => update("max_group_size", e.target.value)} placeholder="e.g. 5" className={inputClass} /></label>
-      </div>
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className={labelClass}>Access expiry<select value={values.access_expiry_type} onChange={(e) => update("access_expiry_type", e.target.value)} className={inputClass}><option value="never">Never</option><option value="date">By date</option><option value="days">After N days</option><option value="enrolment_day">Enrolment day + N</option></select></label>
-        <label className={labelClass}>Expiry days<input value={values.access_expiry_days} onChange={(e) => update("access_expiry_days", e.target.value)} placeholder="e.g. 90" className={inputClass} /></label>
       </div>
     </section>
   );

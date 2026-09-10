@@ -9,7 +9,9 @@ export interface CourseFormField {
   type: CourseFormFieldType;
   required?: boolean;
   placeholder?: string;
+  helpText?: string | null;
   options?: string[]; // for select/multiselect
+  validation?: { minLength?: number | null; maxLength?: number | null; min?: number | null; max?: number | null; pattern?: string | null } | null;
   order: number;
 }
 
@@ -79,14 +81,51 @@ export async function listCourseFormConfigs(): Promise<CourseFormConfig[]> {
   return handleRes<CourseFormConfig[]>(res, "load course form configs");
 }
 
-/** Enterprise: active config resolves selective → global → legacy */
+/** Enterprise: active config resolves selective → global → legacy — handles both simple and full platform shapes. */
 export async function getCourseFormConfigActive(): Promise<CourseFormConfig | null> {
   const res = await fetch(ACTIVE_PATH, { credentials: "include", cache: "no-store" });
-  if (res.status === 404) return null; // no config yet → static form fallback
+  if (res.status === 404 || res.status === 204) return null;
   if (!res.ok) throw new CourseFormConfigApiError(`Unable to load active form (HTTP ${res.status})`, res.status);
   const text = await res.text();
   if (!text) return null;
-  return JSON.parse(text) as CourseFormConfig;
+  const raw = JSON.parse(text) as unknown;
+  if (raw && typeof raw === "object" && "draft_version" in (raw as Record<string, unknown>)) {
+    const full = raw as Record<string, unknown>;
+    const draft = (full.draft_version ?? (full as Record<string, unknown>).published_version) as Record<string, unknown> | null | undefined;
+    if (draft && Array.isArray((draft as Record<string, unknown>).sections)) {
+      const sections = ((draft as Record<string, unknown>).sections as Array<Record<string, unknown>>).map((sec, sIdx) => ({
+        id: typeof sec.id === "string" ? sec.id : `sec-${sIdx}`,
+        title: typeof sec.label === "string" ? sec.label : typeof sec.title === "string" ? sec.title : `Section ${sIdx + 1}`,
+        description: typeof sec.description === "string" ? sec.description : null,
+        order: typeof sec.position === "number" ? sec.position : sIdx,
+        fields: Array.isArray(sec.fields) ? (sec.fields as Array<Record<string, unknown>>).map((fld, fIdx) => ({
+          id: typeof fld.id === "string" ? fld.id : `fld-${fIdx}`,
+          key: typeof fld.stable_key === "string" && fld.stable_key ? fld.stable_key.replace(/^core_/, "") : typeof fld.core_key === "string" && fld.core_key ? fld.core_key : `custom_field_${fIdx}`,
+          label: typeof fld.label === "string" ? fld.label : `Field ${fIdx + 1}`,
+          type: (typeof fld.renderer === "string" ? fld.renderer : typeof fld.type === "string" ? fld.type : "text") as CourseFormFieldType,
+          required: Boolean(fld.required),
+          placeholder: typeof fld.placeholder === "string" ? fld.placeholder : undefined,
+          helpText: typeof fld.help_text === "string" ? fld.help_text : typeof (fld as Record<string, unknown>).helpText === "string" ? (fld as Record<string, unknown>).helpText as string : null,
+          options: Array.isArray(fld.options) ? (fld.options as Array<Record<string, unknown>>).map(o => typeof o.label === "string" ? o.label : typeof o.value === "string" ? o.value : String(o.value ?? "")) : undefined,
+          validation: fld.validation as CourseFormField["validation"],
+          order: typeof fld.position === "number" ? fld.position : fIdx,
+        })) : [],
+      }));
+      return {
+        id: typeof full.id === "string" ? full.id : "active",
+        title: typeof full.name === "string" ? full.name : typeof (full as Record<string, unknown>).title === "string" ? (full as Record<string, unknown>).title as string : "Active Course Form",
+        description: typeof full.description === "string" ? full.description : null,
+        status: "active",
+        is_global: (full as Record<string, unknown>).scope === "global" ? true : true,
+        enterprise_ids: [],
+        sections,
+        version_id: draft && typeof (draft as Record<string, unknown>).id === "string" ? (draft as Record<string, unknown>).id as string : null,
+        created_at: typeof full.created_at === "string" ? full.created_at : null,
+        updated_at: typeof full.updated_at === "string" ? full.updated_at : null,
+      } as CourseFormConfig;
+    }
+  }
+  return raw as CourseFormConfig;
 }
 
 export async function getCourseFormConfig(configId: string): Promise<CourseFormConfig> {

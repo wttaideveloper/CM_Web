@@ -37,7 +37,7 @@ export function createEmptyProgramForm(): CreateProgramFormValues {
     enrolment_start: "",
     enrolment_end: "",
     enrol_type: "fixed_date",
-    delivery_mode: "in_person",
+    delivery_mode: "hybrid",
     price: "",
     currency: "INR",
     capacity: "",

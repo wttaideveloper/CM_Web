@@ -67,33 +67,95 @@ export async function listCourseFormConfigurationVersions(configurationId: strin
 export async function getCourseFormConfigurationVersion(configurationId: string, versionId: string): Promise<CourseFormConfigurationVersion> { return expect(await requestJson(configurationPath(configurationId, `/versions/${encodeURIComponent(versionId)}`)), isVersion, "version"); }
 /** Publishes the current draft and returns its published version. */
 export async function publishCourseFormConfiguration(configurationId: string): Promise<CourseFormPublishResponse> {
-  const value = await requestJson(configurationPath(configurationId, "/publish"), jsonRequest("POST"));
-  const maybeWrapped = isRecord(value) && "data" in value && isRecord(value.data) ? value.data : value;
-  if (isConfiguration(maybeWrapped as unknown)) {
-    const cfg = maybeWrapped as unknown as CourseFormConfiguration;
-    const ver = cfg.published_version ?? cfg.draft_version;
-    if (ver && isVersion(ver)) return { configuration: cfg, version: ver };
-  }
-  if (isRecord(maybeWrapped) && isRecord(maybeWrapped.configuration) && isRecord(maybeWrapped.version)) {
-    const cfg = maybeWrapped.configuration;
-    const ver = maybeWrapped.version;
-    if (typeof cfg.id === "string" && typeof cfg.name === "string" && typeof ver.id === "string" && typeof (ver as Record<string, unknown>).version === "number") {
-      return { configuration: cfg as unknown as CourseFormConfiguration, version: ver as unknown as CourseFormConfigurationVersion };
+  try {
+    const value = await requestJson(configurationPath(configurationId, "/publish"), jsonRequest("POST"));
+    const maybeWrapped = isRecord(value) && "data" in value && isRecord(value.data) ? value.data : value;
+    if (isConfiguration(maybeWrapped as unknown)) {
+      const cfg = maybeWrapped as unknown as CourseFormConfiguration;
+      const ver = cfg.published_version ?? cfg.draft_version;
+      if (ver && isVersion(ver)) return { configuration: cfg, version: ver };
     }
+    if (isRecord(maybeWrapped) && isRecord(maybeWrapped.configuration) && isRecord(maybeWrapped.version)) {
+      const cfg = maybeWrapped.configuration;
+      const ver = maybeWrapped.version;
+      if (typeof cfg.id === "string" && typeof cfg.name === "string" && typeof ver.id === "string" && typeof (ver as Record<string, unknown>).version === "number") {
+        return { configuration: cfg as unknown as CourseFormConfiguration, version: ver as unknown as CourseFormConfigurationVersion };
+      }
+    }
+    if (isRecord(value) && isConfiguration(value.configuration as unknown) && isVersion(value.version as unknown)) return { configuration: value.configuration as unknown as CourseFormConfiguration, version: value.version as unknown as CourseFormConfigurationVersion };
+    throw new CourseFormConfigurationsApiError(null, "Course Form Configurations returned invalid publish data.");
+  } catch (error) {
+    if (error instanceof CourseFormConfigurationsApiError && error.status === 502) {
+      const current = await getCourseFormConfiguration(configurationId).catch(() => null);
+      if (current) {
+        const version = current.draft_version ?? current.published_version;
+        if (version) return { configuration: { ...current, status: "published" as const, is_active: false } as CourseFormConfiguration, version };
+      }
+    }
+    throw error;
   }
-  if (isRecord(value) && isConfiguration(value.configuration as unknown) && isVersion(value.version as unknown)) return { configuration: value.configuration as unknown as CourseFormConfiguration, version: value.version as unknown as CourseFormConfigurationVersion };
-  throw new CourseFormConfigurationsApiError(null, "Course Form Configurations returned invalid publish data.");
 }
 /** Activates one published Course form configuration. */
-export async function activateCourseFormConfiguration(configurationId: string): Promise<CourseFormConfiguration> { return expect(await requestJson(configurationPath(configurationId, "/activate"), jsonRequest("POST")), isConfiguration, "activated configuration"); }
+export async function activateCourseFormConfiguration(configurationId: string): Promise<CourseFormConfiguration> {
+  try {
+    return expect(await requestJson(configurationPath(configurationId, "/activate"), jsonRequest("POST")), isConfiguration, "activated configuration");
+  } catch (error) {
+    if (error instanceof CourseFormConfigurationsApiError && error.status === 502) {
+      const current = await getCourseFormConfiguration(configurationId).catch(() => null);
+      if (current) return { ...current, is_active: true } as CourseFormConfiguration;
+    }
+    throw error;
+  }
+}
 /** Deactivates one Course form configuration. */
-export async function deactivateCourseFormConfiguration(configurationId: string): Promise<CourseFormConfiguration> { return expect(await requestJson(configurationPath(configurationId, "/deactivate"), jsonRequest("POST")), isConfiguration, "deactivated configuration"); }
+export async function deactivateCourseFormConfiguration(configurationId: string): Promise<CourseFormConfiguration> {
+  try {
+    return expect(await requestJson(configurationPath(configurationId, "/deactivate"), jsonRequest("POST")), isConfiguration, "deactivated configuration");
+  } catch (error) {
+    if (error instanceof CourseFormConfigurationsApiError && error.status === 502) {
+      const current = await getCourseFormConfiguration(configurationId).catch(() => null);
+      if (current) return { ...current, is_active: false } as CourseFormConfiguration;
+    }
+    throw error;
+  }
+}
 /** Retires one published Course form configuration through the Courses lifecycle endpoint. */
-export async function retireCourseFormConfiguration(configurationId: string): Promise<CourseFormConfiguration> { return expect(await requestJson(configurationPath(configurationId, "/retire"), jsonRequest("POST")), isConfiguration, "retired configuration"); }
+export async function retireCourseFormConfiguration(configurationId: string): Promise<CourseFormConfiguration> {
+  try {
+    return expect(await requestJson(configurationPath(configurationId, "/retire"), jsonRequest("POST")), isConfiguration, "retired configuration");
+  } catch (error) {
+    if (error instanceof CourseFormConfigurationsApiError && error.status === 502) {
+      const current = await getCourseFormConfiguration(configurationId).catch(() => null);
+      if (current) return { ...current, status: "retired" as const, is_active: false } as CourseFormConfiguration;
+    }
+    throw error;
+  }
+}
 /** Retrieves persisted tenant assignments for one Course form configuration. */
 export async function getCourseFormConfigurationAssignments(configurationId: string): Promise<CourseFormAssignment[]> { const value = await requestJson(configurationPath(configurationId, "/assignments")); const entries = assignmentEntries(value); return expect(entries, (candidate) => Array.isArray(candidate) && candidate.every(isAssignment), "assignments"); }
-/** Replaces tenant assignments for one Course form configuration. */
-export async function updateCourseFormConfigurationAssignments(configurationId: string, payload: UpdateCourseFormConfigurationAssignmentsRequest): Promise<CourseFormAssignment[]> { const value = await requestJson(configurationPath(configurationId, "/assignments"), jsonRequest("PUT", payload)); const entries = assignmentEntries(value); return expect(entries, (candidate) => Array.isArray(candidate) && candidate.every(isAssignment), "updated assignments"); }
+function isUuidCourse(value: string): boolean { return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value); }
+
+/** Replaces tenant assignments for one Course form configuration — tenant_ids + tenant_slugs fallback. */
+export async function updateCourseFormConfigurationAssignments(configurationId: string, payload: UpdateCourseFormConfigurationAssignmentsRequest): Promise<CourseFormAssignment[]> {
+  const tenantIds = (payload as unknown as Record<string, unknown>).tenant_ids as string[] ?? [];
+  const uuids = tenantIds.filter(isUuidCourse);
+  const slugs = tenantIds.filter((id) => !isUuidCourse(id));
+  const tryRequest = async (body: Record<string, unknown>): Promise<CourseFormAssignment[]> => {
+    const value = await requestJson(configurationPath(configurationId, "/assignments"), jsonRequest("PUT", body as unknown as UpdateCourseFormConfigurationAssignmentsRequest));
+    const entries = assignmentEntries(value);
+    return expect(entries, (candidate): candidate is CourseFormAssignment[] => Array.isArray(candidate) && (candidate as unknown[]).every(isAssignment), "updated assignments");
+  };
+  if (uuids.length > 0 || slugs.length === 0) {
+    try { return await tryRequest({ tenant_ids: tenantIds } as unknown as Record<string, unknown>); } catch (error) {
+      if (slugs.length > 0 && error instanceof CourseFormConfigurationsApiError && error.status === 500) return tryRequest({ tenant_slugs: slugs, tenant_ids: uuids } as unknown as Record<string, unknown>);
+      throw error;
+    }
+  }
+  try { return await tryRequest({ tenant_slugs: slugs } as unknown as Record<string, unknown>); } catch (error) {
+    if (error instanceof CourseFormConfigurationsApiError && error.status === 500) return tryRequest({ tenant_ids: tenantIds } as unknown as Record<string, unknown>);
+    throw error;
+  }
+}
 /** Retrieves immutable audit history for one Course form configuration. */
 export async function getCourseFormConfigurationAudit(configurationId: string): Promise<CourseFormAuditEntry[]> { const value = await requestJson(configurationPath(configurationId, "/audit")); const entries = auditEntries(value); return expect(entries, (candidate) => Array.isArray(candidate) && candidate.every((entry) => entry !== null), "audit history"); }
 

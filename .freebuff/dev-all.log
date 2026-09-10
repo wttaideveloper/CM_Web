@@ -1,0 +1,94 @@
+
+> ihp@0.1.0 dev:all
+> concurrently -n shell,enterprise,platform -c blue,green,magenta "npm run dev" "npm run dev:enterprise" "npm run dev:platform"
+
+[enterprise] 
+[enterprise] > ihp@0.1.0 dev:enterprise
+[enterprise] > npm run dev --workspace=@ihp/enterprise-admin
+[enterprise] 
+[platform] 
+[platform] > ihp@0.1.0 dev:platform
+[platform] > npm run dev --workspace=@ihp/platform-admin
+[platform] 
+[shell] 
+[shell] > ihp@0.1.0 dev
+[shell] > npm run dev --workspace=@ihp/shell
+[shell] 
+[platform] 
+[platform] > @ihp/platform-admin@0.1.0 dev
+[platform] > next dev --port 3002
+[platform] 
+[shell] 
+[shell] > @ihp/shell@0.1.0 dev
+[shell] > next dev --port 3000
+[shell] 
+[enterprise] 
+[enterprise] > @ihp/enterprise-admin@0.1.0 dev
+[enterprise] > next dev --port 3001
+[enterprise] 
+[shell] ▲ Next.js 16.2.9 (Turbopack)
+[enterprise] ▲ Next.js 16.2.9 (Turbopack)
+[enterprise] - Local:         http://localhost:3001
+[platform] ▲ Next.js 16.2.9 (Turbopack)
+[shell] - Local:         http://localhost:3000
+[shell] - Network:       http://10.220.126.43:3000
+[shell] - Environments: .env.local
+[shell] ✓ Ready in 1642ms
+[enterprise] - Network:       http://10.220.126.43:3001
+[enterprise] - Environments: .env.local
+[enterprise] ✓ Ready in 1641ms
+[platform] - Local:         http://localhost:3002
+[platform] - Network:       http://10.220.126.43:3002
+[platform] - Environments: .env.local
+[platform] ✓ Ready in 1638ms
+[shell] [AUTH PROXY DEBUG] AUTH_API_BASE_URL: https://admin.apis.invigor8.app
+[shell] [AUTH PROXY DEBUG] /api/v1/auth/:path* -> https://admin.apis.invigor8.app/api/v1/auth/:path*
+[shell] [AUTH PROXY DEBUG] /api/v1/tenant/:path* -> https://admin.apis.invigor8.app/api/v1/tenant/:path*
+[shell] 
+[enterprise] 
+[platform] 
+[enterprise] ○ Compiling /admin/trainings/create ...
+[enterprise]  GET /admin/trainings/create 200 in 11.6s (next.js: 9.1s, application-code: 2.5s)
+[enterprise] ✓ Compiled in 140ms
+[enterprise] ✓ Compiled in 172ms
+[enterprise]  GET /admin/trainings/create 200 in 206ms (next.js: 101ms, application-code: 105ms)
+[platform] ○ Compiling /form-configurations ...
+[platform]  GET /api/platform-super-admin/events?status=pending_approval&page=1&page_size=20 200 in 5.9s (next.js: 1034ms, application-code: 4.9s)
+[platform]  GET /api/platform-super-admin/form-configurations 200 in 6.0s (next.js: 1138ms, application-code: 4.9s)
+[enterprise] ✓ Compiled in 281ms
+[enterprise]  GET /admin/trainings/create 200 in 254ms (next.js: 108ms, application-code: 146ms)
+[platform]  GET /training-form-configurations 200 in 13.4s (next.js: 9.7s, application-code: 3.7s)
+[platform]  GET /form-configurations 200 in 16.1s (next.js: 12.8s, application-code: 3.3s)
+[platform]  GET /api/platform-super-admin/events?status=pending_approval&page=1&page_size=20 200 in 3.0s (next.js: 31ms, application-code: 3.0s)
+[platform]  GET /api/platform-super-admin/form-configurations 200 in 3.0s (next.js: 19ms, application-code: 3.0s)
+[platform]  GET /training-form-configurations 200 in 69ms (next.js: 11ms, application-code: 58ms)
+[enterprise] ✓ Compiled in 342ms
+[platform]  GET /training-form-configurations/new 200 in 1948ms (next.js: 1865ms, application-code: 83ms)
+[enterprise]  GET /admin/trainings/create 200 in 259ms (next.js: 131ms, application-code: 128ms)
+[platform]  GET /api/platform-super-admin/events?status=pending_approval&page=1&page_size=20 200 in 4.3s (next.js: 20ms, application-code: 4.3s)
+[platform]  GET /api/platform-super-admin/training-form-configurations 200 in 4.4s (next.js: 427ms, application-code: 3.9s)
+[platform]  GET /api/platform-super-admin/training-form-configurations/field-registry 200 in 1094ms (next.js: 267ms, application-code: 828ms)
+[platform]  GET /api/platform-super-admin/events?status=pending_approval&page=1&page_size=20 200 in 847ms (next.js: 6ms, application-code: 841ms)
+[platform]  GET /training-form-configurations 200 in 60ms (next.js: 8ms, application-code: 52ms)
+[platform]  GET /api/platform-super-admin/events?status=pending_approval&page=1&page_size=20 200 in 2.2s (next.js: 16ms, application-code: 2.1s)
+[platform]  GET /api/platform-super-admin/training-form-configurations 200 in 2.2s (next.js: 35ms, application-code: 2.1s)
+[platform]  GET /training-form-configurations/0293363c-54a1-443e-b9b6-13f3353daace 200 in 3.4s (next.js: 3.3s, application-code: 79ms)
+[platform]  GET /api/platform-super-admin/events?status=pending_approval&page=1&page_size=20 200 in 5.1s (next.js: 25ms, application-code: 5.0s)
+[platform]  GET /api/platform-super-admin/training-form-configurations/field-registry 200 in 5.1s (next.js: 26ms, application-code: 5.1s)
+[platform]  GET /api/platform-super-admin/training-form-configurations/0293363c-54a1-443e-b9b6-13f3353daace/assignments 200 in 5.5s (next.js: 3.4s, application-code: 2.0s)
+[platform]  GET /api/platform-super-admin/training-form-configurations/0293363c-54a1-443e-b9b6-13f3353daace 200 in 5.8s (next.js: 2.5s, application-code: 3.3s)
+[platform]  GET /api/platform-super-admin/training-form-configurations/0293363c-54a1-443e-b9b6-13f3353daace/audit 200 in 2.7s (next.js: 2.2s, application-code: 487ms)
+[platform]  GET /api/platform-super-admin/training-form-configurations/0293363c-54a1-443e-b9b6-13f3353daace/versions 200 in 3.5s (next.js: 3.0s, application-code: 484ms)
+[platform] ✓ Compiled in 447ms
+[platform]  GET /training-form-configurations/0293363c-54a1-443e-b9b6-13f3353daace 200 in 4.8s (next.js: 1012ms, application-code: 3.8s)
+[platform]  GET /api/platform-super-admin/training-form-configurations/0293363c-54a1-443e-b9b6-13f3353daace/audit 200 in 8.0s (next.js: 1767ms, application-code: 6.2s)
+[platform]  GET /api/platform-super-admin/training-form-configurations/0293363c-54a1-443e-b9b6-13f3353daace/versions 200 in 8.1s (next.js: 958ms, application-code: 7.1s)
+[platform]  GET /api/platform-super-admin/training-form-configurations/field-registry 200 in 8.7s (next.js: 55ms, application-code: 8.7s)
+[platform]  GET /api/platform-super-admin/training-form-configurations/0293363c-54a1-443e-b9b6-13f3353daace/assignments 200 in 10.1s (next.js: 3.6s, application-code: 6.6s)
+[platform]  GET /api/platform-super-admin/training-form-configurations/0293363c-54a1-443e-b9b6-13f3353daace 200 in 10.1s (next.js: 2.7s, application-code: 7.4s)
+[platform] ✓ Compiled in 364ms
+[platform]  GET /training-form-configurations/0293363c-54a1-443e-b9b6-13f3353daace 200 in 1013ms (next.js: 948ms, application-code: 65ms)
+[platform] ✓ Compiled in 263ms
+[platform]  GET /training-form-configurations/0293363c-54a1-443e-b9b6-13f3353daace 200 in 1080ms (next.js: 1009ms, application-code: 72ms)
+[platform] ✓ Compiled in 120ms
+[platform]  GET /training-form-configurations/0293363c-54a1-443e-b9b6-13f3353daace 200 in 1241ms (next.js: 1169ms, application-code: 72ms)
