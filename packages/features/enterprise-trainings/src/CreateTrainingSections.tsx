@@ -13,17 +13,12 @@ function FieldError({ error }: { error?: string[] }) {
   return error?.[0] ? <p className="mt-1 text-xs font-medium text-[#b42318]">{error[0]}</p> : null;
 }
 
-function SectionHeading({ title, description, icon, tip }: { title: string; description: string; icon?: string; tip?: string }) {
+function SectionHeading({ title, description, tip }: { title: string; description: string; tip?: string }) {
   return (
     <div className="rounded-xl bg-[#f9fcfa] border border-[#e8f6ee] p-4">
-      <div className="flex items-start gap-3">
-        {icon ? <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white border border-[#e1ebe6] text-lg" aria-hidden="true">{icon}</span> : null}
-        <div className="flex-1">
-          <h2 className="text-lg font-bold text-[#06201c]">{title}</h2>
-          <p className="mt-1 text-sm leading-5 text-[#52736a]">{description}</p>
-          {tip ? <p className="mt-2 rounded-lg bg-white border border-[#e1ebe6] px-3 py-2 text-xs leading-4 text-[#1f6a58]">💡 <span className="font-semibold">Tip:</span> {tip}</p> : null}
-        </div>
-      </div>
+      <h2 className="text-lg font-bold text-[#06201c]">{title}</h2>
+      <p className="mt-1 text-sm leading-5 text-[#52736a]">{description}</p>
+      {tip ? <p className="mt-2 rounded-lg bg-white border border-[#e1ebe6] px-3 py-2 text-xs leading-4 text-[#1f6a58]"><span className="font-semibold">Tip:</span> {tip}</p> : null}
     </div>
   );
 }
@@ -41,7 +36,7 @@ export function TrainingBasicsSection({ values, update, errors }: SectionProps) 
 
   return (
     <section className="space-y-5">
-      <SectionHeading title="Basic Information" description="Tell learners what this training is about — clear titles get 3× more enrolments." icon="📚" tip="Use a specific, benefit-driven title like ‘Diabetes Reversal — 12-Week Lifestyle Program’ instead of ‘Health Training’." />
+      <SectionHeading title="Basic Information" description="Tell learners what this training is about — clear titles get 3× more enrolments." tip="Use a specific, benefit-driven title like ‘Diabetes Reversal — 12-Week Lifestyle Program’ instead of ‘Health Training’." />
       <label className={labelClass}>Training name <span className="text-[#b42318]">*</span><input value={values.title} onChange={(event) => update("title", event.target.value)} placeholder="e.g. Diabetes Reversal — 12-Week Program" className={inputClass} /><FieldError error={errors.title} /></label>
       <label className={labelClass}>Description <span className="text-[#b42318]">*</span><textarea value={values.description} onChange={(event) => update("description", event.target.value)} rows={5} placeholder="What will learners achieve? Who is it for? What’s included?" className={`${inputClass} h-auto py-3`} /><FieldError error={errors.description} /></label>
       <div className="grid gap-4 md:grid-cols-2">
@@ -61,7 +56,7 @@ export function TrainingBasicsSection({ values, update, errors }: SectionProps) 
 export function TrainingDeliverySection({ values, update }: SectionProps) {
   return (
     <section className="space-y-5">
-      <SectionHeading title="Delivery & Instructor" description="Hybrid builds community — online scales it. Pick the format your learners prefer." icon="🧑‍🏫" tip="Physical needs a venue, Online needs a meeting link, Hybrid needs both. Learners filter by this." />
+      <SectionHeading title="Delivery & Instructor" description="Hybrid builds community — online scales it. Pick the format your learners prefer." tip="Physical needs a venue, Online needs a meeting link, Hybrid needs both. Learners filter by this." />
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Delivery mode<select value={values.delivery_mode} onChange={(event) => update("delivery_mode", event.target.value)} className={inputClass}><option value="hybrid">Hybrid</option><option value="physical">Physical (In Person)</option><option value="online">Online</option><option value="self_paced">Self paced</option><option value="instructor_led">Instructor led</option><option value="blended">Blended</option></select></label>
         <label className={labelClass}>Course type<input value={values.course_type} onChange={(event) => update("course_type", event.target.value)} placeholder="e.g. Workshop" className={inputClass} /></label>
@@ -103,7 +98,7 @@ export function TrainingDeliverySection({ values, update }: SectionProps) {
 export function TrainingScheduleSection({ values, update, errors }: SectionProps) {
   return (
     <section className="space-y-5">
-      <SectionHeading title="Schedule" description="When does it run and when can people join? Dates drive calendar invites and reminders." icon="🗓️" tip="Start date powers the calendar file and ‘Upcoming’ filter. Enrolment closes auto-hides the Enrol button." />
+      <SectionHeading title="Schedule" description="When does it run and when can people join? Dates drive calendar invites and reminders." tip="Start date powers the calendar file and ‘Upcoming’ filter. Enrolment closes auto-hides the Enrol button." />
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Start date<input type="datetime-local" value={values.start_date} onChange={(event) => update("start_date", event.target.value)} className={inputClass} /><FieldError error={errors.start_date} /></label>
         <label className={labelClass}>End date<input type="datetime-local" value={values.end_date} onChange={(event) => update("end_date", event.target.value)} className={inputClass} /><FieldError error={errors.end_date} /></label>
@@ -152,7 +147,7 @@ function UrlList({ label, values, update }: { label: string; values: string[]; u
 export function TrainingPricingSection({ values, update }: SectionProps) {
   return (
     <section className="space-y-5">
-      <SectionHeading title="Pricing & Tickets" description="Free trainings get 8× more views — consider a free preview lesson." icon="💳" tip="Leave price empty for free. Early-bird? Use Promo price + coupon — learners love it." />
+      <SectionHeading title="Pricing & Tickets" description="Free trainings get 8× more views — consider a free preview lesson." tip="Leave price empty for free. Early-bird? Use Promo price + coupon — learners love it." />
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Price<input value={values.price} onChange={(event) => update("price", event.target.value)} className={inputClass} /></label>
         <label className={labelClass}>Currency<input value={values.currency} onChange={(event) => update("currency", event.target.value)} className={inputClass} /></label>
@@ -169,7 +164,7 @@ export function TrainingPricingSection({ values, update }: SectionProps) {
 export function TrainingCapacitySection({ values, update }: SectionProps) {
   return (
     <section className="space-y-5">
-      <SectionHeading title="Capacity & Registration" description="Control who gets in and for how long they keep access." icon="👥" tip="‘Require approval’ is great for coaching cohorts. Access expiry auto-revokes content — great for certifications." />
+      <SectionHeading title="Capacity & Registration" description="Control who gets in and for how long they keep access." tip="‘Require approval’ is great for coaching cohorts. Access expiry auto-revokes content — great for certifications." />
       <label className={labelClass}>Capacity<input value={values.capacity} onChange={(event) => update("capacity", event.target.value)} className={inputClass} /></label>
       <label className="flex items-center gap-3 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={values.requires_approval} onChange={(event) => update("requires_approval", event.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Require approval for enrolment</label>
       <div className="grid gap-4 md:grid-cols-2">
@@ -189,7 +184,7 @@ export function TrainingCapacitySection({ values, update }: SectionProps) {
 export function TrainingMediaSection({ values, update }: SectionProps) {
   return (
     <section className="space-y-5">
-      <SectionHeading title="Images & Media" description="A great cover image lifts enrolments. Use 16:9, ≥1280px." icon="🖼️" tip="Primary image is the card + header. Gallery builds trust — add 2–3 real photos." />
+      <SectionHeading title="Images & Media" description="A great cover image lifts enrolments. Use 16:9, ≥1280px." tip="Primary image is the card + header. Gallery builds trust — add 2–3 real photos." />
       <label className={labelClass}>Primary image URL<input value={values.primary_image} onChange={(event) => update("primary_image", event.target.value)} className={inputClass} /></label>
       <p className="mt-1 text-xs text-[#7f9d94]">Shows on the training card and detail header when set.</p>
       <UrlList label="Gallery images" values={values.gallery_images} update={(next) => update("gallery_images", next)} />
@@ -203,7 +198,7 @@ export function TrainingMediaSection({ values, update }: SectionProps) {
 export function TrainingCourseBuilderSection({ values, update }: SectionProps) {
   return (
     <section className="space-y-5">
-      <SectionHeading title="Additional Configuration" description="Fine-tune the learning journey — when content unlocks and how it’s completed." icon="⚙️" tip="Prerequisites = ‘Complete Module 1 first’. Release = ‘Enrolment day + 3’ for drip content." />
+      <SectionHeading title="Additional Configuration" description="Fine-tune the learning journey — when content unlocks and how it’s completed." tip="Prerequisites = ‘Complete Module 1 first’. Release = ‘Enrolment day + 3’ for drip content." />
       <label className={labelClass}>Prerequisites<textarea value={values.prerequisites} onChange={(e) => update("prerequisites", e.target.value)} placeholder="e.g. Complete Module 1" rows={2} className={`${inputClass} h-auto py-3`} /></label>
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Release rule<select value={values.release_rule} onChange={(e) => update("release_rule", e.target.value)} className={inputClass}><option value="immediate">Immediate</option><option value="date">By date</option><option value="enrolment_day">Enrolment day</option><option value="previous_lesson">Previous lesson</option></select></label>
@@ -216,3 +211,4 @@ export function TrainingCourseBuilderSection({ values, update }: SectionProps) {
     </section>
   );
 }
+

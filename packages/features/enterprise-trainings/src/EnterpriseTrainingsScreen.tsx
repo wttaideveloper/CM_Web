@@ -294,14 +294,13 @@ export default function EnterpriseTrainingsScreen() {
         </section>
       ) : trainingsQuery.isError ? (
         <section className="mt-6 rounded-2xl border border-[#f3d5d1] bg-[#fff7f6] px-8 py-12 text-center shadow-sm" role="alert">
-          <p className="text-2xl" aria-hidden="true">😕</p>
+          <p className="text-2xl" aria-hidden="true">�</p>
           <p className="mt-3 text-base font-bold text-[#b42318]">We couldn’t load trainings</p>
           <p className="mt-2 text-sm leading-5 text-[#6b5a52]">{(trainingsQuery.error as Error).message || "Check your connection and try again."}</p>
           <button type="button" onClick={() => void trainingsQuery.refetch()} className="mt-5 inline-flex h-10 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm hover:bg-[#195646]">Try again</button>
         </section>
       ) : !pagination || visibleTrainings.length === 0 ? (
         <section className="mt-6 rounded-2xl border border-dashed border-[#cfe0d8] bg-[#f9fcfa] px-8 py-16 text-center shadow-sm">
-          <p className="text-3xl" aria-hidden="true">📚</p>
           <p className="mt-3 text-base font-bold text-[#06201c]">No trainings yet</p>
           <p className="mt-2 mx-auto max-w-md text-sm leading-5 text-[#52736a]">Create your first training to start enrolling learners. Use a clear title and a great cover image — it makes all the difference.</p>
           <a href="/admin/trainings/create" className="mt-5 inline-flex h-10 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm hover:bg-[#195646]">+ Create Training</a>
@@ -341,3 +340,4 @@ export default function EnterpriseTrainingsScreen() {
     </div>
   );
 }
+

@@ -269,8 +269,7 @@ export default function TrainingDetailsScreen() {
   if (trainingQuery.isError) {
     return (
       <div className="rounded-2xl border border-[#f3d5d1] bg-[#fff7f6] px-8 py-12 text-center shadow-sm" role="alert">
-        <p className="text-2xl" aria-hidden="true">😕</p>
-        <p className="mt-3 text-base font-bold text-[#b42318]">We couldn’t load this training</p>
+        <p className="mt-3 text-base font-bold text-[#b42318]">We could not load this training</p>
         <p className="mt-2 text-sm leading-5 text-[#6b5a52]">{(trainingQuery.error as Error).message || "It may have been deleted or you don’t have access. Try again or go back to Trainings."}</p>
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           <button type="button" onClick={() => void trainingQuery.refetch()} className="inline-flex h-10 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm hover:bg-[#195646]">Try again</button>
@@ -322,21 +321,18 @@ export default function TrainingDetailsScreen() {
       <ParticipantToolbar trainingId={trainingId} status={training.status} />
 
       <div className="mt-6 flex flex-wrap gap-2 border-b border-[#e1ebe6] overflow-x-auto scrollbar-thin">
-        {trainingDetailsTabs.map((tab) => {
-          const icons: Record<string, string> = { details: "📋", content: "📖", sections: "📚", enrolments: "👥", assessments: "📝", assignments: "📎", live: "🔴", dashboards: "📊", reports: "📈", wishlist: "⭐", reviews: "💬", orders: "🛒" };
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-1.5 whitespace-nowrap rounded-t-xl px-4 py-2.5 text-sm font-bold transition ${activeTab === tab.id ? "border-b-2 border-[#1f6a58] bg-[#f0faf5] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f9fcfa] hover:text-[#1f6a58]"}`}
-              aria-selected={activeTab === tab.id}
-              role="tab"
-            >
-              <span aria-hidden="true">{icons[tab.id] ?? "•"}</span> {tab.label}
-            </button>
-          );
-        })}
+        {trainingDetailsTabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            className={`whitespace-nowrap rounded-t-xl px-4 py-2.5 text-sm font-bold transition ${activeTab === tab.id ? "border-b-2 border-[#1f6a58] bg-[#f0faf5] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f9fcfa] hover:text-[#1f6a58]"}`}
+            aria-selected={activeTab === tab.id}
+            role="tab"
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {activeTab === "details" ? (
