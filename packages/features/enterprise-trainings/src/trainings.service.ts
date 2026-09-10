@@ -87,6 +87,8 @@ export interface TrainingListParams {
   min_price?: string;
   max_price?: string;
   duration?: string;
+  level?: string;
+  language?: string;
   date_from?: string;
   date_to?: string;
   page?: number;
@@ -99,6 +101,8 @@ export interface TrainingSearchParams {
   tenant_id?: string;
   enterprise_id?: string;
   category?: string;
+  level?: string;
+  language?: string;
   page?: number;
   page_size?: number;
 }
@@ -118,6 +122,9 @@ export interface CreateTrainingPayload {
   instructor_bio?: string | null;
   requirements?: string | null;
   learning_objectives?: string[] | null;
+  primary_image?: string | null;
+  gallery_images?: unknown[] | null;
+  promotional_video?: string | null;
   documents?: unknown[] | null;
   delivery_mode?: string | null;
   course_type?: string | null;
@@ -140,6 +147,8 @@ export interface CreateTrainingPayload {
   coupon_code?: string | null;
   requires_approval?: boolean;
   access_duration_days?: string | null;
+  level?: string | null;
+  language?: string | null;
   status?: string;
   form_configuration_version_id?: string | null;
   custom_values?: Record<string, unknown> | null;
@@ -1455,6 +1464,27 @@ export async function exportTrainingEnrolments(trainingId: string): Promise<{ bl
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/enrolments/export`, { credentials: "include" });
   if (!res.ok) throw await createTrainingsApiError(res, "export enrolments");
   return { blob: await res.blob(), filename: getAttachmentFilename(res.headers.get("Content-Disposition")) };
+}
+
+/** Lists reviews — `GET /trainings/{id}/reviews`. */
+export async function listTrainingReviews(trainingId: string): Promise<unknown[]> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/reviews`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load reviews");
+  const value = (await res.json()) as unknown;
+  if (!Array.isArray(value)) throw new Error("Trainings API returned an invalid reviews response.");
+  return value;
+}
+
+/** Creates a review — `POST /trainings/{id}/reviews`. */
+export async function createTrainingReview(trainingId: string, payload: { rating: number; comment?: string | null; participant_email?: string }): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/reviews`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw await createTrainingsApiError(res, "create this review");
+  return (await res.json()) as unknown;
 }
 
 // Re-export helper for filename parsing (used for cert/calendar exports).

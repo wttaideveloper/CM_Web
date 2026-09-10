@@ -51,6 +51,8 @@ export interface CreateTrainingFormValues {
   access_expiry_type: string;
   access_expiry_days: string;
   location_id: string;
+  level: string;
+  language: string;
 }
 
 /** Returns blank values for a newly opened Training editor workspace. */
@@ -101,6 +103,8 @@ export function createEmptyTrainingForm(): CreateTrainingFormValues {
     access_expiry_type: "never",
     access_expiry_days: "",
     location_id: "",
+    level: "beginner",
+    language: "en",
   };
 }
 
@@ -157,10 +161,13 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
     address: stringValue("address"),
     meeting_link: stringValue("meeting_link"),
     delivery_instructions: stringValue("delivery_instructions"),
+    level: stringValue("level", "beginner"),
+    language: stringValue("language", "en"),
   };
 }
 
-/** Builds a confirmed Create Training payload without response-only fields. */
+/** Builds a confirmed Create Training payload without response-only fields.
+ * NOTE: delivery_mode currently conflates "where" (physical/online/hybrid) and "how-paced" (self_paced/instructor_led/blended) in one enum. Splitting it into delivery_where + delivery_pace is out of scope for this iteration — values are mutually exclusive, use one of: hybrid/physical/online/self_paced/instructor_led/blended. TODO: split field when backend supports separate enums. */
 export function buildCreateTrainingPayload(values: CreateTrainingFormValues, tenantId: string, enterpriseId: string): CreateTrainingPayload {
   return {
     tenant_id: tenantId,
@@ -171,15 +178,25 @@ export function buildCreateTrainingPayload(values: CreateTrainingFormValues, ten
     subcategory: values.subcategory.trim() || null,
     tags: values.tags,
     instructor_id: values.instructor_id.trim() || null,
+    instructor_name: values.instructor_name.trim() || null,
+    instructor_bio: values.instructor_bio.trim() || null,
     requirements: values.requirements.trim() || null,
+    learning_objectives: values.learning_objectives.length ? values.learning_objectives : null,
     primary_image: values.primary_image.trim() || null,
     gallery_images: values.gallery_images,
     promotional_video: values.promotional_video.trim() || null,
+    documents: values.documents.length ? values.documents : null,
     delivery_mode: values.delivery_mode || null,
     course_type: values.course_type.trim() || null,
     duration: values.duration.trim() || null,
     start_date: values.start_date || null,
     end_date: values.end_date || null,
+    start_time: values.start_time || null,
+    end_time: values.end_time || null,
+    venue: values.venue.trim() || null,
+    address: values.address.trim() || null,
+    meeting_link: values.meeting_link.trim() || null,
+    delivery_instructions: values.delivery_instructions.trim() || null,
     enrolment_start: values.enrolment_start || null,
     enrolment_end: values.enrolment_end || null,
     time_zone: values.time_zone || null,
@@ -190,27 +207,10 @@ export function buildCreateTrainingPayload(values: CreateTrainingFormValues, ten
     coupon_code: values.coupon_code.trim() || null,
     requires_approval: values.requires_approval,
     access_duration_days: values.access_duration_days.trim() || null,
-    prerequisites: values.prerequisites.trim() || null,
-    release_rule: values.release_rule || null,
-    randomise: values.randomise,
-    scheduled_publication: values.scheduled_publication || null,
-    is_mandatory: values.is_mandatory,
-    group_enrolment: values.group_enrolment,
-    max_group_size: values.max_group_size.trim() || null,
-    access_expiry_type: values.access_expiry_type || null,
-    access_expiry_days: values.access_expiry_days.trim() || null,
     location_id: values.location_id.trim() || null,
-    instructor_name: values.instructor_name.trim() || null,
-    instructor_bio: values.instructor_bio.trim() || null,
-    learning_objectives: values.learning_objectives.length ? values.learning_objectives : null,
-    documents: values.documents.length ? values.documents : null,
-    start_time: values.start_time || null,
-    end_time: values.end_time || null,
-    venue: values.venue.trim() || null,
-    address: values.address.trim() || null,
-    meeting_link: values.meeting_link.trim() || null,
-    delivery_instructions: values.delivery_instructions.trim() || null,
-  } as unknown as CreateTrainingPayload;
+    level: values.level || null,
+    language: values.language || null,
+  };
 }
 
 /** Builds a partial Update payload from changed form values. */
@@ -222,15 +222,25 @@ export function buildUpdateTrainingPayload(values: CreateTrainingFormValues): Up
     subcategory: values.subcategory.trim() || null,
     tags: values.tags,
     instructor_id: values.instructor_id.trim() || null,
+    instructor_name: values.instructor_name.trim() || null,
+    instructor_bio: values.instructor_bio.trim() || null,
     requirements: values.requirements.trim() || null,
+    learning_objectives: values.learning_objectives.length ? values.learning_objectives : null,
     primary_image: values.primary_image.trim() || null,
     gallery_images: values.gallery_images,
     promotional_video: values.promotional_video.trim() || null,
+    documents: values.documents.length ? values.documents : null,
     delivery_mode: values.delivery_mode || null,
     course_type: values.course_type.trim() || null,
     duration: values.duration.trim() || null,
     start_date: values.start_date || null,
     end_date: values.end_date || null,
+    start_time: values.start_time || null,
+    end_time: values.end_time || null,
+    venue: values.venue || null,
+    address: values.address || null,
+    meeting_link: values.meeting_link || null,
+    delivery_instructions: values.delivery_instructions || null,
     enrolment_start: values.enrolment_start || null,
     enrolment_end: values.enrolment_end || null,
     time_zone: values.time_zone || null,
@@ -241,27 +251,10 @@ export function buildUpdateTrainingPayload(values: CreateTrainingFormValues): Up
     coupon_code: values.coupon_code.trim() || null,
     requires_approval: values.requires_approval,
     access_duration_days: values.access_duration_days.trim() || null,
-    prerequisites: values.prerequisites.trim() || null,
-    release_rule: values.release_rule || null,
-    randomise: values.randomise,
-    scheduled_publication: values.scheduled_publication || null,
-    is_mandatory: values.is_mandatory,
-    group_enrolment: values.group_enrolment,
-    max_group_size: values.max_group_size.trim() || null,
-    access_expiry_type: values.access_expiry_type || null,
-    access_expiry_days: values.access_expiry_days.trim() || null,
     location_id: values.location_id.trim() || null,
-    instructor_name: values.instructor_name.trim() || null,
-    instructor_bio: values.instructor_bio.trim() || null,
-    learning_objectives: values.learning_objectives.length ? values.learning_objectives : null,
-    documents: values.documents.length ? values.documents : null,
-    start_time: values.start_time || null,
-    end_time: values.end_time || null,
-    venue: values.venue || null,
-    address: values.address || null,
-    meeting_link: values.meeting_link || null,
-    delivery_instructions: values.delivery_instructions || null,
-  } as unknown as UpdateTrainingPayload;
+    level: values.level || null,
+    language: values.language || null,
+  };
 }
 
 /** Validates the current form values, returning per-field messages. */

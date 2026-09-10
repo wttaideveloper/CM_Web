@@ -134,6 +134,8 @@ export default function EnterpriseTrainingsScreen() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [sort, setSort] = useState<SortOption>("newest");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [levelFilter, setLevelFilter] = useState<string>("all");
+  const [languageFilter, setLanguageFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
 
@@ -149,14 +151,16 @@ export default function EnterpriseTrainingsScreen() {
   }, [query]);
 
   const trainingsQuery = useQuery({
-    queryKey: ["trainings", "list", tenantId, enterpriseId, debouncedQuery, statusFilter, page, TRAININGS_PAGE_SIZE],
+    queryKey: ["trainings", "list", tenantId, enterpriseId, debouncedQuery, statusFilter, levelFilter, languageFilter, page, TRAININGS_PAGE_SIZE],
     queryFn: () =>
       debouncedQuery
-        ? searchTrainings({ query: debouncedQuery, page, page_size: TRAININGS_PAGE_SIZE })
+        ? searchTrainings({ query: debouncedQuery, level: levelFilter === "all" ? undefined : levelFilter, language: languageFilter === "all" ? undefined : languageFilter, page, page_size: TRAININGS_PAGE_SIZE })
         : listTrainings({
             tenant_id: tenantId ?? undefined,
             enterprise_id: enterpriseId ?? undefined,
             status: statusFilter === "all" ? undefined : statusFilter,
+            level: levelFilter === "all" ? undefined : levelFilter,
+            language: languageFilter === "all" ? undefined : languageFilter,
             page,
             page_size: TRAININGS_PAGE_SIZE,
           }),
@@ -236,6 +240,25 @@ export default function EnterpriseTrainingsScreen() {
               <option value="status">Status</option>
             </select>
           </label>
+          <label className="block xl:w-[160px]">
+            <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Level</span>
+            <select value={levelFilter} onChange={(e) => { setLevelFilter(e.target.value); setPage(1); }} className="mt-2 h-12 w-full rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]">
+              <option value="all">All levels</option>
+              <option value="beginner">Beginner</option>
+              <option value="intermediate">Intermediate</option>
+              <option value="advanced">Advanced</option>
+            </select>
+          </label>
+          <label className="block xl:w-[160px]">
+            <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Language</span>
+            <select value={languageFilter} onChange={(e) => { setLanguageFilter(e.target.value); setPage(1); }} className="mt-2 h-12 w-full rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]">
+              <option value="all">All languages</option>
+              <option value="en">English</option>
+              <option value="hi">Hindi</option>
+              <option value="es">Spanish</option>
+              <option value="fr">French</option>
+            </select>
+          </label>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           {statusFilters.map((filter) => {
@@ -258,21 +281,30 @@ export default function EnterpriseTrainingsScreen() {
       </section>
 
       {trainingsQuery.isLoading ? (
-        <section className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
-          <p className="text-base font-bold text-[#06201c]">Loading trainings...</p>
+        <section className="mt-6 grid gap-4 md:grid-cols-2" aria-live="polite" aria-busy="true">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="animate-pulse rounded-2xl border border-[#e1ebe6] bg-white p-5">
+              <div className="h-4 w-1/3 rounded bg-[#edf3f0]" />
+              <div className="mt-3 h-6 w-3/4 rounded-lg bg-[#edf3f0]" />
+              <div className="mt-3 h-10 rounded-lg bg-[#edf3f0]" />
+              <div className="mt-4 h-12 rounded-xl bg-[#edf3f0]" />
+            </div>
+          ))}
+          <span className="sr-only">Loading trainings…</span>
         </section>
       ) : trainingsQuery.isError ? (
-        <section className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
-          <p className="text-base font-bold text-[#06201c]">Unable to load trainings.</p>
-          <p className="mt-2 text-sm text-[#52736a]">{(trainingsQuery.error as Error).message}</p>
-          <button type="button" onClick={() => void trainingsQuery.refetch()} className="mt-3 text-sm font-semibold text-[#1f6a58] underline">
-            Try again
-          </button>
+        <section className="mt-6 rounded-2xl border border-[#f3d5d1] bg-[#fff7f6] px-8 py-12 text-center shadow-sm" role="alert">
+          <p className="text-2xl" aria-hidden="true">😕</p>
+          <p className="mt-3 text-base font-bold text-[#b42318]">We couldn’t load trainings</p>
+          <p className="mt-2 text-sm leading-5 text-[#6b5a52]">{(trainingsQuery.error as Error).message || "Check your connection and try again."}</p>
+          <button type="button" onClick={() => void trainingsQuery.refetch()} className="mt-5 inline-flex h-10 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm hover:bg-[#195646]">Try again</button>
         </section>
       ) : !pagination || visibleTrainings.length === 0 ? (
-        <section className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
-          <p className="text-base font-bold text-[#06201c]">No trainings found.</p>
-          <p className="mt-2 text-sm text-[#52736a]">Try a different search or filter.</p>
+        <section className="mt-6 rounded-2xl border border-dashed border-[#cfe0d8] bg-[#f9fcfa] px-8 py-16 text-center shadow-sm">
+          <p className="text-3xl" aria-hidden="true">📚</p>
+          <p className="mt-3 text-base font-bold text-[#06201c]">No trainings yet</p>
+          <p className="mt-2 mx-auto max-w-md text-sm leading-5 text-[#52736a]">Create your first training to start enrolling learners. Use a clear title and a great cover image — it makes all the difference.</p>
+          <a href="/admin/trainings/create" className="mt-5 inline-flex h-10 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm hover:bg-[#195646]">+ Create Training</a>
         </section>
       ) : (
         <>
