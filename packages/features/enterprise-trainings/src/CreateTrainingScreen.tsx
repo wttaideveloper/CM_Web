@@ -168,6 +168,24 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   if (mode === "edit" && formConfigError) {
     return <div role="alert" className="rounded-2xl border border-[#eadbb8] bg-[#fffaf0] px-5 py-12 text-center text-sm font-semibold text-[#735c1e]">Unable to load this Training&apos;s form configuration.<button type="button" onClick={() => void historicalFormQ.refetch()} className="mt-4 rounded-full border border-current px-4 py-2 text-sm font-bold">Retry</button></div>;
   }
+  if (mode === "create" && !formConfigLoading && !activeForm) {
+    return (
+      <div className="w-full">
+        <header className="flex flex-col gap-4 border-b border-[#edf3f0] pb-6 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <Link href={backHref} className="text-sm font-semibold text-[#1f6a58]">Back to Trainings</Link>
+            <p className="mt-4 text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">DRAFT TRAINING</p>
+            <h1 className="mt-2 text-2xl font-bold text-[#06201c] sm:text-3xl">Create Training</h1>
+          </div>
+          <Link href={backHref} className="inline-flex h-11 items-center justify-center rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a]">Cancel</Link>
+        </header>
+        <div role="status" className="mt-6 rounded-2xl border border-[#eadbb8] bg-[#fffaf0] px-8 py-12 text-center">
+          <p className="text-sm font-bold text-[#735c1e]">No active Training form configuration</p>
+          <p className="mt-2 text-sm text-[#52736a]">The Super Admin has not published an active global Training form. Contact Super Admin to publish and activate a form before creating trainings.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full">
@@ -219,15 +237,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
               </section>
             )
           ) : (
-            <>
-              {activeStep === 0 ? <TrainingBasicsSection {...sharedProps} /> : null}
-              {activeStep === 1 ? <TrainingScheduleSection {...sharedProps} /> : null}
-              {activeStep === 2 ? <TrainingDeliverySection {...sharedProps} /> : null}
-              {activeStep === 3 ? <TrainingPricingSection {...sharedProps} /> : null}
-              {activeStep === 4 ? <TrainingCapacitySection {...sharedProps} /> : null}
-              {activeStep === 5 ? <TrainingMediaSection {...sharedProps} /> : null}
-              {activeStep === 6 ? <TrainingCourseBuilderSection {...sharedProps} /> : null}
-            </>
+            <div role="status" className="rounded-2xl border border-[#eadbb8] bg-[#fffaf0] px-8 py-8 text-center text-sm font-semibold text-[#735c1e]">No active Training form — contact Super Admin.</div>
           )}
           {isCreateBlockedByEnterprise ? <div role="status" className="mt-6 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-3 text-sm font-semibold text-[#735c1e]">Creating a Training is unavailable until an Enterprise is linked. The current backend TrainingCreate contract requires an enterprise_id.</div> : null}
           {submitError ? <div role="alert" className="mt-6 rounded-xl border border-[#f3d0cb] bg-[#fff6f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{submitError}</div> : null}
