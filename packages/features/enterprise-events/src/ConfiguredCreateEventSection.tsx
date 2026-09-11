@@ -4,9 +4,8 @@ import { useState } from "react";
 
 import type { EnterpriseLocationDto } from "@ihp/enterprises";
 
-import type { CreateEventFormValues, EventCustomFieldFormValue, EventTicketFormValue } from "./create-event-form";
+import type { CreateEventFormValues, EventCustomFieldFormValue, EventSessionFormValue, EventTicketFormValue } from "./create-event-form";
 import type { ActiveEventFormField, ActiveEventFormSection, EventCategory } from "./events.service";
-import type { EventSessionInput } from "./events.service";
 
 type UpdateForm = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => void;
 type Props = { section: ActiveEventFormSection; values: CreateEventFormValues; update: UpdateForm; errors: Record<string, string[]>; customValues: Record<string, string | string[] | boolean | number | null>; setCustomValues: (next: Record<string, string | string[] | boolean | number | null>) => void; locations: EnterpriseLocationDto[]; locationId: string; setLocationId: (value: string) => void; categories: readonly EventCategory[]; categoriesLoading: boolean; categoriesError: boolean; allowPastTemporalValues?: boolean; };
@@ -126,10 +125,10 @@ function CompositeField({ field, values, update, error }: { field: ActiveEventFo
 function Simple({ field, required, label, value, onChange }: { field: ActiveEventFormField; required: boolean; label: string; value: string; onChange: (value: string) => void }) { return <label className="block text-sm font-semibold text-[#06201c]">{label}{required ? " *" : ""}<input required={required} value={value} onChange={(event) => onChange(event.target.value)} className={inputClass} /></label>; }
 function TicketTypesEditor({ field, values, update, error }: { field: ActiveEventFormField; values: CreateEventFormValues; update: UpdateForm; error?: string }) { const patch = (index: number, name: keyof EventTicketFormValue, value: string) => update("ticket_types", values.ticket_types.map((item, current) => current === index ? { ...item, [name]: value } : item)); const fields: Array<keyof EventTicketFormValue> = ["name", "price", "currency", "capacity"]; return <CompositeList title={field.label} onAdd={() => update("ticket_types", [...values.ticket_types, { id: "", name: "", price: "", currency: values.currency, capacity: "" }])} error={error}>{values.ticket_types.map((item, index) => <div key={index} className="grid gap-3 md:grid-cols-2">{fields.filter((name) => isCompositeSubfieldEnabled(field, name)).map((name) => <label key={name} className="block text-sm font-semibold">{name}{isCompositeSubfieldRequired(field, name) ? " *" : ""}<input required={isCompositeSubfieldRequired(field, name)} type={name === "price" || name === "capacity" ? "number" : "text"} value={item[name]} onChange={(event) => patch(index, name, event.target.value)} className={inputClass} /></label>)}<button type="button" onClick={() => update("ticket_types", values.ticket_types.filter((_, current) => current !== index))}>Remove</button></div>)}</CompositeList>; }
 function SessionsEditor({ field, values, update, error }: { field: ActiveEventFormField; values: CreateEventFormValues; update: UpdateForm; error?: string }) {
-  const patch = (index: number, name: keyof EventSessionInput, value: string) => {
+  const patch = (index: number, name: keyof EventSessionFormValue, value: string) => {
     update("sessions", values.sessions.map((item, current) => current === index ? { ...item, [name]: value } : item));
   };
-  const fields: Array<keyof EventSessionInput> = ["session_date", "title", "speaker", "start_time", "end_time", "location"];
+  const fields: Array<keyof EventSessionFormValue> = ["session_date", "title", "speaker", "start_time", "end_time", "location", "meeting_link"];
   const eventStartDate = values.start_date.slice(0, 10) || undefined;
   const eventEndDate = values.end_date.slice(0, 10) || undefined;
 
@@ -139,7 +138,7 @@ function SessionsEditor({ field, values, update, error }: { field: ActiveEventFo
         {name}{isCompositeSubfieldRequired(field, name) ? " *" : ""}
         <input
           required={isCompositeSubfieldRequired(field, name)}
-          type={name === "session_date" ? "date" : name === "start_time" || name === "end_time" ? "time" : "text"}
+          type={name === "session_date" ? "date" : name === "start_time" || name === "end_time" ? "time" : name === "meeting_link" ? "url" : "text"}
           value={item[name] ?? ""}
           min={name === "session_date" ? eventStartDate : undefined}
           max={name === "session_date" ? eventEndDate : undefined}

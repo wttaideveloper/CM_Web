@@ -9,10 +9,10 @@ import { useRouter } from "next/navigation";
 
 import { AdditionalConfigurationSection, CapacityAndRegistrationSection, MediaSection, PricingAndTicketsSection, ReviewSection } from "./CreateEventConfigurationSections";
 import { BasicInformationSection, LocationAndHostSection, ScheduleSection } from "./CreateEventDetailsSections";
-import { buildCreateEventPayload, buildUpdateEventPayload, createEmptyEventForm, eventToFormValues, validateEventForm, type CreateEventFormValues } from "./create-event-form";
+import { buildCreateEventPayload, buildUpdateEventPayload, createEmptyEventForm, eventToFormValues, mergeLatestEventSessions, validateEventForm, type CreateEventFormValues } from "./create-event-form";
 import { useEventCategories } from "./event-categories.queries";
 import { useActiveEventFormConfiguration, useEventHistoricalFormConfiguration } from "./event-form-configuration.queries";
-import { createEvent, EventsApiError, updateEvent, type ActiveEventFormConfiguration, type ActiveEventFormField, type Event, type EventCategory } from "./events.service";
+import { createEvent, EventsApiError, getEventById, updateEvent, type ActiveEventFormConfiguration, type ActiveEventFormField, type Event, type EventCategory } from "./events.service";
 import { canEditEvent } from "./event-status";
 import ConfiguredCreateEventSection from "./ConfiguredCreateEventSection";
 import ConfiguredCreateEventReview from "./ConfiguredCreateEventReview";
@@ -78,8 +78,8 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const selectedLocation = locationsQuery.data?.find((location) => location.id === locationId);
   const isCreateBlockedByEnterprise = mode === "create" && !enterpriseId;
   const saveMutation = useMutation({
-    mutationFn: () => {
-      if (mode === "edit") { if (!initialEvent) throw new Error("The event could not be loaded."); if (!canEditEvent(initialEvent.status)) throw new Error("This Event cannot be edited in its current lifecycle state."); const payload = buildUpdateEventPayload(values, initialValues, locationId, initialLocationId); if (formConfiguration && JSON.stringify(customValues) !== JSON.stringify(initialCustomValues)) payload.custom_values = formConfiguration.sections.flatMap((section) => section.fields).filter((field) => field.source === "custom").map((field) => { const key = field.stable_key ?? field.id; return { field_id: field.id, value: serializeCustomFieldValue(field, customValues[key] ?? null) }; }); return updateEvent(initialEvent.id, payload); }
+    mutationFn: async () => {
+      if (mode === "edit") { if (!initialEvent) throw new Error("The event could not be loaded."); if (!canEditEvent(initialEvent.status)) throw new Error("This Event cannot be edited in its current lifecycle state."); const sessionsDirty = JSON.stringify(values.sessions) !== JSON.stringify(initialValues.sessions); const payload = buildUpdateEventPayload(values, initialValues, locationId, initialLocationId); if (sessionsDirty && payload.sessions) { const latestEvent = await getEventById(initialEvent.id); payload.sessions = mergeLatestEventSessions(initialValues.sessions, values.sessions, latestEvent.sessions); } if (formConfiguration && JSON.stringify(customValues) !== JSON.stringify(initialCustomValues)) payload.custom_values = formConfiguration.sections.flatMap((section) => section.fields).filter((field) => field.source === "custom").map((field) => { const key = field.stable_key ?? field.id; return { field_id: field.id, value: serializeCustomFieldValue(field, customValues[key] ?? null) }; }); return updateEvent(initialEvent.id, payload); }
       if (!tenantId || !enterpriseId || !locationId) throw new Error("A tenant, enterprise, and location are required.");
       if (!activeFormConfiguration.data) throw new Error("An active Event form configuration is required.");
       const configuredCoreKeys = new Set(activeFormConfiguration.data.sections.flatMap((section) => section.fields.filter((field) => field.source === "core").map((field) => field.core_key ?? field.stable_key ?? field.id)));

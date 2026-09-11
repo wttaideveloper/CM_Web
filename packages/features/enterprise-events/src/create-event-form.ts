@@ -2,6 +2,7 @@ import type {
   CreateEventPayload,
   CreateEventCustomField,
   EventCustomField,
+  EventSessionRecord,
   EventSessionInput,
   EventTicketType,
   CreateEventVenue,
@@ -15,6 +16,12 @@ export interface EventTicketFormValue extends EventTicketType {}
 
 /** An editable custom registration-field row. */
 export interface EventCustomFieldFormValue extends EventCustomField {}
+
+/** Local session value that retains backend identity while an Event is edited. */
+export interface EventSessionFormValue extends EventSessionInput {
+  id?: string;
+  meeting_link?: string | null;
+}
 
 /** All local values maintained by the Create Event workspace. */
 export interface CreateEventFormValues {
@@ -50,7 +57,7 @@ export interface CreateEventFormValues {
   videos: string[];
   documents: string[];
   custom_fields: EventCustomFieldFormValue[];
-  sessions: EventSessionInput[];
+  sessions: EventSessionFormValue[];
 }
 
 /** Returns blank values for a newly opened Create Event workspace. */
@@ -116,7 +123,7 @@ export function buildCreateEventPayload(
     registration_open_at: toBackendLocalDateTime(values.registration_open_at),
     registration_close_at: toBackendLocalDateTime(values.registration_close_at),
     custom_fields: values.custom_fields as CreateEventCustomField[],
-    sessions: values.sessions,
+    sessions: values.sessions.map(({ id: _id, meeting_link: _meetingLink, ...session }) => session),
     status: "draft",
     ...(formConfigurationVersionId ? { form_configuration_version_id: formConfigurationVersionId } : {}),
     ...(customValues ? { custom_values: customValues } : {}),
@@ -151,8 +158,77 @@ export function eventToFormValues(event: Event): CreateEventFormValues {
     currency: event.currency, ticket_types: event.ticket_types, capacity: event.capacity,
     min_participants: event.min_participants, max_participants: event.max_participants, primary_image: event.primary_image ?? "",
     gallery_images: event.gallery_images, videos: event.videos, documents: event.documents,
-    custom_fields: event.custom_fields, sessions: event.sessions.map(({ session_date, title, speaker, start_time, end_time, location }) => ({ session_date: session_date ?? "", title, speaker: speaker ?? "", start_time: start_time ?? "", end_time: end_time ?? "", location: location ?? "" })),
+    custom_fields: event.custom_fields, sessions: event.sessions.map((session) => ({ ...(session.id ? { id: session.id } : {}), session_date: session.session_date ?? "", title: session.title, speaker: session.speaker ?? "", start_time: session.start_time ?? "", end_time: session.end_time ?? "", location: session.location ?? "", meeting_link: session.meeting_link ?? null })),
   };
+}
+
+const sessionFormKeys = ["session_date", "title", "speaker", "start_time", "end_time", "location", "meeting_link"] as const;
+type SessionFormKey = typeof sessionFormKeys[number];
+
+function formSessionFromRecord(session: EventSessionRecord): EventSessionFormValue {
+  return {
+    ...(session.id ? { id: session.id } : {}),
+    session_date: session.session_date ?? "",
+    title: session.title,
+    speaker: session.speaker ?? "",
+    start_time: session.start_time ?? "",
+    end_time: session.end_time ?? "",
+    location: session.location ?? "",
+    meeting_link: session.meeting_link ?? null,
+  };
+}
+
+/** Applies intentional form edits to the newest canonical session list before replacement. */
+export function mergeLatestEventSessions(
+  initialSessions: readonly EventSessionFormValue[],
+  editedSessions: readonly EventSessionFormValue[],
+  latestSessions: readonly EventSessionRecord[],
+): EventSessionFormValue[] {
+  const latest = latestSessions.map(formSessionFromRecord);
+  const initialById = new Map(initialSessions.flatMap((session) => session.id ? [[session.id, session] as const] : []));
+  const editedIds = new Set(editedSessions.flatMap((session) => session.id ? [session.id] : []));
+  const deletedIds = new Set(initialById.keys());
+  editedIds.forEach((id) => deletedIds.delete(id));
+  const initialWithoutId = initialSessions.filter((session) => !session.id);
+  const editedWithoutId = editedSessions.filter((session) => !session.id);
+  const latestWithoutId = latest.filter((session) => !session.id);
+  const mergedWithoutId = editedWithoutId.flatMap((editedSession, index) => {
+    const initialSession = initialWithoutId[index];
+    const latestSession = latestWithoutId[index];
+    if (!initialSession) return [editedSession];
+    if (!latestSession) return [];
+    return [mergeChangedSession(initialSession, editedSession, latestSession)];
+  });
+  if (latestWithoutId.length > initialWithoutId.length) mergedWithoutId.push(...latestWithoutId.slice(initialWithoutId.length));
+  const result = latest.filter((session) => session.id && !deletedIds.has(session.id));
+  const resultIndexById = new Map(result.flatMap((session, index) => session.id ? [[session.id, index] as const] : []));
+
+  editedSessions.forEach((editedSession) => {
+    if (!editedSession.id) return;
+    if (!initialById.has(editedSession.id)) {
+      result.push(editedSession);
+      return;
+    }
+
+    const latestIndex = resultIndexById.get(editedSession.id);
+    if (latestIndex === undefined) return;
+    const initialSession = initialById.get(editedSession.id)!;
+    result[latestIndex] = mergeChangedSession(initialSession, editedSession, result[latestIndex]);
+  });
+
+  return [...result, ...mergedWithoutId];
+}
+
+function mergeChangedSession(
+  initialSession: EventSessionFormValue,
+  editedSession: EventSessionFormValue,
+  latestSession: EventSessionFormValue,
+): EventSessionFormValue {
+  const merged = { ...latestSession };
+  sessionFormKeys.forEach((key: SessionFormKey) => {
+    if (editedSession[key] !== initialSession[key]) Object.assign(merged, { [key]: editedSession[key] });
+  });
+  return merged;
 }
 
 /** Builds the partial writable EventUpdate request, preserving untouched backend values. */

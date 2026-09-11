@@ -71,7 +71,7 @@ export interface ActiveEventFormFieldValidation { min_length?: number | null; ma
 
 /** One field in a backend-resolved active Event form configuration. */
 export interface ActiveEventFormCompositeConfig { enabled_fields?: string[]; required_fields?: string[]; }
-export interface ActiveEventFormField { id: string; source: "core" | "custom"; core_key: string | null; stable_key: string | null; label: string; renderer: string; value_type: string; required: boolean; position: number; placeholder: string | null; help_text: string | null; options: ActiveEventFormFieldOption[]; validation: ActiveEventFormFieldValidation; composite_config: ActiveEventFormCompositeConfig | null; }
+export interface ActiveEventFormField { id: string; source: "core" | "custom"; core_key: string | null; stable_key: string | null; label: string; renderer: string; value_type: string; required: boolean; position: number; is_enabled?: boolean; placeholder: string | null; help_text: string | null; options: ActiveEventFormFieldOption[]; validation: ActiveEventFormFieldValidation; composite_config: ActiveEventFormCompositeConfig | null; }
 
 /** One ordered section in a backend-resolved active Event form configuration. */
 export interface ActiveEventFormSection { id: string; stable_key: string; label: string; description: string | null; position: number; is_enabled: boolean; fields: ActiveEventFormField[]; }
@@ -550,7 +550,7 @@ function isNullableFiniteNumber(value: unknown): value is number | null | undefi
 function isActiveEventFormFieldOption(value: unknown): value is ActiveEventFormFieldOption { return isRecord(value) && typeof value.value === "string" && typeof value.label === "string" && Number.isInteger(value.position); }
 function isActiveEventFormFieldValidation(value: unknown): value is ActiveEventFormFieldValidation { return isRecord(value) && isNullableFiniteNumber(value.min_length) && isNullableFiniteNumber(value.max_length) && isNullableFiniteNumber(value.min) && isNullableFiniteNumber(value.max) && (value.pattern === undefined || isNullableString(value.pattern)); }
 function isActiveEventFormCompositeConfig(value: unknown): value is ActiveEventFormCompositeConfig | null { return value === null || (isRecord(value) && (value.enabled_fields === undefined || isStringArray(value.enabled_fields)) && (value.required_fields === undefined || isStringArray(value.required_fields))); }
-function isActiveEventFormField(value: unknown): value is ActiveEventFormField { return isRecord(value) && typeof value.id === "string" && (value.source === "core" || value.source === "custom") && isNullableString(value.core_key) && isNullableString(value.stable_key) && typeof value.label === "string" && typeof value.renderer === "string" && typeof value.value_type === "string" && typeof value.required === "boolean" && Number.isInteger(value.position) && isNullableString(value.placeholder) && isNullableString(value.help_text) && Array.isArray(value.options) && value.options.every(isActiveEventFormFieldOption) && isActiveEventFormFieldValidation(value.validation) && isActiveEventFormCompositeConfig(value.composite_config ?? null); }
+function isActiveEventFormField(value: unknown): value is ActiveEventFormField { return isRecord(value) && typeof value.id === "string" && (value.source === "core" || value.source === "custom") && isNullableString(value.core_key) && isNullableString(value.stable_key) && typeof value.label === "string" && typeof value.renderer === "string" && typeof value.value_type === "string" && typeof value.required === "boolean" && Number.isInteger(value.position) && (value.is_enabled === undefined || typeof value.is_enabled === "boolean") && isNullableString(value.placeholder) && isNullableString(value.help_text) && Array.isArray(value.options) && value.options.every(isActiveEventFormFieldOption) && isActiveEventFormFieldValidation(value.validation) && isActiveEventFormCompositeConfig(value.composite_config ?? null); }
 function isActiveEventFormSection(value: unknown): value is ActiveEventFormSection { return isRecord(value) && typeof value.id === "string" && typeof value.stable_key === "string" && typeof value.label === "string" && isNullableString(value.description) && Number.isInteger(value.position) && typeof value.is_enabled === "boolean" && Array.isArray(value.fields) && value.fields.every(isActiveEventFormField); }
 function isActiveEventFormConfiguration(value: unknown): value is ActiveEventFormConfiguration { return isRecord(value) && typeof value.configuration_id === "string" && typeof value.version_id === "string" && typeof value.name === "string" && (value.scope === "global" || value.scope === "selective") && Number.isInteger(value.version) && Array.isArray(value.sections) && value.sections.every(isActiveEventFormSection); }
 function isEventCustomValue(value: unknown): value is EventCustomValue { return isRecord(value) && typeof value.field_id === "string" && (value.value === null || typeof value.value === "string" || typeof value.value === "number" || typeof value.value === "boolean" || isStringArray(value.value)); }
@@ -634,15 +634,14 @@ function isEvent(value: unknown): value is Event {
   }
 
   const stringFields: Array<keyof Omit<Event, "enterprise_id" | "location_id" | "venue" | "meeting_link" | "meeting_provider" | "primary_image" | "available_seats" | "is_full" | "last_admin_notes" | "tags" | "gallery_images" | "videos" | "documents" | "ticket_types" | "custom_fields" | "sessions" | "is_deleted">> = [
-    "id", "tenant_id", "title", "description", "category", "subcategory",
-    "organiser_name", "organiser_contact", "start_date", "end_date", "time_zone", "registration_cutoff",
-    "delivery_mode", "price", "currency", "capacity",
-    "min_participants", "max_participants", "registration_open_at", "registration_close_at", "created_at", "updated_at",
+    "id", "tenant_id", "title", "description", "category", "start_date", "end_date", "time_zone",
+    "delivery_mode", "price", "currency", "capacity", "created_at", "updated_at",
   ];
   const stringArrayFields = ["tags", "gallery_images", "videos", "documents"];
 
   return (
     stringFields.every((field) => typeof value[field] === "string") &&
+    ["subcategory", "organiser_name", "organiser_contact", "registration_cutoff", "min_participants", "max_participants", "registration_open_at", "registration_close_at"].every((field) => value[field] === null || typeof value[field] === "string") &&
     (value.enterprise_id === null || typeof value.enterprise_id === "string") &&
     (value.primary_image === null || typeof value.primary_image === "string") &&
     (value.available_seats === null || (typeof value.available_seats === "number" && Number.isFinite(value.available_seats))) &&
@@ -664,6 +663,20 @@ function isEvent(value: unknown): value is Event {
   );
 }
 
+function normalizeNullableEventFields(event: Event): Event {
+  return {
+    ...event,
+    subcategory: event.subcategory ?? "",
+    organiser_name: event.organiser_name ?? "",
+    organiser_contact: event.organiser_contact ?? "",
+    registration_cutoff: event.registration_cutoff ?? "",
+    min_participants: event.min_participants ?? "",
+    max_participants: event.max_participants ?? "",
+    registration_open_at: event.registration_open_at ?? "",
+    registration_close_at: event.registration_close_at ?? "",
+  };
+}
+
 function isPagination(value: unknown): value is EventListPagination {
   return (
     isRecord(value) &&
@@ -683,7 +696,7 @@ function parseEventListResponse(value: unknown): EventListResponse {
     throw new Error("Events API returned an invalid list response.");
   }
 
-  return { items: value.items, pagination: value.pagination };
+  return { items: value.items.map((item) => normalizeNullableEventFields(item)), pagination: value.pagination };
 }
 
 function isEventRegistration(value: unknown): value is EventRegistration {
@@ -1026,7 +1039,7 @@ export async function createEvent(payload: CreateEventPayload): Promise<Event> {
     throw new Error("Events API returned an invalid created event response.");
   }
 
-  return value;
+  return normalizeNullableEventFields(value);
 }
 
 /** Retrieves one Event by its backend identifier using the authenticated browser session. */

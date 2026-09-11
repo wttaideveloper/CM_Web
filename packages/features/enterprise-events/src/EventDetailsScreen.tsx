@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import EventActionsMenu from "./EventActionsMenu";
+import ConfiguredEventDetails from "./ConfiguredEventDetails";
 import EventAttendanceSection from "./EventAttendanceSection";
 import {
   EventCalendarDownloadAction,
@@ -44,11 +45,13 @@ import {
   resubmitEvent,
   updateEventSession,
   type AddEventSessionPayload,
+  type ActiveEventFormField,
   type Event,
   type EventRegistration,
   type EventSession,
   type UpdateEventSessionPayload,
 } from "./events.service";
+import { useEventHistoricalFormConfiguration } from "./event-form-configuration.queries";
 
 type DetailItem = {
   label: string;
@@ -75,6 +78,23 @@ const registrationsSubviews: ReadonlyArray<{
   { id: "waitlist", label: "Waitlist" },
 ];
 
+function isHistoricalSessionsField(field: ActiveEventFormField): boolean {
+  const key = field.core_key ?? field.stable_key ?? field.id;
+  return field.source === "core" && key === "sessions" && field.renderer === "sessions" && field.is_enabled !== false;
+}
+
+type SessionSubfield = "session_date" | "title" | "speaker" | "start_time" | "end_time" | "location" | "meeting_link";
+
+function isSessionSubfieldEnabled(field: ActiveEventFormField | null | undefined, name: SessionSubfield): boolean {
+  const enabledFields = field?.composite_config?.enabled_fields;
+  return enabledFields === undefined || enabledFields.includes(name);
+}
+
+function isSessionSubfieldRequired(field: ActiveEventFormField | null | undefined, name: SessionSubfield): boolean {
+  if (!field) return name === "session_date" || name === "title";
+  return field.composite_config?.required_fields?.includes(name) ?? false;
+}
+
 /** Renders every supported field from a single authenticated Event response. */
 export default function EventDetailsScreen() {
   const { eventId } = useParams<{ eventId: string }>();
@@ -89,6 +109,14 @@ export default function EventDetailsScreen() {
     staleTime: 30_000,
     retry: 1,
   });
+  const historicalConfiguration = useEventHistoricalFormConfiguration(
+    eventQuery.data?.id,
+    Boolean(eventQuery.data?.form_configuration_id && eventQuery.data?.form_configuration_version_id),
+  );
+  const historicalSessionsField = useMemo(() => historicalConfiguration.data?.sections
+    .filter((section) => section.is_enabled)
+    .flatMap((section) => section.fields)
+    .find((field) => isHistoricalSessionsField(field)) ?? null, [historicalConfiguration.data]);
   const resubmitMutation = useMutation({
     mutationFn: () => resubmitEvent(eventId),
     onSuccess: async () => {
@@ -196,6 +224,17 @@ export default function EventDetailsScreen() {
         hidden={activeTab !== "details"}
         className="mt-6 space-y-5"
       >
+        {historicalConfiguration.data ? <ConfiguredEventDetails
+          configuration={historicalConfiguration.data}
+          event={event}
+          sessionsSection={historicalSessionsField ? <SessionsSection
+            eventId={event.id}
+            startDate={event.start_date}
+            endDate={event.end_date}
+            enabled={activeTab === "details"}
+            sessionField={historicalSessionsField}
+          /> : undefined}
+        /> : <>
         <DetailSection title="Overview / Basic Information">
           <DetailGrid
             items={[
@@ -336,6 +375,7 @@ export default function EventDetailsScreen() {
             ]}
           />
         </DetailSection>
+        </>}
       </div>
       {activeTab === "registrations" ? (
         <section
@@ -982,11 +1022,13 @@ function SessionsSection({
   startDate,
   endDate,
   enabled,
+  sessionField = null,
 }: {
   eventId: string;
   startDate: string;
   endDate: string;
   enabled: boolean;
+  sessionField?: ActiveEventFormField | null;
 }) {
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -1033,7 +1075,7 @@ function SessionsSection({
   return (
     <section className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-lg font-bold text-[#06201c]">Sessions / Agenda</h2>
+        <h2 className="text-lg font-bold text-[#06201c]">{sessionField?.label ?? "Sessions / Agenda"}</h2>
         <button
           ref={triggerRef}
           type="button"
@@ -1092,24 +1134,24 @@ function SessionsSection({
                 key={session.id ?? `embedded-session-${index}`}
                 className="rounded-xl border border-[#edf3f0] bg-[#f9fcfa] p-4"
               >
-                <h3 className="text-sm font-bold text-[#06201c]">
-                  {session.title}
-                </h3>
-                {session.session_date ? (
+                {isSessionSubfieldEnabled(sessionField, "title") ? <h3 className="text-sm font-bold text-[#06201c]">
+                  {session.title || `Session ${index + 1}`}
+                </h3> : null}
+                {isSessionSubfieldEnabled(sessionField, "session_date") && session.session_date ? (
                   <p className="mt-1 text-sm font-semibold text-[#1f6a58]">
                     {formatSessionDate(session.session_date)}
                   </p>
                 ) : null}
                 <div className="mt-2 grid gap-2 text-sm text-[#52736a] sm:grid-cols-2">
-                  {session.speaker ? <p>Speaker: {session.speaker}</p> : null}
-                  {session.start_time ? (
+                  {isSessionSubfieldEnabled(sessionField, "speaker") && session.speaker ? <p>Speaker: {session.speaker}</p> : null}
+                  {isSessionSubfieldEnabled(sessionField, "start_time") && session.start_time ? (
                     <p>Start: {session.start_time}</p>
                   ) : null}
-                  {session.end_time ? <p>End: {session.end_time}</p> : null}
-                  {session.location ? (
+                  {isSessionSubfieldEnabled(sessionField, "end_time") && session.end_time ? <p>End: {session.end_time}</p> : null}
+                  {isSessionSubfieldEnabled(sessionField, "location") && session.location ? (
                     <p>Location: {session.location}</p>
                   ) : null}
-                  {session.meeting_link ? (
+                  {isSessionSubfieldEnabled(sessionField, "meeting_link") && session.meeting_link ? (
                     <a
                       href={session.meeting_link}
                       target="_blank"
@@ -1134,6 +1176,7 @@ function SessionsSection({
           initialSession={editingSession}
           startDate={startDate}
           endDate={endDate}
+          sessionField={sessionField}
           isPending={editingSession ? updateMutation.isPending : addMutation.isPending}
           error={editingSession ? updateMutation.error : addMutation.error}
           onClose={() => {
@@ -1153,6 +1196,7 @@ function AddSessionDialog({
   initialSession = null,
   startDate,
   endDate,
+  sessionField = null,
   isPending,
   error,
   onClose,
@@ -1162,6 +1206,7 @@ function AddSessionDialog({
   initialSession?: EventSession | null;
   startDate: string;
   endDate: string;
+  sessionField?: ActiveEventFormField | null;
   isPending: boolean;
   error: Error | null;
   onClose: () => void;
@@ -1180,23 +1225,25 @@ function AddSessionDialog({
   });
   const [validationError, setValidationError] = useState<string | null>(null);
   const bounds = getSessionTimeBounds(values.session_date, startDate, endDate);
+  const fieldEnabled = (name: SessionSubfield) => isSessionSubfieldEnabled(sessionField, name);
+  const fieldRequired = (name: SessionSubfield) => isSessionSubfieldRequired(sessionField, name);
   useEffect(() => {
     titleRef.current?.focus();
   }, []);
   const submit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!values.session_date) {
+    if (fieldRequired("session_date") && !values.session_date) {
       setValidationError("Select a session date.");
       return;
     }
-    if (!values.title.trim()) {
+    if (fieldRequired("title") && !values.title.trim()) {
       setValidationError("Title is required.");
       return;
     }
     if (
-      (values.start_time &&
+      (fieldEnabled("start_time") && values.start_time &&
         (values.start_time < bounds.min || values.start_time > bounds.max)) ||
-      (values.end_time &&
+      (fieldEnabled("end_time") && values.end_time &&
         (values.end_time < bounds.min || values.end_time > bounds.max))
     ) {
       setValidationError(
@@ -1207,7 +1254,7 @@ function AddSessionDialog({
       return;
     }
     if (
-      values.start_time &&
+      fieldEnabled("start_time") && fieldEnabled("end_time") && values.start_time &&
       values.end_time &&
       values.end_time <= values.start_time
     ) {
@@ -1215,7 +1262,7 @@ function AddSessionDialog({
       return;
     }
     setValidationError(null);
-    const normalized = {
+    const normalized = Object.fromEntries(Object.entries({
       session_date: values.session_date,
       title: values.title.trim(),
       speaker: values.speaker.trim() || null,
@@ -1223,7 +1270,7 @@ function AddSessionDialog({
       end_time: values.end_time || null,
       location: values.location.trim() || null,
       meeting_link: values.meeting_link.trim() || null,
-    };
+    }).filter(([key]) => fieldEnabled(key as SessionSubfield))) as unknown as AddEventSessionPayload;
     if (mode === "add") {
       onSubmit(normalized);
       return;
@@ -1274,8 +1321,8 @@ function AddSessionDialog({
           {mode === "edit" ? "Update this agenda item." : "Add an agenda item to this event."}
         </p>
         <form className="mt-5 space-y-4" onSubmit={submit}>
-          <label className="block text-sm font-bold text-[#06201c]">
-            Session date *
+          {fieldEnabled("session_date") ? <label className="block text-sm font-bold text-[#06201c]">
+            Session date{fieldRequired("session_date") ? " *" : ""}
             <select
               value={values.session_date}
               onChange={update("session_date")}
@@ -1291,54 +1338,59 @@ function AddSessionDialog({
                 </option>
               ))}
             </select>
-          </label>
-          <label className="block text-sm font-bold text-[#06201c]">
-            Title *
+          </label> : null}
+          {fieldEnabled("title") ? <label className="block text-sm font-bold text-[#06201c]">
+            Title{fieldRequired("title") ? " *" : ""}
             <input
               ref={titleRef}
               value={values.title}
               onChange={update("title")}
               className="mt-1 h-10 w-full rounded-lg border border-[#d7e5df] px-3 font-normal outline-none focus:border-[#1f6a58] focus:ring-2 focus:ring-[#1f6a58]/20"
             />
-          </label>
+          </label> : null}
           <div className="grid gap-4 sm:grid-cols-2">
-            <SessionInput
+            {fieldEnabled("speaker") ? <SessionInput
               label="Speaker"
+              required={fieldRequired("speaker")}
               value={values.speaker}
               onChange={update("speaker")}
-            />
-            <SessionInput
+            /> : null}
+            {fieldEnabled("start_time") ? <SessionInput
               label="Start time"
+              required={fieldRequired("start_time")}
               type="time"
               value={values.start_time}
               onChange={update("start_time")}
               min={bounds.min}
               max={bounds.max}
-            />
-            <SessionInput
+            /> : null}
+            {fieldEnabled("end_time") ? <SessionInput
               label="End time"
+              required={fieldRequired("end_time")}
               type="time"
               value={values.end_time}
               onChange={update("end_time")}
               min={bounds.min}
               max={bounds.max}
-            />
-            <SessionInput
+            /> : null}
+            {fieldEnabled("location") ? <SessionInput
               label="Location"
+              required={fieldRequired("location")}
               value={values.location}
               onChange={update("location")}
-            />
+            /> : null}
           </div>
           {validationError ? (
             <p role="alert" className="text-sm font-semibold text-[#b42318]">
               {validationError}
             </p>
           ) : null}
-          <SessionInput
+          {fieldEnabled("meeting_link") ? <SessionInput
             label="Meeting link"
+            required={fieldRequired("meeting_link")}
             value={values.meeting_link}
             onChange={update("meeting_link")}
-          />
+          /> : null}
           {error ? (
             <p role="alert" className="text-sm font-semibold text-[#b42318]">
               {getAddSessionErrorMessage(error)}
@@ -1389,6 +1441,7 @@ function SessionInput({
   onChange,
   min,
   max,
+  required = false,
 }: {
   label: string;
   type?: "text" | "time";
@@ -1396,16 +1449,18 @@ function SessionInput({
   onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   min?: string;
   max?: string;
+  required?: boolean;
 }) {
   return (
     <label className="block text-sm font-bold text-[#06201c]">
-      {label}
+      {label}{required ? " *" : ""}
       <input
         type={type}
         value={value}
         onChange={onChange}
         min={min}
         max={max}
+        required={required}
         className="mt-1 h-10 w-full rounded-lg border border-[#d7e5df] px-3 font-normal outline-none focus:border-[#1f6a58] focus:ring-2 focus:ring-[#1f6a58]/20"
       />
     </label>
