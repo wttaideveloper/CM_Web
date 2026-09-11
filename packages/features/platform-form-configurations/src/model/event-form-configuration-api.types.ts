@@ -37,6 +37,8 @@ export interface EventFormConfigurationSummary { id: string; name: string; descr
 
 /** Full Event form configuration returned by detail and mutation endpoints. */
 export interface EventFormConfiguration extends EventFormConfigurationSummary { draft_version: EventFormConfigurationVersion | null; published_version?: EventFormConfigurationVersion | null; }
+/** Compact lifecycle receipt returned by activate, deactivate, and retire operations. */
+export interface EventFormConfigurationLifecycleResponse { id: string; status: EventFormConfigurationStatus; is_active: boolean; }
 
 /** Response returned after creating a draft configuration. */
 export interface EventFormConfigurationCreateResponse extends EventFormConfiguration { draft_version: EventFormConfigurationVersion; }

@@ -37,6 +37,8 @@ export interface TrainingFormConfigurationSummary { id: string; name: string; de
 
 /** Full Training form configuration returned by detail and mutation endpoints. */
 export interface TrainingFormConfiguration extends TrainingFormConfigurationSummary { draft_version: TrainingFormConfigurationVersion | null; published_version?: TrainingFormConfigurationVersion | null; }
+/** Compact lifecycle receipt returned by activate, deactivate, and retire operations. */
+export interface TrainingFormConfigurationLifecycleResponse { id: string; status: TrainingFormConfigurationStatus; is_active: boolean; }
 
 /** Response returned after creating a draft configuration. */
 export interface TrainingFormConfigurationCreateResponse extends TrainingFormConfiguration { draft_version: TrainingFormConfigurationVersion; }
