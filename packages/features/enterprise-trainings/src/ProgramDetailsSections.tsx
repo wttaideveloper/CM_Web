@@ -285,6 +285,8 @@ export function ProgramCheckInsTab({ programId }: { programId: string }) {
   const queryClient = useQueryClient();
   const [newCheckInEmail, setNewCheckInEmail] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedbackFor, setFeedbackFor] = useState<string | null>(null);
+  const [feedbackText, setFeedbackText] = useState("");
 
   const checkInsQuery = useQuery({
     queryKey: ["programs", programId, "check-ins"],
@@ -305,6 +307,17 @@ export function ProgramCheckInsTab({ programId }: { programId: string }) {
     onError: (error) => setFeedback(error instanceof ProgramsApiError ? error.message : "Unable to record the check-in."),
   });
 
+  const feedbackMutation = useMutation({
+    mutationFn: ({ checkInId, text }: { checkInId: string; text: string }) => addProgramCheckInFeedback(programId, checkInId, { feedback: text.trim() }),
+    onSuccess: () => {
+      setFeedbackFor(null);
+      setFeedbackText("");
+      setFeedback("Feedback saved.");
+      void queryClient.invalidateQueries({ queryKey: ["programs", programId, "check-ins"] });
+    },
+    onError: (error) => setFeedback(error instanceof ProgramsApiError ? error.message : "Unable to save feedback."),
+  });
+
   const checkIns = checkInsQuery.data ?? [];
 
   return (
@@ -320,10 +333,35 @@ export function ProgramCheckInsTab({ programId }: { programId: string }) {
             const id = typeof record.id === "string" ? record.id : String(index);
             const email = typeof record.participant_email === "string" ? record.participant_email : "Participant";
             const createdAt = typeof record.created_at === "string" ? record.created_at : null;
+            const existingFeedback = typeof record.feedback === "string" ? record.feedback : null;
             return (
               <li key={id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] px-4 py-3">
-                <p className="text-sm font-bold text-[#06201c]">{email}</p>
-                {createdAt ? <span className="text-xs text-[#52736a]">{formatProgramDate(createdAt)}</span> : null}
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-[#06201c]">{email}</p>
+                  {createdAt ? <span className="text-xs text-[#52736a]">{formatProgramDate(createdAt)}</span> : null}
+                  {existingFeedback ? <p className="mt-1 text-xs text-[#52736a]">Feedback: {existingFeedback}</p> : null}
+                  {feedbackFor === id ? (
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        value={feedbackText}
+                        onChange={(event) => setFeedbackText(event.target.value)}
+                        placeholder="Feedback / progress notes"
+                        className="h-9 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => { if (feedbackText.trim()) feedbackMutation.mutate({ checkInId: id, text: feedbackText }); }}
+                        disabled={feedbackMutation.isPending || !feedbackText.trim()}
+                        className="h-9 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:opacity-60"
+                      >
+                        {feedbackMutation.isPending ? "Saving..." : "Save"}
+                      </button>
+                      <button type="button" onClick={() => { setFeedbackFor(null); setFeedbackText(""); }} className="h-9 rounded-full border border-[#d7e5df] px-3 text-xs font-semibold text-[#52736a]">Cancel</button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => { setFeedbackFor(id); setFeedbackText(existingFeedback ?? ""); }} className="mt-1 rounded-full border border-[#d7e5df] px-3 py-1 text-xs font-semibold text-[#1f6a58]">Add feedback</button>
+                  )}
+                </div>
               </li>
             );
           })}
@@ -595,6 +633,16 @@ export function ProgramDetailsSidebar({ programId }: { programId: string }) {
     enabled: Boolean(programId),
     retry: false,
   });
+  const certificateQuery = useQuery({
+    queryKey: ["programs", programId, "certificate"],
+    queryFn: () => getProgramCertificate(programId),
+    enabled: Boolean(programId),
+    retry: false,
+  });
+
+  const certificate = certificateQuery.data as Record<string, unknown> | null | undefined;
+  const certificateUrl = certificate && typeof certificate.certificate_url === "string" ? certificate.certificate_url : null;
+  const issuedAt = certificate && typeof certificate.issued_at === "string" ? certificate.issued_at : null;
 
   return (
     <div className="space-y-5">
@@ -608,6 +656,15 @@ export function ProgramDetailsSidebar({ programId }: { programId: string }) {
         <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
           <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Meeting Link</p>
           <p className="mt-2 text-sm text-[#52736a]">{typeof meetingLinkQuery.data === "string" ? meetingLinkQuery.data : JSON.stringify(meetingLinkQuery.data)}</p>
+        </section>
+      ) : null}
+      {certificateQuery.isLoading ? <p className="text-sm text-[#52736a]">Loading certificate...</p> : null}
+      {certificateQuery.isError ? <p className="text-sm text-[#52736a]">Certificate not available yet — unlocks at 100% completion.</p> : null}
+      {certificateUrl ? (
+        <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Certificate</p>
+          {issuedAt ? <p className="mt-1 text-xs text-[#52736a]">Issued {formatProgramDate(issuedAt)}</p> : null}
+          <a href={certificateUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm font-semibold text-[#1f6a58] underline">View certificate →</a>
         </section>
       ) : null}
     </div>

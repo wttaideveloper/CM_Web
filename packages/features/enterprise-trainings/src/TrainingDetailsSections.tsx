@@ -436,7 +436,7 @@ function LessonDetail({ trainingId, sectionId, lessonId, onClose }: { trainingId
         documents: docs.length ? docs.map((d) => ({ url: d.url.trim(), name: d.name.trim() || d.url.trim().split("/").pop() || "document", visibility: d.visibility, downloadable: d.downloadable })) : undefined,
       } as unknown as Record<string, unknown>);
     },
-    onSuccess: () => { setFeedback("Lesson updated."); setEditMode(false); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "sections"] }); },
+    onSuccess: () => { setFeedback("Lesson updated."); setEditMode(false); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "sections"] }); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "lesson", sectionId, lessonId] }); },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to update lesson."),
   });
 
@@ -589,7 +589,7 @@ function LessonDetail({ trainingId, sectionId, lessonId, onClose }: { trainingId
       ) : (
         <div className="space-y-2">
           <p className="text-sm font-bold text-[#06201c]">{lessonTitle || "Untitled"}</p>
-          {lessonType ? <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Type: {lessonType}{lessonMeetingProvider ? ` · ${lessonMeetingProvider.replace("_", " ")}` : ""}</p> : null}
+          {lessonType ? <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Type: {lessonType}</p> : null}
           {lessonIsMandatory ? <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#b4541f]">Mandatory</p> : null}
           {lessonVideoUrl ? <a href={lessonVideoUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-[#1f6a58] underline">Watch video →</a> : null}
           {lessonMeetingLink ? <p className="text-xs text-[#52736a]">Meeting: <a href={lessonMeetingLink} className="text-[#1f6a58] underline">{lessonMeetingLink}</a></p> : null}
@@ -870,7 +870,7 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] font-bold text-[#7f9d94]">{lIndex + 1}.</span>
                             <p className="text-sm text-[#52736a]">{lessonTitle}</p>
-                            {(typeof lesson.meeting_link === "string" && lesson.meeting_link) || (typeof lesson.join_meta === "string" && lesson.join_meta) || (typeof lesson.join_url === "string" && lesson.join_url) ? <span className="rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[10px] font-bold text-[#1f6a58]">Live</span> : null}
+                            {typeof lesson.type === "string" && lesson.type === "live" ? <span className="rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[10px] font-bold text-[#1f6a58]">Live</span> : null}
                             {lessonAssessment ? <span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-[10px] font-bold text-[#2563eb]">Quiz</span> : null}
                           </div>
                           <div className="flex items-center gap-1">

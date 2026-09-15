@@ -965,8 +965,7 @@ export async function getAssessmentSubmissionReview(trainingId: string, assessme
   return (await res.json()) as unknown;
 }
 
-/** Lists assignments for a Training — `GET /trainings/{id}/assignments`.
- *  Backend currently returns 405; gracefully returns [] until the endpoint is implemented. */
+/** Lists assignments for a Training — `GET /trainings/{id}/assignments`. Returns the array (or `items` wrapper) when present. */
 export async function listTrainingAssignments(trainingId: string): Promise<unknown[]> {
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/assignments`, {
     credentials: "include",
