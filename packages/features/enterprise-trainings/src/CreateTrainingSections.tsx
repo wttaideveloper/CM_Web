@@ -62,7 +62,7 @@ export function TrainingDeliverySection({ values, update }: SectionProps) {
     <section className="space-y-5">
       <SectionHeading title="Delivery & Instructor" description="Hybrid builds community — online scales it. Pick the format your learners prefer." tip="Physical needs a venue, Online needs a meeting link, Hybrid needs both. Learners filter by this." />
       <div className="grid gap-4 md:grid-cols-2">
-        <label className={labelClass}>Delivery mode<select value={values.delivery_mode} onChange={(event) => update("delivery_mode", event.target.value)} className={inputClass}><option value="hybrid">Hybrid</option><option value="physical">Physical (In Person)</option><option value="online">Online</option></select></label>
+        <label className={labelClass}>Delivery mode<select value={values.delivery_mode} onChange={(event) => update("delivery_mode", event.target.value)} className={inputClass}><option value="self_paced">Self-paced (recorded)</option><option value="instructor_led">Instructor-led (online)</option><option value="blended">Blended</option><option value="hybrid">Hybrid</option><option value="physical">Physical (In Person)</option><option value="online">Online</option></select></label>
         <label className={labelClass}>Course type<input value={values.course_type} onChange={(event) => update("course_type", event.target.value)} placeholder="e.g. Workshop" className={inputClass} /></label>
       </div>
       {values.delivery_mode === "hybrid" ? (
@@ -73,7 +73,7 @@ export function TrainingDeliverySection({ values, update }: SectionProps) {
           {!values.meeting_link.trim() || !values.qr_payload.trim() ? <p className="mt-2 text-xs font-bold text-[#b42318]">You are missing: {!values.meeting_link.trim() ? "meeting link" : ""}{!values.meeting_link.trim() && !values.qr_payload.trim() ? " and " : ""}{!values.qr_payload.trim() ? "QR payload" : ""}.</p> : null}
         </div>
       ) : null}
-      {(values.delivery_mode === "physical" || values.delivery_mode === "hybrid" || values.delivery_mode === "in_person") ? (
+      {(values.delivery_mode === "physical" || values.delivery_mode === "hybrid" || values.delivery_mode === "in_person" || values.delivery_mode === "blended") ? (
         <>
           <div className="grid gap-4 md:grid-cols-2">
             <label className={labelClass}>Venue<input value={values.venue} onChange={(event) => update("venue", event.target.value)} placeholder="e.g. Main Hall" className={inputClass} /></label>
@@ -82,7 +82,7 @@ export function TrainingDeliverySection({ values, update }: SectionProps) {
           <label className={labelClass}>Location ID<input value={values.location_id} onChange={(event) => update("location_id", event.target.value)} placeholder="Select or paste location ID" className={inputClass} /></label>
         </>
       ) : null}
-      {(values.delivery_mode === "online" || values.delivery_mode === "hybrid") ? (
+      {(values.delivery_mode === "online" || values.delivery_mode === "hybrid" || values.delivery_mode === "instructor_led" || values.delivery_mode === "blended") ? (
         <>
           <label className={labelClass}>Meeting link<input type="url" value={values.meeting_link} onChange={(event) => update("meeting_link", event.target.value)} placeholder="https://..." className={inputClass} /></label>
           <label className={labelClass}>Delivery instructions<textarea value={values.delivery_instructions} onChange={(event) => update("delivery_instructions", event.target.value)} rows={2} placeholder="How to join, setup, etc." className={`${inputClass} h-auto py-3`} /></label>
@@ -111,10 +111,10 @@ export function TrainingDeliverySection({ values, update }: SectionProps) {
       <label className={labelClass}>Access information<textarea value={values.access_information} onChange={(e) => update("access_information", e.target.value)} rows={2} placeholder="How to access, prerequisites for entry" className={`${inputClass} h-auto py-3`} /></label>
       <div className="grid gap-4 md:grid-cols-3">
         <label className={labelClass}>Session mode<input value={values.session_mode} onChange={(e) => update("session_mode", e.target.value)} placeholder="e.g. live, self-paced" className={inputClass} /></label>
-        {values.delivery_mode !== "online" ? <label className="flex items-center gap-2 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={values.check_in} onChange={(e) => update("check_in", e.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58] focus:ring-[#1f6a58]" />Enable check-in</label> : null}
-        {values.delivery_mode !== "online" ? <label className={labelClass}>Pass code<input value={values.pass_code} onChange={(e) => update("pass_code", e.target.value)} placeholder="e.g. 1234" className={inputClass} /></label> : null}
+        {values.delivery_mode !== "online" && values.delivery_mode !== "self_paced" ? <label className="flex items-center gap-2 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={values.check_in} onChange={(e) => update("check_in", e.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58] focus:ring-[#1f6a58]" />Enable check-in</label> : null}
+        {values.delivery_mode !== "online" && values.delivery_mode !== "self_paced" ? <label className={labelClass}>Pass code<input value={values.pass_code} onChange={(e) => update("pass_code", e.target.value)} placeholder="e.g. 1234" className={inputClass} /></label> : null}
       </div>
-      {values.delivery_mode !== "online" ? <label className={labelClass}>QR payload<input value={values.qr_payload} onChange={(e) => update("qr_payload", e.target.value)} placeholder="QR data" className={inputClass} /></label> : null}
+      {values.delivery_mode !== "online" && values.delivery_mode !== "self_paced" ? <label className={labelClass}>QR payload<input value={values.qr_payload} onChange={(e) => update("qr_payload", e.target.value)} placeholder="QR data" className={inputClass} /></label> : null}
       <label className={labelClass}>Requirements<textarea value={values.requirements} onChange={(event) => update("requirements", event.target.value)} rows={3} className={`${inputClass} h-auto py-3`} /></label>
       <p className="text-xs text-[#7f9d94]">Hybrid = venue + online link + QR (check-in) · Physical = venue only · Online = meeting link only (mirrors Event In Person/Online/Hybrid).</p>
     </section>
@@ -153,7 +153,8 @@ export function TrainingAdvancedSection({ values, update }: SectionProps) {
   return (
     <section className="space-y-5">
       <SectionHeading title="Advanced & Collaboration" description="Discussions, announcements, moderation and supplemental notes." tip="JSON fields accept an array or object, e.g. [] or [{}]. Leave empty to omit." />
-      <UrlList label="Instructor notes (URLs)" values={values.instructor_notes} update={(next) => update("instructor_notes", next)} />
+      <UrlList label="Notes / Handouts (URLs)" values={values.notes_documents} update={(next) => update("notes_documents", next)} />
+      <label className={labelClass}>Instructor notes<input value={values.instructor_notes} onChange={(e) => update("instructor_notes", e.target.value)} placeholder="Internal notes for the instructor, not shown to learners" className={inputClass} /></label>
       <label className={labelClass}>Notes PDF URL<input type="url" value={values.notes_pdf_url} onChange={(e) => update("notes_pdf_url", e.target.value)} placeholder="https://…" className={inputClass} /></label>
       <label className={labelClass}>FAQs (JSON)<textarea value={values.faqs} onChange={(e) => update("faqs", e.target.value)} placeholder='[{"question":"...","answer":"..."}]' rows={3} className={`${inputClass} h-auto py-2`} /></label>
       <div>
@@ -290,13 +291,13 @@ export function TrainingCourseBuilderSection({ values, update }: SectionProps) {
         <label className={labelClass}>Notes PDF URL<input type="url" value={values.notes_pdf_url} onChange={(e) => update("notes_pdf_url", e.target.value)} placeholder="https://…" className={inputClass} /></label>
         <label className={labelClass}>Session mode<input value={values.session_mode} onChange={(e) => update("session_mode", e.target.value)} placeholder="e.g. live, cohort" className={inputClass} /></label>
       </div>
-      <UrlList label="Instructor notes" values={values.instructor_notes} update={(next) => update("instructor_notes", next)} />
+      <UrlList label="Notes / Handouts (URLs)" values={values.notes_documents} update={(next) => update("notes_documents", next)} />
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Discussions (JSON)<textarea value={values.discussions} onChange={(e) => update("discussions", e.target.value)} rows={3} placeholder='[]' className={`${inputClass} h-auto py-2`} /></label>
         <label className={labelClass}>Announcements (JSON)<textarea value={values.announcements} onChange={(e) => update("announcements", e.target.value)} rows={3} placeholder='[]' className={`${inputClass} h-auto py-2`} /></label>
       </div>
       <label className={labelClass}>Moderation history (JSON)<textarea value={values.moderation_history} onChange={(e) => update("moderation_history", e.target.value)} rows={3} placeholder='[]' className={`${inputClass} h-auto py-2`} /></label>
-      {values.delivery_mode !== "online" ? (
+      {values.delivery_mode !== "online" && values.delivery_mode !== "self_paced" ? (
         <div className="grid gap-4 md:grid-cols-3">
           <label className="col-span-1 flex items-center gap-2 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={values.check_in} onChange={(e) => update("check_in", e.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58] focus:ring-[#1f6a58]" />Enable check-in</label>
           <label className={labelClass}>Pass code<input value={values.pass_code} onChange={(e) => update("pass_code", e.target.value)} placeholder="code" className={inputClass} /></label>
