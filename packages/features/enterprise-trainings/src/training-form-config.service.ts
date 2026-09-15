@@ -11,6 +11,7 @@ function labelToKey(label: string): string | null {
     "price": "price", "currency": "currency", "promo price": "promo_price", "coupon code": "coupon_code",
     "capacity": "capacity", "requires approval": "requires_approval", "access expiry": "access_expiry_type", "expiry days": "access_expiry_days", "group enrolment": "group_enrolment", "max group size": "max_group_size",
     "primary image": "primary_image", "gallery images": "gallery_images", "documents": "documents", "videos": "promotional_video",
+    "notes": "notes_documents", "notes documents": "notes_documents", "notes / handouts": "notes_documents", "notes handouts": "notes_documents", "handouts": "notes_documents", "notes pdf": "notes_pdf_url", "notes pdf url": "notes_pdf_url", "instructor notes": "instructor_notes",
     "prerequisites": "prerequisites", "release rule": "release_rule", "scheduled publication": "scheduled_publication", "randomise": "randomise", "is mandatory": "is_mandatory",
     "subtitle": "subtitle", "faqs": "faqs", "faq": "faqs", "instructor photo": "instructor_photo", "instructor credentials": "instructor_credentials", "credentials": "instructor_credentials", "badges": "badges", "badge": "badges",
   };
@@ -417,7 +418,7 @@ export async function assignTrainingFormConfig(configId: string, enterpriseIds: 
 
 /** Maps custom_values from dynamic form to TrainingCreate payload keys. Known keys map directly; unknown go to custom_values. */
 export function mapCustomValuesToTrainingPayload(customValues: Record<string, unknown>, tenantId: string, enterpriseId: string) {
-  const known = ["title", "description", "category", "subcategory", "tags", "instructor_id", "requirements", "primary_image", "gallery_images", "promotional_video", "delivery_mode", "course_type", "duration", "start_date", "end_date", "enrolment_start", "enrolment_end", "time_zone", "capacity", "price", "currency", "promo_price", "coupon_code", "requires_approval", "access_duration_days"];
+  const known = ["title", "description", "category", "subcategory", "tags", "instructor_id", "requirements", "primary_image", "gallery_images", "promotional_video", "delivery_mode", "course_type", "duration", "start_date", "end_date", "enrolment_start", "enrolment_end", "time_zone", "capacity", "price", "currency", "promo_price", "coupon_code", "requires_approval", "access_duration_days", "documents", "notes_documents", "notes", "instructor_notes", "notes_pdf_url"];
   const payload: Record<string, unknown> = { tenant_id: tenantId, enterprise_id: enterpriseId, custom_values: customValues };
   for (const k of known) if (customValues[k] !== undefined) payload[k] = customValues[k];
   return payload;

@@ -379,7 +379,7 @@ export interface CreateTrainingAssessmentPayload {
 export interface CreateAssessmentQuestionPayload {
   question_text: string;
   question_type?: string | null;
-  options?: string[] | null;
+  options?: Array<string | { id?: string; label?: string }> | null;
   correct_answer?: string | null;
   points?: number | null;
   explanation?: string | null;
@@ -469,6 +469,9 @@ export interface TrainingTopic {
   id: string;
   title: string;
   content?: string | null;
+  videos?: string[] | null;
+  documents?: Array<{ url: string; name?: string; visibility?: string; downloadable?: boolean }> | null;
+  notes?: string[] | null;
   [key: string]: unknown;
 }
 
@@ -1982,4 +1985,61 @@ export async function batchCheckInTrainingParticipants(trainingId: string, paylo
   const value = (await res.json()) as unknown;
   if (!isTrainingBatchCheckInResponse(value)) throw new Error("Trainings API returned an invalid batch check-in response.");
   return value;
+}
+
+// ---- Media upload (lessons videos / PDFs / notes) ----
+
+/** Upload-purpose enum matching the backend TrainingUploadPurpose literal. */
+export type TrainingUploadPurpose = "lesson_video" | "lesson_pdf" | "lesson_document";
+
+/** Result returned to the caller after a successful media upload. */
+export interface TrainingMediaUploadResult {
+  mediaUrl: string;
+  mediaId: string;
+  storageKey: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+}
+
+/** Maps file MIME to the backend purpose enum. */
+function purposeForFile(file: File): TrainingUploadPurpose {
+  const type = file.type || "";
+  if (type.startsWith("video/")) return "lesson_video";
+  if (type === "application/pdf" || type.endsWith("/pdf")) return "lesson_pdf";
+  return "lesson_document";
+}
+
+/**
+ * Single-step multipart upload via POST /api/v1/trainings/upload.
+ * Returns the persisted media URL to store in the lesson payload.
+ */
+export async function uploadLessonMedia(file: File, purpose?: TrainingUploadPurpose): Promise<TrainingMediaUploadResult> {
+  if (!file) throw new Error("No file selected.");
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("purpose", purpose ?? purposeForFile(file));
+
+  const res = await fetch(`${trainingsBasePath}upload`, {
+    method: "POST",
+    credentials: "include",
+    body: formData,
+  });
+
+  if (!res.ok) throw await createTrainingsApiError(res, "upload this file");
+
+  const body = (await res.json()) as unknown;
+  if (!isRecord(body) || typeof body.url !== "string") {
+    throw new TrainingsApiError("Upload API returned an invalid response.", res.status);
+  }
+
+  return {
+    mediaUrl: body.url,
+    mediaId: typeof body.stored_name === "string" ? body.stored_name : "",
+    storageKey: typeof body.url === "string" ? body.url : "",
+    fileName: typeof body.name === "string" ? body.name : file.name,
+    contentType: typeof body.type === "string" ? body.type : file.type || "application/octet-stream",
+    sizeBytes: typeof body.size === "number" ? body.size : file.size,
+  };
 }

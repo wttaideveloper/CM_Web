@@ -59,7 +59,8 @@ export interface CreateTrainingFormValues {
   access_information: string;
   meeting_provider: string;
   instructor_role: string;
-  instructor_notes: string[];
+  instructor_notes: string;
+  notes_documents: string[];
   notes_pdf_url: string;
   target_audience: string;
   difficulty_level: string;
@@ -96,7 +97,7 @@ export function createEmptyTrainingForm(): CreateTrainingFormValues {
     gallery_images: [],
     promotional_video: "",
     documents: [],
-    delivery_mode: "hybrid",
+    delivery_mode: "self_paced",
     course_type: "",
     duration: "",
     start_date: "",
@@ -134,7 +135,8 @@ export function createEmptyTrainingForm(): CreateTrainingFormValues {
     access_information: "",
     meeting_provider: "",
     instructor_role: "",
-    instructor_notes: [],
+    instructor_notes: "",
+    notes_documents: [],
     notes_pdf_url: "",
     target_audience: "",
     difficulty_level: "",
@@ -213,7 +215,8 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
     access_information: stringValue("access_information"),
     meeting_provider: stringValue("meeting_provider"),
     instructor_role: (() => { const ins = record.instructor as Record<string, unknown> | null; return typeof ins?.role === "string" ? ins.role : stringValue("instructor_role"); })(),
-    instructor_notes: Array.isArray(record.instructor_notes) ? (record.instructor_notes as unknown[]).map(n => typeof (n as Record<string, unknown>)?.url === "string" ? (n as Record<string, unknown>).url as string : typeof n === "string" ? n : "").filter(Boolean) : Array.isArray(record.notes_pdf_url) ? [] : [],
+    instructor_notes: stringValue("instructor_notes"),
+    notes_documents: (() => { const notesRaw = record.notes_documents ?? record.notes; if (!Array.isArray(notesRaw)) return []; return notesRaw.map(n => typeof (n as Record<string, unknown>)?.url === "string" ? (n as Record<string, unknown>).url as string : typeof n === "string" ? n : "").filter(Boolean); })(),
     notes_pdf_url: stringValue("notes_pdf_url"),
     target_audience: stringValue("target_audience"),
     difficulty_level: stringValue("difficulty_level") || stringValue("difficultyLevel") || stringValue("level", "beginner"),
@@ -235,7 +238,7 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
 }
 
 /** Builds a confirmed Create Training payload without response-only fields.
- * NOTE: delivery_mode is restricted to "where" values only: hybrid/physical/online. */
+ * NOTE: delivery_mode accepts self_paced|instructor_led|blended (backend registry) plus legacy hybrid/physical/online. */
 export function buildCreateTrainingPayload(values: CreateTrainingFormValues, tenantId: string, enterpriseId: string): CreateTrainingPayload {
   return {
     tenant_id: tenantId,
@@ -288,7 +291,8 @@ release_rule: values.release_rule.trim() ? { type: values.release_rule.trim() } 
     access_information: values.access_information.trim() || null,
     meeting_provider: values.meeting_provider.trim() || null,
     instructor: values.instructor_role.trim() ? { id: values.instructor_id.trim() || null, name: values.instructor_name.trim() || null, bio: values.instructor_bio.trim() || null, role: values.instructor_role.trim() || null } : null,
-    instructor_notes: values.instructor_notes.length ? values.instructor_notes.map((url, idx) => ({ id: `note-${idx}`, title: `Note ${idx+1}`, url })) : null,
+    instructor_notes: values.instructor_notes.trim() || null,
+    notes_documents: values.notes_documents.length ? values.notes_documents.filter((u) => u.trim()).map((url, idx) => ({ title: url.split("/").pop()?.split(".")[0]?.replace(/[_-]+/g, " ").trim() || `Note ${idx + 1}`, url: url.trim() })) : null,
     notes_pdf_url: values.notes_pdf_url.trim() || null,
     target_audience: values.target_audience.trim() || null,
     offline_enabled: values.offline_enabled,
@@ -359,7 +363,8 @@ recurring: values.recurring.trim() || null,
     access_information: values.access_information.trim() || null,
     meeting_provider: values.meeting_provider.trim() || null,
     instructor: values.instructor_role.trim() ? { id: values.instructor_id.trim() || null, name: values.instructor_name.trim() || null, bio: values.instructor_bio.trim() || null, role: values.instructor_role.trim() || null } : null,
-    instructor_notes: values.instructor_notes.length ? values.instructor_notes.map((url, idx) => ({ id: `note-${idx}`, title: `Note ${idx+1}`, url })) : null,
+    instructor_notes: values.instructor_notes.trim() || null,
+    notes_documents: values.notes_documents.length ? values.notes_documents.filter((u) => u.trim()).map((url, idx) => ({ title: url.split("/").pop()?.split(".")[0]?.replace(/[_-]+/g, " ").trim() || `Note ${idx + 1}`, url: url.trim() })) : null,
     notes_pdf_url: values.notes_pdf_url.trim() || null,
     target_audience: values.target_audience.trim() || null,
     offline_enabled: values.offline_enabled,
