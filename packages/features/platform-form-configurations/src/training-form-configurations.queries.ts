@@ -1,7 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getAuthTenants } from "@ihp/auth";
+import { getPlatformEnterpriseTenants } from "@ihp/platform-enterprises";
+import type { AssignmentTenantOption } from "./components/AssignmentEditor";
 import type { CreateTrainingFormConfigurationRequest, UpdateTrainingFormConfigurationAssignmentsRequest, UpdateTrainingFormConfigurationRequest } from "./model/training-form-configuration-api.types";
 import type { CoreFieldRegistryItem, FormConfigurationListItem } from "./model/form-configuration.types";
 import { activateTrainingFormConfiguration, createTrainingFormConfiguration, deactivateTrainingFormConfiguration, deleteTrainingFormConfiguration, getTrainingFormConfiguration, getTrainingFormConfigurationAssignments, getTrainingFormConfigurationAudit, getTrainingFormConfigurationVersion, getTrainingFormFieldRegistry, listTrainingFormConfigurationVersions, listTrainingFormConfigurations, publishTrainingFormConfiguration, retireTrainingFormConfiguration, updateTrainingFormConfiguration, updateTrainingFormConfigurationAssignments } from "./services/training-form-configurations.service";
@@ -46,8 +47,18 @@ export function useTrainingFormConfigurationVersion(configurationId: string | un
 export function useTrainingFormConfigurationAssignments(configurationId: string | undefined) { return useQuery({ queryKey: trainingFormConfigurationKeys.assignments(configurationId ?? ""), queryFn: () => getTrainingFormConfigurationAssignments(configurationId ?? ""), enabled: Boolean(configurationId), retry: 1 }); }
 /** Reads audit history for one configuration. */
 export function useTrainingFormConfigurationAudit(configurationId: string | undefined) { return useQuery({ queryKey: trainingFormConfigurationKeys.audit(configurationId ?? ""), queryFn: () => getTrainingFormConfigurationAudit(configurationId ?? ""), enabled: Boolean(configurationId), retry: 1 }); }
-/** Reads real tenant options available to the authenticated Platform Admin. */
-export function useTrainingFormConfigurationTenantOptions() { return useQuery({ queryKey: trainingFormConfigurationKeys.assignableTenants(), queryFn: getAuthTenants, retry: 1, staleTime: 60_000 }); }
+/** Reads canonical Enterprise-module tenant UUIDs through the authenticated Platform BFF — same source as Event Form Configuration. */
+export function useTrainingFormConfigurationTenantOptions() {
+  return useQuery({
+    queryKey: trainingFormConfigurationKeys.assignableTenants(),
+    queryFn: async (): Promise<AssignmentTenantOption[]> => {
+      const response = await getPlatformEnterpriseTenants();
+      return response.items.map((tenant) => ({ id: tenant.id, name: tenant.name, slug: tenant.slug }));
+    },
+    retry: 1,
+    staleTime: 60_000,
+  });
+}
 
 /** Creates a configuration and refreshes the configuration collection. */
 export function useCreateTrainingFormConfiguration() { const queryClient = useQueryClient(); return useMutation({ mutationFn: createTrainingFormConfiguration, onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: trainingFormConfigurationKeys.list() }); } }); }

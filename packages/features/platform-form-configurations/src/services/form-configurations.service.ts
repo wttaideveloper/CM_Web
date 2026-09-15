@@ -77,7 +77,24 @@ export async function deactivateEventFormConfiguration(configurationId: string):
 export async function retireEventFormConfiguration(configurationId: string): Promise<EventFormConfiguration | EventFormConfigurationLifecycleResponse> { return expect(await requestJson(configurationPath(configurationId, "/retire"), jsonRequest("POST")), (value) => isConfiguration(value) || isLifecycleResponse(value), "retired configuration"); }
 /** Retrieves persisted tenant assignments for one Event form configuration. */
 export async function getEventFormConfigurationAssignments(configurationId: string): Promise<EventFormAssignmentsResponse> { return expect(await requestJson(configurationPath(configurationId, "/assignments")), isAssignmentsResponse, "assignments"); }
-/** Replaces tenant assignments for one Event form configuration. */
-export async function updateEventFormConfigurationAssignments(configurationId: string, payload: UpdateEventFormConfigurationAssignmentsRequest): Promise<EventFormAssignmentsResponse> { return expect(await requestJson(configurationPath(configurationId, "/assignments"), jsonRequest("PUT", payload)), isAssignmentsResponse, "updated assignments"); }
+function isUuidEvent(value: string): boolean { return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value); }
+
+/** Replaces tenant assignments for one Event form configuration — tenant_ids + tenant_slugs fallback. */
+export async function updateEventFormConfigurationAssignments(configurationId: string, payload: UpdateEventFormConfigurationAssignmentsRequest): Promise<EventFormAssignmentsResponse> {
+  const tenantIds = (payload as unknown as Record<string, unknown>).tenant_ids as string[] ?? [];
+  const uuids = tenantIds.filter(isUuidEvent);
+  const slugs = tenantIds.filter((id) => !isUuidEvent(id));
+  const tryRequest = async (body: Record<string, unknown>): Promise<EventFormAssignmentsResponse> => expect(await requestJson(configurationPath(configurationId, "/assignments"), jsonRequest("PUT", body as unknown as UpdateEventFormConfigurationAssignmentsRequest)), isAssignmentsResponse, "updated assignments");
+  if (uuids.length > 0 || slugs.length === 0) {
+    try { return await tryRequest({ tenant_ids: tenantIds } as unknown as Record<string, unknown>); } catch (error) {
+      if (slugs.length > 0 && error instanceof FormConfigurationsApiError && error.status === 500) return tryRequest({ tenant_slugs: slugs, tenant_ids: uuids } as unknown as Record<string, unknown>);
+      throw error;
+    }
+  }
+  try { return await tryRequest({ tenant_slugs: slugs } as unknown as Record<string, unknown>); } catch (error) {
+    if (error instanceof FormConfigurationsApiError && error.status === 500) return tryRequest({ tenant_ids: tenantIds } as unknown as Record<string, unknown>);
+    throw error;
+  }
+}
 /** Retrieves immutable audit history for one Event form configuration. */
 export async function getEventFormConfigurationAudit(configurationId: string): Promise<EventFormAuditEntry[]> { const value = await requestJson(configurationPath(configurationId, "/audit")); const entries = auditEntries(value); return expect(entries, (candidate) => Array.isArray(candidate) && candidate.every((entry) => entry !== null), "audit history"); }

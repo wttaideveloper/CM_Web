@@ -21,3 +21,6 @@ export { TrainingSectionsTab, TrainingEnrolmentsTab, TrainingLiveTab, TrainingCo
 export * from "./training-form-config.service";
 export * from "./training-form-configuration.queries";
 export { default as TrainingFormBuilderScreen } from "./TrainingFormBuilderScreen";
+export { default as TrainingBookingFlow } from "./TrainingBookingFlow";
+export { default as WishlistScreen } from "./WishlistScreen";
+export * from "./wishlist-storage";

@@ -7,7 +7,7 @@ import Link from "next/link";
 
 import TrainingActionsMenu from "./TrainingActionsMenu";
 import { PRODUCT_TRAINING_STATUSES, getTrainingStatusBadgeClass, getTrainingStatusLabel } from "./training-status";
-import { listTrainings, searchTrainings, type TrainingListItem } from "./trainings.service";
+import { listTrainings, searchTrainings, getTrainingsReportSummary, type TrainingListItem } from "./trainings.service";
 
 type SortOption = "newest" | "oldest" | "az" | "status";
 const statusFilters = ["all", ...PRODUCT_TRAINING_STATUSES] as const;
@@ -17,7 +17,6 @@ const TRAININGS_PAGE_SIZE = 20;
 function isValidDate(value: string) {
   return Number.isFinite(Date.parse(value));
 }
-
 function sortTrainings(items: TrainingListItem[], sort: SortOption) {
   return [...items].sort((left, right) => {
     if (sort === "az") {
@@ -64,6 +63,46 @@ function formatTrainingAvailability(training: TrainingListItem): string {
     }
   }
   return "—";
+}
+
+function TrainingsSummaryCard({ summary, isLoading, isError }: { summary: unknown; isLoading: boolean; isError: boolean }) {
+  if (isLoading) return <section className="mt-4 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm"><p className="text-sm text-[#52736a]">Loading report summary...</p></section>;
+  if (isError || !summary || typeof summary !== "object") return null;
+  const record = summary as Record<string, unknown>;
+  const total = record.total_trainings === null || record.total_trainings === undefined ? "" : String(record.total_trainings);
+  const byStatus = record.by_status && typeof record.by_status === "object" ? (record.by_status as Record<string, unknown>) : undefined;
+  const statusEntries = byStatus ? Object.entries(byStatus).sort((a, b) => Number(b[1]) - Number(a[1])) : [];
+  const byCategory = record.by_category && typeof record.by_category === "object" ? (record.by_category as Record<string, unknown>) : undefined;
+  const categoryEntries = byCategory ? Object.entries(byCategory).sort((a, b) => Number(b[1]) - Number(a[1])) : [];
+  const toneClass = (status: string) => {
+    const normalized = status.trim().toLowerCase();
+    if (["enrolled", "attended", "active", "completed", "approved", "published"].includes(normalized)) return "rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[10px] font-bold text-[#1f6a58]";
+    if (["pending", "pending_approval", "draft", "waitlist", "waitlisted"].includes(normalized)) return "rounded-full bg-[#fff8e1] px-2 py-0.5 text-[10px] font-bold text-[#8a5a00]";
+    if (["cancelled", "rejected", "no_show", "expired"].includes(normalized)) return "rounded-full bg-[#fff1f0] px-2 py-0.5 text-[10px] font-bold text-[#b42318]";
+    return "rounded-full bg-[#f0f3f2] px-2 py-0.5 text-[10px] font-bold text-[#52736a]";
+  };
+  return (
+    <section className="mt-4 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Report Summary</p>
+        {total !== "" ? <span className="rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[10px] font-bold text-[#1f6a58]">{total} total trainings</span> : null}
+      </div>
+      {statusEntries.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {statusEntries.map(([status, count]) => (
+            <span key={status} className={toneClass(status)}>{status.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase())}: {String(count)}</span>
+          ))}
+        </div>
+      ) : null}
+      {categoryEntries.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {categoryEntries.map(([category, count]) => (
+            <span key={category} className="rounded-full bg-[#f0f3f2] px-2 py-0.5 text-[10px] font-bold text-[#52736a]">{category}: {String(count)}</span>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
 }
 
 function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess }: { training: TrainingListItem; onStatusSuccess: () => void; onDuplicateSuccess: () => void; onDeleteSuccess: () => void }) {
@@ -134,6 +173,8 @@ export default function EnterpriseTrainingsScreen() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [sort, setSort] = useState<SortOption>("newest");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [levelFilter, setLevelFilter] = useState<string>("all");
+  const [languageFilter, setLanguageFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
 
@@ -149,14 +190,16 @@ export default function EnterpriseTrainingsScreen() {
   }, [query]);
 
   const trainingsQuery = useQuery({
-    queryKey: ["trainings", "list", tenantId, enterpriseId, debouncedQuery, statusFilter, page, TRAININGS_PAGE_SIZE],
+    queryKey: ["trainings", "list", tenantId, enterpriseId, debouncedQuery, statusFilter, levelFilter, languageFilter, page, TRAININGS_PAGE_SIZE],
     queryFn: () =>
       debouncedQuery
-        ? searchTrainings({ query: debouncedQuery, page, page_size: TRAININGS_PAGE_SIZE })
+        ? searchTrainings({ query: debouncedQuery, level: levelFilter === "all" ? undefined : levelFilter, language: languageFilter === "all" ? undefined : languageFilter, page, page_size: TRAININGS_PAGE_SIZE })
         : listTrainings({
             tenant_id: tenantId ?? undefined,
             enterprise_id: enterpriseId ?? undefined,
             status: statusFilter === "all" ? undefined : statusFilter,
+            level: levelFilter === "all" ? undefined : levelFilter,
+            language: languageFilter === "all" ? undefined : languageFilter,
             page,
             page_size: TRAININGS_PAGE_SIZE,
           }),
@@ -175,6 +218,8 @@ export default function EnterpriseTrainingsScreen() {
   const showDuplicateFeedback = () => setStatusFeedback("Training duplicated.");
   const showDeleteFeedback = () => setStatusFeedback("Training deleted.");
 
+  const summaryQuery = useQuery({ queryKey: ["trainings", "reports", "summary"], queryFn: () => getTrainingsReportSummary(), enabled: Boolean(tenantId), staleTime: 30_000, retry: 1 });
+
   return (
     <div className="w-full">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -189,6 +234,18 @@ export default function EnterpriseTrainingsScreen() {
         </div>
 
         <div className="flex flex-wrap gap-3">
+          <Link
+            href="/admin/trainings/wishlist"
+            className="inline-flex h-12 items-center justify-center rounded-full border border-[#1f6a58] px-5 text-sm font-bold text-[#1f6a58] shadow-sm transition hover:bg-[#e8f6ee]"
+          >
+            Wishlist
+          </Link>
+          <Link
+            href="/admin/trainings/my-enrolments"
+            className="inline-flex h-12 items-center justify-center rounded-full border border-[#1f6a58] px-5 text-sm font-bold text-[#1f6a58] shadow-sm transition hover:bg-[#e8f6ee]"
+          >
+            My Enrolments
+          </Link>
           {enterpriseId ? (
             <Link
               href="/admin/trainings/create"
@@ -210,6 +267,8 @@ export default function EnterpriseTrainingsScreen() {
       </div>
 
       {statusFeedback ? <p role="status" className="mt-4 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">{statusFeedback}</p> : null}
+
+      <TrainingsSummaryCard summary={summaryQuery.data} isLoading={summaryQuery.isLoading} isError={summaryQuery.isError} />
 
       <section className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm">
         <div className="grid gap-3 xl:grid-cols-[1fr_auto]">
@@ -236,6 +295,25 @@ export default function EnterpriseTrainingsScreen() {
               <option value="status">Status</option>
             </select>
           </label>
+          <label className="block xl:w-[160px]">
+            <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Level</span>
+            <select value={levelFilter} onChange={(e) => { setLevelFilter(e.target.value); setPage(1); }} className="mt-2 h-12 w-full rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]">
+              <option value="all">All levels</option>
+              <option value="beginner">Beginner</option>
+              <option value="intermediate">Intermediate</option>
+              <option value="advanced">Advanced</option>
+            </select>
+          </label>
+          <label className="block xl:w-[160px]">
+            <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Language</span>
+            <select value={languageFilter} onChange={(e) => { setLanguageFilter(e.target.value); setPage(1); }} className="mt-2 h-12 w-full rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]">
+              <option value="all">All languages</option>
+              <option value="en">English</option>
+              <option value="hi">Hindi</option>
+              <option value="es">Spanish</option>
+              <option value="fr">French</option>
+            </select>
+          </label>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           {statusFilters.map((filter) => {
@@ -258,21 +336,29 @@ export default function EnterpriseTrainingsScreen() {
       </section>
 
       {trainingsQuery.isLoading ? (
-        <section className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
-          <p className="text-base font-bold text-[#06201c]">Loading trainings...</p>
+        <section className="mt-6 grid gap-4 md:grid-cols-2" aria-live="polite" aria-busy="true">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="animate-pulse rounded-2xl border border-[#e1ebe6] bg-white p-5">
+              <div className="h-4 w-1/3 rounded bg-[#edf3f0]" />
+              <div className="mt-3 h-6 w-3/4 rounded-lg bg-[#edf3f0]" />
+              <div className="mt-3 h-10 rounded-lg bg-[#edf3f0]" />
+              <div className="mt-4 h-12 rounded-xl bg-[#edf3f0]" />
+            </div>
+          ))}
+          <span className="sr-only">Loading trainings…</span>
         </section>
       ) : trainingsQuery.isError ? (
-        <section className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
-          <p className="text-base font-bold text-[#06201c]">Unable to load trainings.</p>
-          <p className="mt-2 text-sm text-[#52736a]">{(trainingsQuery.error as Error).message}</p>
-          <button type="button" onClick={() => void trainingsQuery.refetch()} className="mt-3 text-sm font-semibold text-[#1f6a58] underline">
-            Try again
-          </button>
+        <section className="mt-6 rounded-2xl border border-[#f3d5d1] bg-[#fff7f6] px-8 py-12 text-center shadow-sm" role="alert">
+          <p className="text-2xl" aria-hidden="true">�</p>
+          <p className="mt-3 text-base font-bold text-[#b42318]">We couldn’t load trainings</p>
+          <p className="mt-2 text-sm leading-5 text-[#6b5a52]">{(trainingsQuery.error as Error).message || "Check your connection and try again."}</p>
+          <button type="button" onClick={() => void trainingsQuery.refetch()} className="mt-5 inline-flex h-10 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm hover:bg-[#195646]">Try again</button>
         </section>
       ) : !pagination || visibleTrainings.length === 0 ? (
-        <section className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
-          <p className="text-base font-bold text-[#06201c]">No trainings found.</p>
-          <p className="mt-2 text-sm text-[#52736a]">Try a different search or filter.</p>
+        <section className="mt-6 rounded-2xl border border-dashed border-[#cfe0d8] bg-[#f9fcfa] px-8 py-16 text-center shadow-sm">
+          <p className="mt-3 text-base font-bold text-[#06201c]">No trainings yet</p>
+          <p className="mt-2 mx-auto max-w-md text-sm leading-5 text-[#52736a]">Create your first training to start enrolling learners. Use a clear title and a great cover image — it makes all the difference.</p>
+          <a href="/admin/trainings/create" className="mt-5 inline-flex h-10 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm hover:bg-[#195646]">+ Create Training</a>
         </section>
       ) : (
         <>

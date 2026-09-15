@@ -30,7 +30,23 @@ export function TrainingFormConfigurationEditorScreen({ id, mode }: { id?: strin
   const remove = useDeleteTrainingFormConfiguration();
   const saveAssignments = useUpdateTrainingFormConfigurationAssignments();
   const apiConfiguration = configuration.data;
-  const builderConfiguration = isCreate ? { ...createMockConfiguration("new-training-form", registry.data ?? []), type: "training" as const, name: "", description: "", status: "draft" as const, active: false } : apiConfiguration ? toBuilderTrainingFormConfiguration(apiConfiguration) : undefined;
+  const builderConfiguration = isCreate
+    ? (() => {
+        const base = createMockConfiguration("new-training-form", registry.data ?? []);
+        // Override with training's 6 seeded sections (basic, delivery, schedule, pricing, media, additional) instead of event's 7
+        const trainingSections = Object.entries(copy.seededSections).map(([key, name], index) => ({
+          localId: `section-${key}`,
+          serverId: null,
+          stableKey: `section_${key}`,
+          name,
+          description: "",
+          enabled: true,
+          position: index + 1,
+        }));
+        const trainingFields = base.fields.filter(f => trainingSections.some(s => s.localId === f.sectionLocalId));
+        return { ...base, type: "training" as const, name: "", description: "", status: "draft" as const, active: false, sections: trainingSections, fields: trainingFields };
+      })()
+    : apiConfiguration ? toBuilderTrainingFormConfiguration(apiConfiguration) : undefined;
   const error = registry.error ?? configuration.error;
   const errorCopy = error instanceof TrainingFormConfigurationsApiError && (error.status === 401 || error.status === 403) ? copy.forbidden : copy.loadError;
 

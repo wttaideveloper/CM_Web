@@ -42,3 +42,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local dev logs
+.freebuff/
+.freebuffpreview.log
+.freebuffpreview.log.err
+
+# local dev logs
+dev-all.log

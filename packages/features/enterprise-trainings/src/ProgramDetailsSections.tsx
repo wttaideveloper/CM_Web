@@ -8,6 +8,7 @@ import {
   createProgramActivity,
   createProgramCheckIn,
   createProgramPhase,
+  createProgramReview,
   createProgramSurvey,
   deleteProgramActivity,
   deleteProgramPhase,
@@ -36,6 +37,8 @@ import {
   type CreateProgramPhasePayload,
 } from "./programs.service";
 import { formatProgramDate, humanizeLabel } from "./detail-formatters";
+import { ParticipantDashboardCard, ProviderDashboardCard } from "./dashboard-cards";
+import { parseTrainingParticipantDashboard, parseTrainingProviderDashboard } from "./trainings.service";
 
 function SectionCard({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
@@ -57,6 +60,8 @@ export function ProgramPhasesTab({ programId }: { programId: string }) {
   const [expandedPhase, setExpandedPhase] = useState<string | null>(null);
   const [newActivityTitle, setNewActivityTitle] = useState("");
   const [instructorEmails, setInstructorEmails] = useState("");
+  const [renameId, setRenameId] = useState<string | null>(null);
+  const [renameTitle, setRenameTitle] = useState("");
 
   const phasesQuery = useQuery({
     queryKey: ["programs", programId, "phases"],
@@ -79,6 +84,12 @@ export function ProgramPhasesTab({ programId }: { programId: string }) {
     mutationFn: (phaseId: string) => deleteProgramPhase(programId, phaseId),
     onSuccess: () => { setFeedback("Phase deleted."); void invalidatePhases(); },
     onError: (error) => setFeedback(error instanceof ProgramsApiError ? error.message : "Unable to delete the phase."),
+  });
+
+  const renamePhaseMutation = useMutation({
+    mutationFn: (phaseId: string) => updateProgramPhase(programId, phaseId, { title: renameTitle.trim() }),
+    onSuccess: () => { setRenameId(null); setRenameTitle(""); setFeedback("Phase renamed."); void invalidatePhases(); },
+    onError: (error) => setFeedback(error instanceof ProgramsApiError ? error.message : "Unable to rename the phase."),
   });
 
   const createActivityMutation = useMutation({
@@ -119,11 +130,24 @@ export function ProgramPhasesTab({ programId }: { programId: string }) {
           return (
             <li key={id} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] px-4 py-3">
               <div className="flex items-center justify-between gap-3">
-                <button type="button" onClick={() => setExpandedPhase(isExpanded ? null : id)} className="flex-1 text-left">
-                  <p className="text-sm font-bold text-[#06201c]">{title}</p>
-                  <p className="mt-0.5 text-xs text-[#52736a]">{phaseType ? `${humanizeLabel(phaseType)} · ` : ""}{activities.length > 0 ? `${activities.length} activit${activities.length === 1 ? "y" : "ies"}` : "Expand to add activities"}</p>
-                </button>
-                <button type="button" onClick={() => { if (window.confirm("Delete this phase?")) void deletePhaseMutation.mutate(id); }} className="rounded-full px-2 py-1 text-xs font-semibold text-[#b42318] hover:bg-[#fff6f5]">Delete</button>
+                {renameId === id ? (
+                  <form className="flex flex-1 items-center gap-2" onSubmit={(e) => { e.preventDefault(); if (renameTitle.trim()) void renamePhaseMutation.mutate(id); }}>
+                    <input value={renameTitle} onChange={(e) => setRenameTitle(e.target.value)} autoFocus className="h-8 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]" />
+                    <button type="submit" disabled={renamePhaseMutation.isPending} className="rounded-full bg-[#1f6a58] px-3 py-1 text-xs font-bold text-white disabled:opacity-60">Save</button>
+                    <button type="button" onClick={() => setRenameId(null)} className="rounded-full border border-[#d7e5df] px-3 py-1 text-xs font-semibold text-[#52736a]">Cancel</button>
+                  </form>
+                ) : (
+                  <button type="button" onClick={() => setExpandedPhase(isExpanded ? null : id)} className="flex-1 text-left">
+                    <p className="text-sm font-bold text-[#06201c]">{title}</p>
+                    <p className="mt-0.5 text-xs text-[#52736a]">{phaseType ? `${humanizeLabel(phaseType)} · ` : ""}{activities.length > 0 ? `${activities.length} activit${activities.length === 1 ? "y" : "ies"}` : "Expand to add activities"}</p>
+                  </button>
+                )}
+                {renameId === id ? null : (
+                  <div className="flex gap-1">
+                    <button type="button" onClick={() => { setRenameId(id); setRenameTitle(title); }} className="rounded-full px-2 py-1 text-xs font-semibold text-[#1f6a58] hover:bg-[#e8f6ee]">Rename</button>
+                    <button type="button" onClick={() => { if (window.confirm("Delete this phase?")) void deletePhaseMutation.mutate(id); }} className="rounded-full px-2 py-1 text-xs font-semibold text-[#b42318] hover:bg-[#fff6f5]">Delete</button>
+                  </div>
+                )}
               </div>
               {isExpanded ? (
                 <div className="mt-3 border-t border-[#e1ebe6] pt-3 space-y-3">
@@ -197,10 +221,28 @@ export function ProgramEnrolmentsTab({ programId }: { programId: string }) {
     onError: (error) => setFeedback(error instanceof ProgramsApiError ? error.message : "Unable to update the enrolment."),
   });
 
+  const exportMutation = useMutation({
+    mutationFn: () => exportProgramEnrolments(programId),
+    onSuccess: (data) => {
+      const url = URL.createObjectURL(data.blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = (data.filename ?? `program-${programId}-enrolments.csv`).replace(/"/g, ""); document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      setFeedback("CSV exported.");
+    },
+    onError: (error) => setFeedback(error instanceof Error ? error.message : "Unable to export CSV."),
+  });
+
   const enrolments = enrolmentsQuery.data ?? [];
 
   return (
-    <SectionCard title="Enrolments">
+    <SectionCard
+      title="Enrolments"
+      action={
+        <button type="button" onClick={() => void exportMutation.mutate()} disabled={exportMutation.isPending} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-xs font-semibold text-[#1f6a58] disabled:opacity-60">
+          {exportMutation.isPending ? "Exporting..." : "Export CSV"}
+        </button>
+      }
+    >
       {feedback ? <p role="status" className="mb-4 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">{feedback}</p> : null}
       <form className="mb-4 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); if (enrolName.trim() && enrolEmail.trim()) enrolMutation.mutate(); }}>
         <input value={enrolName} onChange={(e) => setEnrolName(e.target.value)} placeholder="Participant name" className="h-10 flex-1 min-w-[140px] rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm outline-none focus:border-[#1f6a58]" />
@@ -303,6 +345,11 @@ export function ProgramCheckInsTab({ programId }: { programId: string }) {
 
 /** Renders the Program reviews and waitlist. */
 export function ProgramReviewsAndWaitlistTab({ programId }: { programId: string }) {
+  const queryClient = useQueryClient();
+  const [reviewRating, setReviewRating] = useState("5");
+  const [reviewEmail, setReviewEmail] = useState("");
+  const [reviewComment, setReviewComment] = useState("");
+  const [reviewFeedback, setReviewFeedback] = useState<string | null>(null);
   const reviewsQuery = useQuery({
     queryKey: ["programs", programId, "reviews"],
     queryFn: () => listProgramReviews(programId),
@@ -314,12 +361,29 @@ export function ProgramReviewsAndWaitlistTab({ programId }: { programId: string 
     enabled: Boolean(programId),
   });
 
+  const reviewMutation = useMutation({
+    mutationFn: () => createProgramReview(programId, {
+      rating: Number(reviewRating) || 5,
+      participant_email: reviewEmail.trim(),
+      comment: reviewComment.trim() || null,
+    }),
+    onSuccess: () => { setReviewRating("5"); setReviewEmail(""); setReviewComment(""); setReviewFeedback("Review submitted."); void queryClient.invalidateQueries({ queryKey: ["programs", programId, "reviews"] }); },
+    onError: (error) => setReviewFeedback(error instanceof ProgramsApiError ? error.message : "Unable to submit the review."),
+  });
+
   const reviews = reviewsQuery.data ?? [];
   const waitlist = waitlistQuery.data ?? [];
 
   return (
     <div className="grid gap-5">
       <SectionCard title="Reviews">
+        {reviewFeedback ? <p role="status" className="mb-4 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">{reviewFeedback}</p> : null}
+        <form className="mb-4 rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-3 grid gap-2 sm:grid-cols-[80px_1fr] sm:items-center" onSubmit={(e) => { e.preventDefault(); if (reviewEmail.trim()) reviewMutation.mutate(); }}>
+          <input type="number" min={1} max={5} value={reviewRating} onChange={(e) => setReviewRating(e.target.value)} className="h-9 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" aria-label="Rating 1-5" />
+          <input value={reviewEmail} onChange={(e) => setReviewEmail(e.target.value)} placeholder="Participant email" type="email" className="h-9 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
+          <input value={reviewComment} onChange={(e) => setReviewComment(e.target.value)} placeholder="Comment (optional)" className="h-9 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58] sm:col-span-2" />
+          <button type="submit" disabled={reviewMutation.isPending || !reviewEmail.trim()} className="h-9 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:opacity-60">{reviewMutation.isPending ? "Saving..." : "Add review"}</button>
+        </form>
         {reviewsQuery.isLoading ? <p className="text-sm text-[#52736a]">Loading reviews...</p> : null}
         {reviewsQuery.isError ? <p className="text-sm font-semibold text-[#b42318]">{(reviewsQuery.error as Error).message}</p> : null}
         {!reviewsQuery.isLoading && !reviewsQuery.isError && reviews.length === 0 ? <p className="text-sm text-[#52736a]">No reviews yet.</p> : null}
@@ -476,20 +540,8 @@ export function ProgramDashboardsTab({ programId }: { programId: string }) {
 
   return (
     <div className="grid gap-5">
-      <SectionCard title="Participant Dashboard">
-        {participantQuery.isLoading ? <p className="text-sm text-[#52736a]">Loading...</p> : null}
-        {participantQuery.isError ? <p className="text-sm text-[#52736a]">Dashboard data will be available once the program has active participants.</p> : null}
-        {participantQuery.data ? (
-          <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs text-[#52736a]">{JSON.stringify(participantQuery.data, null, 2)}</pre>
-        ) : null}
-      </SectionCard>
-      <SectionCard title="Provider Dashboard">
-        {providerQuery.isLoading ? <p className="text-sm text-[#52736a]">Loading...</p> : null}
-        {providerQuery.isError ? <p className="text-sm text-[#52736a]">Dashboard data will be available once the program has active participants.</p> : null}
-        {providerQuery.data ? (
-          <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs text-[#52736a]">{JSON.stringify(providerQuery.data, null, 2)}</pre>
-        ) : null}
-      </SectionCard>
+      {participantQuery.isLoading ? <p className="text-sm text-[#52736a]">Loading...</p> : participantQuery.isError ? <p className="text-sm text-[#52736a]">Participant dashboard will be available once the program has active participants.</p> : <ParticipantDashboardCard dashboard={parseTrainingParticipantDashboard(participantQuery.data)} />}
+      {providerQuery.isLoading ? <p className="text-sm text-[#52736a]">Loading...</p> : providerQuery.isError ? <p className="text-sm text-[#52736a]">Provider dashboard will be available once the program has active participants.</p> : <ProviderDashboardCard dashboard={parseTrainingProviderDashboard(providerQuery.data)} />}
     </div>
   );
 }

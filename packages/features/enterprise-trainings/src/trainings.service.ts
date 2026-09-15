@@ -30,9 +30,13 @@ export interface TrainingListItem {
   subcategory: string | null;
   tags: unknown[] | null;
   instructor_id: string | null;
+  instructor_name?: string | null;
+  instructor_bio?: string | null;
   delivery_mode: string | null;
   course_type: string | null;
   capacity: string | null;
+  enrolled_count?: number | null;
+  available_slots?: number | null;
   price: string | null;
   currency: string | null;
   status: TrainingStatus;
@@ -40,15 +44,139 @@ export interface TrainingListItem {
   created_at: string | null;
   updated_at: string | null;
   start_date?: string | null;
+  end_date?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  venue?: string | null;
+  address?: string | null;
+  meeting_link?: string | null;
+  delivery_instructions?: string | null;
+  learning_objectives?: string[] | null;
+  documents?: unknown[] | null;
+  requirements?: string | null;
   sections: unknown[] | null;
   assessments: unknown[] | null;
+  sessions?: unknown[] | null;
 }
 
-/** Full training detail — same as list item plus `enterprise_name`. */
+/** Instructor nested object `instructor: {id,name,bio,role}`. */
+export interface TrainingInstructor {
+  id?: string | null;
+  name?: string | null;
+  bio?: string | null;
+  role?: string | null;
+}
+/** Instructor note `instructor_notes[]`. */
+export interface TrainingInstructorNote {
+  id?: string | null;
+  title?: string | null;
+  url?: string | null;
+  name?: string | null;
+}
+/** Typed document `documents[]: {id,name,type,size,url,visibility,downloadable}`. */
+export interface TrainingDocument {
+  id?: string | null;
+  title?: string | null;
+  name?: string | null;
+  type?: string | null;
+  size?: number | null;
+  url?: string | null;
+  visibility?: string | null;
+  downloadable?: boolean | null;
+}
+/** FAQ entry `faqs[]`. */
+export interface TrainingFaq {
+  question?: string | null;
+  answer?: string | null;
+  q?: string | null;
+  a?: string | null;
+}
+/** Review `reviews[]`. */
+export interface TrainingReview {
+  id?: string | null;
+  author?: string | null;
+  rating?: number | null;
+  comment?: string | null;
+  created_at?: string | null;
+  verified?: boolean | null;
+}
+/** Lesson topic. */
+export interface TrainingLessonTopic {
+  id?: string | null;
+  title?: string | null;
+}
+/** Lesson `sections[].lessons[]` with meeting/join/download extensions. */
+export interface TrainingLesson {
+  id?: string | null;
+  type?: string | null;
+  title?: string | null;
+  duration?: number | string | null;
+  is_preview?: boolean | null;
+  is_downloadable?: boolean | null;
+  file_size?: number | null;
+  meeting_link?: string | null;
+  join_url?: string | null;
+  assessment_id?: string | null;
+  topics?: TrainingLessonTopic[] | null;
+  [key: string]: unknown;
+}
+/** Section `sections[]`. */
+export interface TrainingSection {
+  id?: string | null;
+  type?: string | null;
+  order?: number | null;
+  title?: string | null;
+  schedule?: string | null;
+  instructor_id?: string | null;
+  meeting_link?: string | null;
+  join_url?: string | null;
+  assessment_id?: string | null;
+  lessons?: TrainingLesson[] | null;
+  [key: string]: unknown;
+}
+
+/** Full training detail — same as list item plus `enterprise_name` and missing schema gaps. */
 export interface TrainingDetail extends TrainingListItem {
   enterprise_name: string | null;
   promotional_video?: string | null;
   gallery_images?: string[] | null;
+  // --- Missing fields & schema gaps (GET /api/v1/trainings/{id}) ---
+  recurring?: string | boolean | Record<string, unknown> | null;
+  schedule_exceptions?: unknown[] | null;
+  access_information?: string | null;
+  meeting_provider?: string | null;
+  waitlist_count?: number | null;
+  instructor?: TrainingInstructor | null;
+  instructor_notes?: TrainingInstructorNote[] | null;
+  notes_pdf_url?: string | null;
+  reviews?: TrainingReview[] | null;
+  review_count?: number | null;
+  reviews_count?: number | null;
+  difficulty_level?: string | null;
+  offline_enabled?: boolean | null;
+  offline_access_enabled?: boolean | null;
+  session_mode?: string | null;
+  check_in?: boolean | null;
+  pass_code?: string | null;
+  qr_payload?: string | null;
+  release_rule?: { type?: string | null } | Record<string, unknown> | null;
+  discussions?: unknown[] | null;
+  announcements?: unknown[] | null;
+  moderation_history?: unknown[] | null;
+  target_audience?: string | null;
+  // alias for legacy level/offline fields
+  // documents already typed above; keep override
+  documents?: TrainingDocument[] | null;
+  instructor_notes_typed?: TrainingInstructorNote[] | null;
+  // typed sections override
+  sections_typed?: TrainingSection[] | null;
+  sessions?: unknown[] | null;
+  // --- Phase 1 learner-facing depth ---
+  subtitle?: string | null;
+  faqs?: TrainingFaq[] | null;
+  instructor_photo?: string | null;
+  instructor_credentials?: string | null;
+  badges?: string[] | null;
 }
 
 /** `TrainingResponse` (create/update return) — alias of detail without enterprise_name. */
@@ -73,6 +201,8 @@ export interface TrainingListParams {
   min_price?: string;
   max_price?: string;
   duration?: string;
+  level?: string;
+  language?: string;
   date_from?: string;
   date_to?: string;
   page?: number;
@@ -85,6 +215,8 @@ export interface TrainingSearchParams {
   tenant_id?: string;
   enterprise_id?: string;
   category?: string;
+  level?: string;
+  language?: string;
   page?: number;
   page_size?: number;
 }
@@ -100,7 +232,10 @@ export interface CreateTrainingPayload {
   subcategory?: string | null;
   tags?: string[] | null;
   instructor_id?: string | null;
+  instructor_name?: string | null;
+  instructor_bio?: string | null;
   requirements?: string | null;
+  learning_objectives?: string[] | null;
   primary_image?: string | null;
   gallery_images?: unknown[] | null;
   promotional_video?: string | null;
@@ -110,6 +245,12 @@ export interface CreateTrainingPayload {
   duration?: string | null;
   start_date?: string | null;
   end_date?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  venue?: string | null;
+  address?: string | null;
+  meeting_link?: string | null;
+  delivery_instructions?: string | null;
   enrolment_start?: string | null;
   enrolment_end?: string | null;
   time_zone?: string | null;
@@ -120,9 +261,44 @@ export interface CreateTrainingPayload {
   coupon_code?: string | null;
   requires_approval?: boolean;
   access_duration_days?: string | null;
+  level?: string | null;
+  language?: string | null;
   status?: string;
   form_configuration_version_id?: string | null;
   custom_values?: Record<string, unknown> | null;
+  // --- Missing schema gaps wired for POST/PUT ---
+  recurring?: string | boolean | Record<string, unknown> | null;
+  schedule_exceptions?: unknown[] | null;
+  access_information?: string | null;
+  meeting_provider?: string | null;
+  waitlist_count?: number | null;
+  instructor?: TrainingInstructor | null;
+  instructor_notes?: TrainingInstructorNote[] | null;
+  notes_pdf_url?: string | null;
+  reviews?: TrainingReview[] | null;
+  target_audience?: string | null;
+  difficulty_level?: string | null;
+  offline_enabled?: boolean | null;
+  offline_access_enabled?: boolean | null;
+  session_mode?: string | null;
+  check_in?: boolean | null;
+  pass_code?: string | null;
+  qr_payload?: string | null;
+  release_rule?: { type?: string | null } | Record<string, unknown> | null;
+  discussions?: unknown[] | null;
+  announcements?: unknown[] | null;
+  moderation_history?: unknown[] | null;
+  // Lesson/section/document extensions (also via dedicated section/lesson endpoints)
+  sections?: TrainingSection[] | null;
+  documents_typed?: TrainingDocument[] | null;
+  sessions?: unknown[] | null;
+  // --- Phase 1 learner-facing depth ---
+  subtitle?: string | null;
+  faqs?: TrainingFaq[] | null;
+  instructor_photo?: string | null;
+  instructor_credentials?: string | null;
+  badges?: string[] | null;
+  // semantic aliases still sent as level/offline for backward compat
 }
 
 /** Payload for `PUT /api/v1/trainings/{id}` — all fields optional partial. */
@@ -136,6 +312,9 @@ export interface CreateTrainingSectionPayload {
   title: string;
   description?: string | null;
   order?: number | null;
+  meeting_link?: string | null;
+  join_url?: string | null;
+  assessment_id?: string | null;
   [key: string]: unknown;
 }
 
@@ -143,13 +322,33 @@ export interface CreateTrainingSectionPayload {
 export type UpdateTrainingSectionPayload = Partial<CreateTrainingSectionPayload>;
 
 /** Payload for `POST /api/v1/trainings/{id}/sections/{section_id}/lessons`. */
+export type TrainingLessonType = "text" | "video" | "audio" | "webpage" | "pdf" | "live" | "presentation" | "worksheet" | "document" | "venue" | "exam";
+
 export interface CreateTrainingLessonPayload {
   title: string;
   description?: string | null;
   content?: string | null;
-  video_url?: string | null;
-  duration_minutes?: number | null;
+  content_url?: string | null;
+  type?: TrainingLessonType | string | null;
+  duration?: number | string | null;
   order?: number | null;
+  is_preview?: boolean | null;
+  is_downloadable?: boolean | null;
+  is_draft?: boolean | null;
+  is_mandatory?: boolean | null;
+  file_size?: number | null;
+  meeting_link?: string | null;
+  join_meta?: string | null;
+  thumbnail_url?: string | null;
+  venue?: string | null;
+  address?: string | null;
+  pass_code?: string | null;
+  check_in_window?: string | null;
+  assessment_id?: string | null;
+  completion_rule?: string | null;
+  prerequisites?: string[] | null;
+  release_rule?: string | null;
+  instructor_id?: string | null;
   [key: string]: unknown;
 }
 
@@ -171,6 +370,8 @@ export interface CreateTrainingAssessmentPayload {
   passing_score?: number | null;
   time_limit_minutes?: number | null;
   max_attempts?: number | null;
+  section_id?: string | null;
+  lesson_id?: string | null;
   [key: string]: unknown;
 }
 
@@ -984,6 +1185,48 @@ export async function leaveTrainingWaitlist(trainingId: string, entryId: string)
 }
 
 // ---------------------------------------------------------------------------
+// Wishlist
+// ---------------------------------------------------------------------------
+
+/** Lists the current user's wishlist — `GET /trainings/wishlist`. */
+export async function listTrainingWishlist(): Promise<unknown[]> {
+  const res = await fetch(`${trainingsBasePath}wishlist`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load your wishlist");
+  const value = (await res.json()) as unknown;
+  if (Array.isArray(value)) return value;
+  if (isRecord(value) && Array.isArray(value.items)) return value.items as unknown[];
+  return [];
+}
+
+/** Adds a training to the wishlist — `POST /trainings/{id}/wishlist`. */
+export async function addTrainingToWishlist(trainingId: string): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/wishlist`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  if (!res.ok) throw await createTrainingsApiError(res, "add this training to your wishlist");
+  return (await res.json().catch(() => null)) as unknown;
+}
+
+/** Removes a training from the wishlist — `DELETE /trainings/{id}/wishlist`. */
+export async function removeTrainingFromWishlist(trainingId: string): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/wishlist`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!res.ok) throw await createTrainingsApiError(res, "remove this training from your wishlist");
+  const text = await res.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Progress / Content / Live sessions / Certificate / Calendar etc.
 // ---------------------------------------------------------------------------
 
@@ -1399,5 +1642,344 @@ export async function resubmitTraining(trainingId: string): Promise<unknown> {
   return value;
 }
 
+/** Gets training reports — `GET /trainings/{id}/reports`. */
+export async function getTrainingReports(trainingId: string, params: Record<string, unknown> = {}): Promise<unknown> {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== "") sp.set(k, String(v));
+  const qs = sp.toString() ? `?${sp.toString()}` : "";
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/reports${qs}`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load training reports");
+  return (await res.json()) as unknown;
+}
+
+/** Gets trainings report summary — `GET /trainings/reports/summary`. */
+export async function getTrainingsReportSummary(): Promise<unknown> {
+  const res = await fetch(`/api/v1/trainings/reports/summary`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load trainings summary");
+  return (await res.json()) as unknown;
+}
+
+/** Participant dashboard — `GET /trainings/{id}/dashboards/participant`. */
+export interface TrainingParticipantDashboard {
+  training_id: string;
+  enrolment_status: string;
+  overall_percent: number;
+  sections_done: number;
+  total_sections: number;
+  lessons_done: number;
+  total_lessons: number;
+  certificate_url: string | null;
+  expired: boolean;
+  recent_live_sessions: unknown[];
+}
+
+/** Provider dashboard — `GET /trainings/{id}/dashboards/provider`. */
+export interface TrainingProviderDashboard {
+  training_id: string;
+  total_enrolments: number;
+  by_status: Record<string, number>;
+  capacity_utilization: number;
+  recent_enrolments: unknown[];
+}
+
+function dashboardNumber(value: unknown): number {
+  return typeof value === "number" ? value : typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)) ? Number(value) : 0;
+}
+
+/** Normalizes the runtime participant dashboard payload into a stable shape. */
+export function parseTrainingParticipantDashboard(raw: unknown): TrainingParticipantDashboard {
+  const record = (raw ?? {}) as Record<string, unknown>;
+  return {
+    training_id: typeof record.training_id === "string" ? record.training_id : "",
+    enrolment_status: typeof record.enrolment_status === "string" ? record.enrolment_status : "unknown",
+    overall_percent: dashboardNumber(record.overall_percent),
+    sections_done: dashboardNumber(record.sections_done),
+    total_sections: dashboardNumber(record.total_sections),
+    lessons_done: dashboardNumber(record.lessons_done),
+    total_lessons: dashboardNumber(record.total_lessons),
+    certificate_url: typeof record.certificate_url === "string" && record.certificate_url.trim() ? record.certificate_url : null,
+    expired: record.expired === true,
+    recent_live_sessions: Array.isArray(record.recent_live_sessions) ? record.recent_live_sessions : [],
+  };
+}
+
+/** Normalizes the runtime provider dashboard payload into a stable shape. */
+export function parseTrainingProviderDashboard(raw: unknown): TrainingProviderDashboard {
+  const record = (raw ?? {}) as Record<string, unknown>;
+  const byStatus: Record<string, number> = {};
+  if (record.by_status && typeof record.by_status === "object" && !Array.isArray(record.by_status)) {
+    for (const [key, value] of Object.entries(record.by_status as Record<string, unknown>)) {
+      if (dashboardNumber(value) > 0) byStatus[key] = dashboardNumber(value);
+    }
+  }
+  return {
+    training_id: typeof record.training_id === "string" ? record.training_id : "",
+    total_enrolments: dashboardNumber(record.total_enrolments),
+    by_status: byStatus,
+    capacity_utilization: dashboardNumber(record.capacity_utilization),
+    recent_enrolments: Array.isArray(record.recent_enrolments) ? record.recent_enrolments : [],
+  };
+}
+
+/** Participant dashboard — `GET /trainings/{id}/dashboards/participant`. */
+export async function getTrainingParticipantDashboard(trainingId: string): Promise<TrainingParticipantDashboard> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/dashboards/participant`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load participant dashboard");
+  return parseTrainingParticipantDashboard(await res.json());
+}
+
+/** Provider dashboard — `GET /trainings/{id}/dashboards/provider`. */
+export async function getTrainingProviderDashboard(trainingId: string): Promise<TrainingProviderDashboard> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/dashboards/provider`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load provider dashboard");
+  return parseTrainingProviderDashboard(await res.json());
+}
+
+/** Exports enrolments CSV — `GET /trainings/{id}/enrolments/export`. */
+export async function exportTrainingEnrolments(trainingId: string): Promise<{ blob: Blob; filename: string | null }> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/enrolments/export`, { credentials: "include" });
+  if (!res.ok) throw await createTrainingsApiError(res, "export enrolments");
+  return { blob: await res.blob(), filename: getAttachmentFilename(res.headers.get("Content-Disposition")) };
+}
+
+/** Lists reviews — `GET /trainings/{id}/reviews`. */
+export async function listTrainingReviews(trainingId: string): Promise<unknown[]> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/reviews`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load reviews");
+  const value = (await res.json()) as unknown;
+  if (!Array.isArray(value)) throw new Error("Trainings API returned an invalid reviews response.");
+  return value;
+}
+
+/** Creates a review — `POST /trainings/{id}/reviews`. */
+export async function createTrainingReview(trainingId: string, payload: { rating: number; comment?: string | null; participant_email?: string }): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/reviews`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw await createTrainingsApiError(res, "create this review");
+  return (await res.json()) as unknown;
+}
+
 // Re-export helper for filename parsing (used for cert/calendar exports).
 export { getAttachmentFilename };
+
+// ---------------------------------------------------------------------------
+// Enrolment QR check-in (mirrors the events attendance contract)
+// ---------------------------------------------------------------------------
+
+/** Request body accepted by the training enrolment QR validation endpoint. */
+export interface ValidateTrainingQrPayload {
+  qr_code: string;
+}
+
+/** Response returned by training enrolment QR validation (read-only scan). */
+export interface ValidateTrainingQrResponse {
+  valid: boolean;
+  enrolment_id: string;
+  participant_name: string;
+  participant_email: string;
+  training_id: string;
+  training_title: string;
+  status: string;
+  message: string;
+}
+
+/** Identifier accepted by the training enrolment check-in endpoint (either key, never both). */
+export type CheckInTrainingParticipantPayload =
+  | { enrolment_id: string; qr_code?: never }
+  | { qr_code: string; enrolment_id?: never };
+
+/** Response returned after a successful training enrolment check-in. */
+export interface CheckInTrainingParticipantResponse {
+  message: string;
+  enrolment_id: string;
+  participant_name: string;
+  participant_email: string;
+  status: string;
+  checked_in_at: string;
+}
+
+/** Request body accepted by the training enrolment undo-check-in endpoint. */
+export interface UncheckInTrainingParticipantPayload {
+  enrolment_id: string;
+}
+
+/** Enrolment statuses understood by the training batch check-in preview. */
+export type TrainingBatchCheckInStatus = "confirmed" | "attended" | "cancelled" | "no_show";
+
+/** One enrolment row in the training batch check-in preview with backend eligibility. */
+export interface TrainingBatchCheckInPreviewItem {
+  enrolment_id: string;
+  participant_name: string;
+  participant_email: string;
+  status: TrainingBatchCheckInStatus;
+  qr_code: string | null;
+  checked_in_at: string | null;
+  can_check_in: boolean;
+  eligibility_reason: string;
+}
+
+/** Backend-authoritative collection returned by the training batch check-in preview endpoint. */
+export type TrainingBatchCheckInPreviewResponse = readonly TrainingBatchCheckInPreviewItem[];
+
+/** One selected enrolment supplied to the training batch check-in endpoint. */
+export interface TrainingBatchCheckInParticipantPayload {
+  enrolment_id?: string;
+  qr_code?: string;
+}
+
+/** Request body accepted by the training batch check-in endpoint. */
+export interface BatchCheckInTrainingParticipantsPayload {
+  participants: readonly TrainingBatchCheckInParticipantPayload[];
+}
+
+/** One backend result returned for an enrolment in a batch check-in operation. */
+export interface TrainingBatchCheckInResult {
+  enrolment_id: string;
+  participant_name: string;
+  status: string;
+  checked_in_at: string | null;
+  message: string;
+}
+
+/** Summary returned by a training batch check-in, including partial-success results. */
+export interface TrainingBatchCheckInResponse {
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: readonly TrainingBatchCheckInResult[];
+}
+
+function isValidateTrainingQrResponse(value: unknown): value is ValidateTrainingQrResponse {
+  return isRecord(value) &&
+    typeof value.valid === "boolean" &&
+    typeof value.enrolment_id === "string" &&
+    typeof value.participant_name === "string" &&
+    typeof value.participant_email === "string" &&
+    typeof value.training_id === "string" &&
+    typeof value.training_title === "string" &&
+    typeof value.status === "string" &&
+    typeof value.message === "string";
+}
+
+function isCheckInTrainingParticipantResponse(value: unknown): value is CheckInTrainingParticipantResponse {
+  return isRecord(value) &&
+    typeof value.message === "string" &&
+    typeof value.enrolment_id === "string" &&
+    typeof value.participant_name === "string" &&
+    typeof value.participant_email === "string" &&
+    typeof value.status === "string" &&
+    typeof value.checked_in_at === "string";
+}
+
+function isTrainingBatchCheckInStatus(value: unknown): value is TrainingBatchCheckInStatus {
+  return value === "confirmed" || value === "attended" || value === "cancelled" || value === "no_show";
+}
+
+function isTrainingBatchCheckInPreviewItem(value: unknown): value is TrainingBatchCheckInPreviewItem {
+  return isRecord(value) &&
+    typeof value.enrolment_id === "string" &&
+    typeof value.participant_name === "string" &&
+    typeof value.participant_email === "string" &&
+    isTrainingBatchCheckInStatus(value.status) &&
+    (value.qr_code === null || typeof value.qr_code === "string") &&
+    (value.checked_in_at === null || typeof value.checked_in_at === "string") &&
+    typeof value.can_check_in === "boolean" &&
+    typeof value.eligibility_reason === "string";
+}
+
+function parseTrainingBatchCheckInPreviewResponse(value: unknown): TrainingBatchCheckInPreviewResponse {
+  if (!Array.isArray(value) || !value.every(isTrainingBatchCheckInPreviewItem)) {
+    throw new Error("Trainings API returned an invalid batch check-in preview response.");
+  }
+  return value;
+}
+
+function isTrainingBatchCheckInResult(value: unknown): value is TrainingBatchCheckInResult {
+  return isRecord(value) &&
+    typeof value.enrolment_id === "string" &&
+    typeof value.participant_name === "string" &&
+    typeof value.status === "string" &&
+    (value.checked_in_at === null || typeof value.checked_in_at === "string") &&
+    typeof value.message === "string";
+}
+
+function isTrainingBatchCheckInResponse(value: unknown): value is TrainingBatchCheckInResponse {
+  return isRecord(value) &&
+    typeof value.total === "number" && Number.isFinite(value.total) &&
+    typeof value.succeeded === "number" && Number.isFinite(value.succeeded) &&
+    typeof value.failed === "number" && Number.isFinite(value.failed) &&
+    Array.isArray(value.results) && value.results.every(isTrainingBatchCheckInResult);
+}
+
+/** Validates a backend-issued enrolment QR code without changing attendance state. */
+export async function validateTrainingQr(trainingId: string, payload: ValidateTrainingQrPayload): Promise<ValidateTrainingQrResponse> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/enrolments/validate-qr`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw await createTrainingsApiError(res, "validate this enrolment QR code");
+  const value = (await res.json()) as unknown;
+  if (!isValidateTrainingQrResponse(value)) throw new Error("Trainings API returned an invalid QR validation response.");
+  return value;
+}
+
+/** Checks in one eligible enrolment by enrolment id or QR code (idempotent on re-scan). */
+export async function checkInTrainingParticipant(trainingId: string, payload: CheckInTrainingParticipantPayload): Promise<CheckInTrainingParticipantResponse> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/enrolments/check-in`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw await createTrainingsApiError(res, "check in this participant");
+  const value = (await res.json()) as unknown;
+  if (!isCheckInTrainingParticipantResponse(value)) throw new Error("Trainings API returned an invalid check-in response.");
+  return value;
+}
+
+/** Reverses one enrolment check-in. */
+export async function uncheckInTrainingParticipant(trainingId: string, payload: UncheckInTrainingParticipantPayload): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/enrolments/uncheck-in`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw await createTrainingsApiError(res, "undo this participant check-in");
+  const text = await res.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
+  }
+}
+
+/** Loads selectable enrolments using the backend batch check-in eligibility rules. */
+export async function getTrainingBatchCheckInPreview(trainingId: string, status?: TrainingBatchCheckInStatus): Promise<TrainingBatchCheckInPreviewResponse> {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/enrolments/check-in-preview${qs}`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load batch check-in participants");
+  return parseTrainingBatchCheckInPreviewResponse(await res.json());
+}
+
+/** Checks in a non-empty set of enrolments in one backend operation. */
+export async function batchCheckInTrainingParticipants(trainingId: string, payload: BatchCheckInTrainingParticipantsPayload): Promise<TrainingBatchCheckInResponse> {
+  if (payload.participants.length === 0) throw new Error("Select at least one eligible participant before batch check-in.");
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/batch-check-in`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw await createTrainingsApiError(res, "check in the selected participants");
+  const value = (await res.json()) as unknown;
+  if (!isTrainingBatchCheckInResponse(value)) throw new Error("Trainings API returned an invalid batch check-in response.");
+  return value;
+}
