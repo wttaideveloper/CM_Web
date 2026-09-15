@@ -47,3 +47,6 @@ next-env.d.ts
 .freebuff/
 .freebuffpreview.log
 .freebuffpreview.log.err
+
+# local dev logs
+dev-all.log

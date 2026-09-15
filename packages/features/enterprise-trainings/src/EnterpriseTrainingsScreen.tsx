@@ -7,7 +7,7 @@ import Link from "next/link";
 
 import TrainingActionsMenu from "./TrainingActionsMenu";
 import { PRODUCT_TRAINING_STATUSES, getTrainingStatusBadgeClass, getTrainingStatusLabel } from "./training-status";
-import { listTrainings, searchTrainings, type TrainingListItem } from "./trainings.service";
+import { listTrainings, searchTrainings, getTrainingsReportSummary, type TrainingListItem } from "./trainings.service";
 
 type SortOption = "newest" | "oldest" | "az" | "status";
 const statusFilters = ["all", ...PRODUCT_TRAINING_STATUSES] as const;
@@ -64,6 +64,46 @@ function formatTrainingAvailability(training: TrainingListItem): string {
     }
   }
   return "—";
+}
+
+function TrainingsSummaryCard({ summary, isLoading, isError }: { summary: unknown; isLoading: boolean; isError: boolean }) {
+  if (isLoading) return <section className="mt-4 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm"><p className="text-sm text-[#52736a]">Loading report summary...</p></section>;
+  if (isError || !summary || typeof summary !== "object") return null;
+  const record = summary as Record<string, unknown>;
+  const total = record.total_trainings === null || record.total_trainings === undefined ? "" : String(record.total_trainings);
+  const byStatus = record.by_status && typeof record.by_status === "object" ? (record.by_status as Record<string, unknown>) : undefined;
+  const statusEntries = byStatus ? Object.entries(byStatus).sort((a, b) => Number(b[1]) - Number(a[1])) : [];
+  const byCategory = record.by_category && typeof record.by_category === "object" ? (record.by_category as Record<string, unknown>) : undefined;
+  const categoryEntries = byCategory ? Object.entries(byCategory).sort((a, b) => Number(b[1]) - Number(a[1])) : [];
+  const toneClass = (status: string) => {
+    const normalized = status.trim().toLowerCase();
+    if (["enrolled", "attended", "active", "completed", "approved", "published"].includes(normalized)) return "rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[10px] font-bold text-[#1f6a58]";
+    if (["pending", "pending_approval", "draft", "waitlist", "waitlisted"].includes(normalized)) return "rounded-full bg-[#fff8e1] px-2 py-0.5 text-[10px] font-bold text-[#8a5a00]";
+    if (["cancelled", "rejected", "no_show", "expired"].includes(normalized)) return "rounded-full bg-[#fff1f0] px-2 py-0.5 text-[10px] font-bold text-[#b42318]";
+    return "rounded-full bg-[#f0f3f2] px-2 py-0.5 text-[10px] font-bold text-[#52736a]";
+  };
+  return (
+    <section className="mt-4 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Report Summary</p>
+        {total !== "" ? <span className="rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[10px] font-bold text-[#1f6a58]">{total} total trainings</span> : null}
+      </div>
+      {statusEntries.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {statusEntries.map(([status, count]) => (
+            <span key={status} className={toneClass(status)}>{status.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase())}: {String(count)}</span>
+          ))}
+        </div>
+      ) : null}
+      {categoryEntries.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {categoryEntries.map(([category, count]) => (
+            <span key={category} className="rounded-full bg-[#f0f3f2] px-2 py-0.5 text-[10px] font-bold text-[#52736a]">{category}: {String(count)}</span>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
 }
 
 function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess }: { training: TrainingListItem; onStatusSuccess: () => void; onDuplicateSuccess: () => void; onDeleteSuccess: () => void }) {
@@ -179,6 +219,8 @@ export default function EnterpriseTrainingsScreen() {
   const showDuplicateFeedback = () => setStatusFeedback("Training duplicated.");
   const showDeleteFeedback = () => setStatusFeedback("Training deleted.");
 
+  const summaryQuery = useQuery({ queryKey: ["trainings", "reports", "summary"], queryFn: () => getTrainingsReportSummary(), enabled: Boolean(tenantId), staleTime: 30_000, retry: 1 });
+
   return (
     <div className="w-full">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -193,6 +235,18 @@ export default function EnterpriseTrainingsScreen() {
         </div>
 
         <div className="flex flex-wrap gap-3">
+          <Link
+            href="/admin/trainings/wishlist"
+            className="inline-flex h-12 items-center justify-center rounded-full border border-[#1f6a58] px-5 text-sm font-bold text-[#1f6a58] shadow-sm transition hover:bg-[#e8f6ee]"
+          >
+            Wishlist
+          </Link>
+          <Link
+            href="/admin/trainings/my-enrolments"
+            className="inline-flex h-12 items-center justify-center rounded-full border border-[#1f6a58] px-5 text-sm font-bold text-[#1f6a58] shadow-sm transition hover:bg-[#e8f6ee]"
+          >
+            My Enrolments
+          </Link>
           {enterpriseId ? (
             <Link
               href="/admin/trainings/create"
@@ -214,6 +268,8 @@ export default function EnterpriseTrainingsScreen() {
       </div>
 
       {statusFeedback ? <p role="status" className="mt-4 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">{statusFeedback}</p> : null}
+
+      <TrainingsSummaryCard summary={summaryQuery.data} isLoading={summaryQuery.isLoading} isError={summaryQuery.isError} />
 
       <section className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm">
         <div className="grid gap-3 xl:grid-cols-[1fr_auto]">

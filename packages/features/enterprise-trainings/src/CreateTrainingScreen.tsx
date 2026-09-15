@@ -65,12 +65,30 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitForApprovalMode, setSubmitForApprovalMode] = useState(false);
 
+  // Backend rejects custom_values keys that collide with top-level TrainingCreate fields
+  // (e.g. stale `tags` stored as custom → `400 Unknown custom field: tags`). Only send
+  // custom keys that exist in the active form and are not top-level payload keys.
+  const sanitizeCustomValues = (basePayload: Record<string, unknown>, raw: Record<string, unknown>): Record<string, unknown> | undefined => {
+    const topLevelKeys = new Set(Object.keys(basePayload));
+    const formKeys = new Set((activeForm?.sections ?? []).flatMap((sec) => sec.fields.map((fld) => fld.key)));
+    const entries = Object.entries(raw).filter(([k, v]) =>
+      Boolean(k) && !topLevelKeys.has(k) && (formKeys.size === 0 || formKeys.has(k)) && v !== undefined && v !== null && v !== "",
+    );
+    return entries.length ? Object.fromEntries(entries) : undefined;
+  };
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (mode === "edit") {
         if (!initialTraining) throw new Error("The training could not be loaded.");
         if (!canEditTraining(initialTraining.status)) throw new Error("This Training cannot be edited in its current lifecycle state.");
-        const updated = await updateTraining(initialTraining.id, buildUpdateTrainingPayload(values));
+        const baseUpdate = buildUpdateTrainingPayload(values);
+        const custom = sanitizeCustomValues(baseUpdate as unknown as Record<string, unknown>, customValues);
+        // Keep sessions: edit form has no sessions editor, so carry the stored array through —
+        // otherwise a replace-semantics PUT would wipe it. Never drop server data on edit.
+        const initialRaw = initialTraining as unknown as Record<string, unknown>;
+        const keptSessions = Array.isArray(initialRaw.sessions) ? (initialRaw.sessions as unknown[]) : undefined;
+        const updated = await updateTraining(initialTraining.id, { ...baseUpdate, ...(keptSessions ? { sessions: keptSessions } : {}), ...(custom ? { custom_values: custom } : {}) });
         if (submitForApprovalMode) {
           if (initialTraining.status === "needs_revision" || initialTraining.status === "rejected") {
             await resubmitTraining(initialTraining.id);
@@ -82,8 +100,9 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
       }
       if (!tenantId || !enterpriseId) throw new Error("A tenant and enterprise are required.");
       const basePayload = buildCreateTrainingPayload(values, tenantId, enterpriseId);
+      const custom = sanitizeCustomValues(basePayload as unknown as Record<string, unknown>, customValues);
       const payload = activeForm
-        ? ({ ...basePayload, form_configuration_version_id: activeForm.version_id ?? activeForm.id, custom_values: { ...customValues, ...values } } as unknown as Parameters<typeof createTraining>[0])
+        ? ({ ...basePayload, form_configuration_version_id: activeForm.version_id ?? activeForm.id, ...(custom ? { custom_values: custom } : {}) } as unknown as Parameters<typeof createTraining>[0])
         : basePayload;
       const created = await createTraining(payload);
       if (submitForApprovalMode) {
