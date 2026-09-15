@@ -249,19 +249,8 @@ export function validateSessions(sessions: readonly SessionDraft[], eventStart: 
     const range = sessionRange(session); if (enabled("start_time") && enabled("end_time") && (!range || range.start < event.start || range.end > event.end)) return "Each session must have valid times within the Event schedule.";
     if (enabled("meeting_link") && session.meeting_link && !isUrl(session.meeting_link)) return "Meeting links must be valid URLs.";
   }
-  const persistedRanges = occupiedSessions.map(toDraft).map(sessionRange).filter((range): range is Range => Boolean(range));
-  const generatedRanges = sessions.map(sessionRange);
-  for (const generated of generatedRanges) {
-    if (!generated) continue;
-    if (persistedRanges.some((persisted) => overlaps(generated, persisted))) return "Sessions cannot overlap each other.";
-  }
-  for (let index = 0; index < generatedRanges.length; index += 1) {
-    const current = generatedRanges[index];
-    if (current && generatedRanges.slice(index + 1).some((next) => Boolean(next && overlaps(current, next)))) return "Sessions cannot overlap each other.";
-  }
   return null;
 }
 function fieldLabel(field: SessionField): string { return fields.find((item) => item.key === field)?.label ?? field; }
 function isUrl(value: string): boolean { try { new URL(value); return true; } catch { return false; } }
-function overlaps(left: Range, right: Range): boolean { return left.start < right.end && left.end > right.start; }
 function durationOfSessions(sessions: readonly SessionDraft[]): number { return sessions.reduce((total, session) => { const range = sessionRange(session); return total + (range ? range.end - range.start : 0); }, 0); }

@@ -1063,6 +1063,20 @@ export async function getEventById(eventId: string): Promise<Event> {
   return value;
 }
 
+/** Reads the latest Platform review note for an Event through the authenticated Events API. */
+export async function getEventAdminNotes(eventId: string): Promise<unknown> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/admin-notes`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw await createEventsApiError(response, "load the Event admin note");
+  }
+
+  return (await response.json().catch(() => null)) as unknown;
+}
+
 /** Lists registration records for one Event through the authenticated same-origin proxy. */
 export async function getEventRegistrations(eventId: string): Promise<EventRegistrationsResponse> {
   const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/registrations`, {
