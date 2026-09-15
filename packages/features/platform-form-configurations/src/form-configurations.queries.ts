@@ -26,11 +26,11 @@ export const eventFormConfigurationListQueryKey = eventFormConfigurationKeys.lis
 export const eventFormFieldRegistryQueryKey = eventFormConfigurationKeys.fieldRegistry();
 
 function toBuilderRegistryItem(field: Awaited<ReturnType<typeof getEventFormFieldRegistry>>[number]): CoreFieldRegistryItem {
-  return { key: field.key, displayName: field.display_name, valueType: field.value_type, allowedRenderers: field.allowed_renderers, defaultRenderer: field.default_renderer, requiredByDomain: field.required_by_domain, removable: field.removable, hideable: field.hideable, configurable: { label: field.configurable.label, section: field.configurable.section, position: field.configurable.position, required: field.configurable.required, renderer: field.configurable.renderer, placeholder: field.configurable.placeholder, helpText: field.configurable.help_text, validation: field.configurable.validation } };
+  return { key: field.key, displayName: field.display_name, valueType: field.value_type, allowedRenderers: field.allowed_renderers, defaultRenderer: field.default_renderer, requiredByDomain: field.required_by_domain, removable: field.removable, hideable: field.hideable, options: field.options ?? [], valueSource: field.value_source, sourceEndpoint: field.source_endpoint, dependsOn: field.depends_on, configurable: { label: field.configurable.label, section: field.configurable.section, position: field.configurable.position, required: field.configurable.required, renderer: field.configurable.renderer, placeholder: field.configurable.placeholder, helpText: field.configurable.help_text, validation: field.configurable.validation } };
 }
 
 function toListItem(configuration: Awaited<ReturnType<typeof listEventFormConfigurations>>[number]): FormConfigurationListItem {
-  return { id: configuration.id, name: configuration.name, description: configuration.description, scope: configuration.scope, status: configuration.status, active: configuration.is_active, currentVersion: configuration.current_version, updatedAt: configuration.updated_at };
+  return { id: configuration.id, name: configuration.name, description: configuration.description, scope: configuration.scope, status: configuration.status, active: configuration.is_active, currentVersion: configuration.current_version, createdAt: configuration.created_at, updatedAt: configuration.updated_at, publishedAt: configuration.published_at };
 }
 
 /** Reads configuration summaries for the existing Platform Admin list screen. */
@@ -48,7 +48,7 @@ export function useEventFormConfigurationAssignments(configurationId: string | u
 /** Reads audit history for one configuration. */
 export function useEventFormConfigurationAudit(configurationId: string | undefined) { return useQuery({ queryKey: eventFormConfigurationKeys.audit(configurationId ?? ""), queryFn: () => getEventFormConfigurationAudit(configurationId ?? ""), enabled: Boolean(configurationId), retry: 1 }); }
 /** Reads canonical Enterprise-module tenant UUIDs through the authenticated Platform BFF. */
-export function useEventFormConfigurationTenantOptions() {
+export function useEventFormConfigurationTenantOptions(enabled = true) {
   return useQuery({
     queryKey: eventFormConfigurationKeys.assignableTenants(),
     queryFn: async (): Promise<AssignmentTenantOption[]> => {
@@ -57,6 +57,7 @@ export function useEventFormConfigurationTenantOptions() {
     },
     retry: 1,
     staleTime: 60_000,
+    enabled,
   });
 }
 

@@ -44,7 +44,8 @@ export interface EventFormConfigurationLifecycleResponse { id: string; status: E
 export interface EventFormConfigurationCreateResponse extends EventFormConfiguration { draft_version: EventFormConfigurationVersion; }
 
 /** Authoritative metadata for one core Event field. */
-export interface EventCoreFieldRegistryEntry { key: string; display_name: string; value_type: EventFormValueType; allowed_renderers: EventFormRenderer[]; default_renderer: EventFormRenderer; required_by_domain: boolean; removable: boolean; hideable: boolean; configurable: { label: boolean; section: boolean; position: boolean; required: boolean; renderer: boolean; placeholder: boolean; help_text: boolean; validation: boolean; }; }
+export interface EventCoreFieldRegistryOption { value: string; label: string; position: number; }
+export interface EventCoreFieldRegistryEntry { key: string; display_name: string; value_type: EventFormValueType; allowed_renderers: EventFormRenderer[]; default_renderer: EventFormRenderer; required_by_domain: boolean; removable: boolean; hideable: boolean; options: EventCoreFieldRegistryOption[] | null; value_source?: string | null; source_endpoint?: string | null; depends_on?: string | null; configurable: { label: boolean; section: boolean; position: boolean; required: boolean; renderer: boolean; placeholder: boolean; help_text: boolean; validation: boolean; }; }
 
 /** One tenant-to-enterprise assignment returned by the configuration assignment endpoint. */
 export interface EventFormAssignment { tenant_id: string; enterprise_id: string; }

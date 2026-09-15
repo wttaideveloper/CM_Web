@@ -9,7 +9,7 @@ import type {
   Event,
   UpdateEventPayload,
 } from "./events.service";
-import { getEventSessionDates, getSessionTimeBounds } from "./event-session-date";
+import { validateSessions } from "./SessionTableEditor";
 
 /** An editable ticket row in the Create Event workspace. */
 export interface EventTicketFormValue extends EventTicketType {}
@@ -34,6 +34,7 @@ export interface CreateEventFormValues {
   organiser_contact: string;
   start_date: string;
   end_date: string;
+  duration_type: string;
   registration_cutoff: string;
   registration_open_at: string;
   registration_close_at: string;
@@ -64,7 +65,7 @@ export interface CreateEventFormValues {
 export function createEmptyEventForm(): CreateEventFormValues {
   return {
     title: "", description: "", category: "", subcategory: "", tags: [], organiser_name: "",
-    organiser_contact: "", start_date: "", end_date: "", registration_cutoff: "",
+    organiser_contact: "", start_date: "", end_date: "", duration_type: "", registration_cutoff: "",
     registration_open_at: "", registration_close_at: "", time_zone: "Asia/Kolkata", delivery_mode: "in_person",
     venue_name: "", venue_address: "", venue_city: "", venue_latitude: "", venue_longitude: "",
     meeting_link: "", meeting_provider: "", price: "", currency: "INR", ticket_types: [], capacity: "",
@@ -104,6 +105,7 @@ export function buildCreateEventPayload(
     organiser_contact: values.organiser_contact.trim(),
     start_date: toBackendLocalDateTime(values.start_date),
     end_date: toBackendLocalDateTime(values.end_date),
+    duration_type: values.duration_type,
     time_zone: values.time_zone,
     registration_cutoff: toBackendLocalDateTime(values.registration_cutoff),
     primary_image: values.primary_image.trim(),
@@ -149,7 +151,7 @@ export function eventToFormValues(event: Event): CreateEventFormValues {
   return {
     title: event.title, description: event.description, category: event.category, subcategory: event.subcategory,
     tags: event.tags, organiser_name: event.organiser_name, organiser_contact: event.organiser_contact,
-    start_date: toDateTimeLocal(event.start_date), end_date: toDateTimeLocal(event.end_date),
+    start_date: toDateTimeLocal(event.start_date), end_date: toDateTimeLocal(event.end_date), duration_type: event.duration_type,
     registration_cutoff: toDateTimeLocal(event.registration_cutoff), registration_open_at: toDateTimeLocal(event.registration_open_at),
     registration_close_at: toDateTimeLocal(event.registration_close_at), time_zone: event.time_zone, delivery_mode: event.delivery_mode,
     venue_name: event.venue?.name ?? "", venue_address: event.venue?.address ?? "", venue_city: event.venue?.city ?? "",
@@ -232,10 +234,10 @@ function mergeChangedSession(
 }
 
 /** Builds the partial writable EventUpdate request, preserving untouched backend values. */
-export function buildUpdateEventPayload(values: CreateEventFormValues, initialValues: CreateEventFormValues, locationId: string, initialLocationId: string): UpdateEventPayload {
+export function buildUpdateEventPayload(values: CreateEventFormValues, initialValues: CreateEventFormValues, locationId: string, initialLocationId: string, configuredCoreKeys?: ReadonlySet<string>): UpdateEventPayload {
   const changed = <Key extends keyof CreateEventFormValues>(key: Key): boolean => JSON.stringify(values[key]) !== JSON.stringify(initialValues[key]);
   const payload: UpdateEventPayload = {};
-  const scalarKeys: Array<keyof Pick<CreateEventFormValues, "title" | "description" | "category" | "subcategory" | "tags" | "organiser_name" | "organiser_contact" | "time_zone" | "delivery_mode" | "primary_image" | "gallery_images" | "videos" | "documents" | "price" | "currency" | "ticket_types" | "capacity" | "min_participants" | "max_participants" | "custom_fields" | "sessions">> = ["title", "description", "category", "subcategory", "tags", "organiser_name", "organiser_contact", "time_zone", "delivery_mode", "primary_image", "gallery_images", "videos", "documents", "price", "currency", "ticket_types", "capacity", "min_participants", "max_participants", "custom_fields", "sessions"];
+  const scalarKeys: Array<keyof Pick<CreateEventFormValues, "title" | "description" | "category" | "subcategory" | "tags" | "organiser_name" | "organiser_contact" | "duration_type" | "time_zone" | "delivery_mode" | "primary_image" | "gallery_images" | "videos" | "documents" | "price" | "currency" | "ticket_types" | "capacity" | "min_participants" | "max_participants" | "custom_fields" | "sessions">> = ["title", "description", "category", "subcategory", "tags", "organiser_name", "organiser_contact", "duration_type", "time_zone", "delivery_mode", "primary_image", "gallery_images", "videos", "documents", "price", "currency", "ticket_types", "capacity", "min_participants", "max_participants", "custom_fields", "sessions"];
   for (const key of scalarKeys) if (changed(key)) Object.assign(payload, { [key]: values[key] });
   const datetimeKeys: Array<keyof Pick<CreateEventFormValues, "start_date" | "end_date" | "registration_cutoff" | "registration_open_at" | "registration_close_at">> = ["start_date", "end_date", "registration_cutoff", "registration_open_at", "registration_close_at"];
   for (const key of datetimeKeys) if (changed(key)) Object.assign(payload, { [key]: toBackendLocalDateTime(values[key]) });
@@ -244,6 +246,10 @@ export function buildUpdateEventPayload(values: CreateEventFormValues, initialVa
   if (locationId !== initialLocationId) payload.location_id = locationId || null;
   const venueFields: Array<keyof CreateEventFormValues> = ["venue_name", "venue_address", "venue_city", "venue_latitude", "venue_longitude"];
   if (venueFields.some((field) => changed(field))) payload.venue = buildVenue(values);
+  if (configuredCoreKeys) {
+    const payloadKeys: Record<string, keyof UpdateEventPayload> = { title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", duration_type: "duration_type", start_date: "start_date", end_date: "end_date", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", time_zone: "time_zone", delivery_mode: "delivery_mode", venue: "venue", location_id: "location_id", meeting_link: "meeting_link", meeting_provider: "meeting_provider", price: "price", currency: "currency", ticket_types: "ticket_types", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents", sessions: "sessions" };
+    for (const [configurationKey, payloadKey] of Object.entries(payloadKeys)) if (!configuredCoreKeys.has(configurationKey)) delete (payload as Partial<UpdateEventPayload>)[payloadKey];
+  }
   return payload;
 }
 
@@ -302,9 +308,8 @@ function validateRepeatingValues(values: CreateEventFormValues, errors: Record<s
   );
   if (invalidTicket) errors.ticket_types = ["Each ticket needs an ID, name, currency, non-negative price, and capacity."];
 
-  const validSessionDates = getEventSessionDates(values.start_date, values.end_date);
-  const invalidSession = values.sessions.some((session) => { const bounds = getSessionTimeBounds(session.session_date, values.start_date, values.end_date); return !validSessionDates.includes(session.session_date) || !session.title.trim() || !session.speaker.trim() || !session.location.trim() || !session.start_time || !session.end_time || session.end_time <= session.start_time || session.start_time < bounds.min || session.start_time > bounds.max || session.end_time < bounds.min || session.end_time > bounds.max; });
-  if (invalidSession) errors.sessions = ["Each session needs a valid event date, complete details, and times within the event schedule."];
+  const sessionError = validateSessions(values.sessions, values.start_date, values.end_date, undefined, ["session_date", "title", "speaker", "start_time", "end_time", "location"]);
+  if (sessionError) errors.sessions = [sessionError];
 
   const invalidCustomField = values.custom_fields.some(
     (field) => !field.label.trim() || field.options.length === 0);

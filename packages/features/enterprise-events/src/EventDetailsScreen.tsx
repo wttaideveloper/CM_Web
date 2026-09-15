@@ -52,6 +52,7 @@ import {
   type UpdateEventSessionPayload,
 } from "./events.service";
 import { useEventHistoricalFormConfiguration } from "./event-form-configuration.queries";
+import SessionTableEditor, { type SessionDraft } from "./SessionTableEditor";
 
 type DetailItem = {
   label: string;
@@ -1034,6 +1035,7 @@ function SessionsSection({
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSession, setEditingSession] = useState<EventSession | null>(null);
   const [deletingSession, setDeletingSession] = useState<EventSession | null>(null);
+  const [newSessions, setNewSessions] = useState<SessionDraft[]>([]);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const sessionsQuery = useQuery({
     queryKey: ["event-sessions", eventId],
@@ -1072,20 +1074,34 @@ function SessionsSection({
       setDeletingSession(null);
     },
   });
+  const saveNewSessions = async (drafts: SessionDraft[]) => {
+    const payloads = drafts.map((session) => ({
+      session_date: session.session_date,
+      title: session.title.trim(),
+      speaker: session.speaker.trim() || null,
+      start_time: session.start_time || null,
+      end_time: session.end_time || null,
+      location: session.location.trim() || null,
+      meeting_link: session.meeting_link?.trim() || null,
+    }));
+    for (let index = 0; index < payloads.length; index += 1) {
+      try {
+        await addEventSession(eventId, payloads[index]);
+      } catch (caught) {
+        setNewSessions(drafts.slice(index));
+        await sessionsQuery.refetch();
+        throw new Error(index === 0 ? "Could not save new sessions. Please correct the highlighted rows and retry." : `Saved ${index} session${index === 1 ? "" : "s"}; the remaining rows were not saved.`);
+      }
+    }
+    setNewSessions([]);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["event-sessions", eventId] }),
+      queryClient.invalidateQueries({ queryKey: ["events", "detail", eventId] }),
+    ]);
+  };
   return (
-    <section className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-lg font-bold text-[#06201c]">{sessionField?.label ?? "Sessions / Agenda"}</h2>
-        <button
-          ref={triggerRef}
-          type="button"
-          onClick={() => setIsDialogOpen(true)}
-          className="inline-flex h-10 items-center justify-center rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white shadow-sm focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2"
-        >
-          + Add Session
-        </button>
-      </div>
-      <div className="mt-4">
+    <div>
+      <div>
         {sessionsQuery.isLoading ? (
           <div
             role="status"
@@ -1119,56 +1135,22 @@ function SessionsSection({
             <div className="h-10 animate-pulse rounded-xl bg-[#edf3f0]" />
             <div className="h-10 animate-pulse rounded-xl bg-[#edf3f0]" />
           </div>
-        ) : sessionsQuery.data.length === 0 ? (
-          <>
-            <Empty label="No sessions added" />
-            <p className="mt-1 text-sm text-[#52736a]">
-              The agenda for this event will appear here once sessions are
-              added.
-            </p>
-          </>
-        ) : (
-          <ul className="space-y-3">
-            {sessionsQuery.data.map((session, index) => (
-              <li
-                key={session.id ?? `embedded-session-${index}`}
-                className="rounded-xl border border-[#edf3f0] bg-[#f9fcfa] p-4"
-              >
-                {isSessionSubfieldEnabled(sessionField, "title") ? <h3 className="text-sm font-bold text-[#06201c]">
-                  {session.title || `Session ${index + 1}`}
-                </h3> : null}
-                {isSessionSubfieldEnabled(sessionField, "session_date") && session.session_date ? (
-                  <p className="mt-1 text-sm font-semibold text-[#1f6a58]">
-                    {formatSessionDate(session.session_date)}
-                  </p>
-                ) : null}
-                <div className="mt-2 grid gap-2 text-sm text-[#52736a] sm:grid-cols-2">
-                  {isSessionSubfieldEnabled(sessionField, "speaker") && session.speaker ? <p>Speaker: {session.speaker}</p> : null}
-                  {isSessionSubfieldEnabled(sessionField, "start_time") && session.start_time ? (
-                    <p>Start: {session.start_time}</p>
-                  ) : null}
-                  {isSessionSubfieldEnabled(sessionField, "end_time") && session.end_time ? <p>End: {session.end_time}</p> : null}
-                  {isSessionSubfieldEnabled(sessionField, "location") && session.location ? (
-                    <p>Location: {session.location}</p>
-                  ) : null}
-                  {isSessionSubfieldEnabled(sessionField, "meeting_link") && session.meeting_link ? (
-                    <a
-                      href={session.meeting_link}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="break-all font-semibold text-[#1f6a58] underline"
-                    >
-                      Meeting link
-                    </a>
-                  ) : null}
-                </div>
-                {session.id ? (
-                  <div className="mt-3 flex flex-wrap gap-3"><button type="button" onClick={() => setEditingSession(session)} className="text-sm font-semibold text-[#1f6a58] underline">Edit</button><button type="button" onClick={() => setDeletingSession(session)} className="text-sm font-semibold text-[#b42318] underline">Delete</button><SessionCalendarDownloadAction eventId={eventId} sessionId={session.id} /></div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
+        ) : <SessionTableEditor
+          mode="manage"
+          eventStart={startDate}
+          eventEnd={endDate}
+          sessions={newSessions}
+          persistedSessions={sessionsQuery.data}
+          enabledFields={sessionField?.composite_config?.enabled_fields ?? undefined}
+          requiredFields={sessionField?.composite_config?.required_fields ?? []}
+          label={sessionField?.label ?? "Sessions / Agenda"}
+          onSessionsChange={setNewSessions}
+          onAddSession={() => setIsDialogOpen(true)}
+          onEditPersisted={(session) => setEditingSession(session as EventSession)}
+          onDeletePersisted={(session) => setDeletingSession(session as EventSession)}
+          renderPersistedActions={(session) => <SessionCalendarDownloadAction eventId={eventId} sessionId={session.id} />}
+          onSaveNewSessions={saveNewSessions}
+        />}
       </div>
       {isDialogOpen || editingSession ? (
         <AddSessionDialog
@@ -1188,7 +1170,7 @@ function SessionsSection({
         />
       ) : null}
       {deletingSession ? <div className="fixed inset-0 z-50 flex items-end bg-[#06201c]/35 sm:items-center sm:justify-center sm:p-5" role="presentation"><div role="dialog" aria-modal="true" aria-labelledby="delete-session-title" className="w-full rounded-t-2xl bg-white p-5 shadow-2xl sm:max-w-lg sm:rounded-2xl"><h2 id="delete-session-title" className="text-lg font-bold text-[#06201c]">Delete session?</h2><p className="mt-2 text-sm text-[#52736a]">&quot;{deletingSession.title}&quot; will be removed from this event&apos;s agenda.</p>{deleteMutation.error ? <p role="alert" className="mt-3 text-sm font-semibold text-[#b42318]">Couldn&apos;t delete session. Please try again.</p> : null}<div className="mt-5 flex justify-end gap-3"><button type="button" disabled={deleteMutation.isPending} onClick={() => setDeletingSession(null)} className="h-10 rounded-full border border-[#d7e5df] px-4 text-sm font-semibold">Cancel</button><button type="button" disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate(deletingSession.id)} className="h-10 rounded-full bg-[#b42318] px-4 text-sm font-bold text-white">{deleteMutation.isPending ? "Deleting..." : "Delete Session"}</button></div></div></div> : null}
-    </section>
+    </div>
   );
 }
 function AddSessionDialog({

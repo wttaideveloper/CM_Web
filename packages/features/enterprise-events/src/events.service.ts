@@ -13,6 +13,7 @@ export interface Event {
   organiser_contact: string;
   start_date: string;
   end_date: string;
+  duration_type: string;
   time_zone: string;
   registration_cutoff: string;
   primary_image: string | null;
@@ -454,6 +455,7 @@ export interface CreateEventPayload {
   organiser_contact: string;
   start_date: string;
   end_date: string;
+  duration_type: string;
   time_zone: string;
   registration_cutoff: string;
   primary_image: string;
@@ -496,6 +498,7 @@ export interface UpdateEventPayload {
   organiser_contact?: string | null;
   start_date?: string | null;
   end_date?: string | null;
+  duration_type?: string | null;
   time_zone?: string | null;
   registration_cutoff?: string | null;
   primary_image?: string | null;
@@ -634,7 +637,7 @@ function isEvent(value: unknown): value is Event {
   }
 
   const stringFields: Array<keyof Omit<Event, "enterprise_id" | "location_id" | "venue" | "meeting_link" | "meeting_provider" | "primary_image" | "available_seats" | "is_full" | "last_admin_notes" | "tags" | "gallery_images" | "videos" | "documents" | "ticket_types" | "custom_fields" | "sessions" | "is_deleted">> = [
-    "id", "tenant_id", "title", "description", "category", "start_date", "end_date", "time_zone",
+    "id", "tenant_id", "title", "description", "category", "start_date", "end_date", "duration_type", "time_zone",
     "delivery_mode", "price", "currency", "capacity", "created_at", "updated_at",
   ];
   const stringArrayFields = ["tags", "gallery_images", "videos", "documents"];

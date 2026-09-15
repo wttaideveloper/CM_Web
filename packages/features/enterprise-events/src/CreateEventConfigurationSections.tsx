@@ -1,8 +1,7 @@
 "use client";
 
 import type { CreateEventFormValues, EventCustomFieldFormValue, EventTicketFormValue } from "./create-event-form";
-import type { EventSessionInput } from "./events.service";
-import { formatSessionDate, getEventSessionDates, getSessionTimeBounds } from "./event-session-date";
+import SessionTableEditor from "./SessionTableEditor";
 
 type UpdateForm = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => void;
 type SectionProps = { values: CreateEventFormValues; update: UpdateForm; errors: Record<string, string[]> };
@@ -32,13 +31,9 @@ export function MediaSection({ values, update, errors }: SectionProps) {
 
 /** Renders included sessions and supported custom registration fields. */
 export function AdditionalConfigurationSection({ values, update, errors }: SectionProps) {
-  const sessionDates = getEventSessionDates(values.start_date, values.end_date);
-  const patchSession = (index: number, field: keyof EventSessionInput, value: string) => update("sessions", values.sessions.map((session, current) => current === index ? { ...session, [field]: value } : session));
   const patchCustom = (index: number, field: keyof EventCustomFieldFormValue, value: string | string[]) => update("custom_fields", values.custom_fields.map((custom, current) => current === index ? { ...custom, [field]: value } as EventCustomFieldFormValue : custom));
   return <section className="space-y-7"><div><Heading title="Additional Configuration" description="Include sessions and custom registration fields in this create request." /></div>
-    <RepeaterHeading title="Sessions" action="+ Add Session" onClick={() => update("sessions", [...values.sessions, { session_date: sessionDates.length === 1 ? sessionDates[0] : "", title: "", speaker: "", start_time: "", end_time: "", location: "" }])} />
-    {errors.sessions?.[0] ? <p className="text-xs font-medium text-[#b42318]">{errors.sessions[0]}</p> : null}
-    {values.sessions.map((session, index) => { const bounds = getSessionTimeBounds(session.session_date, values.start_date, values.end_date); return <div key={index} className="grid gap-3 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] p-4 md:grid-cols-2"><label className={labelClass}>Session date *<select value={session.session_date} onChange={(event) => patchSession(index, "session_date", event.target.value)} className={inputClass}><option value="" disabled>Select a date</option>{sessionDates.map((date) => <option key={date} value={date}>{formatSessionDate(date)}</option>)}</select></label><Field label="Session title" value={session.title} onChange={(value) => patchSession(index, "title", value)} /><Field label="Speaker" value={session.speaker} onChange={(value) => patchSession(index, "speaker", value)} /><Field label="Start time" value={session.start_time} onChange={(value) => patchSession(index, "start_time", value)} type="time" min={bounds.min} max={bounds.max} /><Field label="End time" value={session.end_time} onChange={(value) => patchSession(index, "end_time", value)} type="time" min={bounds.min} max={bounds.max} /><Field label="Location" value={session.location} onChange={(value) => patchSession(index, "location", value)} /><button type="button" onClick={() => update("sessions", values.sessions.filter((_, current) => current !== index))} className="self-end rounded-full border border-[#f3d0cb] px-4 py-2 text-sm font-semibold text-[#b42318]">Remove</button></div>})}
+    <SessionTableEditor mode="create" eventStart={values.start_date} eventEnd={values.end_date} sessions={values.sessions} error={errors.sessions?.[0]} onSessionsChange={(sessions) => update("sessions", sessions)} />
     <RepeaterHeading title="Custom registration fields" action="+ Add Custom Field" onClick={() => update("custom_fields", [...values.custom_fields, { label: "", type: "select", options: [] }])} />
     {errors.custom_fields?.[0] ? <p className="text-xs font-medium text-[#b42318]">{errors.custom_fields[0]}</p> : null}
     {values.custom_fields.map((custom, index) => <div key={index} className="grid gap-3 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] p-4 md:grid-cols-2"><Field label="Field label" value={custom.label} onChange={(value) => patchCustom(index, "label", value)} /><label className={labelClass}>Field type<select value={custom.type} className={inputClass} disabled><option value={custom.type}>{custom.type}</option></select></label><Field label="Options (comma separated)" value={custom.options.join(", ")} onChange={(value) => patchCustom(index, "options", value.split(",").map((item) => item.trim()).filter(Boolean))} /><button type="button" onClick={() => update("custom_fields", values.custom_fields.filter((_, current) => current !== index))} className="self-end rounded-full border border-[#f3d0cb] px-4 py-2 text-sm font-semibold text-[#b42318]">Remove</button></div>)}

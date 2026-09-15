@@ -16,6 +16,7 @@ import { createEvent, EventsApiError, getEventById, updateEvent, type ActiveEven
 import { canEditEvent } from "./event-status";
 import ConfiguredCreateEventSection from "./ConfiguredCreateEventSection";
 import ConfiguredCreateEventReview from "./ConfiguredCreateEventReview";
+import { validateSessions } from "./SessionTableEditor";
 
 const steps = ["Basic Information", "Schedule", "Location & Host", "Pricing & Tickets", "Capacity & Registration", "Images & Media", "Additional Configuration", "Review & Submit"] as const;
 const stepFields: ReadonlyArray<readonly string[]> = [["title", "description", "category", "organiser_name", "organiser_contact"], ["start_date", "end_date", "registration_cutoff", "registration_open_at", "registration_close_at"], ["location_id", "venue_name", "venue_address", "venue_city"], ["price", "currency", "ticket_types"], ["capacity", "min_participants", "max_participants"], ["media"], ["sessions", "custom_fields"], []];
@@ -58,9 +59,11 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   useEffect(() => { if (mode === "create") setValues((current) => ({ ...current, organiser_name: current.organiser_name || enterpriseName, organiser_contact: current.organiser_contact || organiserContact })); }, [enterpriseName, mode, organiserContact]);
   const locationsQuery = useQuery({ queryKey: ["enterprise", enterpriseId, "locations"], queryFn: () => getEnterpriseLocations(enterpriseId ?? ""), enabled: Boolean(enterpriseId), staleTime: 30_000, retry: 1 });
   const activeFormConfiguration = useActiveEventFormConfiguration(mode === "create");
-  const historicalFormConfiguration = useEventHistoricalFormConfiguration(initialEvent?.id, mode === "edit" && Boolean(initialEvent));
+  const hasHistoricalConfiguration = Boolean(initialEvent?.form_configuration_id && initialEvent?.form_configuration_version_id);
+  const historicalFormConfiguration = useEventHistoricalFormConfiguration(initialEvent?.id, mode === "edit" && hasHistoricalConfiguration);
   const formConfiguration = mode === "create" ? activeFormConfiguration.data : historicalFormConfiguration.data;
   const configuredSections = useMemo(() => [...(formConfiguration?.sections ?? [])].filter((section) => section.is_enabled).sort((left, right) => left.position - right.position), [formConfiguration]);
+  const currencyOptions = useMemo(() => formConfiguration?.sections.flatMap((section) => section.fields).find((field) => field.source === "core" && (field.core_key === "currency" || field.stable_key === "currency"))?.options ?? [], [formConfiguration]);
   const requiresEventCategories = configuredSections.some((section) => section.fields.some((field) => field.source === "core" && (field.core_key === "category" || field.core_key === "subcategory")));
   const eventCategoriesQuery = useEventCategories(Boolean(formConfiguration) && requiresEventCategories);
   const editorSteps = formConfiguration ? [...configuredSections.map((section) => section.label), "Review & Submit"] : steps;
@@ -79,12 +82,12 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const isCreateBlockedByEnterprise = mode === "create" && !enterpriseId;
   const saveMutation = useMutation({
     mutationFn: async () => {
-      if (mode === "edit") { if (!initialEvent) throw new Error("The event could not be loaded."); if (!canEditEvent(initialEvent.status)) throw new Error("This Event cannot be edited in its current lifecycle state."); const sessionsDirty = JSON.stringify(values.sessions) !== JSON.stringify(initialValues.sessions); const payload = buildUpdateEventPayload(values, initialValues, locationId, initialLocationId); if (sessionsDirty && payload.sessions) { const latestEvent = await getEventById(initialEvent.id); payload.sessions = mergeLatestEventSessions(initialValues.sessions, values.sessions, latestEvent.sessions); } if (formConfiguration && JSON.stringify(customValues) !== JSON.stringify(initialCustomValues)) payload.custom_values = formConfiguration.sections.flatMap((section) => section.fields).filter((field) => field.source === "custom").map((field) => { const key = field.stable_key ?? field.id; return { field_id: field.id, value: serializeCustomFieldValue(field, customValues[key] ?? null) }; }); return updateEvent(initialEvent.id, payload); }
+      if (mode === "edit") { if (!initialEvent) throw new Error("The event could not be loaded."); if (!canEditEvent(initialEvent.status)) throw new Error("This Event cannot be edited in its current lifecycle state."); const sessionsDirty = JSON.stringify(values.sessions) !== JSON.stringify(initialValues.sessions); const configuredFieldKeys = formConfiguration ? configuredCoreKeys(formConfiguration) : undefined; const payload = buildUpdateEventPayload(values, initialValues, locationId, initialLocationId, configuredFieldKeys); if (sessionsDirty && payload.sessions) { const latestEvent = await getEventById(initialEvent.id); payload.sessions = mergeLatestEventSessions(initialValues.sessions, values.sessions, latestEvent.sessions); } if (formConfiguration && JSON.stringify(customValues) !== JSON.stringify(initialCustomValues)) payload.custom_values = formConfiguration.sections.flatMap((section) => section.fields).filter((field) => field.source === "custom").map((field) => { const key = field.stable_key ?? field.id; return { field_id: field.id, value: serializeCustomFieldValue(field, customValues[key] ?? null) }; }); return updateEvent(initialEvent.id, payload); }
       if (!tenantId || !enterpriseId || !locationId) throw new Error("A tenant, enterprise, and location are required.");
       if (!activeFormConfiguration.data) throw new Error("An active Event form configuration is required.");
-      const configuredCoreKeys = new Set(activeFormConfiguration.data.sections.flatMap((section) => section.fields.filter((field) => field.source === "core").map((field) => field.core_key ?? field.stable_key ?? field.id)));
+      const configuredCoreFieldKeys = new Set(activeFormConfiguration.data.sections.flatMap((section) => section.fields.filter((field) => field.source === "core").map((field) => field.core_key ?? field.stable_key ?? field.id)));
       const configuredCustomValues = activeFormConfiguration.data.sections.flatMap((section) => section.fields).filter((field) => field.source === "custom").map((field) => { const key = field.stable_key ?? field.id; return { field_id: field.id, value: serializeCustomFieldValue(field, customValues[key] ?? null) }; }).filter((entry) => entry.value !== null);
-      return createEvent(buildCreateEventPayload(values, tenantId, enterpriseId, locationId, activeFormConfiguration.data.version_id, configuredCustomValues, configuredCoreKeys));
+      return createEvent(buildCreateEventPayload(values, tenantId, enterpriseId, locationId, activeFormConfiguration.data.version_id, configuredCustomValues, configuredCoreFieldKeys));
     },
     onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ["events", "list"] }); if (initialEvent) { await queryClient.invalidateQueries({ queryKey: ["events", "detail", initialEvent.id] }); router.push(`/admin/events/${initialEvent.id}`); } else router.push("/admin/events"); },
     onError: (error) => { if (error instanceof EventsApiError) { setErrors((current) => ({ ...current, ...error.fieldErrors })); setSubmitError(error.status === 401 || error.status === 403 ? "Your session cannot save this event. Please sign in again." : error.message); } else setSubmitError(error instanceof Error ? error.message : "Unable to save event."); },
@@ -94,17 +97,21 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const isDirty = JSON.stringify(values) !== JSON.stringify(initialValues) || locationId !== initialLocationId || JSON.stringify(customValues) !== JSON.stringify(initialCustomValues);
   const continueToNext = () => { const currentFields = formConfiguration ? configuredSections[activeStep]?.fields.map((field) => field.source === "core" ? field.core_key ?? field.stable_key ?? field.id : field.stable_key ?? field.id) ?? [] : stepFields[activeStep] ?? []; const currentErrors = Object.fromEntries(Object.entries(allErrors).filter(([field]) => currentFields.includes(field))); if (Object.keys(currentErrors).length > 0) { setErrors(currentErrors); return; } setErrors({}); setActiveStep((current) => Math.min(current + 1, editorSteps.length - 1)); };
   const submit = () => { if (mode === "edit" && !isDirty) return; if (Object.keys(allErrors).length > 0) { setErrors(allErrors); setSubmitError("Review the highlighted fields before saving."); return; } setSubmitError(null); saveMutation.mutate(); };
-  const sharedProps = { values, update, errors };
+  const sharedProps = { values, update, errors, currencyOptions };
   const locationProps = { ...sharedProps, locations: locationsQuery.data ?? [], selectedLocationId: locationId, setSelectedLocationId: setLocationId, isLoadingLocations: locationsQuery.isLoading, locationError: locationsQuery.isError ? "Unable to load enterprise locations." : null };
   const backHref = initialEvent ? `/admin/events/${initialEvent.id}` : "/admin/events";
   const title = mode === "edit" ? "Edit Event" : "Create Event";
 
-  if (mode === "edit" && historicalFormConfiguration.isLoading) {
+  if (mode === "edit" && hasHistoricalConfiguration && historicalFormConfiguration.isLoading) {
     return <HistoricalFormStatus>Loading this Event&apos;s historical form configuration…</HistoricalFormStatus>;
   }
 
-  if (mode === "edit" && historicalFormConfiguration.isError) {
+  if (mode === "edit" && hasHistoricalConfiguration && historicalFormConfiguration.isError) {
     return <HistoricalFormStatus error onRetry={() => void historicalFormConfiguration.refetch()}>Unable to load this Event&apos;s historical form configuration. The Event was not opened with the current active form.</HistoricalFormStatus>;
+  }
+
+  if (mode === "edit" && hasHistoricalConfiguration && !formConfiguration) {
+    return <HistoricalFormStatus error onRetry={() => void historicalFormConfiguration.refetch()}>This Event references a historical form configuration that is unavailable.</HistoricalFormStatus>;
   }
 
   if (mode === "edit" && formConfiguration) {
@@ -112,7 +119,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
       <header className="flex flex-col gap-4 border-b border-[#edf3f0] pb-6 sm:flex-row sm:items-start sm:justify-between"><div><Link href={backHref} className="text-sm font-semibold text-[#1f6a58]">Back to Event</Link><p className="mt-4 text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">{initialEvent?.status ?? "EVENT"}</p><h1 className="mt-2 text-2xl font-bold text-[#06201c] sm:text-3xl">{title}</h1><p className="mt-2 text-sm text-[#52736a] sm:text-base">{initialEvent?.title}</p></div><Link href={backHref} className="inline-flex h-11 items-center justify-center rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a]">Cancel</Link></header>
       <div className="mt-6 grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]"><nav aria-label="Event editor sections" className="rounded-2xl border border-[#e1ebe6] bg-white p-3 shadow-sm">{editorSteps.map((step, index) => <button key={`${step}-${index}`} type="button" onClick={() => setActiveStep(index)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${activeStep === index ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f9fcfa]"}`}><span className="flex h-6 w-6 items-center justify-center rounded-full border border-current text-xs">{index + 1}</span>{step}</button>)}</nav>
         <main className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm sm:p-6">{activeStep < configuredSections.length ? <ConfiguredCreateEventSection section={configuredSections[activeStep]} {...sharedProps} customValues={customValues} setCustomValues={setCustomValues} locations={locationsQuery.data ?? []} locationId={locationId} setLocationId={setLocationId} categories={eventCategoriesQuery.data ?? []} categoriesLoading={eventCategoriesQuery.isLoading} categoriesError={eventCategoriesQuery.isError} allowPastTemporalValues /> : <ConfiguredCreateEventReview configuration={formConfiguration} values={values} customValues={customValues} locationName={selectedLocation ? `${selectedLocation.location_name} - ${selectedLocation.city}` : ""} />}{submitError ? <div role="alert" className="mt-6 rounded-xl border border-[#f3d0cb] bg-[#fff6f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{submitError}</div> : null}
-          <div className="mt-8 flex flex-col-reverse gap-3 border-t border-[#edf3f0] pt-5 sm:flex-row sm:justify-between"><button type="button" onClick={() => setActiveStep((current) => Math.max(current - 1, 0))} disabled={activeStep === 0 || saveMutation.isPending} className="h-11 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a] disabled:opacity-50">Back</button>{activeStep === editorSteps.length - 1 ? <button type="button" onClick={submit} disabled={saveMutation.isPending || !locationId || !isDirty} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm disabled:opacity-60">{saveMutation.isPending ? "Saving..." : "Save Changes"}</button> : <button type="button" onClick={continueToNext} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm">Continue</button>}</div>
+          <div className="mt-8 flex flex-col-reverse gap-3 border-t border-[#edf3f0] pt-5 sm:flex-row sm:justify-between"><button type="button" onClick={() => setActiveStep((current) => Math.max(current - 1, 0))} disabled={activeStep === 0 || saveMutation.isPending} className="h-11 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a] disabled:opacity-50">Back</button>{activeStep === editorSteps.length - 1 ? <button type="button" onClick={submit} disabled={saveMutation.isPending || !isDirty} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm disabled:opacity-60">{saveMutation.isPending ? "Saving..." : "Save Changes"}</button> : <button type="button" onClick={continueToNext} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm">Continue</button>}</div>
         </main></div>
     </div>;
   }
@@ -141,14 +148,18 @@ function validateConfiguredEventForm(configuration: ActiveEventFormConfiguration
   for (const section of configuration.sections.filter((item) => item.is_enabled)) for (const field of section.fields) {
     const key = field.source === "core" ? field.core_key ?? field.stable_key ?? field.id : field.stable_key ?? field.id;
     if (!field.required) continue;
-    if (key === "duration_type") continue;
     if (key === "location" || key === "location_id") { if (!hasLocation) errors[key] = [`${field.label} is required.`]; continue; }
-    const coreKey = ({ title: "title", description: "description", category: "category", subcategory: "subcategory", organiser_name: "organiser_name", organiser_contact: "organiser_contact", start_date: "start_date", start_datetime: "start_date", end_date: "end_date", end_datetime: "end_date", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", time_zone: "time_zone", timezone: "time_zone", delivery_mode: "delivery_mode", event_type: "delivery_mode", price: "price", currency: "currency", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image" } as Record<string, keyof CreateEventFormValues>)[key];
+    const coreKey = ({ title: "title", description: "description", category: "category", subcategory: "subcategory", organiser_name: "organiser_name", organiser_contact: "organiser_contact", start_date: "start_date", start_datetime: "start_date", end_date: "end_date", end_datetime: "end_date", duration_type: "duration_type", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", time_zone: "time_zone", timezone: "time_zone", delivery_mode: "delivery_mode", event_type: "delivery_mode", price: "price", currency: "currency", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image" } as Record<string, keyof CreateEventFormValues>)[key];
     const value = coreKey ? values[coreKey] : customValues[key];
     if ((Array.isArray(value) && value.length === 0) || value === null || value === undefined || String(value).trim() === "") errors[key] = [`${field.label} is required.`];
   }
   validateConfiguredCategories(configuration, values, categories, errors, mode);
   validateConfiguredDateTimes(configuration, values, errors, mode);
+  const sessionField = configuration.sections.filter((section) => section.is_enabled).flatMap((section) => section.fields).find((field) => field.source === "core" && (field.core_key === "sessions" || field.stable_key === "sessions"));
+  if (sessionField) {
+    const sessionError = validateSessions(values.sessions, values.start_date, values.end_date, sessionField.composite_config?.enabled_fields ?? undefined, sessionField.composite_config?.required_fields ?? []);
+    if (sessionError) errors.sessions = [sessionError];
+  }
   return errors;
 }
 
