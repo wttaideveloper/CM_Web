@@ -48,6 +48,7 @@ export interface CreateEventFormValues {
   meeting_link: string;
   meeting_provider: string;
   price: string;
+  pricing_type: "free" | "paid";
   currency: string;
   ticket_types: EventTicketFormValue[];
   capacity: string;
@@ -68,7 +69,7 @@ export function createEmptyEventForm(): CreateEventFormValues {
     organiser_contact: "", start_date: "", end_date: "", duration_type: "", registration_cutoff: "",
     registration_open_at: "", registration_close_at: "", time_zone: "Asia/Kolkata", delivery_mode: "in_person",
     venue_name: "", venue_address: "", venue_city: "", venue_latitude: "", venue_longitude: "",
-    meeting_link: "", meeting_provider: "", price: "", currency: "INR", ticket_types: [], capacity: "",
+    meeting_link: "", meeting_provider: "", price: "", pricing_type: "paid", currency: "INR", ticket_types: [], capacity: "",
     min_participants: "", max_participants: "", primary_image: "", gallery_images: [], videos: [], documents: [],
     custom_fields: [], sessions: [],
   };
@@ -83,6 +84,7 @@ export function buildCreateEventPayload(
   formConfigurationVersionId?: string,
   customValues?: Array<{ field_id: string; value: string | string[] | boolean | number | null }>,
   configuredCoreKeys?: ReadonlySet<string>,
+  sessionsEnabledFields?: readonly string[],
 ): CreateEventPayload {
   const coordinates = buildCoordinates(values.venue_latitude, values.venue_longitude);
   const venue: CreateEventVenue = {
@@ -95,7 +97,7 @@ export function buildCreateEventPayload(
   const payload: CreateEventPayload = {
     tenant_id: tenantId,
     enterprise_id: enterpriseId,
-    location_id: locationId,
+    location_id: locationId || null,
     title: values.title.trim(),
     description: values.description.trim(),
     category: values.category.trim(),
@@ -113,10 +115,11 @@ export function buildCreateEventPayload(
     videos: values.videos,
     documents: values.documents,
     delivery_mode: values.delivery_mode as "in_person",
-    venue,
+    venue: values.delivery_mode === "online" ? null : venue,
     meeting_link: values.meeting_link.trim() || null,
     meeting_provider: values.meeting_provider.trim() || null,
     price: values.price.trim(),
+    pricing_type: values.pricing_type,
     currency: values.currency.trim(),
     ticket_types: values.ticket_types,
     capacity: values.capacity.trim(),
@@ -125,13 +128,13 @@ export function buildCreateEventPayload(
     registration_open_at: toBackendLocalDateTime(values.registration_open_at),
     registration_close_at: toBackendLocalDateTime(values.registration_close_at),
     custom_fields: values.custom_fields as CreateEventCustomField[],
-    sessions: values.sessions.map(({ id: _id, meeting_link: _meetingLink, ...session }) => session),
+    sessions: values.sessions.map((session) => mapSessionForPayload(session, sessionsEnabledFields)),
     status: "draft",
     ...(formConfigurationVersionId ? { form_configuration_version_id: formConfigurationVersionId } : {}),
     ...(customValues ? { custom_values: customValues } : {}),
   };
   if (configuredCoreKeys) {
-    const payloadFields: Record<string, keyof CreateEventPayload> = { title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", start_date: "start_date", start_datetime: "start_date", end_date: "end_date", end_datetime: "end_date", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", timezone: "time_zone", time_zone: "time_zone", event_type: "delivery_mode", delivery_mode: "delivery_mode", venue: "venue", price: "price", currency: "currency", ticket_types: "ticket_types", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents", media: "primary_image", sessions: "sessions", custom_fields: "custom_fields", registration_questions: "custom_fields" };
+    const payloadFields: Record<string, keyof CreateEventPayload> = { title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", start_date: "start_date", start_datetime: "start_date", end_date: "end_date", end_datetime: "end_date", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", timezone: "time_zone", time_zone: "time_zone", event_type: "delivery_mode", delivery_mode: "delivery_mode", venue: "venue", pricing_type: "pricing_type", price: "price", currency: "currency", ticket_types: "ticket_types", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents", media: "primary_image", sessions: "sessions", custom_fields: "custom_fields", registration_questions: "custom_fields" };
     const configuredPayloadFields = new Set(
       Object.entries(payloadFields)
         .filter(([configurationKey]) => configuredCoreKeys.has(configurationKey))
@@ -156,7 +159,7 @@ export function eventToFormValues(event: Event): CreateEventFormValues {
     registration_close_at: toDateTimeLocal(event.registration_close_at), time_zone: event.time_zone, delivery_mode: event.delivery_mode,
     venue_name: event.venue?.name ?? "", venue_address: event.venue?.address ?? "", venue_city: event.venue?.city ?? "",
     venue_latitude: event.venue?.coordinates?.lat?.toString() ?? "", venue_longitude: event.venue?.coordinates?.lng?.toString() ?? "",
-    meeting_link: event.meeting_link ?? "", meeting_provider: event.meeting_provider ?? "", price: event.price,
+    meeting_link: event.meeting_link ?? "", meeting_provider: event.meeting_provider ?? "", price: event.price, pricing_type: event.pricing_type ?? (Number(event.price) === 0 ? "free" : "paid"),
     currency: event.currency, ticket_types: event.ticket_types, capacity: event.capacity,
     min_participants: event.min_participants, max_participants: event.max_participants, primary_image: event.primary_image ?? "",
     gallery_images: event.gallery_images, videos: event.videos, documents: event.documents,
@@ -234,23 +237,30 @@ function mergeChangedSession(
 }
 
 /** Builds the partial writable EventUpdate request, preserving untouched backend values. */
-export function buildUpdateEventPayload(values: CreateEventFormValues, initialValues: CreateEventFormValues, locationId: string, initialLocationId: string, configuredCoreKeys?: ReadonlySet<string>): UpdateEventPayload {
+export function buildUpdateEventPayload(values: CreateEventFormValues, initialValues: CreateEventFormValues, locationId: string, initialLocationId: string, configuredCoreKeys?: ReadonlySet<string>, sessionsEnabledFields?: readonly string[]): UpdateEventPayload {
   const changed = <Key extends keyof CreateEventFormValues>(key: Key): boolean => JSON.stringify(values[key]) !== JSON.stringify(initialValues[key]);
   const payload: UpdateEventPayload = {};
-  const scalarKeys: Array<keyof Pick<CreateEventFormValues, "title" | "description" | "category" | "subcategory" | "tags" | "organiser_name" | "organiser_contact" | "duration_type" | "time_zone" | "delivery_mode" | "primary_image" | "gallery_images" | "videos" | "documents" | "price" | "currency" | "ticket_types" | "capacity" | "min_participants" | "max_participants" | "custom_fields" | "sessions">> = ["title", "description", "category", "subcategory", "tags", "organiser_name", "organiser_contact", "duration_type", "time_zone", "delivery_mode", "primary_image", "gallery_images", "videos", "documents", "price", "currency", "ticket_types", "capacity", "min_participants", "max_participants", "custom_fields", "sessions"];
+  const scalarKeys: Array<keyof Pick<CreateEventFormValues, "title" | "description" | "category" | "subcategory" | "tags" | "organiser_name" | "organiser_contact" | "duration_type" | "time_zone" | "delivery_mode" | "primary_image" | "gallery_images" | "videos" | "documents" | "price" | "pricing_type" | "currency" | "ticket_types" | "capacity" | "min_participants" | "max_participants" | "custom_fields" | "sessions">> = ["title", "description", "category", "subcategory", "tags", "organiser_name", "organiser_contact", "duration_type", "time_zone", "delivery_mode", "primary_image", "gallery_images", "videos", "documents", "price", "pricing_type", "currency", "ticket_types", "capacity", "min_participants", "max_participants", "custom_fields", "sessions"];
   for (const key of scalarKeys) if (changed(key)) Object.assign(payload, { [key]: values[key] });
+  if (changed("sessions")) payload.sessions = values.sessions.map((session) => mapSessionForPayload(session, sessionsEnabledFields));
   const datetimeKeys: Array<keyof Pick<CreateEventFormValues, "start_date" | "end_date" | "registration_cutoff" | "registration_open_at" | "registration_close_at">> = ["start_date", "end_date", "registration_cutoff", "registration_open_at", "registration_close_at"];
   for (const key of datetimeKeys) if (changed(key)) Object.assign(payload, { [key]: toBackendLocalDateTime(values[key]) });
   if (values.meeting_link !== initialValues.meeting_link) payload.meeting_link = values.meeting_link.trim() || null;
   if (values.meeting_provider !== initialValues.meeting_provider) payload.meeting_provider = values.meeting_provider.trim() || null;
   if (locationId !== initialLocationId) payload.location_id = locationId || null;
   const venueFields: Array<keyof CreateEventFormValues> = ["venue_name", "venue_address", "venue_city", "venue_latitude", "venue_longitude"];
-  if (venueFields.some((field) => changed(field))) payload.venue = buildVenue(values);
+  if (venueFields.some((field) => changed(field))) payload.venue = values.delivery_mode === "online" ? null : buildVenue(values);
   if (configuredCoreKeys) {
-    const payloadKeys: Record<string, keyof UpdateEventPayload> = { title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", duration_type: "duration_type", start_date: "start_date", end_date: "end_date", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", time_zone: "time_zone", delivery_mode: "delivery_mode", venue: "venue", location_id: "location_id", meeting_link: "meeting_link", meeting_provider: "meeting_provider", price: "price", currency: "currency", ticket_types: "ticket_types", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents", sessions: "sessions" };
+    const payloadKeys: Record<string, keyof UpdateEventPayload> = { title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", duration_type: "duration_type", start_date: "start_date", end_date: "end_date", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", time_zone: "time_zone", delivery_mode: "delivery_mode", venue: "venue", location_id: "location_id", meeting_link: "meeting_link", meeting_provider: "meeting_provider", pricing_type: "pricing_type", price: "price", currency: "currency", ticket_types: "ticket_types", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents", sessions: "sessions" };
     for (const [configurationKey, payloadKey] of Object.entries(payloadKeys)) if (!configuredCoreKeys.has(configurationKey)) delete (payload as Partial<UpdateEventPayload>)[payloadKey];
   }
   return payload;
+}
+
+export function mapSessionForPayload(session: EventSessionFormValue, enabledFields?: readonly string[]): EventSessionInput {
+  const { id: _id, meeting_link, ...base } = session;
+  const meetingLinkEnabled = enabledFields === undefined || enabledFields.length === 0 || enabledFields.includes("meeting_link");
+  return meetingLinkEnabled ? { ...base, ...(meeting_link?.trim() ? { meeting_link: meeting_link.trim() } : {}) } : base;
 }
 
 /** Validates the safe, user-supplied Create Event values before submission. */
@@ -265,8 +275,9 @@ export function validateEventForm(values: CreateEventFormValues, hasLocation: bo
     require("start_date", "Start date and time"); require("end_date", "End date and time");
     require("registration_cutoff", "Registration cutoff"); require("registration_open_at", "Registration opening");
     require("registration_close_at", "Registration closing"); require("venue_name", "Venue name");
-    require("venue_address", "Venue address"); require("venue_city", "Venue city"); require("price", "Price");
-    require("currency", "Currency"); require("capacity", "Overall capacity");
+    require("venue_address", "Venue address"); require("venue_city", "Venue city"); require("pricing_type", "Pricing type");
+    if (values.pricing_type === "paid") { if (!values.price.trim() && values.ticket_types.length === 0) errors.price = ["Paid Events need a price or at least one ticket type."]; require("currency", "Currency"); }
+    require("capacity", "Overall capacity");
     require("min_participants", "Minimum participants"); require("max_participants", "Maximum participants");
     if (!hasLocation) errors.location_id = ["Select an existing enterprise location before creating this event."];
   }
@@ -298,7 +309,7 @@ function validateUrls(values: CreateEventFormValues, errors: Record<string, stri
 }
 
 function validateRepeatingValues(values: CreateEventFormValues, errors: Record<string, string[]>): void {
-  const invalidTicket = values.ticket_types.some(
+  const invalidTicket = values.pricing_type === "paid" && values.ticket_types.some(
     (ticket) =>
       !ticket.id.trim() ||
       !ticket.name.trim() ||
@@ -308,7 +319,7 @@ function validateRepeatingValues(values: CreateEventFormValues, errors: Record<s
   );
   if (invalidTicket) errors.ticket_types = ["Each ticket needs an ID, name, currency, non-negative price, and capacity."];
 
-  const sessionError = validateSessions(values.sessions, values.start_date, values.end_date, undefined, ["session_date", "title", "speaker", "start_time", "end_time", "location"]);
+  const sessionError = validateSessions(values.sessions, values.start_date, values.end_date, undefined, ["session_date", "title", "speaker", "start_time", "end_time", "location"], [], values.delivery_mode);
   if (sessionError) errors.sessions = [sessionError];
 
   const invalidCustomField = values.custom_fields.some(

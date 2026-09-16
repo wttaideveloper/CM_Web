@@ -37,6 +37,7 @@ export const eventCompositeFieldDefinitions: Readonly<Record<string, EventCompos
       { key: "start_time", label: "Start time" },
       { key: "end_time", label: "End time" },
       { key: "location", label: "Location" },
+      { key: "meeting_link", label: "Meeting link" },
     ],
   },
   venue: {

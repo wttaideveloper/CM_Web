@@ -130,6 +130,12 @@ function isSessionSubfieldRequired(field: ActiveEventFormField | null | undefine
   return field.composite_config?.required_fields?.includes(name) ?? false;
 }
 
+function isDeliveryFieldApplicable(field: SessionSubfield, deliveryMode: string): boolean {
+  if (field === "location") return deliveryMode !== "online";
+  if (field === "meeting_link") return deliveryMode === "online" || deliveryMode === "hybrid";
+  return true;
+}
+
 /** Renders every supported field from a single authenticated Event response. */
 export default function EventDetailsScreen() {
   const { eventId } = useParams<{ eventId: string }>();
@@ -259,6 +265,7 @@ export default function EventDetailsScreen() {
           event={event}
           sessionsSection={historicalSessionsField ? <SessionsSection
             eventId={event.id}
+            deliveryMode={event.delivery_mode}
             startDate={event.start_date}
             endDate={event.end_date}
             enabled={activeTab === "details"}
@@ -343,6 +350,7 @@ export default function EventDetailsScreen() {
           <DetailGrid
             items={[
               { label: "Price", value: event.price },
+              { label: "Pricing Type", value: event.pricing_type ?? (Number(event.price) === 0 ? "Free" : "Paid") },
               { label: "Currency", value: event.currency },
             ]}
           />
@@ -376,6 +384,7 @@ export default function EventDetailsScreen() {
         </DetailSection>
         <SessionsSection
           eventId={event.id}
+          deliveryMode={event.delivery_mode}
           startDate={event.start_date}
           endDate={event.end_date}
           enabled={activeTab === "details"}
@@ -1049,12 +1058,14 @@ function TicketTypes({ event }: { event: Event }) {
 }
 function SessionsSection({
   eventId,
+  deliveryMode,
   startDate,
   endDate,
   enabled,
   sessionField = null,
 }: {
   eventId: string;
+  deliveryMode: string;
   startDate: string;
   endDate: string;
   enabled: boolean;
@@ -1168,6 +1179,7 @@ function SessionsSection({
           mode="manage"
           eventStart={startDate}
           eventEnd={endDate}
+          deliveryMode={deliveryMode}
           sessions={newSessions}
           persistedSessions={sessionsQuery.data}
           enabledFields={sessionField?.composite_config?.enabled_fields ?? undefined}
@@ -1188,6 +1200,7 @@ function SessionsSection({
           startDate={startDate}
           endDate={endDate}
           sessionField={sessionField}
+          deliveryMode={deliveryMode}
           isPending={editingSession ? updateMutation.isPending : addMutation.isPending}
           error={editingSession ? updateMutation.error : addMutation.error}
           onClose={() => {
@@ -1208,6 +1221,7 @@ function AddSessionDialog({
   startDate,
   endDate,
   sessionField = null,
+  deliveryMode,
   isPending,
   error,
   onClose,
@@ -1218,6 +1232,7 @@ function AddSessionDialog({
   startDate: string;
   endDate: string;
   sessionField?: ActiveEventFormField | null;
+  deliveryMode: string;
   isPending: boolean;
   error: Error | null;
   onClose: () => void;
@@ -1236,8 +1251,8 @@ function AddSessionDialog({
   });
   const [validationError, setValidationError] = useState<string | null>(null);
   const bounds = getSessionTimeBounds(values.session_date, startDate, endDate);
-  const fieldEnabled = (name: SessionSubfield) => isSessionSubfieldEnabled(sessionField, name);
-  const fieldRequired = (name: SessionSubfield) => isSessionSubfieldRequired(sessionField, name);
+  const fieldEnabled = (name: SessionSubfield) => isSessionSubfieldEnabled(sessionField, name) && isDeliveryFieldApplicable(name, deliveryMode);
+  const fieldRequired = (name: SessionSubfield) => isSessionSubfieldRequired(sessionField, name) && isDeliveryFieldApplicable(name, deliveryMode);
   useEffect(() => {
     titleRef.current?.focus();
   }, []);
