@@ -62,7 +62,7 @@ export function TrainingDeliverySection({ values, update }: SectionProps) {
     <section className="space-y-5">
       <SectionHeading title="Delivery & Instructor" description="Hybrid builds community — online scales it. Pick the format your learners prefer." tip="Physical needs a venue, Online needs a meeting link, Hybrid needs both. Learners filter by this." />
       <div className="grid gap-4 md:grid-cols-2">
-        <label className={labelClass}>Delivery mode<select value={values.delivery_mode} onChange={(event) => update("delivery_mode", event.target.value)} className={inputClass}><option value="self_paced">Self-paced (recorded)</option><option value="instructor_led">Instructor-led (online)</option><option value="blended">Blended</option><option value="hybrid">Hybrid</option><option value="physical">Physical (In Person)</option><option value="online">Online</option></select></label>
+        <label className={labelClass}>Delivery mode<select value={values.delivery_mode} onChange={(event) => update("delivery_mode", event.target.value)} className={inputClass}><option value="online">Live online</option><option value="physical">Offline (physical venue)</option><option value="hybrid">Hybrid</option><option value="self_paced">Self-paced</option></select></label>
         <label className={labelClass}>Course type<input value={values.course_type} onChange={(event) => update("course_type", event.target.value)} placeholder="e.g. Workshop" className={inputClass} /></label>
       </div>
       {values.delivery_mode === "hybrid" ? (

@@ -68,7 +68,7 @@ export function ParticipantDashboardCard({ dashboard }: { dashboard: TrainingPar
       </div>
       <ProgressBar percent={dashboard.overall_percent} />
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Sections" value={`${dashboard.sections_done} / ${dashboard.total_sections}`} />
+        <Stat label="Sessions" value={`${dashboard.sections_done} / ${dashboard.total_sections}`} />
         <Stat label="Lessons" value={`${dashboard.lessons_done} / ${dashboard.total_lessons}`} />
         <Stat label="Live sessions" value={String(sessions.length)} />
         <Stat label="Certificate" value={dashboard.certificate_url ? "Ready" : "Pending"} />

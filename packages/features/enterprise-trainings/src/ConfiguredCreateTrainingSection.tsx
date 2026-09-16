@@ -295,8 +295,8 @@ function ConfiguredField({
       return <label className="flex items-center gap-2 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={Boolean(values[coreField as keyof CreateTrainingFormValues])} onChange={(e) => setValue(String(e.target.checked))} />{field.label}{required}</label>;
     }
     if (options.length) {
-      // Delivery mode is restricted to self_paced|instructor_led|blended (backend registry) plus legacy hybrid/online/physical; keep a legacy stored value visible for old trainings.
-      const visibleOptions = coreField === "delivery_mode" ? options.filter((opt) => opt === "self_paced" || opt === "instructor_led" || opt === "blended" || opt === "hybrid" || opt === "online" || opt === "physical") : options;
+      // Delivery mode shows only Live online | Offline | Hybrid | Self-paced; keep a legacy stored value visible for old trainings.
+      const visibleOptions = coreField === "delivery_mode" ? options.filter((opt) => opt === "online" || opt === "physical" || opt === "hybrid" || opt === "self_paced") : options;
       if (coreField === "delivery_mode" && value && !visibleOptions.includes(value)) visibleOptions.push(value);
       return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}<select value={value} onChange={(e) => setValue(e.target.value)} className={inputClass}><option value="">Select an option</option>{visibleOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}</select>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
     }

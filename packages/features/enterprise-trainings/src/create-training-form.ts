@@ -238,7 +238,7 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
 }
 
 /** Builds a confirmed Create Training payload without response-only fields.
- * NOTE: delivery_mode accepts self_paced|instructor_led|blended (backend registry) plus legacy hybrid/physical/online. */
+ * NOTE: delivery_mode accepts online|physical|hybrid|self_paced (backend Literal). */
 export function buildCreateTrainingPayload(values: CreateTrainingFormValues, tenantId: string, enterpriseId: string): CreateTrainingPayload {
   return {
     tenant_id: tenantId,

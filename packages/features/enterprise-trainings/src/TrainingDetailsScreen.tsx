@@ -18,7 +18,7 @@ type TrainingDetailsTab = "details" | "content" | "sections" | "enrolments" | "a
 const trainingDetailsTabs: ReadonlyArray<{ id: TrainingDetailsTab; label: string }> = [
   { id: "details", label: "Details" },
   { id: "content", label: "Content" },
-  { id: "sections", label: "Sections & Lessons" },
+  { id: "sections", label: "Sessions & Lessons" },
   { id: "enrolments", label: "Enrolments" },
   { id: "assessments", label: "Assessments" },
   { id: "assignments", label: "Assignments" },
@@ -471,7 +471,7 @@ export default function TrainingDetailsScreen() {
             <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
               <h3 className="text-lg font-bold text-[#06201c]">Structure</h3>
               <div className="mt-4 grid gap-3">
-                <DetailItem label="Sections" value={String(sections.length)} />
+                <DetailItem label="Sessions" value={String(sections.length)} />
                 <DetailItem label="Lessons" value={String(lessonCount)} />
                 <DetailItem label="Enrolments" value={String(enrolments.length)} />
                 <DetailItem label="Sessions" value={String(Array.isArray((training as unknown as Record<string, unknown>).sessions) ? ((training as unknown as Record<string, unknown>).sessions as unknown[]).length : 0)} />

@@ -369,6 +369,7 @@ export interface CreateTrainingAssessmentPayload {
   type?: string | null;
   passing_score?: number | null;
   time_limit_minutes?: number | null;
+  attempts_allowed?: number | null;
   max_attempts?: number | null;
   section_id?: string | null;
   lesson_id?: string | null;
@@ -397,6 +398,7 @@ export interface SubmitAssessmentPayload {
 /** Payload for `POST /api/v1/trainings/{id}/assignments`. */
 export interface CreateTrainingAssignmentPayload {
   title: string;
+  instructions?: string | null;
   description?: string | null;
   due_date?: string | null;
   max_score?: number | null;
@@ -405,14 +407,16 @@ export interface CreateTrainingAssignmentPayload {
 
 /** Payload for `POST /api/v1/trainings/{id}/assignments/{aid}/submit`. */
 export interface SubmitAssignmentPayload {
-  content?: string | null;
+  submission_text?: string | null;
   file_url?: string | null;
+  content?: string | null;
   [key: string]: unknown;
 }
 
 /** Payload for `POST .../grade`. */
 export interface GradeSubmissionPayload {
-  score: number;
+  grade?: string | number | null;
+  score?: number | null;
   feedback?: string | null;
   [key: string]: unknown;
 }
@@ -450,6 +454,7 @@ export interface CompleteLessonPayload {
 export interface CreateTrainingAnnouncementPayload {
   title?: string | null;
   message: string;
+  channel?: "in_app" | "email" | "sms" | "both";
   recipient_type?: "all" | "registered" | "specific";
   channels?: Array<"in_app" | "push" | "email" | "sms">;
   [key: string]: unknown;
@@ -854,6 +859,28 @@ export async function updateTrainingLesson(
   return (await res.json()) as unknown;
 }
 
+/** Removes a single attachment from a lesson media list (documents | videos | notes). */
+export async function deleteTrainingLessonMedia(
+  trainingId: string,
+  sectionId: string,
+  lessonId: string,
+  kind: "documents" | "videos" | "notes",
+  url: string,
+): Promise<unknown> {
+  const res = await fetch(
+    `${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/media?kind=${encodeURIComponent(kind)}&url=${encodeURIComponent(url)}`,
+    { method: "DELETE", credentials: "include" },
+  );
+  if (!res.ok) throw await createTrainingsApiError(res, "remove this attachment");
+  const text = await res.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
+  }
+}
+
 /** Deletes a lesson. */
 export async function deleteTrainingLesson(trainingId: string, sectionId: string, lessonId: string): Promise<unknown> {
   const res = await fetch(
@@ -1190,9 +1217,9 @@ export async function leaveTrainingWaitlist(trainingId: string, entryId: string)
 // Wishlist
 // ---------------------------------------------------------------------------
 
-/** Lists the current user's wishlist — `GET /trainings/wishlist`. */
+/** Lists the current user's wishlist — `GET /trainings/my/wishlist`. */
 export async function listTrainingWishlist(): Promise<unknown[]> {
-  const res = await fetch(`${trainingsBasePath}wishlist`, { credentials: "include", cache: "no-store" });
+  const res = await fetch(`${trainingsBasePath}my/wishlist`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "load your wishlist");
   const value = (await res.json()) as unknown;
   if (Array.isArray(value)) return value;
