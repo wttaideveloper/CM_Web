@@ -26,6 +26,7 @@ interface Props {
   persistedSessions?: readonly EventSessionRecord[];
   enabledFields?: readonly string[];
   requiredFields?: readonly string[];
+  deliveryMode?: string;
   label?: string;
   error?: string;
   onSessionsChange: (sessions: SessionDraft[]) => void;
@@ -58,6 +59,7 @@ export default function SessionTableEditor({
   persistedSessions = [],
   enabledFields,
   requiredFields = [],
+  deliveryMode,
   label = "Sessions / Agenda",
   error,
   onSessionsChange,
@@ -74,7 +76,7 @@ export default function SessionTableEditor({
   const [isSaving, setIsSaving] = useState(false);
   const enabled = (field: SessionField) => enabledFields === undefined || enabledFields.length === 0 || enabledFields.includes(field);
   const required = (field: SessionField) => requiredFields.includes(field);
-  const availableFields = fields.filter((field) => enabled(field.key));
+  const availableFields = fields.filter((field) => enabled(field.key) && isDeliveryFieldApplicable(field.key, deliveryMode));
   const event = useMemo(() => buildEventWindow(eventStart, eventEnd), [eventEnd, eventStart]);
   const persistedOccupied = useMemo(() => event ? normalizeOccupied(persistedSessions, event) : [], [event, persistedSessions]);
   const combinedOccupied = useMemo(() => event ? normalizeOccupied([...persistedSessions, ...sessions], event) : [], [event, persistedSessions, sessions]);
@@ -119,7 +121,7 @@ export default function SessionTableEditor({
   const saveGenerated = async () => {
     if (!onSaveNewSessions) return;
     setSaveError(null);
-    const validation = validateSessions(sessions, eventStart, eventEnd, enabledFields, requiredFields, persistedSessions);
+    const validation = validateSessions(sessions, eventStart, eventEnd, enabledFields, requiredFields, persistedSessions, deliveryMode);
     if (validation) {
       setSaveError(validation);
       return;
@@ -238,30 +240,26 @@ function generateSlots(rules: readonly GeneratorRule[], initialGaps: readonly Ra
 function dateFromMinute(value: number): string { return new Date(value * 60_000).toISOString().slice(0, 10); }
 function timeFromMinute(value: number): string { const date = new Date(value * 60_000); return `${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}`; }
 
-export function validateSessions(sessions: readonly SessionDraft[], eventStart: string, eventEnd: string, enabledFields?: readonly string[], requiredFields: readonly string[] = [], occupiedSessions: readonly EventSessionRecord[] = []): string | null {
+export function validateSessions(sessions: readonly SessionDraft[], eventStart: string, eventEnd: string, enabledFields?: readonly string[], requiredFields: readonly string[] = [], occupiedSessions: readonly EventSessionRecord[] = [], deliveryMode?: string): string | null {
   const event = buildEventWindow(eventStart, eventEnd); if (!event) return "Enter valid Event start and end times before saving sessions.";
   const enabled = (field: SessionField) => enabledFields === undefined || enabledFields.length === 0 || enabledFields.includes(field);
-  const required = (field: SessionField) => requiredFields.includes(field);
+  const applicable = (field: SessionField) => isDeliveryFieldApplicable(field, deliveryMode);
+  const required = (field: SessionField) => requiredFields.includes(field) && applicable(field);
   const dates = new Set(event.dates);
   for (const session of sessions) {
     if (enabled("session_date") && (!dates.has(session.session_date) || !session.session_date)) return "Each session must use a date within the Event schedule.";
-    for (const field of fields.map((item) => item.key)) if (enabled(field) && required(field) && !String(session[field] ?? "").trim()) return `${fieldLabel(field)} is required for every session.`;
+    for (const field of fields.map((item) => item.key)) if (enabled(field) && applicable(field) && required(field) && !String(session[field] ?? "").trim()) return `${fieldLabel(field)} is required for every session.`;
     const range = sessionRange(session); if (enabled("start_time") && enabled("end_time") && (!range || range.start < event.start || range.end > event.end)) return "Each session must have valid times within the Event schedule.";
     if (enabled("meeting_link") && session.meeting_link && !isUrl(session.meeting_link)) return "Meeting links must be valid URLs.";
   }
-  const persistedRanges = occupiedSessions.map(toDraft).map(sessionRange).filter((range): range is Range => Boolean(range));
-  const generatedRanges = sessions.map(sessionRange);
-  for (const generated of generatedRanges) {
-    if (!generated) continue;
-    if (persistedRanges.some((persisted) => overlaps(generated, persisted))) return "Sessions cannot overlap each other.";
-  }
-  for (let index = 0; index < generatedRanges.length; index += 1) {
-    const current = generatedRanges[index];
-    if (current && generatedRanges.slice(index + 1).some((next) => Boolean(next && overlaps(current, next)))) return "Sessions cannot overlap each other.";
-  }
   return null;
+}
+function isDeliveryFieldApplicable(field: SessionField, deliveryMode?: string): boolean {
+  if (!deliveryMode) return true;
+  if (field === "location") return deliveryMode !== "online";
+  if (field === "meeting_link") return deliveryMode === undefined || deliveryMode === "online" || deliveryMode === "hybrid";
+  return true;
 }
 function fieldLabel(field: SessionField): string { return fields.find((item) => item.key === field)?.label ?? field; }
 function isUrl(value: string): boolean { try { new URL(value); return true; } catch { return false; } }
-function overlaps(left: Range, right: Range): boolean { return left.start < right.end && left.end > right.start; }
 function durationOfSessions(sessions: readonly SessionDraft[]): number { return sessions.reduce((total, session) => { const range = sessionRange(session); return total + (range ? range.end - range.start : 0); }, 0); }

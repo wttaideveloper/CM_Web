@@ -17,6 +17,7 @@ const TAXONOMY_SELECT_SEMANTICS: Readonly<Record<string, EventCoreFieldSemantic>
   time_zone: { displayRenderer: "taxonomy_select", optionsSource: "standard_reference", description: "Options come from the backend registry's supported timezone list." },
   duration_type: { displayRenderer: "taxonomy_select", optionsSource: "domain_owned", description: "Options come from the backend registry's static Event values." },
   delivery_mode: { displayRenderer: "taxonomy_select", optionsSource: "domain_owned", description: "Options come from the backend registry's static Event values." },
+  pricing_type: { displayRenderer: "taxonomy_select", optionsSource: "domain_owned", description: "Options come from the backend registry's static Free or Paid Event values." },
 };
 
 /**

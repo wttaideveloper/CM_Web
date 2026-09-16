@@ -25,6 +25,7 @@ export interface Event {
   meeting_link?: string | null;
   meeting_provider: string | null;
   price: string;
+  pricing_type?: "free" | "paid" | null;
   currency: string;
   ticket_types: EventTicketType[];
   capacity: string;
@@ -396,6 +397,7 @@ export interface EventSessionInput {
   start_time: string;
   end_time: string;
   location: string;
+  meeting_link?: string | null;
 }
 
 /** A session embedded in an Event response from the original create payload. */
@@ -445,7 +447,7 @@ export interface UpdateEventSessionPayload {
 export interface CreateEventPayload {
   tenant_id: string;
   enterprise_id: string;
-  location_id: string;
+  location_id: string | null;
   title: string;
   description: string;
   category: string;
@@ -463,10 +465,11 @@ export interface CreateEventPayload {
   videos: string[];
   documents: string[];
   delivery_mode: "in_person";
-  venue: CreateEventVenue;
+  venue: CreateEventVenue | null;
   meeting_link: string | null;
   meeting_provider: string | null;
   price: string;
+  pricing_type: "free" | "paid";
   currency: string;
   ticket_types: EventTicketType[];
   capacity: string;
@@ -510,6 +513,7 @@ export interface UpdateEventPayload {
   meeting_link?: string | null;
   meeting_provider?: string | null;
   price?: string | null;
+  pricing_type?: "free" | "paid" | null;
   currency?: string | null;
   ticket_types?: EventTicketType[] | null;
   capacity?: string | null;
@@ -638,7 +642,7 @@ function isEvent(value: unknown): value is Event {
 
   const stringFields: Array<keyof Omit<Event, "enterprise_id" | "location_id" | "venue" | "meeting_link" | "meeting_provider" | "primary_image" | "available_seats" | "is_full" | "last_admin_notes" | "tags" | "gallery_images" | "videos" | "documents" | "ticket_types" | "custom_fields" | "sessions" | "is_deleted">> = [
     "id", "tenant_id", "title", "description", "category", "start_date", "end_date", "duration_type", "time_zone",
-    "delivery_mode", "price", "currency", "capacity", "created_at", "updated_at",
+    "delivery_mode", "currency", "capacity", "created_at", "updated_at",
   ];
   const stringArrayFields = ["tags", "gallery_images", "videos", "documents"];
 
@@ -647,6 +651,8 @@ function isEvent(value: unknown): value is Event {
     ["subcategory", "organiser_name", "organiser_contact", "registration_cutoff", "min_participants", "max_participants", "registration_open_at", "registration_close_at"].every((field) => value[field] === null || typeof value[field] === "string") &&
     (value.enterprise_id === null || typeof value.enterprise_id === "string") &&
     (value.primary_image === null || typeof value.primary_image === "string") &&
+    (value.price === null || typeof value.price === "string") &&
+    (value.pricing_type === undefined || value.pricing_type === null || value.pricing_type === "free" || value.pricing_type === "paid") &&
     (value.available_seats === null || (typeof value.available_seats === "number" && Number.isFinite(value.available_seats))) &&
     (value.is_full === null || typeof value.is_full === "boolean") &&
     (value.last_admin_notes === null || typeof value.last_admin_notes === "string") &&
@@ -669,6 +675,8 @@ function isEvent(value: unknown): value is Event {
 function normalizeNullableEventFields(event: Event): Event {
   return {
     ...event,
+    price: event.price ?? "",
+    pricing_type: event.pricing_type ?? (event.price !== null && event.price !== undefined && String(event.price).trim() !== "" && Number(event.price) !== 0 ? "paid" : "free"),
     subcategory: event.subcategory ?? "",
     organiser_name: event.organiser_name ?? "",
     organiser_contact: event.organiser_contact ?? "",
@@ -1060,7 +1068,21 @@ export async function getEventById(eventId: string): Promise<Event> {
     throw new Error("Events API returned an invalid event response.");
   }
 
-  return value;
+  return normalizeNullableEventFields(value);
+}
+
+/** Reads the latest Platform review note for an Event through the authenticated Events API. */
+export async function getEventAdminNotes(eventId: string): Promise<unknown> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/admin-notes`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw await createEventsApiError(response, "load the Event admin note");
+  }
+
+  return (await response.json().catch(() => null)) as unknown;
 }
 
 /** Lists registration records for one Event through the authenticated same-origin proxy. */
@@ -1212,7 +1234,7 @@ export async function applyEventTemplate(
     throw new Error("Events API returned an invalid applied template response.");
   }
 
-  return value;
+  return normalizeNullableEventFields(value);
 }
 
 /** Loads the backend-authoritative read-only attendance report for one Event. */
@@ -1520,7 +1542,7 @@ export async function updateEvent(eventId: string, payload: UpdateEventPayload):
     throw new Error("Events API returned an invalid updated event response.");
   }
 
-  return value;
+  return normalizeNullableEventFields(value);
 }
 
 /** Duplicates an Event through the backend-authoritative authenticated endpoint. */
@@ -1539,7 +1561,7 @@ export async function duplicateEvent(eventId: string): Promise<Event> {
     throw new Error("Events API returned an invalid duplicated event response.");
   }
 
-  return value;
+  return normalizeNullableEventFields(value);
 }
 
 /** Deletes an eligible Event through the authenticated same-origin Events proxy. */
@@ -1579,7 +1601,7 @@ export async function updateEventStatus(eventId: string, payload: EventStatusUpd
     throw new Error("Events API returned an invalid updated event status response.");
   }
 
-  return value;
+  return normalizeNullableEventFields(value);
 }
 
 /** Resubmits an Event after a Super Admin rejection or request for revision. */
@@ -1598,7 +1620,7 @@ export async function resubmitEvent(eventId: string): Promise<Event> {
     throw new Error("Events API returned an invalid resubmitted event response.");
   }
 
-  return value;
+  return normalizeNullableEventFields(value);
 }
 
 /** Sends an Event announcement through the authenticated same-origin Events proxy. */

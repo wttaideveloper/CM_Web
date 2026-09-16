@@ -37,6 +37,7 @@ import {
   deleteEventSession,
   EventsApiError,
   exportEventRegistrations,
+  getEventAdminNotes,
   getEventById,
   getEventFeedback,
   getEventRegistrations,
@@ -60,6 +61,39 @@ type DetailItem = {
 };
 type EventDetailsTab = "details" | "registrations" | "attendance" | "feedback" | "reports" | "orders";
 type RegistrationsSubview = "registered" | "waitlist";
+
+function AdminNoteBanner({ eventId, status }: { eventId: string; status: string }) {
+  const adminNoteQuery = useQuery({
+    queryKey: ["events", eventId, "admin-notes"],
+    queryFn: () => getEventAdminNotes(eventId),
+    enabled: Boolean(eventId) && (status === "rejected" || status === "needs_revision"),
+    staleTime: 30_000,
+    retry: 1,
+  });
+
+  if (adminNoteQuery.isLoading || adminNoteQuery.isError || !adminNoteQuery.data) return null;
+
+  const data = adminNoteQuery.data;
+  let note: string | null = null;
+  let by: string | null = null;
+  if (typeof data === "string") {
+    note = data.trim() || null;
+  } else if (typeof data === "object" && data !== null && !Array.isArray(data)) {
+    const record = data as Record<string, unknown>;
+    note = [record.last_admin_notes, record.note, record.message, record.reason, record.comment, record.notes, record.admin_note]
+      .find((value): value is string => typeof value === "string" && value.trim().length > 0) ?? null;
+    by = [record.performed_by, record.admin_name]
+      .find((value): value is string => typeof value === "string" && value.trim().length > 0) ?? null;
+  }
+
+  if (!note) return null;
+  return (
+    <section role="status" className="mt-3 max-w-2xl rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-3">
+      <p className="text-sm font-bold text-[#735c1e]">{status === "needs_revision" ? "Changes requested" : "Not approved"}{by ? ` by ${by}` : ""}</p>
+      <p className="mt-1 whitespace-pre-line text-sm leading-6 text-[#735c1e]">{note}</p>
+    </section>
+  );
+}
 
 const eventDetailsTabs: ReadonlyArray<{ id: EventDetailsTab; label: string }> =
   [
@@ -94,6 +128,12 @@ function isSessionSubfieldEnabled(field: ActiveEventFormField | null | undefined
 function isSessionSubfieldRequired(field: ActiveEventFormField | null | undefined, name: SessionSubfield): boolean {
   if (!field) return name === "session_date" || name === "title";
   return field.composite_config?.required_fields?.includes(name) ?? false;
+}
+
+function isDeliveryFieldApplicable(field: SessionSubfield, deliveryMode: string): boolean {
+  if (field === "location") return deliveryMode !== "online";
+  if (field === "meeting_link") return deliveryMode === "online" || deliveryMode === "hybrid";
+  return true;
 }
 
 /** Renders every supported field from a single authenticated Event response. */
@@ -172,6 +212,7 @@ export default function EventDetailsScreen() {
           </span>
         </div>
       </header>
+      {(event.status === "needs_revision" || event.status === "rejected") ? <AdminNoteBanner eventId={event.id} status={event.status} /> : null}
       <div className="mt-5 flex items-start justify-between gap-3">
         <div>
           {statusFeedback ? (
@@ -181,12 +222,6 @@ export default function EventDetailsScreen() {
             >
               {statusFeedback}
             </p>
-          ) : null}
-          {(event.status === "needs_revision" || event.status === "rejected") ? (
-            <section className="mt-3 max-w-2xl rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-3">
-              <p className="text-sm font-bold text-[#735c1e]">Admin feedback</p>
-              <p className="mt-1 text-sm text-[#735c1e]">{event.last_admin_notes?.trim() || "No additional notes were provided."}</p>
-            </section>
           ) : null}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-3">
@@ -230,6 +265,7 @@ export default function EventDetailsScreen() {
           event={event}
           sessionsSection={historicalSessionsField ? <SessionsSection
             eventId={event.id}
+            deliveryMode={event.delivery_mode}
             startDate={event.start_date}
             endDate={event.end_date}
             enabled={activeTab === "details"}
@@ -314,6 +350,7 @@ export default function EventDetailsScreen() {
           <DetailGrid
             items={[
               { label: "Price", value: event.price },
+              { label: "Pricing Type", value: event.pricing_type ?? (Number(event.price) === 0 ? "Free" : "Paid") },
               { label: "Currency", value: event.currency },
             ]}
           />
@@ -347,6 +384,7 @@ export default function EventDetailsScreen() {
         </DetailSection>
         <SessionsSection
           eventId={event.id}
+          deliveryMode={event.delivery_mode}
           startDate={event.start_date}
           endDate={event.end_date}
           enabled={activeTab === "details"}
@@ -1020,12 +1058,14 @@ function TicketTypes({ event }: { event: Event }) {
 }
 function SessionsSection({
   eventId,
+  deliveryMode,
   startDate,
   endDate,
   enabled,
   sessionField = null,
 }: {
   eventId: string;
+  deliveryMode: string;
   startDate: string;
   endDate: string;
   enabled: boolean;
@@ -1139,6 +1179,7 @@ function SessionsSection({
           mode="manage"
           eventStart={startDate}
           eventEnd={endDate}
+          deliveryMode={deliveryMode}
           sessions={newSessions}
           persistedSessions={sessionsQuery.data}
           enabledFields={sessionField?.composite_config?.enabled_fields ?? undefined}
@@ -1159,6 +1200,7 @@ function SessionsSection({
           startDate={startDate}
           endDate={endDate}
           sessionField={sessionField}
+          deliveryMode={deliveryMode}
           isPending={editingSession ? updateMutation.isPending : addMutation.isPending}
           error={editingSession ? updateMutation.error : addMutation.error}
           onClose={() => {
@@ -1179,6 +1221,7 @@ function AddSessionDialog({
   startDate,
   endDate,
   sessionField = null,
+  deliveryMode,
   isPending,
   error,
   onClose,
@@ -1189,6 +1232,7 @@ function AddSessionDialog({
   startDate: string;
   endDate: string;
   sessionField?: ActiveEventFormField | null;
+  deliveryMode: string;
   isPending: boolean;
   error: Error | null;
   onClose: () => void;
@@ -1207,8 +1251,8 @@ function AddSessionDialog({
   });
   const [validationError, setValidationError] = useState<string | null>(null);
   const bounds = getSessionTimeBounds(values.session_date, startDate, endDate);
-  const fieldEnabled = (name: SessionSubfield) => isSessionSubfieldEnabled(sessionField, name);
-  const fieldRequired = (name: SessionSubfield) => isSessionSubfieldRequired(sessionField, name);
+  const fieldEnabled = (name: SessionSubfield) => isSessionSubfieldEnabled(sessionField, name) && isDeliveryFieldApplicable(name, deliveryMode);
+  const fieldRequired = (name: SessionSubfield) => isSessionSubfieldRequired(sessionField, name) && isDeliveryFieldApplicable(name, deliveryMode);
   useEffect(() => {
     titleRef.current?.focus();
   }, []);
