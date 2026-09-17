@@ -28,7 +28,7 @@ export interface Event {
   venue: EventVenue | null;
   meeting_link?: string | null;
   meeting_provider: string | null;
-  price: string;
+  price: string | null;
   pricing_type?: "free" | "paid" | null;
   currency: string;
   ticket_types: EventTicketType[];
@@ -50,6 +50,9 @@ export interface Event {
   form_configuration_id?: string | null;
   form_configuration_version_id?: string | null;
   custom_values?: EventCustomValue[];
+  registration_open?: boolean;
+  delivery_mode_display?: string;
+  requires_reapproval?: boolean;
 }
 
 /** One typed value captured for a configuration-owned custom Event field. */
@@ -639,41 +642,97 @@ function isEventSessionRecord(value: unknown): value is EventSessionRecord {
   return isEventSession(value) || isEventEmbeddedSession(value);
 }
 
+function normalizeEventTicket(value: unknown): EventTicketType | null {
+  if (!isRecord(value) || typeof value.name !== "string") return null;
+  const id = typeof value.id === "string" ? value.id : value.name;
+  const text = (candidate: unknown) => candidate === null || candidate === undefined ? "" : String(candidate);
+  return { id, name: value.name, price: text(value.price), currency: text(value.currency), capacity: text(value.capacity) };
+}
+
+function normalizeEventSession(value: unknown): EventSessionRecord | null {
+  if (!isRecord(value) || typeof value.title !== "string" || typeof value.session_date !== "string") return null;
+  const optionalText = (candidate: unknown) => candidate === null || candidate === undefined ? null : typeof candidate === "string" ? candidate : null;
+  const common = {
+    session_date: value.session_date,
+    title: value.title,
+    speaker: optionalText(value.speaker),
+    start_time: optionalText(value.start_time),
+    end_time: optionalText(value.end_time),
+    location: optionalText(value.location),
+    meeting_link: optionalText(value.meeting_link),
+  };
+  return typeof value.id === "string" ? { id: value.id, ...common } : { ...common, speaker: common.speaker ?? "", start_time: common.start_time ?? "", end_time: common.end_time ?? "" };
+}
+
+function normalizeEventResponse(value: unknown): Event | null {
+  if (!isRecord(value)) return null;
+  const requiredStrings = ["id", "tenant_id", "title", "description", "category", "start_date", "end_date", "status", "created_at", "updated_at"];
+  if (!requiredStrings.every((key) => typeof value[key] === "string") || !isEventStatus(value.status)) return null;
+  if (value.enterprise_id !== null && typeof value.enterprise_id !== "string") return null;
+  const text = (key: string, fallback = "") => typeof value[key] === "string" ? value[key] as string : fallback;
+  const nullableText = (key: string) => value[key] === null || value[key] === undefined ? null : typeof value[key] === "string" ? value[key] as string : null;
+  const arrayOfStrings = (key: string) => Array.isArray(value[key]) ? value[key].filter((item): item is string => typeof item === "string") : [];
+  const customValues = Array.isArray(value.custom_values) ? value.custom_values.filter(isEventCustomValue) : [];
+  const customFields = Array.isArray(value.custom_fields) ? value.custom_fields.filter(isEventCustomField) : [];
+  const sessions = Array.isArray(value.sessions) ? value.sessions.map(normalizeEventSession).filter((item): item is EventSessionRecord => item !== null) : [];
+  const ticketTypes = Array.isArray(value.ticket_types) ? value.ticket_types.map(normalizeEventTicket).filter((item): item is EventTicketType => item !== null) : [];
+  const venue = value.venue === null || value.venue === undefined ? null : isEventVenue(value.venue) ? value.venue : null;
+  return {
+    ...(value as unknown as Event),
+    id: value.id as string,
+    tenant_id: value.tenant_id as string,
+    enterprise_id: value.enterprise_id as string | null,
+    title: value.title as string,
+    description: value.description as string,
+    category: value.category as string,
+    subcategory: text("subcategory"),
+    tags: arrayOfStrings("tags"),
+    organiser_name: text("organiser_name"),
+    organiser_contact: text("organiser_contact"),
+    start_date: value.start_date as string,
+    end_date: value.end_date as string,
+    duration_type: text("duration_type"),
+    time_zone: text("time_zone"),
+    registration_cutoff: text("registration_cutoff"),
+    registration_open_at: text("registration_open_at"),
+    registration_close_at: text("registration_close_at"),
+    primary_image: text("primary_image"),
+    gallery_images: arrayOfStrings("gallery_images"),
+    videos: arrayOfStrings("videos"),
+    documents: arrayOfStrings("documents"),
+    delivery_mode: text("delivery_mode"),
+    venue,
+    location_id: nullableText("location_id"),
+    meeting_link: nullableText("meeting_link"),
+    meeting_provider: nullableText("meeting_provider"),
+    price: nullableText("price"),
+    pricing_type: value.pricing_type === "free" || value.pricing_type === "paid" ? value.pricing_type : null,
+    currency: text("currency"),
+    capacity: text("capacity"),
+    min_participants: text("min_participants"),
+    max_participants: text("max_participants"),
+    ticket_types: ticketTypes,
+    custom_fields: customFields,
+    custom_values: customValues,
+    sessions,
+    available_seats: typeof value.available_seats === "number" && Number.isFinite(value.available_seats) ? value.available_seats : null,
+    is_full: typeof value.is_full === "boolean" ? value.is_full : null,
+    form_configuration_id: nullableText("form_configuration_id"),
+    form_configuration_version_id: nullableText("form_configuration_version_id"),
+    enterprise_name: nullableText("enterprise_name"),
+    last_admin_notes: nullableText("last_admin_notes"),
+    is_deleted: typeof value.is_deleted === "boolean" ? value.is_deleted : false,
+    registration_open: typeof value.registration_open === "boolean" ? value.registration_open : undefined,
+    delivery_mode_display: typeof value.delivery_mode_display === "string" ? value.delivery_mode_display : undefined,
+    requires_reapproval: typeof value.requires_reapproval === "boolean" ? value.requires_reapproval : undefined,
+    created_at: value.created_at as string,
+    updated_at: value.updated_at as string,
+    status: value.status as EventStatus,
+  };
+}
+
 function isEvent(value: unknown): value is Event {
-  if (!isRecord(value) || (value.venue !== null && !isEventVenue(value.venue))) {
-    return false;
-  }
-
-  const stringFields: Array<keyof Omit<Event, "enterprise_id" | "location_id" | "venue" | "meeting_link" | "meeting_provider" | "primary_image" | "available_seats" | "is_full" | "last_admin_notes" | "tags" | "gallery_images" | "videos" | "documents" | "ticket_types" | "custom_fields" | "sessions" | "is_deleted">> = [
-    "id", "tenant_id", "title", "description", "category", "start_date", "end_date", "duration_type", "time_zone",
-    "delivery_mode", "currency", "capacity", "created_at", "updated_at",
-  ];
-  const stringArrayFields = ["tags", "gallery_images", "videos", "documents"];
-
-  return (
-    stringFields.every((field) => typeof value[field] === "string") &&
-    ["subcategory", "organiser_name", "organiser_contact", "registration_cutoff", "min_participants", "max_participants", "registration_open_at", "registration_close_at"].every((field) => value[field] === null || typeof value[field] === "string") &&
-    (value.enterprise_id === null || typeof value.enterprise_id === "string") &&
-    (value.primary_image === null || typeof value.primary_image === "string") &&
-    (value.price === null || typeof value.price === "string") &&
-    (value.pricing_type === undefined || value.pricing_type === null || value.pricing_type === "free" || value.pricing_type === "paid") &&
-    (value.available_seats === null || (typeof value.available_seats === "number" && Number.isFinite(value.available_seats))) &&
-    (value.is_full === null || typeof value.is_full === "boolean") &&
-    (value.last_admin_notes === null || typeof value.last_admin_notes === "string") &&
-    (value.form_configuration_id === undefined || value.form_configuration_id === null || typeof value.form_configuration_id === "string") &&
-    (value.form_configuration_version_id === undefined || value.form_configuration_version_id === null || typeof value.form_configuration_version_id === "string") &&
-    (value.custom_values === undefined || Array.isArray(value.custom_values) && value.custom_values.every(isEventCustomValue)) &&
-    stringArrayFields.every((field) => isStringArray(value[field])) &&
-    (value.location_id === null || typeof value.location_id === "string") &&
-    (value.meeting_link === null || typeof value.meeting_link === "string") &&
-    (value.meeting_provider === null || typeof value.meeting_provider === "string") &&
-    Array.isArray(value.ticket_types) && value.ticket_types.every(isEventTicketType) &&
-    Array.isArray(value.custom_fields) && value.custom_fields.every(isEventCustomField) &&
-    Array.isArray(value.sessions) && value.sessions.every(isEventSessionRecord) &&
-    (value.enterprise_name === undefined || value.enterprise_name === null || typeof value.enterprise_name === "string") &&
-    typeof value.is_deleted === "boolean" &&
-    isEventStatus(value.status)
-  );
+  return normalizeEventResponse(value) !== null;
 }
 
 function normalizeNullableEventFields(event: Event): Event {
@@ -707,11 +766,14 @@ function isDeleteEventResponse(value: unknown): value is DeleteEventResponse {
 }
 
 function parseEventListResponse(value: unknown): EventListResponse {
-  if (!isRecord(value) || !Array.isArray(value.items) || !value.items.every(isEvent) || !isPagination(value.pagination)) {
+  if (!isRecord(value) || !Array.isArray(value.items) || !isPagination(value.pagination)) {
     throw new Error("Events API returned an invalid list response.");
   }
-
-  return { items: value.items.map((item) => normalizeNullableEventFields(item)), pagination: value.pagination };
+  const items = value.items.map(normalizeEventResponse);
+  if (items.some((item): item is null => item === null)) {
+    throw new Error("Events API returned an invalid list response.");
+  }
+  return { items: (items as Event[]).map((item) => normalizeNullableEventFields(item)), pagination: value.pagination };
 }
 
 function isEventRegistration(value: unknown): value is EventRegistration {
@@ -1050,11 +1112,12 @@ export async function createEvent(payload: CreateEventPayload): Promise<Event> {
   }
 
   const value = (await response.json()) as unknown;
-  if (!isEvent(value)) {
+  const event = normalizeEventResponse(value);
+  if (!event) {
     throw new Error("Events API returned an invalid created event response.");
   }
 
-  return normalizeNullableEventFields(value);
+  return normalizeNullableEventFields(event);
 }
 
 /** Retrieves one Event by its backend identifier using the authenticated browser session. */

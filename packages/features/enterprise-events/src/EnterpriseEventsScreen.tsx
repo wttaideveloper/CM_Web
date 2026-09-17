@@ -119,21 +119,21 @@ function EventCard({ event, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess
 
       <p className={`mt-2 line-clamp-2 min-h-10 text-sm leading-5 ${secondaryTextClass}`}>{event.description || "—"}</p>
 
-      <div className={`mt-3 grid grid-cols-1 gap-x-8 gap-y-4 border-t pt-3 text-sm sm:grid-cols-2 lg:grid-cols-4 ${dividerClass}`}>
+      <div className={`mt-3 grid grid-cols-1 gap-x-6 gap-y-4 border-t pt-3 text-sm sm:grid-cols-2 xl:grid-cols-4 ${dividerClass}`}>
         <div className="min-w-0">
-          <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Date</p>
+          <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Date</p>
           <p className={`mt-1 font-semibold ${primaryTextClass}`}>{formatEventDate(event.start_date)}</p>
         </div>
         <div className="min-w-0">
-          <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Location / Delivery</p>
+          <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Location / Delivery</p>
           <p className={`mt-1 font-semibold ${primaryTextClass}`}>{formatCardLocation(event)}</p>
         </div>
         <div className="min-w-0">
-          <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Registrations</p>
+          <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Registrations</p>
           <p className={`mt-1 font-semibold ${primaryTextClass}`}>—</p>
         </div>
         <div className="min-w-0">
-          <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Availability</p>
+          <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Availability</p>
           <p className={`mt-1 font-semibold ${primaryTextClass}`}>{formatSeatAvailability(event)}</p>
         </div>
       </div>

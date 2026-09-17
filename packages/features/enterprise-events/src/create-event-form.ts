@@ -160,7 +160,7 @@ export function eventToFormValues(event: Event): CreateEventFormValues {
     registration_close_at: toDateTimeLocal(event.registration_close_at), time_zone: event.time_zone, delivery_mode: event.delivery_mode,
     venue_name: event.venue?.name ?? "", venue_address: event.venue?.address ?? "", venue_city: event.venue?.city ?? "",
     venue_latitude: event.venue?.coordinates?.lat?.toString() ?? "", venue_longitude: event.venue?.coordinates?.lng?.toString() ?? "",
-    meeting_link: event.meeting_link ?? "", meeting_provider: event.meeting_provider ?? "", price: event.price, pricing_type: event.pricing_type ?? (Number(event.price) === 0 ? "free" : "paid"),
+    meeting_link: event.meeting_link ?? "", meeting_provider: event.meeting_provider ?? "", price: event.price ?? "", pricing_type: event.pricing_type ?? (Number(event.price) === 0 ? "free" : "paid"),
     currency: event.currency, ticket_types: event.ticket_types, capacity: event.capacity,
     min_participants: event.min_participants, max_participants: event.max_participants, primary_image: event.primary_image ?? "",
     gallery_images: event.gallery_images, videos: event.videos, documents: event.documents,
