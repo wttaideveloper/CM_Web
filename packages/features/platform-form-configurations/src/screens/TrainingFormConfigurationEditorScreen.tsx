@@ -6,7 +6,7 @@ import { useState } from "react";
 import { ConfigurationBuilder } from "../components/ConfigurationBuilder";
 import { TrainingConfigurationHistoryPanels } from "../components/TrainingConfigurationHistoryPanels";
 import { trainingFormConfigurationCopy as copy } from "../constants/training-form-configuration-copy";
-import { useActivateTrainingFormConfiguration, useCreateTrainingFormConfiguration, useDeactivateTrainingFormConfiguration, useDeleteTrainingFormConfiguration, useTrainingFormConfiguration, useTrainingFormConfigurationAssignments, useTrainingFormConfigurationTenantOptions, useTrainingFormFieldRegistry, usePublishTrainingFormConfiguration, useUpdateTrainingFormConfiguration, useUpdateTrainingFormConfigurationAssignments } from "../training-form-configurations.queries";
+import { useActivateTrainingFormConfiguration, useCreateTrainingFormConfiguration, useDeactivateTrainingFormConfiguration, useDeleteTrainingFormConfiguration, useTrainingFormConfiguration, useTrainingFormConfigurationAssignments, useTrainingFormConfigurationEnterpriseOptions, useTrainingFormConfigurationTenantOptions, useTrainingFormFieldRegistry, usePublishTrainingFormConfiguration, useUpdateTrainingFormConfiguration, useUpdateTrainingFormConfigurationAssignments } from "../training-form-configurations.queries";
 import { toBuilderTrainingFormConfiguration, toTrainingFormConfigurationCreateCandidate, toTrainingFormConfigurationPatchCandidate } from "../model/training-form-configuration.mappers";
 import { createMockConfiguration } from "../model/form-configuration.mock";
 import type { FormConfiguration } from "../model/form-configuration.types";
@@ -22,6 +22,7 @@ export function TrainingFormConfigurationEditorScreen({ id, mode }: { id?: strin
   const configuration = useTrainingFormConfiguration(isCreate ? undefined : id);
   const assignments = useTrainingFormConfigurationAssignments(isCreate ? undefined : id);
   const tenantOptions = useTrainingFormConfigurationTenantOptions();
+  const enterpriseOptions = useTrainingFormConfigurationEnterpriseOptions();
   const create = useCreateTrainingFormConfiguration();
   const update = useUpdateTrainingFormConfiguration();
   const publish = usePublishTrainingFormConfiguration();
@@ -54,12 +55,21 @@ export function TrainingFormConfigurationEditorScreen({ id, mode }: { id?: strin
     if (assignmentRecovery) throw new Error("Tenant assignments could not be saved. Open the saved configuration to recover.");
     if (!isCreate) {
       if (!id) throw new Error("Configuration ID is unavailable.");
-      return toBuilderTrainingFormConfiguration(await update.mutateAsync({ configurationId: id, payload: toTrainingFormConfigurationPatchCandidate(builder) }));
+      const updated = toBuilderTrainingFormConfiguration(await update.mutateAsync({ configurationId: id, payload: toTrainingFormConfigurationPatchCandidate(builder) }));
+      if (builder.scope === "global") {
+        try {
+          await saveAssignments.mutateAsync({ configurationId: id, payload: { tenant_ids: [], is_global: true } });
+        } catch (reason) {
+          throw new Error(`Configuration saved, but stale assignments could not be cleared: ${reason instanceof Error ? reason.message : "Unable to clear assignments."}`);
+        }
+      }
+      return updated;
     }
     const saved = await create.mutateAsync(toTrainingFormConfigurationCreateCandidate(builder));
-    if (builder.scope === "selective" && builder.tenantIds.length > 0) {
+    if (builder.scope === "selective" && ((builder.enterpriseIds ?? []).length > 0 || builder.tenantIds.length > 0)) {
       try {
-        await saveAssignments.mutateAsync({ configurationId: saved.id, payload: { tenant_ids: builder.tenantIds } });
+        const enterpriseIds = builder.enterpriseIds ?? [];
+        await saveAssignments.mutateAsync({ configurationId: saved.id, payload: enterpriseIds.length > 0 ? { tenant_ids: [], enterprise_ids: enterpriseIds } : { tenant_ids: builder.tenantIds } });
       } catch (reason) {
         const message = reason instanceof Error ? reason.message : "Unable to save tenant assignments.";
         setAssignmentRecovery({ id: saved.id, message });
@@ -80,6 +90,11 @@ export function TrainingFormConfigurationEditorScreen({ id, mode }: { id?: strin
     const saved = await saveAssignments.mutateAsync({ configurationId: id, payload: { tenant_ids: tenantIds } });
     return saved.map((assignment) => assignment.tenant_id);
   };
+  const persistEnterpriseAssignments = async (args: { enterpriseIds: string[]; isGlobal: boolean }): Promise<readonly string[]> => {
+    if (!id) throw new Error("Save this configuration before assigning enterprises.");
+    const saved = await saveAssignments.mutateAsync({ configurationId: id, payload: args.isGlobal ? { tenant_ids: [], is_global: true } : { tenant_ids: [], enterprise_ids: args.enterpriseIds } });
+    return saved.map((assignment) => assignment.enterprise_id).filter((eid): eid is string => !!eid);
+  };
   const runLifecycle = async (action: "activate" | "deactivate" | "delete") => {
     if (!id) return;
     setLifecycleError("");
@@ -93,7 +108,7 @@ export function TrainingFormConfigurationEditorScreen({ id, mode }: { id?: strin
   if (registry.isLoading || (!isCreate && configuration.isLoading)) return <Page><p>{copy.loading}</p></Page>;
   if (error) return <Page><p role="alert">{errorCopy}</p><button type="button" onClick={() => { void registry.refetch(); void configuration.refetch(); }}>{copy.retry}</button></Page>;
   if (!builderConfiguration || registry.data?.length === 0) return <Page><p>{copy.emptyFieldRegistry}</p></Page>;
-  return <Page>{assignmentRecovery ? <p role="alert">Configuration was created, but assignments were not saved: {assignmentRecovery.message} <Link href={`/training-form-configurations/${assignmentRecovery.id}/edit`}>Open the saved configuration to retry.</Link></p> : null}<div className="mb-4 flex gap-3">{apiConfiguration?.status === "published" && !apiConfiguration.is_active ? <button type="button" disabled={activate.isPending} onClick={() => void runLifecycle("activate")}>{copy.activate}</button> : null}{apiConfiguration?.is_active ? <button type="button" disabled={deactivate.isPending} onClick={() => void runLifecycle("deactivate")}>{copy.deactivate}</button> : null}{apiConfiguration?.status === "draft" ? <button type="button" disabled={remove.isPending} onClick={() => void runLifecycle("delete")}>{copy.delete}</button> : null}</div>{lifecycleError ? <p role="alert">{lifecycleError}</p> : null}<ConfigurationBuilder key={builderConfiguration.id} initialConfiguration={builderConfiguration} coreFieldRegistry={registry.data ?? []} readOnly={mode === "view"} tenantOptions={tenantOptions.data ?? []} assignmentTenantIds={assignments.data?.map((assignment) => assignment.tenant_id)} assignmentsLoaded={assignments.isSuccess} isPersisted={!isCreate && Boolean(id)} isLoadingTenants={tenantOptions.isLoading} tenantError={tenantOptions.isError} isLoadingAssignments={assignments.isLoading} assignmentError={assignments.isError} isSaving={create.isPending || update.isPending} isPublishing={publish.isPending} isSavingAssignments={saveAssignments.isPending} onSave={mode === "view" ? undefined : save} onPublish={mode === "edit" ? publishConfiguration : undefined} onSaveAssignments={mode === "view" || !id ? undefined : persistAssignments} />{apiConfiguration ? <TrainingConfigurationHistoryPanels configuration={apiConfiguration} /> : null}</Page>;
+  return <Page>{assignmentRecovery ? <p role="alert">Configuration was created, but assignments were not saved: {assignmentRecovery.message} <Link href={`/training-form-configurations/${assignmentRecovery.id}/edit`}>Open the saved configuration to retry.</Link></p> : null}<div className="mb-4 flex gap-3">{apiConfiguration?.status === "published" && !apiConfiguration.is_active ? <button type="button" disabled={activate.isPending} onClick={() => void runLifecycle("activate")}>{copy.activate}</button> : null}{apiConfiguration?.is_active ? <button type="button" disabled={deactivate.isPending} onClick={() => void runLifecycle("deactivate")}>{copy.deactivate}</button> : null}{apiConfiguration?.status === "draft" ? <button type="button" disabled={remove.isPending} onClick={() => void runLifecycle("delete")}>{copy.delete}</button> : null}</div>{lifecycleError ? <p role="alert">{lifecycleError}</p> : null}<ConfigurationBuilder key={builderConfiguration.id} initialConfiguration={builderConfiguration} coreFieldRegistry={registry.data ?? []} readOnly={mode === "view"} tenantOptions={tenantOptions.data ?? []} enterpriseOptions={enterpriseOptions.data ?? []} assignmentTenantIds={assignments.data?.map((assignment) => assignment.tenant_id)} assignmentEnterpriseIds={(assignments.data ?? []).map((assignment) => assignment.enterprise_id).filter((eid): eid is string => !!eid)} assignmentsLoaded={assignments.isSuccess} isPersisted={!isCreate && Boolean(id)} isLoadingTenants={tenantOptions.isLoading} tenantError={tenantOptions.isError} isSavingEnterpriseAssignments={saveAssignments.isPending} isLoadingAssignments={assignments.isLoading} assignmentError={assignments.isError} isSaving={create.isPending || update.isPending} isPublishing={publish.isPending} isSavingAssignments={saveAssignments.isPending} onSave={mode === "view" ? undefined : save} onPublish={mode === "edit" ? publishConfiguration : undefined} onSaveAssignments={mode === "view" || !id ? undefined : persistAssignments} onSaveEnterpriseAssignments={mode === "view" || !id ? undefined : persistEnterpriseAssignments} />{apiConfiguration ? <TrainingConfigurationHistoryPanels configuration={apiConfiguration} /> : null}</Page>;
 }
 
 function Page({ children }: { children: React.ReactNode }) { return <div className="mx-auto w-full max-w-[1180px]"><div className="mb-6 flex items-center justify-between"><h1 className="text-3xl font-bold">{copy.title}</h1><Link href="/training-form-configurations">{copy.title}</Link></div>{children}</div>; }

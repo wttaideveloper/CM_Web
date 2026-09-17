@@ -308,10 +308,10 @@ export default function EnterpriseTrainingsScreen() {
             <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Language</span>
             <select value={languageFilter} onChange={(e) => { setLanguageFilter(e.target.value); setPage(1); }} className="mt-2 h-12 w-full rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]">
               <option value="all">All languages</option>
-              <option value="en">English</option>
-              <option value="hi">Hindi</option>
-              <option value="es">Spanish</option>
-              <option value="fr">French</option>
+              <option value="English">English</option>
+              <option value="Hindi">Hindi</option>
+              <option value="Spanish">Spanish</option>
+              <option value="French">French</option>
             </select>
           </label>
         </div>

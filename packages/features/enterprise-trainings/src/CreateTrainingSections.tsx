@@ -94,7 +94,7 @@ export function TrainingDeliverySection({ values, update }: SectionProps) {
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Level<select value={values.level} onChange={(e) => update("level", e.target.value)} className={inputClass}><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option><option value="all">All levels</option></select></label>
-        <label className={labelClass}>Language<select value={values.language} onChange={(e) => update("language", e.target.value)} className={inputClass}><option value="en">English</option><option value="hi">Hindi</option><option value="es">Spanish</option><option value="fr">French</option></select></label>
+        <label className={labelClass}>Language<select value={values.language} onChange={(e) => update("language", e.target.value)} className={inputClass}><option value="English">English</option><option value="Hindi">Hindi</option><option value="Spanish">Spanish</option><option value="French">French</option></select></label>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Instructor name<input value={values.instructor_name} onChange={(event) => update("instructor_name", event.target.value)} placeholder="Display name" className={inputClass} /></label>
@@ -297,13 +297,6 @@ export function TrainingCourseBuilderSection({ values, update }: SectionProps) {
         <label className={labelClass}>Announcements (JSON)<textarea value={values.announcements} onChange={(e) => update("announcements", e.target.value)} rows={3} placeholder='[]' className={`${inputClass} h-auto py-2`} /></label>
       </div>
       <label className={labelClass}>Moderation history (JSON)<textarea value={values.moderation_history} onChange={(e) => update("moderation_history", e.target.value)} rows={3} placeholder='[]' className={`${inputClass} h-auto py-2`} /></label>
-      {values.delivery_mode !== "online" && values.delivery_mode !== "self_paced" ? (
-        <div className="grid gap-4 md:grid-cols-3">
-          <label className="col-span-1 flex items-center gap-2 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={values.check_in} onChange={(e) => update("check_in", e.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58] focus:ring-[#1f6a58]" />Enable check-in</label>
-          <label className={labelClass}>Pass code<input value={values.pass_code} onChange={(e) => update("pass_code", e.target.value)} placeholder="code" className={inputClass} /></label>
-          <label className={labelClass}>QR payload<input value={values.qr_payload} onChange={(e) => update("qr_payload", e.target.value)} placeholder="qr data" className={inputClass} /></label>
-        </div>
-      ) : null}
     </section>
   );
 }

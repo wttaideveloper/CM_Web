@@ -17,6 +17,10 @@ import {
 type Status = TrainingApprovalStatus;
 type ApprovalMutationVariables = { trainingId: string; action: TrainingApprovalDecision; reason?: string };
 
+/** Platform approval mutations go through the bearer-token BFF (Super Admin session),
+ * not the cookie rewrite — the marketplace backend cannot validate the Keycloak session cookie. */
+const trainingApprovalsBase = "/api/platform-super-admin/training-approvals";
+
 function formatDate(value: string | null | undefined): string {
   const match = value && /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
   return match
@@ -70,9 +74,9 @@ export default function TrainingApprovalQueue() {
   });
   const approval = useMutation({
     mutationFn: ({ trainingId, action, reason }: ApprovalMutationVariables) => {
-      if (action === "approve") return approveTrainingReview(trainingId);
-      if (action === "request_changes") return requestTrainingChanges(trainingId, reason ?? "");
-      return rejectTrainingReview(trainingId, reason);
+      if (action === "approve") return approveTrainingReview(trainingId, trainingApprovalsBase);
+      if (action === "request_changes") return requestTrainingChanges(trainingId, reason ?? "", trainingApprovalsBase);
+      return rejectTrainingReview(trainingId, reason, trainingApprovalsBase);
     },
     onSuccess: async (_, variables) => {
       await Promise.all([

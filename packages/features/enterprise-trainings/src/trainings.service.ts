@@ -1399,46 +1399,50 @@ export async function createTrainingAnnouncement(trainingId: string, payload: Cr
 // Admin
 // ---------------------------------------------------------------------------
 
+/** Base path for the admin approval endpoints. Platform Admin passes its bearer-token BFF
+ * (`/api/platform-super-admin/training-approvals`); Enterprise Admin uses the cookie rewrite default. */
+export const trainingsAdminBasePath = "/api/v1/admin/trainings";
+
 /** Lists pending trainings for admin approval. */
-export async function listPendingTrainings(params: { page?: number; page_size?: number; enterprise_id?: string; category?: string } = {}): Promise<unknown> {
+export async function listPendingTrainings(params: { page?: number; page_size?: number; enterprise_id?: string; category?: string } = {}, adminBasePath: string = trainingsAdminBasePath): Promise<unknown> {
   const sp = toSearchParams(params as Record<string, unknown>);
   const qs = sp.toString() ? `?${sp.toString()}` : "";
-  const res = await fetch(`/api/v1/admin/trainings/pending${qs}`, { credentials: "include", cache: "no-store" });
+  const res = await fetch(`${adminBasePath}/pending${qs}`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "load pending trainings");
   return (await res.json()) as unknown;
 }
 
 /** Approves a pending training. */
-export async function approveTraining(trainingId: string): Promise<unknown> {
-  const res = await fetch(`/api/v1/admin/trainings/${encodeURIComponent(trainingId)}/approve`, { method: "POST", credentials: "include" });
+export async function approveTraining(trainingId: string, adminBasePath: string = trainingsAdminBasePath): Promise<unknown> {
+  const res = await fetch(`${adminBasePath}/${encodeURIComponent(trainingId)}/approve`, { method: "POST", credentials: "include" });
   if (!res.ok) throw await createTrainingsApiError(res, "approve this training");
   return (await res.json().catch(() => null)) as unknown;
 }
 
 /** Rejects a pending training. */
-export async function rejectTraining(trainingId: string): Promise<unknown> {
-  const res = await fetch(`/api/v1/admin/trainings/${encodeURIComponent(trainingId)}/reject`, { method: "POST", credentials: "include" });
+export async function rejectTraining(trainingId: string, adminBasePath: string = trainingsAdminBasePath): Promise<unknown> {
+  const res = await fetch(`${adminBasePath}/${encodeURIComponent(trainingId)}/reject`, { method: "POST", credentials: "include" });
   if (!res.ok) throw await createTrainingsApiError(res, "reject this training");
   return (await res.json().catch(() => null)) as unknown;
 }
 
 /** Publishes a training via admin. */
-export async function publishTraining(trainingId: string): Promise<unknown> {
-  const res = await fetch(`/api/v1/admin/trainings/${encodeURIComponent(trainingId)}/publish`, { method: "POST", credentials: "include" });
+export async function publishTraining(trainingId: string, adminBasePath: string = trainingsAdminBasePath): Promise<unknown> {
+  const res = await fetch(`${adminBasePath}/${encodeURIComponent(trainingId)}/publish`, { method: "POST", credentials: "include" });
   if (!res.ok) throw await createTrainingsApiError(res, "publish this training");
   return (await res.json().catch(() => null)) as unknown;
 }
 
 /** Admin detail view for approval review — `GET /admin/trainings/{id}`. */
-export async function adminGetTraining(trainingId: string): Promise<unknown> {
-  const res = await fetch(`/api/v1/admin/trainings/${encodeURIComponent(trainingId)}`, { credentials: "include", cache: "no-store" });
+export async function adminGetTraining(trainingId: string, adminBasePath: string = trainingsAdminBasePath): Promise<unknown> {
+  const res = await fetch(`${adminBasePath}/${encodeURIComponent(trainingId)}`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "get admin training detail");
   return (await res.json()) as unknown;
 }
 
 /** Admin requests changes before approval — `POST /admin/trainings/{id}/request-changes`. */
-export async function requestChangesTraining(trainingId: string, reason: string): Promise<unknown> {
-  const res = await fetch(`/api/v1/admin/trainings/${encodeURIComponent(trainingId)}/request-changes`, {
+export async function requestChangesTraining(trainingId: string, reason: string, adminBasePath: string = trainingsAdminBasePath): Promise<unknown> {
+  const res = await fetch(`${adminBasePath}/${encodeURIComponent(trainingId)}/request-changes`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getPlatformEnterpriseTenants } from "@ihp/platform-enterprises";
+import { getPlatformEnterpriseTenants, getPlatformEnterprises } from "@ihp/platform-enterprises";
 import type { AssignmentTenantOption } from "./components/AssignmentEditor";
 import type { CreateTrainingFormConfigurationRequest, UpdateTrainingFormConfigurationAssignmentsRequest, UpdateTrainingFormConfigurationRequest } from "./model/training-form-configuration-api.types";
 import type { CoreFieldRegistryItem, FormConfigurationListItem } from "./model/form-configuration.types";
@@ -54,6 +54,29 @@ export function useTrainingFormConfigurationTenantOptions() {
     queryFn: async (): Promise<AssignmentTenantOption[]> => {
       const response = await getPlatformEnterpriseTenants();
       return response.items.map((tenant) => ({ id: tenant.id, name: tenant.name, slug: tenant.slug }));
+    },
+    retry: 1,
+    staleTime: 60_000,
+  });
+}
+/** Reads enterprises for enterprise_ids assignment — display name prefers the trading name. */
+export function useTrainingFormConfigurationEnterpriseOptions() {
+  return useQuery({
+    queryKey: [...trainingFormConfigurationKeys.all, "assignable-enterprises"] as const,
+    queryFn: async (): Promise<AssignmentTenantOption[]> => {
+      const enterprises = await getPlatformEnterprises();
+      return enterprises
+        .map((enterprise) => {
+          const record = enterprise as unknown as Record<string, unknown>;
+          const id = typeof record.id === "string" ? record.id : "";
+          const name = typeof record.business_short_name === "string" && record.business_short_name
+            ? record.business_short_name
+            : typeof record.business_legal_name === "string" && record.business_legal_name
+              ? record.business_legal_name
+              : typeof record.name === "string" ? record.name : "";
+          return { id, name, slug: null };
+        })
+        .filter((option) => option.id && option.name);
     },
     retry: 1,
     staleTime: 60_000,
