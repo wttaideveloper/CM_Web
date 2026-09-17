@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@ihp/auth";
 import { getChatTokenUserId, type ChatSocket, useChatAuth } from "@ihp/chat-runtime";
 import { useRealtime } from "@ihp/realtime";
 import EmojiPicker from "emoji-picker-react";
@@ -1621,8 +1622,9 @@ function getVisibleTypingUsers(value: unknown) {
 }
 
 export default function EnterpriseMessagesScreen() {
+  const { authenticated, authReady } = useAuth();
   const { canUseProviderChat, isReady: isChatAuthReady } = useChatAuth();
-  const canInitializeProviderChat = canUseProviderChat && isChatAuthReady;
+  const canInitializeProviderChat = authenticated && authReady && canUseProviderChat && isChatAuthReady;
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterKind>("ALL");
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);

@@ -2,8 +2,11 @@
 
 import { ProductsListScreen } from "@ihp/products";
 import CurrentEnterpriseGuard from "@/components/CurrentEnterpriseGuard";
+import { isInternalUserRole, useAuth } from "@ihp/auth";
 
 export default function EnterpriseProductsPage() {
+  const { roles } = useAuth();
+  const readOnly = isInternalUserRole(roles?.tenantRole);
   return (
     <CurrentEnterpriseGuard>
       {({ enterpriseId, enterpriseName }) => (
@@ -13,6 +16,7 @@ export default function EnterpriseProductsPage() {
           createHref="/admin/products/create"
           detailHrefBase="/admin/products"
           editHrefBase="/admin/products"
+          readOnly={readOnly}
         />
       )}
     </CurrentEnterpriseGuard>

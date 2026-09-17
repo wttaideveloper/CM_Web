@@ -20,6 +20,7 @@ export interface EventCustomFieldFormValue extends EventCustomField {}
 /** Local session value that retains backend identity while an Event is edited. */
 export interface EventSessionFormValue extends EventSessionInput {
   id?: string;
+  location: string;
   meeting_link?: string | null;
 }
 
@@ -128,7 +129,7 @@ export function buildCreateEventPayload(
     registration_open_at: toBackendLocalDateTime(values.registration_open_at),
     registration_close_at: toBackendLocalDateTime(values.registration_close_at),
     custom_fields: values.custom_fields as CreateEventCustomField[],
-    sessions: values.sessions.map((session) => mapSessionForPayload(session, sessionsEnabledFields)),
+    sessions: values.sessions.map((session) => mapSessionForPayload(session, sessionsEnabledFields, values.delivery_mode)),
     status: "draft",
     ...(formConfigurationVersionId ? { form_configuration_version_id: formConfigurationVersionId } : {}),
     ...(customValues ? { custom_values: customValues } : {}),
@@ -159,7 +160,7 @@ export function eventToFormValues(event: Event): CreateEventFormValues {
     registration_close_at: toDateTimeLocal(event.registration_close_at), time_zone: event.time_zone, delivery_mode: event.delivery_mode,
     venue_name: event.venue?.name ?? "", venue_address: event.venue?.address ?? "", venue_city: event.venue?.city ?? "",
     venue_latitude: event.venue?.coordinates?.lat?.toString() ?? "", venue_longitude: event.venue?.coordinates?.lng?.toString() ?? "",
-    meeting_link: event.meeting_link ?? "", meeting_provider: event.meeting_provider ?? "", price: event.price, pricing_type: event.pricing_type ?? (Number(event.price) === 0 ? "free" : "paid"),
+    meeting_link: event.meeting_link ?? "", meeting_provider: event.meeting_provider ?? "", price: event.price ?? "", pricing_type: event.pricing_type ?? (Number(event.price) === 0 ? "free" : "paid"),
     currency: event.currency, ticket_types: event.ticket_types, capacity: event.capacity,
     min_participants: event.min_participants, max_participants: event.max_participants, primary_image: event.primary_image ?? "",
     gallery_images: event.gallery_images, videos: event.videos, documents: event.documents,
@@ -242,7 +243,7 @@ export function buildUpdateEventPayload(values: CreateEventFormValues, initialVa
   const payload: UpdateEventPayload = {};
   const scalarKeys: Array<keyof Pick<CreateEventFormValues, "title" | "description" | "category" | "subcategory" | "tags" | "organiser_name" | "organiser_contact" | "duration_type" | "time_zone" | "delivery_mode" | "primary_image" | "gallery_images" | "videos" | "documents" | "price" | "pricing_type" | "currency" | "ticket_types" | "capacity" | "min_participants" | "max_participants" | "custom_fields" | "sessions">> = ["title", "description", "category", "subcategory", "tags", "organiser_name", "organiser_contact", "duration_type", "time_zone", "delivery_mode", "primary_image", "gallery_images", "videos", "documents", "price", "pricing_type", "currency", "ticket_types", "capacity", "min_participants", "max_participants", "custom_fields", "sessions"];
   for (const key of scalarKeys) if (changed(key)) Object.assign(payload, { [key]: values[key] });
-  if (changed("sessions")) payload.sessions = values.sessions.map((session) => mapSessionForPayload(session, sessionsEnabledFields));
+  if (changed("sessions")) payload.sessions = values.sessions.map((session) => mapSessionForPayload(session, sessionsEnabledFields, values.delivery_mode));
   const datetimeKeys: Array<keyof Pick<CreateEventFormValues, "start_date" | "end_date" | "registration_cutoff" | "registration_open_at" | "registration_close_at">> = ["start_date", "end_date", "registration_cutoff", "registration_open_at", "registration_close_at"];
   for (const key of datetimeKeys) if (changed(key)) Object.assign(payload, { [key]: toBackendLocalDateTime(values[key]) });
   if (values.meeting_link !== initialValues.meeting_link) payload.meeting_link = values.meeting_link.trim() || null;
@@ -257,10 +258,21 @@ export function buildUpdateEventPayload(values: CreateEventFormValues, initialVa
   return payload;
 }
 
-export function mapSessionForPayload(session: EventSessionFormValue, enabledFields?: readonly string[]): EventSessionInput {
-  const { id: _id, meeting_link, ...base } = session;
+export function mapSessionForPayload(session: EventSessionFormValue, enabledFields?: readonly string[], deliveryMode?: string): EventSessionInput {
+  const { id: _id, meeting_link, location, ...base } = session;
   const meetingLinkEnabled = enabledFields === undefined || enabledFields.length === 0 || enabledFields.includes("meeting_link");
-  return meetingLinkEnabled ? { ...base, ...(meeting_link?.trim() ? { meeting_link: meeting_link.trim() } : {}) } : base;
+  const locationApplicable = deliveryMode !== "online";
+  const meetingLinkApplicable = deliveryMode === undefined || deliveryMode === "online" || deliveryMode === "hybrid";
+  return { ...base, ...(locationApplicable && location?.trim() ? { location: location.trim() } : {}), ...(meetingLinkApplicable && meetingLinkEnabled && meeting_link?.trim() ? { meeting_link: meeting_link.trim() } : {}) };
+}
+
+/** Validates the shared Event capacity and participant constraints. */
+export function validateParticipantCapacity(values: Pick<CreateEventFormValues, "capacity" | "min_participants" | "max_participants">, errors: Record<string, string[]>): void {
+  const fields = ["capacity", "min_participants", "max_participants"] as const;
+  const parsed = Object.fromEntries(fields.map((field) => [field, Number(values[field])])) as Record<typeof fields[number], number>;
+  for (const field of fields) if (String(values[field]).trim() && (!Number.isFinite(parsed[field]) || parsed[field] < 0)) errors[field] = ["Enter a non-negative number."];
+  if (Number.isFinite(parsed.min_participants) && Number.isFinite(parsed.max_participants) && parsed.min_participants > parsed.max_participants) errors.min_participants = ["Minimum participants must not exceed maximum participants."];
+  if (Number.isFinite(parsed.max_participants) && Number.isFinite(parsed.capacity) && parsed.max_participants > parsed.capacity) errors.max_participants = ["Maximum participants must not exceed overall capacity."];
 }
 
 /** Validates the safe, user-supplied Create Event values before submission. */
@@ -300,7 +312,7 @@ function validateDateOrder(values: CreateEventFormValues, errors: Record<string,
 function validateNumbers(values: CreateEventFormValues, errors: Record<string, string[]>): void {
   const numericFields: Array<keyof CreateEventFormValues> = ["price", "capacity", "min_participants", "max_participants"];
   for (const field of numericFields) if (Number(values[field]) < 0 || !Number.isFinite(Number(values[field]))) errors[field] = ["Enter a non-negative number."];
-  if (Number(values.max_participants) < Number(values.min_participants)) errors.max_participants = ["Maximum participants must not be below minimum participants."];
+  validateParticipantCapacity(values, errors);
 }
 
 function validateUrls(values: CreateEventFormValues, errors: Record<string, string[]>): void {

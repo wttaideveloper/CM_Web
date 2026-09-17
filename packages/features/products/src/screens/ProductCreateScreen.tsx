@@ -9,7 +9,7 @@ import { formatCurrency } from "@ihp/shared";
 
 import { createProduct } from "../services/product.service";
 import { PRODUCT_CATEGORY_OPTIONS } from "../constants/product-category-options";
-import type { ProductCreateScreenProps } from "../types/product-screen-config.types";
+import type { ProductCreateScreenProps, ProductProviderOption } from "../types/product-screen-config.types";
 
 const tabs = ["Product Info", "Pricing", "Images", "Review"];
 
@@ -115,6 +115,7 @@ export default function ProductCreateScreen({
   tenantId: ownerTenantId,
   enterprisesLoader = getEnterprises,
   enterpriseLocationsLoader = getEnterpriseLocations,
+  providerOptionsLoader,
 }: ProductCreateScreenProps = {}) {
   const router = useRouter();
   const isEnterpriseAdmin = mode === "enterprise-admin";
@@ -128,6 +129,8 @@ export default function ProductCreateScreen({
   const [productPrice, setProductPrice] = useState("");
   const [productImages, setProductImages] = useState("");
   const [locationId, setLocationId] = useState("");
+  const [providerUserId, setProviderUserId] = useState("");
+  const [providerName, setProviderName] = useState("");
   const [sku, setSku] = useState("");
   const [barcodeUpc, setBarcodeUpc] = useState("");
   const [weight, setWeight] = useState("");
@@ -143,6 +146,9 @@ export default function ProductCreateScreen({
   const [customAttributes, setCustomAttributes] = useState<CustomAttributeRow[]>([]);
   const [enterpriseOptions, setEnterpriseOptions] = useState<EnterpriseOption[]>([]);
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
+  const [providerOptions, setProviderOptions] = useState<ProductProviderOption[]>([]);
+  const [isLoadingProviders, setIsLoadingProviders] = useState(false);
+  const [providerError, setProviderError] = useState<string | null>(null);
   const [isLoadingEnterprises, setIsLoadingEnterprises] = useState(true);
   const [isLoadingLocations, setIsLoadingLocations] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -245,6 +251,26 @@ export default function ProductCreateScreen({
     }
   }
 
+  async function fetchProviders() {
+    if (!isEnterpriseAdmin || !providerOptionsLoader) {
+      setProviderOptions([]);
+      return;
+    }
+
+    try {
+      setIsLoadingProviders(true);
+      setProviderError(null);
+      setProviderOptions(await providerOptionsLoader());
+    } catch (fetchError) {
+      setProviderOptions([]);
+      setProviderError(
+        fetchError instanceof Error ? fetchError.message : "Unable to load providers.",
+      );
+    } finally {
+      setIsLoadingProviders(false);
+    }
+  }
+
   useEffect(() => {
     void fetchEnterprises();
   }, [isEnterpriseAdmin, ownerEnterpriseId, ownerEnterpriseName]);
@@ -253,6 +279,10 @@ export default function ProductCreateScreen({
     setLocationId("");
     void fetchLocations(enterpriseId.trim());
   }, [enterpriseId]);
+
+  useEffect(() => {
+    void fetchProviders();
+  }, [isEnterpriseAdmin, providerOptionsLoader]);
 
   async function handleSubmit() {
     const trimmedEnterpriseId = enterpriseId.trim();
@@ -298,6 +328,8 @@ export default function ProductCreateScreen({
         ...(isEnterpriseAdmin && trimmedTenantId ? { tenant_id: trimmedTenantId } : {}),
         enterprise_id: trimmedEnterpriseId,
         ...(locationId.trim() ? { location_id: locationId.trim() } : {}),
+        ...(providerUserId.trim() ? { provider_user_id: providerUserId.trim() } : {}),
+        ...(providerName.trim() ? { provider_name: providerName.trim() } : {}),
         product_name: trimmedProductName,
         product_description: trimmedProductDescription,
         product_category: trimmedProductCategory,
@@ -487,6 +519,39 @@ export default function ProductCreateScreen({
                   <p className="mt-1.5 text-xs font-medium text-[#b42318]">{locationError}</p>
                 ) : null}
               </label>
+              {isEnterpriseAdmin ? (
+                <label className="block">
+                  <FieldLabel>Provider</FieldLabel>
+                  <select
+                    className={inputClass()}
+                    value={providerUserId}
+                    onChange={(event) => {
+                      const selected = providerOptions.find(
+                        (provider) => provider.userId === event.target.value,
+                      );
+                      setProviderUserId(event.target.value);
+                      setProviderName(selected?.fullName ?? "");
+                    }}
+                    disabled={isLoadingProviders || providerOptions.length === 0}
+                  >
+                    <option value="">
+                      {isLoadingProviders
+                        ? "Loading providers..."
+                        : providerOptions.length === 0
+                          ? "No providers available"
+                          : "Select provider"}
+                    </option>
+                    {providerOptions.map((provider) => (
+                      <option key={provider.userId} value={provider.userId}>
+                        {provider.fullName}
+                      </option>
+                    ))}
+                  </select>
+                  {providerError ? (
+                    <p className="mt-1.5 text-xs font-medium text-[#b42318]">{providerError}</p>
+                  ) : null}
+                </label>
+              ) : null}
               <label className="block">
                 <FieldLabel>SKU</FieldLabel>
                 <input

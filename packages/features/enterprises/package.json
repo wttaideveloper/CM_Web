@@ -6,6 +6,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@ihp/auth": "0.1.0",
     "@ihp/shared": "0.1.0",
     "country-state-city": "^3.2.1"
   },

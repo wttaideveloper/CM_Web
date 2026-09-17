@@ -2,6 +2,8 @@ export type ProductDto = {
   id: string;
   enterprise_id: string;
   location_id?: string | null;
+  provider_user_id?: string | null;
+  provider_name?: string | null;
   product_name: string;
   product_description: string;
   product_category: string;
@@ -26,6 +28,8 @@ export type CreateProductPayload = {
   tenant_id?: string;
   enterprise_id: string;
   location_id?: string;
+  provider_user_id?: string;
+  provider_name?: string;
   product_name: string;
   product_description: string;
   product_category: string;
@@ -49,6 +53,8 @@ export type CreateProductPayload = {
 export type UpdateProductPayload = Partial<{
   enterprise_id: string;
   location_id: string;
+  provider_user_id: string;
+  provider_name: string;
   product_name: string;
   product_description: string;
   product_category: string;

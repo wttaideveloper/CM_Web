@@ -11,8 +11,8 @@ type SectionProps = { values: CreateEventFormValues; update: UpdateForm; errors:
 const inputClass = "mt-1.5 h-11 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]";
 const labelClass = "block text-sm font-semibold text-[#06201c]";
 
-function FieldError({ error }: { error?: string[] }) {
-  return error?.[0] ? <p className="mt-1 text-xs font-medium text-[#b42318]">{error[0]}</p> : null;
+function FieldError({ error, id }: { error?: string[]; id?: string }) {
+  return error?.[0] ? <p id={id} role="alert" className="mt-1 text-xs font-medium text-[#b42318]">{error[0]}</p> : null;
 }
 
 /** Renders basic Event fields and the accessible tag chip editor. */
@@ -57,5 +57,5 @@ export function LocationAndHostSection({ values, update, errors, locations, sele
 }
 
 function SectionHeading({ title, description }: { title: string; description: string }) { return <div><h2 className="text-xl font-bold text-[#06201c]">{title}</h2><p className="mt-1 text-sm text-[#52736a]">{description}</p></div>; }
-function TextField<Key extends keyof CreateEventFormValues>({ label, field, values, update, errors, type = "text" }: { label: string; field: Key; values: CreateEventFormValues; update: UpdateForm; errors: Record<string, string[]>; type?: string }) { return <label className={labelClass}>{label}<input type={type} value={String(values[field])} onChange={(event) => update(field, event.target.value as CreateEventFormValues[Key])} className={inputClass} /><FieldError error={errors[field]} /></label>; }
-function DateField<Key extends "start_date" | "end_date" | "registration_cutoff" | "registration_open_at" | "registration_close_at">({ label, field, values, update, errors }: { label: string; field: Key; values: CreateEventFormValues; update: UpdateForm; errors: Record<string, string[]> }) { return <label className={labelClass}>{label}<input type="datetime-local" value={values[field]} onChange={(event) => update(field, event.target.value)} className={inputClass} /><FieldError error={errors[field]} /></label>; }
+function TextField<Key extends keyof CreateEventFormValues>({ label, field, values, update, errors, type = "text" }: { label: string; field: Key; values: CreateEventFormValues; update: UpdateForm; errors: Record<string, string[]>; type?: string }) { const error = errors[field]?.[0]; const id = `event-field-${String(field)}`; return <label className={labelClass}>{label}<input id={id} type={type} value={String(values[field])} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} onChange={(event) => update(field, event.target.value as CreateEventFormValues[Key])} className={inputClass} /><FieldError error={errors[field]} id={`${id}-error`} /></label>; }
+function DateField<Key extends "start_date" | "end_date" | "registration_cutoff" | "registration_open_at" | "registration_close_at">({ label, field, values, update, errors }: { label: string; field: Key; values: CreateEventFormValues; update: UpdateForm; errors: Record<string, string[]> }) { const error = errors[field]?.[0]; const id = `event-field-${field}`; return <label className={labelClass}>{label}<input id={id} type="datetime-local" value={values[field]} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} onChange={(event) => update(field, event.target.value)} className={inputClass} /><FieldError error={errors[field]} id={`${id}-error`} /></label>; }
