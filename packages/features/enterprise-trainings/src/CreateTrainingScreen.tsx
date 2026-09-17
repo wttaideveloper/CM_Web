@@ -23,6 +23,18 @@ const stepFields: ReadonlyArray<readonly string[]> = [
   ["primary_image", "gallery_images", "promotional_video"],
   ["prerequisites", "release_rule", "randomise", "scheduled_publication", "is_mandatory"],
 ];
+// One static section component per entry in `steps`, in the same order — this is the
+// static/default Training form used whenever no dynamic Super Admin form configuration
+// is available (no active config, or the config request failed).
+const staticSectionComponents = [
+  TrainingBasicsSection,
+  TrainingScheduleSection,
+  TrainingDeliverySection,
+  TrainingPricingSection,
+  TrainingCapacitySection,
+  TrainingMediaSection,
+  TrainingCourseBuilderSection,
+] as const;
 
 type TrainingEditorProps = { mode?: "create" | "edit"; initialTraining?: Training };
 
@@ -177,38 +189,29 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   const configuredSections = activeForm ? [...activeForm.sections].filter(s => s.fields.length > 0).sort((a, b) => a.order - b.order) : [];
   const editorSteps = activeForm ? [...configuredSections.map(s => s.title || "Section"), "Review & Submit"] : [...steps];
   const sharedProps = { values, update, errors };
+  const StaticSection = staticSectionComponents[activeStep] ?? staticSectionComponents[0];
   const backHref = initialTraining ? `/admin/trainings/${initialTraining.id}` : "/admin/trainings";
   const title = mode === "edit" ? "Edit Training" : "Create Training";
   const isCreateBlockedByEnterprise = mode === "create" && !enterpriseId;
 
-  if (mode === "edit" && formConfigLoading) {
-    return <div role="status" className="rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-5 py-12 text-center text-sm font-semibold text-[#52736a]">Loading this Training&apos;s form configuration…</div>;
+  // Bounded, one-time loading gate (react-query already retries once) so the editor never
+  // flashes the static form and then swaps to the dynamic one a moment later.
+  if (formConfigLoading) {
+    return <div role="status" className="rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-5 py-12 text-center text-sm font-semibold text-[#52736a]">{mode === "edit" ? "Loading this Training's form configuration…" : "Loading the Training form configuration…"}</div>;
   }
-  if (mode === "edit" && formConfigError) {
-    return <div role="alert" className="rounded-2xl border border-[#eadbb8] bg-[#fffaf0] px-5 py-12 text-center text-sm font-semibold text-[#735c1e]">Unable to load this Training&apos;s form configuration.<button type="button" onClick={() => void historicalFormQ.refetch()} className="mt-4 rounded-full border border-current px-4 py-2 text-sm font-bold">Retry</button></div>;
-  }
-  if (mode === "create" && !formConfigLoading && !activeForm) {
-    return (
-      <div className="w-full">
-        <header className="flex flex-col gap-4 border-b border-[#edf3f0] pb-6 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <Link href={backHref} className="text-sm font-semibold text-[#1f6a58]">Back to Trainings</Link>
-            <p className="mt-4 text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">DRAFT TRAINING</p>
-            <h1 className="mt-2 text-2xl font-bold text-[#06201c] sm:text-3xl">Create Training</h1>
-          </div>
-          <Link href={backHref} className="inline-flex h-11 items-center justify-center rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a]">Cancel</Link>
-        </header>
-        <div role="status" className="mt-6 rounded-2xl border border-[#eadbb8] bg-[#fffaf0] px-8 py-12 text-center">
-          <p className="text-sm font-bold text-[#735c1e]">No active Training form configuration</p>
-          <p className="mt-2 text-sm text-[#52736a]">The Super Admin has not published an active global Training form. Contact Super Admin to publish and activate a form before creating trainings.</p>
-        </div>
-      </div>
-    );
-  }
+  // No active/historical configuration, or the configuration request itself failed — either
+  // way the dynamic form is unavailable, so fall through to the static/default Training form
+  // below rather than blocking Training creation/editing. A genuine fetch failure is still
+  // surfaced (non-blocking notice + retry) instead of being silently hidden.
+  const refetchFormConfig = () => void (mode === "edit" ? historicalFormQ.refetch() : activeFormQ.refetch());
 
   return (
     <div className="w-full">
-      {activeForm ? <div className="mb-3 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-2 text-xs font-semibold text-[#167550]">{mode === "edit" ? `Historical form: ${activeForm.title}` : `Using Super Admin form: ${activeForm.title}`} {activeForm.is_global ? "(Global)" : `(${activeForm.enterprise_ids.length} enterprises)`} — {configuredSections.length} sections, {configuredSections.reduce((sum, s) => sum + s.fields.length, 0)} fields.</div> : null}
+      {activeForm ? (
+        <div className="mb-3 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-2 text-xs font-semibold text-[#167550]">{mode === "edit" ? `Historical form: ${activeForm.title}` : `Using Super Admin form: ${activeForm.title}`} {activeForm.is_global ? "(Global)" : `(${activeForm.enterprise_ids.length} enterprises)`} — {configuredSections.length} sections, {configuredSections.reduce((sum, s) => sum + s.fields.length, 0)} fields.</div>
+      ) : formConfigError ? (
+        <div role="alert" className="mb-3 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-2 text-xs font-semibold text-[#735c1e]">Could not load the Super Admin form configuration — using the standard Training form instead. <button type="button" onClick={refetchFormConfig} className="underline">Retry</button></div>
+      ) : null}
       <header className="flex flex-col gap-4 border-b border-[#edf3f0] pb-6 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <Link href={backHref} className="text-sm font-semibold text-[#1f6a58]">Back to {mode === "edit" ? "Training" : "Trainings"}</Link>
@@ -256,7 +259,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
               </section>
             )
           ) : (
-            <div role="status" className="rounded-2xl border border-[#eadbb8] bg-[#fffaf0] px-8 py-8 text-center text-sm font-semibold text-[#735c1e]">No active Training form — contact Super Admin.</div>
+            <StaticSection {...sharedProps} />
           )}
           {isCreateBlockedByEnterprise ? <div role="status" className="mt-6 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-3 text-sm font-semibold text-[#735c1e]">Creating a Training is unavailable until an Enterprise is linked. The current backend TrainingCreate contract requires an enterprise_id.</div> : null}
           {submitError ? <div role="alert" className="mt-6 rounded-xl border border-[#f3d0cb] bg-[#fff6f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{submitError}</div> : null}
