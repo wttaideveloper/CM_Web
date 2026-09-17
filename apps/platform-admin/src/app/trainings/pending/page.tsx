@@ -1,13 +1,12 @@
-import PlatformAdminShell from "@/components/PlatformAdminShell";
-import PlatformTrainingAuthGate from "@/components/PlatformTrainingAuthGate";
-import { PlatformApprovalScreen } from "@ihp/enterprise-trainings";
+import { redirect } from "next/navigation";
 
-export default function PlatformApprovalPage() {
-  return (
-    <PlatformAdminShell>
-      <PlatformTrainingAuthGate>
-        <PlatformApprovalScreen />
-      </PlatformTrainingAuthGate>
-    </PlatformAdminShell>
-  );
+/**
+ * /trainings/pending is superseded by the canonical Trainings tab in /approval-queue.
+ * Phase 3: redirect to the unified approval queue to eliminate the duplicate Training
+ * approval workflow. The /approval-queue Trainings tab supports pending_approval,
+ * needs_revision, and approved statuses with search, pagination, reason capture for
+ * reject/request-changes, and a confirmation dialog.
+ */
+export default function PlatformApprovalPendingRedirectPage() {
+  redirect("/approval-queue");
 }
