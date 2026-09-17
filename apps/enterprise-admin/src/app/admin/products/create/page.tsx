@@ -2,14 +2,17 @@
 
 import { useTenant } from "@ihp/enterprise-runtime";
 import { ProductCreateScreen } from "@ihp/products";
+import { loadEnterpriseServiceProviderOptions } from "@/adapters/service-provider-options";
 
 import CurrentEnterpriseGuard from "@/components/CurrentEnterpriseGuard";
+import EnterpriseListingManagementGuard from "@/components/EnterpriseListingManagementGuard";
 
 export default function EnterpriseCreateProductPage() {
   const { tenantId } = useTenant();
 
   return (
-    <CurrentEnterpriseGuard>
+    <EnterpriseListingManagementGuard redirectTo="/admin/products">
+      <CurrentEnterpriseGuard>
       {({ enterpriseId, enterpriseName }) => (
         <ProductCreateScreen
           mode="enterprise-admin"
@@ -17,8 +20,10 @@ export default function EnterpriseCreateProductPage() {
           enterpriseId={enterpriseId}
           enterpriseName={enterpriseName}
           tenantId={tenantId ?? undefined}
+          providerOptionsLoader={loadEnterpriseServiceProviderOptions}
         />
       )}
-    </CurrentEnterpriseGuard>
+      </CurrentEnterpriseGuard>
+    </EnterpriseListingManagementGuard>
   );
 }

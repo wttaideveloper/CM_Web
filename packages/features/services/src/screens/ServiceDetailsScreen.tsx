@@ -55,6 +55,7 @@ export default function ServiceDetailsScreen({
   editHrefBase = "/services",
   enterprisesLoader = getEnterprises,
   enterpriseLocationLoader = getLocationById,
+  readOnly = false,
 }: ServiceDetailsScreenProps = {}) {
   const params = useParams<{ id: string }>();
   const [service, setService] = useState<ServiceDto | null>(null);
@@ -273,13 +274,13 @@ export default function ServiceDetailsScreen({
           <p className="mt-1 text-sm text-[#52736a]">Service details</p>
         </div>
         <div className="flex flex-wrap gap-3">
-          <Link
+          {!readOnly ? <Link
             href={`${editHrefBase}/${service.id}/edit`}
             className="inline-flex h-12 items-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-bold text-[#1f6a58] shadow-sm"
           >
             Edit Service
-          </Link>
-          {serviceStatus !== "Active" ? (
+          </Link> : null}
+          {!readOnly && serviceStatus !== "Active" ? (
             <button
               type="button"
               onClick={() => void handleActivate()}
@@ -288,7 +289,7 @@ export default function ServiceDetailsScreen({
             >
               Activate
             </button>
-          ) : (
+          ) : !readOnly ? (
             <button
               type="button"
               onClick={() => void handleDeactivate()}
@@ -297,7 +298,7 @@ export default function ServiceDetailsScreen({
             >
               Deactivate
             </button>
-          )}
+          ) : null}
           <Link
             href={listHref}
             className="inline-flex h-12 items-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-bold text-[#1f6a58] shadow-sm"

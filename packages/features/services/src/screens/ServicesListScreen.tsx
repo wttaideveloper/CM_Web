@@ -112,6 +112,7 @@ export default function ServicesListScreen({
   editHrefBase = "/services",
   enterpriseName,
   enterprisesLoader = getEnterprises,
+  readOnly = false,
 }: ServicesListScreenProps = {}) {
   const [services, setServices] = useState<ServiceListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -173,12 +174,14 @@ export default function ServicesListScreen({
             Manage all bookable services across enterprise accounts
           </p>
         </div>
-        <Link
-          href={createHref}
-          className="inline-flex h-12 items-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
-        >
-          + Add Service
-        </Link>
+        {!readOnly ? (
+          <Link
+            href={createHref}
+            className="inline-flex h-12 items-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
+          >
+            + Add Service
+          </Link>
+        ) : null}
       </div>
 
       <div className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
@@ -278,13 +281,15 @@ export default function ServicesListScreen({
                         >
                           <EyeIcon />
                         </Link>
-                        <Link
-                          href={`${editHrefBase}/${service.id}/edit`}
-                          className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7]"
-                          aria-label={`Edit ${service.name}`}
-                        >
-                          <EditIcon />
-                        </Link>
+                        {!readOnly ? (
+                          <Link
+                            href={`${editHrefBase}/${service.id}/edit`}
+                            className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7]"
+                            aria-label={`Edit ${service.name}`}
+                          >
+                            <EditIcon />
+                          </Link>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
