@@ -21,6 +21,10 @@ import { validateSessions } from "./SessionTableEditor";
 const steps = ["Basic Information", "Schedule", "Location & Host", "Pricing & Tickets", "Capacity & Registration", "Images & Media", "Additional Configuration", "Review & Submit"] as const;
 const stepFields: ReadonlyArray<readonly string[]> = [["title", "description", "category", "organiser_name", "organiser_contact"], ["start_date", "end_date", "registration_cutoff", "registration_open_at", "registration_close_at"], ["location_id", "venue_name", "venue_address", "venue_city"], ["price", "currency", "ticket_types"], ["capacity", "min_participants", "max_participants"], ["media"], ["sessions", "custom_fields"], []];
 
+function fieldDomId(key: string): string { return `event-field-${key.replace(/[^a-zA-Z0-9_-]/g, "-")}`; }
+function firstErrorKey(order: readonly string[], errors: Record<string, string[]>): string | null { return order.find((key) => Boolean(errors[key]?.length)) ?? null; }
+function errorCount(errors: Record<string, string[]>): number { return Object.values(errors).filter((messages) => messages.length > 0).length; }
+
 type EventEditorProps = { mode?: "create" | "edit"; initialEvent?: Event };
 type CustomFieldValue = string | string[] | boolean | number | null;
 
@@ -51,6 +55,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const [locationId, setLocationId] = useState(initialEvent?.location_id ?? "");
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [pendingFocusField, setPendingFocusField] = useState<string | null>(null);
   const [customValues, setCustomValues] = useState<Record<string, string | string[] | boolean | number | null>>({});
   const [initialCustomValues, setInitialCustomValues] = useState<Record<string, string | string[] | boolean | number | null>>({});
   const historicalCustomValuesHydrated = useRef(false);
@@ -95,12 +100,18 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     onError: (error) => { if (error instanceof EventsApiError) { setErrors((current) => ({ ...current, ...error.fieldErrors })); setSubmitError(error.status === 401 || error.status === 403 ? "Your session cannot save this event. Please sign in again." : error.message); } else setSubmitError(error instanceof Error ? error.message : "Unable to save event."); },
   });
   const update = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => { setValues((current) => ({ ...current, [key]: value })); setErrors((current) => ({ ...current, [key]: [] })); setSubmitError(null); };
+  const updateLocationId = (value: string) => { setLocationId(value); setErrors((current) => ({ ...current, location_id: [] })); setSubmitError(null); };
+  const updateCustomValues = (next: Record<string, string | string[] | boolean | number | null>) => { const changedKey = Object.keys(next).find((key) => JSON.stringify(next[key]) !== JSON.stringify(customValues[key])); setCustomValues(next); if (changedKey) setErrors((current) => ({ ...current, [changedKey]: [] })); setSubmitError(null); };
+  useEffect(() => { if (!pendingFocusField) return; const element = document.getElementById(fieldDomId(pendingFocusField)); if (!element) return; element.scrollIntoView({ behavior: "smooth", block: "center" }); if (element instanceof HTMLElement) element.focus({ preventScroll: true }); setPendingFocusField(null); }, [activeStep, pendingFocusField]);
   const allErrors = useMemo(() => formConfiguration ? validateConfiguredEventForm(formConfiguration, values, customValues, Boolean(locationId), eventCategoriesQuery.data ?? [], mode) : validateEventForm(values, Boolean(locationId), mode), [customValues, eventCategoriesQuery.data, formConfiguration, locationId, mode, values]);
   const isDirty = JSON.stringify(values) !== JSON.stringify(initialValues) || locationId !== initialLocationId || JSON.stringify(customValues) !== JSON.stringify(initialCustomValues);
-  const continueToNext = () => { const currentFields = formConfiguration ? configuredSections[activeStep]?.fields.map((field) => field.source === "core" ? field.core_key ?? field.stable_key ?? field.id : field.stable_key ?? field.id) ?? [] : stepFields[activeStep] ?? []; const currentErrors = Object.fromEntries(Object.entries(allErrors).filter(([field]) => currentFields.includes(field))); if (Object.keys(currentErrors).length > 0) { setErrors(currentErrors); return; } setErrors({}); setActiveStep((current) => Math.min(current + 1, editorSteps.length - 1)); };
-  const submit = () => { if (mode === "edit" && !isDirty) return; if (Object.keys(allErrors).length > 0) { setErrors(allErrors); setSubmitError("Review the highlighted fields before saving."); return; } setSubmitError(null); saveMutation.mutate(); };
+  const sectionFields = (index: number): string[] => formConfiguration ? configuredSections[index]?.fields.map((field) => field.source === "core" ? field.core_key ?? field.stable_key ?? field.id : field.stable_key ?? field.id) ?? [] : [...(stepFields[index] ?? [])];
+  const allFieldOrder = editorSteps.flatMap((_, index) => sectionFields(index));
+  const focusError = (key: string, errorsToShow: Record<string, string[]>) => { setErrors(errorsToShow); setPendingFocusField(key); };
+  const continueToNext = () => { const currentErrors = Object.fromEntries(Object.entries(allErrors).filter(([field]) => sectionFields(activeStep).includes(field))); const first = firstErrorKey(sectionFields(activeStep), currentErrors); if (first) { focusError(first, currentErrors); return; } setErrors({}); setActiveStep((current) => Math.min(current + 1, editorSteps.length - 1)); };
+  const submit = () => { if (mode === "edit" && !isDirty) return; const first = firstErrorKey(allFieldOrder, allErrors); if (first) { const sectionIndex = editorSteps.findIndex((_, index) => sectionFields(index).includes(first)); focusError(first, allErrors); if (sectionIndex >= 0) setActiveStep(sectionIndex); const count = errorCount(allErrors); setSubmitError(`${count} validation error${count === 1 ? "" : "s"} need attention.`); return; } setSubmitError(null); saveMutation.mutate(); };
   const sharedProps = { values, update, errors, currencyOptions };
-  const locationProps = { ...sharedProps, locations: locationsQuery.data ?? [], selectedLocationId: locationId, setSelectedLocationId: setLocationId, isLoadingLocations: locationsQuery.isLoading, locationError: locationsQuery.isError ? "Unable to load enterprise locations." : null };
+  const locationProps = { ...sharedProps, locations: locationsQuery.data ?? [], selectedLocationId: locationId, setSelectedLocationId: updateLocationId, isLoadingLocations: locationsQuery.isLoading, locationError: locationsQuery.isError ? "Unable to load enterprise locations." : null };
   const backHref = initialEvent ? `/admin/events/${initialEvent.id}` : "/admin/events";
   const title = mode === "edit" ? "Edit Event" : "Create Event";
 
