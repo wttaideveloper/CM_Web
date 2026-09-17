@@ -20,6 +20,8 @@ import {
   displayValue,
   formatEventDate,
   formatEventDateTime,
+  formatEventDeliveryMode,
+  formatEventDurationType,
   formatEventTime,
 } from "./event-detail-formatters";
 import {
@@ -307,6 +309,7 @@ export default function EventDetailsScreen() {
                 value: formatEventTime(event.end_date, event.time_zone),
               },
               { label: "Time Zone", value: event.time_zone },
+              { label: "Duration Type", value: formatEventDurationType(event.duration_type) },
               {
                 label: "Registration Cutoff",
                 value: formatEventDateTime(
@@ -334,7 +337,7 @@ export default function EventDetailsScreen() {
         <DetailSection title="Location & Delivery">
           <DetailGrid
             items={[
-              { label: "Delivery Mode", value: event.delivery_mode },
+              { label: "Delivery Mode", value: formatEventDeliveryMode(event.delivery_mode) },
               { label: "Location ID", value: event.location_id },
               { label: "Venue Name", value: event.venue?.name },
               { label: "Venue Address", value: event.venue?.address },

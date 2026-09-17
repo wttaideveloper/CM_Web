@@ -396,7 +396,7 @@ export interface EventSessionInput {
   speaker: string;
   start_time: string;
   end_time: string;
-  location: string;
+  location?: string | null;
   meeting_link?: string | null;
 }
 

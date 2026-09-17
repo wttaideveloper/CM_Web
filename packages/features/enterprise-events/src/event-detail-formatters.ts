@@ -7,6 +7,21 @@ export function displayValue(value: string | number | boolean | null | undefined
   return String(value);
 }
 
+/** Converts backend delivery-mode values into user-facing labels. */
+export function formatEventDeliveryMode(value: string | null | undefined): string {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "online") return "Online";
+  if (normalized === "in_person" || normalized === "in-person") return "In Person";
+  if (normalized === "hybrid") return "Hybrid";
+  return displayValue(value);
+}
+
+/** Converts backend duration values into user-facing labels. */
+export function formatEventDurationType(value: string | null | undefined): string {
+  if (!value?.trim()) return "Not provided";
+  return value.trim().toLowerCase() === "custom" ? "Custom" : value.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 /** Formats an Event datetime while preserving a backend-provided local wall-clock time. */
 export function formatEventDateTime(value: string | null | undefined, timeZone: string): string {
   if (!value) {

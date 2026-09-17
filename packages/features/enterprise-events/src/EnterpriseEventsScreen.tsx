@@ -9,6 +9,7 @@ import EventActionsMenu from "./EventActionsMenu";
 import EventTemplatesDialog from "./EventTemplatesDialog";
 import { PRODUCT_EVENT_STATUSES, getEventStatusBadgeClass, getEventStatusLabel } from "./event-status";
 import { listEvents, type Event } from "./events.service";
+import { formatEventDeliveryMode } from "./event-detail-formatters";
 
 type SortOption = "newest" | "oldest" | "az" | "status";
 const statusFilters = ["all", ...PRODUCT_EVENT_STATUSES] as const;
@@ -66,6 +67,15 @@ function formatSeatAvailability(event: Event): string {
   return "—";
 }
 
+function formatCardLocation(event: Event): string {
+  const venue = [event.venue?.name, event.venue?.city].filter((value): value is string => Boolean(value?.trim())).join(", ");
+  const mode = event.delivery_mode?.trim().toLowerCase();
+  if (mode === "online") return "Online";
+  if (mode === "hybrid") return venue ? `Hybrid · ${venue}` : "Hybrid";
+  if (mode === "in_person") return venue || "In Person";
+  return venue || formatEventDeliveryMode(event.delivery_mode);
+}
+
 function EventCard({ event, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess }: { event: Event; onStatusSuccess: () => void; onDuplicateSuccess: () => void; onDeleteSuccess: () => void }) {
   const primaryImage = event.primary_image?.trim() ?? "";
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
@@ -115,8 +125,8 @@ function EventCard({ event, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess
           <p className={`mt-1 font-semibold ${primaryTextClass}`}>{formatEventDate(event.start_date)}</p>
         </div>
         <div className="min-w-0">
-          <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Location</p>
-          <p className={`mt-1 font-semibold ${primaryTextClass}`}>{event.delivery_mode || "—"}</p>
+          <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Location / Delivery</p>
+          <p className={`mt-1 font-semibold ${primaryTextClass}`}>{formatCardLocation(event)}</p>
         </div>
         <div className="min-w-0">
           <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Registrations</p>
