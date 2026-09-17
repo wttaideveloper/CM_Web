@@ -14,6 +14,10 @@ export type TrainingApprovalDecision = "approve" | "request_changes" | "reject";
 
 const trainingsBasePath = "/api/v1/trainings/";
 
+/** Base path for the admin approval endpoints. Platform Admin passes its bearer-token BFF
+ * (`/api/platform-super-admin/training-approvals`); the cookie rewrite is the default. */
+export const trainingsAdminBasePath = "/api/v1/admin/trainings";
+
 async function parseTraining(response: Response): Promise<TrainingApprovalReview> {
   if (!response.ok) throw new TrainingApprovalError();
   const value = await response.json();
@@ -31,9 +35,9 @@ export async function getTrainingApprovalReview(trainingId: string): Promise<Tra
 }
 
 /** Approves one pending Training. The list queues reflect the persisted state via invalidation. */
-export async function approveTrainingReview(trainingId: string): Promise<void> {
+export async function approveTrainingReview(trainingId: string, adminBasePath: string = trainingsAdminBasePath): Promise<void> {
   const response = await fetch(
-    `/api/v1/admin/trainings/${encodeURIComponent(trainingId)}/approve`,
+    `${adminBasePath}/${encodeURIComponent(trainingId)}/approve`,
     {
       method: "POST",
       credentials: "include",
@@ -43,8 +47,8 @@ export async function approveTrainingReview(trainingId: string): Promise<void> {
 }
 
 /** Sends a Training back for revision with a required admin note — `POST /admin/trainings/{id}/request-changes`. */
-export async function requestTrainingChanges(trainingId: string, reason: string): Promise<void> {
-  const response = await fetch(`/api/v1/admin/trainings/${encodeURIComponent(trainingId)}/request-changes`, {
+export async function requestTrainingChanges(trainingId: string, reason: string, adminBasePath: string = trainingsAdminBasePath): Promise<void> {
+  const response = await fetch(`${adminBasePath}/${encodeURIComponent(trainingId)}/request-changes`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -55,8 +59,8 @@ export async function requestTrainingChanges(trainingId: string, reason: string)
 }
 
 /** Rejects a Training, optionally recording an admin reason. The list queues reflect the persisted state via invalidation. */
-export async function rejectTrainingReview(trainingId: string, reason?: string): Promise<void> {
-  const response = await fetch(`/api/v1/admin/trainings/${encodeURIComponent(trainingId)}/reject`, {
+export async function rejectTrainingReview(trainingId: string, reason?: string, adminBasePath: string = trainingsAdminBasePath): Promise<void> {
+  const response = await fetch(`${adminBasePath}/${encodeURIComponent(trainingId)}/reject`, {
     method: "POST",
     credentials: "include",
     // Reject accepts { reason } (optional) or no body (null) — never {} (422).

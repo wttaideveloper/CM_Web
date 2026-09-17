@@ -240,6 +240,9 @@ function ParticipantToolbar({ trainingId, status }: { trainingId: string; status
 }
 
 function DetailItem({ label, value }: { label: string; value: string }) {
+  // Show only fields that have data — hide "Not provided" / "—" sentinels and disabled flags.
+  const hasData = value.replace(/Not provided|—/g, "").trim();
+  if (!hasData || hasData === "false") return null;
   return (
     <div>
       <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">{label}</p>
@@ -248,8 +251,19 @@ function DetailItem({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** Renders every supported field from a single authenticated Training response. */
-export default function TrainingDetailsScreen() {
+/** Parses FAQs stored as an array or a JSON string into renderable Q&A entries (never raw JSON). */
+function parseFaqsList(value: unknown): Array<Record<string, unknown>> {
+  const parsed: unknown = typeof value === "string"
+    ? (() => { try { return value.trim() ? JSON.parse(value) as unknown : []; } catch { return []; } })()
+    : value;
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter((f): f is Record<string, unknown> => !!f && typeof f === "object");
+}
+
+/** Renders every supported field from a single authenticated Training response.
+ * `managementActions=false` hides the enterprise action menu (duplicate/status/delete) —
+ * used when this screen is embedded in platform-admin, where those endpoints reject Super Admin. */
+export default function TrainingDetailsScreen({ managementActions = true }: { managementActions?: boolean }) {
   const { trainingId } = useParams<{ trainingId: string }>();
   const [activeTab, setActiveTab] = useState<TrainingDetailsTab>("details");
 
@@ -312,6 +326,7 @@ export default function TrainingDetailsScreen() {
   const sections = Array.isArray(sectionsQuery.data) ? (sectionsQuery.data as Array<Record<string, unknown>>) : [];
   const enrolments = Array.isArray(enrolmentsQuery.data) ? enrolmentsQuery.data : [];
   const lessonCount = sections.reduce((total, section) => total + (Array.isArray(section.lessons) ? section.lessons.length : 0), 0);
+  const faqsList = parseFaqsList((training as unknown as Record<string, unknown>).faqs);
 
   return (
     <div className="w-full">
@@ -328,9 +343,11 @@ export default function TrainingDetailsScreen() {
               {typeof training.delivery_mode === "string" && training.delivery_mode ? <span className="text-xs text-white/70">{training.delivery_mode}</span> : null}
             </div>
           </div>
-          <div className="absolute top-4 right-4">
-            <TrainingActionsMenu training={training} />
-          </div>
+          {managementActions ? (
+            <div className="absolute top-4 right-4">
+              <TrainingActionsMenu training={training} />
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm sm:flex sm:items-start sm:justify-between sm:gap-4">
@@ -339,7 +356,7 @@ export default function TrainingDetailsScreen() {
             <h2 className="mt-1 text-2xl font-bold text-[#06201c] sm:text-3xl">{training.title}</h2>
             <span className={`mt-2 inline-block rounded-full px-3 py-1 text-[11px] font-bold ${getTrainingStatusBadgeClass(training.status)}`}>{getTrainingStatusLabel(training.status)}</span>
           </div>
-          <TrainingActionsMenu training={training} />
+          {managementActions ? <TrainingActionsMenu training={training} /> : null}
         </div>
       )}
 
@@ -406,7 +423,7 @@ export default function TrainingDetailsScreen() {
               <DetailItem label="Instructor role" value={displayValue((training as unknown as Record<string, unknown>).instructor_role as string) || displayValue(((training as unknown as Record<string, unknown>).instructor as Record<string, unknown> | null)?.role as string)} />
               <DetailItem label="Instructor photo" value={displayValue((training as unknown as Record<string, unknown>).instructor_photo as string)} />
               <DetailItem label="Instructor credentials" value={displayValue((training as unknown as Record<string, unknown>).instructor_credentials as string)} />
-              <DetailItem label="FAQs" value={Array.isArray((training as unknown as Record<string, unknown>).faqs) ? `${((training as unknown as Record<string, unknown>).faqs as unknown[]).length} questions` : displayValue((training as unknown as Record<string, unknown>).faqs as string)} />
+              <DetailItem label="FAQs" value={faqsList.length ? `${faqsList.length} questions` : "—"} />
               <DetailItem label="Badges" value={Array.isArray((training as unknown as Record<string, unknown>).badges) ? ((training as unknown as Record<string, unknown>).badges as unknown[]).map(String).join(", ") || "—" : "—"} />
               <DetailItem label="Notes / Handouts" value={(() => { const raw = (training as unknown as Record<string, unknown>).notes_documents ?? (training as unknown as Record<string, unknown>).notes; if (!Array.isArray(raw)) return "—"; const parts = raw.map((n) => { if (typeof n === "string") return n; if (n && typeof n === "object" && typeof (n as Record<string, unknown>).title === "string" && typeof (n as Record<string, unknown>).url === "string") return `${(n as Record<string, unknown>).title as string} · ${(n as Record<string, unknown>).url as string}`; return ""; }).filter(Boolean) as string[]; return parts.length ? parts.join(" | ") : "—"; })()} />
               <DetailItem label="Instructor notes" value={displayValue((training as unknown as Record<string, unknown>).instructor_notes as string)} />
@@ -425,10 +442,12 @@ export default function TrainingDetailsScreen() {
               <DetailItem label="Created" value={formatTrainingDate(training.created_at)} />
               <DetailItem label="Updated" value={formatTrainingDate(training.updated_at)} />
             </div>
-            <div className="mt-6">
-              <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Description</p>
-              <p className="mt-2 text-sm leading-6 text-[#52736a]">{training.description || "—"}</p>
-            </div>
+            {training.description ? (
+              <div className="mt-6">
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Description</p>
+                <p className="mt-2 text-sm leading-6 text-[#52736a]">{training.description}</p>
+              </div>
+            ) : null}
             {Array.isArray(training.tags) && training.tags.length > 0 ? (
               <div className="mt-6">
                 <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Tags</p>
@@ -449,11 +468,11 @@ export default function TrainingDetailsScreen() {
                 </div>
               </div>
             ) : null}
-            {Array.isArray((training as unknown as Record<string, unknown>).faqs) && ((training as unknown as Record<string, unknown>).faqs as unknown[]).length > 0 ? (
+            {faqsList.length > 0 ? (
               <div className="mt-6">
                 <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">FAQs</p>
                 <div className="mt-2 space-y-2">
-                  {((training as unknown as Record<string, unknown>).faqs as Array<Record<string, unknown>>).map((faq, i) => {
+                  {faqsList.map((faq, i) => {
                     const q = typeof faq.question === "string" ? faq.question : typeof faq.q === "string" ? faq.q : "";
                     const a = typeof faq.answer === "string" ? faq.answer : typeof faq.a === "string" ? faq.a : "";
                     return (

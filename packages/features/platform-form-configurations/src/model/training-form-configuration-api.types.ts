@@ -47,7 +47,7 @@ export interface TrainingFormConfigurationCreateResponse extends TrainingFormCon
 export interface TrainingCoreFieldRegistryEntry { key: string; display_name: string; value_type: TrainingFormValueType; allowed_renderers: TrainingFormRenderer[]; default_renderer: TrainingFormRenderer; required_by_domain: boolean; removable: boolean; hideable: boolean; configurable: { label: boolean; section: boolean; position: boolean; required: boolean; renderer: boolean; placeholder: boolean; help_text: boolean; validation: boolean; }; }
 
 /** One tenant assignment returned by the configuration assignment endpoint. */
-export interface TrainingFormAssignment { id: string; configuration_id: string; tenant_id: string; created_at: string | null; updated_at: string | null; }
+export interface TrainingFormAssignment { id: string; configuration_id: string; tenant_id: string; enterprise_id: string | null; created_at: string | null; updated_at: string | null; }
 
 /** One immutable audit entry for a configuration change. */
 export interface TrainingFormAuditEntry { id: string; configuration_id: string; action: string; actor_id: string | null; created_at: string; metadata: Record<string, unknown> | null; }
@@ -64,8 +64,10 @@ export interface CreateTrainingFormConfigurationRequest { name: string; descript
 /** Request body for updating a Training form configuration. */
 export interface UpdateTrainingFormConfigurationRequest { name: string; description: string | null; scope: TrainingFormConfigurationScope; sections: TrainingFormSectionInput[]; }
 
-/** Request body for replacing a configuration's tenant assignments. */
-export interface UpdateTrainingFormConfigurationAssignmentsRequest { tenant_ids: string[]; }
+/** Request body for replacing a configuration's assignments. Backend contract: `{is_global: true}`
+ * or `{enterprise_ids: []}` makes the config global; non-empty `enterprise_ids` (or `tenant_ids` /
+ * `tenant_slugs`) makes it selective. `tenant_ids` is the legacy fallback. */
+export interface UpdateTrainingFormConfigurationAssignmentsRequest { tenant_ids: string[]; enterprise_ids?: string[]; is_global?: boolean; }
 
 /** Response returned after publishing a configuration. */
 export interface TrainingFormPublishResponse { configuration: TrainingFormConfiguration; version: TrainingFormConfigurationVersion; }

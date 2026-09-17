@@ -4,7 +4,7 @@ import { TrainingDetailsScreen } from "@ihp/enterprise-trainings";
 export default function PlatformTrainingDetailPage() {
   return (
     <PlatformAdminShell>
-      <TrainingDetailsScreen />
+      <TrainingDetailsScreen managementActions={false} />
     </PlatformAdminShell>
   );
 }

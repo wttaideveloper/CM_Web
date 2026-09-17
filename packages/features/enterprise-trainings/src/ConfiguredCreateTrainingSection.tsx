@@ -59,6 +59,7 @@ const CORE_FIELDS: Record<string, keyof CreateTrainingFormValues> = {
   schedule_exceptions: "schedule_exceptions",
   access_information: "access_information",
   meeting_provider: "meeting_provider",
+  meeting_passcode: "meeting_passcode",
   instructor_role: "instructor_role",
   instructor_notes: "instructor_notes",
   notes_documents: "notes_documents",
@@ -140,7 +141,8 @@ const deliveryInputClass = "mt-1.5 h-10 w-full rounded-xl border border-[#d7e5df
 
 /** Auto-renders delivery-mode fields (meeting link / QR payload / pass code / check-in) in the configurable
  * form even when the Super Admin form config does not include them. Mirrors the static builder's rules:
- * hybrid → meeting link + QR (required); online → meeting link only; physical/offline → QR (optional). */
+ * hybrid → meeting link + QR (required); online → meeting link only; physical/offline → QR (optional);
+ * self-paced → hidden entirely. */
 function ConfiguredDeliveryFields({
   values,
   update,
@@ -152,6 +154,7 @@ function ConfiguredDeliveryFields({
 }) {
   const mode = values.delivery_mode;
   if (!mode) return null;
+  if (mode === "self_paced") return null;
   const showMeeting = mode === "hybrid" || mode === "online";
   const showQr = mode !== "online";
   const required = mode === "hybrid";
@@ -295,10 +298,19 @@ function ConfiguredField({
       return <label className="flex items-center gap-2 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={Boolean(values[coreField as keyof CreateTrainingFormValues])} onChange={(e) => setValue(String(e.target.checked))} />{field.label}{required}</label>;
     }
     if (options.length) {
-      // Delivery mode shows only Live online | Offline | Hybrid | Self-paced; keep a legacy stored value visible for old trainings.
-      const visibleOptions = coreField === "delivery_mode" ? options.filter((opt) => opt === "online" || opt === "physical" || opt === "hybrid" || opt === "self_paced") : options;
-      if (coreField === "delivery_mode" && value && !visibleOptions.includes(value)) visibleOptions.push(value);
-      return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}<select value={value} onChange={(e) => setValue(e.target.value)} className={inputClass}><option value="">Select an option</option>{visibleOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}</select>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
+      // Delivery mode shows only Live online | Offline | Hybrid | Self-paced, defaulting to Self-paced instead of a placeholder; keep a legacy stored value visible for old trainings.
+      // Language codes from the server config render and submit as full names (English, not en).
+      const DELIVERY_LABELS: Record<string, string> = { online: "Live online", physical: "Offline (physical venue)", hybrid: "Hybrid", self_paced: "Self-paced" };
+      const LANGUAGE_NAMES: Record<string, string> = { en: "English", hi: "Hindi", es: "Spanish", fr: "French" };
+      const isDelivery = coreField === "delivery_mode";
+      const isLang = coreField === "language";
+      const visibleOptions = isDelivery ? options.filter((opt) => opt === "online" || opt === "physical" || opt === "hybrid" || opt === "self_paced") : options;
+      if (isDelivery && !visibleOptions.includes("self_paced")) visibleOptions.push("self_paced");
+      if (isDelivery && value && !visibleOptions.includes(value)) visibleOptions.push(value);
+      const langOptions = isLang ? [...new Set(visibleOptions.map((opt) => LANGUAGE_NAMES[opt.toLowerCase()] ?? opt))] : visibleOptions;
+      const selectValue = isDelivery && !value ? "self_paced" : isLang ? (LANGUAGE_NAMES[(value || "").toLowerCase()] ?? value) : value;
+      const shownOptions = isLang ? langOptions : visibleOptions;
+      return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}<select value={selectValue} onChange={(e) => setValue(e.target.value)} className={inputClass}>{isDelivery ? null : <option value="">Select an option</option>}{shownOptions.map((opt) => <option key={opt} value={opt}>{isDelivery ? (DELIVERY_LABELS[opt] ?? opt) : opt}</option>)}</select>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
     }
     if (field.type === "textarea") {
       return <label className="block text-sm font-semibold text-[#06201c] md:col-span-2">{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}<textarea value={value} placeholder={field.placeholder} onChange={(e) => setValue(e.target.value)} className={`${inputClass} h-24 resize-y py-2`} />{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;

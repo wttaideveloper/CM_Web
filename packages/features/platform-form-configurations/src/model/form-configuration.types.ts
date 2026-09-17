@@ -13,7 +13,7 @@ export type FormSection = BuilderEntityIdentity & { stableKey: string; name: str
 export type ConfiguredField = BuilderEntityIdentity & { stableKey: string | null; source: "core" | "custom"; coreKey: string | null; label: string; sectionLocalId: string; position: number; valueType: string; required: boolean; renderer: FormRenderer; placeholder: string; helpText: string; options: FormFieldOption[]; validation: FormFieldValidation; compositeConfig?: EventFormCompositeConfig | null; enabled: boolean };
 
 export type FormConfiguration = {
-  id: string; type: FormConfigurationType; name: string; description: string; scope: FormConfigurationScope; status: FormConfigurationStatus; active: boolean; version: number; tenantIds: string[]; updatedAt: string; sections: FormSection[]; fields: ConfiguredField[];
+  id: string; type: FormConfigurationType; name: string; description: string; scope: FormConfigurationScope; status: FormConfigurationStatus; active: boolean; version: number; tenantIds: string[]; enterpriseIds?: string[]; updatedAt: string; sections: FormSection[]; fields: ConfiguredField[];
 };
 
 export type CoreFieldRegistryItem = { key: string; displayName: string; valueType: string; allowedRenderers: readonly FormRenderer[]; defaultRenderer: FormRenderer; requiredByDomain: boolean; removable: boolean; hideable: boolean; options?: readonly FormFieldOption[]; valueSource?: string | null; sourceEndpoint?: string | null; dependsOn?: string | null; configurable: { label: boolean; section: boolean; position: boolean; required: boolean; renderer: boolean; placeholder: boolean; helpText: boolean; validation: boolean } };

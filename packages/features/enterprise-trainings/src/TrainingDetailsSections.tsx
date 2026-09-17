@@ -212,7 +212,7 @@ const LEGACY_MEETING_PROVIDERS = new Set(["google_meet", "zoom", "microsoft_team
 
 /** Maps a stored lesson type to a valid backend kind, recovering legacy provider values as "live". */
 function normalizeLessonType(value: string, provider?: string): { kind: string; provider: string } {
-  if (value === "youtube") return { kind: "video", provider: provider ?? "" };
+  if (value === "youtube") return { kind: "youtube", provider: provider ?? "" };
   if (value && ALLOWED_LESSON_TYPES.has(value)) return { kind: value, provider: provider ?? "" };
   if (value && LEGACY_MEETING_PROVIDERS.has(value)) return { kind: "live", provider: value };
   return { kind: "", provider: provider ?? "" };
@@ -391,11 +391,33 @@ function LessonDetail({ trainingId, sectionId, lessonId, onClose, initialEditMod
         notes,
         documents: documentsPayload,
       };
-      const echo = (await updateTrainingLesson(trainingId, sectionId, lessonId, payload as unknown as Record<string, unknown>)) as Record<string, unknown> | null;
+      let sentType = normalizedType.kind;
+      let echo: Record<string, unknown> | null;
+      try {
+        echo = (await updateTrainingLesson(trainingId, sectionId, lessonId, payload as unknown as Record<string, unknown>)) as Record<string, unknown> | null;
+      } catch (error) {
+        // Older backends reject the "youtube" kind — retry once as video (URL detection keeps the YouTube UX).
+        if (normalizedType.kind === "youtube" && error instanceof TrainingsApiError && error.status === 400 && error.message.includes("Unsupported curriculum item type")) {
+          sentType = "video";
+          echo = (await updateTrainingLesson(trainingId, sectionId, lessonId, { ...payload, type: "video" } as unknown as Record<string, unknown>)) as Record<string, unknown> | null;
+        } else {
+          throw error;
+        }
+      }
+      const sentTitle = title.trim();
+      const sentContentUrl = videoUrl.trim();
+      const normUrl = (u: unknown) => (typeof u === "string" ? u.trim().replace(/\/+$/, "") : "");
       const sentVideos = new Set(videos.map((v) => v.trim()));
       const sentNotes = new Set(notes.map((n) => n.trim()));
       const sentDocs = new Set(docs.map((d) => d.url.trim()));
-      const matches = (l: Record<string, unknown> | null) => !!l && sameUrlSet(mediaUrlSet(l.videos), sentVideos) && sameUrlSet(mediaUrlSet(l.notes), sentNotes) && sameUrlSet(mediaUrlSet(l.documents), sentDocs);
+      const displayType = lessonTypeValue || normalizedType.kind;
+      const matches = (l: Record<string, unknown> | null) => !!l
+        && sameUrlSet(mediaUrlSet(l.videos), sentVideos)
+        && sameUrlSet(mediaUrlSet(l.notes), sentNotes)
+        && sameUrlSet(mediaUrlSet(l.documents), sentDocs)
+        && (typeof l.title !== "string" || l.title.trim() === sentTitle)
+        && (!sentType || (typeof l.type === "string" && l.type.trim() === sentType))
+        && (!sentContentUrl || normUrl(l.content_url) === normUrl(sentContentUrl));
       const readLesson = async (): Promise<Record<string, unknown> | null> => {
         try {
           return (await getTrainingLesson(trainingId, sectionId, lessonId)) as Record<string, unknown>;
@@ -405,20 +427,40 @@ function LessonDetail({ trainingId, sectionId, lessonId, onClose, initialEditMod
       };
       // Verify against a refetch (authoritative DB state) — the PUT response may be in-memory only.
       const fresh = await readLesson();
-      if (fresh && matches(fresh)) return { applied: true, via: "lesson", lesson: fresh, lessonType: normalizedType.kind };
-      if (!fresh && matches(echo)) return { applied: true, via: "lesson-unverified", lesson: echo, lessonType: normalizedType.kind };
-      // Fallback: rewrite the media lists via the training-level PUT (tracked full-array assignment).
+      if (fresh && matches(fresh)) return { applied: true, via: "lesson", lesson: fresh, lessonType: displayType };
+      if (!fresh && matches(echo)) return { applied: true, via: "lesson-unverified", lesson: echo, lessonType: displayType };
+      // Fallback: rewrite title/type/content_url/media via the training-level PUT (tracked full-array assignment).
+      const overrides: Record<string, unknown> = {
+        title: sentTitle,
+        ...(sentType ? { type: sentType } : {}),
+        ...(sentContentUrl ? { content_url: sentContentUrl } : {}),
+        ...(meetingLink.trim() ? { meeting_link: meetingLink.trim() } : {}),
+        ...(joinUrl.trim() ? { join_meta: joinUrl.trim() } : {}),
+        ...(effectiveProvider ? { meeting_type: effectiveProvider } : {}),
+        ...(venue.trim() ? { venue: venue.trim() } : {}),
+        ...(address.trim() ? { address: address.trim() } : {}),
+        ...(passCode.trim() ? { pass_code: passCode.trim() } : {}),
+        ...(checkInWindow.trim() ? { check_in_window: checkInWindow.trim() } : {}),
+        is_mandatory: isMandatory,
+        is_downloadable: isDownloadable,
+        is_preview: isPreview,
+        ...(durationMinutes.trim() ? { duration: Number(durationMinutes) } : {}),
+        ...(fileSize.trim() ? { file_size: fileSize } : {}),
+        videos: [...sentVideos],
+        notes: [...sentNotes],
+        documents: documentsPayload,
+      };
       const sections = (await getTrainingSections(trainingId)) as Array<Record<string, unknown>>;
       const rewritten = sections.map((s) => {
         const sid = typeof s.id === "string" ? s.id : String(s.order ?? "");
         if (sid !== sectionId) return s;
         const lessons = Array.isArray(s.lessons) ? (s.lessons as Array<Record<string, unknown>>) : [];
-        return { ...s, lessons: lessons.map((l) => (typeof l.id === "string" && l.id === lessonId ? { ...l, videos: [...sentVideos], notes: [...sentNotes], documents: documentsPayload } : l)) };
+        return { ...s, lessons: lessons.map((l) => (typeof l.id === "string" && l.id === lessonId ? { ...l, ...overrides } : l)) };
       });
       await updateTraining(trainingId, { sections: rewritten } as unknown as UpdateTrainingPayload);
       const final = await readLesson();
       const ok = matches(final);
-      return { applied: ok, via: "training", lesson: final ?? echo, lessonType: normalizedType.kind };
+      return { applied: ok, via: "training", lesson: final ?? echo, lessonType: displayType };
     },
     onSuccess: (result) => {
       const saved = (result.lesson ?? {}) as Record<string, unknown>;
@@ -631,12 +673,12 @@ function LessonDetail({ trainingId, sectionId, lessonId, onClose, initialEditMod
             <option value="90">1.5 hr</option>
             <option value="120">2 hr</option>
           </select>
-          <button type="button" onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending || !title.trim()} className="h-8 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:opacity-60">{updateMutation.isPending ? "Saving..." : "Save"}</button>
+          <button type="button" onClick={() => { if (updateMutation.isPending) return; if (!title.trim()) { setFeedback("Add a lesson title."); return; } const kind = lessonTypeValue; if (kind === "video" && !videoUrl.trim() && lessonVideos.length === 0) { setFeedback("Add a video URL or upload a video."); return; } if (kind === "youtube" && !videoUrl.trim()) { setFeedback("Paste the YouTube URL."); return; } if (kind === "live" && !meetingLink.trim()) { setFeedback("Add the meeting link."); return; } if (kind === "venue" && !venue.trim()) { setFeedback("Add the venue name."); return; } if (kind === "pdf" && lessonDocs.length === 0) { setFeedback("Upload at least one PDF."); return; } if (kind === "notes" && lessonNotes.length === 0) { setFeedback("Add at least one note."); return; } updateMutation.mutate(); }} disabled={updateMutation.isPending || !title.trim()} className="h-8 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:opacity-60">{updateMutation.isPending ? "Saving..." : "Save"}</button>
         </div>
       ) : (
         <div className="space-y-2">
           <p className="text-sm font-bold text-[#06201c]">{lessonTitle || "Untitled"}</p>
-          {lessonType ? <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Type: {lessonType}</p> : null}
+          {lessonType ? <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Type: {lessonType === "video" && isYouTubeUrl(lessonVideoUrl) ? "youtube" : lessonType}</p> : null}
           {lessonIsMandatory ? <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#b4541f]">Mandatory</p> : null}
           {lessonVideoUrl ? (isYouTubeUrl(lessonVideoUrl) ? <a href={lessonVideoUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-[#1f6a58] underline" title={lessonVideoUrl}>Watch on YouTube →</a> : <div><VideoPreview url={lessonVideoUrl} /><a href={toPlayableMediaUrl(lessonVideoUrl)} target="_blank" rel="noreferrer" className="text-xs font-semibold text-[#1f6a58] underline">Watch video →</a></div>) : null}
           {lessonMeetingLink ? <p className="text-xs text-[#52736a]">Meeting: <a href={lessonMeetingLink} className="text-[#1f6a58] underline">{lessonMeetingLink}</a></p> : null}
@@ -663,11 +705,13 @@ function QuestionComposer({ trainingId, assessmentId, notify }: { trainingId: st
   const [options, setOptions] = useState<string[]>(["", "", "", ""]);
   const [correctSingle, setCorrectSingle] = useState("");
   const [correctMulti, setCorrectMulti] = useState<string[]>([]);
+  const [desc, setDesc] = useState("");
+  const [instr, setInstr] = useState("");
 
   const addMutation = useMutation({
     mutationFn: (payload: CreateAssessmentQuestionPayload) => addAssessmentQuestions(trainingId, assessmentId, payload),
     onSuccess: () => {
-      setQText(""); setOptions(["", "", "", ""]); setCorrectSingle(""); setCorrectMulti([]);
+      setQText(""); setOptions(["", "", "", ""]); setCorrectSingle(""); setCorrectMulti([]); setDesc(""); setInstr("");
       notify("Question added to the quiz.");
       void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessments"] });
     },
@@ -678,6 +722,8 @@ function QuestionComposer({ trainingId, assessmentId, notify }: { trainingId: st
     setQType(next);
     setCorrectSingle(next === "true_false" ? "True" : "");
     setCorrectMulti([]);
+    setDesc("");
+    setInstr("");
     if (next === "mcq" || next === "multiple_select") setOptions((cur) => (cur.length ? cur : ["", "", "", ""]));
   };
 
@@ -699,6 +745,11 @@ function QuestionComposer({ trainingId, assessmentId, notify }: { trainingId: st
     } else if (qType === "true_false") {
       const correct = correctSingle.trim() === "False" ? "False" : "True";
       addMutation.mutate({ question_text: value, question_type: qType, options: [{ id: "a", label: "True" }, { id: "b", label: "False" }], correct_answer: correct } as CreateAssessmentQuestionPayload);
+    } else if (qType === "task") {
+      const description = desc.trim();
+      const instructions = instr.trim();
+      if (!description) { notify("Add the task description."); return; }
+      addMutation.mutate({ question_text: value, question_type: qType, description, explanation: instructions || undefined } as CreateAssessmentQuestionPayload);
     } else {
       const model = correctSingle.trim();
       addMutation.mutate({ question_text: value, question_type: qType, correct_answer: model || undefined } as CreateAssessmentQuestionPayload);
@@ -714,9 +765,10 @@ function QuestionComposer({ trainingId, assessmentId, notify }: { trainingId: st
         <option value="true_false">True / False</option>
         <option value="short_answer">Blank text – short answer</option>
         <option value="essay">Essay text – long answer</option>
+        <option value="task">Task – hands-on task</option>
       </select>
       <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); submit(); }}>
-        <input value={qText} onChange={(e) => setQText(e.target.value)} placeholder="Question text…" className="h-8 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
+        <input value={qText} onChange={(e) => setQText(e.target.value)} placeholder={qType === "task" ? "Task title / name…" : "Question text…"} className="h-8 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
         <button type="submit" disabled={addMutation.isPending || !qText.trim()} className="h-8 rounded-full border border-[#1f6a58] px-3 text-[10px] font-bold text-[#1f6a58] disabled:opacity-60">{addMutation.isPending ? "Adding…" : "Add"}</button>
       </form>
       {(qType === "mcq" || qType === "multiple_select") ? (
@@ -746,6 +798,11 @@ function QuestionComposer({ trainingId, assessmentId, notify }: { trainingId: st
               <option value="False">False</option>
             </select>
           </label>
+        </div>
+      ) : qType === "task" ? (
+        <div className="space-y-1">
+          <textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Task description…" rows={2} className="w-full rounded-lg border border-[#d7e5df] bg-white px-3 py-2 text-xs outline-none focus:border-[#1f6a58]" />
+          <textarea value={instr} onChange={(e) => setInstr(e.target.value)} placeholder="Task instructions…" rows={3} className="w-full rounded-lg border border-[#d7e5df] bg-white px-3 py-2 text-xs outline-none focus:border-[#1f6a58]" />
         </div>
       ) : (
         <input value={correctSingle} onChange={(e) => setCorrectSingle(e.target.value)} placeholder="Model answer (optional — graded manually)" className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
@@ -820,6 +877,7 @@ function LessonQuizManager({ trainingId, sectionId, lessonId, lessonTitle, lesso
                     <div className="min-w-0">
                       <p className="text-xs text-[#52736a]">{qi + 1}. {qText} <span className="text-[10px] text-[#7f9d94]">({typeof q.question_type === "string" ? q.question_type : "quiz"})</span></p>
                       {qOptions.length > 0 ? <p className="text-[10px] text-[#7f9d94]">{qOptions.join(" · ")}{typeof q.correct_answer === "string" && q.correct_answer ? ` → ${q.correct_answer}` : ""}</p> : null}
+                      {q.question_type === "task" ? (<>{typeof q.description === "string" && q.description ? <p className="text-[10px] text-[#52736a]">{q.description}</p> : null}{typeof q.explanation === "string" && q.explanation ? <p className="text-[10px] text-[#7f9d94]">Instructions: {q.explanation}</p> : null}</>) : null}
                     </div>
                     <button type="button" onClick={() => { if (window.confirm("Delete this question?")) deleteQuestionMutation.mutate(qId); }} className="shrink-0 text-[10px] font-semibold text-[#b42318]">Delete</button>
                   </li>
@@ -962,11 +1020,23 @@ function NewLessonComposer({ trainingId, sectionId, notify, onCreated }: { train
     else if (failed) notify("Upload failed.");
   };
 
+  /** Kind-aware required-field validation — returns an error message or null when valid. */
+  const validateDraft = (): string | null => {
+    if (!title.trim()) return "Add a lesson title.";
+    if (kind === "video" && !videoUrl.trim() && videos.length === 0) return "Add a video URL or upload a video.";
+    if (kind === "youtube" && !videoUrl.trim()) return "Paste the YouTube URL.";
+    if (kind === "live" && !meetingLink.trim()) return "Add the meeting link.";
+    if (kind === "venue" && !venue.trim()) return "Add the venue name.";
+    if (kind === "pdf" && docs.length === 0) return "Upload at least one PDF.";
+    if (kind === "notes" && notes.length === 0) return "Add at least one note.";
+    return null;
+  };
+
   const createMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const payload = {
         title: title.trim(),
-        type: kind === "youtube" ? "video" : kind,
+        type: kind,
         content: content.trim() || undefined,
         content_url: videoUrl.trim() || undefined,
         meeting_link: meetingLink.trim() || undefined,
@@ -980,7 +1050,15 @@ function NewLessonComposer({ trainingId, sectionId, notify, onCreated }: { train
         documents: docs.filter((d) => d.url.trim()).map((d) => ({ url: d.url.trim(), name: d.name.trim() || d.url.trim().split("/").pop() || "document", visibility: d.visibility, downloadable: d.downloadable })),
         notes: notes.map((n) => n.trim()).filter(Boolean),
       } as CreateTrainingLessonPayload;
-      return createTrainingLesson(trainingId, sectionId, payload);
+      try {
+        return await createTrainingLesson(trainingId, sectionId, payload);
+      } catch (error) {
+        // Older backends reject the "youtube" kind — retry once as video (URL detection keeps the YouTube UX).
+        if (kind === "youtube" && error instanceof TrainingsApiError && error.status === 400 && error.message.includes("Unsupported curriculum item type")) {
+          return createTrainingLesson(trainingId, sectionId, { ...payload, type: "video" });
+        }
+        throw error;
+      }
     },
     onSuccess: (data) => {
       const created = (data ?? {}) as Record<string, unknown>;
@@ -998,7 +1076,7 @@ function NewLessonComposer({ trainingId, sectionId, notify, onCreated }: { train
   return (
     <form
       className="mt-3 space-y-2 rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-3"
-      onSubmit={(event) => { event.preventDefault(); if (title.trim() && !createMutation.isPending) createMutation.mutate(); }}
+      onSubmit={(event) => { event.preventDefault(); if (createMutation.isPending) return; const error = validateDraft(); if (error) { notify(error); return; } createMutation.mutate(); }}
     >
       <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Add lesson</p>
       <div className="flex flex-col gap-2 sm:flex-row">
@@ -1087,6 +1165,8 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
   const [questionOptionsList, setQuestionOptionsList] = useState<Record<string, string[]>>({});
   const [questionCorrectSingle, setQuestionCorrectSingle] = useState<Record<string, string>>({});
   const [questionCorrectMulti, setQuestionCorrectMulti] = useState<Record<string, string[]>>({});
+  const [questionTaskDesc, setQuestionTaskDesc] = useState<Record<string, string>>({});
+  const [questionTaskInstr, setQuestionTaskInstr] = useState<Record<string, string>>({});
   const [quizPassPercent, setQuizPassPercent] = useState<Record<string, string>>({});
   const [quizTimeLimit, setQuizTimeLimit] = useState<Record<string, string>>({});
   const [quizMaxAttempts, setQuizMaxAttempts] = useState<Record<string, string>>({});
@@ -1106,8 +1186,8 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
   });
 
   const addSectionQuestionMutation = useMutation({
-    mutationFn: ({ assessmentId, question, questionType, options, correctAnswer }: { assessmentId: string; question: string; questionType: string; options: string[]; correctAnswer?: string }) =>
-      addAssessmentQuestions(trainingId, assessmentId, { question_text: question, question_type: questionType, options: options.length ? options.map((label, i) => ({ id: String.fromCharCode(97 + i), label })) : undefined, correct_answer: correctAnswer?.trim() ? correctAnswer.trim() : undefined } as CreateAssessmentQuestionPayload),
+    mutationFn: ({ assessmentId, question, questionType, options, correctAnswer, description, instructions }: { assessmentId: string; question: string; questionType: string; options: string[]; correctAnswer?: string; description?: string; instructions?: string }) =>
+      addAssessmentQuestions(trainingId, assessmentId, { question_text: question, question_type: questionType, options: options.length ? options.map((label, i) => ({ id: String.fromCharCode(97 + i), label })) : undefined, correct_answer: correctAnswer?.trim() ? correctAnswer.trim() : undefined, description: description?.trim() ? description.trim() : undefined, explanation: instructions?.trim() ? instructions.trim() : undefined } as CreateAssessmentQuestionPayload),
     onSuccess: () => { setFeedback("Question added to the quiz."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessments"] }); },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to add question."),
   });
@@ -1132,6 +1212,11 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
     } else if (questionType === "true_false") {
       const correct = (questionCorrectSingle[lessonKey] ?? "True").trim() === "False" ? "False" : "True";
       addSectionQuestionMutation.mutate({ assessmentId, question: value, questionType, options: ["True", "False"], correctAnswer: correct });
+    } else if (questionType === "task") {
+      const desc = (questionTaskDesc[lessonKey] ?? "").trim();
+      const instr = (questionTaskInstr[lessonKey] ?? "").trim();
+      if (!desc) { setFeedback("Add the task description."); return; }
+      addSectionQuestionMutation.mutate({ assessmentId, question: value, questionType, options: [], description: desc, instructions: instr || undefined });
     } else {
       const model = (questionCorrectSingle[lessonKey] ?? "").trim();
       addSectionQuestionMutation.mutate({ assessmentId, question: value, questionType, options: [], correctAnswer: model || undefined });
@@ -1140,6 +1225,8 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
     setQuestionOptionsList((current) => ({ ...current, [lessonKey]: [] }));
     setQuestionCorrectSingle((current) => ({ ...current, [lessonKey]: "" }));
     setQuestionCorrectMulti((current) => ({ ...current, [lessonKey]: [] }));
+    setQuestionTaskDesc((current) => ({ ...current, [lessonKey]: "" }));
+    setQuestionTaskInstr((current) => ({ ...current, [lessonKey]: "" }));
   };
 
   /** Switches a draft question's type, resetting option/correct drafts (4 blank rows for choice types). */
@@ -1415,7 +1502,7 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
                   <>
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-[#06201c]">{title} <span className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">{sessionKindLabel(sectionType)}</span></p>
-                      {sectionScheduleRaw ? <p className="text-xs text-[#52736a]">{sectionScheduleRaw.length > 90 ? `${sectionScheduleRaw.slice(0, 90)}…` : sectionScheduleRaw}</p> : null}
+                      {(sectionType === "live" || sectionType === "venue") && sectionScheduleRaw ? <p className="text-xs text-[#52736a]">{sectionScheduleRaw.length > 90 ? `${sectionScheduleRaw.slice(0, 90)}…` : sectionScheduleRaw}</p> : null}
                     </div>
                     <div className="flex items-center gap-1">
                       <button type="button" onClick={() => moveSectionMutation.mutate({ sectionId: id, direction: "up" })} disabled={sIndex === 0} className="rounded px-1.5 py-0.5 text-[10px] font-bold text-[#7f9d94] hover:bg-[#e8f6ee] disabled:opacity-30">↑</button>
@@ -1466,7 +1553,7 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
                                 <p className="text-xs text-[#52736a]">{typeof lessonAssessment.type === "string" ? lessonAssessment.type : "quiz"} • {lessonQuestions.length} questions{typeof lessonAssessment.pass_percent === "number" ? ` • pass ${lessonAssessment.pass_percent}%` : typeof lessonAssessment.passing_score === "number" ? ` • pass ${lessonAssessment.passing_score} pts` : ""}{typeof lessonAssessment.time_limit_minutes === "number" ? ` • ${lessonAssessment.time_limit_minutes} min` : ""}{typeof lessonAssessment.attempts_allowed === "number" ? ` • ${lessonAssessment.attempts_allowed} attempts` : typeof lessonAssessment.max_attempts === "number" ? ` • ${lessonAssessment.max_attempts} attempts` : ""}</p>
                                 {lessonQuestions.length > 0 ? (
                                   <ul className="space-y-1">
-                                    {lessonQuestions.map((q, qi) => { const qr = q as Record<string, unknown>; const qId = typeof qr.id === "string" ? qr.id : String(qi); const qText = typeof qr.question === "string" ? qr.question : typeof qr.question_text === "string" ? qr.question_text : typeof qr.text === "string" ? qr.text : "Question"; const qOptions = Array.isArray(qr.options) ? (qr.options as unknown[]).map((o) => (o && typeof o === "object" ? String((o as Record<string, unknown>).label ?? (o as Record<string, unknown>).value ?? "") : typeof o === "string" ? o : "")).filter((s): s is string => Boolean(s)) : []; return (<li key={qId} className="flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-1.5"><div className="min-w-0"><p className="text-xs text-[#52736a]">{qi + 1}. {qText} <span className="text-[10px] text-[#7f9d94]">({typeof qr.question_type === "string" ? qr.question_type : "quiz"})</span></p>{qOptions.length > 0 ? <p className="text-[10px] text-[#7f9d94]">{qOptions.join(" · ")}{typeof qr.correct_answer === "string" && qr.correct_answer ? ` → ${qr.correct_answer}` : ""}</p> : null}</div><button type="button" onClick={() => { if (lessonAssessmentId && window.confirm("Delete this question?")) deleteSectionQuestionMutation.mutate({ assessmentId: lessonAssessmentId, questionId: qId }); }} className="shrink-0 text-[10px] font-semibold text-[#b42318]">Delete</button></li>); })}
+                                    {lessonQuestions.map((q, qi) => { const qr = q as Record<string, unknown>; const qId = typeof qr.id === "string" ? qr.id : String(qi); const qText = typeof qr.question === "string" ? qr.question : typeof qr.question_text === "string" ? qr.question_text : typeof qr.text === "string" ? qr.text : "Question"; const qOptions = Array.isArray(qr.options) ? (qr.options as unknown[]).map((o) => (o && typeof o === "object" ? String((o as Record<string, unknown>).label ?? (o as Record<string, unknown>).value ?? "") : typeof o === "string" ? o : "")).filter((s): s is string => Boolean(s)) : []; return (<li key={qId} className="flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-1.5"><div className="min-w-0"><p className="text-xs text-[#52736a]">{qi + 1}. {qText} <span className="text-[10px] text-[#7f9d94]">({typeof qr.question_type === "string" ? qr.question_type : "quiz"})</span></p>{qOptions.length > 0 ? <p className="text-[10px] text-[#7f9d94]">{qOptions.join(" · ")}{typeof qr.correct_answer === "string" && qr.correct_answer ? ` → ${qr.correct_answer}` : ""}</p> : null}{qr.question_type === "task" ? (<>{typeof qr.description === "string" && qr.description ? <p className="text-[10px] text-[#52736a]">{qr.description}</p> : null}{typeof qr.explanation === "string" && qr.explanation ? <p className="text-[10px] text-[#7f9d94]">Instructions: {qr.explanation}</p> : null}</>) : null}</div><button type="button" onClick={() => { if (lessonAssessmentId && window.confirm("Delete this question?")) deleteSectionQuestionMutation.mutate({ assessmentId: lessonAssessmentId, questionId: qId }); }} className="shrink-0 text-[10px] font-semibold text-[#b42318]">Delete</button></li>); })}
                                   </ul>
                                 ) : <p className="text-xs text-[#7f9d94]">No questions yet — add the first one below.</p>}
                                 <div className="mt-2 space-y-2 rounded-lg border border-[#e1ebe6] bg-white p-2">
@@ -1477,9 +1564,10 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
                                     <option value="true_false">True / False</option>
                                     <option value="short_answer">Blank text – short answer</option>
                                     <option value="essay">Essay text – long answer</option>
+                                    <option value="task">Task – hands-on task</option>
                                   </select>
                                   <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (lessonAssessmentId) submitLessonQuestion(lessonKey, lessonAssessmentId); }}>
-                                    <input value={lessonQuestion[lessonKey] ?? ""} onChange={(e) => setLessonQuestion((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="Question text…" className="h-8 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
+                                    <input value={lessonQuestion[lessonKey] ?? ""} onChange={(e) => setLessonQuestion((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder={(questionTypeDraft[lessonKey] ?? "mcq") === "task" ? "Task title / name…" : "Question text…"} className="h-8 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
                                     <button type="submit" disabled={addSectionQuestionMutation.isPending || !lessonQuestion[lessonKey]?.trim()} className="h-8 rounded-full border border-[#1f6a58] px-3 text-[10px] font-bold text-[#1f6a58] disabled:opacity-60">{addSectionQuestionMutation.isPending ? "Adding…" : "Add"}</button>
                                   </form>
                                   {(questionTypeDraft[lessonKey] ?? "mcq") === "mcq" || (questionTypeDraft[lessonKey] ?? "mcq") === "multiple_select" ? (
@@ -1512,6 +1600,11 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
                                           <option value="False">False</option>
                                         </select>
                                       </label>
+                                    </div>
+                                  ) : (questionTypeDraft[lessonKey] ?? "mcq") === "task" ? (
+                                    <div className="space-y-1">
+                                      <textarea value={questionTaskDesc[lessonKey] ?? ""} onChange={(e) => setQuestionTaskDesc((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="Task description…" rows={2} className="w-full rounded-lg border border-[#d7e5df] bg-white px-3 py-2 text-xs outline-none focus:border-[#1f6a58]" />
+                                      <textarea value={questionTaskInstr[lessonKey] ?? ""} onChange={(e) => setQuestionTaskInstr((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="Task instructions…" rows={3} className="w-full rounded-lg border border-[#d7e5df] bg-white px-3 py-2 text-xs outline-none focus:border-[#1f6a58]" />
                                     </div>
                                   ) : (
                                     <input value={questionCorrectSingle[lessonKey] ?? ""} onChange={(e) => setQuestionCorrectSingle((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="Model answer (optional — graded manually)" className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
@@ -1567,7 +1660,7 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
       >
         <div className="flex flex-wrap items-center gap-2">
           <input value={newSectionTitle} onChange={(event) => setNewSectionTitle(event.target.value)} placeholder="New session title" className="h-10 min-w-0 flex-1 rounded-xl border border-[#d7e5df] bg-white px-4 text-sm outline-none focus:border-[#1f6a58]" />
-          <select value={newSectionKind} onChange={(e) => setNewSectionKind(e.target.value)} className="h-10 rounded-xl border border-[#d7e5df] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]">
+          <select value={newSectionKind} onChange={(e) => { const next = e.target.value; setNewSectionKind(next); if (next !== "live" && next !== "venue") setNewSectionSchedule(""); }} className="h-10 rounded-xl border border-[#d7e5df] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]">
             <option value="">Select</option>
             <option value="video">Video</option>
             <option value="live">Live</option>
@@ -2507,7 +2600,7 @@ export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
   const [newTitle, setNewTitle] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [expandedAssessment, setExpandedAssessment] = useState<string | null>(null);
-  const [newQuestion, setNewQuestion] = useState("");
+  const [editPassPercent, setEditPassPercent] = useState<Record<string, string>>({});
   const [editingAssessmentId, setEditingAssessmentId] = useState<string | null>(null);
   const [editAssessmentTitle, setEditAssessmentTitle] = useState("");
   const [reviewSubmission, setReviewSubmission] = useState<{ assessmentId: string; submissionId: string } | null>(null);
@@ -2539,11 +2632,11 @@ export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to delete assessment."),
   });
 
-  const addQuestionMutation = useMutation({
-    mutationFn: ({ assessmentId, question }: { assessmentId: string; question: string }) =>
-      addAssessmentQuestions(trainingId, assessmentId, { question_text: question, question_type: "short_answer" }),
-    onSuccess: () => { setNewQuestion(""); setFeedback("Question added."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessments"] }); },
-    onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to add question."),
+  const savePassMutation = useMutation({
+    mutationFn: ({ assessmentId, pass }: { assessmentId: string; pass: string }) =>
+      updateTrainingAssessment(trainingId, assessmentId, { pass_percent: pass.trim() === "" ? null : Number(pass) }),
+    onSuccess: () => { setEditPassPercent({}); setFeedback("Pass percentage updated."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessments"] }); },
+    onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to update pass percentage."),
   });
 
   const deleteQuestionMutation = useMutation({
@@ -2612,24 +2705,41 @@ export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
               </div>
               {isExpanded ? (
                 <div className="mt-3 space-y-2 pl-4">
+                  {(() => {
+                    const meta = [
+                      typeof record.pass_percent === "number" ? `Pass ${record.pass_percent}%` : typeof record.passing_score === "number" ? `Pass ${record.passing_score} pts` : null,
+                      typeof record.time_limit_minutes === "number" ? `${record.time_limit_minutes} min` : null,
+                      typeof record.attempts_allowed === "number" ? `${record.attempts_allowed} attempts` : typeof record.max_attempts === "number" ? `${record.max_attempts} attempts` : null,
+                    ].filter((s): s is string => !!s);
+                    return (
+                      <div className="flex flex-wrap items-center gap-2 rounded-lg bg-white p-2">
+                        <p className="text-xs font-semibold text-[#06201c]">{meta.length ? meta.join(" • ") : "No pass rule set"}</p>
+                        <input value={editPassPercent[id] ?? (typeof record.pass_percent === "number" ? String(record.pass_percent) : "")} onChange={(e) => setEditPassPercent((current) => ({ ...current, [id]: e.target.value }))} placeholder="Pass %" type="number" min="0" max="100" className="h-8 w-24 rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]" />
+                        <button type="button" onClick={() => savePassMutation.mutate({ assessmentId: id, pass: editPassPercent[id] ?? "" })} disabled={savePassMutation.isPending} className="h-8 rounded-full bg-[#1f6a58] px-3 text-[10px] font-bold text-white disabled:opacity-60">{savePassMutation.isPending ? "Saving…" : "Set pass %"}</button>
+                      </div>
+                    );
+                  })()}
                   {questions.length > 0 ? (
                     <ul className="space-y-1">
                       {questions.map((q, qIndex) => {
                         const qId = typeof q.id === "string" ? q.id : String(qIndex);
-                        const qText = typeof q.question === "string" ? q.question : typeof q.text === "string" ? q.text : typeof q.question_text === "string" ? q.question_text : "Question";
+                        const qText = typeof q.question_text === "string" ? q.question_text : typeof q.question === "string" ? q.question : typeof q.text === "string" ? q.text : "Question";
+                        const qType = typeof q.question_type === "string" ? q.question_type : "mcq";
+                        const qOptions = Array.isArray(q.options) ? (q.options as unknown[]).map((o) => (o && typeof o === "object" ? String((o as Record<string, unknown>).label ?? (o as Record<string, unknown>).value ?? "") : typeof o === "string" ? o : "")).filter((s): s is string => Boolean(s)) : [];
                         return (
                           <li key={qId} className="flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-2">
-                            <p className="text-sm text-[#52736a]">{qIndex + 1}. {qText}</p>
+                            <div className="min-w-0">
+                              <p className="text-sm text-[#52736a]">{qIndex + 1}. {qText} <span className="text-[10px] text-[#7f9d94]">({qType})</span></p>
+                              {qOptions.length > 0 ? <p className="text-[10px] text-[#7f9d94]">{qOptions.join(" · ")}{typeof q.correct_answer === "string" && q.correct_answer ? ` → ${q.correct_answer}` : ""}</p> : (typeof q.correct_answer === "string" && q.correct_answer ? <p className="text-[10px] text-[#7f9d94]">Answer: {q.correct_answer}</p> : null)}
+                              {qType === "task" ? (<>{typeof q.description === "string" && q.description ? <p className="text-[10px] text-[#52736a]">{q.description}</p> : null}{typeof q.explanation === "string" && q.explanation ? <p className="text-[10px] text-[#7f9d94]">Instructions: {q.explanation}</p> : null}</>) : null}
+                            </div>
                             <button type="button" onClick={() => { if (window.confirm("Delete this question?")) deleteQuestionMutation.mutate({ assessmentId: id, questionId: qId }); }} className="shrink-0 text-[10px] font-semibold text-[#b42318]">Delete</button>
                           </li>
                         );
                       })}
                     </ul>
-                  ) : <p className="text-xs text-[#7f9d94]">No questions yet.</p>}
-                  <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (newQuestion.trim()) addQuestionMutation.mutate({ assessmentId: id, question: newQuestion.trim() }); }}>
-                    <input value={newQuestion} onChange={(e) => setNewQuestion(e.target.value)} placeholder="New question" className="h-8 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-                    <button type="submit" disabled={addQuestionMutation.isPending || !newQuestion.trim()} className="h-8 rounded-full border border-[#1f6a58] px-3 text-[10px] font-bold text-[#1f6a58] disabled:opacity-60">Add</button>
-                  </form>
+                  ) : <p className="text-xs text-[#7f9d94]">No questions yet — add the first one below.</p>}
+                  <QuestionComposer trainingId={trainingId} assessmentId={id} notify={setFeedback} />
                 </div>
               ) : null}
               {reviewSubmission?.assessmentId === id ? (
