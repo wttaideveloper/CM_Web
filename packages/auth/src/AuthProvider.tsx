@@ -111,6 +111,7 @@ export function AuthProvider({ children, config }: AuthProviderProps) {
     }),
     [
       authenticated,
+      authReady,
       hasActiveTenant,
       isLoading,
       logout,
