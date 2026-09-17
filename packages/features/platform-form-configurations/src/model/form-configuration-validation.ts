@@ -5,6 +5,7 @@ export type PersistedAssignmentState = {
   isPersisted: boolean;
   isLoaded: boolean;
   tenantIds: readonly string[];
+  enterpriseIds: readonly string[];
   isDirty: boolean;
 };
 
@@ -41,15 +42,16 @@ export function validateFormConfiguration(configuration: FormConfiguration, regi
 
 function validateSelectiveAssignments(configuration: FormConfiguration, persisted?: PersistedAssignmentState): FormConfigurationValidationIssue[] {
   if (configuration.scope !== "selective") return [];
+  const noAssignmentsMessage = "Select at least one tenant or enterprise before publishing this selective configuration.";
   if (!persisted?.isPersisted) {
-    return configuration.tenantIds.length === 0
-      ? [{ code: "selective-tenant-required", message: "Select at least one tenant before publishing this selective configuration." }]
+    return configuration.tenantIds.length === 0 && (configuration.enterpriseIds ?? []).length === 0
+      ? [{ code: "selective-tenant-required", message: noAssignmentsMessage }]
       : [];
   }
   if (!persisted.isLoaded) return [{ code: "selective-assignments-loading", message: "Tenant assignments are still loading. Please wait before publishing." }];
   if (persisted.isDirty) return [{ code: "selective-assignments-dirty", message: "Save tenant assignments before publishing." }];
-  return persisted.tenantIds.length === 0
-    ? [{ code: "selective-tenant-required", message: "Select at least one tenant before publishing this selective configuration." }]
+  return persisted.tenantIds.length === 0 && persisted.enterpriseIds.length === 0
+    ? [{ code: "selective-tenant-required", message: noAssignmentsMessage }]
     : [];
 }
 

@@ -28,6 +28,10 @@ type Props = {
   isPersisted: boolean;
   canSaveAssignments: boolean;
   isSaving: boolean;
+  /** Which Save button's mutation was actually clicked — both Save buttons share one mutation's
+   * `isPending`, so this alone decides which button's label reads "Saving..." (the other stays
+   * disabled, as before, but keeps its normal label instead of falsely claiming to be saving). */
+  savingTarget?: "tenant" | "enterprise" | null;
   canSaveEnterpriseAssignments?: boolean;
   isSavingEnterpriseAssignments?: boolean;
   onScopeChange: (scope: FormConfigurationScope) => void;
@@ -54,6 +58,7 @@ export function AssignmentEditor({
   canSaveAssignments,
   readOnly = isPersisted && !canSaveAssignments,
   isSaving,
+  savingTarget = null,
   canSaveEnterpriseAssignments = false,
   isSavingEnterpriseAssignments = false,
   onScopeChange,
@@ -179,8 +184,8 @@ export function AssignmentEditor({
     </div> : <p className="pt-4 text-sm text-[#52736a]">{copy.globalAssignmentsDescription}</p>}
 
     {!readOnly && isPersisted && scope === "selective" ? <div className="mt-4 flex flex-wrap gap-2 border-t border-[#edf3f0] pt-4">
-      {canSaveAssignments ? <button type="button" onClick={onSave} disabled={isSaving || isLoadingTenants || tenantError || isLoadingAssignments || assignmentError} className="rounded-lg bg-[#1f6a58] px-4 py-2 text-sm font-bold text-white hover:bg-[#185746] disabled:cursor-not-allowed disabled:opacity-60">{isSaving ? copy.savingAssignments : copy.saveAssignments}</button> : null}
-      {showEnterprises && canSaveEnterpriseAssignments && onSaveEnterprises ? <button type="button" onClick={onSaveEnterprises} disabled={isSavingEnterpriseAssignments || isLoadingEnterprises || enterpriseError || isLoadingAssignments || assignmentError} className="rounded-lg bg-[#1f6a58] px-4 py-2 text-sm font-bold text-white hover:bg-[#185746] disabled:cursor-not-allowed disabled:opacity-60">{isSavingEnterpriseAssignments ? copy.savingAssignments : "Save enterprises"}</button> : null}
+      {canSaveAssignments ? <button type="button" onClick={onSave} disabled={isSaving || isLoadingTenants || tenantError || isLoadingAssignments || assignmentError} className="rounded-lg bg-[#1f6a58] px-4 py-2 text-sm font-bold text-white hover:bg-[#185746] disabled:cursor-not-allowed disabled:opacity-60">{isSaving && savingTarget === "tenant" ? copy.savingAssignments : copy.saveAssignments}</button> : null}
+      {showEnterprises && canSaveEnterpriseAssignments && onSaveEnterprises ? <button type="button" onClick={onSaveEnterprises} disabled={isSavingEnterpriseAssignments || isLoadingEnterprises || enterpriseError || isLoadingAssignments || assignmentError} className="rounded-lg bg-[#1f6a58] px-4 py-2 text-sm font-bold text-white hover:bg-[#185746] disabled:cursor-not-allowed disabled:opacity-60">{isSavingEnterpriseAssignments && savingTarget === "enterprise" ? copy.savingAssignments : "Save enterprises"}</button> : null}
     </div> : null}
   </section>;
 }
