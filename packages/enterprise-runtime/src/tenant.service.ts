@@ -1,3 +1,7 @@
+import { authenticatedFetch } from "@ihp/auth";
+
+const fetch = authenticatedFetch;
+
 /** Details for the authenticated user's server-derived tenant. */
 export interface TenantDetails {
   id: string;

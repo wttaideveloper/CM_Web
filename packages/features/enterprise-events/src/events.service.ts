@@ -1,3 +1,7 @@
+import { authenticatedFetch } from "@ihp/auth";
+
+const fetch = authenticatedFetch;
+
 /** An event returned by the Events list API. */
 export interface Event {
   id: string;

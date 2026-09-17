@@ -18,16 +18,16 @@ type TenantContextValue = {
 const TenantContext = createContext<TenantContextValue | null>(null);
 
 function TenantProviderContent({ children }: { children: ReactNode }) {
-  const { authenticated, user } = useAuth();
+  const { authenticated, authReady, user } = useAuth();
   const tenantQuery = useQuery({
     queryKey: ["tenant", "me", user?.id ?? user?.userId ?? "unauthenticated"],
     queryFn: getTenantMe,
-    enabled: authenticated,
+    enabled: authenticated && authReady,
     staleTime: 30_000,
     retry: 1,
   });
   const tenant = authenticated ? tenantQuery.data?.data ?? null : null;
-  const isLoadingTenant = authenticated && tenantQuery.isFetching;
+  const isLoadingTenant = authenticated && !authReady || authenticated && tenantQuery.isFetching;
   const tenantError =
     authenticated && tenantQuery.isError
       ? tenantQuery.error instanceof Error
