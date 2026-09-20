@@ -119,7 +119,7 @@ export function buildCreateEventPayload(
     venue: values.delivery_mode === "online" ? null : venue,
     meeting_link: values.meeting_link.trim() || null,
     meeting_provider: values.meeting_provider.trim() || null,
-    price: values.price.trim(),
+    price: values.pricing_type === "free" ? null : values.price.trim(),
     pricing_type: values.pricing_type,
     currency: values.currency.trim(),
     ticket_types: values.ticket_types,
@@ -246,11 +246,23 @@ export function buildUpdateEventPayload(values: CreateEventFormValues, initialVa
   if (changed("sessions")) payload.sessions = values.sessions.map((session) => mapSessionForPayload(session, sessionsEnabledFields, values.delivery_mode));
   const datetimeKeys: Array<keyof Pick<CreateEventFormValues, "start_date" | "end_date" | "registration_cutoff" | "registration_open_at" | "registration_close_at">> = ["start_date", "end_date", "registration_cutoff", "registration_open_at", "registration_close_at"];
   for (const key of datetimeKeys) if (changed(key)) Object.assign(payload, { [key]: toBackendLocalDateTime(values[key]) });
+  const deliveryModeChanged = changed("delivery_mode");
   if (values.meeting_link !== initialValues.meeting_link) payload.meeting_link = values.meeting_link.trim() || null;
   if (values.meeting_provider !== initialValues.meeting_provider) payload.meeting_provider = values.meeting_provider.trim() || null;
+  if (deliveryModeChanged && values.delivery_mode === "in_person") {
+    payload.meeting_link = null;
+    payload.meeting_provider = null;
+  }
   if (locationId !== initialLocationId) payload.location_id = locationId || null;
+  if (deliveryModeChanged && values.delivery_mode === "online") {
+    payload.location_id = null;
+    payload.venue = null;
+  }
   const venueFields: Array<keyof CreateEventFormValues> = ["venue_name", "venue_address", "venue_city", "venue_latitude", "venue_longitude"];
-  if (venueFields.some((field) => changed(field))) payload.venue = values.delivery_mode === "online" ? null : buildVenue(values);
+  if (venueFields.some((field) => changed(field)) || (deliveryModeChanged && values.delivery_mode !== "online")) {
+    payload.venue = values.delivery_mode === "online" ? null : buildVenue(values);
+  }
+  if (values.pricing_type === "free" && (changed("pricing_type") || changed("price"))) payload.price = null;
   if (configuredCoreKeys) {
     const payloadKeys: Record<string, keyof UpdateEventPayload> = { title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", duration_type: "duration_type", start_date: "start_date", end_date: "end_date", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", time_zone: "time_zone", delivery_mode: "delivery_mode", venue: "venue", location_id: "location_id", meeting_link: "meeting_link", meeting_provider: "meeting_provider", pricing_type: "pricing_type", price: "price", currency: "currency", ticket_types: "ticket_types", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents", sessions: "sessions" };
     for (const [configurationKey, payloadKey] of Object.entries(payloadKeys)) if (!configuredCoreKeys.has(configurationKey)) delete (payload as Partial<UpdateEventPayload>)[payloadKey];
@@ -286,12 +298,15 @@ export function validateEventForm(values: CreateEventFormValues, hasLocation: bo
     require("organiser_name", "Organizer"); require("organiser_contact", "Organizer contact");
     require("start_date", "Start date and time"); require("end_date", "End date and time");
     require("registration_cutoff", "Registration cutoff"); require("registration_open_at", "Registration opening");
-    require("registration_close_at", "Registration closing"); require("venue_name", "Venue name");
-    require("venue_address", "Venue address"); require("venue_city", "Venue city"); require("pricing_type", "Pricing type");
+    require("registration_close_at", "Registration closing");
+    if (values.delivery_mode !== "online") {
+      require("venue_name", "Venue name"); require("venue_address", "Venue address"); require("venue_city", "Venue city");
+    }
+    require("pricing_type", "Pricing type");
     if (values.pricing_type === "paid") { if (!values.price.trim() && values.ticket_types.length === 0) errors.price = ["Paid Events need a price or at least one ticket type."]; require("currency", "Currency"); }
     require("capacity", "Overall capacity");
     require("min_participants", "Minimum participants"); require("max_participants", "Maximum participants");
-    if (!hasLocation) errors.location_id = ["Select an existing enterprise location before creating this event."];
+    if (values.delivery_mode !== "online" && !hasLocation) errors.location_id = ["Select an existing enterprise location before creating this event."];
   }
   validateDateOrder(values, errors);
   validateNumbers(values, errors);
@@ -304,8 +319,11 @@ function validateDateOrder(values: CreateEventFormValues, errors: Record<string,
   const start = Date.parse(values.start_date); const end = Date.parse(values.end_date);
   const opens = Date.parse(values.registration_open_at); const closes = Date.parse(values.registration_close_at);
   const cutoff = Date.parse(values.registration_cutoff);
-  if (Number.isFinite(start) && Number.isFinite(end) && end < start) errors.end_date = ["End must not be earlier than start."];
-  if (Number.isFinite(opens) && Number.isFinite(closes) && closes < opens) errors.registration_close_at = ["Registration closing must not be earlier than opening."];
+  if (Number.isFinite(start) && Number.isFinite(end) && end <= start) errors.end_date = ["End date and time must be after the start date and time."];
+  if (Number.isFinite(opens) && Number.isFinite(closes) && closes <= opens) errors.registration_close_at = ["Registration closing time must be after registration opening time."];
+  if (Number.isFinite(closes) && Number.isFinite(start) && closes > start) errors.registration_close_at = ["Registration closing time must be on or before the Event start."];
+  if (Number.isFinite(cutoff) && Number.isFinite(opens) && cutoff <= opens) errors.registration_cutoff = ["Registration cutoff must be after registration opening time."];
+  if (Number.isFinite(cutoff) && Number.isFinite(closes) && cutoff > closes) errors.registration_cutoff = ["Registration cutoff must not be after registration closing time."];
   if (Number.isFinite(cutoff) && Number.isFinite(start) && cutoff > start) errors.registration_cutoff = ["Registration cutoff must not be after the event starts."];
 }
 

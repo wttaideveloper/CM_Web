@@ -475,7 +475,7 @@ export interface CreateEventPayload {
   venue: CreateEventVenue | null;
   meeting_link: string | null;
   meeting_provider: string | null;
-  price: string;
+  price: string | null;
   pricing_type: "free" | "paid";
   currency: string;
   ticket_types: EventTicketType[];
