@@ -154,7 +154,7 @@ export function TrainingAdvancedSection({ values, update }: SectionProps) {
     <section className="space-y-5">
       <SectionHeading title="Advanced & Collaboration" description="Discussions, announcements, moderation and supplemental notes." tip="JSON fields accept an array or object, e.g. [] or [{}]. Leave empty to omit." />
       <UrlList label="Notes / Handouts (URLs)" values={values.instructor_notes} update={(next) => update("instructor_notes", next)} />
-      <label className={labelClass}>Instructor notes<input value={values.instructor_notes} onChange={(e) => update("instructor_notes", e.target.value)} placeholder="Internal notes for the instructor, not shown to learners" className={inputClass} /></label>
+      <label className={labelClass}>Instructor notes<input value={values.instructor_notes.join(", ")} onChange={(e) => update("instructor_notes", e.target.value.split(",").map((note) => note.trim()).filter(Boolean))} placeholder="Internal notes for the instructor, not shown to learners" className={inputClass} /></label>
       <label className={labelClass}>Notes PDF URL<input type="url" value={values.notes_pdf_url} onChange={(e) => update("notes_pdf_url", e.target.value)} placeholder="https://…" className={inputClass} /></label>
       <label className={labelClass}>FAQs (JSON)<textarea value={values.faqs} onChange={(e) => update("faqs", e.target.value)} placeholder='[{"question":"...","answer":"..."}]' rows={3} className={`${inputClass} h-auto py-2`} /></label>
       <div>

@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import QRCode from "qrcode";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -306,16 +305,7 @@ function DetailGroupHeading({ children }: { children: string }) {
 }
 
 function CheckInQrCard({ payload, displayPayload }: { payload: string; displayPayload: string }) {
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    void QRCode.toDataURL(payload, { width: 220, margin: 2, errorCorrectionLevel: "M" })
-      .then((dataUrl) => { if (active) setQrDataUrl(dataUrl); })
-      .catch(() => { if (active) setQrDataUrl(null); });
-    return () => { active = false; };
-  }, [payload]);
 
   async function copyPayload() {
     try {
@@ -331,10 +321,9 @@ function CheckInQrCard({ payload, displayPayload }: { payload: string; displayPa
     <div className="rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-4 sm:col-span-2">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Check-in QR code</p>
-          <p className="mt-1 text-xs text-[#52736a]">Scan this code to check participants into the training.</p>
+          <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Check-in payload</p>
+          <p className="mt-1 text-xs text-[#52736a]">Use this payload with the check-in workflow.</p>
         </div>
-        {qrDataUrl ? <img src={qrDataUrl} alt="Training check-in QR code" width={160} height={160} className="rounded-lg border border-[#e1ebe6] bg-white p-2" /> : <div className="flex h-40 w-40 items-center justify-center rounded-lg border border-dashed border-[#d7e5df] text-center text-xs text-[#7f9d94]">QR code unavailable</div>}
       </div>
       <div className="mt-3 rounded-lg border border-[#e1ebe6] bg-white p-3">
         <div className="flex items-center justify-between gap-3">
@@ -363,18 +352,21 @@ export default function TrainingDetailsScreen() {
     queryKey: ["trainings", trainingId, "sections"],
     queryFn: () => getTrainingSections(trainingId),
     enabled: activeTab === "details" && Boolean(trainingId),
+    retry: false,
   });
 
   const enrolmentsQuery = useQuery({
     queryKey: ["trainings", trainingId, "enrolments"],
     queryFn: () => listTrainingEnrolments(trainingId),
     enabled: activeTab === "details" && Boolean(trainingId),
+    retry: false,
   });
 
   const progressQuery = useQuery({
     queryKey: ["trainings", trainingId, "progress"],
     queryFn: () => getTrainingProgress(trainingId),
     enabled: Boolean(trainingId),
+    retry: false,
   });
 
   if (trainingQuery.isLoading) {
@@ -535,10 +527,10 @@ export default function TrainingDetailsScreen() {
               <DetailItem label="Discussions" value={Array.isArray((training as unknown as Record<string, unknown>).discussions) ? `${((training as unknown as Record<string, unknown>).discussions as unknown[]).length} threads` : displayValue((training as unknown as Record<string, unknown>).discussions as string)} />
               <DetailItem label="Announcements" value={Array.isArray((training as unknown as Record<string, unknown>).announcements) ? `${((training as unknown as Record<string, unknown>).announcements as unknown[]).length} items` : displayValue((training as unknown as Record<string, unknown>).announcements as string)} />
               <DetailItem label="PDFs" value={Array.isArray((training as unknown as Record<string, unknown>).documents) ? `${((training as unknown as Record<string, unknown>).documents as unknown[]).length} pdfs` : "—"} />
-              <DetailItem label="Duration" value={displayValue(training.duration as string)} />
-              <DetailItem label="Time zone" value={displayValue(training.time_zone as string)} />
-              <DetailItem label="Enrolment start" value={displayValue(training.enrolment_start as string)} />
-              <DetailItem label="Enrolment end" value={displayValue(training.enrolment_end as string)} />
+              <DetailItem label="Duration" value={displayValue((training as unknown as Record<string, unknown>).duration as string)} />
+              <DetailItem label="Time zone" value={displayValue((training as unknown as Record<string, unknown>).time_zone as string)} />
+              <DetailItem label="Enrolment start" value={displayValue((training as unknown as Record<string, unknown>).enrolment_start as string)} />
+              <DetailItem label="Enrolment end" value={displayValue((training as unknown as Record<string, unknown>).enrolment_end as string)} />
               <DetailGroupHeading>Record Information</DetailGroupHeading>
               <DetailItem label="Created" value={formatTrainingDate(training.created_at)} />
               <DetailItem label="Updated" value={formatTrainingDate(training.updated_at)} />

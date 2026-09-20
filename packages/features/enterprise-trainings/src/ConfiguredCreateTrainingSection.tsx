@@ -59,10 +59,8 @@ const CORE_FIELDS: Record<string, keyof CreateTrainingFormValues> = {
   schedule_exceptions: "schedule_exceptions",
   access_information: "access_information",
   meeting_provider: "meeting_provider",
-  meeting_passcode: "meeting_passcode",
   instructor_role: "instructor_role",
   instructor_notes: "instructor_notes",
-  notes_documents: "notes_documents",
   notes_pdf_url: "notes_pdf_url",
   target_audience: "target_audience",
   difficulty_level: "difficulty_level",
@@ -245,8 +243,8 @@ function ConfiguredField({
         </div>
       );
     }
-    // Gallery / notes_documents UrlList with + Add — like TrainingMediaSection:219
-    if (coreField === "gallery_images" || coreField === "notes_documents") {
+    // Gallery UrlList with + Add — like TrainingMediaSection:219
+    if (coreField === "gallery_images") {
       const arr = (values[coreField as keyof CreateTrainingFormValues] as string[]) ?? [];
       return (
         <div className="block text-sm font-semibold text-[#06201c] md:col-span-2">

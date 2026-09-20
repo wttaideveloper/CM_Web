@@ -11,6 +11,9 @@ if (process.env.NODE_ENV === "development") {
 }
 
 const nextConfig: NextConfig = {
+  experimental: {
+    cpus: 1,
+  },
   transpilePackages: [
     "@ihp/auth",
     "@ihp/attributes",

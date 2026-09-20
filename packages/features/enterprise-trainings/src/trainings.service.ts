@@ -650,6 +650,31 @@ export async function listTrainings(params: TrainingListParams = {}): Promise<Tr
   return { items: parsed.items.map(normaliseTrainingListItem), pagination: parsed.pagination };
 }
 
+export interface TrainingUploadResponse {
+  url: string;
+  name: string;
+  size: number;
+  type?: string | null;
+  purpose?: string | null;
+}
+
+/** Uploads lesson media and returns the hosted URL accepted by lesson APIs. */
+export async function uploadTrainingMedia(
+  file: File,
+  purpose: "lesson_video" | "lesson_pdf" | "lesson_document",
+): Promise<TrainingUploadResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("purpose", purpose);
+  const res = await fetch(`${trainingsBasePath}upload`, {
+    method: "POST",
+    body: formData,
+    credentials: "include",
+  });
+  if (!res.ok) throw await createTrainingsApiError(res, "upload training media");
+  return (await res.json()) as TrainingUploadResponse;
+}
+
 function normaliseTrainingListItem(item: TrainingListItem): TrainingListItem {
   if (typeof item.primary_image !== "string" || item.primary_image.trim().length === 0) return { ...item, primary_image: null };
   return { ...item, primary_image: item.primary_image.trim() };
