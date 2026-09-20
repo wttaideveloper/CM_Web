@@ -57,6 +57,7 @@ import {
   updateTrainingAssessment,
   updateTrainingLesson,
   updateTrainingSection,
+  uploadTrainingMedia,
   downloadTrainingCalendar,
   TrainingsApiError,
   type CreateLiveSessionPayload,
@@ -252,6 +253,54 @@ function LessonDocsList({ values, update }: { values: Array<{ url: string; name:
   );
 }
 
+const MAX_LESSON_FILE_BYTES = 10 * 1024 * 1024;
+
+function LessonFileDrop({
+  label,
+  accept,
+  fileName,
+  onFile,
+}: {
+  label: string;
+  accept: string;
+  fileName: string;
+  onFile: (file: File) => void;
+}) {
+  const [isDragging, setIsDragging] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const handleFile = (file: File | undefined) => {
+    if (!file) return;
+    setError(null);
+    onFile(file);
+  };
+  return (
+    <div
+      onDragOver={(event) => { event.preventDefault(); setIsDragging(true); }}
+      onDragLeave={() => setIsDragging(false)}
+      onDrop={(event) => { event.preventDefault(); setIsDragging(false); try { handleFile(event.dataTransfer.files[0]); } catch (dropError) { setError(dropError instanceof Error ? dropError.message : "Unable to add file."); } }}
+      className={`rounded-lg border border-dashed px-3 py-4 text-center text-xs ${isDragging ? "border-[#1f6a58] bg-[#effaf4]" : "border-[#b9d3c8] bg-[#f9fcfa]"}`}
+    >
+      <input
+        type="file"
+        accept={accept}
+        className="sr-only"
+        id={`lesson-file-${label.toLowerCase().replace(/\s+/g, "-")}`}
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file && file.size > MAX_LESSON_FILE_BYTES) setError(`${file.name} is larger than 10 MB.`);
+          else handleFile(file);
+          event.currentTarget.value = "";
+        }}
+      />
+      <label htmlFor={`lesson-file-${label.toLowerCase().replace(/\s+/g, "-")}`} className="cursor-pointer font-semibold text-[#1f6a58]">
+        {fileName || `Drop ${label.toLowerCase()} here or click to browse`}
+      </label>
+      <p className="mt-1 text-[10px] text-[#7f9d94]">Maximum file size: 10 MB</p>
+      {error ? <p role="alert" className="mt-1 text-[10px] font-semibold text-[#b42318]">{error}</p> : null}
+    </div>
+  );
+}
+
 function LessonDetail({ trainingId, sectionId, lessonId, onClose }: { trainingId: string; sectionId: string; lessonId: string; onClose: () => void }) {
   const [editMode, setEditMode] = useState(false);
   const [title, setTitle] = useState("");
@@ -294,7 +343,7 @@ function LessonDetail({ trainingId, sectionId, lessonId, onClose }: { trainingId
         join_url: null,
         meeting_type: null,
         is_downloadable: isDownloadable,
-        file_size: fileSize.trim() ? Number(fileSize) : undefined,
+        file_size: fileSize.trim() || undefined,
         is_preview: isPreview,
         videos: videos.length ? videos : undefined,
         notes: notes.length ? notes : undefined,
@@ -407,10 +456,16 @@ function AddLessonForm({ pending, onSubmit }: { pending: boolean; onSubmit: (pay
   const [videos, setVideos] = useState<string[]>([]);
   const [documents, setDocuments] = useState<Array<{ url: string; name: string; visibility: string; downloadable: boolean }>>([]);
   const [notes, setNotes] = useState<string[]>([]);
+  const [videoFileName, setVideoFileName] = useState("");
+  const [pdfFileName, setPdfFileName] = useState("");
+  const [noteFileName, setNoteFileName] = useState("");
+  const [fileUploadError, setFileUploadError] = useState<string | null>(null);
 
   const reset = () => {
     setTitle(""); setContent(""); setContentUrl(""); setType("text"); setMeetingLink(""); setJoinMeta("");
     setIsPreview(false); setIsDownloadable(false); setFileSize(""); setDuration(""); setVideos([]); setDocuments([]); setNotes([]);
+    setVideoFileName(""); setPdfFileName(""); setNoteFileName("");
+    setFileUploadError(null);
   };
 
   return (
@@ -428,7 +483,7 @@ function AddLessonForm({ pending, onSubmit }: { pending: boolean; onSubmit: (pay
           join_meta: joinMeta.trim() || undefined,
           is_preview: isPreview,
           is_downloadable: isDownloadable,
-          file_size: fileSize.trim() ? Number(fileSize) : undefined,
+          file_size: fileSize.trim() || undefined,
           duration: duration.trim() ? Number(duration) : undefined,
           videos: videos.filter((value) => value.trim()),
           notes: notes.filter((value) => value.trim()),
@@ -443,15 +498,34 @@ function AddLessonForm({ pending, onSubmit }: { pending: boolean; onSubmit: (pay
       }}
     >
       <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">New lesson details</p>
+      {fileUploadError ? <p role="alert" className="rounded-lg border border-[#f0c7c2] bg-[#fff6f5] px-3 py-2 text-xs font-semibold text-[#b42318]">{fileUploadError}</p> : null}
       <input required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Lesson title" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
       <select value={type} onChange={(event) => setType(event.target.value)} aria-label="New lesson type" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]">
         {LESSON_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
       {isLessonType(type, "text", "notes") ? <textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder={type === "notes" ? "Notes content..." : "Topic content..."} rows={3} className="w-full rounded-lg border border-[#d7e5df] px-3 py-2 text-xs outline-none focus:border-[#1f6a58]" /> : null}
-      {isLessonType(type, "video", "youtube") ? <input value={contentUrl} onChange={(event) => setContentUrl(event.target.value)} placeholder={type === "youtube" ? "Paste YouTube link" : "Video URL https://…"} className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
-      {type === "video" ? <LessonUrlList label="Videos" values={videos} update={setVideos} placeholder="Additional video URL https://…" /> : null}
-      {type === "pdf" ? <LessonDocsList values={documents} update={setDocuments} /> : null}
-      {type === "notes" ? <LessonUrlList label="Notes" values={notes} update={setNotes} placeholder="Note URL / link https://…" /> : null}
+      {type === "video" ? <LessonFileDrop label="Video" accept="video/*" fileName={videoFileName} onFile={(file) => {
+        setFileUploadError(null);
+        setVideoFileName(`Uploading ${file.name}...`);
+        void uploadTrainingMedia(file, "lesson_video")
+          .then((uploaded) => { setContentUrl(uploaded.url); setVideoFileName(uploaded.name); setFileSize(String(uploaded.size)); })
+          .catch((error: Error) => { setVideoFileName(""); setFileUploadError(error.message); });
+      }} /> : null}
+      {type === "youtube" ? <input value={contentUrl} onChange={(event) => setContentUrl(event.target.value)} placeholder="Paste YouTube link" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
+      {type === "pdf" ? <LessonFileDrop label="PDF" accept="application/pdf,.pdf" fileName={pdfFileName} onFile={(file) => {
+        setFileUploadError(null);
+        setPdfFileName(`Uploading ${file.name}...`);
+        void uploadTrainingMedia(file, "lesson_pdf")
+          .then((uploaded) => { setDocuments([{ url: uploaded.url, name: uploaded.name, visibility: "public", downloadable: true }]); setFileSize(String(uploaded.size)); setPdfFileName(uploaded.name); })
+          .catch((error: Error) => { setPdfFileName(""); setFileUploadError(error.message); });
+      }} /> : null}
+      {type === "notes" ? <LessonFileDrop label="note" accept=".txt,.md,.rtf,text/plain,text/markdown" fileName={noteFileName} onFile={(file) => {
+        setFileUploadError(null);
+        setNoteFileName(`Uploading ${file.name}...`);
+        void uploadTrainingMedia(file, "lesson_document")
+          .then((uploaded) => { setNotes([uploaded.url]); setFileSize(String(uploaded.size)); setNoteFileName(uploaded.name); })
+          .catch((error: Error) => { setNoteFileName(""); setFileUploadError(error.message); });
+      }} /> : null}
       {type === "video" ? <input value={duration} onChange={(event) => setDuration(event.target.value)} placeholder="Duration (minutes)" type="number" min="0" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
       {isLessonType(type, "video", "pdf", "notes") ? (
         <div className="flex flex-wrap gap-4">
@@ -514,6 +588,7 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
     queryKey: ["trainings", trainingId, "assessments"],
     queryFn: () => listTrainingAssessments(trainingId),
     enabled: Boolean(trainingId),
+    retry: false,
   });
 
   const addSectionQuestionMutation = useMutation({
@@ -1808,7 +1883,7 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
       <aside className="space-y-5">
         <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
           <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Progress</p>
-          {progressQuery.isLoading ? <p className="mt-2 text-sm text-[#52736a]">Loading...</p> : <ProgressSummaryCard data={progressQuery.data} />}
+          {progressQuery.isLoading ? <p className="mt-2 text-sm text-[#52736a]">Loading...</p> : progressQuery.isError ? <p role="alert" className="mt-2 text-sm font-semibold text-[#b42318]">Progress is temporarily unavailable from the Training API.</p> : <ProgressSummaryCard data={progressQuery.data} />}
         </section>
       </aside>
     </div>
@@ -2026,6 +2101,7 @@ export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
     >
       {feedback ? <p role="status" className="mb-4 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">{feedback}</p> : null}
       {assessmentsQuery.isLoading ? <p className="text-sm text-[#52736a]">Loading...</p> : null}
+      {assessmentsQuery.isError ? <p role="alert" className="text-sm font-semibold text-[#b42318]">Assessments are temporarily unavailable from the Training API.</p> : null}
       {assessments.length === 0 && !assessmentsQuery.isLoading ? <p className="text-sm text-[#52736a]">No assessments yet.</p> : null}
       <QuestionBankBrowser trainingId={trainingId} />
       <ul className="mt-3 grid gap-2">

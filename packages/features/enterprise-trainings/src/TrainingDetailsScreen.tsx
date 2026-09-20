@@ -352,18 +352,21 @@ export default function TrainingDetailsScreen() {
     queryKey: ["trainings", trainingId, "sections"],
     queryFn: () => getTrainingSections(trainingId),
     enabled: activeTab === "details" && Boolean(trainingId),
+    retry: false,
   });
 
   const enrolmentsQuery = useQuery({
     queryKey: ["trainings", trainingId, "enrolments"],
     queryFn: () => listTrainingEnrolments(trainingId),
     enabled: activeTab === "details" && Boolean(trainingId),
+    retry: false,
   });
 
   const progressQuery = useQuery({
     queryKey: ["trainings", trainingId, "progress"],
     queryFn: () => getTrainingProgress(trainingId),
     enabled: Boolean(trainingId),
+    retry: false,
   });
 
   if (trainingQuery.isLoading) {
