@@ -6,6 +6,7 @@ import { useCurrentEnterprise, useTenant } from "@ihp/enterprise-runtime";
 import Link from "next/link";
 
 import TrainingActionsMenu from "./TrainingActionsMenu";
+import { humanizeLabel } from "./detail-formatters";
 import { PRODUCT_TRAINING_STATUSES, getTrainingStatusBadgeClass, getTrainingStatusLabel } from "./training-status";
 import { listTrainings, searchTrainings, getTrainingsReportSummary, type TrainingListItem } from "./trainings.service";
 
@@ -144,7 +145,7 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
           </div>
           <div className="min-w-0">
             <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Location</p>
-            <p className={`mt-1 font-semibold ${primaryTextClass}`}>{training.delivery_mode || "—"}</p>
+            <p className={`mt-1 font-semibold ${primaryTextClass}`}>{training.delivery_mode ? humanizeLabel(training.delivery_mode) : "—"}</p>
           </div>
           <div className="min-w-0">
             <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Registrations</p>
@@ -213,6 +214,7 @@ export default function EnterpriseTrainingsScreen() {
     return sortTrainings(trainingsQuery.data?.items ?? [], sort);
   }, [trainingsQuery.data?.items, sort]);
   const pagination = trainingsQuery.data?.pagination;
+  const hasActiveFilters = Boolean(debouncedQuery) || statusFilter !== "all" || levelFilter !== "all" || languageFilter !== "all";
 
   const showStatusFeedback = () => setStatusFeedback("Training status updated.");
   const showDuplicateFeedback = () => setStatusFeedback("Training duplicated.");
@@ -308,10 +310,10 @@ export default function EnterpriseTrainingsScreen() {
             <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Language</span>
             <select value={languageFilter} onChange={(e) => { setLanguageFilter(e.target.value); setPage(1); }} className="mt-2 h-12 w-full rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]">
               <option value="all">All languages</option>
-              <option value="English">English</option>
-              <option value="Hindi">Hindi</option>
-              <option value="Spanish">Spanish</option>
-              <option value="French">French</option>
+              <option value="en">English</option>
+              <option value="hi">Hindi</option>
+              <option value="es">Spanish</option>
+              <option value="fr">French</option>
             </select>
           </label>
         </div>
@@ -349,16 +351,26 @@ export default function EnterpriseTrainingsScreen() {
         </section>
       ) : trainingsQuery.isError ? (
         <section className="mt-6 rounded-2xl border border-[#f3d5d1] bg-[#fff7f6] px-8 py-12 text-center shadow-sm" role="alert">
-          <p className="text-2xl" aria-hidden="true">�</p>
+          <p className="text-2xl" aria-hidden="true">!</p>
           <p className="mt-3 text-base font-bold text-[#b42318]">We couldn’t load trainings</p>
           <p className="mt-2 text-sm leading-5 text-[#6b5a52]">{(trainingsQuery.error as Error).message || "Check your connection and try again."}</p>
           <button type="button" onClick={() => void trainingsQuery.refetch()} className="mt-5 inline-flex h-10 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm hover:bg-[#195646]">Try again</button>
         </section>
       ) : !pagination || visibleTrainings.length === 0 ? (
         <section className="mt-6 rounded-2xl border border-dashed border-[#cfe0d8] bg-[#f9fcfa] px-8 py-16 text-center shadow-sm">
-          <p className="mt-3 text-base font-bold text-[#06201c]">No trainings yet</p>
-          <p className="mt-2 mx-auto max-w-md text-sm leading-5 text-[#52736a]">Create your first training to start enrolling learners. Use a clear title and a great cover image — it makes all the difference.</p>
-          <a href="/admin/trainings/create" className="mt-5 inline-flex h-10 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm hover:bg-[#195646]">+ Create Training</a>
+          <p className="mt-3 text-base font-bold text-[#06201c]">{hasActiveFilters ? "No trainings match these filters" : "No trainings yet"}</p>
+          <p className="mt-2 mx-auto max-w-md text-sm leading-5 text-[#52736a]">
+            {hasActiveFilters
+              ? "Try changing your search or filters to find other trainings."
+              : "Create your first training to start enrolling learners. Use a clear title and a great cover image — it makes all the difference."}
+          </p>
+          {!hasActiveFilters ? (
+            enterpriseId ? (
+              <a href="/admin/trainings/create" className="mt-5 inline-flex h-10 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm hover:bg-[#195646]">+ Create Training</a>
+            ) : (
+              <button type="button" disabled title="Enterprise required" className="mt-5 inline-flex h-10 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white opacity-60">+ Create Training</button>
+            )
+          ) : null}
         </section>
       ) : (
         <>

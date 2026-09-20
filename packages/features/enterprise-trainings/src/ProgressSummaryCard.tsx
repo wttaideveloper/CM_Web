@@ -77,15 +77,15 @@ export default function ProgressSummaryCard({ data }: { data: unknown }) {
           ) : null}
           {sectionsDone !== null && totalSections !== null ? (
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Sections</p>
-              <p className="mt-1 font-semibold text-[#06201c]">{sectionsDone} of {totalSections} completed</p>
+              <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Sessions</p>
+              <p className="mt-1 font-semibold text-[#06201c]">{sectionsDone} of {totalSections} sessions completed</p>
             </div>
           ) : null}
         </div>
       ) : null}
       {sectionRows.length > 0 ? (
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">By section</p>
+          <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">By session</p>
           <ul className="mt-2 space-y-1.5">
             {sectionRows.map((section, index) => (
               <li key={`${section.title}-${index}`} className="flex items-baseline justify-between gap-3">

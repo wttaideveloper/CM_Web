@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
-import { formatTrainingDate, formatTrainingPrice } from "./detail-formatters";
+import { formatTrainingDate, formatTrainingPrice, humanizeLabel } from "./detail-formatters";
 import {
   checkoutTraining,
   enrolInTraining,
@@ -156,7 +156,7 @@ export default function TrainingBookingFlow({ trainingId: trainingIdProp }: { tr
               <p className="text-sm text-[#52736a]">Price: <span className="font-bold text-[#06201c]">{formatTrainingPrice(training.price, training.currency)}</span></p>
               <p className="text-sm text-[#52736a]">Seats left: <span className="font-bold text-[#06201c]">{availableSlots ?? "—"}</span></p>
               <p className="text-sm text-[#52736a]">Starts: <span className="font-bold text-[#06201c]">{typeof record.start_date === "string" ? formatTrainingDate(record.start_date) : "—"}</span></p>
-              <p className="text-sm text-[#52736a]">Mode: <span className="font-bold text-[#06201c]">{typeof training.delivery_mode === "string" ? training.delivery_mode : "—"}</span></p>
+              <p className="text-sm text-[#52736a]">Mode: <span className="font-bold text-[#06201c]">{typeof training.delivery_mode === "string" ? humanizeLabel(training.delivery_mode) : "—"}</span></p>
             </div>
             {soldOut ? <p className="rounded-xl bg-[#fff7e5] px-4 py-3 text-sm font-semibold text-[#b7791f]">Sold out — you can join the waitlist on the next step.</p> : null}
           </section>
