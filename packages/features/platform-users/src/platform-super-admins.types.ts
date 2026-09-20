@@ -31,61 +31,39 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function hasOnlyKeys(value: Record<string, unknown>, allowedKeys: readonly string[]): boolean {
-  return Object.keys(value).every((key) => allowedKeys.includes(key));
-}
-
-function readRequiredString(value: Record<string, unknown>, key: string): string | null {
-  const candidate = value[key];
+function readRequiredString(value: Record<string, unknown>, ...keys: string[]): string | null {
+  const candidate = keys.map((key) => value[key]).find((item) => typeof item === "string" && item.trim());
   return typeof candidate === "string" && candidate.trim() ? candidate.trim() : null;
 }
 
-function readNullableString(value: Record<string, unknown>, key: string): string | null | undefined {
-  const candidate = value[key];
-  return candidate === null ? null : typeof candidate === "string" ? candidate : undefined;
+function readNullableString(value: Record<string, unknown>, ...keys: string[]): string | null {
+  const candidate = keys.map((key) => value[key]).find((item) => item !== undefined);
+  return candidate === null || candidate === undefined ? null : typeof candidate === "string" ? candidate : null;
 }
 
 function parseInvitedBy(value: unknown): PlatformSuperAdminInviter | null | undefined {
   if (value === null) return null;
-  if (!isRecord(value) || !hasOnlyKeys(value, ["id", "email", "fullName"])) return undefined;
+  if (!isRecord(value)) return undefined;
 
-  const id = readRequiredString(value, "id");
+  const id = readRequiredString(value, "id", "userId", "user_id");
   const email = readRequiredString(value, "email");
-  const fullName = readRequiredString(value, "fullName");
+  const fullName = readRequiredString(value, "fullName", "full_name") ?? email;
   return id && email && fullName ? { id, email, fullName } : undefined;
 }
 
 function parseSuperAdmin(value: unknown): PlatformSuperAdmin | null {
-  if (
-    !isRecord(value) ||
-    !hasOnlyKeys(value, [
-      "id",
-      "email",
-      "fullName",
-      "isSuperAdmin",
-      "status",
-      "emailVerified",
-      "inviteStatus",
-      "keycloakId",
-      "createdAt",
-      "lastLoginAt",
-      "lastActivatedAt",
-      "invitedBy",
-    ])
-  ) {
-    return null;
-  }
+  if (!isRecord(value)) return null;
 
   const id = readRequiredString(value, "id");
   const email = readRequiredString(value, "email");
-  const fullName = readRequiredString(value, "fullName");
-  const status = readRequiredString(value, "status");
-  const inviteStatus = readRequiredString(value, "inviteStatus");
-  const keycloakId = readRequiredString(value, "keycloakId");
-  const createdAt = readRequiredString(value, "createdAt");
-  const lastLoginAt = readNullableString(value, "lastLoginAt");
-  const lastActivatedAt = readNullableString(value, "lastActivatedAt");
-  const invitedBy = parseInvitedBy(value.invitedBy);
+  const fullName = readRequiredString(value, "fullName", "full_name") ?? email;
+  const status = readRequiredString(value, "status") ?? "unknown";
+  const inviteStatus = readRequiredString(value, "inviteStatus", "invite_status") ?? "unknown";
+  const keycloakId = readRequiredString(value, "keycloakId", "keycloak_id", "userId", "user_id") ?? id;
+  const createdAt = readRequiredString(value, "createdAt", "created_at") ?? "";
+  const lastLoginAt = readNullableString(value, "lastLoginAt", "last_login_at");
+  const lastActivatedAt = readNullableString(value, "lastActivatedAt", "last_activated_at");
+  const invitedBy = parseInvitedBy(value.invitedBy ?? value.invited_by) ?? null;
 
   if (
     !id ||
@@ -93,13 +71,7 @@ function parseSuperAdmin(value: unknown): PlatformSuperAdmin | null {
     !fullName ||
     !status ||
     !inviteStatus ||
-    !keycloakId ||
-    !createdAt ||
-    typeof value.isSuperAdmin !== "boolean" ||
-    typeof value.emailVerified !== "boolean" ||
-    lastLoginAt === undefined ||
-    lastActivatedAt === undefined ||
-    invitedBy === undefined
+    !keycloakId
   ) {
     return null;
   }
@@ -108,9 +80,9 @@ function parseSuperAdmin(value: unknown): PlatformSuperAdmin | null {
     id,
     email,
     fullName,
-    isSuperAdmin: value.isSuperAdmin,
+    isSuperAdmin: value.isSuperAdmin === true,
     status,
-    emailVerified: value.emailVerified,
+    emailVerified: value.emailVerified === true,
     inviteStatus,
     keycloakId,
     createdAt,
@@ -122,11 +94,18 @@ function parseSuperAdmin(value: unknown): PlatformSuperAdmin | null {
 
 /** Parses only the confirmed dedicated Super Admin collection contract. */
 export function parsePlatformSuperAdminsResponse(value: unknown): PlatformSuperAdminsResponse {
-  if (!isRecord(value) || !hasOnlyKeys(value, ["message", "data", "total"]) || typeof value.message !== "string" || !Array.isArray(value.data) || typeof value.total !== "number") {
-    throw new Error();
-  }
+  const records = Array.isArray(value)
+    ? value
+    : isRecord(value) && Array.isArray(value.data)
+      ? value.data
+      : isRecord(value) && Array.isArray(value.items)
+        ? value.items
+        : isRecord(value) && Array.isArray(value.users)
+          ? value.users
+          : null;
+  if (!records) throw new Error();
 
-  const items = value.data.map(parseSuperAdmin);
-  if (items.some((item) => item === null)) throw new Error();
-  return { items: items as PlatformSuperAdmin[], total: value.total };
+  const items = records.map(parseSuperAdmin).filter((item): item is PlatformSuperAdmin => item !== null);
+  const total = isRecord(value) && typeof value.total === "number" ? value.total : items.length;
+  return { items, total };
 }
