@@ -535,10 +535,10 @@ export default function TrainingDetailsScreen() {
               <DetailItem label="Discussions" value={Array.isArray((training as unknown as Record<string, unknown>).discussions) ? `${((training as unknown as Record<string, unknown>).discussions as unknown[]).length} threads` : displayValue((training as unknown as Record<string, unknown>).discussions as string)} />
               <DetailItem label="Announcements" value={Array.isArray((training as unknown as Record<string, unknown>).announcements) ? `${((training as unknown as Record<string, unknown>).announcements as unknown[]).length} items` : displayValue((training as unknown as Record<string, unknown>).announcements as string)} />
               <DetailItem label="PDFs" value={Array.isArray((training as unknown as Record<string, unknown>).documents) ? `${((training as unknown as Record<string, unknown>).documents as unknown[]).length} pdfs` : "—"} />
-              <DetailItem label="Duration" value={displayValue(training.duration as string)} />
-              <DetailItem label="Time zone" value={displayValue(training.time_zone as string)} />
-              <DetailItem label="Enrolment start" value={displayValue(training.enrolment_start as string)} />
-              <DetailItem label="Enrolment end" value={displayValue(training.enrolment_end as string)} />
+              <DetailItem label="Duration" value={displayValue((training as unknown as Record<string, unknown>).duration as string)} />
+              <DetailItem label="Time zone" value={displayValue((training as unknown as Record<string, unknown>).time_zone as string)} />
+              <DetailItem label="Enrolment start" value={displayValue((training as unknown as Record<string, unknown>).enrolment_start as string)} />
+              <DetailItem label="Enrolment end" value={displayValue((training as unknown as Record<string, unknown>).enrolment_end as string)} />
               <DetailGroupHeading>Record Information</DetailGroupHeading>
               <DetailItem label="Created" value={formatTrainingDate(training.created_at)} />
               <DetailItem label="Updated" value={formatTrainingDate(training.updated_at)} />

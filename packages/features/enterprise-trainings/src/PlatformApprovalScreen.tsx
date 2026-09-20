@@ -16,8 +16,6 @@ import { getTrainingStatusBadgeClass, getTrainingStatusLabel, type TrainingStatu
 
 /** Platform Admin approval calls go through the bearer-token BFF (Super Admin session),
  * not the cookie rewrite — the marketplace backend cannot validate the Keycloak session cookie. */
-const trainingApprovalsBase = "/api/platform-super-admin/training-approvals";
-
 function ApprovalNoteForm({
   trainingId,
   kind,
@@ -33,8 +31,8 @@ function ApprovalNoteForm({
 
   const mutation = useMutation({
     mutationFn: () => {
-      if (kind === "reject") return rejectTraining(trainingId, trainingApprovalsBase);
-      return requestChangesTraining(trainingId, reason.trim(), trainingApprovalsBase);
+      if (kind === "reject") return rejectTraining(trainingId);
+      return requestChangesTraining(trainingId, reason.trim());
     },
     onSuccess: () => {
       setFeedback(kind === "reject" ? "Training rejected." : "Changes requested.");
@@ -88,7 +86,7 @@ function AdminDetail({ trainingId, onBack }: { trainingId: string; onBack: () =>
 
   const detailQuery = useQuery({
     queryKey: ["admin", "trainings", trainingId],
-    queryFn: () => adminGetTraining(trainingId, trainingApprovalsBase),
+    queryFn: () => adminGetTraining(trainingId),
     enabled: Boolean(trainingId),
     staleTime: 30_000,
   });
@@ -101,7 +99,7 @@ function AdminDetail({ trainingId, onBack }: { trainingId: string; onBack: () =>
   });
 
   const approveMutation = useMutation({
-    mutationFn: () => approveTraining(trainingId, trainingApprovalsBase),
+    mutationFn: () => approveTraining(trainingId),
     onSuccess: () => {
       setFeedback("Training approved.");
       void queryClient.invalidateQueries({ queryKey: ["admin", "trainings", "pending"] });
@@ -272,7 +270,7 @@ export function PlatformApprovalScreen() {
 
   const pendingQuery = useQuery({
     queryKey: ["admin", "trainings", "pending"],
-    queryFn: () => listPendingTrainings({}, trainingApprovalsBase),
+    queryFn: () => listPendingTrainings({}),
     staleTime: 30_000,
   });
 

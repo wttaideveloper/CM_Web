@@ -1623,7 +1623,11 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
   const participantPickerId = `mark-for-${trainingId}`;
   const enrolledEmails = Array.isArray(enrolments)
     ? enrolments
-      .map((raw) => raw && typeof raw === "object" && typeof (raw as Record<string, unknown>).participant_email === "string" ? (raw as Record<string, unknown>).participant_email.trim().toLowerCase() : "")
+      .map((raw) => {
+        if (!raw || typeof raw !== "object") return "";
+        const participantEmailValue = (raw as Record<string, unknown>).participant_email;
+        return typeof participantEmailValue === "string" ? participantEmailValue.trim().toLowerCase() : "";
+      })
       .filter(Boolean)
     : [];
   const normalizedParticipantEmail = participantEmail.trim().toLowerCase();
