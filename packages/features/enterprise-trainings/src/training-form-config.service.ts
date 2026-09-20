@@ -73,6 +73,31 @@ function mapSimpleTrainingFormSections(rawSections: Array<Record<string, unknown
   }));
 }
 
+function extractConfigurationItems(raw: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(raw)) return raw.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"));
+  if (!raw || typeof raw !== "object") return [];
+  const record = raw as Record<string, unknown>;
+  for (const key of ["items", "results", "data", "configurations"]) {
+    const value = record[key];
+    if (Array.isArray(value)) return value.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"));
+  }
+  return [];
+}
+
+function isPublishedActiveGlobalConfiguration(configuration: Record<string, unknown>): boolean {
+  const status = typeof configuration.status === "string" ? configuration.status.toLowerCase() : "";
+  const scope = typeof configuration.scope === "string" ? configuration.scope.toLowerCase() : "";
+  return configuration.is_active === true
+    && (configuration.is_global === true || scope === "global")
+    && (status === "published" || status === "active" || status === "");
+}
+
+function isUsableActiveConfigurationResponse(configuration: Record<string, unknown>): boolean {
+  const status = typeof configuration.status === "string" ? configuration.status.toLowerCase() : "";
+  if (configuration.is_active === false || ["draft", "inactive", "retired", "archived"].includes(status)) return false;
+  return true;
+}
+
 export interface TrainingFormField {
   id: string;
   key: string; // maps to TrainingCreate field, e.g. "title", "category", "custom.delivery_mode"
@@ -221,6 +246,9 @@ export async function getTrainingFormConfigActive(): Promise<TrainingFormConfig 
     const text = await res.text();
     if (text) {
       const raw = JSON.parse(text) as unknown;
+      if (raw && typeof raw === "object" && !isUsableActiveConfigurationResponse(raw as Record<string, unknown>)) {
+        return null;
+      }
       if (raw && typeof raw === "object" && "draft_version" in (raw as Record<string, unknown>)) {
         const full = raw as Record<string, unknown>;
         const draft = ((full as Record<string, unknown>).published_version ?? full.draft_version) as Record<string, unknown> | null | undefined;
@@ -317,8 +345,8 @@ export async function getTrainingFormConfigActive(): Promise<TrainingFormConfig 
     const listRes = await fetch(`/api/v1/admin/training-form-configurations/`, { credentials: "include", cache: "no-store" });
     if (listRes.ok) {
       const list = (await listRes.json()) as unknown;
-      const items = Array.isArray(list) ? list : Array.isArray((list as Record<string, unknown>).items) ? (list as Record<string, unknown>).items as unknown[] : [];
-      const activeGlobal = (items as Array<Record<string, unknown>>).find(i => i.is_active === true || i.is_global === true || (i.scope === "global" && (i.status === "published" || i.status === "active")));
+      const items = extractConfigurationItems(list);
+      const activeGlobal = items.find(isPublishedActiveGlobalConfiguration);
       if (activeGlobal && typeof activeGlobal.id === "string") {
         const detailRes = await fetch(`/api/v1/admin/training-form-configurations/${encodeURIComponent(activeGlobal.id)}`, { credentials: "include", cache: "no-store" });
         if (detailRes.ok) {

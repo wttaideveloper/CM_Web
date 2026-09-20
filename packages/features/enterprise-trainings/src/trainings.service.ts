@@ -310,10 +310,17 @@ export type UpdateTrainingPayload = Partial<CreateTrainingPayload>;
 /** Payload for `POST /api/v1/trainings/{id}/sections`. */
 export interface CreateTrainingSectionPayload {
   title: string;
+  type?: "session" | "video" | "live" | "venue" | string | null;
   description?: string | null;
   order?: number | null;
+  scheduled_at?: string | null;
+  meeting_type?: "google_meet" | "zoom" | "teams" | "webex" | "other" | string | null;
   meeting_link?: string | null;
   join_url?: string | null;
+  venue_name?: string | null;
+  venue_address?: string | null;
+  pass_code?: string | null;
+  check_in_window?: string | null;
   assessment_id?: string | null;
   [key: string]: unknown;
 }
@@ -322,7 +329,7 @@ export interface CreateTrainingSectionPayload {
 export type UpdateTrainingSectionPayload = Partial<CreateTrainingSectionPayload>;
 
 /** Payload for `POST /api/v1/trainings/{id}/sections/{section_id}/lessons`. */
-export type TrainingLessonType = "text" | "video" | "audio" | "webpage" | "pdf" | "live" | "presentation" | "worksheet" | "document" | "venue" | "exam";
+export type TrainingLessonType = "text" | "video" | "youtube" | "audio" | "webpage" | "pdf" | "live" | "presentation" | "worksheet" | "document" | "venue" | "exam";
 
 export interface CreateTrainingLessonPayload {
   title: string;
@@ -336,7 +343,7 @@ export interface CreateTrainingLessonPayload {
   is_downloadable?: boolean | null;
   is_draft?: boolean | null;
   is_mandatory?: boolean | null;
-  file_size?: number | null;
+  file_size?: string | number | null;
   meeting_link?: string | null;
   join_meta?: string | null;
   thumbnail_url?: string | null;
@@ -347,8 +354,11 @@ export interface CreateTrainingLessonPayload {
   assessment_id?: string | null;
   completion_rule?: string | null;
   prerequisites?: string[] | null;
-  release_rule?: string | null;
+  release_rule?: Record<string, unknown> | string | null;
   instructor_id?: string | null;
+  videos?: string[] | null;
+  documents?: Array<Record<string, unknown>> | null;
+  notes?: string[] | null;
   [key: string]: unknown;
 }
 
@@ -369,7 +379,6 @@ export interface CreateTrainingAssessmentPayload {
   type?: string | null;
   passing_score?: number | null;
   time_limit_minutes?: number | null;
-  attempts_allowed?: number | null;
   max_attempts?: number | null;
   section_id?: string | null;
   lesson_id?: string | null;
@@ -380,7 +389,7 @@ export interface CreateTrainingAssessmentPayload {
 export interface CreateAssessmentQuestionPayload {
   question_text: string;
   question_type?: string | null;
-  options?: Array<string | { id?: string; label?: string }> | null;
+  options?: string[] | null;
   correct_answer?: string | null;
   points?: number | null;
   explanation?: string | null;
@@ -398,7 +407,6 @@ export interface SubmitAssessmentPayload {
 /** Payload for `POST /api/v1/trainings/{id}/assignments`. */
 export interface CreateTrainingAssignmentPayload {
   title: string;
-  instructions?: string | null;
   description?: string | null;
   due_date?: string | null;
   max_score?: number | null;
@@ -407,16 +415,14 @@ export interface CreateTrainingAssignmentPayload {
 
 /** Payload for `POST /api/v1/trainings/{id}/assignments/{aid}/submit`. */
 export interface SubmitAssignmentPayload {
-  submission_text?: string | null;
-  file_url?: string | null;
   content?: string | null;
+  file_url?: string | null;
   [key: string]: unknown;
 }
 
 /** Payload for `POST .../grade`. */
 export interface GradeSubmissionPayload {
-  grade?: string | number | null;
-  score?: number | null;
+  score: number;
   feedback?: string | null;
   [key: string]: unknown;
 }
@@ -454,7 +460,6 @@ export interface CompleteLessonPayload {
 export interface CreateTrainingAnnouncementPayload {
   title?: string | null;
   message: string;
-  channel?: "in_app" | "email" | "sms" | "both";
   recipient_type?: "all" | "registered" | "specific";
   channels?: Array<"in_app" | "push" | "email" | "sms">;
   [key: string]: unknown;
@@ -474,9 +479,6 @@ export interface TrainingTopic {
   id: string;
   title: string;
   content?: string | null;
-  videos?: string[] | null;
-  documents?: Array<{ url: string; name?: string; visibility?: string; downloadable?: boolean }> | null;
-  notes?: string[] | null;
   [key: string]: unknown;
 }
 
@@ -859,28 +861,6 @@ export async function updateTrainingLesson(
   return (await res.json()) as unknown;
 }
 
-/** Removes a single attachment from a lesson media list (documents | videos | notes). */
-export async function deleteTrainingLessonMedia(
-  trainingId: string,
-  sectionId: string,
-  lessonId: string,
-  kind: "documents" | "videos" | "notes",
-  url: string,
-): Promise<unknown> {
-  const res = await fetch(
-    `${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/media?kind=${encodeURIComponent(kind)}&url=${encodeURIComponent(url)}`,
-    { method: "DELETE", credentials: "include" },
-  );
-  if (!res.ok) throw await createTrainingsApiError(res, "remove this attachment");
-  const text = await res.text();
-  if (!text) return null;
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return text;
-  }
-}
-
 /** Deletes a lesson. */
 export async function deleteTrainingLesson(trainingId: string, sectionId: string, lessonId: string): Promise<unknown> {
   const res = await fetch(
@@ -992,7 +972,8 @@ export async function getAssessmentSubmissionReview(trainingId: string, assessme
   return (await res.json()) as unknown;
 }
 
-/** Lists assignments for a Training — `GET /trainings/{id}/assignments`. Returns the array (or `items` wrapper) when present. */
+/** Lists assignments for a Training — `GET /trainings/{id}/assignments`.
+ *  Backend currently returns 405; gracefully returns [] until the endpoint is implemented. */
 export async function listTrainingAssignments(trainingId: string): Promise<unknown[]> {
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/assignments`, {
     credentials: "include",
@@ -1399,50 +1380,46 @@ export async function createTrainingAnnouncement(trainingId: string, payload: Cr
 // Admin
 // ---------------------------------------------------------------------------
 
-/** Base path for the admin approval endpoints. Platform Admin passes its bearer-token BFF
- * (`/api/platform-super-admin/training-approvals`); Enterprise Admin uses the cookie rewrite default. */
-export const trainingsAdminBasePath = "/api/v1/admin/trainings";
-
 /** Lists pending trainings for admin approval. */
-export async function listPendingTrainings(params: { page?: number; page_size?: number; enterprise_id?: string; category?: string } = {}, adminBasePath: string = trainingsAdminBasePath): Promise<unknown> {
+export async function listPendingTrainings(params: { page?: number; page_size?: number; enterprise_id?: string; category?: string } = {}): Promise<unknown> {
   const sp = toSearchParams(params as Record<string, unknown>);
   const qs = sp.toString() ? `?${sp.toString()}` : "";
-  const res = await fetch(`${adminBasePath}/pending${qs}`, { credentials: "include", cache: "no-store" });
+  const res = await fetch(`/api/v1/admin/trainings/pending${qs}`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "load pending trainings");
   return (await res.json()) as unknown;
 }
 
 /** Approves a pending training. */
-export async function approveTraining(trainingId: string, adminBasePath: string = trainingsAdminBasePath): Promise<unknown> {
-  const res = await fetch(`${adminBasePath}/${encodeURIComponent(trainingId)}/approve`, { method: "POST", credentials: "include" });
+export async function approveTraining(trainingId: string): Promise<unknown> {
+  const res = await fetch(`/api/v1/admin/trainings/${encodeURIComponent(trainingId)}/approve`, { method: "POST", credentials: "include" });
   if (!res.ok) throw await createTrainingsApiError(res, "approve this training");
   return (await res.json().catch(() => null)) as unknown;
 }
 
 /** Rejects a pending training. */
-export async function rejectTraining(trainingId: string, adminBasePath: string = trainingsAdminBasePath): Promise<unknown> {
-  const res = await fetch(`${adminBasePath}/${encodeURIComponent(trainingId)}/reject`, { method: "POST", credentials: "include" });
+export async function rejectTraining(trainingId: string): Promise<unknown> {
+  const res = await fetch(`/api/v1/admin/trainings/${encodeURIComponent(trainingId)}/reject`, { method: "POST", credentials: "include" });
   if (!res.ok) throw await createTrainingsApiError(res, "reject this training");
   return (await res.json().catch(() => null)) as unknown;
 }
 
 /** Publishes a training via admin. */
-export async function publishTraining(trainingId: string, adminBasePath: string = trainingsAdminBasePath): Promise<unknown> {
-  const res = await fetch(`${adminBasePath}/${encodeURIComponent(trainingId)}/publish`, { method: "POST", credentials: "include" });
+export async function publishTraining(trainingId: string): Promise<unknown> {
+  const res = await fetch(`/api/v1/admin/trainings/${encodeURIComponent(trainingId)}/publish`, { method: "POST", credentials: "include" });
   if (!res.ok) throw await createTrainingsApiError(res, "publish this training");
   return (await res.json().catch(() => null)) as unknown;
 }
 
 /** Admin detail view for approval review — `GET /admin/trainings/{id}`. */
-export async function adminGetTraining(trainingId: string, adminBasePath: string = trainingsAdminBasePath): Promise<unknown> {
-  const res = await fetch(`${adminBasePath}/${encodeURIComponent(trainingId)}`, { credentials: "include", cache: "no-store" });
+export async function adminGetTraining(trainingId: string): Promise<unknown> {
+  const res = await fetch(`/api/v1/admin/trainings/${encodeURIComponent(trainingId)}`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "get admin training detail");
   return (await res.json()) as unknown;
 }
 
 /** Admin requests changes before approval — `POST /admin/trainings/{id}/request-changes`. */
-export async function requestChangesTraining(trainingId: string, reason: string, adminBasePath: string = trainingsAdminBasePath): Promise<unknown> {
-  const res = await fetch(`${adminBasePath}/${encodeURIComponent(trainingId)}/request-changes`, {
+export async function requestChangesTraining(trainingId: string, reason: string): Promise<unknown> {
+  const res = await fetch(`/api/v1/admin/trainings/${encodeURIComponent(trainingId)}/request-changes`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -1777,11 +1754,29 @@ export async function exportTrainingEnrolments(trainingId: string): Promise<{ bl
 
 /** Lists reviews — `GET /trainings/{id}/reviews`. */
 export async function listTrainingReviews(trainingId: string): Promise<unknown[]> {
-  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/reviews`, { credentials: "include", cache: "no-store" });
-  if (!res.ok) throw await createTrainingsApiError(res, "load reviews");
-  const value = (await res.json()) as unknown;
-  if (!Array.isArray(value)) throw new Error("Trainings API returned an invalid reviews response.");
-  return value;
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 10_000);
+  try {
+    const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/reviews`, {
+      credentials: "include",
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!res.ok) throw await createTrainingsApiError(res, "load reviews");
+    const value = (await res.json()) as unknown;
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === "object" && Array.isArray((value as { reviews?: unknown }).reviews)) {
+      return (value as { reviews: unknown[] }).reviews;
+    }
+    throw new Error("Trainings API returned an invalid reviews response.");
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Loading reviews timed out. Please try again.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 }
 
 /** Creates a review — `POST /trainings/{id}/reviews`. */
@@ -2015,61 +2010,4 @@ export async function batchCheckInTrainingParticipants(trainingId: string, paylo
   const value = (await res.json()) as unknown;
   if (!isTrainingBatchCheckInResponse(value)) throw new Error("Trainings API returned an invalid batch check-in response.");
   return value;
-}
-
-// ---- Media upload (lessons videos / PDFs / notes) ----
-
-/** Upload-purpose enum matching the backend TrainingUploadPurpose literal. */
-export type TrainingUploadPurpose = "lesson_video" | "lesson_pdf" | "lesson_document";
-
-/** Result returned to the caller after a successful media upload. */
-export interface TrainingMediaUploadResult {
-  mediaUrl: string;
-  mediaId: string;
-  storageKey: string;
-  fileName: string;
-  contentType: string;
-  sizeBytes: number;
-}
-
-/** Maps file MIME to the backend purpose enum. */
-function purposeForFile(file: File): TrainingUploadPurpose {
-  const type = file.type || "";
-  if (type.startsWith("video/")) return "lesson_video";
-  if (type === "application/pdf" || type.endsWith("/pdf")) return "lesson_pdf";
-  return "lesson_document";
-}
-
-/**
- * Single-step multipart upload via POST /api/v1/trainings/upload.
- * Returns the persisted media URL to store in the lesson payload.
- */
-export async function uploadLessonMedia(file: File, purpose?: TrainingUploadPurpose): Promise<TrainingMediaUploadResult> {
-  if (!file) throw new Error("No file selected.");
-
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("purpose", purpose ?? purposeForFile(file));
-
-  const res = await fetch(`${trainingsBasePath}upload`, {
-    method: "POST",
-    credentials: "include",
-    body: formData,
-  });
-
-  if (!res.ok) throw await createTrainingsApiError(res, "upload this file");
-
-  const body = (await res.json()) as unknown;
-  if (!isRecord(body) || typeof body.url !== "string") {
-    throw new TrainingsApiError("Upload API returned an invalid response.", res.status);
-  }
-
-  return {
-    mediaUrl: body.url,
-    mediaId: typeof body.stored_name === "string" ? body.stored_name : "",
-    storageKey: typeof body.url === "string" ? body.url : "",
-    fileName: typeof body.name === "string" ? body.name : file.name,
-    contentType: typeof body.type === "string" ? body.type : file.type || "application/octet-stream",
-    sizeBytes: typeof body.size === "number" ? body.size : file.size,
-  };
 }

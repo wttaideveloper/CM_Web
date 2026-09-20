@@ -58,10 +58,8 @@ export interface CreateTrainingFormValues {
   schedule_exceptions: string;
   access_information: string;
   meeting_provider: string;
-  meeting_passcode: string;
   instructor_role: string;
-  instructor_notes: string;
-  notes_documents: string[];
+  instructor_notes: string[];
   notes_pdf_url: string;
   target_audience: string;
   difficulty_level: string;
@@ -98,7 +96,7 @@ export function createEmptyTrainingForm(): CreateTrainingFormValues {
     gallery_images: [],
     promotional_video: "",
     documents: [],
-    delivery_mode: "self_paced",
+    delivery_mode: "hybrid",
     course_type: "",
     duration: "",
     start_date: "",
@@ -130,15 +128,13 @@ export function createEmptyTrainingForm(): CreateTrainingFormValues {
     access_expiry_days: "",
     location_id: "",
     level: "beginner",
-    language: "English",
+    language: "en",
     recurring: "",
     schedule_exceptions: "",
     access_information: "",
     meeting_provider: "",
-    meeting_passcode: "",
     instructor_role: "",
-    instructor_notes: "",
-    notes_documents: [],
+    instructor_notes: [],
     notes_pdf_url: "",
     target_audience: "",
     difficulty_level: "",
@@ -156,16 +152,6 @@ export function createEmptyTrainingForm(): CreateTrainingFormValues {
     instructor_credentials: "",
     badges: [],
   };
-}
-
-/** Legacy language codes mapped to full names sent to the API (e.g. en → English). */
-const LANGUAGE_BY_CODE: Record<string, string> = { en: "English", hi: "Hindi", es: "Spanish", fr: "French" };
-
-/** Normalizes a stored language (code or name) to the full name the API expects. */
-function normalizeLanguage(value: unknown, fallback = "English"): string {
-  const raw = typeof value === "string" ? value.trim() : "";
-  if (!raw) return fallback;
-  return LANGUAGE_BY_CODE[raw.toLowerCase()] ?? raw;
 }
 
 /** Maps a Training response into editable form values. */
@@ -221,15 +207,13 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
     meeting_link: stringValue("meeting_link"),
     delivery_instructions: stringValue("delivery_instructions"),
     level: stringValue("level", "beginner"),
-    language: normalizeLanguage(record.language),
+    language: stringValue("language", "en"),
     recurring: stringValue("recurring"),
     schedule_exceptions: (() => { const v = record.schedule_exceptions; return Array.isArray(v) ? JSON.stringify(v) : typeof v === "string" ? v : ""; })(),
     access_information: stringValue("access_information"),
     meeting_provider: stringValue("meeting_provider"),
-    meeting_passcode: stringValue("meeting_passcode"),
     instructor_role: (() => { const ins = record.instructor as Record<string, unknown> | null; return typeof ins?.role === "string" ? ins.role : stringValue("instructor_role"); })(),
-    instructor_notes: stringValue("instructor_notes"),
-    notes_documents: (() => { const notesRaw = record.notes_documents ?? record.notes; if (!Array.isArray(notesRaw)) return []; return notesRaw.map(n => typeof (n as Record<string, unknown>)?.url === "string" ? (n as Record<string, unknown>).url as string : typeof n === "string" ? n : "").filter(Boolean); })(),
+    instructor_notes: Array.isArray(record.instructor_notes) ? (record.instructor_notes as unknown[]).map(n => typeof (n as Record<string, unknown>)?.url === "string" ? (n as Record<string, unknown>).url as string : typeof n === "string" ? n : "").filter(Boolean) : Array.isArray(record.notes_pdf_url) ? [] : [],
     notes_pdf_url: stringValue("notes_pdf_url"),
     target_audience: stringValue("target_audience"),
     difficulty_level: stringValue("difficulty_level") || stringValue("difficultyLevel") || stringValue("level", "beginner"),
@@ -251,7 +235,7 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
 }
 
 /** Builds a confirmed Create Training payload without response-only fields.
- * NOTE: delivery_mode accepts online|physical|hybrid|self_paced (backend Literal). */
+ * NOTE: delivery_mode is restricted to "where" values only: hybrid/physical/online. */
 export function buildCreateTrainingPayload(values: CreateTrainingFormValues, tenantId: string, enterpriseId: string): CreateTrainingPayload {
   return {
     tenant_id: tenantId,
@@ -303,10 +287,8 @@ release_rule: values.release_rule.trim() ? { type: values.release_rule.trim() } 
     schedule_exceptions: (() => { try { return values.schedule_exceptions.trim() ? JSON.parse(values.schedule_exceptions) : null; } catch { return values.schedule_exceptions.trim() || null; } })(),
     access_information: values.access_information.trim() || null,
     meeting_provider: values.meeting_provider.trim() || null,
-    meeting_passcode: values.meeting_passcode.trim() || null,
     instructor: values.instructor_role.trim() ? { id: values.instructor_id.trim() || null, name: values.instructor_name.trim() || null, bio: values.instructor_bio.trim() || null, role: values.instructor_role.trim() || null } : null,
-    instructor_notes: values.instructor_notes.trim() || null,
-    notes_documents: values.notes_documents.length ? values.notes_documents.filter((u) => u.trim()).map((url, idx) => ({ title: url.split("/").pop()?.split(".")[0]?.replace(/[_-]+/g, " ").trim() || `Note ${idx + 1}`, url: url.trim() })) : null,
+    instructor_notes: values.instructor_notes.length ? values.instructor_notes.map((url, idx) => ({ id: `note-${idx}`, title: `Note ${idx+1}`, url })) : null,
     notes_pdf_url: values.notes_pdf_url.trim() || null,
     target_audience: values.target_audience.trim() || null,
     offline_enabled: values.offline_enabled,
@@ -376,10 +358,8 @@ recurring: values.recurring.trim() || null,
     schedule_exceptions: (() => { try { return values.schedule_exceptions.trim() ? JSON.parse(values.schedule_exceptions) : null; } catch { return values.schedule_exceptions.trim() || null; } })(),
     access_information: values.access_information.trim() || null,
     meeting_provider: values.meeting_provider.trim() || null,
-    meeting_passcode: values.meeting_passcode.trim() || null,
     instructor: values.instructor_role.trim() ? { id: values.instructor_id.trim() || null, name: values.instructor_name.trim() || null, bio: values.instructor_bio.trim() || null, role: values.instructor_role.trim() || null } : null,
-    instructor_notes: values.instructor_notes.trim() || null,
-    notes_documents: values.notes_documents.length ? values.notes_documents.filter((u) => u.trim()).map((url, idx) => ({ title: url.split("/").pop()?.split(".")[0]?.replace(/[_-]+/g, " ").trim() || `Note ${idx + 1}`, url: url.trim() })) : null,
+    instructor_notes: values.instructor_notes.length ? values.instructor_notes.map((url, idx) => ({ id: `note-${idx}`, title: `Note ${idx+1}`, url })) : null,
     notes_pdf_url: values.notes_pdf_url.trim() || null,
     target_audience: values.target_audience.trim() || null,
     offline_enabled: values.offline_enabled,
@@ -404,6 +384,7 @@ export function validateTrainingForm(values: CreateTrainingFormValues): Record<s
   const errors: Record<string, string[]> = {};
   const timeRe = /^([01]\d|2[0-3]):([0-5]\d)$/;
   if (!values.title.trim()) errors.title = ["Title is required."];
+  if (!values.description.trim()) errors.description = ["Description is required."];
   if (!values.category.trim()) errors.category = ["Category is required."];
   if (values.delivery_mode === "hybrid" && !values.meeting_link.trim()) errors.meeting_link = ["Hybrid mode requires the Google Meet / Zoom meeting link."];
   if (values.delivery_mode === "hybrid" && !values.qr_payload.trim()) errors.qr_payload = ["Hybrid mode requires the QR payload (check-in code)."];

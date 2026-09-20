@@ -1,7 +1,6 @@
 "use client";
 
-import { Fragment, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { Fragment, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   addAssessmentQuestions,
@@ -21,7 +20,6 @@ import {
   deleteTrainingAssessment,
   deleteTrainingAssignment,
   deleteTrainingLesson,
-  deleteTrainingLessonMedia,
   deleteTrainingSection,
   exportLiveSessionAttendance,
   exportTrainingEnrolments,
@@ -56,26 +54,141 @@ import {
   reorderTrainingSections,
   submitTrainingAssessment,
   submitTrainingAssignment,
-  updateTraining,
   updateTrainingAssessment,
   updateTrainingLesson,
   updateTrainingSection,
-  uploadLessonMedia,
   downloadTrainingCalendar,
   TrainingsApiError,
   type CreateLiveSessionPayload,
   type CreateTrainingLessonPayload,
   type CreateTrainingSectionPayload,
-  type UpdateTrainingSectionPayload,
-  type UpdateTrainingPayload,
-  type CreateTrainingAssessmentPayload,
-  type CreateAssessmentQuestionPayload,
 } from "./trainings.service";
 import { enrolInTraining, type TrainingCheckoutRequest } from "./trainings.service";
 import { formatDetailDateTime, formatTrainingDate, humanizeLabel } from "./detail-formatters";
 import ProgressSummaryCard from "./ProgressSummaryCard";
 import TrainingAttendanceSection from "./TrainingAttendanceSection";
 import TrainingBatchCheckInSection from "./TrainingBatchCheckInSection";
+
+const LESSON_TYPE_OPTIONS = [
+  { value: "text", label: "Topic" },
+  { value: "video", label: "Video" },
+  { value: "youtube", label: "YouTube" },
+  { value: "pdf", label: "PDF" },
+  { value: "notes", label: "Notes" },
+  { value: "quiz", label: "Quiz" },
+  { value: "assignment", label: "Assignment" },
+] as const;
+
+const QUIZ_QUESTION_TYPE_OPTIONS = [
+  { value: "mcq", label: "Radio / Single choice" },
+  { value: "multiple_select", label: "Checkbox / Multiple choice" },
+  { value: "true_false", label: "True / False" },
+  { value: "short_answer", label: "Blank answer" },
+  { value: "essay", label: "Essay" },
+  { value: "task", label: "Task" },
+] as const;
+
+const SESSION_TYPE_OPTIONS = [
+  { value: "session", label: "Select / plain Session" },
+  { value: "video", label: "Video" },
+  { value: "live", label: "Live" },
+  { value: "venue", label: "Venue" },
+] as const;
+
+const MEETING_TYPE_OPTIONS = [
+  { value: "google_meet", label: "Google Meet" },
+  { value: "zoom", label: "Zoom" },
+  { value: "teams", label: "Teams" },
+  { value: "webex", label: "Webex" },
+  { value: "other", label: "Other" },
+] as const;
+
+function normalizeSessionType(value: unknown): string {
+  return value === "video" || value === "live" || value === "venue" ? value : "session";
+}
+
+function toApiLessonType(type: string): string {
+  if (type === "notes" || type === "assignment") return "text";
+  if (type === "quiz") return "exam";
+  return type;
+}
+
+function toUiLessonType(type: string): string {
+  if (type === "exam") return "quiz";
+  return LESSON_TYPE_OPTIONS.some((option) => option.value === type) ? type : "text";
+}
+
+function isLessonType(type: string, ...types: string[]): boolean {
+  return types.includes(type);
+}
+
+type SessionFieldsProps = {
+  type: string;
+  setType: (value: string) => void;
+  date: string;
+  setDate: (value: string) => void;
+  meetingType: string;
+  setMeetingType: (value: string) => void;
+  meetingLink: string;
+  setMeetingLink: (value: string) => void;
+  joinUrl: string;
+  setJoinUrl: (value: string) => void;
+  venueName: string;
+  setVenueName: (value: string) => void;
+  venueAddress: string;
+  setVenueAddress: (value: string) => void;
+  passCode: string;
+  setPassCode: (value: string) => void;
+  checkInWindow: string;
+  setCheckInWindow: (value: string) => void;
+};
+
+function SessionFields({
+  type,
+  setType,
+  date,
+  setDate,
+  meetingType,
+  setMeetingType,
+  meetingLink,
+  setMeetingLink,
+  joinUrl,
+  setJoinUrl,
+  venueName,
+  setVenueName,
+  venueAddress,
+  setVenueAddress,
+  passCode,
+  setPassCode,
+  checkInWindow,
+  setCheckInWindow,
+}: SessionFieldsProps) {
+  return (
+    <div className="grid gap-2 rounded-lg border border-[#e1ebe6] bg-[#f9fcfa] p-3 sm:grid-cols-2">
+      <select value={type} onChange={(event) => setType(event.target.value)} aria-label="Session type" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58] sm:col-span-2">
+        {SESSION_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+      {type === "live" || type === "venue" ? <input type="datetime-local" value={date} onChange={(event) => setDate(event.target.value)} aria-label="Session date and time" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
+      {type === "live" ? (
+        <>
+          <select value={meetingType} onChange={(event) => setMeetingType(event.target.value)} aria-label="Meeting type" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]">
+            {MEETING_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+          <input type="url" value={meetingLink} onChange={(event) => setMeetingLink(event.target.value)} placeholder="Meeting link" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
+          <input value={joinUrl} onChange={(event) => setJoinUrl(event.target.value)} placeholder="Join info" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58] sm:col-span-2" />
+        </>
+      ) : null}
+      {type === "venue" ? (
+        <>
+          <input value={venueName} onChange={(event) => setVenueName(event.target.value)} placeholder="Venue name" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
+          <input value={venueAddress} onChange={(event) => setVenueAddress(event.target.value)} placeholder="Venue address" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
+          <input value={passCode} onChange={(event) => setPassCode(event.target.value)} placeholder="Check-in pass code" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
+          <input value={checkInWindow} onChange={(event) => setCheckInWindow(event.target.value)} placeholder="Check-in window" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
+        </>
+      ) : null}
+    </div>
+  );
+}
 
 function SectionCard({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
@@ -89,68 +202,33 @@ function SectionCard({ title, children, action }: { title: string; children: Rea
   );
 }
 
-
-
-/** Detects YouTube watch/share/embed URLs (rendered as tap-to-open links, not players). */
-function isYouTubeUrl(url: string): boolean {
-  return /youtu\.be|youtube\.com\/(watch|embed|shorts|live)/i.test(url.trim());
-}
-
-/** Rewrites backend-hosted media URLs to a same-origin proxied path so the authenticated request carries cookies (cross-origin <video> never sends them → 401). */
-function toPlayableMediaUrl(url: string): string {
-  const trimmed = url.trim();
-  const match = /^https?:\/\/[^/]+\/api\/v1\/trainings\/upload\/(.+)$/.exec(trimmed);
-  return match ? `/api/v1/trainings/upload/${match[1]}` : trimmed;
-}
-
-/** Inline video player used for uploaded/URL videos in the lesson media editor and read-only view. */
-function VideoPreview({ url }: { url: string }) {
-  const [failed, setFailed] = useState(false);
-  const trimmed = url.trim();
-  const src = toPlayableMediaUrl(trimmed);
-  if (!trimmed) return null;
-  if (failed) {
-    return (
-      <div className="flex w-full flex-wrap items-center gap-1 rounded-lg border border-[#e1ebe6] bg-[#f9fcfa] px-3 py-2 text-xs text-[#52736a]">
-        This video couldn't play in the browser.
-        <a href={src} target="_blank" rel="noreferrer" className="font-semibold text-[#1f6a58] underline">Open video →</a>
-      </div>
-    );
-  }
-  return <video key={src} controls preload="metadata" playsInline src={src} onError={() => setFailed(true)} className="aspect-video w-full rounded-lg bg-black" />;
-}
-
 /** List of URL inputs with add/remove — used for a lesson's videos and notes. */
-function LessonUrlList({ label, values, update, placeholder, onRemove, renderPreview, showFileName }: { label: string; values: string[]; update: (next: string[]) => void; placeholder?: string; onRemove?: (url: string) => void; renderPreview?: (value: string) => ReactNode; showFileName?: boolean }) {
+function LessonUrlList({ label, values, update, placeholder }: { label: string; values: string[]; update: (next: string[]) => void; placeholder?: string }) {
   return (
     <div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between">
         <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">{label}</p>
         <button type="button" onClick={() => update([...values, ""])} className="text-[10px] font-bold text-[#1f6a58]">+ Add</button>
       </div>
-      <div className="mt-1 space-y-2">
+      <div className="mt-1 space-y-1">
         {values.map((val, idx) => (
-          <div key={idx} className="space-y-1">
-            {renderPreview ? renderPreview(val) : null}
-            {showFileName && val.trim() ? <p className="truncate text-xs font-semibold text-[#06201c]" title={val}>{mediaFileName(val)}</p> : null}
-            <div className="flex gap-1">
-              <input value={val} onChange={(e) => update(values.map((c, i) => (i === idx ? e.target.value : c)))} placeholder={placeholder ?? "https://…"} className="h-8 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-              <button type="button" onClick={() => { onRemove?.(val.trim()); update(values.filter((_, i) => i !== idx)); }} className="shrink-0 rounded-lg px-2 text-[10px] font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button>
-            </div>
+          <div key={idx} className="flex gap-1">
+            <input value={val} onChange={(e) => update(values.map((c, i) => (i === idx ? e.target.value : c)))} placeholder={placeholder ?? "https://…"} className="h-8 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
+            <button type="button" onClick={() => update(values.filter((_, i) => i !== idx))} className="shrink-0 rounded-lg px-2 text-[10px] font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button>
           </div>
         ))}
-        {values.length === 0 ? <p className="text-xs text-[#7f9d94]">No {label.toLowerCase()} linked yet — add a URL or use drag & drop above.</p> : null}
+        {values.length === 0 ? <p className="text-xs text-[#7f9d94]">No {label.toLowerCase()} yet — click + Add.</p> : null}
       </div>
     </div>
   );
 }
 
 /** Lesson document (URL + name + visibility + downloadable) editor. */
-function LessonDocsList({ values, update, onRemove }: { values: Array<{ url: string; name: string; visibility: string; downloadable: boolean }>; update: (next: Array<{ url: string; name: string; visibility: string; downloadable: boolean }>) => void; onRemove?: (url: string) => void }) {
+function LessonDocsList({ values, update }: { values: Array<{ url: string; name: string; visibility: string; downloadable: boolean }>; update: (next: Array<{ url: string; name: string; visibility: string; downloadable: boolean }>) => void }) {
   return (
     <div>
-      <div className="flex items-center gap-2">
-        <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">PDF / Document</p>
+      <div className="flex items-center justify-between">
+<p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">PDF</p>
         <button type="button" onClick={() => update([...values, { url: "", name: "", visibility: "public", downloadable: true }])} className="text-[10px] font-bold text-[#1f6a58]">+ Add</button>
       </div>
       <div className="mt-1 space-y-2">
@@ -164,194 +242,33 @@ function LessonDocsList({ values, update, onRemove }: { values: Array<{ url: str
                 <option value="private">private</option>
               </select>
               <label className="flex items-center gap-1 text-[10px] font-semibold text-[#52736a]"><input type="checkbox" checked={doc.downloadable} onChange={(e) => update(values.map((d, i) => (i === idx ? { ...d, downloadable: e.target.checked } : d)))} className="h-3 w-3" />Downloadable</label>
-              <button type="button" onClick={() => { if (doc.url.trim()) onRemove?.(doc.url.trim()); update(values.filter((_, i) => i !== idx)); }} className="rounded-lg px-2 text-[10px] font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button>
+              <button type="button" onClick={() => update(values.filter((_, i) => i !== idx))} className="rounded-lg px-2 text-[10px] font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button>
             </div>
           </div>
         ))}
-        {values.length === 0 ? <p className="text-xs text-[#7f9d94]">No PDFs linked yet — add a URL or use drag & drop above.</p> : null}
+        {values.length === 0 ? <p className="text-xs text-[#7f9d94]">No PDFs yet — click + Add.</p> : null}
       </div>
     </div>
   );
 }
 
-/** Drag-and-drop + click zone that uploads files and routes them to the right list at once. */
-function LessonMediaDropZone({ onFiles, busy }: { onFiles: (files: File[]) => void; busy: boolean }) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [dragActive, setDragActive] = useState(false);
-
-  const handleFiles = (fileList: FileList | null) => {
-    if (!fileList) return;
-    const files = Array.from(fileList);
-    if (files.length) onFiles(files);
-    if (inputRef.current) inputRef.current.value = "";
-  };
-
-  return (
-    <div>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => !busy && inputRef.current?.click()}
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (!busy) inputRef.current?.click(); } }}
-        onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
-        onDragLeave={() => setDragActive(false)}
-        onDrop={(e) => { e.preventDefault(); setDragActive(false); handleFiles(e.dataTransfer.files); }}
-        className={`flex h-24 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed px-3 text-center transition-colors ${dragActive ? "border-[#1f6a58] bg-[#e8f6ee]" : "border-[#c9dcd4] bg-white hover:border-[#1f6a58] hover:bg-[#f4faf7]"}`}
-      >
-        <input ref={inputRef} type="file" accept="video/*,audio/*,image/*,.pdf,application/pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.txt,.md" multiple className="hidden" onChange={(e) => handleFiles(e.target.files)} />
-        <p className="text-xs font-bold text-[#06201c]">{busy ? "Uploading… please wait" : dragActive ? "Drop files to upload" : "Drag & drop files here"}</p>
-        <p className="text-[10px] text-[#7f9d94]">or click to browse from your device — videos, PDFs, images & documents</p>
-        <p className="text-[10px] font-semibold text-[#1f6a58]">Auto-sorted: video → Videos · PDF → PDF/Document · others → Notes</p>
-      </div>
-    </div>
-  );
-}
-
-const ALLOWED_LESSON_TYPES = new Set(["topic", "video", "live", "venue", "pdf", "notes", "quiz", "assignment"]);
-const LEGACY_MEETING_PROVIDERS = new Set(["google_meet", "zoom", "microsoft_teams", "webex", "other"]);
-
-/** Maps a stored lesson type to a valid backend kind, recovering legacy provider values as "live". */
-function normalizeLessonType(value: string, provider?: string): { kind: string; provider: string } {
-  if (value === "youtube") return { kind: "youtube", provider: provider ?? "" };
-  if (value && ALLOWED_LESSON_TYPES.has(value)) return { kind: value, provider: provider ?? "" };
-  if (value && LEGACY_MEETING_PROVIDERS.has(value)) return { kind: "live", provider: value };
-  return { kind: "", provider: provider ?? "" };
-}
-
-/** Collects trimmed attachment URLs from a videos/notes/documents list (strings or {url} dicts). */
-function mediaUrlSet(list: unknown): Set<string> {
-  const out = new Set<string>();
-  if (!Array.isArray(list)) return out;
-  for (const item of list) {
-    if (typeof item === "string") { if (item.trim()) out.add(item.trim()); }
-    else if (item && typeof item === "object") {
-      const r = item as Record<string, unknown>;
-      if (typeof r.url === "string" && r.url.trim()) out.add(r.url.trim());
-    }
-  }
-  return out;
-}
-
-function sameUrlSet(a: Set<string>, b: Set<string>): boolean {
-  if (a.size !== b.size) return false;
-  for (const v of a) if (!b.has(v)) return false;
-  return true;
-}
-
-/** Display name for a media URL (decoded file name; UUID upload prefix stripped). */
-function mediaFileName(url: string): string {
-  const clean = url.trim().split("?")[0].split("#")[0];
-  const seg = clean.split("/").filter(Boolean).pop() ?? "";
-  let name = seg;
-  try { name = decodeURIComponent(seg); } catch { /* keep raw segment */ }
-  name = name.replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_/i, "");
-  return name || url.trim();
-}
-
-/** Display label for a session kind stored in section.type. */
-function sessionKindLabel(t: string): string {
-  switch (t) {
-    case "video": return "Video";
-    case "live": return "Live";
-    case "venue": return "Venue";
-    case "module": return "Module";
-    default: return "Session";
-  }
-}
-
-/** Reads an optional string field from a section record. */
-function sessionField(section: Record<string, unknown>, key: string): string {
-  const v = section[key];
-  return typeof v === "string" ? v : "";
-}
-
-/** Title placeholder matching the selected lesson kind. */
-function lessonTitlePlaceholder(kind: string): string {
-  switch (kind) {
-    case "topic": return "Topic title";
-    case "video": return "Video title";
-    case "youtube": return "YouTube title";
-    case "live": return "Meeting title";
-    case "venue": return "Session title";
-    case "pdf": return "PDF title";
-    case "notes": return "Notes title";
-    case "quiz": return "Quiz title";
-    case "assignment": return "Assignment title";
-    default: return "Lesson title";
-  }
-}
-
-function LessonDetail({ trainingId, sectionId, lessonId, onClose, initialEditMode }: { trainingId: string; sectionId: string; lessonId: string; onClose: () => void; initialEditMode?: boolean }) {
-  const [editMode, setEditMode] = useState(initialEditMode ?? false);
+function LessonDetail({ trainingId, sectionId, lessonId, onClose }: { trainingId: string; sectionId: string; lessonId: string; onClose: () => void }) {
+  const [editMode, setEditMode] = useState(false);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
   const [lessonTypeValue, setLessonTypeValue] = useState("");
-  const lessonTypeDirtyRef = useRef(false);
   const [meetingLink, setMeetingLink] = useState("");
   const [joinUrl, setJoinUrl] = useState("");
   const [isDownloadable, setIsDownloadable] = useState(false);
   const [fileSize, setFileSize] = useState("");
   const [durationMinutes, setDurationMinutes] = useState("");
   const [isPreview, setIsPreview] = useState(false);
-  const [isMandatory, setIsMandatory] = useState(false);
-  const [meetingProviderValue, setMeetingProviderValue] = useState("");
-  const [venue, setVenue] = useState("");
-  const [address, setAddress] = useState("");
-  const [passCode, setPassCode] = useState("");
-  const [checkInWindow, setCheckInWindow] = useState("");
   const [lessonVideos, setLessonVideos] = useState<string[]>([]);
   const [lessonDocs, setLessonDocs] = useState<Array<{ url: string; name: string; visibility: string; downloadable: boolean }>>([]);
   const [lessonNotes, setLessonNotes] = useState<string[]>([]);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [uploadingMedia, setUploadingMedia] = useState(false);
   const queryClient = useQueryClient();
-
-  const uploadFileToLesson = async (file: File): Promise<string> => {
-    const result = await uploadLessonMedia(file);
-    setFeedback("File uploaded — save the lesson to attach it.");
-    return result.mediaUrl;
-  };
-
-  /** Uploads a batch and routes each file into the right list by type. */
-  const handleLessonMediaFiles = async (files: File[]) => {
-    setUploadingMedia(true);
-    let uploaded = 0;
-    try {
-      for (const file of files) {
-        const result = await uploadLessonMedia(file);
-        const url = result.mediaUrl;
-        const type = file.type ?? "";
-        if (type.startsWith("video/")) {
-          setLessonVideos((v) => [...v, url]);
-        } else if (type === "application/pdf" || type === "application/msword" || type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || /\.(pdf|doc|docx)$/i.test(file.name)) {
-          setLessonDocs((d) => [...d, { url, name: file.name, visibility: "public", downloadable: true }]);
-        } else {
-          setLessonNotes((n) => [...n, url]);
-        }
-        uploaded += 1;
-      }
-      setFeedback(`Uploaded ${uploaded} file${uploaded === 1 ? "" : "s"} — save the lesson to attach.`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Upload failed.";
-      setFeedback(`${message}${uploaded ? ` (${uploaded} uploaded)` : ""}`);
-    } finally {
-      setUploadingMedia(false);
-    }
-  };
-  const mainVideoInputRef = useRef<HTMLInputElement>(null);
-
-  /** Removes an attachment via the server-side media endpoint, then lets Save converge. */
-  const removeLessonMediaEntry = async (kind: "documents" | "videos" | "notes", url: string) => {
-    try {
-      await deleteTrainingLessonMedia(trainingId, sectionId, lessonId, kind, url);
-      setFeedback("Attachment removed from the lesson.");
-      void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "lesson", sectionId, lessonId] });
-      void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "sections"] });
-    } catch (error) {
-      setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to remove attachment.");
-    }
-  };
 
   const lessonQuery = useQuery({
     queryKey: ["trainings", trainingId, "lesson", sectionId, lessonId],
@@ -360,17 +277,14 @@ function LessonDetail({ trainingId, sectionId, lessonId, onClose, initialEditMod
   });
 
   const updateMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: () => {
       const videos = lessonVideos.filter((v) => v.trim() !== "");
       const notes = lessonNotes.filter((n) => n.trim() !== "");
       const docs = lessonDocs.filter((d) => d.url.trim() !== "");
-      const normalizedType = normalizeLessonType(lessonTypeValue.trim(), meetingProviderValue.trim());
-      const effectiveProvider = normalizedType.provider || meetingProviderValue.trim() || null;
-      const documentsPayload = docs.map((d) => ({ url: d.url.trim(), name: d.name.trim() || d.url.trim().split("/").pop() || "document", visibility: d.visibility, downloadable: d.downloadable }));
-      const payload = {
+      return updateTrainingLesson(trainingId, sectionId, lessonId, {
         title: title.trim(),
         content: content.trim(),
-        type: normalizedType.kind || undefined,
+        type: lessonTypeValue.trim() ? toApiLessonType(lessonTypeValue.trim()) : undefined,
         duration: durationMinutes.trim() ? Number(durationMinutes) : undefined,
         duration_minutes: null,
         content_url: videoUrl.trim() || undefined,
@@ -378,106 +292,16 @@ function LessonDetail({ trainingId, sectionId, lessonId, onClose, initialEditMod
         meeting_link: meetingLink.trim() || undefined,
         join_meta: joinUrl.trim() || undefined,
         join_url: null,
-        meeting_type: effectiveProvider,
-        venue: venue.trim() || undefined,
-        address: address.trim() || undefined,
-        pass_code: passCode.trim() || undefined,
-        check_in_window: checkInWindow.trim() || undefined,
-        is_mandatory: isMandatory,
+        meeting_type: null,
         is_downloadable: isDownloadable,
-        file_size: fileSize.trim() ? fileSize : undefined,
+        file_size: fileSize.trim() ? Number(fileSize) : undefined,
         is_preview: isPreview,
-        videos,
-        notes,
-        documents: documentsPayload,
-      };
-      let sentType = normalizedType.kind;
-      let echo: Record<string, unknown> | null;
-      try {
-        echo = (await updateTrainingLesson(trainingId, sectionId, lessonId, payload as unknown as Record<string, unknown>)) as Record<string, unknown> | null;
-      } catch (error) {
-        // Older backends reject the "youtube" kind — retry once as video (URL detection keeps the YouTube UX).
-        if (normalizedType.kind === "youtube" && error instanceof TrainingsApiError && error.status === 400 && error.message.includes("Unsupported curriculum item type")) {
-          sentType = "video";
-          echo = (await updateTrainingLesson(trainingId, sectionId, lessonId, { ...payload, type: "video" } as unknown as Record<string, unknown>)) as Record<string, unknown> | null;
-        } else {
-          throw error;
-        }
-      }
-      const sentTitle = title.trim();
-      const sentContentUrl = videoUrl.trim();
-      const normUrl = (u: unknown) => (typeof u === "string" ? u.trim().replace(/\/+$/, "") : "");
-      const sentVideos = new Set(videos.map((v) => v.trim()));
-      const sentNotes = new Set(notes.map((n) => n.trim()));
-      const sentDocs = new Set(docs.map((d) => d.url.trim()));
-      const displayType = lessonTypeValue || normalizedType.kind;
-      const matches = (l: Record<string, unknown> | null) => !!l
-        && sameUrlSet(mediaUrlSet(l.videos), sentVideos)
-        && sameUrlSet(mediaUrlSet(l.notes), sentNotes)
-        && sameUrlSet(mediaUrlSet(l.documents), sentDocs)
-        && (typeof l.title !== "string" || l.title.trim() === sentTitle)
-        && (!sentType || (typeof l.type === "string" && l.type.trim() === sentType))
-        && (!sentContentUrl || normUrl(l.content_url) === normUrl(sentContentUrl));
-      const readLesson = async (): Promise<Record<string, unknown> | null> => {
-        try {
-          return (await getTrainingLesson(trainingId, sectionId, lessonId)) as Record<string, unknown>;
-        } catch {
-          return null;
-        }
-      };
-      // Verify against a refetch (authoritative DB state) — the PUT response may be in-memory only.
-      const fresh = await readLesson();
-      if (fresh && matches(fresh)) return { applied: true, via: "lesson", lesson: fresh, lessonType: displayType };
-      if (!fresh && matches(echo)) return { applied: true, via: "lesson-unverified", lesson: echo, lessonType: displayType };
-      // Fallback: rewrite title/type/content_url/media via the training-level PUT (tracked full-array assignment).
-      const overrides: Record<string, unknown> = {
-        title: sentTitle,
-        ...(sentType ? { type: sentType } : {}),
-        ...(sentContentUrl ? { content_url: sentContentUrl } : {}),
-        ...(meetingLink.trim() ? { meeting_link: meetingLink.trim() } : {}),
-        ...(joinUrl.trim() ? { join_meta: joinUrl.trim() } : {}),
-        ...(effectiveProvider ? { meeting_type: effectiveProvider } : {}),
-        ...(venue.trim() ? { venue: venue.trim() } : {}),
-        ...(address.trim() ? { address: address.trim() } : {}),
-        ...(passCode.trim() ? { pass_code: passCode.trim() } : {}),
-        ...(checkInWindow.trim() ? { check_in_window: checkInWindow.trim() } : {}),
-        is_mandatory: isMandatory,
-        is_downloadable: isDownloadable,
-        is_preview: isPreview,
-        ...(durationMinutes.trim() ? { duration: Number(durationMinutes) } : {}),
-        ...(fileSize.trim() ? { file_size: fileSize } : {}),
-        videos: [...sentVideos],
-        notes: [...sentNotes],
-        documents: documentsPayload,
-      };
-      const sections = (await getTrainingSections(trainingId)) as Array<Record<string, unknown>>;
-      const rewritten = sections.map((s) => {
-        const sid = typeof s.id === "string" ? s.id : String(s.order ?? "");
-        if (sid !== sectionId) return s;
-        const lessons = Array.isArray(s.lessons) ? (s.lessons as Array<Record<string, unknown>>) : [];
-        return { ...s, lessons: lessons.map((l) => (typeof l.id === "string" && l.id === lessonId ? { ...l, ...overrides } : l)) };
-      });
-      await updateTraining(trainingId, { sections: rewritten } as unknown as UpdateTrainingPayload);
-      const final = await readLesson();
-      const ok = matches(final);
-      return { applied: ok, via: "training", lesson: final ?? echo, lessonType: displayType };
+        videos: videos.length ? videos : undefined,
+        notes: notes.length ? notes : undefined,
+        documents: docs.length ? docs.map((d) => ({ url: d.url.trim(), name: d.name.trim() || d.url.trim().split("/").pop() || "document", visibility: d.visibility, downloadable: d.downloadable })) : undefined,
+      } as unknown as Record<string, unknown>);
     },
-    onSuccess: (result) => {
-      const saved = (result.lesson ?? {}) as Record<string, unknown>;
-      const savedType = result.lessonType || (typeof saved.type === "string" ? saved.type.trim() : "");
-      if (saved && typeof saved.id === "string") {
-        queryClient.setQueryData(["trainings", trainingId, "lesson", sectionId, lessonId], saved);
-      }
-      lessonTypeDirtyRef.current = false;
-      if (result.applied) {
-        setFeedback(savedType ? `Lesson updated (type: ${savedType}).` : "Lesson updated.");
-        setEditMode(false);
-      } else {
-        setFeedback("Saved, but the media changes may not have been applied — refresh to confirm before leaving.");
-      }
-      void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "sections"] });
-      void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "lesson", sectionId, lessonId] });
-    },
+    onSuccess: () => { setFeedback("Lesson updated."); setEditMode(false); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "sections"] }); },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to update lesson."),
   });
 
@@ -495,40 +319,21 @@ function LessonDetail({ trainingId, sectionId, lessonId, onClose, initialEditMod
   const lessonFileSize = typeof lesson.file_size === "number" ? String(lesson.file_size) : typeof lesson.file_size === "string" ? lesson.file_size : "";
   const lessonDuration = typeof lesson.duration === "number" ? String(lesson.duration) : typeof lesson.duration === "string" ? lesson.duration : typeof lesson.duration_minutes === "number" ? String(lesson.duration_minutes) : "";
   const lessonIsPreview = lesson.is_preview === true;
-  const lessonIsMandatory = lesson.is_mandatory === true;
-  const lessonMeetingProvider = typeof lesson.meeting_type === "string" ? lesson.meeting_type : "";
-  const lessonVenue = typeof lesson.venue === "string" ? lesson.venue : "";
-  const lessonAddress = typeof lesson.address === "string" ? lesson.address : "";
-  const lessonPassCode = typeof lesson.pass_code === "string" ? lesson.pass_code : "";
-  const lessonCheckInWindow = typeof lesson.check_in_window === "string" ? lesson.check_in_window : "";
   const lessonVideosInit = Array.isArray(lesson.videos) ? (lesson.videos as unknown[]).filter((v): v is string => typeof v === "string") : [];
   const lessonDocsInit = Array.isArray(lesson.documents) ? (lesson.documents as unknown[]).map((d) => { if (typeof d === "string" && d.trim()) return { url: d, name: "", visibility: "public", downloadable: true }; if (d && typeof d === "object") { const r = d as Record<string, unknown>; if (typeof r.url === "string") return { url: r.url, name: typeof r.name === "string" ? r.name : typeof r.title === "string" ? r.title : "", visibility: typeof r.visibility === "string" ? r.visibility : "public", downloadable: typeof r.downloadable === "boolean" ? r.downloadable : true }; } return null; }).filter((v): v is { url: string; name: string; visibility: string; downloadable: boolean } => v !== null) : [];
   const lessonNotesInit = Array.isArray(lesson.notes) ? (lesson.notes as unknown[]).filter((n): n is string => typeof n === "string") : [];
 
-  if (!editMode && title === "" && content === "" && videoUrl === "" && lessonTypeValue === "" && meetingLink === "" && joinUrl === "" && fileSize === "" && durationMinutes === "" && lessonVideos.length === 0 && lessonDocs.length === 0 && lessonNotes.length === 0 && meetingProviderValue === "" && venue === "" && address === "" && passCode === "" && checkInWindow === "") {
+  if (!editMode && title === "" && content === "" && videoUrl === "" && lessonTypeValue === "" && meetingLink === "" && joinUrl === "" && fileSize === "" && durationMinutes === "" && lessonVideos.length === 0 && lessonDocs.length === 0 && lessonNotes.length === 0) {
     setTitle(lessonTitle);
     setContent(lessonContent);
     setVideoUrl(lessonVideoUrl);
-    {
-      const normalized = normalizeLessonType(lessonType, lessonMeetingProvider);
-      if (!lessonTypeDirtyRef.current) {
-        const storedKind = normalized.kind;
-        setLessonTypeValue(storedKind === "video" && isYouTubeUrl(lessonVideoUrl) ? "youtube" : storedKind);
-      }
-      setMeetingProviderValue(normalized.provider || lessonMeetingProvider);
-    }
+    setLessonTypeValue(toUiLessonType(lessonType));
     setMeetingLink(lessonMeetingLink);
     setJoinUrl(lessonJoinUrl);
     setIsDownloadable(lessonIsDownloadable);
     setFileSize(lessonFileSize);
     setDurationMinutes(lessonDuration);
     setIsPreview(lessonIsPreview);
-    setIsMandatory(lessonIsMandatory);
-    setMeetingProviderValue(lessonMeetingProvider);
-    setVenue(lessonVenue);
-    setAddress(lessonAddress);
-    setPassCode(lessonPassCode);
-    setCheckInWindow(lessonCheckInWindow);
     if (lessonVideosInit.length) setLessonVideos(lessonVideosInit);
     if (lessonDocsInit.length) setLessonDocs(lessonDocsInit);
     if (lessonNotesInit.length) setLessonNotes(lessonNotesInit);
@@ -546,150 +351,40 @@ function LessonDetail({ trainingId, sectionId, lessonId, onClose, initialEditMod
       {feedback ? <p role="status" className="rounded-lg bg-[#effaf4] px-3 py-1.5 text-xs font-semibold text-[#167550]">{feedback}</p> : null}
       {editMode ? (
         <div className="space-y-2">
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={lessonTitlePlaceholder(lessonTypeValue)} className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
-          <select value={lessonTypeValue} onChange={(e) => { setLessonTypeValue(e.target.value); lessonTypeDirtyRef.current = true; }} className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]">
-            <option value="">Lesson kind — select</option>
-            <option value="topic">Topic</option>
-            <option value="video">Video</option>
-            <option value="youtube">YouTube</option>
-            <option value="pdf">PDF</option>
-            <option value="notes">Notes</option>
-            <option value="quiz">Quiz</option>
-            <option value="assignment">Assignment</option>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Lesson title" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
+          <select value={lessonTypeValue} onChange={(e) => setLessonTypeValue(e.target.value)} aria-label="Lesson type" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]">
+            <option value="">Lesson type — select</option>
+            {LESSON_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
-          {lessonTypeValue === "" ? <p className="text-xs text-[#7f9d94]">Select a lesson type above to see its fields.</p> : null}
-          {lessonTypeValue === "topic" ? (
-            <textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="Topic content..." rows={4} className="w-full rounded-lg border border-[#d7e5df] px-3 py-2 text-xs outline-none focus:border-[#1f6a58]" />
-          ) : null}
-          {lessonTypeValue === "video" ? (
-            <div className="space-y-2 rounded-lg border border-[#e1ebe6] bg-[#f9fcfa] p-3">
-              <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Video upload</p>
-              <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="Video URL https://…" className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-              <div className="flex items-center gap-2">
-                <input
-                  ref={mainVideoInputRef}
-                  type="file"
-                  accept="video/*"
-                  className="hidden"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0] ?? null;
-                    if (file) void (async () => {
-                      try {
-                        const url = await uploadFileToLesson(file);
-                        setVideoUrl(url);
-                      } catch {
-                        // uploadFileToLesson already reports errors via feedback
-                      } finally {
-                        if (mainVideoInputRef.current) mainVideoInputRef.current.value = "";
-                      }
-                    })();
-                  }}
-                />
-                <button type="button" onClick={() => mainVideoInputRef.current?.click()} className="rounded-full border border-[#1f6a58] px-3 py-1 text-[10px] font-bold text-[#1f6a58] hover:bg-[#e8f6ee]">Upload video</button>
-                <span className="text-[10px] text-[#7f9d94]">or drag & drop below</span>
-              </div>
-              {videoUrl.trim() ? <VideoPreview url={videoUrl} /> : null}
-              <LessonMediaDropZone onFiles={(files) => void handleLessonMediaFiles(files)} busy={uploadingMedia} />
-              <LessonUrlList label="Videos" values={lessonVideos} update={setLessonVideos} placeholder="Video URL https://…" onRemove={(url) => void removeLessonMediaEntry("videos", url)} renderPreview={(val) => <VideoPreview url={val} />} showFileName />
-              <p className="text-[10px] text-[#7f9d94]">Save the lesson to apply video changes.</p>
+          {isLessonType(lessonTypeValue, "text", "notes") ? <textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="Topic content..." rows={4} className="w-full rounded-lg border border-[#d7e5df] px-3 py-2 text-xs outline-none focus:border-[#1f6a58]" /> : null}
+          {isLessonType(lessonTypeValue, "video", "youtube") ? <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder={lessonTypeValue === "youtube" ? "Paste YouTube link" : "Video URL https://…"} className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
+          {lessonTypeValue === "video" ? <LessonUrlList label="Videos" values={lessonVideos} update={setLessonVideos} placeholder="Additional video URL https://…" /> : null}
+          {lessonTypeValue === "pdf" ? <LessonDocsList values={lessonDocs} update={setLessonDocs} /> : null}
+          {lessonTypeValue === "notes" ? <LessonUrlList label="Notes" values={lessonNotes} update={setLessonNotes} placeholder="Note URL / link https://…" /> : null}
+          {lessonTypeValue === "video" ? <input value={durationMinutes} onChange={(e) => setDurationMinutes(e.target.value)} placeholder="Duration (minutes)" type="number" min="0" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
+          {isLessonType(lessonTypeValue, "video", "pdf", "notes") ? (
+            <div className="flex gap-4">
+              <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={isPreview} onChange={(e) => setIsPreview(e.target.checked)} className="h-3 w-3" />Is preview</label>
+              <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={isDownloadable} onChange={(e) => setIsDownloadable(e.target.checked)} className="h-3 w-3" />Is downloadable</label>
             </div>
           ) : null}
-          {lessonTypeValue === "youtube" ? (
-            <div className="space-y-2 rounded-lg border border-[#e1ebe6] bg-[#f9fcfa] p-3">
-              <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">YouTube video</p>
-              <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="YouTube URL e.g. https://youtube.com/watch?v=… or https://youtu.be/…" className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-              <p className="text-[10px] text-[#7f9d94]">Paste a YouTube link — it saves as a tap-to-open link for learners.</p>
-            </div>
-          ) : null}
-          {lessonTypeValue === "live" ? (
-            <div className="space-y-2 rounded-lg border border-[#e1ebe6] bg-[#f9fcfa] p-3">
-              <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Live meeting</p>
-              <select value={meetingProviderValue} onChange={(e) => setMeetingProviderValue(e.target.value)} className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]">
-                <option value="">Meeting type — select</option>
-                <option value="google_meet">Google Meet</option>
-                <option value="zoom">Zoom</option>
-                <option value="microsoft_teams">Microsoft Teams</option>
-                <option value="webex">Webex</option>
-                <option value="other">Other</option>
-              </select>
-              <input value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} placeholder="Meeting link e.g. https://…" className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-              <input value={joinUrl} onChange={(e) => setJoinUrl(e.target.value)} placeholder="Join info e.g. Opens 10 min before · muted on join" className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-            </div>
-          ) : null}
-          {lessonTypeValue === "venue" ? (
-            <div className="space-y-2 rounded-lg border border-[#e1ebe6] bg-[#f9fcfa] p-3">
-              <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Venue & check-in</p>
-              <input value={venue} onChange={(e) => setVenue(e.target.value)} placeholder="Venue name e.g. Restwell Studio · Room B" className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-              <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Venue address" className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-              <input value={passCode} onChange={(e) => setPassCode(e.target.value)} placeholder="Check-in pass code" className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-              <input value={checkInWindow} onChange={(e) => setCheckInWindow(e.target.value)} placeholder="Check-in window e.g. Opens 8:40 AM · closes 9:20 AM" className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-            </div>
-          ) : null}
-          {lessonTypeValue === "pdf" ? (
-            <div className="space-y-3 rounded-lg border border-[#e1ebe6] bg-[#f9fcfa] p-3">
-              <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">PDF upload</p>
-              <LessonMediaDropZone onFiles={(files) => void handleLessonMediaFiles(files)} busy={uploadingMedia} />
-              <LessonDocsList values={lessonDocs} update={setLessonDocs} onRemove={(url) => void removeLessonMediaEntry("documents", url)} />
-              <p className="text-[10px] text-[#7f9d94]">Save the lesson to apply PDF changes.</p>
-            </div>
-          ) : null}
-          {lessonTypeValue === "notes" ? (
-            <div className="space-y-3 rounded-lg border border-[#e1ebe6] bg-[#f9fcfa] p-3">
-              <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Notes upload</p>
-              <LessonMediaDropZone onFiles={(files) => void handleLessonMediaFiles(files)} busy={uploadingMedia} />
-              <LessonUrlList label="Notes" values={lessonNotes} update={setLessonNotes} placeholder="Note URL / link https://…" onRemove={(url) => void removeLessonMediaEntry("notes", url)} showFileName />
-              <p className="text-[10px] text-[#7f9d94]">Save the lesson to apply notes changes.</p>
-            </div>
-          ) : null}
-          {lessonTypeValue === "quiz" ? (
-            <div className="rounded-lg border border-[#e1ebe6] bg-[#f9fcfa] p-3">
-              <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Quiz attachment & questions</p>
-              <div className="mt-2">
-                <LessonQuizManager trainingId={trainingId} sectionId={sectionId} lessonId={lessonId} lessonTitle={title.trim() || lessonTitle} lesson={lesson} notify={setFeedback} />
-              </div>
-            </div>
-          ) : null}
-          {lessonTypeValue === "assignment" ? (
-            <div className="rounded-lg border border-[#e1ebe6] bg-[#f9fcfa] p-3">
-              <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Assignment attachment</p>
-              <div className="mt-2">
-                <LessonAssignmentManager trainingId={trainingId} sectionId={sectionId} lessonId={lessonId} lessonTitle={title.trim() || lessonTitle} lesson={lesson} notify={setFeedback} />
-              </div>
-            </div>
-          ) : null}
-          <div className="flex gap-4">
-            <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={isPreview} onChange={(e) => setIsPreview(e.target.checked)} className="h-3 w-3" />Is preview</label>
-            <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={isDownloadable} onChange={(e) => setIsDownloadable(e.target.checked)} className="h-3 w-3" />Is downloadable</label>
-            <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={isMandatory} onChange={(e) => setIsMandatory(e.target.checked)} className="h-3 w-3" />Is mandatory</label>
-          </div>
-          <input value={fileSize} onChange={(e) => setFileSize(e.target.value)} placeholder="File size e.g. 24 MB" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
-          <select value={durationMinutes} onChange={(e) => setDurationMinutes(e.target.value)} className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]">
-            <option value="">Duration — select</option>
-            <option value="15">15 min</option>
-            <option value="30">30 min</option>
-            <option value="45">45 min</option>
-            <option value="60">1 hr</option>
-            <option value="75">1 hr 15 min</option>
-            <option value="90">1.5 hr</option>
-            <option value="120">2 hr</option>
-          </select>
-          <button type="button" onClick={() => { if (updateMutation.isPending) return; if (!title.trim()) { setFeedback("Add a lesson title."); return; } const kind = lessonTypeValue; if (kind === "video" && !videoUrl.trim() && lessonVideos.length === 0) { setFeedback("Add a video URL or upload a video."); return; } if (kind === "youtube" && !videoUrl.trim()) { setFeedback("Paste the YouTube URL."); return; } if (kind === "live" && !meetingLink.trim()) { setFeedback("Add the meeting link."); return; } if (kind === "venue" && !venue.trim()) { setFeedback("Add the venue name."); return; } if (kind === "pdf" && lessonDocs.length === 0) { setFeedback("Upload at least one PDF."); return; } if (kind === "notes" && lessonNotes.length === 0) { setFeedback("Add at least one note."); return; } updateMutation.mutate(); }} disabled={updateMutation.isPending || !title.trim()} className="h-8 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:opacity-60">{updateMutation.isPending ? "Saving..." : "Save"}</button>
+          {isLessonType(lessonTypeValue, "pdf", "notes") ? <input value={fileSize} onChange={(e) => setFileSize(e.target.value)} placeholder="File size (bytes)" type="number" min="0" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
+          {lessonTypeValue === "video" ? <input value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} placeholder="Meeting link (optional)" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
+          {isLessonType(lessonTypeValue, "quiz", "assignment") ? <p className="rounded-lg bg-[#f9fcfa] px-3 py-2 text-xs text-[#52736a]">{lessonTypeValue === "quiz" ? "After saving, use the quiz panel to attach or create questions." : "After saving, use the Assignments tab to attach or create the submission task."}</p> : null}
+          <p className="text-[10px] text-[#7f9d94]">Only fields for the selected lesson type are shown.</p>
+          <button type="button" onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending || !title.trim()} className="h-8 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:opacity-60">{updateMutation.isPending ? "Saving..." : "Save"}</button>
         </div>
       ) : (
         <div className="space-y-2">
           <p className="text-sm font-bold text-[#06201c]">{lessonTitle || "Untitled"}</p>
-          {lessonType ? <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Type: {lessonType === "video" && isYouTubeUrl(lessonVideoUrl) ? "youtube" : lessonType}</p> : null}
-          {lessonIsMandatory ? <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#b4541f]">Mandatory</p> : null}
-          {lessonVideoUrl ? (isYouTubeUrl(lessonVideoUrl) ? <a href={lessonVideoUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-[#1f6a58] underline" title={lessonVideoUrl}>Watch on YouTube →</a> : <div><VideoPreview url={lessonVideoUrl} /><a href={toPlayableMediaUrl(lessonVideoUrl)} target="_blank" rel="noreferrer" className="text-xs font-semibold text-[#1f6a58] underline">Watch video →</a></div>) : null}
+          {lessonVideoUrl ? <a href={lessonVideoUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-[#1f6a58] underline">Watch video →</a> : null}
           {lessonMeetingLink ? <p className="text-xs text-[#52736a]">Meeting: <a href={lessonMeetingLink} className="text-[#1f6a58] underline">{lessonMeetingLink}</a></p> : null}
           {lessonJoinUrl ? <p className="text-xs text-[#52736a]">Join: <a href={lessonJoinUrl} className="text-[#1f6a58] underline">{lessonJoinUrl}</a></p> : null}
-          {lessonVenue ? <p className="text-xs text-[#52736a]">Venue: {lessonVenue}{lessonAddress ? ` · ${lessonAddress}` : ""}</p> : null}
-          {lessonPassCode ? <p className="text-xs text-[#52736a]">Pass code: {lessonPassCode}</p> : null}
-          {lessonCheckInWindow ? <p className="text-xs text-[#52736a]">Check-in: {lessonCheckInWindow}</p> : null}
-          {lessonVideosInit.length > 0 ? <div><p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Videos</p><div className="mt-1 space-y-1.5">{lessonVideosInit.map((v, i) => (isYouTubeUrl(v) ? <div key={i}><a href={v} target="_blank" rel="noreferrer" className="text-xs text-[#1f6a58] underline" title={v}>Watch on YouTube →</a></div> : <div key={i}><VideoPreview url={v} /><a href={toPlayableMediaUrl(v)} target="_blank" rel="noreferrer" className="text-xs text-[#1f6a58] underline" title={v}>{mediaFileName(v)}</a></div>))}</div></div> : null}
-          {lessonDocsInit.length > 0 ? <div><p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">PDF / Document</p><ul className="mt-0.5 space-y-0.5">{lessonDocsInit.map((d, i) => <li key={i} className="text-xs text-[#52736a]"><a href={d.url} target="_blank" rel="noreferrer" className="text-[#1f6a58] underline">{d.name || d.url}</a>{d.visibility === "private" ? " • private" : ""}{d.downloadable ? " • downloadable" : ""}</li>)}</ul></div> : null}
-          {lessonNotesInit.length > 0 ? <div><p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Notes</p><ul className="mt-0.5 space-y-0.5">{lessonNotesInit.map((n, i) => <li key={i}><a href={n} target="_blank" rel="noreferrer" className="text-xs text-[#1f6a58] underline" title={n}>{mediaFileName(n)}</a></li>)}</ul></div> : null}
-          <p className="text-xs text-[#7f9d94]">{lessonIsPreview ? "Preview • " : ""}{lessonIsDownloadable ? "Downloadable" : "Not downloadable"}{lessonDuration ? ` • ${lessonDuration} min` : ""}{lessonFileSize ? ` • ${lessonFileSize}` : ""}</p>
+          {lessonType ? <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">{lessonType}</p> : null}
+          {lessonVideosInit.length > 0 ? <div><p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Videos</p><ul className="mt-0.5 space-y-0.5">{lessonVideosInit.map((v, i) => <li key={i}><a href={v} target="_blank" rel="noreferrer" className="text-xs text-[#1f6a58] underline">{v}</a></li>)}</ul></div> : null}
+          {lessonDocsInit.length > 0 ? <div><p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">PDF</p><ul className="mt-0.5 space-y-0.5">{lessonDocsInit.map((d, i) => <li key={i} className="text-xs text-[#52736a]"><a href={d.url} target="_blank" rel="noreferrer" className="text-[#1f6a58] underline">{d.name || d.url}</a>{d.visibility === "private" ? " • private" : ""}{d.downloadable ? " • downloadable" : ""}</li>)}</ul></div> : null}
+          {lessonNotesInit.length > 0 ? <div><p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Notes</p><ul className="mt-0.5 space-y-0.5">{lessonNotesInit.map((n, i) => <li key={i}><a href={n} target="_blank" rel="noreferrer" className="text-xs text-[#1f6a58] underline">{n}</a></li>)}</ul></div> : null}
+          <p className="text-xs text-[#7f9d94]">{lessonIsPreview ? "Preview • " : ""}{lessonIsDownloadable ? "Downloadable" : "Not downloadable"}{lessonDuration ? ` • ${lessonDuration} min` : ""}{lessonFileSize ? ` • ${lessonFileSize} bytes` : ""}</p>
           {lessonContent ? <p className="whitespace-pre-wrap text-xs leading-5 text-[#52736a]">{lessonContent}</p> : <p className="text-xs text-[#7f9d94]">No content.</p>}
         </div>
       )}
@@ -697,479 +392,115 @@ function LessonDetail({ trainingId, sectionId, lessonId, onClose, initialEditMod
   );
 }
 
-/** Compact question composer (radio / checkbox / true-false / text) for use inside the lesson form. */
-function QuestionComposer({ trainingId, assessmentId, notify }: { trainingId: string; assessmentId: string; notify: (msg: string) => void }) {
-  const queryClient = useQueryClient();
-  const [qText, setQText] = useState("");
-  const [qType, setQType] = useState("mcq");
-  const [options, setOptions] = useState<string[]>(["", "", "", ""]);
-  const [correctSingle, setCorrectSingle] = useState("");
-  const [correctMulti, setCorrectMulti] = useState<string[]>([]);
-  const [desc, setDesc] = useState("");
-  const [instr, setInstr] = useState("");
-
-  const addMutation = useMutation({
-    mutationFn: (payload: CreateAssessmentQuestionPayload) => addAssessmentQuestions(trainingId, assessmentId, payload),
-    onSuccess: () => {
-      setQText(""); setOptions(["", "", "", ""]); setCorrectSingle(""); setCorrectMulti([]); setDesc(""); setInstr("");
-      notify("Question added to the quiz.");
-      void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessments"] });
-    },
-    onError: (error) => notify(error instanceof TrainingsApiError ? error.message : "Unable to add question."),
-  });
-
-  const changeType = (next: string) => {
-    setQType(next);
-    setCorrectSingle(next === "true_false" ? "True" : "");
-    setCorrectMulti([]);
-    setDesc("");
-    setInstr("");
-    if (next === "mcq" || next === "multiple_select") setOptions((cur) => (cur.length ? cur : ["", "", "", ""]));
-  };
-
-  const submit = () => {
-    const value = qText.trim();
-    if (!value) return;
-    if (qType === "mcq" || qType === "multiple_select") {
-      const labels = options.map((o) => o.trim()).filter(Boolean);
-      if (labels.length < 2) { notify("Add at least two options for choice questions."); return; }
-      if (qType === "mcq") {
-        const correct = correctSingle.trim();
-        if (!correct || !labels.includes(correct)) { notify("Select the radio for the single correct answer."); return; }
-        addMutation.mutate({ question_text: value, question_type: qType, options: labels.map((label, i) => ({ id: String.fromCharCode(97 + i), label })), correct_answer: correct } as CreateAssessmentQuestionPayload);
-      } else {
-        const correct = correctMulti.map((c) => c.trim()).filter((c) => labels.includes(c));
-        if (!correct.length) { notify("Tick at least one correct answer for this question."); return; }
-        addMutation.mutate({ question_text: value, question_type: qType, options: labels.map((label, i) => ({ id: String.fromCharCode(97 + i), label })), correct_answer: correct.join(", ") } as CreateAssessmentQuestionPayload);
-      }
-    } else if (qType === "true_false") {
-      const correct = correctSingle.trim() === "False" ? "False" : "True";
-      addMutation.mutate({ question_text: value, question_type: qType, options: [{ id: "a", label: "True" }, { id: "b", label: "False" }], correct_answer: correct } as CreateAssessmentQuestionPayload);
-    } else if (qType === "task") {
-      const description = desc.trim();
-      const instructions = instr.trim();
-      if (!description) { notify("Add the task description."); return; }
-      addMutation.mutate({ question_text: value, question_type: qType, description, explanation: instructions || undefined } as CreateAssessmentQuestionPayload);
-    } else {
-      const model = correctSingle.trim();
-      addMutation.mutate({ question_text: value, question_type: qType, correct_answer: model || undefined } as CreateAssessmentQuestionPayload);
-    }
-  };
-
-  return (
-    <div className="mt-2 space-y-2 rounded-lg border border-[#e1ebe6] bg-white p-2">
-      <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Add question</p>
-      <select value={qType} onChange={(e) => changeType(e.target.value)} className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]">
-        <option value="mcq">Radio button – single answer</option>
-        <option value="multiple_select">Checkbox – multiple answers</option>
-        <option value="true_false">True / False</option>
-        <option value="short_answer">Blank text – short answer</option>
-        <option value="essay">Essay text – long answer</option>
-        <option value="task">Task – hands-on task</option>
-      </select>
-      <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); submit(); }}>
-        <input value={qText} onChange={(e) => setQText(e.target.value)} placeholder={qType === "task" ? "Task title / name…" : "Question text…"} className="h-8 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-        <button type="submit" disabled={addMutation.isPending || !qText.trim()} className="h-8 rounded-full border border-[#1f6a58] px-3 text-[10px] font-bold text-[#1f6a58] disabled:opacity-60">{addMutation.isPending ? "Adding…" : "Add"}</button>
-      </form>
-      {(qType === "mcq" || qType === "multiple_select") ? (
-        <div className="space-y-1">
-          {options.map((opt, oi) => (
-            <div key={oi} className="flex items-center gap-1.5">
-              {qType === "mcq" ? (
-                <input type="radio" name={`qc-${assessmentId}`} checked={correctSingle === opt && opt.trim() !== ""} onChange={() => setCorrectSingle(opt)} title="Mark as the correct answer" className="h-3.5 w-3.5 shrink-0 accent-[#1f6a58]" />
-              ) : (
-                <input type="checkbox" checked={correctMulti.includes(opt)} onChange={(e) => setCorrectMulti((cur) => (e.target.checked ? [...cur, opt] : cur.filter((x) => x !== opt)))} title="Mark as a correct answer" className="h-3.5 w-3.5 shrink-0 accent-[#1f6a58]" />
-              )}
-              <input value={opt} onChange={(e) => setOptions((cur) => cur.map((o, i) => (i === oi ? e.target.value : o)))} placeholder={`Option ${oi + 1}`} className="h-8 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-              <button type="button" onClick={() => { const removed = options[oi] ?? ""; setOptions((cur) => cur.filter((_, i) => i !== oi)); if (removed) { setCorrectSingle((cur) => (cur === removed ? "" : cur)); setCorrectMulti((cur) => cur.filter((x) => x !== removed)); } }} className="shrink-0 rounded-lg px-1.5 text-xs font-bold text-[#b42318] hover:bg-[#fff6f5]" title="Remove option">×</button>
-            </div>
-          ))}
-          <div className="flex items-center justify-between">
-            <button type="button" onClick={() => setOptions((cur) => [...cur, ""])} className="text-[10px] font-bold text-[#1f6a58]">+ Add option</button>
-            <p className="text-[10px] text-[#7f9d94]">{qType === "mcq" ? "Select the radio for the single correct answer." : "Tick the checkboxes for all correct answers."}</p>
-          </div>
-        </div>
-      ) : qType === "true_false" ? (
-        <div className="flex items-center gap-2 text-xs text-[#52736a]">
-          <span>Options: <strong>True</strong> / <strong>False</strong>.</span>
-          <label className="flex items-center gap-1 font-semibold">Correct answer:
-            <select value={correctSingle || "True"} onChange={(e) => setCorrectSingle(e.target.value)} className="h-8 rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]">
-              <option value="True">True</option>
-              <option value="False">False</option>
-            </select>
-          </label>
-        </div>
-      ) : qType === "task" ? (
-        <div className="space-y-1">
-          <textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Task description…" rows={2} className="w-full rounded-lg border border-[#d7e5df] bg-white px-3 py-2 text-xs outline-none focus:border-[#1f6a58]" />
-          <textarea value={instr} onChange={(e) => setInstr(e.target.value)} placeholder="Task instructions…" rows={3} className="w-full rounded-lg border border-[#d7e5df] bg-white px-3 py-2 text-xs outline-none focus:border-[#1f6a58]" />
-        </div>
-      ) : (
-        <input value={correctSingle} onChange={(e) => setCorrectSingle(e.target.value)} placeholder="Model answer (optional — graded manually)" className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-      )}
-    </div>
-  );
-}
-
-/** Quiz attach / create / questions for use inside the lesson form (quiz type). */
-function LessonQuizManager({ trainingId, sectionId, lessonId, lessonTitle, lesson, notify }: { trainingId: string; sectionId: string; lessonId: string; lessonTitle: string; lesson: Record<string, unknown>; notify: (msg: string) => void }) {
-  const queryClient = useQueryClient();
-  const [attachId, setAttachId] = useState("");
-  const [newTitle, setNewTitle] = useState("");
-  const assessmentsQuery = useQuery({ queryKey: ["trainings", trainingId, "assessments"], queryFn: () => listTrainingAssessments(trainingId), enabled: Boolean(trainingId) });
-  const assessments = Array.isArray(assessmentsQuery.data) ? (assessmentsQuery.data as Array<Record<string, unknown>>) : [];
-  const explicitId = typeof lesson.assessment_id === "string" ? lesson.assessment_id : "";
-  const attached = explicitId
-    ? assessments.find((a) => typeof a.id === "string" && a.id === explicitId)
-    : assessments.find((a) => typeof a.lesson_id === "string" && a.lesson_id === lessonId);
-  const attachedId = attached && typeof attached.id === "string" ? attached.id : "";
-  const questions: Array<Record<string, unknown>> = attached && Array.isArray(attached.questions) ? (attached.questions as Array<Record<string, unknown>>) : [];
-
-  const invalidate = () => {
-    void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessments"] });
-    void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "sections"] });
-    void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "lesson", sectionId, lessonId] });
-  };
-  const attachMutation = useMutation({
-    mutationFn: (assessmentId: string) => updateTrainingLesson(trainingId, sectionId, lessonId, { title: lessonTitle, assessment_id: assessmentId }),
-    onSuccess: () => { setAttachId(""); notify("Quiz attached — learners see it after this lesson."); invalidate(); },
-    onError: (error) => notify(error instanceof TrainingsApiError ? error.message : "Unable to attach quiz."),
-  });
-  const detachMutation = useMutation({
-    mutationFn: () => updateTrainingLesson(trainingId, sectionId, lessonId, { title: lessonTitle, assessment_id: null }),
-    onSuccess: () => { notify("Quiz detached from this lesson."); invalidate(); },
-    onError: (error) => notify(error instanceof TrainingsApiError ? error.message : "Unable to detach quiz."),
-  });
-  const createMutation = useMutation({
-    mutationFn: (title: string) => createTrainingAssessment(trainingId, { title: title.trim(), type: "quiz", section_id: sectionId, lesson_id: lessonId } as CreateTrainingAssessmentPayload),
-    onSuccess: async (data) => {
-      const created = (data ?? {}) as Record<string, unknown>;
-      const createdId = typeof created.id === "string" ? created.id : "";
-      if (createdId) { try { await updateTrainingLesson(trainingId, sectionId, lessonId, { title: lessonTitle, assessment_id: createdId }); } catch { /* keep the quiz even if the lesson link echoes unsupported */ } }
-      setNewTitle("");
-      notify("Lesson quiz created and placed after this lesson.");
-      invalidate();
-    },
-    onError: (error) => notify(error instanceof TrainingsApiError ? error.message : "Unable to create the lesson quiz."),
-  });
-  const deleteQuestionMutation = useMutation({
-    mutationFn: (questionId: string) => deleteAssessmentQuestion(trainingId, attachedId, questionId),
-    onSuccess: () => { notify("Question deleted."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessments"] }); },
-    onError: (error) => notify(error instanceof TrainingsApiError ? error.message : "Unable to delete question."),
-  });
-
-  return (
-    <div className="mt-1 space-y-2">
-      {attached ? (
-        <div className="rounded-lg bg-white p-2">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-xs font-bold text-[#06201c]">{typeof attached.title === "string" ? attached.title : "Untitled quiz"} <span className="font-normal text-[#7f9d94]">• {questions.length} questions</span></p>
-            <button type="button" onClick={() => { if (window.confirm("Detach this quiz from the lesson?")) detachMutation.mutate(); }} className="rounded-full px-2 py-0.5 text-[10px] font-semibold text-[#b42318] hover:bg-[#fff6f5]">Detach</button>
-          </div>
-          {questions.length > 0 ? (
-            <ul className="mt-1 space-y-1">
-              {questions.map((q, qi) => {
-                const qId = typeof q.id === "string" ? q.id : String(qi);
-                const qText = typeof q.question_text === "string" ? q.question_text : typeof q.question === "string" ? q.question : typeof q.text === "string" ? q.text : "Question";
-                const qOptions = Array.isArray(q.options) ? (q.options as unknown[]).map((o) => (o && typeof o === "object" ? String((o as Record<string, unknown>).label ?? (o as Record<string, unknown>).value ?? "") : typeof o === "string" ? o : "")).filter((s): s is string => Boolean(s)) : [];
-                return (
-                  <li key={qId} className="flex items-center justify-between gap-2 rounded-lg bg-[#f9fcfa] px-2 py-1.5">
-                    <div className="min-w-0">
-                      <p className="text-xs text-[#52736a]">{qi + 1}. {qText} <span className="text-[10px] text-[#7f9d94]">({typeof q.question_type === "string" ? q.question_type : "quiz"})</span></p>
-                      {qOptions.length > 0 ? <p className="text-[10px] text-[#7f9d94]">{qOptions.join(" · ")}{typeof q.correct_answer === "string" && q.correct_answer ? ` → ${q.correct_answer}` : ""}</p> : null}
-                      {q.question_type === "task" ? (<>{typeof q.description === "string" && q.description ? <p className="text-[10px] text-[#52736a]">{q.description}</p> : null}{typeof q.explanation === "string" && q.explanation ? <p className="text-[10px] text-[#7f9d94]">Instructions: {q.explanation}</p> : null}</>) : null}
-                    </div>
-                    <button type="button" onClick={() => { if (window.confirm("Delete this question?")) deleteQuestionMutation.mutate(qId); }} className="shrink-0 text-[10px] font-semibold text-[#b42318]">Delete</button>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : <p className="mt-1 text-xs text-[#7f9d94]">No questions yet — add the first one below.</p>}
-          <QuestionComposer trainingId={trainingId} assessmentId={attachedId} notify={notify} />
-        </div>
-      ) : (
-        <div className="space-y-2 rounded-lg bg-white p-2">
-          <p className="text-xs text-[#7f9d94]">No quiz attached yet.</p>
-          <div className="flex gap-2">
-            <select value={attachId} onChange={(e) => setAttachId(e.target.value)} className="h-8 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]">
-              <option value="">Attach existing quiz…</option>
-              {assessments.map((a) => { const aId = typeof a.id === "string" ? a.id : ""; const aTitle = typeof a.title === "string" ? a.title : "Untitled"; return aId ? <option key={aId} value={aId}>{aTitle}</option> : null; })}
-            </select>
-            <button type="button" onClick={() => { if (attachId) attachMutation.mutate(attachId); }} disabled={!attachId || attachMutation.isPending} className="h-8 rounded-full bg-[#1f6a58] px-3 text-[10px] font-bold text-white disabled:opacity-60">Attach</button>
-          </div>
-          <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (newTitle.trim()) createMutation.mutate(newTitle.trim()); }}>
-            <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Or create a new quiz…" className="h-8 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-            <button type="submit" disabled={createMutation.isPending || !newTitle.trim()} className="h-8 rounded-full border border-[#1f6a58] px-3 text-[10px] font-bold text-[#1f6a58] disabled:opacity-60">{createMutation.isPending ? "Creating…" : "Create"}</button>
-          </form>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Assignment attach / create for use inside the lesson form (assignment type). */
-function LessonAssignmentManager({ trainingId, sectionId, lessonId, lessonTitle, lesson, notify }: { trainingId: string; sectionId: string; lessonId: string; lessonTitle: string; lesson: Record<string, unknown>; notify: (msg: string) => void }) {
-  const queryClient = useQueryClient();
-  const [attachId, setAttachId] = useState("");
-  const [newTitle, setNewTitle] = useState("");
-  const assignmentsQuery = useQuery({ queryKey: ["trainings", trainingId, "assignments"], queryFn: () => listTrainingAssignments(trainingId), enabled: Boolean(trainingId) });
-  const assignments = Array.isArray(assignmentsQuery.data) ? (assignmentsQuery.data as Array<Record<string, unknown>>) : [];
-  const explicitId = typeof lesson.assignment_id === "string" ? lesson.assignment_id : "";
-  const attached = explicitId ? assignments.find((a) => typeof a.id === "string" && a.id === explicitId) : undefined;
-
-  const invalidate = () => {
-    void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assignments"] });
-    void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "sections"] });
-    void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "lesson", sectionId, lessonId] });
-  };
-  const attachMutation = useMutation({
-    mutationFn: (assignmentId: string) => updateTrainingLesson(trainingId, sectionId, lessonId, { title: lessonTitle, assignment_id: assignmentId }),
-    onSuccess: () => { setAttachId(""); notify("Assignment attached to this lesson."); invalidate(); },
-    onError: (error) => notify(error instanceof TrainingsApiError ? error.message : "Unable to attach assignment."),
-  });
-  const detachMutation = useMutation({
-    mutationFn: () => updateTrainingLesson(trainingId, sectionId, lessonId, { title: lessonTitle, assignment_id: null }),
-    onSuccess: () => { notify("Assignment detached from this lesson."); invalidate(); },
-    onError: (error) => notify(error instanceof TrainingsApiError ? error.message : "Unable to detach assignment."),
-  });
-  const createMutation = useMutation({
-    mutationFn: (title: string) => createTrainingAssignment(trainingId, { title: title.trim(), instructions: null, due_date: null, max_score: null }),
-    onSuccess: async (data) => {
-      const created = (data ?? {}) as Record<string, unknown>;
-      const createdId = typeof created.id === "string" ? created.id : "";
-      if (createdId) { try { await updateTrainingLesson(trainingId, sectionId, lessonId, { title: lessonTitle, assignment_id: createdId }); } catch { /* keep the assignment even if the lesson link echoes unsupported */ } }
-      setNewTitle("");
-      notify("Assignment created and attached to this lesson.");
-      invalidate();
-    },
-    onError: (error) => notify(error instanceof TrainingsApiError ? error.message : "Unable to create the assignment."),
-  });
-
-  return (
-    <div className="mt-1 space-y-2">
-      {attached ? (
-        <div className="flex items-center justify-between gap-2 rounded-lg bg-white p-2">
-          <div className="min-w-0">
-            <p className="text-xs font-bold text-[#06201c]">{typeof attached.title === "string" ? attached.title : "Untitled assignment"}</p>
-            <p className="text-[10px] text-[#7f9d94]">{typeof attached.due_date === "string" && attached.due_date ? `Due ${attached.due_date}` : "No due date"}{typeof attached.max_score === "number" ? ` • ${attached.max_score} pts` : ""}</p>
-          </div>
-          <button type="button" onClick={() => { if (window.confirm("Detach this assignment from the lesson?")) detachMutation.mutate(); }} className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold text-[#b42318] hover:bg-[#fff6f5]">Detach</button>
-        </div>
-      ) : (
-        <div className="space-y-2 rounded-lg bg-white p-2">
-          <p className="text-xs text-[#7f9d94]">No assignment attached yet.</p>
-          <div className="flex gap-2">
-            <select value={attachId} onChange={(e) => setAttachId(e.target.value)} className="h-8 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]">
-              <option value="">Attach existing assignment…</option>
-              {assignments.map((a) => { const aId = typeof a.id === "string" ? a.id : ""; const aTitle = typeof a.title === "string" ? a.title : "Untitled"; return aId ? <option key={aId} value={aId}>{aTitle}</option> : null; })}
-            </select>
-            <button type="button" onClick={() => { if (attachId) attachMutation.mutate(attachId); }} disabled={!attachId || attachMutation.isPending} className="h-8 rounded-full bg-[#1f6a58] px-3 text-[10px] font-bold text-white disabled:opacity-60">Attach</button>
-          </div>
-          <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (newTitle.trim()) createMutation.mutate(newTitle.trim()); }}>
-            <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Or create a new assignment…" className="h-8 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-            <button type="submit" disabled={createMutation.isPending || !newTitle.trim()} className="h-8 rounded-full border border-[#1f6a58] px-3 text-[10px] font-bold text-[#1f6a58] disabled:opacity-60">{createMutation.isPending ? "Creating…" : "Create"}</button>
-          </form>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Type-driven new-lesson composer: pick a kind first, fill its fields, then Add. Opens the created lesson in edit mode. */
-function NewLessonComposer({ trainingId, sectionId, notify, onCreated }: { trainingId: string; sectionId: string; notify: (msg: string) => void; onCreated: (lessonId: string) => void }) {
-  const queryClient = useQueryClient();
+/** Renders the Training structure: sections, lessons, and reordering. */
+function AddLessonForm({ pending, onSubmit }: { pending: boolean; onSubmit: (payload: CreateTrainingLessonPayload) => void }) {
   const [title, setTitle] = useState("");
-  const [kind, setKind] = useState("topic");
   const [content, setContent] = useState("");
-  const [videoUrl, setVideoUrl] = useState("");
-  const [provider, setProvider] = useState("");
+  const [contentUrl, setContentUrl] = useState("");
+  const [type, setType] = useState("text");
   const [meetingLink, setMeetingLink] = useState("");
-  const [joinUrl, setJoinUrl] = useState("");
-  const [venue, setVenue] = useState("");
-  const [address, setAddress] = useState("");
-  const [passCode, setPassCode] = useState("");
-  const [checkInWindow, setCheckInWindow] = useState("");
+  const [joinMeta, setJoinMeta] = useState("");
+  const [isPreview, setIsPreview] = useState(false);
+  const [isDownloadable, setIsDownloadable] = useState(false);
+  const [fileSize, setFileSize] = useState("");
+  const [duration, setDuration] = useState("");
   const [videos, setVideos] = useState<string[]>([]);
-  const [docs, setDocs] = useState<Array<{ url: string; name: string; visibility: string; downloadable: boolean }>>([]);
+  const [documents, setDocuments] = useState<Array<{ url: string; name: string; visibility: string; downloadable: boolean }>>([]);
   const [notes, setNotes] = useState<string[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const videoInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFiles = async (files: File[]) => {
-    setUploading(true);
-    let uploaded = 0;
-    let failed = 0;
-    for (const file of files) {
-      try {
-        const url = (await uploadLessonMedia(file)).mediaUrl;
-        const type = file.type ?? "";
-        if (type.startsWith("video/")) {
-          setVideos((v) => [...v, url]);
-        } else if (type === "application/pdf" || type === "application/msword" || type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || /\.(pdf|doc|docx)$/i.test(file.name)) {
-          setDocs((d) => [...d, { url, name: file.name, visibility: "public", downloadable: true }]);
-        } else {
-          setNotes((n) => [...n, url]);
-        }
-        uploaded += 1;
-      } catch {
-        failed += 1;
-      }
-    }
-    setUploading(false);
-    if (uploaded) notify(`Uploaded ${uploaded} file${uploaded === 1 ? "" : "s"} — they will attach when you add the lesson.${failed ? ` ${failed} failed.` : ""}`);
-    else if (failed) notify("Upload failed.");
+  const reset = () => {
+    setTitle(""); setContent(""); setContentUrl(""); setType("text"); setMeetingLink(""); setJoinMeta("");
+    setIsPreview(false); setIsDownloadable(false); setFileSize(""); setDuration(""); setVideos([]); setDocuments([]); setNotes([]);
   };
-
-  /** Kind-aware required-field validation — returns an error message or null when valid. */
-  const validateDraft = (): string | null => {
-    if (!title.trim()) return "Add a lesson title.";
-    if (kind === "video" && !videoUrl.trim() && videos.length === 0) return "Add a video URL or upload a video.";
-    if (kind === "youtube" && !videoUrl.trim()) return "Paste the YouTube URL.";
-    if (kind === "live" && !meetingLink.trim()) return "Add the meeting link.";
-    if (kind === "venue" && !venue.trim()) return "Add the venue name.";
-    if (kind === "pdf" && docs.length === 0) return "Upload at least one PDF.";
-    if (kind === "notes" && notes.length === 0) return "Add at least one note.";
-    return null;
-  };
-
-  const createMutation = useMutation({
-    mutationFn: async () => {
-      const payload = {
-        title: title.trim(),
-        type: kind,
-        content: content.trim() || undefined,
-        content_url: videoUrl.trim() || undefined,
-        meeting_link: meetingLink.trim() || undefined,
-        join_meta: joinUrl.trim() || undefined,
-        meeting_type: provider || undefined,
-        venue: venue.trim() || undefined,
-        address: address.trim() || undefined,
-        pass_code: passCode.trim() || undefined,
-        check_in_window: checkInWindow.trim() || undefined,
-        videos: videos.map((v) => v.trim()).filter(Boolean),
-        documents: docs.filter((d) => d.url.trim()).map((d) => ({ url: d.url.trim(), name: d.name.trim() || d.url.trim().split("/").pop() || "document", visibility: d.visibility, downloadable: d.downloadable })),
-        notes: notes.map((n) => n.trim()).filter(Boolean),
-      } as CreateTrainingLessonPayload;
-      try {
-        return await createTrainingLesson(trainingId, sectionId, payload);
-      } catch (error) {
-        // Older backends reject the "youtube" kind — retry once as video (URL detection keeps the YouTube UX).
-        if (kind === "youtube" && error instanceof TrainingsApiError && error.status === 400 && error.message.includes("Unsupported curriculum item type")) {
-          return createTrainingLesson(trainingId, sectionId, { ...payload, type: "video" });
-        }
-        throw error;
-      }
-    },
-    onSuccess: (data) => {
-      const created = (data ?? {}) as Record<string, unknown>;
-      const createdId = typeof created.id === "string" ? created.id : "";
-      setTitle(""); setKind("topic"); setContent(""); setVideoUrl(""); setProvider(""); setMeetingLink(""); setJoinUrl("");
-      setVenue(""); setAddress(""); setPassCode(""); setCheckInWindow("");
-      setVideos([]); setDocs([]); setNotes([]);
-      notify(createdId ? "Lesson added — opened for editing below." : "Lesson added.");
-      void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "sections"] });
-      if (createdId) onCreated(createdId);
-    },
-    onError: (error) => notify(error instanceof TrainingsApiError ? error.message : "Unable to add the lesson."),
-  });
 
   return (
     <form
-      className="mt-3 space-y-2 rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-3"
-      onSubmit={(event) => { event.preventDefault(); if (createMutation.isPending) return; const error = validateDraft(); if (error) { notify(error); return; } createMutation.mutate(); }}
+      className="mt-3 space-y-2 rounded-xl border border-[#d7e5df] bg-white p-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!title.trim()) return;
+        onSubmit({
+          title: title.trim(),
+          content: content.trim() || undefined,
+          content_url: contentUrl.trim() || undefined,
+          type: toApiLessonType(type),
+          meeting_link: meetingLink.trim() || undefined,
+          join_meta: joinMeta.trim() || undefined,
+          is_preview: isPreview,
+          is_downloadable: isDownloadable,
+          file_size: fileSize.trim() ? Number(fileSize) : undefined,
+          duration: duration.trim() ? Number(duration) : undefined,
+          videos: videos.filter((value) => value.trim()),
+          notes: notes.filter((value) => value.trim()),
+          documents: documents.filter((document) => document.url.trim()).map((document) => ({
+            url: document.url.trim(),
+            name: document.name.trim() || document.url.trim().split("/").pop() || "document",
+            visibility: document.visibility,
+            downloadable: document.downloadable,
+          })),
+        });
+        reset();
+      }}
     >
-      <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Add lesson</p>
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={lessonTitlePlaceholder(kind)} className="h-9 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]" />
-        <select value={kind} onChange={(e) => setKind(e.target.value)} className="h-9 rounded-lg border border-[#d7e5df] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]">
-          <option value="topic">Topic</option>
-          <option value="video">Video</option>
-          <option value="youtube">YouTube</option>
-          <option value="pdf">PDF</option>
-          <option value="notes">Notes</option>
-          <option value="quiz">Quiz</option>
-          <option value="assignment">Assignment</option>
-        </select>
-      </div>
-      {kind === "topic" ? (
-        <textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="Topic content..." rows={3} className="w-full rounded-lg border border-[#d7e5df] bg-white px-3 py-2 text-xs outline-none focus:border-[#1f6a58]" />
-      ) : null}
-      {kind === "video" ? (
-        <div className="space-y-2">
-          <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="Video URL https://…" className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-          <div className="flex items-center gap-2">
-            <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={(event) => { const file = event.target.files?.[0] ?? null; if (file) void (async () => { try { setVideoUrl((await uploadLessonMedia(file)).mediaUrl); } catch (error) { notify(error instanceof Error ? error.message : "Upload failed."); } finally { if (videoInputRef.current) videoInputRef.current.value = ""; } })(); }} />
-            <button type="button" onClick={() => videoInputRef.current?.click()} className="rounded-full border border-[#1f6a58] px-3 py-1 text-[10px] font-bold text-[#1f6a58] hover:bg-[#e8f6ee]">Upload video</button>
-            {videoUrl.trim() ? <p className="truncate text-xs font-semibold text-[#06201c]" title={videoUrl}>{mediaFileName(videoUrl)}</p> : null}
-          </div>
-          <LessonUrlList label="More videos" values={videos} update={setVideos} placeholder="Video URL https://…" renderPreview={(val) => <VideoPreview url={val} />} showFileName />
+      <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">New lesson details</p>
+      <input required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Lesson title" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
+      <select value={type} onChange={(event) => setType(event.target.value)} aria-label="New lesson type" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]">
+        {LESSON_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+      {isLessonType(type, "text", "notes") ? <textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder={type === "notes" ? "Notes content..." : "Topic content..."} rows={3} className="w-full rounded-lg border border-[#d7e5df] px-3 py-2 text-xs outline-none focus:border-[#1f6a58]" /> : null}
+      {isLessonType(type, "video", "youtube") ? <input value={contentUrl} onChange={(event) => setContentUrl(event.target.value)} placeholder={type === "youtube" ? "Paste YouTube link" : "Video URL https://…"} className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
+      {type === "video" ? <LessonUrlList label="Videos" values={videos} update={setVideos} placeholder="Additional video URL https://…" /> : null}
+      {type === "pdf" ? <LessonDocsList values={documents} update={setDocuments} /> : null}
+      {type === "notes" ? <LessonUrlList label="Notes" values={notes} update={setNotes} placeholder="Note URL / link https://…" /> : null}
+      {type === "video" ? <input value={duration} onChange={(event) => setDuration(event.target.value)} placeholder="Duration (minutes)" type="number" min="0" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
+      {isLessonType(type, "video", "pdf", "notes") ? (
+        <div className="flex flex-wrap gap-4">
+          <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={isPreview} onChange={(event) => setIsPreview(event.target.checked)} className="h-3 w-3" />Is preview</label>
+          <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={isDownloadable} onChange={(event) => setIsDownloadable(event.target.checked)} className="h-3 w-3" />Is downloadable</label>
         </div>
       ) : null}
-      {kind === "youtube" ? (
-        <div className="grid gap-2">
-          <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="YouTube URL e.g. https://youtube.com/watch?v=… or https://youtu.be/…" className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-          <p className="text-[10px] text-[#7f9d94]">Paste a YouTube link — it saves as a tap-to-open link for learners.</p>
-        </div>
-      ) : null}
-      {kind === "pdf" ? (
-        <div className="space-y-2">
-          <LessonMediaDropZone onFiles={(files) => void handleFiles(files)} busy={uploading} />
-          <LessonDocsList values={docs} update={setDocs} />
-        </div>
-      ) : null}
-      {kind === "notes" ? (
-        <div className="space-y-2">
-          <LessonMediaDropZone onFiles={(files) => void handleFiles(files)} busy={uploading} />
-          <LessonUrlList label="Notes" values={notes} update={setNotes} placeholder="Note URL / link https://…" showFileName />
-        </div>
-      ) : null}
-      {kind === "quiz" || kind === "assignment" ? (
-        <p className="text-xs text-[#52736a]">{kind === "quiz" ? "Create the lesson, then attach the quiz and add questions inside — it opens for editing automatically." : "Create the lesson, then attach the assignment inside — it opens for editing automatically."}</p>
-      ) : null}
-      <button type="submit" disabled={createMutation.isPending || !title.trim()} className="h-9 rounded-full border border-[#1f6a58] px-4 text-xs font-bold text-[#1f6a58] disabled:opacity-60">{createMutation.isPending ? "Adding…" : "Add lesson"}</button>
+      {isLessonType(type, "pdf", "notes") ? <input value={fileSize} onChange={(event) => setFileSize(event.target.value)} placeholder="File size (bytes)" type="number" min="0" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
+      {type === "video" ? <input value={meetingLink} onChange={(event) => setMeetingLink(event.target.value)} placeholder="Meeting link (optional)" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
+      {isLessonType(type, "quiz", "assignment") ? <p className="rounded-lg bg-[#f9fcfa] px-3 py-2 text-xs text-[#52736a]">{type === "quiz" ? "After creating this lesson, attach or create the quiz questions below." : "After creating this lesson, use the Assignments tab to create the submission task."}</p> : null}
+      <p className="text-[10px] text-[#7f9d94]">Only fields for the selected lesson type are shown.</p>
+      <button type="submit" disabled={pending || !title.trim()} className="h-9 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:opacity-60">{pending ? "Adding..." : "Add lesson"}</button>
     </form>
   );
 }
 
-/** Renders the Training structure: sections, lessons, and reordering. */
 export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
   const queryClient = useQueryClient();
   const [newSectionTitle, setNewSectionTitle] = useState("");
+  const [newSectionType, setNewSectionType] = useState("session");
+  const [newSectionDate, setNewSectionDate] = useState("");
+  const [newSectionMeetingType, setNewSectionMeetingType] = useState("google_meet");
+  const [newSectionMeetingLink, setNewSectionMeetingLink] = useState("");
+  const [newSectionJoinUrl, setNewSectionJoinUrl] = useState("");
+  const [newSectionVenueName, setNewSectionVenueName] = useState("");
+  const [newSectionVenueAddress, setNewSectionVenueAddress] = useState("");
+  const [newSectionPassCode, setNewSectionPassCode] = useState("");
+  const [newSectionCheckInWindow, setNewSectionCheckInWindow] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
   const [editSectionTitle, setEditSectionTitle] = useState("");
-  const [editSectionSchedule, setEditSectionSchedule] = useState("");
-  const [editSectionType, setEditSectionType] = useState("");
-  const [newSectionSchedule, setNewSectionSchedule] = useState("");
-  const [newSectionKind, setNewSectionKind] = useState("");
-  const [newMeetingProvider, setNewMeetingProvider] = useState("");
-  const [newMeetingLink, setNewMeetingLink] = useState("");
-  const [newJoinUrl, setNewJoinUrl] = useState("");
-  const [newVenue, setNewVenue] = useState("");
-  const [newAddress, setNewAddress] = useState("");
-  const [newPassCode, setNewPassCode] = useState("");
-  const [newCheckInWindow, setNewCheckInWindow] = useState("");
-  const [editMeetingProvider, setEditMeetingProvider] = useState("");
-  const [editMeetingLink, setEditMeetingLink] = useState("");
-  const [editJoinUrl, setEditJoinUrl] = useState("");
-  const [editVenue, setEditVenue] = useState("");
-  const [editAddress, setEditAddress] = useState("");
-  const [editPassCode, setEditPassCode] = useState("");
-  const [editCheckInWindow, setEditCheckInWindow] = useState("");
-  const [viewingLesson, setViewingLesson] = useState<{ sectionId: string; lessonId: string; edit?: boolean } | null>(null);
+  const [editSectionType, setEditSectionType] = useState("session");
+  const [editSectionDate, setEditSectionDate] = useState("");
+  const [editSectionMeetingType, setEditSectionMeetingType] = useState("google_meet");
+  const [editSectionMeetingLink, setEditSectionMeetingLink] = useState("");
+  const [editSectionJoinUrl, setEditSectionJoinUrl] = useState("");
+  const [editSectionVenueName, setEditSectionVenueName] = useState("");
+  const [editSectionVenueAddress, setEditSectionVenueAddress] = useState("");
+  const [editSectionPassCode, setEditSectionPassCode] = useState("");
+  const [editSectionCheckInWindow, setEditSectionCheckInWindow] = useState("");
+  const [viewingLesson, setViewingLesson] = useState<{ sectionId: string; lessonId: string } | null>(null);
   const [quizLesson, setQuizLesson] = useState<{ sectionId: string; lessonId: string } | null>(null);
   const [lessonAssessmentDraft, setLessonAssessmentDraft] = useState<Record<string, string>>({});
   const [lessonAssessmentTitle, setLessonAssessmentTitle] = useState<Record<string, string>>({});
   const [lessonQuestion, setLessonQuestion] = useState<Record<string, string>>({});
-  const [questionTypeDraft, setQuestionTypeDraft] = useState<Record<string, string>>({});
-  const [questionOptionsList, setQuestionOptionsList] = useState<Record<string, string[]>>({});
-  const [questionCorrectSingle, setQuestionCorrectSingle] = useState<Record<string, string>>({});
-  const [questionCorrectMulti, setQuestionCorrectMulti] = useState<Record<string, string[]>>({});
-  const [questionTaskDesc, setQuestionTaskDesc] = useState<Record<string, string>>({});
-  const [questionTaskInstr, setQuestionTaskInstr] = useState<Record<string, string>>({});
-  const [quizPassPercent, setQuizPassPercent] = useState<Record<string, string>>({});
-  const [quizTimeLimit, setQuizTimeLimit] = useState<Record<string, string>>({});
-  const [quizMaxAttempts, setQuizMaxAttempts] = useState<Record<string, string>>({});
+  const [lessonQuestionType, setLessonQuestionType] = useState<Record<string, string>>({});
+  const [lessonQuestionOptions, setLessonQuestionOptions] = useState<Record<string, string>>({});
+  const [lessonCorrectAnswer, setLessonCorrectAnswer] = useState<Record<string, string>>({});
+  const [lessonQuestionPoints, setLessonQuestionPoints] = useState<Record<string, string>>({});
 
   const sectionsQuery = useQuery({
     queryKey: ["trainings", trainingId, "sections"],
@@ -1186,58 +517,25 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
   });
 
   const addSectionQuestionMutation = useMutation({
-    mutationFn: ({ assessmentId, question, questionType, options, correctAnswer, description, instructions }: { assessmentId: string; question: string; questionType: string; options: string[]; correctAnswer?: string; description?: string; instructions?: string }) =>
-      addAssessmentQuestions(trainingId, assessmentId, { question_text: question, question_type: questionType, options: options.length ? options.map((label, i) => ({ id: String.fromCharCode(97 + i), label })) : undefined, correct_answer: correctAnswer?.trim() ? correctAnswer.trim() : undefined, description: description?.trim() ? description.trim() : undefined, explanation: instructions?.trim() ? instructions.trim() : undefined } as CreateAssessmentQuestionPayload),
-    onSuccess: () => { setFeedback("Question added to the quiz."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessments"] }); },
+    mutationFn: ({ formKey, assessmentId, question, questionType, options, correctAnswer, points }: { formKey: string; assessmentId: string; question: string; questionType: string; options: string[]; correctAnswer: string; points: number }) =>
+      addAssessmentQuestions(trainingId, assessmentId, {
+        question_text: question,
+        question_type: questionType,
+        options: ["mcq", "multiple_select"].includes(questionType) ? options : null,
+        correct_answer: correctAnswer || null,
+        points,
+      }),
+    onSuccess: (_data, variables) => {
+      const key = variables.formKey;
+      setLessonQuestion((current) => ({ ...current, [key]: "" }));
+      setLessonQuestionOptions((current) => ({ ...current, [key]: "" }));
+      setLessonCorrectAnswer((current) => ({ ...current, [key]: "" }));
+      setLessonQuestionPoints((current) => ({ ...current, [key]: "1" }));
+      setFeedback("Question added to the quiz.");
+      void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessments"] });
+    },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to add question."),
   });
-
-  /** Validates + submits one quiz question with its options and correct answer(s). */
-  const submitLessonQuestion = (lessonKey: string, assessmentId: string) => {
-    const value = lessonQuestion[lessonKey]?.trim();
-    if (!value) return;
-    const questionType = questionTypeDraft[lessonKey] ?? "mcq";
-    if (questionType === "mcq" || questionType === "multiple_select") {
-      const options = (questionOptionsList[lessonKey] ?? []).map((o) => o.trim()).filter(Boolean);
-      if (options.length < 2) { setFeedback("Add at least two options for choice questions."); return; }
-      if (questionType === "mcq") {
-        const correct = (questionCorrectSingle[lessonKey] ?? "").trim();
-        if (!correct || !options.includes(correct)) { setFeedback("Select the radio for the single correct answer."); return; }
-        addSectionQuestionMutation.mutate({ assessmentId, question: value, questionType, options, correctAnswer: correct });
-      } else {
-        const correct = (questionCorrectMulti[lessonKey] ?? []).map((c) => c.trim()).filter((c) => options.includes(c));
-        if (!correct.length) { setFeedback("Tick at least one correct answer for this question."); return; }
-        addSectionQuestionMutation.mutate({ assessmentId, question: value, questionType, options, correctAnswer: correct.join(", ") });
-      }
-    } else if (questionType === "true_false") {
-      const correct = (questionCorrectSingle[lessonKey] ?? "True").trim() === "False" ? "False" : "True";
-      addSectionQuestionMutation.mutate({ assessmentId, question: value, questionType, options: ["True", "False"], correctAnswer: correct });
-    } else if (questionType === "task") {
-      const desc = (questionTaskDesc[lessonKey] ?? "").trim();
-      const instr = (questionTaskInstr[lessonKey] ?? "").trim();
-      if (!desc) { setFeedback("Add the task description."); return; }
-      addSectionQuestionMutation.mutate({ assessmentId, question: value, questionType, options: [], description: desc, instructions: instr || undefined });
-    } else {
-      const model = (questionCorrectSingle[lessonKey] ?? "").trim();
-      addSectionQuestionMutation.mutate({ assessmentId, question: value, questionType, options: [], correctAnswer: model || undefined });
-    }
-    setLessonQuestion((current) => ({ ...current, [lessonKey]: "" }));
-    setQuestionOptionsList((current) => ({ ...current, [lessonKey]: [] }));
-    setQuestionCorrectSingle((current) => ({ ...current, [lessonKey]: "" }));
-    setQuestionCorrectMulti((current) => ({ ...current, [lessonKey]: [] }));
-    setQuestionTaskDesc((current) => ({ ...current, [lessonKey]: "" }));
-    setQuestionTaskInstr((current) => ({ ...current, [lessonKey]: "" }));
-  };
-
-  /** Switches a draft question's type, resetting option/correct drafts (4 blank rows for choice types). */
-  const changeLessonQuestionType = (lessonKey: string, next: string) => {
-    setQuestionTypeDraft((current) => ({ ...current, [lessonKey]: next }));
-    setQuestionCorrectSingle((current) => ({ ...current, [lessonKey]: next === "true_false" ? "True" : "" }));
-    setQuestionCorrectMulti((current) => ({ ...current, [lessonKey]: [] }));
-    if (next === "mcq" || next === "multiple_select") {
-      setQuestionOptionsList((current) => ({ ...current, [lessonKey]: (current[lessonKey] ?? []).length ? current[lessonKey] : ["", "", "", ""] }));
-    }
-  };
 
   const deleteSectionQuestionMutation = useMutation({
     mutationFn: ({ assessmentId, questionId }: { assessmentId: string; questionId: string }) => deleteAssessmentQuestion(trainingId, assessmentId, questionId),
@@ -1258,17 +556,7 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
   });
 
   const createLessonAssessmentMutation = useMutation({
-    mutationFn: ({ sectionId, lessonId, lessonTitle, title }: { sectionId: string; lessonId: string; lessonTitle: string; title: string }) => {
-      const key = `${sectionId}:${lessonId}`;
-      const payload = { title: title.trim(), type: "quiz", section_id: sectionId, lesson_id: lessonId } as CreateTrainingAssessmentPayload;
-      const passPercent = quizPassPercent[key]?.trim();
-      const timeLimit = quizTimeLimit[key]?.trim();
-      const maxAttempts = quizMaxAttempts[key]?.trim();
-      if (passPercent) payload.pass_percent = Number(passPercent);
-      if (timeLimit) payload.time_limit_minutes = Number(timeLimit);
-      if (maxAttempts) payload.attempts_allowed = Number(maxAttempts);
-      return createTrainingAssessment(trainingId, payload);
-    },
+    mutationFn: ({ sectionId, lessonId, lessonTitle, title }: { sectionId: string; lessonId: string; lessonTitle: string; title: string }) => createTrainingAssessment(trainingId, { title: title.trim(), type: "quiz", section_id: sectionId, lesson_id: lessonId }),
     onSuccess: async (data, vars) => {
       const created = (data ?? {}) as Record<string, unknown>;
       const createdId = typeof created.id === "string" ? created.id : "";
@@ -1276,10 +564,7 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
         try { await updateTrainingLesson(trainingId, vars.sectionId, vars.lessonId, { title: vars.lessonTitle, assessment_id: createdId }); } catch { /* keep the quiz even if the lesson link echoes unsupported */ }
       }
       setLessonAssessmentTitle((current) => ({ ...current, [`${vars.sectionId}:${vars.lessonId}`]: "" }));
-      setQuizPassPercent((current) => ({ ...current, [`${vars.sectionId}:${vars.lessonId}`]: "" }));
-      setQuizTimeLimit((current) => ({ ...current, [`${vars.sectionId}:${vars.lessonId}`]: "" }));
-      setQuizMaxAttempts((current) => ({ ...current, [`${vars.sectionId}:${vars.lessonId}`]: "" }));
-      setFeedback("Lesson quiz created and placed after this lesson — locked until this lesson is completed.");
+      setFeedback("Lesson quiz created and placed after this lesson.");
       void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessments"] });
       void invalidateSections();
     },
@@ -1288,98 +573,82 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
 
   const createSectionMutation = useMutation({
     mutationFn: () => {
-      const payload: CreateTrainingSectionPayload = { title: newSectionTitle.trim(), type: newSectionKind || "section" };
-      const schedule = newSectionSchedule.trim();
-      if (schedule) payload.schedule = schedule;
-      if (newSectionKind === "live") {
-        if (newMeetingProvider) payload.meeting_type = newMeetingProvider;
-        if (newMeetingLink.trim()) payload.meeting_link = newMeetingLink.trim();
-        if (newJoinUrl.trim()) payload.join_meta = newJoinUrl.trim();
-      }
-      if (newSectionKind === "venue") {
-        if (newVenue.trim()) payload.venue = newVenue.trim();
-        if (newAddress.trim()) payload.address = newAddress.trim();
-        if (newPassCode.trim()) payload.pass_code = newPassCode.trim();
-        if (newCheckInWindow.trim()) payload.check_in_window = newCheckInWindow.trim();
-      }
+      const payload: CreateTrainingSectionPayload = {
+        title: newSectionTitle.trim(),
+        type: newSectionType,
+        ...(newSectionType === "live" ? {
+          scheduled_at: newSectionDate || null,
+          meeting_type: newSectionMeetingType,
+          meeting_link: newSectionMeetingLink.trim() || null,
+          join_url: newSectionJoinUrl.trim() || null,
+        } : {}),
+        ...(newSectionType === "venue" ? {
+          scheduled_at: newSectionDate || null,
+          venue_name: newSectionVenueName.trim() || null,
+          venue_address: newSectionVenueAddress.trim() || null,
+          pass_code: newSectionPassCode.trim() || null,
+          check_in_window: newSectionCheckInWindow.trim() || null,
+        } : {}),
+      };
       return createTrainingSection(trainingId, payload);
     },
     onSuccess: () => {
       setNewSectionTitle("");
-      setNewSectionSchedule("");
-      setNewSectionKind("");
-      setNewMeetingProvider(""); setNewMeetingLink(""); setNewJoinUrl("");
-      setNewVenue(""); setNewAddress(""); setNewPassCode(""); setNewCheckInWindow("");
-      setFeedback("Session created.");
+      setNewSectionType("session");
+      setNewSectionDate("");
+      setNewSectionMeetingLink("");
+      setNewSectionJoinUrl("");
+      setNewSectionVenueName("");
+      setNewSectionVenueAddress("");
+      setNewSectionPassCode("");
+      setNewSectionCheckInWindow("");
+      setFeedback("Section created.");
       void invalidateSections();
     },
-    onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to create the session."),
+    onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to create the section."),
   });
 
   const updateSectionMutation = useMutation({
-    mutationFn: async ({ sectionId, title, schedule, sectionType, meetingProvider, meetingLink, joinUrl, venue, address, passCode, checkInWindow }: { sectionId: string; title: string; schedule: string; sectionType: string; meetingProvider: string; meetingLink: string; joinUrl: string; venue: string; address: string; passCode: string; checkInWindow: string }) => {
-      const nextTitle = title.trim();
-      const payload: UpdateTrainingSectionPayload = { title: nextTitle, type: sectionType || "section" };
-      if (schedule.trim()) payload.schedule = schedule.trim();
-      if (sectionType === "live") {
-        if (meetingProvider) payload.meeting_type = meetingProvider;
-        if (meetingLink.trim()) payload.meeting_link = meetingLink.trim();
-        if (joinUrl.trim()) payload.join_meta = joinUrl.trim();
-      }
-      if (sectionType === "venue") {
-        if (venue.trim()) payload.venue = venue.trim();
-        if (address.trim()) payload.address = address.trim();
-        if (passCode.trim()) payload.pass_code = passCode.trim();
-        if (checkInWindow.trim()) payload.check_in_window = checkInWindow.trim();
-      }
-      const updated = (await updateTrainingSection(trainingId, sectionId, payload)) as Record<string, unknown> | null;
-      const echoedTitle = updated && typeof updated.title === "string" ? updated.title.trim() : "";
-      if (echoedTitle && echoedTitle === nextTitle) return { applied: true, title: echoedTitle };
-      // Fallback: the section-level PUT returned stale data — rewrite the title via the
-      // training-level PUT, which replaces the whole sections array (tracked assignment).
-      const current = ((sectionsQuery.data ?? []) as Array<Record<string, unknown>>).map((s) => {
-        const sid = typeof s.id === "string" ? s.id : String(s.order ?? "");
-        if (sid !== sectionId) return s;
-        const next: Record<string, unknown> = { ...s, title: nextTitle, type: sectionType || "section" };
-        if (schedule.trim()) next.schedule = schedule.trim();
-        if (sectionType === "live") {
-          if (meetingProvider) next.meeting_type = meetingProvider;
-          if (meetingLink.trim()) next.meeting_link = meetingLink.trim();
-          if (joinUrl.trim()) next.join_meta = joinUrl.trim();
-        }
-        if (sectionType === "venue") {
-          if (venue.trim()) next.venue = venue.trim();
-          if (address.trim()) next.address = address.trim();
-          if (passCode.trim()) next.pass_code = passCode.trim();
-          if (checkInWindow.trim()) next.check_in_window = checkInWindow.trim();
-        }
-        return next;
-      });
-      await updateTraining(trainingId, { sections: current } as unknown as UpdateTrainingPayload);
-      const fresh = (await getTrainingSections(trainingId)) as Array<Record<string, unknown>>;
-      const match = fresh.find((s) => (typeof s.id === "string" ? s.id : String(s.order ?? "")) === sectionId);
-      const finalTitle = match && typeof match.title === "string" ? match.title.trim() : "";
-      return { applied: finalTitle === nextTitle, title: finalTitle || nextTitle };
-    },
-    onSuccess: (result) => {
-      setEditingSectionId(null);
-      void invalidateSections();
-      if (result.applied) {
-        setFeedback("Session updated.");
-      } else {
-        setFeedback(`Saved, but the server returned the old title ("${result.title}") — the change may not have been applied.`);
-      }
-    },
-    onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to update session."),
+    mutationFn: ({ sectionId, title }: { sectionId: string; title: string }) => updateTrainingSection(trainingId, sectionId, {
+      title,
+      type: editSectionType,
+      ...(editSectionType === "live" ? {
+        scheduled_at: editSectionDate || null,
+        meeting_type: editSectionMeetingType,
+        meeting_link: editSectionMeetingLink.trim() || null,
+        join_url: editSectionJoinUrl.trim() || null,
+      } : {}),
+      ...(editSectionType === "venue" ? {
+        scheduled_at: editSectionDate || null,
+        venue_name: editSectionVenueName.trim() || null,
+        venue_address: editSectionVenueAddress.trim() || null,
+        pass_code: editSectionPassCode.trim() || null,
+        check_in_window: editSectionCheckInWindow.trim() || null,
+      } : {}),
+    }),
+    onSuccess: () => { setEditingSectionId(null); setFeedback("Section updated."); void invalidateSections(); },
+    onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to update section."),
   });
 
   const deleteSectionMutation = useMutation({
     mutationFn: (sectionId: string) => deleteTrainingSection(trainingId, sectionId),
     onSuccess: () => {
-      setFeedback("Session deleted.");
+      setFeedback("Section deleted.");
       void invalidateSections();
     },
-    onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to delete the session."),
+    onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to delete the section."),
+  });
+
+  const createLessonMutation = useMutation({
+    mutationFn: ({ sectionId, payload }: { sectionId: string; payload: CreateTrainingLessonPayload }) => createTrainingLesson(trainingId, sectionId, payload),
+    onSuccess: (data, vars) => {
+      const created = (data ?? {}) as Record<string, unknown>;
+      const createdId = typeof created.id === "string" ? created.id : "";
+      if (createdId) setViewingLesson({ sectionId: vars.sectionId, lessonId: createdId });
+      setFeedback(createdId ? "Lesson added — attach videos, PDFs, and notes below." : "Lesson added.");
+      void invalidateSections();
+    },
+    onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to add the lesson."),
   });
 
   const deleteLessonMutation = useMutation({
@@ -1405,11 +674,11 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ordered_ids: sectionOrders.map((s) => s.id) }),
+        body: JSON.stringify({ section_orders: sectionOrders }),
       }).then((r) => { if (!r.ok) throw new Error("Reorder failed"); });
     },
-    onSuccess: () => { setFeedback("Sessions reordered."); void invalidateSections(); },
-    onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to reorder sessions."),
+    onSuccess: () => { setFeedback("Sections reordered."); void invalidateSections(); },
+    onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to reorder sections."),
   });
 
   const moveLessonMutation = useMutation({
@@ -1428,7 +697,7 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ordered_ids: lessonOrders.map((l) => l.id) }),
+        body: JSON.stringify({ lesson_orders: lessonOrders }),
       }).then((r) => { if (!r.ok) throw new Error("Reorder failed"); });
     },
     onSuccess: () => { setFeedback("Lessons reordered."); void invalidateSections(); },
@@ -1449,65 +718,64 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
         {sections.map((section, sIndex) => {
           const id = typeof section.id === "string" ? section.id : String(section.order ?? "");
           const title = typeof section.title === "string" ? section.title : "Untitled session";
-          const sectionScheduleRaw = typeof section.schedule === "string" ? section.schedule : typeof section.schedule === "object" && section.schedule ? JSON.stringify(section.schedule) : "";
-          const sectionType = typeof section.type === "string" ? section.type : "section";
           const lessons = Array.isArray(section.lessons) ? section.lessons : [];
           const isEditing = editingSectionId === id;
           return (
             <li key={id} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-4">
               <div className="flex items-center justify-between gap-3">
                 {isEditing ? (
-                  <form className="flex flex-1 gap-2" onSubmit={(e) => { e.preventDefault(); if (editSectionTitle.trim()) updateSectionMutation.mutate({ sectionId: id, title: editSectionTitle.trim(), schedule: editSectionSchedule, sectionType: editSectionType, meetingProvider: editMeetingProvider, meetingLink: editMeetingLink, joinUrl: editJoinUrl, venue: editVenue, address: editAddress, passCode: editPassCode, checkInWindow: editCheckInWindow }); }}>
-                    <div className="flex min-w-0 flex-1 flex-col gap-1">
-                      <input value={editSectionTitle} onChange={(e) => setEditSectionTitle(e.target.value)} className="h-8 rounded-lg border border-[#d7e5df] px-3 text-sm font-bold text-[#06201c] outline-none focus:border-[#1f6a58]" />
-                      <select value={editSectionType} onChange={(e) => setEditSectionType(e.target.value)} className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]">
-                        <option value="">Select</option>
-                        <option value="video">Video</option>
-                        <option value="live">Live</option>
-                        <option value="venue">Venue</option>
-                        {editSectionType === "module" ? <option value="module">Module</option> : null}
-                      </select>
-                      {editSectionType === "live" || editSectionType === "venue" ? (
-                        <input value={editSectionSchedule} onChange={(e) => setEditSectionSchedule(e.target.value)} placeholder="Schedule time & date e.g. Mon 9:00–10:30 AM or ISO date" className="h-8 rounded-lg border border-[#d7e5df] px-3 text-xs text-[#52736a] outline-none focus:border-[#1f6a58]" />
-                      ) : null}
-                      {editSectionType === "live" ? (
-                        <>
-                          <select value={editMeetingProvider} onChange={(e) => setEditMeetingProvider(e.target.value)} className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]">
-                            <option value="">Meeting type — select</option>
-                            <option value="google_meet">Google Meet</option>
-                            <option value="zoom">Zoom</option>
-                            <option value="microsoft_teams">Microsoft Teams</option>
-                            <option value="webex">Webex</option>
-                            <option value="other">Other</option>
-                          </select>
-                          <input value={editMeetingLink} onChange={(e) => setEditMeetingLink(e.target.value)} placeholder="Meeting link e.g. https://…" className="h-8 rounded-lg border border-[#d7e5df] px-3 text-xs text-[#52736a] outline-none focus:border-[#1f6a58]" />
-                          <input value={editJoinUrl} onChange={(e) => setEditJoinUrl(e.target.value)} placeholder="Join info e.g. Opens 10 min before" className="h-8 rounded-lg border border-[#d7e5df] px-3 text-xs text-[#52736a] outline-none focus:border-[#1f6a58]" />
-                        </>
-                      ) : null}
-                      {editSectionType === "venue" ? (
-                        <>
-                          <input value={editVenue} onChange={(e) => setEditVenue(e.target.value)} placeholder="Venue name e.g. Restwell Studio · Room B" className="h-8 rounded-lg border border-[#d7e5df] px-3 text-xs text-[#52736a] outline-none focus:border-[#1f6a58]" />
-                          <input value={editAddress} onChange={(e) => setEditAddress(e.target.value)} placeholder="Venue address" className="h-8 rounded-lg border border-[#d7e5df] px-3 text-xs text-[#52736a] outline-none focus:border-[#1f6a58]" />
-                          <input value={editPassCode} onChange={(e) => setEditPassCode(e.target.value)} placeholder="Check-in pass code" className="h-8 rounded-lg border border-[#d7e5df] px-3 text-xs text-[#52736a] outline-none focus:border-[#1f6a58]" />
-                          <input value={editCheckInWindow} onChange={(e) => setEditCheckInWindow(e.target.value)} placeholder="Check-in window e.g. Opens 8:40 AM" className="h-8 rounded-lg border border-[#d7e5df] px-3 text-xs text-[#52736a] outline-none focus:border-[#1f6a58]" />
-                        </>
-                      ) : null}
-                    </div>
-                    <div className="flex flex-col gap-1">
+                  <form className="grid flex-1 gap-2" onSubmit={(e) => { e.preventDefault(); if (editSectionTitle.trim()) updateSectionMutation.mutate({ sectionId: id, title: editSectionTitle.trim() }); }}>
+                    <div className="flex gap-2">
+                      <input value={editSectionTitle} onChange={(e) => setEditSectionTitle(e.target.value)} className="h-8 flex-1 rounded-lg border border-[#d7e5df] px-3 text-sm font-bold text-[#06201c] outline-none focus:border-[#1f6a58]" />
                       <button type="submit" className="h-8 rounded-full bg-[#1f6a58] px-3 text-xs font-bold text-white">Save</button>
                       <button type="button" onClick={() => setEditingSectionId(null)} className="h-8 rounded-full border border-[#d7e5df] px-3 text-xs font-bold text-[#52736a]">Cancel</button>
                     </div>
+                    <SessionFields
+                      type={editSectionType}
+                      setType={setEditSectionType}
+                      date={editSectionDate}
+                      setDate={setEditSectionDate}
+                      meetingType={editSectionMeetingType}
+                      setMeetingType={setEditSectionMeetingType}
+                      meetingLink={editSectionMeetingLink}
+                      setMeetingLink={setEditSectionMeetingLink}
+                      joinUrl={editSectionJoinUrl}
+                      setJoinUrl={setEditSectionJoinUrl}
+                      venueName={editSectionVenueName}
+                      setVenueName={setEditSectionVenueName}
+                      venueAddress={editSectionVenueAddress}
+                      setVenueAddress={setEditSectionVenueAddress}
+                      passCode={editSectionPassCode}
+                      setPassCode={setEditSectionPassCode}
+                      checkInWindow={editSectionCheckInWindow}
+                      setCheckInWindow={setEditSectionCheckInWindow}
+                    />
                   </form>
                 ) : (
                   <>
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold text-[#06201c]">{title} <span className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">{sessionKindLabel(sectionType)}</span></p>
-                      {(sectionType === "live" || sectionType === "venue") && sectionScheduleRaw ? <p className="text-xs text-[#52736a]">{sectionScheduleRaw.length > 90 ? `${sectionScheduleRaw.slice(0, 90)}…` : sectionScheduleRaw}</p> : null}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-bold text-[#06201c]">{title}</p>
+                        <span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-[10px] font-bold text-[#2563eb]">{SESSION_TYPE_OPTIONS.find((option) => option.value === normalizeSessionType(section.type))?.label ?? "Session"}</span>
+                      </div>
+                      {(normalizeSessionType(section.type) === "live" || normalizeSessionType(section.type) === "venue") && typeof section.scheduled_at === "string" && section.scheduled_at ? <p className="mt-1 text-xs text-[#52736a]">{formatTrainingDate(section.scheduled_at)}</p> : null}
                     </div>
                     <div className="flex items-center gap-1">
                       <button type="button" onClick={() => moveSectionMutation.mutate({ sectionId: id, direction: "up" })} disabled={sIndex === 0} className="rounded px-1.5 py-0.5 text-[10px] font-bold text-[#7f9d94] hover:bg-[#e8f6ee] disabled:opacity-30">↑</button>
                       <button type="button" onClick={() => moveSectionMutation.mutate({ sectionId: id, direction: "down" })} disabled={sIndex === sections.length - 1} className="rounded px-1.5 py-0.5 text-[10px] font-bold text-[#7f9d94] hover:bg-[#e8f6ee] disabled:opacity-30">↓</button>
-                      <button type="button" onClick={() => { setEditingSectionId(id); setEditSectionTitle(title); setEditSectionSchedule(sectionScheduleRaw); setEditSectionType(sectionType === "section" ? "" : sectionType); setEditMeetingProvider(sessionField(section, "meeting_type")); setEditMeetingLink(sessionField(section, "meeting_link")); setEditJoinUrl(sessionField(section, "join_meta") || sessionField(section, "join_url")); setEditVenue(sessionField(section, "venue")); setEditAddress(sessionField(section, "address")); setEditPassCode(sessionField(section, "pass_code")); setEditCheckInWindow(sessionField(section, "check_in_window")); }} className="rounded-full px-2 py-1 text-xs font-semibold text-[#1f6a58] hover:bg-[#e8f6ee]">Edit</button>
+                      <button type="button" onClick={() => {
+                        setEditingSectionId(id);
+                        setEditSectionTitle(title);
+                        setEditSectionType(normalizeSessionType(section.type));
+                        setEditSectionDate(typeof section.scheduled_at === "string" ? section.scheduled_at.slice(0, 16) : "");
+                        setEditSectionMeetingType(typeof section.meeting_type === "string" ? section.meeting_type : "google_meet");
+                        setEditSectionMeetingLink(typeof section.meeting_link === "string" ? section.meeting_link : "");
+                        setEditSectionJoinUrl(typeof section.join_url === "string" ? section.join_url : typeof section.join_meta === "string" ? section.join_meta : "");
+                        setEditSectionVenueName(typeof section.venue_name === "string" ? section.venue_name : "");
+                        setEditSectionVenueAddress(typeof section.venue_address === "string" ? section.venue_address : "");
+                        setEditSectionPassCode(typeof section.pass_code === "string" ? section.pass_code : "");
+                        setEditSectionCheckInWindow(typeof section.check_in_window === "string" ? section.check_in_window : "");
+                      }} className="rounded-full px-2 py-1 text-xs font-semibold text-[#1f6a58] hover:bg-[#e8f6ee]">Edit</button>
                       <button type="button" onClick={() => { if (window.confirm("Delete this session and its lessons?")) void deleteSectionMutation.mutate(id); }} className="rounded-full px-2 py-1 text-xs font-semibold text-[#b42318] hover:bg-[#fff6f5]">Delete</button>
                     </div>
                   </>
@@ -1518,6 +786,7 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
                   {lessons.map((lesson, lIndex) => {
                     const lessonId = typeof lesson.id === "string" ? lesson.id : "";
                     const lessonTitle = typeof lesson.title === "string" ? lesson.title : "Untitled lesson";
+                    const lessonType = typeof lesson.type === "string" && lesson.type.trim() ? lesson.type : "";
                     const lessonKey = `${id}:${lessonId || lessonTitle}`;
                     const explicitLessonAssessmentId = typeof lesson.assessment_id === "string" ? lesson.assessment_id : "";
                     const lessonAssessment = explicitLessonAssessmentId ? assessments.find((a) => typeof a.id === "string" && a.id === explicitLessonAssessmentId) : lessonId ? assessments.find((a) => typeof a.lesson_id === "string" && a.lesson_id === lessonId) : undefined;
@@ -1530,7 +799,8 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] font-bold text-[#7f9d94]">{lIndex + 1}.</span>
                             <p className="text-sm text-[#52736a]">{lessonTitle}</p>
-                            {typeof lesson.type === "string" && lesson.type === "live" ? <span className="rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[10px] font-bold text-[#1f6a58]">Live</span> : null}
+                            {lessonType ? <span className="rounded-full bg-[#f0f3f2] px-2 py-0.5 text-[10px] font-bold text-[#52736a]">{humanizeLabel(lessonType)}</span> : null}
+                            {(typeof lesson.meeting_link === "string" && lesson.meeting_link) || (typeof lesson.join_meta === "string" && lesson.join_meta) || (typeof lesson.join_url === "string" && lesson.join_url) ? <span className="rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[10px] font-bold text-[#1f6a58]">Live</span> : null}
                             {lessonAssessment ? <span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-[10px] font-bold text-[#2563eb]">Quiz</span> : null}
                           </div>
                           <div className="flex items-center gap-1">
@@ -1550,66 +820,59 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
                                   <p className="text-sm font-bold text-[#06201c]">{typeof lessonAssessment.title === "string" ? lessonAssessment.title : "Untitled quiz"}</p>
                                   <button type="button" onClick={() => { if (window.confirm("Detach this quiz from the lesson?")) detachLessonAssessmentMutation.mutate({ sectionId: id, lessonId, lessonTitle }); }} className="rounded-full px-2 py-0.5 text-[10px] font-semibold text-[#b42318] hover:bg-[#fff6f5]">Detach</button>
                                 </div>
-                                <p className="text-xs text-[#52736a]">{typeof lessonAssessment.type === "string" ? lessonAssessment.type : "quiz"} • {lessonQuestions.length} questions{typeof lessonAssessment.pass_percent === "number" ? ` • pass ${lessonAssessment.pass_percent}%` : typeof lessonAssessment.passing_score === "number" ? ` • pass ${lessonAssessment.passing_score} pts` : ""}{typeof lessonAssessment.time_limit_minutes === "number" ? ` • ${lessonAssessment.time_limit_minutes} min` : ""}{typeof lessonAssessment.attempts_allowed === "number" ? ` • ${lessonAssessment.attempts_allowed} attempts` : typeof lessonAssessment.max_attempts === "number" ? ` • ${lessonAssessment.max_attempts} attempts` : ""}</p>
+                                <p className="text-xs text-[#52736a]">{typeof lessonAssessment.type === "string" ? lessonAssessment.type : "quiz"} • {lessonQuestions.length} questions</p>
                                 {lessonQuestions.length > 0 ? (
                                   <ul className="space-y-1">
-                                    {lessonQuestions.map((q, qi) => { const qr = q as Record<string, unknown>; const qId = typeof qr.id === "string" ? qr.id : String(qi); const qText = typeof qr.question === "string" ? qr.question : typeof qr.question_text === "string" ? qr.question_text : typeof qr.text === "string" ? qr.text : "Question"; const qOptions = Array.isArray(qr.options) ? (qr.options as unknown[]).map((o) => (o && typeof o === "object" ? String((o as Record<string, unknown>).label ?? (o as Record<string, unknown>).value ?? "") : typeof o === "string" ? o : "")).filter((s): s is string => Boolean(s)) : []; return (<li key={qId} className="flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-1.5"><div className="min-w-0"><p className="text-xs text-[#52736a]">{qi + 1}. {qText} <span className="text-[10px] text-[#7f9d94]">({typeof qr.question_type === "string" ? qr.question_type : "quiz"})</span></p>{qOptions.length > 0 ? <p className="text-[10px] text-[#7f9d94]">{qOptions.join(" · ")}{typeof qr.correct_answer === "string" && qr.correct_answer ? ` → ${qr.correct_answer}` : ""}</p> : null}{qr.question_type === "task" ? (<>{typeof qr.description === "string" && qr.description ? <p className="text-[10px] text-[#52736a]">{qr.description}</p> : null}{typeof qr.explanation === "string" && qr.explanation ? <p className="text-[10px] text-[#7f9d94]">Instructions: {qr.explanation}</p> : null}</>) : null}</div><button type="button" onClick={() => { if (lessonAssessmentId && window.confirm("Delete this question?")) deleteSectionQuestionMutation.mutate({ assessmentId: lessonAssessmentId, questionId: qId }); }} className="shrink-0 text-[10px] font-semibold text-[#b42318]">Delete</button></li>); })}
+                                    {lessonQuestions.map((q, qi) => {
+                                      const qr = q as Record<string, unknown>;
+                                      const qId = typeof qr.id === "string" ? qr.id : String(qi);
+                                      const qText = typeof qr.question === "string" ? qr.question : typeof qr.question_text === "string" ? qr.question_text : typeof qr.text === "string" ? qr.text : "Question";
+                                      const qType = typeof qr.question_type === "string" ? qr.question_type : typeof qr.type === "string" ? qr.type : "short_answer";
+                                      const qOptions = Array.isArray(qr.options) ? qr.options.map((option) => {
+                                        if (typeof option === "string") return option;
+                                        if (option && typeof option === "object") {
+                                          const optionRecord = option as Record<string, unknown>;
+                                          return typeof optionRecord.label === "string" ? optionRecord.label : typeof optionRecord.text === "string" ? optionRecord.text : typeof optionRecord.value === "string" ? optionRecord.value : "";
+                                        }
+                                        return "";
+                                      }).filter(Boolean) : [];
+                                      const qCorrect = typeof qr.correct_answer === "string" ? qr.correct_answer : "";
+                                      return (
+                                        <li key={qId} className="rounded-lg bg-white px-2 py-2">
+                                          <div className="flex items-start justify-between gap-2">
+                                            <div>
+                                              <p className="text-xs font-semibold text-[#52736a]">{qi + 1}. {qText}</p>
+                                              <p className="mt-0.5 text-[10px] uppercase tracking-[.06em] text-[#7f9d94]">{humanizeLabel(qType)}{typeof qr.points === "number" ? ` • ${qr.points} point${qr.points === 1 ? "" : "s"}` : ""}</p>
+                                            </div>
+                                            <button type="button" onClick={() => { if (lessonAssessmentId && window.confirm("Delete this question?")) deleteSectionQuestionMutation.mutate({ assessmentId: lessonAssessmentId, questionId: qId }); }} className="shrink-0 text-[10px] font-semibold text-[#b42318]">Delete</button>
+                                          </div>
+                                          {qOptions.length > 0 ? <ul className="mt-2 space-y-1">{qOptions.map((option, optionIndex) => <li key={`${qId}-${optionIndex}`} className={`rounded border px-2 py-1 text-[11px] ${qCorrect === option ? "border-[#bce8d1] bg-[#effaf4] font-semibold text-[#167550]" : "border-[#eef4ef] text-[#52736a]"}`}>{String.fromCharCode(65 + optionIndex)}. {option}{qCorrect === option ? " (correct)" : ""}</li>)}</ul> : null}
+                                          {qCorrect && qOptions.every((option) => option !== qCorrect) ? <p className="mt-1 text-[11px] font-semibold text-[#167550]">Correct answer: {qCorrect}</p> : null}
+                                        </li>
+                                      );
+                                    })}
                                   </ul>
                                 ) : <p className="text-xs text-[#7f9d94]">No questions yet — add the first one below.</p>}
-                                <div className="mt-2 space-y-2 rounded-lg border border-[#e1ebe6] bg-white p-2">
-                                  <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Add question</p>
-                                  <select value={questionTypeDraft[lessonKey] ?? "mcq"} onChange={(e) => changeLessonQuestionType(lessonKey, e.target.value)} className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]">
-                                    <option value="mcq">Radio button – single answer</option>
-                                    <option value="multiple_select">Checkbox – multiple answers</option>
-                                    <option value="true_false">True / False</option>
-                                    <option value="short_answer">Blank text – short answer</option>
-                                    <option value="essay">Essay text – long answer</option>
-                                    <option value="task">Task – hands-on task</option>
+                                <form className="grid gap-2 sm:grid-cols-2" onSubmit={(e) => {
+                                  e.preventDefault();
+                                  const question = lessonQuestion[lessonKey]?.trim() ?? "";
+                                  const questionType = lessonQuestionType[lessonKey] ?? "short_answer";
+                                  const options = questionType === "true_false" ? ["true", "false"] : (lessonQuestionOptions[lessonKey] ?? "").split(",").map((option) => option.trim()).filter(Boolean);
+                                  const correctAnswer = lessonCorrectAnswer[lessonKey]?.trim() ?? "";
+                                  if (question && lessonAssessmentId && (questionType === "short_answer" || questionType === "essay" || correctAnswer) && (questionType !== "mcq" && questionType !== "multiple_select" || options.length > 0)) {
+                                    addSectionQuestionMutation.mutate({ formKey: lessonKey, assessmentId: lessonAssessmentId, question, questionType, options, correctAnswer, points: Number(lessonQuestionPoints[lessonKey] || 1) });
+                                  }
+                                }}>
+                                  <input value={lessonQuestion[lessonKey] ?? ""} onChange={(e) => setLessonQuestion((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="Question text" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58] sm:col-span-2" />
+                                  <select value={lessonQuestionType[lessonKey] ?? "short_answer"} onChange={(e) => setLessonQuestionType((current) => ({ ...current, [lessonKey]: e.target.value }))} aria-label="Question type" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]">
+                                    {QUIZ_QUESTION_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                                   </select>
-                                  <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (lessonAssessmentId) submitLessonQuestion(lessonKey, lessonAssessmentId); }}>
-                                    <input value={lessonQuestion[lessonKey] ?? ""} onChange={(e) => setLessonQuestion((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder={(questionTypeDraft[lessonKey] ?? "mcq") === "task" ? "Task title / name…" : "Question text…"} className="h-8 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-                                    <button type="submit" disabled={addSectionQuestionMutation.isPending || !lessonQuestion[lessonKey]?.trim()} className="h-8 rounded-full border border-[#1f6a58] px-3 text-[10px] font-bold text-[#1f6a58] disabled:opacity-60">{addSectionQuestionMutation.isPending ? "Adding…" : "Add"}</button>
-                                  </form>
-                                  {(questionTypeDraft[lessonKey] ?? "mcq") === "mcq" || (questionTypeDraft[lessonKey] ?? "mcq") === "multiple_select" ? (
-                                    <div className="space-y-1">
-                                      {((questionOptionsList[lessonKey] ?? []).length ? questionOptionsList[lessonKey] : ["", "", "", ""]).map((opt, oi) => {
-                                        const qType = questionTypeDraft[lessonKey] ?? "mcq";
-                                        return (
-                                          <div key={oi} className="flex items-center gap-1.5">
-                                            {qType === "mcq" ? (
-                                              <input type="radio" name={`correct-${lessonKey}`} checked={(questionCorrectSingle[lessonKey] ?? "") === opt && opt.trim() !== ""} onChange={() => setQuestionCorrectSingle((current) => ({ ...current, [lessonKey]: opt }))} title="Mark as the correct answer" className="h-3.5 w-3.5 shrink-0 accent-[#1f6a58]" />
-                                            ) : (
-                                              <input type="checkbox" checked={(questionCorrectMulti[lessonKey] ?? []).includes(opt)} onChange={(e) => setQuestionCorrectMulti((current) => { const cur = current[lessonKey] ?? []; return { ...current, [lessonKey]: e.target.checked ? [...cur, opt] : cur.filter((x) => x !== opt) }; })} title="Mark as a correct answer" className="h-3.5 w-3.5 shrink-0 accent-[#1f6a58]" />
-                                            )}
-                                            <input value={opt} onChange={(e) => setQuestionOptionsList((current) => ({ ...current, [lessonKey]: (current[lessonKey] ?? []).map((o, i) => (i === oi ? e.target.value : o)) }))} placeholder={`Option ${oi + 1}`} className="h-8 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-                                            <button type="button" onClick={() => { const removed = (questionOptionsList[lessonKey] ?? [])[oi] ?? ""; setQuestionOptionsList((current) => ({ ...current, [lessonKey]: (current[lessonKey] ?? []).filter((_, i) => i !== oi) })); if (removed) { setQuestionCorrectSingle((current) => (current[lessonKey] === removed ? { ...current, [lessonKey]: "" } : current)); setQuestionCorrectMulti((current) => ({ ...current, [lessonKey]: (current[lessonKey] ?? []).filter((x) => x !== removed) })); } }} className="shrink-0 rounded-lg px-1.5 text-xs font-bold text-[#b42318] hover:bg-[#fff6f5]" title="Remove option">×</button>
-                                          </div>
-                                        );
-                                      })}
-                                      <div className="flex items-center justify-between">
-                                        <button type="button" onClick={() => setQuestionOptionsList((current) => ({ ...current, [lessonKey]: [...(current[lessonKey] ?? []), ""] }))} className="text-[10px] font-bold text-[#1f6a58]">+ Add option</button>
-                                        <p className="text-[10px] text-[#7f9d94]">{(questionTypeDraft[lessonKey] ?? "mcq") === "mcq" ? "Select the radio for the single correct answer." : "Tick the checkboxes for all correct answers."}</p>
-                                      </div>
-                                    </div>
-                                  ) : (questionTypeDraft[lessonKey] ?? "mcq") === "true_false" ? (
-                                    <div className="flex items-center gap-2 text-xs text-[#52736a]">
-                                      <span>Options: <strong>True</strong> / <strong>False</strong>.</span>
-                                      <label className="flex items-center gap-1 font-semibold">Correct answer:
-                                        <select value={questionCorrectSingle[lessonKey] ?? "True"} onChange={(e) => setQuestionCorrectSingle((current) => ({ ...current, [lessonKey]: e.target.value }))} className="h-8 rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]">
-                                          <option value="True">True</option>
-                                          <option value="False">False</option>
-                                        </select>
-                                      </label>
-                                    </div>
-                                  ) : (questionTypeDraft[lessonKey] ?? "mcq") === "task" ? (
-                                    <div className="space-y-1">
-                                      <textarea value={questionTaskDesc[lessonKey] ?? ""} onChange={(e) => setQuestionTaskDesc((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="Task description…" rows={2} className="w-full rounded-lg border border-[#d7e5df] bg-white px-3 py-2 text-xs outline-none focus:border-[#1f6a58]" />
-                                      <textarea value={questionTaskInstr[lessonKey] ?? ""} onChange={(e) => setQuestionTaskInstr((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="Task instructions…" rows={3} className="w-full rounded-lg border border-[#d7e5df] bg-white px-3 py-2 text-xs outline-none focus:border-[#1f6a58]" />
-                                    </div>
-                                  ) : (
-                                    <input value={questionCorrectSingle[lessonKey] ?? ""} onChange={(e) => setQuestionCorrectSingle((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="Model answer (optional — graded manually)" className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-                                  )}
-                                </div>
+                                  <input type="number" min="1" value={lessonQuestionPoints[lessonKey] ?? "1"} onChange={(e) => setLessonQuestionPoints((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="Points" className="h-8 rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
+                                  {["mcq", "multiple_select"].includes(lessonQuestionType[lessonKey] ?? "short_answer") ? <input value={lessonQuestionOptions[lessonKey] ?? ""} onChange={(e) => setLessonQuestionOptions((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="Options, separated by commas" className="h-8 rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
+                                  {lessonQuestionType[lessonKey] === "true_false" ? <select value={lessonCorrectAnswer[lessonKey] ?? ""} onChange={(e) => setLessonCorrectAnswer((current) => ({ ...current, [lessonKey]: e.target.value }))} aria-label="Correct true or false answer" className="h-8 rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]"><option value="">Correct answer</option><option value="true">True</option><option value="false">False</option></select> : null}
+                                  {["mcq", "multiple_select", "task"].includes(lessonQuestionType[lessonKey] ?? "") ? <input value={lessonCorrectAnswer[lessonKey] ?? ""} onChange={(e) => setLessonCorrectAnswer((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder={lessonQuestionType[lessonKey] === "task" ? "Task grading note" : "Correct answer"} className="h-8 rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
+                                  <button type="submit" disabled={addSectionQuestionMutation.isPending || !lessonQuestion[lessonKey]?.trim()} className="h-8 rounded-full border border-[#1f6a58] px-3 text-[10px] font-bold text-[#1f6a58] disabled:opacity-60 sm:col-span-2">{addSectionQuestionMutation.isPending ? "Adding…" : "Add question"}</button>
+                                </form>
                               </div>
                             ) : (
                               <p className="mt-1 text-xs text-[#7f9d94]">No quiz linked yet — learners take it right after finishing this lesson.</p>
@@ -1625,12 +888,6 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
                               <input value={lessonAssessmentTitle[lessonKey] ?? ""} onChange={(e) => setLessonAssessmentTitle((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="Or create a new quiz for this lesson…" className="h-8 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
                               <button type="submit" disabled={createLessonAssessmentMutation.isPending || !lessonAssessmentTitle[lessonKey]?.trim()} className="h-8 rounded-full border border-[#1f6a58] px-3 text-[10px] font-bold text-[#1f6a58] disabled:opacity-60">{createLessonAssessmentMutation.isPending ? "Creating…" : "Create"}</button>
                             </form>
-                            <div className="mt-2 grid grid-cols-3 gap-2">
-                              <input value={quizPassPercent[lessonKey] ?? ""} onChange={(e) => setQuizPassPercent((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="Pass %" type="number" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]" />
-                              <input value={quizTimeLimit[lessonKey] ?? ""} onChange={(e) => setQuizTimeLimit((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="Time limit (min)" type="number" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]" />
-                              <input value={quizMaxAttempts[lessonKey] ?? ""} onChange={(e) => setQuizMaxAttempts((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="Max attempts" type="number" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]" />
-                            </div>
-                            <p className="mt-1 text-[10px] text-[#7f9d94]">Quiz stays locked for each learner until this lesson is marked complete.</p>
                           </div>
                         ) : null}
                       </Fragment>
@@ -1639,60 +896,47 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
                 </ul>
               ) : null}
               {viewingLesson?.sectionId === id ? (
-                <LessonDetail key={`${id}:${viewingLesson.lessonId}`} trainingId={trainingId} sectionId={id} lessonId={viewingLesson.lessonId} onClose={() => setViewingLesson(null)} initialEditMode={viewingLesson.edit} />
+                <LessonDetail trainingId={trainingId} sectionId={id} lessonId={viewingLesson.lessonId} onClose={() => setViewingLesson(null)} />
               ) : null}
-              <NewLessonComposer
-                trainingId={trainingId}
-                sectionId={id}
-                notify={setFeedback}
-                onCreated={(lessonId) => setViewingLesson({ sectionId: id, lessonId, edit: true })}
+              <AddLessonForm
+                pending={createLessonMutation.isPending}
+                onSubmit={(payload) => createLessonMutation.mutate({ sectionId: id, payload })}
               />
             </li>
           );
         })}
       </ul>
       <form
-        className="mt-4 space-y-2 rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-3"
+        className="mt-4 grid gap-2"
         onSubmit={(event) => {
           event.preventDefault();
           if (newSectionTitle.trim()) void createSectionMutation.mutate();
         }}
       >
-        <div className="flex flex-wrap items-center gap-2">
-          <input value={newSectionTitle} onChange={(event) => setNewSectionTitle(event.target.value)} placeholder="New session title" className="h-10 min-w-0 flex-1 rounded-xl border border-[#d7e5df] bg-white px-4 text-sm outline-none focus:border-[#1f6a58]" />
-          <select value={newSectionKind} onChange={(e) => { const next = e.target.value; setNewSectionKind(next); if (next !== "live" && next !== "venue") setNewSectionSchedule(""); }} className="h-10 rounded-xl border border-[#d7e5df] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]">
-            <option value="">Select</option>
-            <option value="video">Video</option>
-            <option value="live">Live</option>
-            <option value="venue">Venue</option>
-          </select>
-          <button type="submit" disabled={createSectionMutation.isPending} className="h-10 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white disabled:opacity-60">{createSectionMutation.isPending ? "Adding..." : "Add session"}</button>
+        <div className="flex gap-2">
+          <input value={newSectionTitle} onChange={(event) => setNewSectionTitle(event.target.value)} placeholder="New session title" className="h-10 flex-1 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm outline-none focus:border-[#1f6a58]" />
+          <button type="submit" disabled={createSectionMutation.isPending || !newSectionTitle.trim()} className="h-10 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white disabled:opacity-60">{createSectionMutation.isPending ? "Adding..." : "Add session"}</button>
         </div>
-        {newSectionKind === "live" || newSectionKind === "venue" ? (
-          <input value={newSectionSchedule} onChange={(event) => setNewSectionSchedule(event.target.value)} placeholder="Schedule time & date (optional)" className="h-10 w-full rounded-xl border border-[#d7e5df] bg-white px-4 text-sm text-[#52736a] outline-none focus:border-[#1f6a58]" />
-        ) : null}
-        {newSectionKind === "live" ? (
-          <div className="grid gap-2 sm:grid-cols-3">
-            <select value={newMeetingProvider} onChange={(e) => setNewMeetingProvider(e.target.value)} className="h-10 rounded-xl border border-[#d7e5df] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]">
-              <option value="">Meeting type — select</option>
-              <option value="google_meet">Google Meet</option>
-              <option value="zoom">Zoom</option>
-              <option value="microsoft_teams">Microsoft Teams</option>
-              <option value="webex">Webex</option>
-              <option value="other">Other</option>
-            </select>
-            <input value={newMeetingLink} onChange={(event) => setNewMeetingLink(event.target.value)} placeholder="Meeting link e.g. https://…" className="h-10 rounded-xl border border-[#d7e5df] bg-white px-4 text-sm outline-none focus:border-[#1f6a58]" />
-            <input value={newJoinUrl} onChange={(event) => setNewJoinUrl(event.target.value)} placeholder="Join info e.g. Opens 10 min before" className="h-10 rounded-xl border border-[#d7e5df] bg-white px-4 text-sm text-[#52736a] outline-none focus:border-[#1f6a58]" />
-          </div>
-        ) : null}
-        {newSectionKind === "venue" ? (
-          <div className="grid gap-2 sm:grid-cols-2">
-            <input value={newVenue} onChange={(event) => setNewVenue(event.target.value)} placeholder="Venue name e.g. Restwell Studio · Room B" className="h-10 rounded-xl border border-[#d7e5df] bg-white px-4 text-sm outline-none focus:border-[#1f6a58]" />
-            <input value={newAddress} onChange={(event) => setNewAddress(event.target.value)} placeholder="Venue address" className="h-10 rounded-xl border border-[#d7e5df] bg-white px-4 text-sm outline-none focus:border-[#1f6a58]" />
-            <input value={newPassCode} onChange={(event) => setNewPassCode(event.target.value)} placeholder="Check-in pass code" className="h-10 rounded-xl border border-[#d7e5df] bg-white px-4 text-sm outline-none focus:border-[#1f6a58]" />
-            <input value={newCheckInWindow} onChange={(event) => setNewCheckInWindow(event.target.value)} placeholder="Check-in window e.g. Opens 8:40 AM" className="h-10 rounded-xl border border-[#d7e5df] bg-white px-4 text-sm text-[#52736a] outline-none focus:border-[#1f6a58]" />
-          </div>
-        ) : null}
+        <SessionFields
+          type={newSectionType}
+          setType={setNewSectionType}
+          date={newSectionDate}
+          setDate={setNewSectionDate}
+          meetingType={newSectionMeetingType}
+          setMeetingType={setNewSectionMeetingType}
+          meetingLink={newSectionMeetingLink}
+          setMeetingLink={setNewSectionMeetingLink}
+          joinUrl={newSectionJoinUrl}
+          setJoinUrl={setNewSectionJoinUrl}
+          venueName={newSectionVenueName}
+          setVenueName={setNewSectionVenueName}
+          venueAddress={newSectionVenueAddress}
+          setVenueAddress={setNewSectionVenueAddress}
+          passCode={newSectionPassCode}
+          setPassCode={setNewSectionPassCode}
+          checkInWindow={newSectionCheckInWindow}
+          setCheckInWindow={setNewSectionCheckInWindow}
+        />
       </form>
     </SectionCard>
   );
@@ -2059,6 +1303,7 @@ export function TrainingLiveTab({ trainingId }: { trainingId: string }) {
   const queryClient = useQueryClient();
   const [newSessionTitle, setNewSessionTitle] = useState("");
   const [newSessionDate, setNewSessionDate] = useState("");
+  const [newSessionMeetingLink, setNewSessionMeetingLink] = useState("");
   const [newDiscussionMessage, setNewDiscussionMessage] = useState("");
   const [replyToDiscussion, setReplyToDiscussion] = useState<string | null>(null);
   const [replyMessage, setReplyMessage] = useState("");
@@ -2083,8 +1328,8 @@ export function TrainingLiveTab({ trainingId }: { trainingId: string }) {
   });
 
   const createLiveSessionMutation = useMutation({
-    mutationFn: () => createTrainingLiveSession(trainingId, { title: newSessionTitle.trim(), scheduled_at: newSessionDate, duration_minutes: 60, meeting_link: "" }),
-    onSuccess: () => { setNewSessionTitle(""); setNewSessionDate(""); setFeedback("Live session created."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "live-sessions"] }); },
+    mutationFn: () => createTrainingLiveSession(trainingId, { title: newSessionTitle.trim(), scheduled_at: newSessionDate, duration_minutes: 60, meeting_link: newSessionMeetingLink.trim() }),
+    onSuccess: () => { setNewSessionTitle(""); setNewSessionDate(""); setNewSessionMeetingLink(""); setFeedback("Live session created."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "live-sessions"] }); },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to create the live session."),
   });
 
@@ -2108,7 +1353,7 @@ export function TrainingLiveTab({ trainingId }: { trainingId: string }) {
   });
 
   const createAnnouncementMutation = useMutation({
-    mutationFn: () => createTrainingAnnouncement(trainingId, { title: newAnnouncementTitle.trim(), message: newAnnouncementMessage.trim(), channel: "in_app" }),
+    mutationFn: () => createTrainingAnnouncement(trainingId, { title: newAnnouncementTitle.trim(), message: newAnnouncementMessage.trim(), recipient_type: "all" }),
     onSuccess: () => { setNewAnnouncementTitle(""); setNewAnnouncementMessage(""); setFeedback("Announcement sent."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "announcements"] }); },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to send announcement."),
   });
@@ -2222,10 +1467,11 @@ export function TrainingLiveTab({ trainingId }: { trainingId: string }) {
             );
           })}
         </ul>
-        <form className="mt-4 flex flex-col gap-2 sm:flex-row" onSubmit={(e) => { e.preventDefault(); if (newSessionTitle.trim() && newSessionDate) createLiveSessionMutation.mutate(); }}>
+        <form className="mt-4 flex flex-col gap-2 sm:flex-row" onSubmit={(e) => { e.preventDefault(); if (newSessionTitle.trim() && newSessionDate && newSessionMeetingLink.trim()) createLiveSessionMutation.mutate(); }}>
           <input value={newSessionTitle} onChange={(e) => setNewSessionTitle(e.target.value)} placeholder="Session title" className="h-10 flex-1 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm outline-none focus:border-[#1f6a58]" />
           <input type="datetime-local" value={newSessionDate} onChange={(e) => setNewSessionDate(e.target.value)} className="h-10 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm outline-none focus:border-[#1f6a58]" />
-          <button type="submit" disabled={createLiveSessionMutation.isPending || !newSessionTitle.trim() || !newSessionDate} className="h-10 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white disabled:opacity-60">{createLiveSessionMutation.isPending ? "Adding..." : "Add session"}</button>
+          <input type="url" value={newSessionMeetingLink} onChange={(e) => setNewSessionMeetingLink(e.target.value)} placeholder="Meeting link" className="h-10 flex-1 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm outline-none focus:border-[#1f6a58]" />
+          <button type="submit" disabled={createLiveSessionMutation.isPending || !newSessionTitle.trim() || !newSessionDate || !newSessionMeetingLink.trim()} className="h-10 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white disabled:opacity-60">{createLiveSessionMutation.isPending ? "Adding..." : "Add session"}</button>
         </form>
       </SectionCard>
       <SectionCard title="Discussions">
@@ -2315,6 +1561,8 @@ export function TrainingLiveTab({ trainingId }: { trainingId: string }) {
 export function TrainingContentTab({ trainingId }: { trainingId: string }) {
   const queryClient = useQueryClient();
   const [expandedLesson, setExpandedLesson] = useState<string | null>(null);
+  const [expandedSession, setExpandedSession] = useState<string | null>(null);
+  const [adminControlsOpen, setAdminControlsOpen] = useState(false);
   const [feedback, setFeedback] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [participantEmail, setParticipantEmail] = useState<string>("");
 
@@ -2347,8 +1595,13 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
         section_id: sectionId ?? null,
         ...(participantEmail?.trim() ? { participant_email: participantEmail.trim() } : {}),
       }),
-    onSuccess: () => {
-      setFeedback({ kind: "success", text: "Lesson marked as complete." });
+    onSuccess: (_data, variables) => {
+      setFeedback({
+        kind: "success",
+        text: variables.participantEmail
+          ? `Lesson marked complete for ${variables.participantEmail}.`
+          : "Lesson marked complete for your account.",
+      });
       void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "progress"] });
       void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "content"] });
     },
@@ -2368,6 +1621,25 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
     )
   );
   const participantPickerId = `mark-for-${trainingId}`;
+  const enrolledEmails = Array.isArray(enrolments)
+    ? enrolments
+      .map((raw) => raw && typeof raw === "object" && typeof (raw as Record<string, unknown>).participant_email === "string" ? (raw as Record<string, unknown>).participant_email.trim().toLowerCase() : "")
+      .filter(Boolean)
+    : [];
+  const normalizedParticipantEmail = participantEmail.trim().toLowerCase();
+  const participantEmailIsValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedParticipantEmail) &&
+    enrolledEmails.includes(normalizedParticipantEmail);
+
+  function markLessonComplete(lessonId: string, sectionId: string) {
+    if (!participantEmailIsValid) {
+      setFeedback({ kind: "error", text: "Select an enrolled participant before marking progress." });
+      return;
+    }
+    const targetEmail = normalizedParticipantEmail;
+    const targetLabel = targetEmail;
+    if (!window.confirm(`Mark this lesson complete for ${targetLabel}? This changes the selected learner's progress.`)) return;
+    completeLessonMutation.mutate({ lessonId, sectionId, participantEmail: targetEmail || undefined });
+  }
 
   const content = contentQuery.data;
   const sections: Array<Record<string, unknown>> = Array.isArray(content)
@@ -2399,48 +1671,55 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
         {feedback ? (
           <p role={feedback.kind === "error" ? "alert" : "status"} className={feedback.kind === "error" ? "mt-4 rounded-xl border border-[#f3c2c0] bg-[#fff4f2] px-4 py-3 text-sm font-semibold text-[#b42318]" : "mt-4 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]"}>{feedback.text}</p>
         ) : null}
-        {sections.length === 0 ? <p className="mt-4 text-sm text-[#52736a]">No content available yet.</p> : null}              {canCompleteFor && participantEmail.trim().length > 0 ? (
-                <p className="mt-4 rounded-lg bg-[#effaf4] px-3 py-2 text-xs text-[#1f6a58]">
-                  Marking completion for <span className="font-semibold">{participantEmail.trim()}</span>.
-                  Change it above to record progress for a different participant.
-                </p>
-              ) : null}
-              <label htmlFor={participantPickerId} className={`mt-4 block text-sm font-semibold ${canCompleteFor ? 'text-[#06201c]' : 'text-[#52736a]'}`}>
-                Mark completion as:
-                {canCompleteFor ? (
-                  <span className="block mt-1 text-xs text-[#52736a]">
-                    Enter the enrolled participant's email to record their progress (leave empty to use your own account).
-                  </span>
-                ) : (
-                  <span className="block mt-1 text-xs text-[#7f9d94]">
-                    This training has no enrolments with emails; completion is recorded against your own account.
-                  </span>
-                )}
-              </label>
-              <input
-                id={participantPickerId}
-                type="email"
-                value={participantEmail}
-                onChange={(e) => setParticipantEmail(e.target.value)}
-                placeholder={canCompleteFor ? "enrolled participant email (optional)" : "your email (no enrolments)"}
-                disabled={!canCompleteFor}
-                className={`mt-1.5 h-10 w-full rounded-xl border border-[#d7e5df] bg-white px-3 text-sm text-[#06201c] outline-none focus:border-[#1f6a58] focus:ring-2 focus:ring-[#1f6a58]/20 ${!canCompleteFor ? 'opacity-60' : ''}`}
-              />
-              <ul className="mt-4 space-y-4">
+        {sections.length === 0 ? <p className="mt-4 text-sm text-[#52736a]">No content available yet.</p> : null}
+        <section className="mt-4 rounded-xl border border-[#eadbb8] bg-[#fffaf0]">
+          <button type="button" onClick={() => setAdminControlsOpen((open) => !open)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
+            <span>
+              <span className="block text-sm font-bold text-[#735c1e]">Admin progress controls</span>
+              <span className="mt-1 block text-xs text-[#8a6f2b]">Use only to test or correct a learner's progress.</span>
+            </span>
+            <span className="text-sm font-bold text-[#735c1e]" aria-hidden="true">{adminControlsOpen ? "−" : "+"}</span>
+          </button>
+          {adminControlsOpen ? (
+            <div className="border-t border-[#eadbb8] px-4 pb-4 pt-3">
+              <p className="text-xs leading-5 text-[#735c1e]">Select an enrolled participant to test or correct their lesson progress. This action changes their progress record.</p>
+              {canCompleteFor ? (
+                <div className="mt-3">
+                  <label htmlFor={participantPickerId} className="block text-sm font-semibold text-[#06201c]">Participant</label>
+                  <select id={participantPickerId} value={participantEmail} onChange={(e) => setParticipantEmail(e.target.value)} className="mt-1.5 h-10 w-full rounded-xl border border-[#d7e5df] bg-white px-3 text-sm text-[#06201c] outline-none focus:border-[#1f6a58] focus:ring-2 focus:ring-[#1f6a58]/20">
+                    <option value="">Select an enrolled participant</option>
+                    {enrolledEmails.map((email) => <option key={email} value={email}>{email}</option>)}
+                  </select>
+                </div>
+              ) : <p className="mt-3 text-xs text-[#8a6f2b]">No enrolled participant email is available for progress updates.</p>}
+            </div>
+          ) : null}
+        </section>
+              <ul className="mt-4 space-y-3">
           {sections.map((section, sIndex) => {
             const sectionId = typeof section.id === "string" ? section.id : String(sIndex);
             const sectionTitle = typeof section.title === "string" ? section.title : "Untitled section";
             const lessons: Array<Record<string, unknown>> = Array.isArray(section.lessons) ? section.lessons : [];
+            const completedInSession = lessons.filter((lesson) => typeof lesson.id === "string" && completedLessons.has(lesson.id)).length;
+            const sessionExpanded = expandedSession === sectionId;
             return (
               <li key={sectionId} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-4">
-                <p className="text-sm font-bold text-[#06201c]">{sectionTitle}</p>
-                {lessons.length === 0 ? <p className="mt-2 text-xs text-[#7f9d94]">No lessons in this section.</p> : null}
-                <ul className="mt-2 space-y-2">
+                <button type="button" onClick={() => setExpandedSession((current) => current === sectionId ? null : sectionId)} className="flex w-full items-center justify-between gap-3 text-left">
+                  <span className="min-w-0">
+                    <span className="block text-sm font-bold text-[#06201c]">{sectionTitle}</span>
+                    <span className="mt-1 block text-xs text-[#52736a]">{completedInSession}/{lessons.length} lessons completed</span>
+                  </span>
+                  <span className="shrink-0 text-sm font-bold text-[#1f6a58]" aria-hidden="true">{sessionExpanded ? "−" : "+"}</span>
+                </button>
+                {sessionExpanded && lessons.length === 0 ? <p className="mt-3 text-xs text-[#7f9d94]">No lessons in this session.</p> : null}
+                {sessionExpanded ? <ul className="mt-3 space-y-2">
                   {lessons.map((lesson, lIndex) => {
                     const lessonId = typeof lesson.id === "string" ? lesson.id : `${sectionId}-${lIndex}`;
                     const lessonTitle = typeof lesson.title === "string" ? lesson.title : "Untitled lesson";
                     const lessonContent = typeof lesson.content === "string" ? lesson.content : null;
                     const videoUrl = typeof lesson.content_url === "string" && lesson.content_url.trim() ? lesson.content_url : typeof lesson.video_url === "string" ? lesson.video_url : null;
+                    const lessonType = typeof lesson.type === "string" && lesson.type.trim() ? lesson.type : "lesson";
+                    const isAssessment = ["quiz", "exam", "test", "survey"].includes(lessonType.toLowerCase()) || /\bquiz\b|\bexam\b/i.test(lessonTitle);
                     const isExpanded = expandedLesson === lessonId;
                     const isCompleted = completedLessons.has(lessonId);
                     return (
@@ -2458,17 +1737,20 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
                                 <span className="flex h-5 w-5 items-center justify-center rounded-full border border-[#d7e5df] text-xs text-[#7f9d94]">{lIndex + 1}</span>
                               )}
                               <p className="text-sm font-semibold text-[#06201c]">{lessonTitle}</p>
+                              <span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-[10px] font-bold text-[#2563eb]">{humanizeLabel(isAssessment ? "assessment" : lessonType)}</span>
                             </div>
                           </button>
-                          {!isCompleted ? (
+                          {!isCompleted && !isAssessment ? (
                             <button
                               type="button"
-                              onClick={() => completeLessonMutation.mutate({ lessonId, sectionId, participantEmail: participantEmail || undefined })}
-                              disabled={completeLessonMutation.isPending}
+                              onClick={() => markLessonComplete(lessonId, sectionId)}
+                              disabled={completeLessonMutation.isPending && completeLessonMutation.variables?.lessonId === lessonId}
                               className="rounded-full border border-[#1f6a58] px-3 py-1 text-xs font-bold text-[#1f6a58] hover:bg-[#e8f6ee] disabled:opacity-60"
                             >
-                              {completeLessonMutation.isPending ? "..." : "Complete"}
+                              {completeLessonMutation.isPending && completeLessonMutation.variables?.lessonId === lessonId ? "Saving..." : "Mark complete"}
                             </button>
+                          ) : isAssessment && !isCompleted ? (
+                            <span className="text-xs font-bold text-[#2563eb]">Assessment</span>
                           ) : (
                             <span className="text-xs font-bold text-[#16825b]">Completed</span>
                           )}
@@ -2481,13 +1763,31 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
                                 <a href={videoUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-semibold text-[#1f6a58] underline">Watch video →</a>
                               </div>
                             ) : null}
+                            {typeof lesson.audio_url === "string" && lesson.audio_url.trim() ? (
+                              <div>
+                                <p className="text-xs font-bold uppercase tracking-[.08em] text-[#7f9d94]">Audio</p>
+                                <audio controls src={lesson.audio_url} className="mt-1 w-full" />
+                              </div>
+                            ) : null}
+                            {Array.isArray(lesson.documents) && lesson.documents.length > 0 ? (
+                              <div>
+                                <p className="text-xs font-bold uppercase tracking-[.08em] text-[#7f9d94]">Documents</p>
+                                <ul className="mt-1 space-y-1">
+                                  {lesson.documents.map((document, documentIndex) => {
+                                    const documentUrl = typeof document === "string" ? document : document && typeof document === "object" && typeof (document as Record<string, unknown>).url === "string" ? (document as Record<string, unknown>).url as string : "";
+                                    const documentName = typeof document === "object" && document !== null && typeof (document as Record<string, unknown>).name === "string" ? (document as Record<string, unknown>).name as string : documentUrl;
+                                    return documentUrl ? <li key={`${documentUrl}-${documentIndex}`}><a href={documentUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-[#1f6a58] underline">{documentName || "Open document"} →</a></li> : null;
+                                  })}
+                                </ul>
+                              </div>
+                            ) : null}
                             {lessonContent ? (
                               <div>
                                 <p className="text-xs font-bold uppercase tracking-[.08em] text-[#7f9d94]">Content</p>
                                 <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[#52736a]">{lessonContent}</p>
                               </div>
                             ) : null}
-                            {!videoUrl && !lessonContent ? (
+                            {!videoUrl && !lessonContent && !(typeof lesson.audio_url === "string" && lesson.audio_url.trim()) && !(Array.isArray(lesson.documents) && lesson.documents.length > 0) ? (
                               <p className="text-xs text-[#7f9d94]">No content for this lesson yet.</p>
                             ) : null}
                           </div>
@@ -2495,7 +1795,7 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
                       </li>
                     );
                   })}
-                </ul>
+                </ul> : null}
               </li>
             );
           })}
@@ -2560,10 +1860,10 @@ function AssessmentReview({ trainingId, assessmentId, submissionId, onClose }: {
   if (reviewQuery.isError) return <p className="text-xs font-semibold text-[#b42318]">{(reviewQuery.error as Error).message}</p>;
 
   const review = (reviewQuery.data ?? {}) as Record<string, unknown>;
-  const score = typeof review.score === "number" ? review.score : null;
+  const score = typeof review.score === "number" || typeof review.score === "string" ? String(review.score) : null;
   const passed = typeof review.passed === "boolean" ? review.passed : null;
-  const feedback = typeof review.feedback === "string" ? review.feedback : typeof review.review === "string" ? review.review : null;
-  const answers = Array.isArray(review.answers) ? review.answers : [];
+  const feedback = typeof review.feedback === "string" ? review.feedback : null;
+  const answers = Array.isArray(review.review) ? review.review : Array.isArray(review.answers) ? review.answers : [];
 
   return (
     <div className="mt-3 rounded-xl border border-[#eef4ff] bg-[#f8faff] p-4 space-y-2">
@@ -2578,13 +1878,14 @@ function AssessmentReview({ trainingId, assessmentId, submissionId, onClose }: {
         <ul className="space-y-1">
           {(answers as Array<Record<string, unknown>>).map((a, aIndex) => {
             const qText = typeof a.question === "string" ? a.question : typeof a.question_text === "string" ? a.question_text : `Q${aIndex + 1}`;
-            const answer = typeof a.answer === "string" ? a.answer : typeof a.user_answer === "string" ? a.user_answer : "";
-            const correct = typeof a.correct === "boolean" ? a.correct : typeof a.is_correct === "boolean" ? a.is_correct : null;
+            const answer = typeof a.answer === "string" ? a.answer : typeof a.given === "string" ? a.given : typeof a.user_answer === "string" ? a.user_answer : "";
+            const correctAnswer = typeof a.correct === "string" ? a.correct : null;
             return (
               <li key={aIndex} className="rounded-lg bg-white p-2">
                 <p className="text-xs font-semibold text-[#06201c]">{qText}</p>
                 <p className="text-xs text-[#52736a]">Answer: {answer}</p>
-                {correct !== null ? <p className={`text-[10px] font-bold ${correct ? "text-[#167550]" : "text-[#b42318]"}`}>{correct ? "✓ Correct" : "✗ Incorrect"}</p> : null}
+                {correctAnswer ? <p className="text-[10px] font-semibold text-[#52736a]">Correct answer: {correctAnswer}</p> : null}
+                {typeof a.explanation === "string" && a.explanation ? <p className="text-[10px] text-[#52736a]">{a.explanation}</p> : null}
               </li>
             );
           })}
@@ -2598,11 +1899,21 @@ function AssessmentReview({ trainingId, assessmentId, submissionId, onClose }: {
 export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
   const queryClient = useQueryClient();
   const [newTitle, setNewTitle] = useState("");
+  const [newInstructions, setNewInstructions] = useState("");
+  const [newTimeLimit, setNewTimeLimit] = useState("");
+  const [newPassPercent, setNewPassPercent] = useState("");
+  const [newAttemptsAllowed, setNewAttemptsAllowed] = useState("");
+  const [newRandomise, setNewRandomise] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [expandedAssessment, setExpandedAssessment] = useState<string | null>(null);
-  const [editPassPercent, setEditPassPercent] = useState<Record<string, string>>({});
+  const [newQuestion, setNewQuestion] = useState("");
+  const [newQuestionType, setNewQuestionType] = useState("short_answer");
+  const [newQuestionOptions, setNewQuestionOptions] = useState("");
+  const [newCorrectAnswer, setNewCorrectAnswer] = useState("");
+  const [newQuestionPoints, setNewQuestionPoints] = useState("1");
   const [editingAssessmentId, setEditingAssessmentId] = useState<string | null>(null);
   const [editAssessmentTitle, setEditAssessmentTitle] = useState("");
+  const [editAssessmentRandomise, setEditAssessmentRandomise] = useState(false);
   const [reviewSubmission, setReviewSubmission] = useState<{ assessmentId: string; submissionId: string } | null>(null);
   const [gradeSubmission, setGradeSubmission] = useState<{ assessmentId: string; submissionId: string } | null>(null);
   const [gradeScore, setGradeScore] = useState("");
@@ -2615,13 +1926,32 @@ export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
   });
 
   const createMutation = useMutation({
-    mutationFn: () => createTrainingAssessment(trainingId, { title: newTitle.trim(), type: "quiz" }),
-    onSuccess: () => { setNewTitle(""); setFeedback("Assessment created."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessments"] }); },
+    mutationFn: () => createTrainingAssessment(trainingId, {
+      title: newTitle.trim(),
+      type: "quiz",
+      level: "module",
+      instructions: newInstructions.trim() || null,
+      time_limit_minutes: newTimeLimit ? Number(newTimeLimit) : null,
+      pass_percent: newPassPercent ? Number(newPassPercent) : null,
+      attempts_allowed: newAttemptsAllowed ? Number(newAttemptsAllowed) : null,
+      randomise: newRandomise,
+      is_published: false,
+    }),
+    onSuccess: () => {
+      setNewTitle("");
+      setNewInstructions("");
+      setNewTimeLimit("");
+      setNewPassPercent("");
+      setNewAttemptsAllowed("");
+      setNewRandomise(false);
+      setFeedback("Assessment created as a draft.");
+      void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessments"] });
+    },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to create assessment."),
   });
 
   const updateAssessmentMutation = useMutation({
-    mutationFn: ({ assessmentId, title }: { assessmentId: string; title: string }) => updateTrainingAssessment(trainingId, assessmentId, { title }),
+    mutationFn: ({ assessmentId, title, randomise }: { assessmentId: string; title: string; randomise: boolean }) => updateTrainingAssessment(trainingId, assessmentId, { title, randomise }),
     onSuccess: () => { setEditingAssessmentId(null); setFeedback("Assessment updated."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessments"] }); },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to update assessment."),
   });
@@ -2632,11 +1962,28 @@ export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to delete assessment."),
   });
 
-  const savePassMutation = useMutation({
-    mutationFn: ({ assessmentId, pass }: { assessmentId: string; pass: string }) =>
-      updateTrainingAssessment(trainingId, assessmentId, { pass_percent: pass.trim() === "" ? null : Number(pass) }),
-    onSuccess: () => { setEditPassPercent({}); setFeedback("Pass percentage updated."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessments"] }); },
-    onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to update pass percentage."),
+  const addQuestionMutation = useMutation({
+    mutationFn: ({ assessmentId, question }: { assessmentId: string; question: string }) =>
+      addAssessmentQuestions(trainingId, assessmentId, {
+        question_text: question,
+        question_type: newQuestionType,
+        options: newQuestionType === "true_false"
+          ? ["true", "false"]
+          : ["mcq", "multiple_select"].includes(newQuestionType)
+            ? newQuestionOptions.split(",").map((option) => option.trim()).filter(Boolean)
+          : null,
+        correct_answer: newCorrectAnswer.trim() || null,
+        points: newQuestionPoints ? Number(newQuestionPoints) : 1,
+      }),
+    onSuccess: () => {
+      setNewQuestion("");
+      setNewQuestionOptions("");
+      setNewCorrectAnswer("");
+      setNewQuestionPoints("1");
+      setFeedback("Question added.");
+      void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessments"] });
+    },
+    onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to add question."),
   });
 
   const deleteQuestionMutation = useMutation({
@@ -2653,14 +2000,23 @@ export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
   });
 
   const assessments = assessmentsQuery.data ?? [];
+  const questionNeedsOptions = newQuestionType === "mcq" || newQuestionType === "multiple_select";
+  const questionIsValid = newQuestion.trim().length > 0
+    && (!questionNeedsOptions || newQuestionOptions.split(",").some((option) => option.trim()))
+    && (newQuestionType === "short_answer" || newQuestionType === "essay" || newCorrectAnswer.trim().length > 0);
 
   return (
     <SectionCard
       title="Assessments"
       action={
-        <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (newTitle.trim()) createMutation.mutate(); }}>
-          <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="New assessment title" className="h-9 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]" />
-          <button type="submit" disabled={createMutation.isPending || !newTitle.trim()} className="h-9 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:opacity-60">{createMutation.isPending ? "Adding..." : "Add"}</button>
+        <form className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" onSubmit={(e) => { e.preventDefault(); if (newTitle.trim()) createMutation.mutate(); }}>
+          <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Assessment title" className="h-9 rounded-lg border border-[#d7e5df] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]" />
+          <input value={newInstructions} onChange={(e) => setNewInstructions(e.target.value)} placeholder="Instructions (optional)" className="h-9 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
+          <input type="number" min="1" value={newTimeLimit} onChange={(e) => setNewTimeLimit(e.target.value)} placeholder="Time limit (min)" className="h-9 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
+          <input type="number" min="0" max="100" value={newPassPercent} onChange={(e) => setNewPassPercent(e.target.value)} placeholder="Pass % (optional)" className="h-9 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
+          <input type="number" min="1" value={newAttemptsAllowed} onChange={(e) => setNewAttemptsAllowed(e.target.value)} placeholder="Attempts (optional)" className="h-9 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
+          <label className="flex h-9 items-center gap-2 rounded-lg border border-[#d7e5df] px-3 text-xs font-semibold text-[#52736a]"><input type="checkbox" checked={newRandomise} onChange={(e) => setNewRandomise(e.target.checked)} />Randomise questions</label>
+          <button type="submit" disabled={createMutation.isPending || !newTitle.trim()} className="h-9 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:opacity-60">{createMutation.isPending ? "Adding..." : "Add draft"}</button>
         </form>
       }
     >
@@ -2680,66 +2036,92 @@ export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
           return (
             <li key={id} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-4">
               <div className="flex items-center justify-between gap-3">
-                <button type="button" onClick={() => setExpandedAssessment(isExpanded ? null : id)} className="flex-1 text-left">
-                  <div className="flex items-center gap-2">
-                    {isEditing ? (
-                      <form className="flex flex-1 gap-2" onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); if (editAssessmentTitle.trim()) updateAssessmentMutation.mutate({ assessmentId: id, title: editAssessmentTitle.trim() }); }}>
-                        <input value={editAssessmentTitle} onChange={(e) => setEditAssessmentTitle(e.target.value)} className="h-8 flex-1 rounded-lg border border-[#d7e5df] px-3 text-sm font-bold text-[#06201c] outline-none focus:border-[#1f6a58]" />
-                        <button type="submit" className="h-8 rounded-full bg-[#1f6a58] px-3 text-xs font-bold text-white">Save</button>
-                        <button type="button" onClick={(e) => { e.stopPropagation(); setEditingAssessmentId(null); }} className="h-8 rounded-full border border-[#d7e5df] px-3 text-xs font-bold text-[#52736a]">Cancel</button>
-                      </form>
-                    ) : (
-                      <>
-                        <p className="text-sm font-bold text-[#06201c]">{title}</p>
-                        {type ? <span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-[10px] font-bold text-[#2563eb]">{type}</span> : null}
-                        {typeof record.lesson_id === "string" && record.lesson_id ? <span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-[10px] font-bold text-[#2563eb]">In a lesson</span> : null}
-                        <span className="text-xs text-[#7f9d94]">{questions.length} questions</span>
-                      </>
-                    )}
+                {isEditing ? (
+                  <form className="flex flex-1 flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); if (editAssessmentTitle.trim()) updateAssessmentMutation.mutate({ assessmentId: id, title: editAssessmentTitle.trim(), randomise: editAssessmentRandomise }); }}>
+                    <input value={editAssessmentTitle} onChange={(e) => setEditAssessmentTitle(e.target.value)} aria-label="Assessment title" className="h-8 flex-1 rounded-lg border border-[#d7e5df] px-3 text-sm font-bold text-[#06201c] outline-none focus:border-[#1f6a58]" />
+                    <label className="flex h-8 items-center gap-2 rounded-lg border border-[#d7e5df] px-3 text-xs font-semibold text-[#52736a]"><input type="checkbox" checked={editAssessmentRandomise} onChange={(e) => setEditAssessmentRandomise(e.target.checked)} />Randomise questions</label>
+                    <button type="submit" className="h-8 rounded-full bg-[#1f6a58] px-3 text-xs font-bold text-white">Save</button>
+                    <button type="button" onClick={() => setEditingAssessmentId(null)} className="h-8 rounded-full border border-[#d7e5df] px-3 text-xs font-bold text-[#52736a]">Cancel</button>
+                  </form>
+                ) : (
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setExpandedAssessment(isExpanded ? null : id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setExpandedAssessment(isExpanded ? null : id);
+                      }
+                    }}
+                    className="flex flex-1 cursor-pointer items-center gap-2 text-left"
+                  >
+                    <p className="text-sm font-bold text-[#06201c]">{title}</p>
+                    {type ? <span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-[10px] font-bold text-[#2563eb]">{type}</span> : null}
+                    {typeof record.lesson_id === "string" && record.lesson_id ? <span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-[10px] font-bold text-[#2563eb]">In a lesson</span> : null}
+                    <span className="text-xs text-[#7f9d94]">{questions.length} questions</span>
                   </div>
-                </button>
+                )}
                 <div className="flex items-center gap-1">
-                  <button type="button" onClick={(e) => { e.stopPropagation(); setEditingAssessmentId(id); setEditAssessmentTitle(title); }} className="rounded-full px-2 py-1 text-xs font-semibold text-[#1f6a58] hover:bg-[#e8f6ee]">Edit</button>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); setEditingAssessmentId(id); setEditAssessmentTitle(title); setEditAssessmentRandomise(record.randomise === true || record.randomize === true); }} className="rounded-full px-2 py-1 text-xs font-semibold text-[#1f6a58] hover:bg-[#e8f6ee]">Edit</button>
                   <button type="button" onClick={() => { if (window.confirm("Delete this assessment?")) deleteMutation.mutate(id); }} className="rounded-full px-2 py-1 text-xs font-semibold text-[#b42318] hover:bg-[#fff6f5]">Delete</button>
                 </div>
               </div>
               {isExpanded ? (
                 <div className="mt-3 space-y-2 pl-4">
-                  {(() => {
-                    const meta = [
-                      typeof record.pass_percent === "number" ? `Pass ${record.pass_percent}%` : typeof record.passing_score === "number" ? `Pass ${record.passing_score} pts` : null,
-                      typeof record.time_limit_minutes === "number" ? `${record.time_limit_minutes} min` : null,
-                      typeof record.attempts_allowed === "number" ? `${record.attempts_allowed} attempts` : typeof record.max_attempts === "number" ? `${record.max_attempts} attempts` : null,
-                    ].filter((s): s is string => !!s);
-                    return (
-                      <div className="flex flex-wrap items-center gap-2 rounded-lg bg-white p-2">
-                        <p className="text-xs font-semibold text-[#06201c]">{meta.length ? meta.join(" • ") : "No pass rule set"}</p>
-                        <input value={editPassPercent[id] ?? (typeof record.pass_percent === "number" ? String(record.pass_percent) : "")} onChange={(e) => setEditPassPercent((current) => ({ ...current, [id]: e.target.value }))} placeholder="Pass %" type="number" min="0" max="100" className="h-8 w-24 rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]" />
-                        <button type="button" onClick={() => savePassMutation.mutate({ assessmentId: id, pass: editPassPercent[id] ?? "" })} disabled={savePassMutation.isPending} className="h-8 rounded-full bg-[#1f6a58] px-3 text-[10px] font-bold text-white disabled:opacity-60">{savePassMutation.isPending ? "Saving…" : "Set pass %"}</button>
-                      </div>
-                    );
-                  })()}
                   {questions.length > 0 ? (
                     <ul className="space-y-1">
                       {questions.map((q, qIndex) => {
                         const qId = typeof q.id === "string" ? q.id : String(qIndex);
-                        const qText = typeof q.question_text === "string" ? q.question_text : typeof q.question === "string" ? q.question : typeof q.text === "string" ? q.text : "Question";
-                        const qType = typeof q.question_type === "string" ? q.question_type : "mcq";
-                        const qOptions = Array.isArray(q.options) ? (q.options as unknown[]).map((o) => (o && typeof o === "object" ? String((o as Record<string, unknown>).label ?? (o as Record<string, unknown>).value ?? "") : typeof o === "string" ? o : "")).filter((s): s is string => Boolean(s)) : [];
+                        const qText = typeof q.question === "string" ? q.question : typeof q.text === "string" ? q.text : typeof q.question_text === "string" ? q.question_text : "Question";
+                        const questionType = typeof q.question_type === "string" ? q.question_type : typeof q.type === "string" ? q.type : null;
+                        const options = Array.isArray(q.options)
+                          ? q.options.map((option) => {
+                            if (typeof option === "string") return option;
+                            if (option && typeof option === "object") {
+                              const optionRecord = option as Record<string, unknown>;
+                              return typeof optionRecord.label === "string" ? optionRecord.label : typeof optionRecord.text === "string" ? optionRecord.text : null;
+                            }
+                            return null;
+                          }).filter((option): option is string => Boolean(option?.trim()))
+                          : [];
+                        const correctAnswer = typeof q.correct_answer === "string" ? q.correct_answer : null;
                         return (
-                          <li key={qId} className="flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-2">
-                            <div className="min-w-0">
-                              <p className="text-sm text-[#52736a]">{qIndex + 1}. {qText} <span className="text-[10px] text-[#7f9d94]">({qType})</span></p>
-                              {qOptions.length > 0 ? <p className="text-[10px] text-[#7f9d94]">{qOptions.join(" · ")}{typeof q.correct_answer === "string" && q.correct_answer ? ` → ${q.correct_answer}` : ""}</p> : (typeof q.correct_answer === "string" && q.correct_answer ? <p className="text-[10px] text-[#7f9d94]">Answer: {q.correct_answer}</p> : null)}
-                              {qType === "task" ? (<>{typeof q.description === "string" && q.description ? <p className="text-[10px] text-[#52736a]">{q.description}</p> : null}{typeof q.explanation === "string" && q.explanation ? <p className="text-[10px] text-[#7f9d94]">Instructions: {q.explanation}</p> : null}</>) : null}
+                          <li key={qId} className="rounded-lg bg-white px-3 py-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold leading-5 text-[#06201c]">{qIndex + 1}. {qText}</p>
+                                {questionType ? <p className="mt-1 text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">{humanizeLabel(questionType)}</p> : null}
+                              </div>
+                              <button type="button" onClick={() => { if (window.confirm("Delete this question?")) deleteQuestionMutation.mutate({ assessmentId: id, questionId: qId }); }} className="shrink-0 text-[10px] font-semibold text-[#b42318]">Delete</button>
                             </div>
-                            <button type="button" onClick={() => { if (window.confirm("Delete this question?")) deleteQuestionMutation.mutate({ assessmentId: id, questionId: qId }); }} className="shrink-0 text-[10px] font-semibold text-[#b42318]">Delete</button>
+                            {options.length > 0 ? (
+                              <div className="mt-2 space-y-1">
+                                {options.map((option, optionIndex) => (
+                                  <div key={`${qId}-option-${optionIndex}`} className={`rounded-md border px-2.5 py-1.5 text-xs ${correctAnswer === option ? "border-[#bce8d1] bg-[#effaf4] font-semibold text-[#167550]" : "border-[#eef4ef] bg-[#f9fcfa] text-[#52736a]"}`}>
+                                    <span className="mr-1.5 font-bold">{String.fromCharCode(65 + optionIndex)}.</span>{option}
+                                    {correctAnswer === option ? <span className="ml-2 text-[10px] uppercase tracking-[.06em]">Correct answer</span> : null}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+                            {correctAnswer && options.every((option) => option !== correctAnswer) ? <p className="mt-2 rounded-md bg-[#effaf4] px-2.5 py-1.5 text-xs font-semibold text-[#167550]">Correct answer: {correctAnswer}</p> : null}
                           </li>
                         );
                       })}
                     </ul>
-                  ) : <p className="text-xs text-[#7f9d94]">No questions yet — add the first one below.</p>}
-                  <QuestionComposer trainingId={trainingId} assessmentId={id} notify={setFeedback} />
+                  ) : <p className="text-xs text-[#7f9d94]">No questions yet.</p>}
+                  <form className="grid gap-2 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); if (questionIsValid) addQuestionMutation.mutate({ assessmentId: id, question: newQuestion.trim() }); }}>
+                    <input value={newQuestion} onChange={(e) => setNewQuestion(e.target.value)} placeholder="Question text" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58] sm:col-span-2" />
+                    <select value={newQuestionType} onChange={(e) => setNewQuestionType(e.target.value)} aria-label="Question type" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]">
+                      {QUIZ_QUESTION_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                    <input type="number" min="1" value={newQuestionPoints} onChange={(e) => setNewQuestionPoints(e.target.value)} placeholder="Points" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
+                    {["mcq", "multiple_select"].includes(newQuestionType) ? <input value={newQuestionOptions} onChange={(e) => setNewQuestionOptions(e.target.value)} placeholder="Options, separated by commas" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
+                    {newQuestionType === "true_false" ? <select value={newCorrectAnswer} onChange={(e) => setNewCorrectAnswer(e.target.value)} aria-label="Correct true or false answer" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]"><option value="">Correct answer</option><option value="true">True</option><option value="false">False</option></select> : null}
+                    {["mcq", "multiple_select", "task"].includes(newQuestionType) ? <input value={newCorrectAnswer} onChange={(e) => setNewCorrectAnswer(e.target.value)} placeholder={newQuestionType === "task" ? "Task grading note" : "Correct answer"} className="h-8 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
+                    <button type="submit" disabled={addQuestionMutation.isPending || !questionIsValid} className="h-8 rounded-full border border-[#1f6a58] px-3 text-[10px] font-bold text-[#1f6a58] disabled:opacity-60 sm:col-span-2">Add question</button>
+                  </form>
                 </div>
               ) : null}
               {reviewSubmission?.assessmentId === id ? (
@@ -2786,7 +2168,7 @@ export function TrainingAssignmentsTab({ trainingId }: { trainingId: string }) {
   });
 
   const createMutation = useMutation({
-    mutationFn: () => createTrainingAssignment(trainingId, { title: newTitle.trim(), instructions: newDescription.trim() || null, due_date: newDueDate || null, max_score: newMaxScore ? Number(newMaxScore) : null }),
+    mutationFn: () => createTrainingAssignment(trainingId, { title: newTitle.trim(), description: newDescription.trim() || null, due_date: newDueDate || null, max_score: newMaxScore ? Number(newMaxScore) : null }),
     onSuccess: () => { setNewTitle(""); setNewDescription(""); setNewDueDate(""); setNewMaxScore(""); setFeedback("Assignment created."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assignments"] }); },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to create assignment."),
   });
@@ -2799,14 +2181,14 @@ export function TrainingAssignmentsTab({ trainingId }: { trainingId: string }) {
 
   const submitMutation = useMutation({
     mutationFn: ({ assignmentId, text, url }: { assignmentId: string; text: string; url: string }) =>
-      submitTrainingAssignment(trainingId, assignmentId, { submission_text: text, file_url: url.trim() ? url.trim() : undefined }),
+      submitTrainingAssignment(trainingId, assignmentId, { text, url: url || undefined }),
     onSuccess: () => { setSubmittingAssignment(null); setSubmitText(""); setSubmitUrl(""); setFeedback("Assignment submitted."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assignments"] }); },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to submit assignment."),
   });
 
   const gradeMutation = useMutation({
     mutationFn: ({ assignmentId, submissionId, score, feedbackText }: { assignmentId: string; submissionId: string; score: number; feedbackText: string }) =>
-      gradeAssignmentSubmission(trainingId, assignmentId, submissionId, { grade: String(score), score, feedback: feedbackText }),
+      gradeAssignmentSubmission(trainingId, assignmentId, submissionId, { score, feedback: feedbackText }),
     onSuccess: () => { setGradingSubmission(null); setGradeScore(""); setGradeFeedbackText(""); setFeedback("Submission graded."); },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to grade submission."),
   });
@@ -2919,6 +2301,7 @@ export function TrainingReviewsTab({ trainingId }: { trainingId: string }) {
     queryKey: ["trainings", trainingId, "reviews"],
     queryFn: () => listTrainingReviews(trainingId),
     enabled: Boolean(trainingId),
+    retry: 1,
   });
 
   const createMutation = useMutation({

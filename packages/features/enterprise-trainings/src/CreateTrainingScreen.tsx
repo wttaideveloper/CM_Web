@@ -10,6 +10,7 @@ import { TrainingBasicsSection, TrainingCapacitySection, TrainingCourseBuilderSe
 import { buildCreateTrainingPayload, buildUpdateTrainingPayload, createEmptyTrainingForm, trainingToFormValues, validateTrainingForm, type CreateTrainingFormValues } from "./create-training-form";
 import { createTraining, resubmitTraining, TrainingsApiError, updateTraining, updateTrainingStatus, type Training } from "./trainings.service";
 import { useActiveTrainingFormConfiguration, useTrainingHistoricalFormConfiguration } from "./training-form-configuration.queries";
+import type { TrainingFormField, TrainingFormSection } from "./training-form-config.service";
 import { canEditTraining } from "./training-status";
 import ConfiguredCreateTrainingSection from "./ConfiguredCreateTrainingSection";
 
@@ -37,6 +38,31 @@ const staticSectionComponents = [
 ] as const;
 
 type TrainingEditorProps = { mode?: "create" | "edit"; initialTraining?: Training };
+
+function hasConfiguredValue(value: unknown): boolean {
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return value !== null && value !== undefined;
+}
+
+function validateConfiguredSection(
+  section: TrainingFormSection,
+  values: CreateTrainingFormValues,
+  customValues: Record<string, unknown>,
+): Record<string, string[]> {
+  const errors: Record<string, string[]> = {};
+
+  for (const field of section.fields) {
+    if (!field.required) continue;
+    const key = field.key as keyof CreateTrainingFormValues;
+    const value = key in values ? values[key] : customValues[field.key];
+    if (!hasConfiguredValue(value)) {
+      errors[field.key] = [`${field.label} is required.`];
+    }
+  }
+
+  return errors;
+}
 
 /** Renders the shared Enterprise Admin Training editor — uses active Super Admin form (global→enterprise-assigned) when present, else static fallback. */
 export default function CreateTrainingScreen({ mode = "create", initialTraining }: TrainingEditorProps) {
@@ -151,6 +177,20 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   const isDirty = JSON.stringify(values) !== JSON.stringify(initialValues);
   const continueToNext = () => {
     if (activeForm) {
+      const currentSection = configuredSections[activeStep];
+      if (currentSection) {
+        const configuredErrors = validateConfiguredSection(currentSection, values, customValues);
+        const currentErrors = Object.fromEntries(
+          Object.entries({ ...allErrors, ...configuredErrors }).filter(([field]) =>
+            currentSection.fields.some((configuredField: TrainingFormField) => configuredField.key === field),
+          ),
+        );
+        if (Object.keys(currentErrors).length > 0) {
+          setErrors(currentErrors);
+          return;
+        }
+      }
+      setErrors({});
       setActiveStep((current) => Math.min(current + 1, editorSteps.length - 1));
       return;
     }
@@ -211,6 +251,8 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
         <div className="mb-3 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-2 text-xs font-semibold text-[#167550]">{mode === "edit" ? `Historical form: ${activeForm.title}` : `Using Super Admin form: ${activeForm.title}`} {activeForm.is_global ? "(Global)" : `(${activeForm.enterprise_ids.length} enterprises)`} — {configuredSections.length} sections, {configuredSections.reduce((sum, s) => sum + s.fields.length, 0)} fields.</div>
       ) : formConfigError ? (
         <div role="alert" className="mb-3 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-2 text-xs font-semibold text-[#735c1e]">Could not load the Super Admin form configuration — using the standard Training form instead. <button type="button" onClick={refetchFormConfig} className="underline">Retry</button></div>
+      ) : mode === "create" ? (
+        <div role="status" className="mb-3 rounded-xl border border-[#d8e4ef] bg-[#f5f9fd] px-4 py-2 text-xs font-semibold text-[#41627f]">No active Super Admin form configuration was found — using the standard Training form.</div>
       ) : null}
       <header className="flex flex-col gap-4 border-b border-[#edf3f0] pb-6 sm:flex-row sm:items-start sm:justify-between">
         <div>
