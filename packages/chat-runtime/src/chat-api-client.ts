@@ -1,3 +1,5 @@
+import { authenticatedFetch } from "@ihp/auth";
+
 import { CHAT_API_BASE_URL, CHAT_GATEWAY_MODE } from "./config";
 import { getChatAccessToken } from "./chat-token";
 
@@ -29,7 +31,9 @@ export async function chatRequestResponse(
     headers.delete("Content-Type");
   }
 
-  return fetch(`${CHAT_API_BASE_URL}${path}`, {
+  const request = CHAT_GATEWAY_MODE ? authenticatedFetch : fetch;
+
+  return request(`${CHAT_API_BASE_URL}${path}`, {
     ...init,
     cache: "no-store",
     credentials: CHAT_GATEWAY_MODE ? "include" : undefined,

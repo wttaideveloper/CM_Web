@@ -2,8 +2,11 @@
 
 import { ServicesListScreen } from "@ihp/services";
 import CurrentEnterpriseGuard from "@/components/CurrentEnterpriseGuard";
+import { isInternalUserRole, useAuth } from "@ihp/auth";
 
 export default function EnterpriseServicesPage() {
+  const { roles } = useAuth();
+  const readOnly = isInternalUserRole(roles?.tenantRole);
   return (
     <CurrentEnterpriseGuard>
       {({ enterpriseId, enterpriseName }) => (
@@ -13,6 +16,7 @@ export default function EnterpriseServicesPage() {
           createHref="/admin/services/create"
           detailHrefBase="/admin/services"
           editHrefBase="/admin/services"
+          readOnly={readOnly}
         />
       )}
     </CurrentEnterpriseGuard>

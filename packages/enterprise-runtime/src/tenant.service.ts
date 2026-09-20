@@ -1,3 +1,7 @@
+import { authenticatedFetch } from "@ihp/auth";
+
+const fetch = authenticatedFetch;
+
 /** Details for the authenticated user's server-derived tenant. */
 export interface TenantDetails {
   id: string;
@@ -49,6 +53,32 @@ export type TenantMemberActionResponse = {
   message: string;
   data?: TenantMember | null;
 };
+
+/** Structured error returned by tenant-scoped API requests. */
+export class TenantApiError extends Error {
+  readonly status: number;
+  readonly detail: string | null;
+
+  constructor(message: string, status: number, detail: string | null = null) {
+    super(message);
+    this.name = "TenantApiError";
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+const TENANT_MEMBER_PERMISSION_DETAIL = "Only tenant owners and tenant admins can manage members";
+
+/** Returns whether a tenant-members request failed because the caller cannot manage members. */
+export function isTenantMemberPermissionDenied(error: unknown): boolean {
+  if (!(error instanceof TenantApiError)) {
+    return false;
+  }
+
+  return error.status === 403 || (
+    error.status === 400 && error.detail?.trim() === TENANT_MEMBER_PERMISSION_DETAIL
+  );
+}
 
 /** A tenant RBAC role returned by the tenant roles API. */
 export interface TenantRole {
@@ -123,6 +153,55 @@ function isTenantMember(value: unknown): value is TenantMember {
   );
 }
 
+function readMemberString(value: Record<string, unknown>, ...keys: string[]): string | null {
+  for (const key of keys) {
+    if (typeof value[key] === "string") {
+      return value[key] as string;
+    }
+  }
+
+  return null;
+}
+
+function normalizeTenantMember(value: unknown): TenantMember | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const id = readMemberString(value, "id", "membership_id");
+  const userId = readMemberString(value, "userId", "user_id");
+  const email = readMemberString(value, "email");
+  const fullName = readMemberString(value, "fullName", "full_name");
+  const status = readMemberString(value, "status");
+
+  if (!id || !userId || !email || !fullName || !status) {
+    return null;
+  }
+
+  const role = readMemberString(value, "role") ?? "";
+  const roleName = readMemberString(value, "roleName", "role_name") ?? "";
+  const roleSlug = readMemberString(value, "roleSlug", "role_slug") ?? role;
+  const knowledgeRoles = value.knowledgeRoles ?? value.knowledge_roles;
+  const tenantRbacRoles = value.tenantRbacRoles ?? value.tenant_rbac_roles;
+  const joinedAt = value.joinedAt ?? value.joined_at;
+  const permissions = value.permissions;
+
+  return {
+    id,
+    userId,
+    email,
+    fullName,
+    role,
+    roleName,
+    status,
+    roleSlug,
+    ...(isOptionalStringArray(knowledgeRoles) ? { knowledgeRoles } : {}),
+    ...(isOptionalString(joinedAt) ? { joinedAt } : {}),
+    ...(isOptionalStringArray(tenantRbacRoles) ? { tenantRbacRoles } : {}),
+    ...(isOptionalStringArray(permissions) ? { permissions } : {}),
+  };
+}
+
 function isTenantDetails(value: unknown): value is TenantDetails {
   return (
     isRecord(value) &&
@@ -178,7 +257,19 @@ function isOptionalStringArray(value: unknown): value is string[] | undefined {
 
 async function throwTenantApiError(response: Response, fallback: string): Promise<never> {
   const errorText = await response.text().catch(() => "");
-  throw new Error(errorText || `${fallback} (HTTP ${response.status}).`);
+  let detail: string | null = null;
+  if (errorText) {
+    try {
+      const payload = JSON.parse(errorText) as unknown;
+      if (isRecord(payload) && typeof payload.detail === "string") {
+        detail = payload.detail;
+      }
+    } catch {
+      // Preserve the generic product-facing message for non-JSON errors.
+    }
+  }
+
+  throw new TenantApiError(`${fallback} (HTTP ${response.status}).`, response.status, detail);
 }
 
 function memberPath(membershipId: string): string {
@@ -223,7 +314,7 @@ export async function getTenantMe(): Promise<TenantMeResponse> {
   };
 }
 
-/** Loads the current tenant's members from the documented list response envelope. */
+/** Loads and normalizes the current tenant's members collection response. */
 export async function getTenantMembers(
   options?: GetTenantMembersOptions,
 ): Promise<TenantMember[]> {
@@ -244,21 +335,30 @@ export async function getTenantMembers(
   });
 
   if (!response.ok) {
-    throw new Error(`Unable to load tenant members (HTTP ${response.status}).`);
+    return throwTenantApiError(response, "Unable to load tenant members");
   }
 
   const payload = (await response.json()) as unknown;
   if (
     !isRecord(payload) ||
-    typeof payload.message !== "string" ||
-    typeof payload.total !== "number" ||
-    !Array.isArray(payload.data) ||
-    !payload.data.every(isTenantMember)
+    (payload.message !== undefined && typeof payload.message !== "string") ||
+    (payload.total !== undefined && typeof payload.total !== "number") ||
+    !Array.isArray(payload.data)
   ) {
     throw new Error("Invalid tenant members response.");
   }
 
-  return payload.data;
+  const data = payload.data.flatMap((member) => {
+    const normalized = normalizeTenantMember(member);
+    return normalized ? [normalized] : [];
+  });
+  const normalizedResponse = {
+    ...(typeof payload.message === "string" ? { message: payload.message } : {}),
+    total: typeof payload.total === "number" ? payload.total : data.length,
+    data,
+  };
+
+  return normalizedResponse.data;
 }
 
 /** Loads one current-tenant member by membership ID. */

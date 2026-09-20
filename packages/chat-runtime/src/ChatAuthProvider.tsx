@@ -7,8 +7,8 @@ import { clearChatTokenSession, setChatSessionEnabled } from "./chat-token";
 import { ChatAuthContext } from "./useChatAuth";
 
 export function ChatAuthProvider({ children }: { children: ReactNode }) {
-  const { authenticated, user } = useAuth();
-  const canUseProviderChat = authenticated && user?.membership?.tenantRole === "internal_user";
+  const { authenticated, authReady, user } = useAuth();
+  const canUseProviderChat = authenticated && authReady && user?.membership?.tenantRole === "internal_user";
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {

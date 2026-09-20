@@ -22,7 +22,7 @@ export function PricingAndTicketsSection({ values, update, errors }: SectionProp
 
 /** Renders capacity limits and registration capacity inputs. */
 export function CapacityAndRegistrationSection({ values, update, errors }: SectionProps) {
-  return <section className="space-y-5"><Heading title="Capacity & Registration" description="Set the attendance boundaries for this event." /><div className="grid gap-4 md:grid-cols-3"><Field label="Overall capacity" value={values.capacity} onChange={(value) => update("capacity", value)} type="number" error={errors.capacity} /><Field label="Minimum participants" value={values.min_participants} onChange={(value) => update("min_participants", value)} type="number" error={errors.min_participants} /><Field label="Maximum participants" value={values.max_participants} onChange={(value) => update("max_participants", value)} type="number" error={errors.max_participants} /></div></section>;
+  return <section className="space-y-5"><Heading title="Capacity & Registration" description="Set the attendance boundaries for this event." /><div className="grid gap-4 md:grid-cols-3"><Field label="Overall capacity" value={values.capacity} onChange={(value) => update("capacity", value)} type="number" min="0" error={errors.capacity} /><Field label="Minimum participants" value={values.min_participants} onChange={(value) => update("min_participants", value)} type="number" min="0" error={errors.min_participants} /><Field label="Maximum participants" value={values.max_participants} onChange={(value) => update("max_participants", value)} type="number" min="0" error={errors.max_participants} /></div></section>;
 }
 
 /** Renders URL-based images and media lists without fabricating uploads. */

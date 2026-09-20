@@ -6,6 +6,7 @@ import {
   getTenantMembers,
   getTenantPermissions,
   getTenantRoles,
+  isTenantMemberPermissionDenied,
   type TenantMember,
   useTenant,
 } from "@ihp/enterprise-runtime";
@@ -55,7 +56,7 @@ export default function TeamAndUsersCard({ onInviteSuccess }: TeamAndUsersCardPr
     queryKey: [...settingsQueryKeys.members(tenantId ?? "unavailable"), memberStatusFilter],
     queryFn: () => memberStatusFilter === "active" ? getTenantMembers() : getTenantMembers({ includeArchived: true }),
     staleTime: TENANT_QUERY_STALE_TIME_MS,
-    retry: 1,
+    retry: (failureCount, error) => !isTenantMemberPermissionDenied(error) && failureCount < 1,
     enabled: canLoadTenantResources,
   });
   const rolesQuery = useQuery({
@@ -159,8 +160,17 @@ export default function TeamAndUsersCard({ onInviteSuccess }: TeamAndUsersCardPr
               <LoadingRows />
             ) : membersQuery.isError ? (
               <div className="py-2">
-                <p role="alert" className="text-sm text-[#b42318]">Unable to load team members. Please try again.</p>
-                <button type="button" onClick={() => void membersQuery.refetch()} className="mt-2 text-sm font-semibold text-[#1f6a58] hover:text-[#16332b]">Retry</button>
+                {isTenantMemberPermissionDenied(membersQuery.error) ? (
+                  <>
+                    <p role="alert" className="text-sm text-[#52736a]">You don’t have permission to manage team members.</p>
+                    <p className="mt-1 text-sm text-[#52736a]">Team management is available only to Enterprise Owners and Enterprise Admins.</p>
+                  </>
+                ) : (
+                  <>
+                    <p role="alert" className="text-sm text-[#b42318]">Unable to load team members. Please try again.</p>
+                    <button type="button" onClick={() => void membersQuery.refetch()} className="mt-2 text-sm font-semibold text-[#1f6a58] hover:text-[#16332b]">Retry</button>
+                  </>
+                )}
               </div>
             ) : (
               <MemberList members={visibleMembers} onSelectMember={setSelectedMember} />

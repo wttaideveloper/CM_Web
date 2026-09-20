@@ -12,14 +12,19 @@ export type { GoogleOwnerSignupOptions } from "./google-owner-signup";
 export { restartLogin } from "./restart-login";
 export {
   completeLogin,
+  authenticatedFetch,
   getAuthStatus,
   getSession,
+  invalidateAuthRefreshes,
   logoutWebAuth,
   refreshAuthSession,
+  refreshAuthSessionSingleFlight,
   startWebAuthGetLogout,
 } from "./session";
+export { AuthRefreshInvalidatedError } from "./session";
 export type { GetWebAuthLogoutOptions } from "./session";
 export { useAuth } from "./useAuth";
+export { isInternalUserRole } from "./capabilities";
 export { loginSuperAdmin, SuperAdminAuthError } from "./super-admin-auth";
 export type { SuperAdminIdentity, SuperAdminLoginInput } from "./super-admin-auth";
 export {

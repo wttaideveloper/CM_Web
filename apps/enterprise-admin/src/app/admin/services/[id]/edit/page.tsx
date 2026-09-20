@@ -3,10 +3,12 @@
 import { ServiceEditScreen } from "@ihp/services";
 import { loadEnterpriseServiceProviderOptions } from "@/adapters/service-provider-options";
 import CurrentEnterpriseGuard from "@/components/CurrentEnterpriseGuard";
+import EnterpriseListingManagementGuard from "@/components/EnterpriseListingManagementGuard";
 
 export default function EnterpriseServiceEditPage() {
   return (
-    <CurrentEnterpriseGuard>
+    <EnterpriseListingManagementGuard redirectTo="/admin/services">
+      <CurrentEnterpriseGuard>
       {({ enterpriseId }) => (
         <ServiceEditScreen
           enterpriseFilterId={enterpriseId}
@@ -15,6 +17,7 @@ export default function EnterpriseServiceEditPage() {
           providerOptionsLoader={loadEnterpriseServiceProviderOptions}
         />
       )}
-    </CurrentEnterpriseGuard>
+      </CurrentEnterpriseGuard>
+    </EnterpriseListingManagementGuard>
   );
 }

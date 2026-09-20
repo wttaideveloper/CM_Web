@@ -11,7 +11,7 @@ import {
 } from "react";
 
 import type { AuthClientConfig } from "./client";
-import { getSession, logoutWebAuth } from "./session";
+import { getSession, invalidateAuthRefreshes, logoutWebAuth, refreshAuthSessionSingleFlight } from "./session";
 import type { AuthContextValue, AuthUser } from "./types";
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -25,6 +25,7 @@ export function AuthProvider({ children, config }: AuthProviderProps) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [authReady, setAuthReady] = useState(false);
   const [hasActiveTenant, setHasActiveTenant] = useState(false);
   const [needsOrganizationSetup, setNeedsOrganizationSetup] = useState(false);
   const sessionRequestVersion = useRef(0);
@@ -44,7 +45,16 @@ export function AuthProvider({ children, config }: AuthProviderProps) {
     setIsLoading(true);
 
     try {
-      const session = await getSession(config);
+      let session;
+      try {
+        session = await getSession(config);
+      } catch (error) {
+        if (!(error instanceof Error) || (error as Error & { status?: number }).status !== 401) {
+          throw error;
+        }
+        await refreshAuthSessionSingleFlight(config);
+        session = await getSession(config);
+      }
       if (requestVersion === sessionRequestVersion.current) {
         applySession(session);
       }
@@ -58,6 +68,7 @@ export function AuthProvider({ children, config }: AuthProviderProps) {
     } finally {
       if (requestVersion === sessionRequestVersion.current) {
         setIsLoading(false);
+        setAuthReady(true);
       }
     }
   }, [applySession, config]);
@@ -74,6 +85,7 @@ export function AuthProvider({ children, config }: AuthProviderProps) {
 
   const logout = useCallback(async () => {
     sessionRequestVersion.current += 1;
+    invalidateAuthRefreshes();
     const logoutUrl = await logoutWebAuth(config);
     setUser(null);
     setAuthenticated(false);
@@ -88,6 +100,7 @@ export function AuthProvider({ children, config }: AuthProviderProps) {
       userId: user?.userId ?? user?.id ?? null,
       authenticated,
       isLoading,
+      authReady,
       membership: user?.membership ?? null,
       roles: user?.roles ?? null,
       hasActiveTenant,
@@ -98,6 +111,7 @@ export function AuthProvider({ children, config }: AuthProviderProps) {
     }),
     [
       authenticated,
+      authReady,
       hasActiveTenant,
       isLoading,
       logout,

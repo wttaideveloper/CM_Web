@@ -37,7 +37,9 @@ function logSessionStructure(result: AuthSessionResponse) {
 async function parseAuthResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
-    throw new Error(errorText || `Authentication request failed with status ${response.status}`);
+    const error = new Error(errorText || `Authentication request failed with status ${response.status}`) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
   }
 
   return (await response.json()) as T;
@@ -130,6 +132,62 @@ export async function refreshAuthSession(
   });
 
   return parseAuthResponse<RefreshAuthSessionResponse>(response);
+}
+
+let refreshInFlight: Promise<RefreshAuthSessionResponse> | null = null;
+let refreshInFlightGeneration: number | null = null;
+let refreshGeneration = 0;
+
+/** Error raised when logout invalidates a refresh before it can be used. */
+export class AuthRefreshInvalidatedError extends Error {
+  constructor() {
+    super("Authentication refresh was invalidated.");
+    this.name = "AuthRefreshInvalidatedError";
+  }
+}
+
+/** Runs one cookie-backed refresh for all concurrent callers. */
+export function refreshAuthSessionSingleFlight(config?: AuthClientConfig): Promise<RefreshAuthSessionResponse> {
+  if (refreshInFlight && refreshInFlightGeneration === refreshGeneration) {
+    return refreshInFlight;
+  }
+
+  const generationAtStart = refreshGeneration;
+  const refreshPromise = refreshAuthSession(config)
+    .then((result) => {
+      if (generationAtStart !== refreshGeneration) throw new AuthRefreshInvalidatedError();
+      return result;
+    })
+    .finally(() => {
+      if (refreshInFlight === refreshPromise) {
+        refreshInFlight = null;
+        refreshInFlightGeneration = null;
+      }
+    });
+  refreshInFlight = refreshPromise;
+  refreshInFlightGeneration = generationAtStart;
+  return refreshInFlight;
+}
+
+/** Invalidates refreshes started before logout or another auth boundary. */
+export function invalidateAuthRefreshes(): void {
+  refreshGeneration += 1;
+}
+
+function isReplayableBody(body: BodyInit | null | undefined): boolean {
+  if (body === null || body === undefined || typeof body === "string") return true;
+  if (typeof ReadableStream !== "undefined" && body instanceof ReadableStream) return false;
+  return body instanceof URLSearchParams || body instanceof FormData || body instanceof Blob || body instanceof ArrayBuffer || ArrayBuffer.isView(body);
+}
+
+/** Performs a cookie-authenticated request and retries once after a shared 401 refresh. */
+export async function authenticatedFetch(input: RequestInfo | URL, init?: RequestInit, config?: AuthClientConfig): Promise<Response> {
+  const requestInit: RequestInit = { ...init, credentials: "include" };
+  const response = await fetch(input, requestInit);
+  if (response.status !== 401) return response;
+  if (!isReplayableBody(requestInit.body) || (input instanceof Request && !requestInit.body && input.body)) return response;
+  await refreshAuthSessionSingleFlight(config);
+  return fetch(input, requestInit);
 }
 
 export async function logoutWebAuth(config?: AuthClientConfig) {

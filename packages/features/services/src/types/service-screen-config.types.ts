@@ -21,6 +21,7 @@ export type ServicesListScreenProps = {
   enterpriseName?: string;
   enterprisesLoader?: EnterpriseOptionsLoader;
   enterpriseLocationsLoader?: EnterpriseLocationsLoader;
+  readOnly?: boolean;
 };
 
 export type ServiceCreateScreenProps = {
@@ -40,6 +41,7 @@ export type ServiceDetailsScreenProps = {
   editHrefBase?: string;
   enterprisesLoader?: EnterpriseOptionsLoader;
   enterpriseLocationLoader?: EnterpriseLocationLoader;
+  readOnly?: boolean;
 };
 
 export type ServiceEditScreenProps = {

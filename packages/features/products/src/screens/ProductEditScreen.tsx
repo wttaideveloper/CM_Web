@@ -16,7 +16,7 @@ import { getEnterpriseLocations, type EnterpriseLocationDto } from "@ihp/enterpr
 import { getProductById, updateProduct } from "../services/product.service";
 import { PRODUCT_CATEGORY_OPTIONS } from "../constants/product-category-options";
 import type { ProductDto } from "../types/product.types";
-import type { ProductEditScreenProps } from "../types/product-screen-config.types";
+import type { ProductEditScreenProps, ProductProviderOption } from "../types/product-screen-config.types";
 
 type ProductAttributeRow = {
   id?: string;
@@ -127,6 +127,7 @@ export default function ProductEditScreen({
   listHref = "/products",
   detailHrefBase = "/products",
   enterpriseLocationsLoader = getEnterpriseLocations,
+  providerOptionsLoader,
 }: ProductEditScreenProps = {}) {
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -151,9 +152,14 @@ export default function ProductEditScreen({
   const [productStatus, setProductStatus] = useState(true);
   const [customAttributes, setCustomAttributes] = useState<ProductAttributeRow[]>([]);
   const [locationId, setLocationId] = useState("");
+  const [providerUserId, setProviderUserId] = useState("");
+  const [providerName, setProviderName] = useState("");
   const [locationOptions, setLocationOptions] = useState<EnterpriseLocationDto[]>([]);
+  const [providerOptions, setProviderOptions] = useState<ProductProviderOption[]>([]);
   const [isLoadingLocations, setIsLoadingLocations] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [providerError, setProviderError] = useState<string | null>(null);
+  const [isLoadingProviders, setIsLoadingProviders] = useState(false);
   const [accessDenied, setAccessDenied] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -180,6 +186,31 @@ export default function ProductEditScreen({
       setLocationError(fetchError instanceof Error ? fetchError.message : "Unable to load locations.");
     } finally {
       setIsLoadingLocations(false);
+    }
+  }
+
+  async function fetchProviders(currentProvider?: ProductProviderOption) {
+    if (!providerOptionsLoader) {
+      setProviderOptions(currentProvider ? [currentProvider] : []);
+      return;
+    }
+
+    try {
+      setIsLoadingProviders(true);
+      setProviderError(null);
+      const loadedProviders = await providerOptionsLoader();
+      setProviderOptions(
+        currentProvider && !loadedProviders.some((provider) => provider.userId === currentProvider.userId)
+          ? [currentProvider, ...loadedProviders]
+          : loadedProviders,
+      );
+    } catch (fetchError) {
+      setProviderOptions(currentProvider ? [currentProvider] : []);
+      setProviderError(
+        fetchError instanceof Error ? fetchError.message : "Unable to load providers.",
+      );
+    } finally {
+      setIsLoadingProviders(false);
     }
   }
 
@@ -226,8 +257,15 @@ export default function ProductEditScreen({
       setPublishStatus(normalizeOptionValue(data.publish_status, publishStatusOptions));
       setProductStatus(data.product_status !== false);
       setLocationId(data.location_id ?? "");
+      setProviderUserId(data.provider_user_id ?? "");
+      setProviderName(data.provider_name ?? "");
       setLocationError(null);
       void fetchLocations(data.enterprise_id, data.location_id ?? "");
+      void fetchProviders(
+        data.provider_user_id
+          ? { userId: data.provider_user_id, fullName: data.provider_name || data.provider_user_id }
+          : undefined,
+      );
 
       try {
         const attributes = await getDynamicAttributes("product", data.id);
@@ -294,6 +332,8 @@ export default function ProductEditScreen({
         product_images: productImages.trim(),
         product_status: productStatus,
         ...(locationId.trim() ? { location_id: locationId.trim() } : {}),
+        ...(providerUserId.trim() ? { provider_user_id: providerUserId.trim() } : {}),
+        ...(providerName.trim() ? { provider_name: providerName.trim() } : {}),
         ...(trimmedSku ? { sku: trimmedSku } : {}),
         ...(trimmedBarcodeUpc ? { barcode_upc: trimmedBarcodeUpc } : {}),
         ...(parsedWeight !== undefined ? { weight: parsedWeight } : {}),
@@ -492,6 +532,38 @@ export default function ProductEditScreen({
             </select>
             {locationError ? (
               <p className="mt-1.5 text-xs font-medium text-[#b42318]">{locationError}</p>
+            ) : null}
+          </label>
+
+          <label className="block">
+            <FieldLabel>Provider</FieldLabel>
+            <select
+              value={providerUserId}
+              onChange={(event) => {
+                const selected = providerOptions.find(
+                  (provider) => provider.userId === event.target.value,
+                );
+                setProviderUserId(event.target.value);
+                setProviderName(selected?.fullName ?? "");
+              }}
+              className={inputClass()}
+              disabled={isLoadingProviders || providerOptions.length === 0}
+            >
+              <option value="">
+                {isLoadingProviders
+                  ? "Loading providers..."
+                  : providerOptions.length === 0
+                    ? "No providers available"
+                    : "Select provider"}
+              </option>
+              {providerOptions.map((provider) => (
+                <option key={provider.userId} value={provider.userId}>
+                  {provider.fullName}
+                </option>
+              ))}
+            </select>
+            {providerError ? (
+              <p className="mt-1.5 text-xs font-medium text-[#b42318]">{providerError}</p>
             ) : null}
           </label>
 

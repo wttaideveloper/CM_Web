@@ -151,6 +151,7 @@ export default function ProductsListScreen({
   editHrefBase = "/products",
   enterpriseName,
   enterprisesLoader = getEnterprises,
+  readOnly = false,
 }: ProductsListScreenProps = {}) {
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [products, setProducts] = useState<ProductListItem[]>([]);
@@ -213,12 +214,14 @@ export default function ProductsListScreen({
             Manage all products across enterprise accounts
           </p>
         </div>
-        <Link
-          href={createHref}
-          className="inline-flex h-12 items-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
-        >
-          + Add Product
-        </Link>
+        {!readOnly ? (
+          <Link
+            href={createHref}
+            className="inline-flex h-12 items-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm"
+          >
+            + Add Product
+          </Link>
+        ) : null}
       </div>
 
       <div className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
@@ -338,13 +341,15 @@ export default function ProductsListScreen({
                         >
                           <EyeIcon />
                         </Link>
-                        <Link
-                          href={`${editHrefBase}/${product.id}/edit`}
-                          className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7]"
-                          aria-label={`Edit ${product.name}`}
-                        >
-                          <EditIcon />
-                        </Link>
+                        {!readOnly ? (
+                          <Link
+                            href={`${editHrefBase}/${product.id}/edit`}
+                            className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] hover:bg-[#f4faf7]"
+                            aria-label={`Edit ${product.name}`}
+                          >
+                            <EditIcon />
+                          </Link>
+                        ) : null}
                       </div>
                     </td>
                   </tr>

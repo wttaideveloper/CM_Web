@@ -18,18 +18,18 @@ export function trainingApprovalListQueryKey(status: TrainingApprovalStatus, pag
   return ["platform", "training-approval-list", status, page, search] as const;
 }
 
-/** Lists Trainings in one approval lifecycle state through the documented list endpoint. */
+/** Platform approval reads go through the bearer-token BFF (Super Admin session), never the
+ * marketplace's public list endpoint directly — that endpoint has no auth dependency (it powers
+ * the public course catalog), so calling it straight from the browser leaked every tenant's
+ * pending/approved/needs-revision Trainings to anyone who opened it, authenticated or not. */
+const trainingApprovalsBffBasePath = "/api/platform-super-admin/training-approvals";
+
+/** Lists Trainings in one approval lifecycle state via the Super Admin BFF. */
 export async function getTrainingApprovalList(status: TrainingApprovalStatus, page: number, search: string): Promise<TrainingApprovalList> {
   const parameters = new URLSearchParams({ status, page: String(page), page_size: "20" });
   if (search) parameters.set("search", search);
 
-  const enterpriseOrigin = (process.env.NEXT_PUBLIC_ENTERPRISE_ADMIN_ORIGIN ?? "").trim();
-  const trainingsBase =
-    enterpriseOrigin && enterpriseOrigin !== "/"
-      ? `${enterpriseOrigin.replace(/\/+$/, "")}/api/v1/trainings`
-      : "/api/v1/trainings";
-
-  const response = await fetch(trainingsBase + "?" + parameters.toString(), { credentials: "include" });
+  const response = await fetch(`${trainingApprovalsBffBasePath}/list?${parameters.toString()}`, { credentials: "include" });
   if (!response.ok) throw new Error();
 
   const value = await response.json();
