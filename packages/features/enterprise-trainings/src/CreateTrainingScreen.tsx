@@ -251,6 +251,8 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
         <div className="mb-3 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-2 text-xs font-semibold text-[#167550]">{mode === "edit" ? `Historical form: ${activeForm.title}` : `Using Super Admin form: ${activeForm.title}`} {activeForm.is_global ? "(Global)" : `(${activeForm.enterprise_ids.length} enterprises)`} — {configuredSections.length} sections, {configuredSections.reduce((sum, s) => sum + s.fields.length, 0)} fields.</div>
       ) : formConfigError ? (
         <div role="alert" className="mb-3 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-2 text-xs font-semibold text-[#735c1e]">Could not load the Super Admin form configuration — using the standard Training form instead. <button type="button" onClick={refetchFormConfig} className="underline">Retry</button></div>
+      ) : mode === "create" ? (
+        <div role="status" className="mb-3 rounded-xl border border-[#d8e4ef] bg-[#f5f9fd] px-4 py-2 text-xs font-semibold text-[#41627f]">No active Super Admin form configuration was found — using the standard Training form.</div>
       ) : null}
       <header className="flex flex-col gap-4 border-b border-[#edf3f0] pb-6 sm:flex-row sm:items-start sm:justify-between">
         <div>

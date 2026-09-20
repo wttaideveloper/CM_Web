@@ -153,7 +153,7 @@ export function TrainingAdvancedSection({ values, update }: SectionProps) {
   return (
     <section className="space-y-5">
       <SectionHeading title="Advanced & Collaboration" description="Discussions, announcements, moderation and supplemental notes." tip="JSON fields accept an array or object, e.g. [] or [{}]. Leave empty to omit." />
-      <UrlList label="Notes / Handouts (URLs)" values={values.notes_documents} update={(next) => update("notes_documents", next)} />
+      <UrlList label="Notes / Handouts (URLs)" values={values.instructor_notes} update={(next) => update("instructor_notes", next)} />
       <label className={labelClass}>Instructor notes<input value={values.instructor_notes} onChange={(e) => update("instructor_notes", e.target.value)} placeholder="Internal notes for the instructor, not shown to learners" className={inputClass} /></label>
       <label className={labelClass}>Notes PDF URL<input type="url" value={values.notes_pdf_url} onChange={(e) => update("notes_pdf_url", e.target.value)} placeholder="https://…" className={inputClass} /></label>
       <label className={labelClass}>FAQs (JSON)<textarea value={values.faqs} onChange={(e) => update("faqs", e.target.value)} placeholder='[{"question":"...","answer":"..."}]' rows={3} className={`${inputClass} h-auto py-2`} /></label>
@@ -171,24 +171,25 @@ export function TrainingAdvancedSection({ values, update }: SectionProps) {
 }
 
 /** Media input shared by the Training create/edit wizard. */
-function UrlList({ label, values, update }: { label: string; values: string[]; update: (next: string[]) => void }) {
+function UrlList({ label, values, update }: { label: string; values?: string[]; update: (next: string[]) => void }) {
+  const safeValues = Array.isArray(values) ? values : [];
   return (
     <div>
       <div className="flex items-center justify-between">
         <p className={labelClass}>{label}</p>
-        <button type="button" onClick={() => update([...values, ""])} className="text-sm font-semibold text-[#1f6a58]">+ Add</button>
+        <button type="button" onClick={() => update([...safeValues, ""])} className="text-sm font-semibold text-[#1f6a58]">+ Add</button>
       </div>
       <div className="mt-2 space-y-2">
-        {values.map((value, index) => (
+        {safeValues.map((value, index) => (
           <div key={index} className="flex gap-2">
             <input
               type="url"
               value={value}
-              onChange={(event) => update(values.map((current, item) => (item === index ? event.target.value : current)))}
+              onChange={(event) => update(safeValues.map((current, item) => (item === index ? event.target.value : current)))}
               className={inputClass.replace("mt-1.5 ", "")}
               placeholder="https://…"
             />
-            <button type="button" onClick={() => update(values.filter((_item, item) => item !== index))} className="shrink-0 rounded-xl px-3 text-sm font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button>
+            <button type="button" onClick={() => update(safeValues.filter((_item, item) => item !== index))} className="shrink-0 rounded-xl px-3 text-sm font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button>
           </div>
         ))}
       </div>
@@ -291,7 +292,7 @@ export function TrainingCourseBuilderSection({ values, update }: SectionProps) {
         <label className={labelClass}>Notes PDF URL<input type="url" value={values.notes_pdf_url} onChange={(e) => update("notes_pdf_url", e.target.value)} placeholder="https://…" className={inputClass} /></label>
         <label className={labelClass}>Session mode<input value={values.session_mode} onChange={(e) => update("session_mode", e.target.value)} placeholder="e.g. live, cohort" className={inputClass} /></label>
       </div>
-      <UrlList label="Notes / Handouts (URLs)" values={values.notes_documents} update={(next) => update("notes_documents", next)} />
+      <UrlList label="Notes / Handouts (URLs)" values={values.instructor_notes} update={(next) => update("instructor_notes", next)} />
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Discussions (JSON)<textarea value={values.discussions} onChange={(e) => update("discussions", e.target.value)} rows={3} placeholder='[]' className={`${inputClass} h-auto py-2`} /></label>
         <label className={labelClass}>Announcements (JSON)<textarea value={values.announcements} onChange={(e) => update("announcements", e.target.value)} rows={3} placeholder='[]' className={`${inputClass} h-auto py-2`} /></label>

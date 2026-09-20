@@ -92,6 +92,12 @@ function isPublishedActiveGlobalConfiguration(configuration: Record<string, unkn
     && (status === "published" || status === "active" || status === "");
 }
 
+function isUsableActiveConfigurationResponse(configuration: Record<string, unknown>): boolean {
+  const status = typeof configuration.status === "string" ? configuration.status.toLowerCase() : "";
+  if (configuration.is_active === false || ["draft", "inactive", "retired", "archived"].includes(status)) return false;
+  return true;
+}
+
 export interface TrainingFormField {
   id: string;
   key: string; // maps to TrainingCreate field, e.g. "title", "category", "custom.delivery_mode"
@@ -240,6 +246,9 @@ export async function getTrainingFormConfigActive(): Promise<TrainingFormConfig 
     const text = await res.text();
     if (text) {
       const raw = JSON.parse(text) as unknown;
+      if (raw && typeof raw === "object" && !isUsableActiveConfigurationResponse(raw as Record<string, unknown>)) {
+        return null;
+      }
       if (raw && typeof raw === "object" && "draft_version" in (raw as Record<string, unknown>)) {
         const full = raw as Record<string, unknown>;
         const draft = ((full as Record<string, unknown>).published_version ?? full.draft_version) as Record<string, unknown> | null | undefined;
