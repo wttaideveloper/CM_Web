@@ -11,7 +11,7 @@ import { toBuilderFormConfiguration, toEventFormConfigurationCreateCandidate, to
 import { createMockConfiguration } from "../model/form-configuration.mock";
 import type { FormConfiguration } from "../model/form-configuration.types";
 import { getConfigurationActions } from "../model/configuration-actions";
-import { FormConfigurationsApiError } from "../services/form-configurations.service";
+import { findActiveEventFormConfigurationConflicts, FormConfigurationsApiError } from "../services/form-configurations.service";
 
 /** Hosts persisted configuration editing while keeping the route adapter thin. */
 export function FormConfigurationEditorScreen({ id, mode }: { id?: string; mode: "create" | "view" | "edit" }) {
@@ -41,6 +41,11 @@ export function FormConfigurationEditorScreen({ id, mode }: { id?: string; mode:
     if (!isCreate) {
       if (!id) throw new Error("Configuration ID is unavailable.");
       return toBuilderFormConfiguration(await update.mutateAsync({ configurationId: id, payload: toEventFormConfigurationPatchCandidate(builder) }));
+    }
+    const conflicts = await findActiveEventFormConfigurationConflicts(builder.scope === "selective" ? builder.tenantIds : []);
+    if (conflicts.length > 0) {
+      const conflictText = conflicts.map((conflict) => `${conflict.tenantId} is assigned to active configuration "${conflict.configurationName}"`).join("; ");
+      throw new Error(`This Event form cannot be assigned to the selected tenant${conflicts.length === 1 ? "" : "s"} yet: ${conflictText}. Deactivate or reassign the active configuration first.`);
     }
     const saved = await create.mutateAsync(toEventFormConfigurationCreateCandidate(builder));
     if (builder.scope === "selective" && builder.tenantIds.length > 0) {
