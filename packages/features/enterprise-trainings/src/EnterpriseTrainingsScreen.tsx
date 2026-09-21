@@ -8,7 +8,7 @@ import Link from "next/link";
 import TrainingActionsMenu from "./TrainingActionsMenu";
 import { humanizeLabel } from "./detail-formatters";
 import { PRODUCT_TRAINING_STATUSES, getTrainingStatusBadgeClass, getTrainingStatusLabel } from "./training-status";
-import { listTrainings, searchTrainings, getTrainingsReportSummary, type TrainingListItem } from "./trainings.service";
+import { getTrainingProviderDashboard, listTrainings, searchTrainings, getTrainingsReportSummary, type TrainingListItem } from "./trainings.service";
 
 type SortOption = "newest" | "oldest" | "az" | "status";
 const statusFilters = ["all", ...PRODUCT_TRAINING_STATUSES] as const;
@@ -107,6 +107,16 @@ function TrainingsSummaryCard({ summary, isLoading, isError }: { summary: unknow
 }
 
 function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess }: { training: TrainingListItem; onStatusSuccess: () => void; onDuplicateSuccess: () => void; onDeleteSuccess: () => void }) {
+  const providerDashboardQuery = useQuery({
+    queryKey: ["training", training.id, "provider-dashboard"],
+    queryFn: () => getTrainingProviderDashboard(training.id),
+    enabled: training.enrolled_count === null || training.enrolled_count === undefined,
+    staleTime: 30_000,
+    retry: 1,
+  });
+  const registrationCount = typeof training.enrolled_count === "number" && Number.isFinite(training.enrolled_count)
+    ? training.enrolled_count
+    : providerDashboardQuery.data?.total_enrolments;
   const primaryImage = typeof training.primary_image === "string" ? training.primary_image.trim() : "";
   const hasPrimaryImage = primaryImage.length > 0;
   const labelClass = hasPrimaryImage ? "text-white/75" : "text-[#7f9d94]";
@@ -149,7 +159,7 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
           </div>
           <div className="min-w-0">
             <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Registrations</p>
-            <p className={`mt-1 font-semibold ${primaryTextClass}`}>—</p>
+            <p className={`mt-1 font-semibold ${primaryTextClass}`}>{typeof registrationCount === "number" ? registrationCount : "—"}</p>
           </div>
           <div className="min-w-0">
             <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Availability</p>

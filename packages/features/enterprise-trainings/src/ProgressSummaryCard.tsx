@@ -1,7 +1,12 @@
 "use client";
 
 function asNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 function clampPercent(value: number): number {
@@ -18,11 +23,11 @@ export default function ProgressSummaryCard({ data }: { data: unknown }) {
 
   const record = data as Record<string, unknown>;
 
-  const overallPercent = asNumber(record.overall_percent) ?? asNumber(record.percentage) ?? asNumber(record.progress_percent);
-  const lessonsDone = asNumber(record.lessons_done);
-  const totalLessons = asNumber(record.total_lessons);
-  const sectionsDone = asNumber(record.sections_done);
-  const totalSections = asNumber(record.total_sections);
+  const overallPercent = asNumber(record.overall_percent) ?? asNumber(record.percentage) ?? asNumber(record.progress_percent) ?? asNumber(record.completion_percentage);
+  const lessonsDone = asNumber(record.lessons_done) ?? asNumber(record.completed_lessons);
+  const totalLessons = asNumber(record.total_lessons) ?? asNumber(record.lessons_count);
+  const sectionsDone = asNumber(record.sections_done) ?? asNumber(record.completed_sections);
+  const totalSections = asNumber(record.total_sections) ?? asNumber(record.sections_count);
   const status = typeof record.status === "string" && record.status.trim() ? record.status : null;
   const expired = record.expired === true;
 
@@ -38,8 +43,8 @@ export default function ProgressSummaryCard({ data }: { data: unknown }) {
       const row = raw as Record<string, unknown>;
       sectionRows.push({
         title: typeof row.section_title === "string" && row.section_title.trim() ? row.section_title : "Section",
-        done: asNumber(row.lessons_done),
-        total: asNumber(row.total_lessons),
+        done: asNumber(row.lessons_done) ?? asNumber(row.completed_lessons),
+        total: asNumber(row.total_lessons) ?? asNumber(row.lessons_count),
       });
     }
   }

@@ -6,7 +6,6 @@ import {
   addAssessmentQuestions,
   approveTrainingEnrolment,
   cancelTrainingEnrolment,
-  completeTrainingLesson,
   createDiscussionReply,
   createTrainingAnnouncement,
   createTrainingAssignment,
@@ -418,7 +417,6 @@ function LessonDetail({ trainingId, sectionId, lessonId, onClose }: { trainingId
             </div>
           ) : null}
           {isLessonType(lessonTypeValue, "pdf", "notes") ? <input value={fileSize} onChange={(e) => setFileSize(e.target.value)} placeholder="File size (bytes)" type="number" min="0" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
-          {lessonTypeValue === "video" ? <input value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} placeholder="Meeting link (optional)" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
           {isLessonType(lessonTypeValue, "quiz", "assignment") ? <p className="rounded-lg bg-[#f9fcfa] px-3 py-2 text-xs text-[#52736a]">{lessonTypeValue === "quiz" ? "After saving, use the quiz panel to attach or create questions." : "After saving, use the Assignments tab to attach or create the submission task."}</p> : null}
           <p className="text-[10px] text-[#7f9d94]">Only fields for the selected lesson type are shown.</p>
           <button type="button" onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending || !title.trim()} className="h-8 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:opacity-60">{updateMutation.isPending ? "Saving..." : "Save"}</button>
@@ -534,7 +532,6 @@ function AddLessonForm({ pending, onSubmit }: { pending: boolean; onSubmit: (pay
         </div>
       ) : null}
       {isLessonType(type, "pdf", "notes") ? <input value={fileSize} onChange={(event) => setFileSize(event.target.value)} placeholder="File size (bytes)" type="number" min="0" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
-      {type === "video" ? <input value={meetingLink} onChange={(event) => setMeetingLink(event.target.value)} placeholder="Meeting link (optional)" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
       {isLessonType(type, "quiz", "assignment") ? <p className="rounded-lg bg-[#f9fcfa] px-3 py-2 text-xs text-[#52736a]">{type === "quiz" ? "After creating this lesson, attach or create the quiz questions below." : "After creating this lesson, use the Assignments tab to create the submission task."}</p> : null}
       <p className="text-[10px] text-[#7f9d94]">Only fields for the selected lesson type are shown.</p>
       <button type="submit" disabled={pending || !title.trim()} className="h-9 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:opacity-60">{pending ? "Adding..." : "Add lesson"}</button>
@@ -1637,9 +1634,8 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
   const queryClient = useQueryClient();
   const [expandedLesson, setExpandedLesson] = useState<string | null>(null);
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
-  const [adminControlsOpen, setAdminControlsOpen] = useState(false);
-  const [feedback, setFeedback] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [participantEmail, setParticipantEmail] = useState<string>("");
+  const normalizedParticipantEmail = participantEmail.trim().toLowerCase();
 
   const enrolmentsQuery = useQuery({
     queryKey: ["trainings", trainingId, "enrolments"],
@@ -1657,36 +1653,16 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
   });
 
   const progressQuery = useQuery({
-    queryKey: ["trainings", trainingId, "progress"],
-    queryFn: () => getTrainingProgress(trainingId),
+    queryKey: ["trainings", trainingId, "progress", normalizedParticipantEmail],
+    queryFn: () => getTrainingProgress(trainingId, normalizedParticipantEmail || undefined),
     enabled: Boolean(trainingId),
     staleTime: 30_000,
-  });
-
-  const completeLessonMutation = useMutation({
-    mutationFn: ({ lessonId, sectionId, participantEmail }: { lessonId: string; sectionId?: string; participantEmail?: string }) =>
-      completeTrainingLesson(trainingId, {
-        lesson_id: lessonId,
-        section_id: sectionId ?? null,
-        ...(participantEmail?.trim() ? { participant_email: participantEmail.trim() } : {}),
-      }),
-    onSuccess: (_data, variables) => {
-      setFeedback({
-        kind: "success",
-        text: variables.participantEmail
-          ? `Lesson marked complete for ${variables.participantEmail}.`
-          : "Lesson marked complete for your account.",
-      });
-      void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "progress"] });
-      void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "content"] });
-    },
-    onError: (error) => setFeedback({ kind: "error", text: error instanceof TrainingsApiError ? error.message : "Unable to mark lesson as complete." }),
   });
 
   if (contentQuery.isLoading) return <p className="text-sm text-[#52736a]">Loading content...</p>;
   if (contentQuery.isError) return <p className="text-sm font-semibold text-[#b42318]">{(contentQuery.error as Error).message}</p>;
 
-  const canCompleteFor = (
+  const hasEnrolledParticipants = (
     Array.isArray(enrolments) &&
     enrolments.some(
       (raw): raw is Record<string, unknown> =>
@@ -1705,21 +1681,6 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
       })
       .filter(Boolean)
     : [];
-  const normalizedParticipantEmail = participantEmail.trim().toLowerCase();
-  const participantEmailIsValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedParticipantEmail) &&
-    enrolledEmails.includes(normalizedParticipantEmail);
-
-  function markLessonComplete(lessonId: string, sectionId: string) {
-    if (!participantEmailIsValid) {
-      setFeedback({ kind: "error", text: "Select an enrolled participant before marking progress." });
-      return;
-    }
-    const targetEmail = normalizedParticipantEmail;
-    const targetLabel = targetEmail;
-    if (!window.confirm(`Mark this lesson complete for ${targetLabel}? This changes the selected learner's progress.`)) return;
-    completeLessonMutation.mutate({ lessonId, sectionId, participantEmail: targetEmail || undefined });
-  }
-
   const content = contentQuery.data;
   const sections: Array<Record<string, unknown>> = Array.isArray(content)
     ? (content as Array<Record<string, unknown>>)
@@ -1747,22 +1708,10 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
   return (
     <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">        <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
         <h3 className="text-lg font-bold text-[#06201c]">Training Content</h3>
-        {feedback ? (
-          <p role={feedback.kind === "error" ? "alert" : "status"} className={feedback.kind === "error" ? "mt-4 rounded-xl border border-[#f3c2c0] bg-[#fff4f2] px-4 py-3 text-sm font-semibold text-[#b42318]" : "mt-4 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]"}>{feedback.text}</p>
-        ) : null}
         {sections.length === 0 ? <p className="mt-4 text-sm text-[#52736a]">No content available yet.</p> : null}
-        <section className="mt-4 rounded-xl border border-[#eadbb8] bg-[#fffaf0]">
-          <button type="button" onClick={() => setAdminControlsOpen((open) => !open)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
-            <span>
-              <span className="block text-sm font-bold text-[#735c1e]">Admin progress controls</span>
-              <span className="mt-1 block text-xs text-[#8a6f2b]">Use only to test or correct a learner's progress.</span>
-            </span>
-            <span className="text-sm font-bold text-[#735c1e]" aria-hidden="true">{adminControlsOpen ? "−" : "+"}</span>
-          </button>
-          {adminControlsOpen ? (
-            <div className="border-t border-[#eadbb8] px-4 pb-4 pt-3">
-              <p className="text-xs leading-5 text-[#735c1e]">Select an enrolled participant to test or correct their lesson progress. This action changes their progress record.</p>
-              {canCompleteFor ? (
+        <section className="mt-4 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-4 py-3">
+          <p className="text-sm font-bold text-[#06201c]">View participant progress</p>
+          {hasEnrolledParticipants ? (
                 <div className="mt-3">
                   <label htmlFor={participantPickerId} className="block text-sm font-semibold text-[#06201c]">Participant</label>
                   <select id={participantPickerId} value={participantEmail} onChange={(e) => setParticipantEmail(e.target.value)} className="mt-1.5 h-10 w-full rounded-xl border border-[#d7e5df] bg-white px-3 text-sm text-[#06201c] outline-none focus:border-[#1f6a58] focus:ring-2 focus:ring-[#1f6a58]/20">
@@ -1770,9 +1719,7 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
                     {enrolledEmails.map((email) => <option key={email} value={email}>{email}</option>)}
                   </select>
                 </div>
-              ) : <p className="mt-3 text-xs text-[#8a6f2b]">No enrolled participant email is available for progress updates.</p>}
-            </div>
-          ) : null}
+              ) : <p className="mt-3 text-xs text-[#52736a]">No enrolled participant email is available.</p>}
         </section>
               <ul className="mt-4 space-y-3">
           {sections.map((section, sIndex) => {
@@ -1819,20 +1766,7 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
                               <span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-[10px] font-bold text-[#2563eb]">{humanizeLabel(isAssessment ? "assessment" : lessonType)}</span>
                             </div>
                           </button>
-                          {!isCompleted && !isAssessment ? (
-                            <button
-                              type="button"
-                              onClick={() => markLessonComplete(lessonId, sectionId)}
-                              disabled={completeLessonMutation.isPending && completeLessonMutation.variables?.lessonId === lessonId}
-                              className="rounded-full border border-[#1f6a58] px-3 py-1 text-xs font-bold text-[#1f6a58] hover:bg-[#e8f6ee] disabled:opacity-60"
-                            >
-                              {completeLessonMutation.isPending && completeLessonMutation.variables?.lessonId === lessonId ? "Saving..." : "Mark complete"}
-                            </button>
-                          ) : isAssessment && !isCompleted ? (
-                            <span className="text-xs font-bold text-[#2563eb]">Assessment</span>
-                          ) : (
-                            <span className="text-xs font-bold text-[#16825b]">Completed</span>
-                          )}
+                          <span className={`text-xs font-bold ${isCompleted ? "text-[#16825b]" : "text-[#8a5a00]"}`}>{isCompleted ? "Completed" : "Not completed"}</span>
                         </div>
                         {isExpanded ? (
                           <div className="mt-3 space-y-3 pl-7">
@@ -1883,6 +1817,7 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
       <aside className="space-y-5">
         <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
           <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Progress</p>
+          {normalizedParticipantEmail ? <p className="mt-1 text-xs text-[#52736a]">Showing progress for {normalizedParticipantEmail}</p> : null}
           {progressQuery.isLoading ? <p className="mt-2 text-sm text-[#52736a]">Loading...</p> : progressQuery.isError ? <p role="alert" className="mt-2 text-sm font-semibold text-[#b42318]">Progress is temporarily unavailable from the Training API.</p> : <ProgressSummaryCard data={progressQuery.data} />}
         </section>
       </aside>

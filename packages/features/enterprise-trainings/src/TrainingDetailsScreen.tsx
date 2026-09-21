@@ -11,7 +11,7 @@ import { ParticipantDashboardCard, ProviderDashboardCard } from "./dashboard-car
 import { TrainingAssessmentsTab, TrainingAssignmentsTab, TrainingContentTab, TrainingEnrolmentsTab, TrainingLiveTab, TrainingReviewsTab, TrainingSectionsTab } from "./TrainingDetailsSections";
 import { displayValue, formatTrainingDate, formatTrainingPrice, humanizeLabel } from "./detail-formatters";
 import { getTrainingStatusBadgeClass, getTrainingStatusLabel } from "./training-status";
-import { getTrainingAdminNotes, getTrainingById, getTrainingProgress, getTrainingSections, listTrainingEnrolments, getTrainingCertificate, downloadTrainingCalendar, getTrainingMeetingLink, getTrainingModerationHistory, publishTrainingEnterprise, getTrainingParticipantDashboard, getTrainingProviderDashboard, getTrainingReports, TrainingsApiError } from "./trainings.service";
+import { getTrainingAdminNotes, getTrainingById, getTrainingProgress, getTrainingSections, listTrainingEnrolments, downloadTrainingCalendar, downloadTrainingDownloads, downloadTrainingNotesPdf, getTrainingMeetingLink, getTrainingModerationHistory, publishTrainingEnterprise, getTrainingParticipantDashboard, getTrainingProviderDashboard, getTrainingReports, TrainingsApiError } from "./trainings.service";
 
 type TrainingDetailsTab = "details" | "content" | "sections" | "enrolments" | "assessments" | "assignments" | "live" | "reviews" | "dashboards" | "reports";
 
@@ -61,80 +61,6 @@ function ParticipantToolbar({ trainingId, status, trainingMeetingLink }: { train
   const [feedback, setFeedback] = useState<string | null>(null);
   const [meetingLink, setMeetingLink] = useState<string | null>(null);
   const [moderationExpanded, setModerationExpanded] = useState(false);
-  const [certificateEmail, setCertificateEmail] = useState("");
-  const [showCertificate, setShowCertificate] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-
-  const certMutation = useMutation({
-    mutationFn: () => getTrainingCertificate(trainingId, certificateEmail.trim()),
-    onSuccess: (data) => {
-      if (data instanceof Blob) {
-        const url = URL.createObjectURL(data);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `certificate-${trainingId}.pdf`;
-        a.click();
-        URL.revokeObjectURL(url);
-        setFeedback("Certificate downloaded.");
-        return;
-      }
-      const record = data as Record<string, unknown> | null;
-      const certUrl =
-        typeof data === "string"
-          ? data
-          : typeof record?.certificate_url === "string"
-            ? record.certificate_url
-            : typeof record?.certificateUrl === "string"
-              ? record.certificateUrl
-              : typeof record?.url === "string"
-                ? record.url
-                : typeof record?.download_url === "string"
-                  ? record.download_url
-                  : null;
-      if (certUrl && certUrl.trim()) {
-        window.open(certUrl.trim(), "_blank");
-        setFeedback("Certificate link opened.");
-      } else {
-        setFeedback("Certificate is not yet available (backend returns placeholder URL).");
-      }
-    },
-    onError: (error) => setFeedback(error instanceof Error ? error.message : "Unable to download certificate."),
-  });
-
-  const closePreview = () => { if (previewUrl && previewUrl.startsWith("blob:")) URL.revokeObjectURL(previewUrl); setPreviewUrl(null); };
-  const previewMutation = useMutation({
-    mutationFn: () => getTrainingCertificate(trainingId, certificateEmail.trim()),
-    onSuccess: (data) => {
-      if (data instanceof Blob) {
-        closePreview();
-        setPreviewUrl(URL.createObjectURL(data));
-        setFeedback("Certificate preview ready.");
-        return;
-      }
-      const record = data as Record<string, unknown> | null;
-      const certUrl =
-        typeof data === "string"
-          ? data
-          : typeof record?.certificate_url === "string"
-            ? record.certificate_url
-            : typeof record?.certificateUrl === "string"
-              ? record.certificateUrl
-              : typeof record?.url === "string"
-                ? record.url
-                : typeof record?.download_url === "string"
-                  ? record.download_url
-                  : null;
-      if (certUrl && certUrl.trim()) {
-        closePreview();
-        setPreviewUrl(certUrl.trim());
-        setFeedback("Certificate preview ready.");
-      } else {
-        setFeedback("Certificate is not yet available (backend returns placeholder URL).");
-      }
-    },
-    onError: (error) => setFeedback(error instanceof Error ? error.message : "Unable to preview certificate."),
-  });
-
   const calendarMutation = useMutation({
     mutationFn: () => downloadTrainingCalendar(trainingId),
     onSuccess: (data) => {
@@ -147,6 +73,28 @@ function ParticipantToolbar({ trainingId, status, trainingMeetingLink }: { train
       setFeedback("Calendar downloaded.");
     },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to download calendar."),
+  });
+
+  const fileDownload = (data: { blob: Blob; filename: string | null }, fallback: string, success: string) => {
+    const url = URL.createObjectURL(data.blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = data.filename || fallback;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setFeedback(success);
+  };
+
+  const downloadsMutation = useMutation({
+    mutationFn: () => downloadTrainingDownloads(trainingId),
+    onSuccess: (data) => fileDownload(data, `training-${trainingId}-downloads`, "Training downloads started."),
+    onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to download training content."),
+  });
+
+  const notesMutation = useMutation({
+    mutationFn: () => downloadTrainingNotesPdf(trainingId),
+    onSuccess: (data) => fileDownload(data, `training-${trainingId}-notes.pdf`, "Training notes downloaded."),
+    onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to download training notes."),
   });
 
   const meetingMutation = useMutation({
@@ -200,8 +148,11 @@ function ParticipantToolbar({ trainingId, status, trainingMeetingLink }: { train
         <button type="button" onClick={() => calendarMutation.mutate()} disabled={calendarMutation.isPending} className="h-9 rounded-full border border-[#1f6a58] px-4 text-xs font-bold text-[#1f6a58] hover:bg-[#e8f6ee] disabled:opacity-60">
           {calendarMutation.isPending ? "..." : "Download Calendar"}
         </button>
-        <button type="button" onClick={() => setShowCertificate((v) => !v)} className="h-9 rounded-full border border-[#2563eb] px-4 text-xs font-bold text-[#2563eb] hover:bg-[#eef4ff]">
-          Certificate
+        <button type="button" onClick={() => downloadsMutation.mutate()} disabled={downloadsMutation.isPending} className="h-9 rounded-full border border-[#1f6a58] px-4 text-xs font-bold text-[#1f6a58] hover:bg-[#e8f6ee] disabled:opacity-60">
+          {downloadsMutation.isPending ? "..." : "Downloads"}
+        </button>
+        <button type="button" onClick={() => notesMutation.mutate()} disabled={notesMutation.isPending} className="h-9 rounded-full border border-[#8a5a00] px-4 text-xs font-bold text-[#8a5a00] hover:bg-[#fffaf0] disabled:opacity-60">
+          {notesMutation.isPending ? "..." : "Notes PDF"}
         </button>
         <button type="button" onClick={() => {
           const trainingLink = typeof trainingMeetingLink === "string" ? trainingMeetingLink.trim() : "";
@@ -214,9 +165,6 @@ function ParticipantToolbar({ trainingId, status, trainingMeetingLink }: { train
         }} disabled={meetingMutation.isPending} className="h-9 rounded-full border border-[#7c3aed] px-4 text-xs font-bold text-[#7c3aed] hover:bg-[#f5f3ff] disabled:opacity-60">
           {meetingMutation.isPending ? "..." : "Meeting Link"}
         </button>
-        <Link href={`/admin/trainings/${trainingId}/book`} className="inline-flex h-9 items-center rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white hover:bg-[#175448]">
-          Book now
-        </Link>
         <button type="button" onClick={() => setModerationExpanded(!moderationExpanded)} className="h-9 rounded-full border border-[#d7e5df] px-4 text-xs font-bold text-[#52736a] hover:bg-white">
           {moderationExpanded ? "Hide" : "Moderation History"}
         </button>
@@ -226,27 +174,6 @@ function ParticipantToolbar({ trainingId, status, trainingMeetingLink }: { train
         <div className="mt-3 rounded-xl border border-[#d8c9f5] bg-[#faf8ff] px-4 py-3">
           <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#6b4bb5]">Training meeting link</p>
           <a href={meetingLink} target="_blank" rel="noreferrer" className="mt-1 block break-all text-sm font-semibold text-[#5b3fa3] underline">{meetingLink}</a>
-        </div>
-      ) : null}
-      {showCertificate ? (
-        <div className="mt-3 rounded-xl border border-[#e1ebe6] bg-white p-4 space-y-2">
-          <p className="text-xs font-bold uppercase tracking-[.08em] text-[#7f9d94]">Certificate — participant email required</p>
-          <div className="flex gap-2">
-            <input value={certificateEmail} onChange={(e) => setCertificateEmail(e.target.value)} placeholder="participant@email.com" type="email" className="h-8 flex-1 rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
-            <button type="button" onClick={() => certMutation.mutate()} disabled={certMutation.isPending || !certificateEmail.trim()} className="h-8 rounded-full bg-[#2563eb] px-4 text-xs font-bold text-white disabled:opacity-60">{certMutation.isPending ? "Loading..." : "Download"}</button>
-            <button type="button" onClick={() => previewMutation.mutate()} disabled={previewMutation.isPending || !certificateEmail.trim()} className="h-8 rounded-full border border-[#2563eb] px-4 text-xs font-bold text-[#2563eb] hover:bg-[#eef4ff] disabled:opacity-60">{previewMutation.isPending ? "Loading..." : "Preview"}</button>
-            <button type="button" onClick={() => { closePreview(); setShowCertificate(false); }} className="h-8 rounded-full border border-[#d7e5df] px-3 text-xs font-bold text-[#52736a]">Cancel</button>
-          </div>
-          {previewUrl ? (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase tracking-[.08em] text-[#7f9d94]">Certificate preview</p>
-                <button type="button" onClick={closePreview} className="text-xs font-semibold text-[#b42318]">Close preview</button>
-              </div>
-              <iframe src={previewUrl} title="Certificate preview" className="h-96 w-full rounded-xl border border-[#d7e5df] bg-white" />
-            </div>
-          ) : null}
-          <p className="text-[11px] text-[#7f9d94]">Backend: GET /trainings/{"{id}"}/certificate?participant_email=... (currently returns placeholder URL, PDF generation not implemented).</p>
         </div>
       ) : null}
       {moderationExpanded ? (
@@ -300,38 +227,6 @@ function DetailGroupHeading({ children }: { children: string }) {
   return (
     <div className="col-span-full border-b border-[#edf3f0] pb-2 pt-2 first:pt-0">
       <h4 className="text-sm font-bold text-[#1f6a58]">{children}</h4>
-    </div>
-  );
-}
-
-function CheckInQrCard({ payload, displayPayload }: { payload: string; displayPayload: string }) {
-  const [copied, setCopied] = useState(false);
-
-  async function copyPayload() {
-    try {
-      await navigator.clipboard.writeText(payload);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
-    }
-  }
-
-  return (
-    <div className="rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-4 sm:col-span-2">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Check-in payload</p>
-          <p className="mt-1 text-xs text-[#52736a]">Use this payload with the check-in workflow.</p>
-        </div>
-      </div>
-      <div className="mt-3 rounded-lg border border-[#e1ebe6] bg-white p-3">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs font-bold text-[#06201c]">Payload</p>
-          <button type="button" onClick={copyPayload} className="rounded-full border border-[#1f6a58] px-3 py-1 text-[10px] font-bold text-[#1f6a58]">{copied ? "Copied" : "Copy payload"}</button>
-        </div>
-        <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all text-xs leading-5 text-[#52736a]">{displayPayload}</pre>
-      </div>
     </div>
   );
 }
@@ -402,14 +297,6 @@ export default function TrainingDetailsScreen() {
   const sections = Array.isArray(sectionsQuery.data) ? (sectionsQuery.data as Array<Record<string, unknown>>) : [];
   const enrolments = Array.isArray(enrolmentsQuery.data) ? enrolmentsQuery.data : [];
   const lessonCount = sections.reduce((total, section) => total + (Array.isArray(section.lessons) ? section.lessons.length : 0), 0);
-  const rawQrPayload = (training as unknown as Record<string, unknown>).qr_payload;
-  const qrPayload = typeof rawQrPayload === "string" ? rawQrPayload.trim() : "";
-  let formattedQrPayload = qrPayload;
-  try {
-    formattedQrPayload = JSON.stringify(JSON.parse(qrPayload), null, 2);
-  } catch {
-    // Keep non-JSON legacy payloads readable and copyable.
-  }
 
   return (
     <div className="w-full">
@@ -522,7 +409,6 @@ export default function TrainingDetailsScreen() {
               <DetailItem label="Session mode" value={displayValue((training as unknown as Record<string, unknown>).session_mode as string)} />
               <DetailItem label="Check-in" value={String((training as unknown as Record<string, unknown>).check_in ?? "—")} />
               <DetailItem label="Pass code" value={displayValue((training as unknown as Record<string, unknown>).pass_code as string)} />
-              {qrPayload ? <CheckInQrCard payload={qrPayload} displayPayload={formattedQrPayload} /> : null}
               <DetailItem label="Reviews" value={Array.isArray((training as unknown as Record<string, unknown>).reviews) ? `${((training as unknown as Record<string, unknown>).reviews as unknown[]).length} reviews` : displayValue(String((training as unknown as Record<string, unknown>).review_count ?? (training as unknown as Record<string, unknown>).reviews_count ?? (training as unknown as Record<string, unknown>).average_rating ?? "—"))} />
               <DetailItem label="Discussions" value={Array.isArray((training as unknown as Record<string, unknown>).discussions) ? `${((training as unknown as Record<string, unknown>).discussions as unknown[]).length} threads` : displayValue((training as unknown as Record<string, unknown>).discussions as string)} />
               <DetailItem label="Announcements" value={Array.isArray((training as unknown as Record<string, unknown>).announcements) ? `${((training as unknown as Record<string, unknown>).announcements as unknown[]).length} items` : displayValue((training as unknown as Record<string, unknown>).announcements as string)} />
