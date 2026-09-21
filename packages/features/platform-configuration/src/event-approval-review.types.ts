@@ -24,9 +24,16 @@ export type EventSession = {
 };
 
 export type EventCustomField = {
+  id?: string;
+  stable_key?: string | null;
   label: string;
   type: string;
   options: string[];
+};
+
+export type EventCustomValue = {
+  field_id: string;
+  value: string | string[] | boolean | number | null;
 };
 
 export type EventApprovalReview = {
@@ -63,6 +70,7 @@ export type EventApprovalReview = {
   registration_open_at?: string | null;
   registration_close_at?: string | null;
   custom_fields?: EventCustomField[] | null;
+  custom_values?: EventCustomValue[] | null;
   sessions?: EventSession[] | null;
   status: string;
   is_deleted?: boolean | null;
@@ -96,7 +104,11 @@ function isSession(value: unknown): value is EventSession {
 }
 
 function isCustomField(value: unknown): value is EventCustomField {
-  return isRecord(value) && typeof value.label === "string" && typeof value.type === "string" && Array.isArray(value.options) && value.options.every((option) => typeof option === "string");
+  return isRecord(value) && (value.id === undefined || typeof value.id === "string") && (value.stable_key === undefined || value.stable_key === null || typeof value.stable_key === "string") && typeof value.label === "string" && typeof value.type === "string" && Array.isArray(value.options) && value.options.every((option) => typeof option === "string");
+}
+
+function isCustomValue(value: unknown): value is EventCustomValue {
+  return isRecord(value) && typeof value.field_id === "string" && (value.value === null || typeof value.value === "string" || typeof value.value === "number" || typeof value.value === "boolean" || (Array.isArray(value.value) && value.value.every((item) => typeof item === "string")));
 }
 
 function isOptionalArray<T>(value: unknown, guard: (item: unknown) => item is T): value is T[] | null | undefined {
@@ -105,5 +117,5 @@ function isOptionalArray<T>(value: unknown, guard: (item: unknown) => item is T)
 
 /** Validates the runtime Event detail fields used by the read-only approval dossier. */
 export function isEventApprovalReview(value: unknown): value is EventApprovalReview {
-  return isRecord(value) && typeof value.id === "string" && (value.enterprise_id === null || typeof value.enterprise_id === "string") && typeof value.title === "string" && typeof value.category === "string" && typeof value.status === "string" && isOptionalString(value.tenant_id) && isOptionalString(value.location_id) && isOptionalString(value.enterprise_name) && isOptionalString(value.description) && isOptionalString(value.subcategory) && isOptionalStringArray(value.tags) && isOptionalString(value.organiser_name) && isOptionalString(value.organiser_contact) && isOptionalString(value.start_date) && isOptionalString(value.end_date) && isOptionalString(value.time_zone) && isOptionalString(value.registration_cutoff) && isOptionalString(value.primary_image) && isOptionalStringArray(value.gallery_images) && isOptionalStringArray(value.videos) && isOptionalStringArray(value.documents) && isOptionalString(value.delivery_mode) && isVenue(value.venue) && isOptionalString(value.meeting_link) && isOptionalString(value.meeting_provider) && isOptionalString(value.price) && isOptionalString(value.currency) && isOptionalArray(value.ticket_types, isTicketType) && isOptionalString(value.capacity) && isOptionalString(value.min_participants) && isOptionalString(value.max_participants) && isOptionalString(value.registration_open_at) && isOptionalString(value.registration_close_at) && isOptionalArray(value.custom_fields, isCustomField) && isOptionalArray(value.sessions, isSession) && (value.is_deleted === undefined || value.is_deleted === null || typeof value.is_deleted === "boolean") && isOptionalString(value.created_at) && isOptionalString(value.updated_at) && isOptionalString(value.last_admin_notes);
+  return isRecord(value) && typeof value.id === "string" && (value.enterprise_id === null || typeof value.enterprise_id === "string") && typeof value.title === "string" && typeof value.category === "string" && typeof value.status === "string" && isOptionalString(value.tenant_id) && isOptionalString(value.location_id) && isOptionalString(value.enterprise_name) && isOptionalString(value.description) && isOptionalString(value.subcategory) && isOptionalStringArray(value.tags) && isOptionalString(value.organiser_name) && isOptionalString(value.organiser_contact) && isOptionalString(value.start_date) && isOptionalString(value.end_date) && isOptionalString(value.time_zone) && isOptionalString(value.registration_cutoff) && isOptionalString(value.primary_image) && isOptionalStringArray(value.gallery_images) && isOptionalStringArray(value.videos) && isOptionalStringArray(value.documents) && isOptionalString(value.delivery_mode) && isVenue(value.venue) && isOptionalString(value.meeting_link) && isOptionalString(value.meeting_provider) && isOptionalString(value.price) && isOptionalString(value.currency) && isOptionalArray(value.ticket_types, isTicketType) && isOptionalString(value.capacity) && isOptionalString(value.min_participants) && isOptionalString(value.max_participants) && isOptionalString(value.registration_open_at) && isOptionalString(value.registration_close_at) && isOptionalArray(value.custom_fields, isCustomField) && isOptionalArray(value.custom_values, isCustomValue) && isOptionalArray(value.sessions, isSession) && (value.is_deleted === undefined || value.is_deleted === null || typeof value.is_deleted === "boolean") && isOptionalString(value.created_at) && isOptionalString(value.updated_at) && isOptionalString(value.last_admin_notes);
 }

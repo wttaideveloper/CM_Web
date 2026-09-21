@@ -336,8 +336,20 @@ export interface ValidateEventQrResponse {
   message: string;
 }
 
+/** A waitlist record returned for one Event. */
+export interface EventWaitlistRecord {
+  id: string;
+  event_id: string;
+  participant_name: string | null;
+  participant_email: string | null;
+  status: string;
+  payment_offer_expires_at: string | null;
+  registration_id: string | null;
+  created_at: string;
+}
+
 /** The runtime-confirmed top-level waitlist response for one Event. */
-export type EventWaitlistResponse = readonly unknown[];
+export type EventWaitlistResponse = readonly EventWaitlistRecord[];
 
 /** The runtime-confirmed top-level session representations returned for one Event. */
 export type EventSessionsResponse = readonly EventSessionRecord[];
@@ -943,7 +955,17 @@ function parseEventWaitlistResponse(value: unknown): EventWaitlistResponse {
     throw new Error("Events API returned an invalid waitlist response.");
   }
 
-  return value;
+  return value.filter((record): record is EventWaitlistRecord =>
+    isRecord(record) &&
+    typeof record.id === "string" &&
+    typeof record.event_id === "string" &&
+    (record.participant_name === null || typeof record.participant_name === "string") &&
+    (record.participant_email === null || typeof record.participant_email === "string") &&
+    typeof record.status === "string" &&
+    (record.payment_offer_expires_at === null || typeof record.payment_offer_expires_at === "string") &&
+    (record.registration_id === null || typeof record.registration_id === "string") &&
+    typeof record.created_at === "string",
+  );
 }
 
 function parseEventSessionsResponse(value: unknown): EventSessionsResponse {
