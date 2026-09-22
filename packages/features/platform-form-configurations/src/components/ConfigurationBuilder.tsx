@@ -43,6 +43,9 @@ export function ConfigurationBuilder({ initialConfiguration, coreFieldRegistry, 
   const [customRequired, setCustomRequired] = useState(false);
   const [workspace, setWorkspace] = useState<"builder" | "preview">("builder");
   const [error, setError] = useState("");
+  useEffect(() => {
+    if (error) window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [error]);
   const [feedback, setFeedback] = useState("");
   const assignmentsHydrated = useRef(false);
   const [persistedTenantIds, setPersistedTenantIds] = useState<string[]>([]);

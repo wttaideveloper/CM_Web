@@ -7,7 +7,10 @@
  * enterprise-events module convention (single self-contained service file).
  */
 
+import { authenticatedFetch } from "@ihp/auth";
 import type { TrainingStatus, TrainingStatusUpdatePayload } from "./training-status";
+
+const fetch = authenticatedFetch;
 
 /** Pagination metadata returned with every list response. */
 export interface TrainingPagination {
@@ -562,7 +565,9 @@ function isTrainingListItem(value: unknown): value is TrainingListItem {
     (rec.description === undefined || rec.description === null || typeof rec.description === "string") &&
     (rec.created_at === undefined || rec.created_at === null || typeof rec.created_at === "string") &&
     (rec.updated_at === undefined || rec.updated_at === null || typeof rec.updated_at === "string") &&
-    (rec.start_date === undefined || rec.start_date === null || typeof rec.start_date === "string")
+    (rec.start_date === undefined || rec.start_date === null || typeof rec.start_date === "string") &&
+    (rec.capacity === undefined || rec.capacity === null || typeof rec.capacity === "string" || typeof rec.capacity === "number") &&
+    (rec.price === undefined || rec.price === null || typeof rec.price === "string" || typeof rec.price === "number")
   );
 }
 
@@ -573,11 +578,43 @@ function isTrainingDetail(value: unknown): value is TrainingDetail {
   return en === undefined || en === null || typeof en === "string";
 }
 
+function unwrapApiData(value: unknown): unknown {
+  if (!isRecord(value) || !Object.prototype.hasOwnProperty.call(value, "data")) return value;
+  return value.data;
+}
+
+function readArrayResponse(value: unknown, operation: string): unknown[] {
+  const unwrapped = unwrapApiData(value);
+  if (Array.isArray(unwrapped)) return unwrapped;
+  if (isRecord(unwrapped)) {
+    for (const key of ["items", "results", "records"]) {
+      if (Array.isArray(unwrapped[key])) return unwrapped[key];
+    }
+  }
+  throw new Error(`Trainings API returned an invalid ${operation} response.`);
+}
+
+function normaliseTrainingRecord(value: TrainingListItem | TrainingDetail): TrainingListItem | TrainingDetail {
+  const record = value as TrainingListItem & Partial<TrainingDetail> & Record<string, unknown>;
+  const normalised = { ...record };
+  for (const key of ["capacity", "price"] as const) {
+    const field = normalised[key];
+    if (typeof field === "number") normalised[key] = String(field);
+  }
+  if (!Array.isArray(normalised.sections) && Array.isArray(normalised.sections_typed)) normalised.sections = normalised.sections_typed;
+  if (!Array.isArray(normalised.instructor_notes) && Array.isArray(normalised.instructor_notes_typed)) normalised.instructor_notes = normalised.instructor_notes_typed;
+  return normalised;
+}
+
 function parsePaginatedResponse(value: unknown): TrainingPaginatedResponse {
-  if (!isRecord(value) || !Array.isArray(value.items) || !value.items.every(isTrainingListItem) || !isPagination(value.pagination)) {
+  const unwrapped = unwrapApiData(value);
+  const candidate = isRecord(unwrapped) && Array.isArray(unwrapped.results)
+    ? { ...unwrapped, items: unwrapped.results }
+    : unwrapped;
+  if (!isRecord(candidate) || !Array.isArray(candidate.items) || !candidate.items.every(isTrainingListItem) || !isPagination(candidate.pagination)) {
     throw new Error("Trainings API returned an invalid paginated response.");
   }
-  return { items: value.items, pagination: value.pagination };
+  return { items: candidate.items, pagination: candidate.pagination };
 }
 
 function readErrorMessages(value: unknown): string[] {
@@ -647,7 +684,7 @@ export async function listTrainings(params: TrainingListParams = {}): Promise<Tr
   if (!res.ok) throw await createTrainingsApiError(res, "load trainings");
   const value = (await res.json()) as unknown;
   const parsed = parsePaginatedResponse(value);
-  return { items: parsed.items.map(normaliseTrainingListItem), pagination: parsed.pagination };
+  return { items: parsed.items.map((item) => normaliseTrainingListItem(normaliseTrainingRecord(item) as TrainingListItem)), pagination: parsed.pagination };
 }
 
 export interface TrainingUploadResponse {
@@ -686,7 +723,8 @@ export async function searchTrainings(params: TrainingSearchParams = {}): Promis
   const qs = sp.toString() ? `?${sp.toString()}` : "";
   const res = await fetch(`/api/v1/search/trainings${qs}`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "search trainings");
-  return parsePaginatedResponse((await res.json()) as unknown);
+  const parsed = parsePaginatedResponse((await res.json()) as unknown);
+  return { items: parsed.items.map((item) => normaliseTrainingListItem(normaliseTrainingRecord(item) as TrainingListItem)), pagination: parsed.pagination };
 }
 
 /** Creates a Training. */
@@ -707,9 +745,9 @@ export async function createTraining(payload: CreateTrainingPayload): Promise<Tr
 export async function getTrainingById(trainingId: string): Promise<TrainingDetail> {
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "load this training");
-  const value = (await res.json()) as unknown;
+  const value = unwrapApiData((await res.json()) as unknown);
   if (!isTrainingDetail(value)) throw new Error("Trainings API returned an invalid training response.");
-  return value;
+  return normaliseTrainingRecord(value) as TrainingDetail;
 }
 
 /** Partially updates a Training. */
@@ -798,9 +836,7 @@ export async function restoreTraining(trainingId: string): Promise<TrainingDetai
 export async function getTrainingSections(trainingId: string): Promise<unknown[]> {
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/sections`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "load training sections");
-  const value = (await res.json()) as unknown;
-  if (!Array.isArray(value)) throw new Error("Trainings API returned an invalid sections response.");
-  return value;
+  return readArrayResponse(await res.json(), "sections");
 }
 
 /** Creates a section. */
@@ -924,9 +960,14 @@ export async function listTrainingAssessments(trainingId: string, params: Assess
   const qs = sp.toString() ? `?${sp.toString()}` : "";
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/assessments${qs}`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "load assessments");
-  const value = (await res.json()) as unknown;
-  if (!Array.isArray(value)) throw new Error("Trainings API returned an invalid assessments response.");
-  return value;
+  return readArrayResponse(await res.json(), "assessments");
+}
+
+/** Gets one assessment with its questions and submissions metadata. */
+export async function getTrainingAssessment(trainingId: string, assessmentId: string): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/assessments/${encodeURIComponent(assessmentId)}`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load this assessment");
+  return unwrapApiData((await res.json()) as unknown);
 }
 
 /** Creates an assessment. */
@@ -1005,10 +1046,7 @@ export async function listTrainingAssignments(trainingId: string): Promise<unkno
     cache: "no-store",
   });
   if (!res.ok) return [];
-  const value = (await res.json()) as unknown;
-  if (Array.isArray(value)) return value;
-  if (isRecord(value) && Array.isArray(value.items)) return value.items as unknown[];
-  return [];
+  return readArrayResponse(await res.json(), "assignments");
 }
 
 /** Creates an assignment. */
@@ -1068,9 +1106,7 @@ export async function gradeAssignmentSubmission(
 export async function listMyTrainingEnrolments(): Promise<unknown[]> {
   const res = await fetch(`${trainingsBasePath}my/enrolments`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "load my training enrolments");
-  const value = (await res.json()) as unknown;
-  if (!Array.isArray(value)) throw new Error("Trainings API returned an invalid my enrolments response.");
-  return value;
+  return readArrayResponse(await res.json(), "my enrolments");
 }
 
 /** Enrols in a Training. */
@@ -1088,11 +1124,8 @@ export async function enrolInTraining(trainingId: string, payload: Record<string
 /** Lists enrolments for a Training. */
 export async function listTrainingEnrolments(trainingId: string): Promise<unknown[]> {
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/enrolments`, { credentials: "include", cache: "no-store" });
-  if (!res.ok) return [];
-  const value = (await res.json()) as unknown;
-  if (Array.isArray(value)) return value;
-  if (isRecord(value) && Array.isArray(value.items)) return value.items as unknown[];
-  return [];
+  if (!res.ok) throw await createTrainingsApiError(res, "load training enrolments");
+  return readArrayResponse(await res.json(), "training enrolments");
 }
 
 /** Cancels an enrolment. */
@@ -1265,11 +1298,12 @@ export async function removeTrainingFromWishlist(trainingId: string): Promise<un
 // Progress / Content / Live sessions / Certificate / Calendar etc.
 // ---------------------------------------------------------------------------
 
-/** Gets training progress. */
-export async function getTrainingProgress(trainingId: string): Promise<unknown> {
-  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/progress`, { credentials: "include", cache: "no-store" });
+/** Gets training progress, optionally scoped to an enrolled participant email. */
+export async function getTrainingProgress(trainingId: string, participantEmail?: string): Promise<unknown> {
+  const query = participantEmail?.trim() ? `?participant_email=${encodeURIComponent(participantEmail.trim())}` : "";
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/progress${query}`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "load training progress");
-  return (await res.json()) as unknown;
+  return unwrapApiData((await res.json()) as unknown);
 }
 
 /** Gets training content (sections/lessons for learner) — supports `?is_preview=true` draft gating. */
@@ -1277,7 +1311,7 @@ export async function getTrainingContent(trainingId: string, isPreview = false):
   const qs = isPreview ? "?is_preview=true" : "";
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/content${qs}`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "load training content");
-  return (await res.json()) as unknown;
+  return unwrapApiData((await res.json()) as unknown);
 }
 
 /** Gets a single lesson — `GET /sections/{sid}/lessons/{lid}` with optional `?is_preview`. */
@@ -1288,7 +1322,14 @@ export async function getTrainingLesson(trainingId: string, sectionId: string, l
     { credentials: "include", cache: "no-store" },
   );
   if (!res.ok) throw await createTrainingsApiError(res, "load this lesson");
-  return (await res.json()) as unknown;
+  return unwrapApiData((await res.json()) as unknown);
+}
+
+/** Downloads one lesson's protected media/content. */
+export async function downloadTrainingLesson(trainingId: string, sectionId: string, lessonId: string): Promise<{ blob: Blob; filename: string | null }> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/download`, { credentials: "include" });
+  if (!res.ok) throw await createTrainingsApiError(res, "download this lesson");
+  return { blob: await res.blob(), filename: getAttachmentFilename(res.headers.get("Content-Disposition")) };
 }
 
 /** Completes a lesson. */
@@ -1307,9 +1348,7 @@ export async function completeTrainingLesson(trainingId: string, payload: Comple
 export async function listTrainingLiveSessions(trainingId: string): Promise<unknown[]> {
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/live-sessions`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "load live sessions");
-  const value = (await res.json()) as unknown;
-  if (!Array.isArray(value)) throw new Error("Trainings API returned an invalid live sessions response.");
-  return value;
+  return readArrayResponse(await res.json(), "live sessions");
 }
 
 /** Creates a live session. */
@@ -1359,6 +1398,27 @@ export async function downloadTrainingCalendar(trainingId: string): Promise<{ bl
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/calendar.ics`, { credentials: "include" });
   if (!res.ok) throw await createTrainingsApiError(res, "download training calendar");
   return { blob: await res.blob(), filename: getAttachmentFilename(res.headers.get("Content-Disposition")) };
+}
+
+/** Downloads all downloadable training content as provided by the API. */
+export async function downloadTrainingDownloads(trainingId: string): Promise<{ blob: Blob; filename: string | null }> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/downloads`, { credentials: "include" });
+  if (!res.ok) throw await createTrainingsApiError(res, "download training content");
+  return { blob: await res.blob(), filename: getAttachmentFilename(res.headers.get("Content-Disposition")) };
+}
+
+/** Downloads the generated training notes PDF. */
+export async function downloadTrainingNotesPdf(trainingId: string): Promise<{ blob: Blob; filename: string | null }> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/notes.pdf`, { credentials: "include" });
+  if (!res.ok) throw await createTrainingsApiError(res, "download training notes");
+  return { blob: await res.blob(), filename: getAttachmentFilename(res.headers.get("Content-Disposition")) };
+}
+
+/** Retrieves uploaded training media by its stored filename. */
+export async function getTrainingUploadedMedia(storedName: string): Promise<Blob> {
+  const res = await fetch(`${trainingsBasePath}upload/${encodeURIComponent(storedName)}`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load training media");
+  return res.blob();
 }
 
 /** Gets meeting link. */

@@ -426,7 +426,7 @@ export default function EventDetailsScreen() {
           aria-labelledby="event-registrations-tab"
           className="mt-6"
         >
-          <RegistrationsSection eventId={event.id} />
+          <RegistrationsSection eventId={event.id} timeZone={event.time_zone} />
         </section>
       ) : null}
       {activeTab === "attendance" ? (
@@ -548,7 +548,7 @@ function handleTabKeyDown(
   event.preventDefault();
 }
 
-function RegistrationsSection({ eventId }: { eventId: string }) {
+function RegistrationsSection({ eventId, timeZone }: { eventId: string; timeZone: string }) {
   const [activeSubview, setActiveSubview] =
     useState<RegistrationsSubview>("registered");
   const [isExporting, setIsExporting] = useState(false);
@@ -665,10 +665,32 @@ function RegistrationsSection({ eventId }: { eventId: string }) {
               {waitlistQuery.data.length} waitlist record
               {waitlistQuery.data.length === 1 ? "" : "s"}
             </p>
-            <p className="mt-1 text-sm text-[#52736a]">
-              The current backend contract does not document waitlist record
-              fields for display.
-            </p>
+            <div className="mt-3 overflow-x-auto">
+              <table className="min-w-[900px] w-full text-left text-sm">
+                <thead className="border-y border-[#e1ebe6] bg-[#f9fcfa] text-xs font-bold uppercase tracking-[.08em] text-[#52736a]">
+                  <tr>
+                    <th className="px-3 py-2">Participant</th>
+                    <th className="px-3 py-2">Email</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2">Joined waitlist</th>
+                    <th className="px-3 py-2">Registration</th>
+                    <th className="px-3 py-2">Payment offer</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {waitlistQuery.data.map((record) => (
+                    <tr key={record.id} className="border-b border-[#edf3f0] last:border-b-0">
+                      <td className="px-3 py-3 font-semibold text-[#06201c]">{record.participant_name || "Unknown participant"}</td>
+                      <td className="px-3 py-3 text-[#52736a]">{record.participant_email || "—"}</td>
+                      <td className="px-3 py-3"><span className="inline-flex rounded-full bg-[#edf3f0] px-2.5 py-1 text-xs font-semibold text-[#31594d]">{humanizeRegistrationStatus(record.status)}</span></td>
+                      <td className="px-3 py-3 text-[#52736a]">{formatEventDateTime(record.created_at, timeZone)}</td>
+                      <td className="px-3 py-3 text-[#52736a]">{record.registration_id ? "Registered / Promoted" : "Not registered"}</td>
+                      <td className="px-3 py-3 text-[#52736a]">{record.payment_offer_expires_at ? formatEventDateTime(record.payment_offer_expires_at, timeZone) : "Not offered"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </>
         )}
       </RegistrationsPanel>
@@ -748,7 +770,7 @@ function RegistrationsSection({ eventId }: { eventId: string }) {
       <RegistrationTable
         eventId={eventId}
         registrations={filteredRegistrations}
-        totalRegistrations={registrationsQuery.data.length}
+        totalRegistrations={registrationsQuery.data.filter(isActiveRegistration).length}
         search={registrationSearch}
         onSearchChange={setRegistrationSearch}
       />
@@ -759,6 +781,11 @@ function RegistrationsSection({ eventId }: { eventId: string }) {
 function humanizeRegistrationStatus(value: string): string {
   const normalized = value.trim().replace(/[_-]+/g, " ");
   return normalized ? normalized.replace(/\b\w/g, (character) => character.toUpperCase()) : "Status unavailable";
+}
+
+function isActiveRegistration(registration: { status: string }): boolean {
+  const status = registration.status.trim().toLowerCase().replace(/[_-]+/g, " ");
+  return status !== "cancelled" && status !== "canceled";
 }
 
 function getRegistrationRefundState(status: string): "refund_requested" | "refunded" | undefined {
@@ -780,8 +807,8 @@ function RegistrationTable({
   search: string;
   onSearchChange: (value: string) => void;
 }) {
-  const countLabel = registrations.length === 1 ? "registered participant" : "registered participants";
-  return <section className="space-y-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><label className="w-full sm:max-w-sm"><span className="sr-only">Search registrations</span><input type="search" value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search registrations..." className="h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]" /></label><p aria-live="polite" className="text-sm text-[#52736a]">{search.trim() ? registrations.length + " of " + totalRegistrations + " registrations" : registrations.length + " " + countLabel}</p></div>{registrations.length === 0 ? <div className="rounded-xl border border-dashed border-[#d7e5df] bg-[#f9fcfa] px-4 py-8 text-center"><p className="text-sm font-bold text-[#06201c]">No registrations found.</p></div> : <div className="overflow-x-auto"><table className="min-w-[760px] w-full table-fixed text-left text-sm"><thead className="border-y border-[#e1ebe6] bg-[#f9fcfa] text-xs font-bold uppercase tracking-[.08em] text-[#52736a]"><tr><th scope="col" className="w-12 px-3 py-2">#</th><th scope="col" className="w-[25%] px-3 py-2">Name</th><th scope="col" className="w-[38%] px-3 py-2">Email</th><th scope="col" className="w-[17%] px-3 py-2">Status</th><th scope="col" className="w-[120px] px-3 py-2"><span className="sr-only">Actions</span></th></tr></thead><tbody>{registrations.map((registration, index) => <tr key={registration.id} className="border-b border-[#edf3f0] text-[#06201c] last:border-b-0"><td className="px-3 py-2.5 text-[#52736a]">{index + 1}</td><td className="truncate px-3 py-2.5 font-semibold" title={registration.participant_name}>{registration.participant_name}</td><td className="truncate px-3 py-2.5 text-[#52736a]" title={registration.participant_email}>{registration.participant_email}</td><td className="px-3 py-2.5"><span className="inline-flex rounded-full bg-[#edf3f0] px-2.5 py-1 text-xs font-semibold text-[#31594d]">{humanizeRegistrationStatus(registration.status)}</span></td><td className="px-3 py-2.5"><EventRefundAction eventId={eventId} target="registration" targetId={registration.id} refundState={getRegistrationRefundState(registration.status)} /></td></tr>)}</tbody></table></div>}</section>;
+  const countLabel = totalRegistrations === 1 ? "registered participant" : "registered participants";
+  return <section className="space-y-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><label className="w-full sm:max-w-sm"><span className="sr-only">Search registrations</span><input type="search" value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search registrations..." className="h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]" /></label><p aria-live="polite" className="text-sm text-[#52736a]">{search.trim() ? registrations.length + " of " + totalRegistrations + " registrations" : totalRegistrations + " " + countLabel}</p></div>{registrations.length === 0 ? <div className="rounded-xl border border-dashed border-[#d7e5df] bg-[#f9fcfa] px-4 py-8 text-center"><p className="text-sm font-bold text-[#06201c]">No registrations found.</p></div> : <div className="overflow-x-auto"><table className="min-w-[760px] w-full table-fixed text-left text-sm"><thead className="border-y border-[#e1ebe6] bg-[#f9fcfa] text-xs font-bold uppercase tracking-[.08em] text-[#52736a]"><tr><th scope="col" className="w-12 px-3 py-2">#</th><th scope="col" className="w-[25%] px-3 py-2">Name</th><th scope="col" className="w-[38%] px-3 py-2">Email</th><th scope="col" className="w-[17%] px-3 py-2">Status</th><th scope="col" className="w-[120px] px-3 py-2"><span className="sr-only">Actions</span></th></tr></thead><tbody>{registrations.map((registration, index) => <tr key={registration.id} className="border-b border-[#edf3f0] text-[#06201c] last:border-b-0"><td className="px-3 py-2.5 text-[#52736a]">{index + 1}</td><td className="truncate px-3 py-2.5 font-semibold" title={registration.participant_name}>{registration.participant_name}</td><td className="truncate px-3 py-2.5 text-[#52736a]" title={registration.participant_email}>{registration.participant_email}</td><td className="px-3 py-2.5"><span className="inline-flex rounded-full bg-[#edf3f0] px-2.5 py-1 text-xs font-semibold text-[#31594d]">{humanizeRegistrationStatus(registration.status)}</span></td><td className="px-3 py-2.5"><EventRefundAction eventId={eventId} target="registration" targetId={registration.id} refundState={getRegistrationRefundState(registration.status)} /></td></tr>)}</tbody></table></div>}</section>;
 }
 
 function RegistrationsHeader({

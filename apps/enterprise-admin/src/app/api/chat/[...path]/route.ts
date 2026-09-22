@@ -52,6 +52,7 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   }
 
   let upstream: Response;
+  const fetchStartedAt = Date.now();
   try {
     upstream = await fetch(targetUrl, {
       method: request.method,
@@ -60,7 +61,47 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
       cache: "no-store",
       signal: AbortSignal.timeout(30_000),
     });
-  } catch {
+  } catch (error: unknown) {
+    const errorRecord = error instanceof Error ? error as Error & { code?: unknown; cause?: unknown } : null;
+    const causeRecord = errorRecord?.cause && typeof errorRecord.cause === "object"
+      ? errorRecord.cause as { code?: unknown }
+      : null;
+    const errorCode = typeof errorRecord?.code === "string" ? errorRecord.code : undefined;
+    const causeCode = typeof causeRecord?.code === "string" ? causeRecord.code : undefined;
+    const code = errorCode ?? causeCode;
+    const errorName = errorRecord?.name ?? "UnknownError";
+    const timedOut = errorName === "AbortError" || errorName === "TimeoutError" || code === "ETIMEDOUT" || code === "UND_ERR_CONNECT_TIMEOUT";
+    const failureType = timedOut
+      ? "timeout"
+      : code === "ENOTFOUND" || code === "EAI_AGAIN"
+        ? "dns"
+        : code === "ECONNRESET"
+          ? "connection_reset"
+          : code === "ECONNREFUSED"
+            ? "connection_refused"
+            : code === "CERT_HAS_EXPIRED" || code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE" || code === "ERR_TLS_CERT_ALTNAME_INVALID"
+              ? "tls"
+              : "other";
+
+    let hostname = "unknown";
+    try {
+      hostname = new URL(proxyTarget).hostname;
+    } catch {
+      // Keep diagnostics safe even if configuration contains an invalid URL.
+    }
+
+    console.error("[chat-proxy] upstream fetch failed", {
+      method: request.method,
+      path: `/${path.join("/")}`,
+      hostname,
+      elapsedMs: Date.now() - fetchStartedAt,
+      errorName,
+      errorCode,
+      causeCode,
+      timedOut,
+      failureType,
+    });
+
     return NextResponse.json({ detail: "Chat proxy request failed." }, { status: 502 });
   }
 

@@ -98,3 +98,22 @@ export async function updateEventFormConfigurationAssignments(configurationId: s
 }
 /** Retrieves immutable audit history for one Event form configuration. */
 export async function getEventFormConfigurationAudit(configurationId: string): Promise<EventFormAuditEntry[]> { const value = await requestJson(configurationPath(configurationId, "/audit")); const entries = auditEntries(value); return expect(entries, (candidate) => Array.isArray(candidate) && candidate.every((entry) => entry !== null), "audit history"); }
+
+/** Finds selected tenants that already belong to another active Event form configuration. */
+export async function findActiveEventFormConfigurationConflicts(tenantIds: readonly string[]): Promise<Array<{ tenantId: string; configurationName: string }>> {
+  if (tenantIds.length === 0) return [];
+  const configurations = await listEventFormConfigurations();
+  const activeConfigurations = configurations.filter((configuration) => configuration.is_active);
+  const conflicts: Array<{ tenantId: string; configurationName: string }> = [];
+
+  for (const configuration of activeConfigurations) {
+    const assignments = await getEventFormConfigurationAssignments(configuration.id);
+    for (const assignment of assignments.assignments) {
+      if (tenantIds.includes(assignment.tenant_id)) {
+        conflicts.push({ tenantId: assignment.tenant_id, configurationName: configuration.name });
+      }
+    }
+  }
+
+  return conflicts;
+}
