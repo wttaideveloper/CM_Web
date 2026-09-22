@@ -235,10 +235,6 @@ interface TrainingDetailsScreenProps {
   managementActions?: boolean;
 }
 
-interface TrainingDetailsScreenProps {
-  managementActions?: boolean;
-}
-
 /** Renders every supported field from a single authenticated Training response. */
 export default function TrainingDetailsScreen({
   managementActions = true,
