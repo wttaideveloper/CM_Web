@@ -1,6 +1,3 @@
-const SHELL_ORIGIN_ENV = "NEXT_PUBLIC_SHELL_ORIGIN";
-const ENTERPRISE_ADMIN_ORIGIN_ENV = "NEXT_PUBLIC_ENTERPRISE_ADMIN_ORIGIN";
-const PLATFORM_ADMIN_ORIGIN_ENV = "NEXT_PUBLIC_PLATFORM_ADMIN_ORIGIN";
 const platformAdminSafeReturnPaths = new Set([
   "/",
   "/form-builder-new",
@@ -20,8 +17,8 @@ function normalizeOrigin(value: string | undefined) {
   }
 }
 
-function getConfiguredOrigin(environmentVariable: string, developmentFallback: string) {
-  const configured = normalizeOrigin(process.env[environmentVariable]);
+function getConfiguredOrigin(value: string | undefined, developmentFallback: string) {
+  const configured = normalizeOrigin(value);
   if (configured) {
     return configured;
   }
@@ -30,15 +27,24 @@ function getConfiguredOrigin(environmentVariable: string, developmentFallback: s
 }
 
 export function getShellAppOrigin() {
-  return getConfiguredOrigin(SHELL_ORIGIN_ENV, "http://localhost:3000");
+  return getConfiguredOrigin(
+    process.env.NEXT_PUBLIC_SHELL_ORIGIN,
+    "http://localhost:3000",
+  );
 }
 
 export function getEnterpriseAdminAppOrigin() {
-  return getConfiguredOrigin(ENTERPRISE_ADMIN_ORIGIN_ENV, "http://localhost:3001");
+  return getConfiguredOrigin(
+    process.env.NEXT_PUBLIC_ENTERPRISE_ADMIN_ORIGIN,
+    "http://localhost:3001",
+  );
 }
 
 export function getPlatformAdminAppOrigin() {
-  return getConfiguredOrigin(PLATFORM_ADMIN_ORIGIN_ENV, "http://localhost:3002");
+  return getConfiguredOrigin(
+    process.env.NEXT_PUBLIC_PLATFORM_ADMIN_ORIGIN,
+    "http://localhost:3002",
+  );
 }
 
 export function getSafeEnterpriseAdminReturnUrl(value: string | null | undefined) {

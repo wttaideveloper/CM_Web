@@ -336,8 +336,14 @@ function CheckInQrCard({ payload, displayPayload }: { payload: string; displayPa
   );
 }
 
+interface TrainingDetailsScreenProps {
+  managementActions?: boolean;
+}
+
 /** Renders every supported field from a single authenticated Training response. */
-export default function TrainingDetailsScreen() {
+export default function TrainingDetailsScreen({
+  managementActions = true,
+}: TrainingDetailsScreenProps) {
   const { trainingId } = useParams<{ trainingId: string }>();
   const [activeTab, setActiveTab] = useState<TrainingDetailsTab>("details");
   const trainingQuery = useQuery({
@@ -426,9 +432,11 @@ export default function TrainingDetailsScreen() {
               {typeof training.delivery_mode === "string" && training.delivery_mode ? <span className="text-xs text-white/70">{humanizeLabel(training.delivery_mode)}</span> : null}
             </div>
           </div>
-          <div className="absolute top-4 right-4">
-            <TrainingActionsMenu training={training} />
-          </div>
+          {managementActions ? (
+            <div className="absolute top-4 right-4">
+              <TrainingActionsMenu training={training} />
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm sm:flex sm:items-start sm:justify-between sm:gap-4">
@@ -437,17 +445,19 @@ export default function TrainingDetailsScreen() {
             <h2 className="mt-1 text-2xl font-bold text-[#06201c] sm:text-3xl">{training.title}</h2>
             <span className={`mt-2 inline-block rounded-full px-3 py-1 text-[11px] font-bold ${getTrainingStatusBadgeClass(training.status)}`}>{getTrainingStatusLabel(training.status)}</span>
           </div>
-          <TrainingActionsMenu training={training} />
+          {managementActions ? <TrainingActionsMenu training={training} /> : null}
         </div>
       )}
 
       {(training.status === "rejected" || training.status === "needs_revision") ? <AdminNoteBanner trainingId={trainingId} status={training.status} /> : null}
 
-      <ParticipantToolbar
-        trainingId={trainingId}
-        status={training.status}
-        trainingMeetingLink={typeof (training as unknown as Record<string, unknown>).meeting_link === "string" ? String((training as unknown as Record<string, unknown>).meeting_link) : null}
-      />
+      {managementActions ? (
+        <ParticipantToolbar
+          trainingId={trainingId}
+          status={training.status}
+          trainingMeetingLink={typeof (training as unknown as Record<string, unknown>).meeting_link === "string" ? String((training as unknown as Record<string, unknown>).meeting_link) : null}
+        />
+      ) : null}
 
       <div className="mt-6 flex flex-wrap gap-2 border-b border-[#e1ebe6] overflow-x-auto scrollbar-thin">
         {trainingDetailsTabs.map((tab) => (

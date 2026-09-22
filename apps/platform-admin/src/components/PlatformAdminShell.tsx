@@ -34,8 +34,10 @@ const platformOwnedNavigationRoutes = new Set([
   "/services",
   "/enterprises",
   "/users",
+  "/super-admins",
   "/events",
   "/trainings",
+  "/programs",
   "/integrations",
 ]);
 
