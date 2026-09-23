@@ -30,4 +30,13 @@ export const trainingFormConfigurationCopy = {
   addSectionHelp: "Need another group of Training fields? Add a section here.",
   fieldTypes: { text: "Text", textarea: "Textarea", number: "Number", url: "URL", date: "Date", datetime: "Datetime", time: "Time", select: "Select", multi_select: "Multi Select", checkbox: "Checkbox" },
   seededSections: { basic: "Basic Information", schedule: "Schedule", location: "Location & Host", pricing: "Pricing & Tickets", capacity: "Capacity & Registration", media: "Images & Media", additional: "Additional Configuration" },
+  builderHelp: "Click a Training field or section to edit it in the panel on the right. Drag items to reorder or move them between sections.",
+  viewTips: "View tips",
+  hideTips: "Hide tips",
+  tipDragSections: "Drag Training sections to reorder the form.",
+  tipDragFields: "Drag Training fields to reorder them or move them into another section.",
+  tipAddField: "Use + Add field inside a Training section to add more fields.",
+  tipAddSection: "To add a new Training section, scroll to the bottom of the builder and select Add section.",
+  tipLocked: "Some Training core field settings may be locked to protect Training requirements.",
+  tipPreview: "Use Preview to review how the Training form will appear before publishing.",
 } as const;

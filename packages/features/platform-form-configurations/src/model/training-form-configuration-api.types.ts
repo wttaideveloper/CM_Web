@@ -44,7 +44,8 @@ export interface TrainingFormConfigurationLifecycleResponse { id: string; status
 export interface TrainingFormConfigurationCreateResponse extends TrainingFormConfiguration { draft_version: TrainingFormConfigurationVersion; }
 
 /** Authoritative metadata for one core Training field. */
-export interface TrainingCoreFieldRegistryEntry { key: string; display_name: string; value_type: TrainingFormValueType; allowed_renderers: TrainingFormRenderer[]; default_renderer: TrainingFormRenderer; required_by_domain: boolean; removable: boolean; hideable: boolean; configurable: { label: boolean; section: boolean; position: boolean; required: boolean; renderer: boolean; placeholder: boolean; help_text: boolean; validation: boolean; }; }
+export interface TrainingCoreFieldRegistryOption { value: string; label: string; position: number; }
+export interface TrainingCoreFieldRegistryEntry { key: string; display_name: string; value_type: TrainingFormValueType; allowed_renderers: TrainingFormRenderer[]; default_renderer: TrainingFormRenderer; required_by_domain: boolean; removable: boolean; hideable: boolean; options?: TrainingCoreFieldRegistryOption[] | null; value_source?: string | null; source_endpoint?: string | null; depends_on?: string | null; configurable: { label: boolean; section: boolean; position: boolean; required: boolean; renderer: boolean; placeholder: boolean; help_text: boolean; validation: boolean; }; }
 
 /** One tenant assignment returned by the configuration assignment endpoint. */
 export interface TrainingFormAssignment { id: string; configuration_id: string; tenant_id: string; enterprise_id: string | null; created_at: string | null; updated_at: string | null; }
