@@ -120,7 +120,7 @@ function isHistoricalSessionsField(field: ActiveEventFormField): boolean {
   return field.source === "core" && key === "sessions" && field.renderer === "sessions" && field.is_enabled !== false;
 }
 
-type SessionSubfield = "session_date" | "title" | "speaker" | "start_time" | "end_time" | "location" | "meeting_link";
+type SessionSubfield = "session_date" | "title" | "description" | "speaker" | "speaker_bio" | "start_time" | "end_time" | "location" | "meeting_link";
 
 function isSessionSubfieldEnabled(field: ActiveEventFormField | null | undefined, name: SessionSubfield): boolean {
   const enabledFields = field?.composite_config?.enabled_fields;
@@ -1148,7 +1148,9 @@ function SessionsSection({
     const payloads = drafts.map((session) => ({
       session_date: session.session_date,
       title: session.title.trim(),
+      description: session.description.trim() || null,
       speaker: session.speaker.trim() || null,
+      speaker_bio: session.speaker_bio.trim() || null,
       start_time: session.start_time || null,
       end_time: session.end_time || null,
       location: session.location.trim() || null,
@@ -1273,7 +1275,9 @@ function AddSessionDialog({
   const [values, setValues] = useState({
     session_date: initialSession?.session_date ?? (dates.length === 1 ? dates[0] : ""),
     title: initialSession?.title ?? "",
+    description: initialSession?.description ?? "",
     speaker: initialSession?.speaker ?? "",
+    speaker_bio: initialSession?.speaker_bio ?? "",
     start_time: initialSession?.start_time ?? "",
     end_time: initialSession?.end_time ?? "",
     location: initialSession?.location ?? "",
@@ -1321,7 +1325,9 @@ function AddSessionDialog({
     const normalized = Object.fromEntries(Object.entries({
       session_date: values.session_date,
       title: values.title.trim(),
+      description: values.description.trim() || null,
       speaker: values.speaker.trim() || null,
+      speaker_bio: values.speaker_bio.trim() || null,
       start_time: values.start_time || null,
       end_time: values.end_time || null,
       location: values.location.trim() || null,
@@ -1334,7 +1340,9 @@ function AddSessionDialog({
     const original = {
       session_date: initialSession?.session_date ?? "",
       title: initialSession?.title ?? "",
+      description: initialSession?.description ?? "",
       speaker: initialSession?.speaker ?? "",
+      speaker_bio: initialSession?.speaker_bio ?? "",
       start_time: initialSession?.start_time ?? "",
       end_time: initialSession?.end_time ?? "",
       location: initialSession?.location ?? "",
@@ -1404,6 +1412,10 @@ function AddSessionDialog({
               className="mt-1 h-10 w-full rounded-lg border border-[#d7e5df] px-3 font-normal outline-none focus:border-[#1f6a58] focus:ring-2 focus:ring-[#1f6a58]/20"
             />
           </label> : null}
+          {fieldEnabled("description") ? <label className="block text-sm font-bold text-[#06201c]">
+            Description{fieldRequired("description") ? " *" : ""}
+            <textarea value={values.description} onChange={(event) => setValues((current) => ({ ...current, description: event.target.value }))} className="mt-1 min-h-24 w-full rounded-lg border border-[#d7e5df] px-3 py-2 font-normal" />
+          </label> : null}
           <div className="grid gap-4 sm:grid-cols-2">
             {fieldEnabled("speaker") ? <SessionInput
               label="Speaker"
@@ -1411,6 +1423,10 @@ function AddSessionDialog({
               value={values.speaker}
               onChange={update("speaker")}
             /> : null}
+            {fieldEnabled("speaker_bio") ? <label className="block text-sm font-bold text-[#06201c]">
+              Speaker bio{fieldRequired("speaker_bio") ? " *" : ""}
+              <textarea value={values.speaker_bio} onChange={(event) => setValues((current) => ({ ...current, speaker_bio: event.target.value }))} className="mt-1 min-h-24 w-full rounded-lg border border-[#d7e5df] px-3 py-2 font-normal" />
+            </label> : null}
             {fieldEnabled("start_time") ? <SessionInput
               label="Start time"
               required={fieldRequired("start_time")}
@@ -1455,7 +1471,7 @@ function AddSessionDialog({
           <div className="flex justify-end gap-3">
             <button
               type="button"
-              disabled={isPending || (mode === "edit" && Object.keys(Object.fromEntries(Object.entries(values).filter(([key, value]) => value !== ({ session_date: initialSession?.session_date ?? "", title: initialSession?.title ?? "", speaker: initialSession?.speaker ?? "", start_time: initialSession?.start_time ?? "", end_time: initialSession?.end_time ?? "", location: initialSession?.location ?? "", meeting_link: initialSession?.meeting_link ?? "" })[key as keyof typeof values]))).length === 0)}
+              disabled={isPending || (mode === "edit" && Object.keys(Object.fromEntries(Object.entries(values).filter(([key, value]) => value !== ({ session_date: initialSession?.session_date ?? "", title: initialSession?.title ?? "", description: initialSession?.description ?? "", speaker: initialSession?.speaker ?? "", speaker_bio: initialSession?.speaker_bio ?? "", start_time: initialSession?.start_time ?? "", end_time: initialSession?.end_time ?? "", location: initialSession?.location ?? "", meeting_link: initialSession?.meeting_link ?? "" })[key as keyof typeof values]))).length === 0)}
               onClick={onClose}
               className="h-10 rounded-full border border-[#d7e5df] px-4 text-sm font-semibold text-[#52736a] disabled:opacity-60"
             >

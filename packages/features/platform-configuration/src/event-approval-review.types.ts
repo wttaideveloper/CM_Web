@@ -16,7 +16,9 @@ export type EventSession = {
   id?: string;
   session_date?: string | null;
   title: string;
+  description?: string | null;
   speaker?: string | null;
+  speaker_bio?: string | null;
   start_time?: string | null;
   end_time?: string | null;
   location?: string | null;

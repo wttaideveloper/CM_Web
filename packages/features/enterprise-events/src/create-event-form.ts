@@ -21,6 +21,8 @@ export interface EventCustomFieldFormValue extends EventCustomField {}
 export interface EventSessionFormValue extends EventSessionInput {
   id?: string;
   location: string;
+  description: string;
+  speaker_bio: string;
   meeting_link?: string | null;
 }
 
@@ -98,7 +100,7 @@ export function buildCreateEventPayload(
   const payload: CreateEventPayload = {
     tenant_id: tenantId,
     enterprise_id: enterpriseId,
-    location_id: locationId || null,
+    location_id: values.delivery_mode === "online" ? null : locationId || null,
     title: values.title.trim(),
     description: values.description.trim(),
     category: values.category.trim(),
@@ -117,8 +119,8 @@ export function buildCreateEventPayload(
     documents: values.documents,
     delivery_mode: values.delivery_mode as "in_person",
     venue: values.delivery_mode === "online" ? null : venue,
-    meeting_link: values.meeting_link.trim() || null,
-    meeting_provider: values.meeting_provider.trim() || null,
+    meeting_link: values.delivery_mode === "in_person" ? null : values.meeting_link.trim() || null,
+    meeting_provider: values.delivery_mode === "in_person" ? null : values.meeting_provider.trim() || null,
     price: values.pricing_type === "free" ? null : values.price.trim(),
     pricing_type: values.pricing_type,
     currency: values.currency.trim(),
@@ -164,11 +166,11 @@ export function eventToFormValues(event: Event): CreateEventFormValues {
     currency: event.currency, ticket_types: event.ticket_types, capacity: event.capacity,
     min_participants: event.min_participants, max_participants: event.max_participants, primary_image: event.primary_image ?? "",
     gallery_images: event.gallery_images, videos: event.videos, documents: event.documents,
-    custom_fields: event.custom_fields, sessions: event.sessions.map((session) => ({ ...(session.id ? { id: session.id } : {}), session_date: session.session_date ?? "", title: session.title, speaker: session.speaker ?? "", start_time: session.start_time ?? "", end_time: session.end_time ?? "", location: session.location ?? "", meeting_link: session.meeting_link ?? null })),
+    custom_fields: event.custom_fields, sessions: event.sessions.map((session) => ({ ...(session.id ? { id: session.id } : {}), session_date: session.session_date ?? "", title: session.title, description: session.description ?? "", speaker: session.speaker ?? "", speaker_bio: session.speaker_bio ?? "", start_time: session.start_time ?? "", end_time: session.end_time ?? "", location: session.location ?? "", meeting_link: session.meeting_link ?? null })),
   };
 }
 
-const sessionFormKeys = ["session_date", "title", "speaker", "start_time", "end_time", "location", "meeting_link"] as const;
+const sessionFormKeys = ["session_date", "title", "description", "speaker", "speaker_bio", "start_time", "end_time", "location", "meeting_link"] as const;
 type SessionFormKey = typeof sessionFormKeys[number];
 
 function formSessionFromRecord(session: EventSessionRecord): EventSessionFormValue {
@@ -176,7 +178,9 @@ function formSessionFromRecord(session: EventSessionRecord): EventSessionFormVal
     ...(session.id ? { id: session.id } : {}),
     session_date: session.session_date ?? "",
     title: session.title,
+    description: session.description ?? "",
     speaker: session.speaker ?? "",
+    speaker_bio: session.speaker_bio ?? "",
     start_time: session.start_time ?? "",
     end_time: session.end_time ?? "",
     location: session.location ?? "",
@@ -275,7 +279,7 @@ export function mapSessionForPayload(session: EventSessionFormValue, enabledFiel
   const meetingLinkEnabled = enabledFields === undefined || enabledFields.length === 0 || enabledFields.includes("meeting_link");
   const locationApplicable = deliveryMode !== "online";
   const meetingLinkApplicable = deliveryMode === undefined || deliveryMode === "online" || deliveryMode === "hybrid";
-  return { ...base, ...(locationApplicable && location?.trim() ? { location: location.trim() } : {}), ...(meetingLinkApplicable && meetingLinkEnabled && meeting_link?.trim() ? { meeting_link: meeting_link.trim() } : {}) };
+  return { ...base, description: base.description?.trim() || null, speaker_bio: base.speaker_bio?.trim() || null, ...(locationApplicable && location?.trim() ? { location: location.trim() } : {}), ...(meetingLinkApplicable && meetingLinkEnabled && meeting_link?.trim() ? { meeting_link: meeting_link.trim() } : {}) };
 }
 
 /** Validates the shared Event capacity and participant constraints. */

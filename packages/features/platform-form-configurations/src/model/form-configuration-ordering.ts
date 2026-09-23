@@ -1,4 +1,5 @@
 import type { ConfiguredField, FormFieldOption, FormSection } from "./form-configuration.types";
+import { EVENT_DELIVERY_BUNDLE, isEventDeliveryBundleKey } from "./event-delivery-bundle";
 
 /** Derives persisted section positions from the current local builder order. */
 export function normalizeSectionPositions(sections: readonly FormSection[]): FormSection[] { return sections.map((section, index) => ({ ...section, position: index + 1 })); }
@@ -13,6 +14,15 @@ export function normalizeConfigurationOrder(sections: readonly FormSection[], fi
 export function moveConfiguredField(fields: readonly ConfiguredField[], fieldLocalId: string, targetSectionLocalId: string, targetIndex: number) {
   const movingField = fields.find((field) => field.localId === fieldLocalId);
   if (!movingField) return [...fields];
+  if (isEventDeliveryBundleKey(movingField.coreKey)) {
+    const movingIds = new Set(fields.filter((field) => isEventDeliveryBundleKey(field.coreKey)).map((field) => field.localId));
+    const movingFields = EVENT_DELIVERY_BUNDLE.flatMap((key) => fields.filter((field) => field.coreKey === key));
+    const remaining = fields.filter((field) => !movingIds.has(field.localId));
+    const targetFields = remaining.filter((field) => field.sectionLocalId === targetSectionLocalId).sort((left, right) => left.position - right.position);
+    const insertionIndex = Math.max(0, Math.min(targetIndex, targetFields.length));
+    targetFields.splice(insertionIndex, 0, ...movingFields.map((field) => ({ ...field, sectionLocalId: targetSectionLocalId })));
+    return remaining.filter((field) => field.sectionLocalId !== targetSectionLocalId).concat(targetFields);
+  }
   const remaining = fields.filter((field) => field.localId !== fieldLocalId);
   const targetFields = remaining.filter((field) => field.sectionLocalId === targetSectionLocalId).sort((left, right) => left.position - right.position);
   const insertionIndex = Math.max(0, Math.min(targetIndex, targetFields.length));

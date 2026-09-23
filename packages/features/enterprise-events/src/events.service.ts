@@ -412,7 +412,9 @@ export interface CreateEventCustomField extends EventCustomField {
 export interface EventSessionInput {
   session_date: string;
   title: string;
+  description?: string | null;
   speaker: string;
+  speaker_bio?: string | null;
   start_time: string;
   end_time: string;
   location?: string | null;
@@ -430,7 +432,9 @@ export interface EventSession {
   id: string;
   session_date?: string | null;
   title: string;
+  description?: string | null;
   speaker: string | null;
+  speaker_bio?: string | null;
   start_time: string | null;
   end_time: string | null;
   location: string | null;
@@ -444,7 +448,9 @@ export type EventSessionRecord = EventEmbeddedSession | EventSession;
 export interface AddEventSessionPayload {
   session_date: string;
   title: string;
+  description?: string | null;
   speaker?: string | null;
+  speaker_bio?: string | null;
   start_time?: string | null;
   end_time?: string | null;
   location?: string | null;
@@ -455,7 +461,9 @@ export interface AddEventSessionPayload {
 export interface UpdateEventSessionPayload {
   session_date?: string | null;
   title?: string | null;
+  description?: string | null;
   speaker?: string | null;
+  speaker_bio?: string | null;
   start_time?: string | null;
   end_time?: string | null;
   location?: string | null;
@@ -643,10 +651,12 @@ function isEventEmbeddedSession(value: unknown): value is EventEmbeddedSession {
 function isEventSession(value: unknown): value is EventSession {
   return isRecord(value) && typeof value.id === "string" && typeof value.title === "string" &&
     (value.session_date === undefined || value.session_date === null || typeof value.session_date === "string") &&
-    (value.speaker === null || typeof value.speaker === "string") &&
-    (value.start_time === null || typeof value.start_time === "string") &&
-    (value.end_time === null || typeof value.end_time === "string") &&
-    (value.location === null || typeof value.location === "string") &&
+    (value.speaker === undefined || value.speaker === null || typeof value.speaker === "string") &&
+    (value.description === undefined || value.description === null || typeof value.description === "string") &&
+    (value.speaker_bio === undefined || value.speaker_bio === null || typeof value.speaker_bio === "string") &&
+    (value.start_time === undefined || value.start_time === null || typeof value.start_time === "string") &&
+    (value.end_time === undefined || value.end_time === null || typeof value.end_time === "string") &&
+    (value.location === undefined || value.location === null || typeof value.location === "string") &&
     (value.meeting_link === undefined || value.meeting_link === null || typeof value.meeting_link === "string");
 }
 
@@ -667,7 +677,9 @@ function normalizeEventSession(value: unknown): EventSessionRecord | null {
   const common = {
     session_date: value.session_date,
     title: value.title,
+    description: optionalText(value.description),
     speaker: optionalText(value.speaker),
+    speaker_bio: optionalText(value.speaker_bio),
     start_time: optionalText(value.start_time),
     end_time: optionalText(value.end_time),
     location: optionalText(value.location),
