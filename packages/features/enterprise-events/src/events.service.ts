@@ -1081,7 +1081,7 @@ export async function getEventHistoricalFormConfiguration(eventId: string): Prom
 
 /** Reads the backend-owned Event taxonomy through the authenticated same-origin Events proxy. */
 export async function getEventCategories(): Promise<EventCategoriesResponse> {
-  const response = await fetch("/api/v1/event-categories", { credentials: "include", cache: "no-store" });
+  const response = await fetch("/api/v1/event-categories/", { credentials: "include", cache: "no-store" });
   if (!response.ok) throw await createEventsApiError(response, "load Event categories");
   const value = (await response.json()) as unknown;
   if (!Array.isArray(value) || !value.every(isEventCategory)) {

@@ -56,14 +56,28 @@ function formatTrainingDate(value: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value));
 }
 
-function formatTrainingAvailability(training: TrainingListItem): string {
+function formatTrainingAvailability(training: TrainingListItem, registrationCount: number | undefined): string {
+  if (typeof training.available_slots === "number" && Number.isFinite(training.available_slots)) {
+    return `${Math.max(0, training.available_slots)} seats available`;
+  }
   if (typeof training.capacity === "string" && training.capacity.trim().length > 0) {
     const capacity = Number.parseInt(training.capacity.trim(), 10);
     if (Number.isFinite(capacity) && capacity > 0) {
-      return `${capacity} seats available`;
+      const availableSeats = typeof registrationCount === "number" && Number.isFinite(registrationCount)
+        ? Math.max(0, capacity - registrationCount)
+        : capacity;
+      return `${availableSeats} seats available`;
     }
   }
   return "—";
+}
+
+function formatTrainingLocation(training: TrainingListItem): string {
+  const mode = training.delivery_mode?.trim().toLowerCase();
+  const venue = [training.venue, training.address].filter((value): value is string => Boolean(value?.trim())).join(", ");
+  if (mode === "online" || mode === "self_paced") return mode === "self_paced" ? "Self-paced" : "Online";
+  if (mode === "hybrid") return venue ? `Hybrid · ${venue}` : "Hybrid";
+  return venue || (training.delivery_mode ? humanizeLabel(training.delivery_mode) : "—");
 }
 
 function TrainingsSummaryCard({ summary, isLoading, isError }: { summary: unknown; isLoading: boolean; isError: boolean }) {
@@ -118,7 +132,20 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
     ? training.enrolled_count
     : providerDashboardQuery.data?.total_enrolments;
   const primaryImage = typeof training.primary_image === "string" ? training.primary_image.trim() : "";
-  const hasPrimaryImage = primaryImage.length > 0;
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
+  const hasPrimaryImage = primaryImage.length > 0 && failedImageUrl !== primaryImage;
+  useEffect(() => {
+    if (!primaryImage) {
+      setFailedImageUrl(null);
+      return;
+    }
+    const image = new Image();
+    image.onerror = () => setFailedImageUrl(primaryImage);
+    image.src = primaryImage;
+    return () => {
+      image.onerror = null;
+    };
+  }, [primaryImage]);
   const labelClass = hasPrimaryImage ? "text-white/75" : "text-[#7f9d94]";
   const primaryTextClass = hasPrimaryImage ? "text-white" : "text-[#06201c]";
   const secondaryTextClass = hasPrimaryImage ? "text-white/85" : "text-[#52736a]";
@@ -154,8 +181,8 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
             <p className={`mt-1 font-semibold ${primaryTextClass}`}>{formatTrainingDate(training.start_date ?? "")}</p>
           </div>
           <div className="min-w-0">
-            <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Location</p>
-            <p className={`mt-1 font-semibold ${primaryTextClass}`}>{training.delivery_mode ? humanizeLabel(training.delivery_mode) : "—"}</p>
+            <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Location / Delivery</p>
+            <p className={`mt-1 font-semibold ${primaryTextClass}`}>{formatTrainingLocation(training)}</p>
           </div>
           <div className="min-w-0">
             <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Registrations</p>
@@ -163,7 +190,7 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
           </div>
           <div className="min-w-0">
             <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Availability</p>
-            <p className={`mt-1 font-semibold ${primaryTextClass}`}>{formatTrainingAvailability(training)}</p>
+            <p className={`mt-1 font-semibold ${primaryTextClass}`}>{formatTrainingAvailability(training, registrationCount)}</p>
           </div>
         </div>
 
@@ -246,18 +273,6 @@ export default function EnterpriseTrainingsScreen() {
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <Link
-            href="/admin/trainings/wishlist"
-            className="inline-flex h-12 items-center justify-center rounded-full border border-[#1f6a58] px-5 text-sm font-bold text-[#1f6a58] shadow-sm transition hover:bg-[#e8f6ee]"
-          >
-            Wishlist
-          </Link>
-          <Link
-            href="/admin/trainings/my-enrolments"
-            className="inline-flex h-12 items-center justify-center rounded-full border border-[#1f6a58] px-5 text-sm font-bold text-[#1f6a58] shadow-sm transition hover:bg-[#e8f6ee]"
-          >
-            My Enrolments
-          </Link>
           {enterpriseId ? (
             <Link
               href="/admin/trainings/create"

@@ -29,7 +29,6 @@ import {
   getTrainingLesson,
   getTrainingMeetingLink,
   getTrainingModerationHistory,
-  getTrainingProgress,
   getTrainingQuestionBank,
   getTrainingSections,
   gradeAssessmentSubmission,
@@ -65,7 +64,6 @@ import {
 } from "./trainings.service";
 import { enrolInTraining, type TrainingCheckoutRequest } from "./trainings.service";
 import { formatDetailDateTime, formatTrainingDate, humanizeLabel } from "./detail-formatters";
-import ProgressSummaryCard from "./ProgressSummaryCard";
 import TrainingAttendanceSection from "./TrainingAttendanceSection";
 import TrainingBatchCheckInSection from "./TrainingBatchCheckInSection";
 
@@ -76,7 +74,6 @@ const LESSON_TYPE_OPTIONS = [
   { value: "pdf", label: "PDF" },
   { value: "notes", label: "Notes" },
   { value: "quiz", label: "Quiz" },
-  { value: "assignment", label: "Assignment" },
 ] as const;
 
 const QUIZ_QUESTION_TYPE_OPTIONS = [
@@ -91,6 +88,7 @@ const QUIZ_QUESTION_TYPE_OPTIONS = [
 const SESSION_TYPE_OPTIONS = [
   { value: "session", label: "Select / plain Session" },
   { value: "video", label: "Video" },
+  { value: "hybrid", label: "Hybrid" },
   { value: "live", label: "Live" },
   { value: "venue", label: "Venue" },
 ] as const;
@@ -104,7 +102,7 @@ const MEETING_TYPE_OPTIONS = [
 ] as const;
 
 function normalizeSessionType(value: unknown): string {
-  return value === "video" || value === "live" || value === "venue" ? value : "session";
+  return value === "video" || value === "hybrid" || value === "live" || value === "venue" ? value : "session";
 }
 
 function toApiLessonType(type: string): string {
@@ -137,10 +135,6 @@ type SessionFieldsProps = {
   setVenueName: (value: string) => void;
   venueAddress: string;
   setVenueAddress: (value: string) => void;
-  passCode: string;
-  setPassCode: (value: string) => void;
-  checkInWindow: string;
-  setCheckInWindow: (value: string) => void;
 };
 
 function SessionFields({
@@ -158,10 +152,6 @@ function SessionFields({
   setVenueName,
   venueAddress,
   setVenueAddress,
-  passCode,
-  setPassCode,
-  checkInWindow,
-  setCheckInWindow,
 }: SessionFieldsProps) {
   return (
     <div className="grid gap-2 rounded-lg border border-[#e1ebe6] bg-[#f9fcfa] p-3 sm:grid-cols-2">
@@ -182,8 +172,6 @@ function SessionFields({
         <>
           <input value={venueName} onChange={(event) => setVenueName(event.target.value)} placeholder="Venue name" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
           <input value={venueAddress} onChange={(event) => setVenueAddress(event.target.value)} placeholder="Venue address" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-          <input value={passCode} onChange={(event) => setPassCode(event.target.value)} placeholder="Check-in pass code" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-          <input value={checkInWindow} onChange={(event) => setCheckInWindow(event.target.value)} placeholder="Check-in window" className="h-8 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
         </>
       ) : null}
     </div>
@@ -417,7 +405,7 @@ function LessonDetail({ trainingId, sectionId, lessonId, onClose }: { trainingId
             </div>
           ) : null}
           {isLessonType(lessonTypeValue, "pdf", "notes") ? <input value={fileSize} onChange={(e) => setFileSize(e.target.value)} placeholder="File size (bytes)" type="number" min="0" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
-          {isLessonType(lessonTypeValue, "quiz", "assignment") ? <p className="rounded-lg bg-[#f9fcfa] px-3 py-2 text-xs text-[#52736a]">{lessonTypeValue === "quiz" ? "After saving, use the quiz panel to attach or create questions." : "After saving, use the Assignments tab to attach or create the submission task."}</p> : null}
+          {isLessonType(lessonTypeValue, "quiz") ? <p className="rounded-lg bg-[#f9fcfa] px-3 py-2 text-xs text-[#52736a]">After saving, use the quiz panel to attach or create questions.</p> : null}
           <p className="text-[10px] text-[#7f9d94]">Only fields for the selected lesson type are shown.</p>
           <button type="button" onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending || !title.trim()} className="h-8 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:opacity-60">{updateMutation.isPending ? "Saving..." : "Save"}</button>
         </div>
@@ -440,13 +428,17 @@ function LessonDetail({ trainingId, sectionId, lessonId, onClose }: { trainingId
 }
 
 /** Renders the Training structure: sections, lessons, and reordering. */
-function AddLessonForm({ pending, onSubmit }: { pending: boolean; onSubmit: (payload: CreateTrainingLessonPayload) => void }) {
+function AddLessonForm({ pending, parentSessionType, onSubmit }: { pending: boolean; parentSessionType: string; onSubmit: (payload: CreateTrainingLessonPayload) => void }) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [contentUrl, setContentUrl] = useState("");
   const [type, setType] = useState("text");
+  const [scheduledAt, setScheduledAt] = useState("");
+  const [meetingType, setMeetingType] = useState("google_meet");
   const [meetingLink, setMeetingLink] = useState("");
   const [joinMeta, setJoinMeta] = useState("");
+  const [venueName, setVenueName] = useState("");
+  const [venueAddress, setVenueAddress] = useState("");
   const [isPreview, setIsPreview] = useState(false);
   const [isDownloadable, setIsDownloadable] = useState(false);
   const [fileSize, setFileSize] = useState("");
@@ -460,7 +452,8 @@ function AddLessonForm({ pending, onSubmit }: { pending: boolean; onSubmit: (pay
   const [fileUploadError, setFileUploadError] = useState<string | null>(null);
 
   const reset = () => {
-    setTitle(""); setContent(""); setContentUrl(""); setType("text"); setMeetingLink(""); setJoinMeta("");
+    setTitle(""); setContent(""); setContentUrl(""); setType("text"); setScheduledAt(""); setMeetingType("google_meet"); setMeetingLink(""); setJoinMeta("");
+    setVenueName(""); setVenueAddress("");
     setIsPreview(false); setIsDownloadable(false); setFileSize(""); setDuration(""); setVideos([]); setDocuments([]); setNotes([]);
     setVideoFileName(""); setPdfFileName(""); setNoteFileName("");
     setFileUploadError(null);
@@ -477,8 +470,8 @@ function AddLessonForm({ pending, onSubmit }: { pending: boolean; onSubmit: (pay
           content: content.trim() || undefined,
           content_url: contentUrl.trim() || undefined,
           type: toApiLessonType(type),
-          meeting_link: meetingLink.trim() || undefined,
-          join_meta: joinMeta.trim() || undefined,
+          ...(type === "live" ? { scheduled_at: scheduledAt || undefined, meeting_type: meetingType, meeting_link: meetingLink.trim() || undefined, join_meta: joinMeta.trim() || undefined } : {}),
+          ...(type === "venue" ? { scheduled_at: scheduledAt || undefined, venue_name: venueName.trim() || undefined, venue_address: venueAddress.trim() || undefined } : {}),
           is_preview: isPreview,
           is_downloadable: isDownloadable,
           file_size: fileSize.trim() || undefined,
@@ -500,6 +493,12 @@ function AddLessonForm({ pending, onSubmit }: { pending: boolean; onSubmit: (pay
       <input required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Lesson title" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
       <select value={type} onChange={(event) => setType(event.target.value)} aria-label="New lesson type" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]">
         {LESSON_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        {parentSessionType === "hybrid" ? (
+          <>
+            <option value="live">Live</option>
+            <option value="venue">Venue</option>
+          </>
+        ) : null}
       </select>
       {isLessonType(type, "text", "notes") ? <textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder={type === "notes" ? "Notes content..." : "Topic content..."} rows={3} className="w-full rounded-lg border border-[#d7e5df] px-3 py-2 text-xs outline-none focus:border-[#1f6a58]" /> : null}
       {type === "video" ? <LessonFileDrop label="Video" accept="video/*" fileName={videoFileName} onFile={(file) => {
@@ -510,6 +509,23 @@ function AddLessonForm({ pending, onSubmit }: { pending: boolean; onSubmit: (pay
           .catch((error: Error) => { setVideoFileName(""); setFileUploadError(error.message); });
       }} /> : null}
       {type === "youtube" ? <input value={contentUrl} onChange={(event) => setContentUrl(event.target.value)} placeholder="Paste YouTube link" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
+      {type === "live" ? (
+        <>
+          <input type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} aria-label="Lesson date and time" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
+          <select value={meetingType} onChange={(event) => setMeetingType(event.target.value)} aria-label="Lesson meeting type" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]">
+            {MEETING_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+          <input type="url" value={meetingLink} onChange={(event) => setMeetingLink(event.target.value)} placeholder="Meeting link" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
+          <input value={joinMeta} onChange={(event) => setJoinMeta(event.target.value)} placeholder="Join info" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58] sm:col-span-2" />
+        </>
+      ) : null}
+      {type === "venue" ? (
+        <>
+          <input type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} aria-label="Lesson date and time" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
+          <input value={venueName} onChange={(event) => setVenueName(event.target.value)} placeholder="Venue name" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
+          <input value={venueAddress} onChange={(event) => setVenueAddress(event.target.value)} placeholder="Venue address" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
+        </>
+      ) : null}
       {type === "pdf" ? <LessonFileDrop label="PDF" accept="application/pdf,.pdf" fileName={pdfFileName} onFile={(file) => {
         setFileUploadError(null);
         setPdfFileName(`Uploading ${file.name}...`);
@@ -549,8 +565,6 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
   const [newSectionJoinUrl, setNewSectionJoinUrl] = useState("");
   const [newSectionVenueName, setNewSectionVenueName] = useState("");
   const [newSectionVenueAddress, setNewSectionVenueAddress] = useState("");
-  const [newSectionPassCode, setNewSectionPassCode] = useState("");
-  const [newSectionCheckInWindow, setNewSectionCheckInWindow] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
   const [editSectionTitle, setEditSectionTitle] = useState("");
@@ -561,8 +575,6 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
   const [editSectionJoinUrl, setEditSectionJoinUrl] = useState("");
   const [editSectionVenueName, setEditSectionVenueName] = useState("");
   const [editSectionVenueAddress, setEditSectionVenueAddress] = useState("");
-  const [editSectionPassCode, setEditSectionPassCode] = useState("");
-  const [editSectionCheckInWindow, setEditSectionCheckInWindow] = useState("");
   const [viewingLesson, setViewingLesson] = useState<{ sectionId: string; lessonId: string } | null>(null);
   const [quizLesson, setQuizLesson] = useState<{ sectionId: string; lessonId: string } | null>(null);
   const [lessonAssessmentDraft, setLessonAssessmentDraft] = useState<Record<string, string>>({});
@@ -658,8 +670,6 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
           scheduled_at: newSectionDate || null,
           venue_name: newSectionVenueName.trim() || null,
           venue_address: newSectionVenueAddress.trim() || null,
-          pass_code: newSectionPassCode.trim() || null,
-          check_in_window: newSectionCheckInWindow.trim() || null,
         } : {}),
       };
       return createTrainingSection(trainingId, payload);
@@ -672,8 +682,6 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
       setNewSectionJoinUrl("");
       setNewSectionVenueName("");
       setNewSectionVenueAddress("");
-      setNewSectionPassCode("");
-      setNewSectionCheckInWindow("");
       setFeedback("Section created.");
       void invalidateSections();
     },
@@ -694,8 +702,6 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
         scheduled_at: editSectionDate || null,
         venue_name: editSectionVenueName.trim() || null,
         venue_address: editSectionVenueAddress.trim() || null,
-        pass_code: editSectionPassCode.trim() || null,
-        check_in_window: editSectionCheckInWindow.trim() || null,
       } : {}),
     }),
     onSuccess: () => { setEditingSectionId(null); setFeedback("Section updated."); void invalidateSections(); },
@@ -817,10 +823,6 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
                       setVenueName={setEditSectionVenueName}
                       venueAddress={editSectionVenueAddress}
                       setVenueAddress={setEditSectionVenueAddress}
-                      passCode={editSectionPassCode}
-                      setPassCode={setEditSectionPassCode}
-                      checkInWindow={editSectionCheckInWindow}
-                      setCheckInWindow={setEditSectionCheckInWindow}
                     />
                   </form>
                 ) : (
@@ -845,8 +847,6 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
                         setEditSectionJoinUrl(typeof section.join_url === "string" ? section.join_url : typeof section.join_meta === "string" ? section.join_meta : "");
                         setEditSectionVenueName(typeof section.venue_name === "string" ? section.venue_name : "");
                         setEditSectionVenueAddress(typeof section.venue_address === "string" ? section.venue_address : "");
-                        setEditSectionPassCode(typeof section.pass_code === "string" ? section.pass_code : "");
-                        setEditSectionCheckInWindow(typeof section.check_in_window === "string" ? section.check_in_window : "");
                       }} className="rounded-full px-2 py-1 text-xs font-semibold text-[#1f6a58] hover:bg-[#e8f6ee]">Edit</button>
                       <button type="button" onClick={() => { if (window.confirm("Delete this session and its lessons?")) void deleteSectionMutation.mutate(id); }} className="rounded-full px-2 py-1 text-xs font-semibold text-[#b42318] hover:bg-[#fff6f5]">Delete</button>
                     </div>
@@ -972,6 +972,7 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
               ) : null}
               <AddLessonForm
                 pending={createLessonMutation.isPending}
+                parentSessionType={normalizeSessionType(section.type)}
                 onSubmit={(payload) => createLessonMutation.mutate({ sectionId: id, payload })}
               />
             </li>
@@ -1004,10 +1005,6 @@ export function TrainingSectionsTab({ trainingId }: { trainingId: string }) {
           setVenueName={setNewSectionVenueName}
           venueAddress={newSectionVenueAddress}
           setVenueAddress={setNewSectionVenueAddress}
-          passCode={newSectionPassCode}
-          setPassCode={setNewSectionPassCode}
-          checkInWindow={newSectionCheckInWindow}
-          setCheckInWindow={setNewSectionCheckInWindow}
         />
       </form>
     </SectionCard>
@@ -1031,7 +1028,7 @@ function EnrolmentsSection({ trainingId }: { trainingId: string }) {
 
   const enrolMutation = useMutation({
     mutationFn: () => enrolInTraining(trainingId, { participant_name: enrolName.trim(), participant_email: enrolEmail.trim(), group_enrol: isGroupEnrol || undefined, max_group_size: groupSize.trim() || undefined }),
-    onSuccess: () => { setEnrolName(""); setEnrolEmail(""); setIsGroupEnrol(false); setGroupSize(""); setFeedback("Enrolment submitted."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "enrolments"] }); },
+    onSuccess: () => { setEnrolName(""); setEnrolEmail(""); setIsGroupEnrol(false); setGroupSize(""); setFeedback("Enrolment submitted."); void Promise.all([queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "enrolments"] }), queryClient.invalidateQueries({ queryKey: ["trainings", "list"] })]); },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to enrol participant."),
   });
 
@@ -1048,13 +1045,13 @@ function EnrolmentsSection({ trainingId }: { trainingId: string }) {
 
   const approveMutation = useMutation({
     mutationFn: (enrolId: string) => approveTrainingEnrolment(trainingId, enrolId),
-    onSuccess: () => { setFeedback("Enrolment approved."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "enrolments"] }); },
+    onSuccess: () => { setFeedback("Enrolment approved."); void Promise.all([queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "enrolments"] }), queryClient.invalidateQueries({ queryKey: ["trainings", "list"] })]); },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to approve enrolment."),
   });
 
   const cancelMutation = useMutation({
     mutationFn: (enrolId: string) => cancelTrainingEnrolment(trainingId, enrolId),
-    onSuccess: () => { setFeedback("Enrolment cancelled."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "enrolments"] }); },
+    onSuccess: () => { setFeedback("Enrolment cancelled."); void Promise.all([queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "enrolments"] }), queryClient.invalidateQueries({ queryKey: ["trainings", "list"] })]); },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to cancel enrolment."),
   });
 
@@ -1358,16 +1355,24 @@ function OrderPill({ tone, children }: { tone: "green" | "amber" | "red" | "blue
   return <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${tones[tone]}`}>{children}</span>;
 }
 
-/** Renders the Training enrolments, QR check-in, batch check-in, and orders. */
+/** Renders the Training enrolment management workspace. */
 export function TrainingEnrolmentsTab({ trainingId }: { trainingId: string }) {
+  return <EnrolmentsSection trainingId={trainingId} />;
+}
+
+/** Renders the backend-authoritative Training attendance and check-in workspace. */
+export function TrainingAttendanceTab({ trainingId }: { trainingId: string }) {
   return (
     <div className="grid gap-5">
-      <EnrolmentsSection trainingId={trainingId} />
       <TrainingAttendanceSection trainingId={trainingId} />
       <TrainingBatchCheckInSection trainingId={trainingId} />
-      <OrdersSection trainingId={trainingId} />
     </div>
   );
+}
+
+/** Renders Training purchase records and refund/status actions. */
+export function TrainingOrdersTab({ trainingId }: { trainingId: string }) {
+  return <OrdersSection trainingId={trainingId} />;
 }
 
 /** Renders live sessions, discussions (with create/reply), and announcements. */
@@ -1379,6 +1384,7 @@ export function TrainingLiveTab({ trainingId }: { trainingId: string }) {
   const [newDiscussionMessage, setNewDiscussionMessage] = useState("");
   const [replyToDiscussion, setReplyToDiscussion] = useState<string | null>(null);
   const [replyMessage, setReplyMessage] = useState("");
+  const [postedReplies, setPostedReplies] = useState<Record<string, Array<Record<string, unknown>>>>({});
   const [newAnnouncementTitle, setNewAnnouncementTitle] = useState("");
   const [newAnnouncementMessage, setNewAnnouncementMessage] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -1419,8 +1425,18 @@ export function TrainingLiveTab({ trainingId }: { trainingId: string }) {
   });
 
   const replyMutation = useMutation({
-    mutationFn: ({ discussionId, message }: { discussionId: string; message: string }) => createDiscussionReply(trainingId, discussionId, { message }),
-    onSuccess: () => { setReplyToDiscussion(null); setReplyMessage(""); setFeedback("Reply posted."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "discussions"] }); },
+    mutationFn: ({ discussionId, answer }: { discussionId: string; answer: string }) => createDiscussionReply(trainingId, discussionId, { answer }),
+    onSuccess: (createdReply, variables) => {
+      const replyRecord = createdReply && typeof createdReply === "object" ? createdReply : {};
+      setPostedReplies((current) => ({
+        ...current,
+        [variables.discussionId]: [...(current[variables.discussionId] ?? []), { ...replyRecord, answer: variables.answer }],
+      }));
+      setReplyToDiscussion(null);
+      setReplyMessage("");
+      setFeedback("Reply posted.");
+      void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "discussions"] });
+    },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to post reply."),
   });
 
@@ -1560,7 +1576,12 @@ export function TrainingLiveTab({ trainingId }: { trainingId: string }) {
             const message = typeof record.message === "string" ? record.message : typeof record.question === "string" ? record.question : "Discussion";
             const author = typeof record.author === "string" ? record.author : typeof record.user_name === "string" ? record.user_name : null;
             const createdAt = typeof record.created_at === "string" ? record.created_at : null;
-            const replies: Array<Record<string, unknown>> = Array.isArray(record.replies) ? record.replies : [];
+            const storedAnswer = typeof record.answer === "string" && record.answer.trim() ? [{ answer: record.answer, author }] : [];
+            const replies: Array<Record<string, unknown>> = [
+              ...(Array.isArray(record.replies) ? record.replies : []),
+              ...storedAnswer,
+              ...(postedReplies[id] ?? []),
+            ];
             const isReplying = replyToDiscussion === id;
             return (
               <li key={id} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-4">
@@ -1576,7 +1597,7 @@ export function TrainingLiveTab({ trainingId }: { trainingId: string }) {
                   <ul className="mt-3 space-y-2 border-t border-[#e1ebe6] pt-3 pl-4">
                     {replies.map((reply, rIndex) => {
                       const rId = typeof reply.id === "string" ? reply.id : String(rIndex);
-                      const rMessage = typeof reply.message === "string" ? reply.message : "Reply";
+                      const rMessage = typeof reply.answer === "string" ? reply.answer : typeof reply.message === "string" ? reply.message : "Reply";
                       const rAuthor = typeof reply.author === "string" ? reply.author : typeof reply.user_name === "string" ? reply.user_name : null;
                       return (
                         <li key={rId} className="rounded-lg bg-white p-3">
@@ -1588,7 +1609,7 @@ export function TrainingLiveTab({ trainingId }: { trainingId: string }) {
                   </ul>
                 ) : null}
                 {isReplying ? (
-                  <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (replyMessage.trim()) replyMutation.mutate({ discussionId: id, message: replyMessage.trim() }); }}>
+                  <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (replyMessage.trim()) replyMutation.mutate({ discussionId: id, answer: replyMessage.trim() }); }}>
                     <input value={replyMessage} onChange={(e) => setReplyMessage(e.target.value)} placeholder="Write a reply..." className="h-9 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]" />
                     <button type="submit" disabled={replyMutation.isPending || !replyMessage.trim()} className="h-9 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:opacity-60">{replyMutation.isPending ? "..." : "Reply"}</button>
                   </form>
@@ -1634,16 +1655,6 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
   const queryClient = useQueryClient();
   const [expandedLesson, setExpandedLesson] = useState<string | null>(null);
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
-  const [participantEmail, setParticipantEmail] = useState<string>("");
-  const normalizedParticipantEmail = participantEmail.trim().toLowerCase();
-
-  const enrolmentsQuery = useQuery({
-    queryKey: ["trainings", trainingId, "enrolments"],
-    queryFn: () => listTrainingEnrolments(trainingId),
-    enabled: Boolean(trainingId),
-    staleTime: 30_000,
-  });
-  const enrolments = enrolmentsQuery.data ?? ([] as Array<Record<string, unknown>>);
 
   const contentQuery = useQuery({
     queryKey: ["trainings", trainingId, "content"],
@@ -1652,35 +1663,9 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
     staleTime: 30_000,
   });
 
-  const progressQuery = useQuery({
-    queryKey: ["trainings", trainingId, "progress", normalizedParticipantEmail],
-    queryFn: () => getTrainingProgress(trainingId, normalizedParticipantEmail || undefined),
-    enabled: Boolean(trainingId),
-    staleTime: 30_000,
-  });
-
   if (contentQuery.isLoading) return <p className="text-sm text-[#52736a]">Loading content...</p>;
   if (contentQuery.isError) return <p className="text-sm font-semibold text-[#b42318]">{(contentQuery.error as Error).message}</p>;
 
-  const hasEnrolledParticipants = (
-    Array.isArray(enrolments) &&
-    enrolments.some(
-      (raw): raw is Record<string, unknown> =>
-        !!raw &&
-        typeof (raw as Record<string, unknown>).participant_email === "string" &&
-        String((raw as Record<string, unknown>).participant_email).trim().length > 0,
-    )
-  );
-  const participantPickerId = `mark-for-${trainingId}`;
-  const enrolledEmails = Array.isArray(enrolments)
-    ? enrolments
-      .map((raw) => {
-        if (!raw || typeof raw !== "object") return "";
-        const participantEmailValue = (raw as Record<string, unknown>).participant_email;
-        return typeof participantEmailValue === "string" ? participantEmailValue.trim().toLowerCase() : "";
-      })
-      .filter(Boolean)
-    : [];
   const content = contentQuery.data;
   const sections: Array<Record<string, unknown>> = Array.isArray(content)
     ? (content as Array<Record<string, unknown>>)
@@ -1688,52 +1673,23 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
       ? ((content as Record<string, unknown>).sections as Array<Record<string, unknown>>)
       : [];
 
-  const progress = progressQuery.data as Record<string, unknown> | undefined;
-  const completedLessons: Set<string> = new Set();
-  if (progress && typeof progress === "object") {
-    if (Array.isArray(progress.lessons_detail)) {
-      for (const raw of progress.lessons_detail) {
-        if (!raw || typeof raw !== "object") continue;
-        const detail = raw as Record<string, unknown>;
-        if (detail.is_completed === true && typeof detail.lesson_id === "string") completedLessons.add(detail.lesson_id);
-      }
-    }
-    if (Array.isArray(progress.completed_lessons)) {
-      for (const lessonId of progress.completed_lessons) {
-        if (typeof lessonId === "string") completedLessons.add(lessonId);
-      }
-    }
-  }
-
   return (
-    <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">        <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
+    <div className="mt-6">
+      <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
         <h3 className="text-lg font-bold text-[#06201c]">Training Content</h3>
         {sections.length === 0 ? <p className="mt-4 text-sm text-[#52736a]">No content available yet.</p> : null}
-        <section className="mt-4 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-4 py-3">
-          <p className="text-sm font-bold text-[#06201c]">View participant progress</p>
-          {hasEnrolledParticipants ? (
-                <div className="mt-3">
-                  <label htmlFor={participantPickerId} className="block text-sm font-semibold text-[#06201c]">Participant</label>
-                  <select id={participantPickerId} value={participantEmail} onChange={(e) => setParticipantEmail(e.target.value)} className="mt-1.5 h-10 w-full rounded-xl border border-[#d7e5df] bg-white px-3 text-sm text-[#06201c] outline-none focus:border-[#1f6a58] focus:ring-2 focus:ring-[#1f6a58]/20">
-                    <option value="">Select an enrolled participant</option>
-                    {enrolledEmails.map((email) => <option key={email} value={email}>{email}</option>)}
-                  </select>
-                </div>
-              ) : <p className="mt-3 text-xs text-[#52736a]">No enrolled participant email is available.</p>}
-        </section>
-              <ul className="mt-4 space-y-3">
+        <ul className="mt-4 space-y-3">
           {sections.map((section, sIndex) => {
             const sectionId = typeof section.id === "string" ? section.id : String(sIndex);
             const sectionTitle = typeof section.title === "string" ? section.title : "Untitled section";
             const lessons: Array<Record<string, unknown>> = Array.isArray(section.lessons) ? section.lessons : [];
-            const completedInSession = lessons.filter((lesson) => typeof lesson.id === "string" && completedLessons.has(lesson.id)).length;
             const sessionExpanded = expandedSession === sectionId;
             return (
               <li key={sectionId} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-4">
                 <button type="button" onClick={() => setExpandedSession((current) => current === sectionId ? null : sectionId)} className="flex w-full items-center justify-between gap-3 text-left">
                   <span className="min-w-0">
                     <span className="block text-sm font-bold text-[#06201c]">{sectionTitle}</span>
-                    <span className="mt-1 block text-xs text-[#52736a]">{completedInSession}/{lessons.length} lessons completed</span>
+                    <span className="mt-1 block text-xs text-[#52736a]">{lessons.length} {lessons.length === 1 ? "lesson" : "lessons"}</span>
                   </span>
                   <span className="shrink-0 text-sm font-bold text-[#1f6a58]" aria-hidden="true">{sessionExpanded ? "−" : "+"}</span>
                 </button>
@@ -1747,7 +1703,6 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
                     const lessonType = typeof lesson.type === "string" && lesson.type.trim() ? lesson.type : "lesson";
                     const isAssessment = ["quiz", "exam", "test", "survey"].includes(lessonType.toLowerCase()) || /\bquiz\b|\bexam\b/i.test(lessonTitle);
                     const isExpanded = expandedLesson === lessonId;
-                    const isCompleted = completedLessons.has(lessonId);
                     return (
                       <li key={lessonId} className="rounded-lg bg-white p-3">
                         <div className="flex items-center justify-between gap-3">
@@ -1757,16 +1712,11 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
                             className="flex-1 text-left"
                           >
                             <div className="flex items-center gap-2">
-                              {isCompleted ? (
-                                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1f6a58] text-xs text-white">✓</span>
-                              ) : (
-                                <span className="flex h-5 w-5 items-center justify-center rounded-full border border-[#d7e5df] text-xs text-[#7f9d94]">{lIndex + 1}</span>
-                              )}
+                              <span className="flex h-5 w-5 items-center justify-center rounded-full border border-[#d7e5df] text-xs text-[#7f9d94]">{lIndex + 1}</span>
                               <p className="text-sm font-semibold text-[#06201c]">{lessonTitle}</p>
                               <span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-[10px] font-bold text-[#2563eb]">{humanizeLabel(isAssessment ? "assessment" : lessonType)}</span>
                             </div>
                           </button>
-                          <span className={`text-xs font-bold ${isCompleted ? "text-[#16825b]" : "text-[#8a5a00]"}`}>{isCompleted ? "Completed" : "Not completed"}</span>
                         </div>
                         {isExpanded ? (
                           <div className="mt-3 space-y-3 pl-7">
@@ -1814,13 +1764,6 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
           })}
         </ul>
       </section>
-      <aside className="space-y-5">
-        <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Progress</p>
-          {normalizedParticipantEmail ? <p className="mt-1 text-xs text-[#52736a]">Showing progress for {normalizedParticipantEmail}</p> : null}
-          {progressQuery.isLoading ? <p className="mt-2 text-sm text-[#52736a]">Loading...</p> : progressQuery.isError ? <p role="alert" className="mt-2 text-sm font-semibold text-[#b42318]">Progress is temporarily unavailable from the Training API.</p> : <ProgressSummaryCard data={progressQuery.data} />}
-        </section>
-      </aside>
     </div>
   );
 }

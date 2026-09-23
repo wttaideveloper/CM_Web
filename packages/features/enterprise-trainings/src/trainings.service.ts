@@ -313,7 +313,7 @@ export type UpdateTrainingPayload = Partial<CreateTrainingPayload>;
 /** Payload for `POST /api/v1/trainings/{id}/sections`. */
 export interface CreateTrainingSectionPayload {
   title: string;
-  type?: "session" | "video" | "live" | "venue" | string | null;
+  type?: "session" | "video" | "hybrid" | "live" | "venue" | string | null;
   description?: string | null;
   order?: number | null;
   scheduled_at?: string | null;
@@ -1701,8 +1701,8 @@ export async function listTrainingAnnouncements(trainingId: string): Promise<unk
 
 // ---- Discussion threaded replies ----
 
-/** Replies to a discussion — `POST /discussions/{did}/replies` with `{message, is_answer?}`. */
-export async function createDiscussionReply(trainingId: string, discussionId: string, payload: { message: string; is_answer?: boolean }): Promise<unknown> {
+/** Replies to a discussion — `POST /discussions/{did}/replies` with `{answer, is_answer?}`. */
+export async function createDiscussionReply(trainingId: string, discussionId: string, payload: { answer: string; is_answer?: boolean }): Promise<unknown> {
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/discussions/${encodeURIComponent(discussionId)}/replies`, {
     method: "POST",
     credentials: "include",

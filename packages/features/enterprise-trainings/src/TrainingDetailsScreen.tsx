@@ -8,24 +8,23 @@ import { useParams } from "next/navigation";
 import ProgressSummaryCard from "./ProgressSummaryCard";
 import TrainingActionsMenu from "./TrainingActionsMenu";
 import { ParticipantDashboardCard, ProviderDashboardCard } from "./dashboard-cards";
-import { TrainingAssessmentsTab, TrainingAssignmentsTab, TrainingContentTab, TrainingEnrolmentsTab, TrainingLiveTab, TrainingReviewsTab, TrainingSectionsTab } from "./TrainingDetailsSections";
+import { TrainingAssessmentsTab, TrainingAttendanceTab, TrainingContentTab, TrainingEnrolmentsTab, TrainingLiveTab, TrainingSectionsTab } from "./TrainingDetailsSections";
 import { displayValue, formatTrainingDate, formatTrainingPrice, humanizeLabel } from "./detail-formatters";
 import { getTrainingStatusBadgeClass, getTrainingStatusLabel } from "./training-status";
-import { getTrainingAdminNotes, getTrainingById, getTrainingProgress, getTrainingSections, listTrainingEnrolments, downloadTrainingCalendar, downloadTrainingDownloads, downloadTrainingNotesPdf, getTrainingMeetingLink, getTrainingModerationHistory, publishTrainingEnterprise, getTrainingParticipantDashboard, getTrainingProviderDashboard, getTrainingReports, TrainingsApiError } from "./trainings.service";
+import { getTrainingAdminNotes, getTrainingById, getTrainingProgress, getTrainingSections, listTrainingEnrolments, downloadTrainingDownloads, downloadTrainingNotesPdf, getTrainingMeetingLink, getTrainingModerationHistory, publishTrainingEnterprise, getTrainingParticipantDashboard, getTrainingProviderDashboard, TrainingsApiError } from "./trainings.service";
+import TrainingCalendarAction from "./TrainingCalendarAction";
 
-type TrainingDetailsTab = "details" | "content" | "sections" | "enrolments" | "assessments" | "assignments" | "live" | "reviews" | "dashboards" | "reports";
+type TrainingDetailsTab = "details" | "content" | "sections" | "enrolments" | "attendance" | "assessments" | "live" | "dashboards";
 
 const trainingDetailsTabs: ReadonlyArray<{ id: TrainingDetailsTab; label: string }> = [
   { id: "details", label: "Details" },
   { id: "content", label: "Content" },
   { id: "sections", label: "Sessions & Lessons" },
   { id: "enrolments", label: "Enrolments" },
+  { id: "attendance", label: "Attendance" },
   { id: "assessments", label: "Assessments" },
-  { id: "assignments", label: "Assignments" },
   { id: "live", label: "Live & Discussions" },
-  { id: "reviews", label: "Reviews" },
   { id: "dashboards", label: "Dashboards" },
-  { id: "reports", label: "Reports" },
 ];
 
 /** Shows the latest super-admin reject / request-changes note on the Training detail page. */
@@ -61,20 +60,6 @@ function ParticipantToolbar({ trainingId, status, trainingMeetingLink }: { train
   const [feedback, setFeedback] = useState<string | null>(null);
   const [meetingLink, setMeetingLink] = useState<string | null>(null);
   const [moderationExpanded, setModerationExpanded] = useState(false);
-  const calendarMutation = useMutation({
-    mutationFn: () => downloadTrainingCalendar(trainingId),
-    onSuccess: (data) => {
-      const url = URL.createObjectURL(data.blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = data.filename || `training-${trainingId}.ics`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setFeedback("Calendar downloaded.");
-    },
-    onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to download calendar."),
-  });
-
   const fileDownload = (data: { blob: Blob; filename: string | null }, fallback: string, success: string) => {
     const url = URL.createObjectURL(data.blob);
     const anchor = document.createElement("a");
@@ -145,9 +130,7 @@ function ParticipantToolbar({ trainingId, status, trainingMeetingLink }: { train
   return (
     <div className="mt-4 rounded-2xl border border-[#e1ebe6] bg-[#f9fcfa] p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" onClick={() => calendarMutation.mutate()} disabled={calendarMutation.isPending} className="h-9 rounded-full border border-[#1f6a58] px-4 text-xs font-bold text-[#1f6a58] hover:bg-[#e8f6ee] disabled:opacity-60">
-          {calendarMutation.isPending ? "..." : "Download Calendar"}
-        </button>
+        <TrainingCalendarAction trainingId={trainingId} />
         <button type="button" onClick={() => downloadsMutation.mutate()} disabled={downloadsMutation.isPending} className="h-9 rounded-full border border-[#1f6a58] px-4 text-xs font-bold text-[#1f6a58] hover:bg-[#e8f6ee] disabled:opacity-60">
           {downloadsMutation.isPending ? "..." : "Downloads"}
         </button>
@@ -216,7 +199,7 @@ function DetailItem({ label, value }: { label: string; value: string }) {
   }
 
   return (
-    <div>
+    <div className="training-detail-item">
       <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">{label}</p>
       <p className="mt-1 text-sm font-semibold text-[#06201c]">{value}</p>
     </div>
@@ -225,7 +208,7 @@ function DetailItem({ label, value }: { label: string; value: string }) {
 
 function DetailGroupHeading({ children }: { children: string }) {
   return (
-    <div className="col-span-full border-b border-[#edf3f0] pb-2 pt-2 first:pt-0">
+    <div className="training-detail-group-heading col-span-full border-b border-[#edf3f0] pb-2 pt-2 first:pt-0">
       <h4 className="text-sm font-bold text-[#1f6a58]">{children}</h4>
     </div>
   );
@@ -419,7 +402,6 @@ export default function TrainingDetailsScreen({
               <DetailItem label="Session mode" value={displayValue((training as unknown as Record<string, unknown>).session_mode as string)} />
               <DetailItem label="Check-in" value={String((training as unknown as Record<string, unknown>).check_in ?? "—")} />
               <DetailItem label="Pass code" value={displayValue((training as unknown as Record<string, unknown>).pass_code as string)} />
-              <DetailItem label="Reviews" value={Array.isArray((training as unknown as Record<string, unknown>).reviews) ? `${((training as unknown as Record<string, unknown>).reviews as unknown[]).length} reviews` : displayValue(String((training as unknown as Record<string, unknown>).review_count ?? (training as unknown as Record<string, unknown>).reviews_count ?? (training as unknown as Record<string, unknown>).average_rating ?? "—"))} />
               <DetailItem label="Discussions" value={Array.isArray((training as unknown as Record<string, unknown>).discussions) ? `${((training as unknown as Record<string, unknown>).discussions as unknown[]).length} threads` : displayValue((training as unknown as Record<string, unknown>).discussions as string)} />
               <DetailItem label="Announcements" value={Array.isArray((training as unknown as Record<string, unknown>).announcements) ? `${((training as unknown as Record<string, unknown>).announcements as unknown[]).length} items` : displayValue((training as unknown as Record<string, unknown>).announcements as string)} />
               <DetailItem label="PDFs" value={Array.isArray((training as unknown as Record<string, unknown>).documents) ? `${((training as unknown as Record<string, unknown>).documents as unknown[]).length} pdfs` : "—"} />
@@ -431,10 +413,12 @@ export default function TrainingDetailsScreen({
               <DetailItem label="Created" value={formatTrainingDate(training.created_at)} />
               <DetailItem label="Updated" value={formatTrainingDate(training.updated_at)} />
             </div>
-            <div className="mt-6">
-              <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Description</p>
-              <p className="mt-2 text-sm leading-6 text-[#52736a]">{training.description || "—"}</p>
-            </div>
+            {training.description?.trim() ? (
+              <div className="mt-6">
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Description</p>
+                <p className="mt-2 text-sm leading-6 text-[#52736a]">{training.description}</p>
+              </div>
+            ) : null}
             {Array.isArray(training.tags) && training.tags.length > 0 ? (
               <div className="mt-6">
                 <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Tags</p>
@@ -472,6 +456,11 @@ export default function TrainingDetailsScreen({
                 </div>
               </div>
             ) : null}
+            <style jsx global>{`
+              .training-detail-group-heading:not(:has(+ .training-detail-item)) {
+                display: none;
+              }
+            `}</style>
           </section>
           <aside className="space-y-5">
             <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
@@ -512,12 +501,10 @@ export default function TrainingDetailsScreen({
       {activeTab === "content" ? <TrainingContentTab trainingId={trainingId} /> : null}
       {activeTab === "sections" ? <div className="mt-6"><TrainingSectionsTab trainingId={trainingId} /></div> : null}
       {activeTab === "enrolments" ? <div className="mt-6"><TrainingEnrolmentsTab trainingId={trainingId} /></div> : null}
+      {activeTab === "attendance" ? <div className="mt-6"><TrainingAttendanceTab trainingId={trainingId} /></div> : null}
       {activeTab === "assessments" ? <div className="mt-6"><TrainingAssessmentsTab trainingId={trainingId} /></div> : null}
-      {activeTab === "assignments" ? <div className="mt-6"><TrainingAssignmentsTab trainingId={trainingId} /></div> : null}
-      {activeTab === "reviews" ? <div className="mt-6"><TrainingReviewsTab trainingId={trainingId} /></div> : null}
       {activeTab === "live" ? <div className="mt-6"><TrainingLiveTab trainingId={trainingId} /></div> : null}
       {activeTab === "dashboards" ? <div className="mt-6"><TrainingDashboardsTab trainingId={trainingId} /></div> : null}
-      {activeTab === "reports" ? <div className="mt-6"><TrainingReportsTab trainingId={trainingId} /></div> : null}
     </div>
   );
 }
@@ -527,92 +514,8 @@ function TrainingDashboardsTab({ trainingId }: { trainingId: string }) {
   const providerQuery = useQuery({ queryKey: ["trainings", trainingId, "dashboard", "provider"], queryFn: () => getTrainingProviderDashboard(trainingId), enabled: Boolean(trainingId), retry: false });
   return (
     <div className="grid gap-5">
-      {participantQuery.isLoading ? <p className="text-sm text-[#52736a]">Loading...</p> : participantQuery.isError ? <p className="text-sm text-[#52736a]">Participant dashboard will be available once the training has active participants.</p> : participantQuery.data ? <ParticipantDashboardCard dashboard={participantQuery.data} /> : null}
+      {participantQuery.isLoading ? <p className="text-sm text-[#52736a]">Loading...</p> : participantQuery.isError ? <p className="text-sm text-[#52736a]">Participant dashboard will be available once the training has active participants.</p> : participantQuery.data ? <ParticipantDashboardCard dashboard={participantQuery.data} trainingId={trainingId} /> : null}
       {providerQuery.isLoading ? <p className="text-sm text-[#52736a]">Loading...</p> : providerQuery.isError ? <p className="text-sm text-[#52736a]">Provider dashboard will be available once the training has active participants.</p> : providerQuery.data ? <ProviderDashboardCard dashboard={providerQuery.data} /> : null}
-    </div>
-  );
-}
-
-function TrainingReportsTab({ trainingId }: { trainingId: string }) {
-  const reportsQuery = useQuery({ queryKey: ["trainings", trainingId, "reports"], queryFn: () => getTrainingReports(trainingId), enabled: Boolean(trainingId), retry: false });
-  return (
-    <div className="grid gap-5">
-      <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
-        <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Training Reports</p>
-        {reportsQuery.isLoading ? <p className="mt-2 text-sm text-[#52736a]">Loading...</p> : reportsQuery.isError ? <p className="mt-2 text-sm text-[#52736a]">Reports will be available once training has active participants.</p> : <TrainingReportCard report={reportsQuery.data} />}
-      </section>
-    </div>
-  );
-}
-
-function humanizeReportKey(value: string): string {
-  return value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function ReportRow({ label, value, tone }: { label: string; value: string; tone?: "good" | "warn" | "bad" }) {
-  const chipClass = tone === "good" ? "rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[10px] font-bold text-[#1f6a58]" : tone === "warn" ? "rounded-full bg-[#fff8e1] px-2 py-0.5 text-[10px] font-bold text-[#8a5a00]" : tone === "bad" ? "rounded-full bg-[#fff1f0] px-2 py-0.5 text-[10px] font-bold text-[#b42318]" : "rounded-full bg-[#f0f3f2] px-2 py-0.5 text-[10px] font-bold text-[#52736a]";
-  return (
-    <li className="flex items-center justify-between gap-2 rounded-lg border border-[#e1ebe6] bg-[#f9fcfa] px-3 py-2">
-      <span className="text-sm text-[#06201c]">{label}</span>
-      <span className={chipClass}>{value}</span>
-    </li>
-  );
-}
-
-function ReportGrid({ values }: { values: Array<{ label: string; value: string }> }) {
-  return (
-    <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-      {values.map((item) => (
-        <div key={item.label} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-3">
-          <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">{item.label}</p>
-          <p className="mt-1 text-lg font-bold text-[#06201c]">{item.value}</p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function statusTone(status: string): "good" | "warn" | "bad" | undefined {
-  const normalized = status.trim().toLowerCase();
-  if (["enrolled", "attended", "active", "completed", "approved", "published", "total"].includes(normalized)) return "good";
-  if (["pending", "pending_approval", "waitlist", "waitlisted", "draft"].includes(normalized)) return "warn";
-  if (["cancelled", "rejected", "no_show", "expired"].includes(normalized)) return "bad";
-  return undefined;
-}
-
-/** Renders a single training report (`{ type, data }`). */
-function TrainingReportCard({ report }: { report: unknown }) {
-  const record = (report ?? {}) as Record<string, unknown>;
-  const type = typeof record.type === "string" ? record.type : "";
-  const data = record.data as Record<string, unknown> | undefined;
-  if (!data || typeof data !== "object") return <p className="mt-2 text-sm text-[#52736a]">No report data available.</p>;
-  const rawTotal = data.total;
-  const total = rawTotal === null || rawTotal === undefined ? "" : String(rawTotal);
-  const byStatus = data.by_status && typeof data.by_status === "object" ? (data.by_status as Record<string, unknown>) : undefined;
-  const statusEntries = byStatus ? Object.entries(byStatus).sort((a, b) => Number(b[1]) - Number(a[1])) : [];
-  const extraEntries = Object.entries(data).filter(([k]) => !["total", "by_status"].includes(k)).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
-  return (
-    <div>
-      <div className="mt-2 flex items-center gap-2">
-        {type ? <span className="rounded-full bg-[#f0f3f2] px-2 py-0.5 text-[10px] font-bold text-[#52736a]">{humanizeReportKey(type)}</span> : null}
-        {total !== "" ? <span className="rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[10px] font-bold text-[#1f6a58]">{total} total</span> : null}
-      </div>
-      {statusEntries.length > 0 ? (
-        <div>
-          <p className="mt-4 text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">By status</p>
-          <ul className="mt-2 grid gap-2 sm:grid-cols-2">
-            {statusEntries.map(([status, count]) => (
-              <ReportRow key={status} label={humanizeReportKey(status)} value={String(count)} tone={statusTone(status)} />
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {extraEntries.length > 0 ? (
-        <div>
-          <p className="mt-4 text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Details</p>
-          <ReportGrid values={extraEntries.map(([k, v]) => ({ label: humanizeReportKey(k), value: v === null || v === undefined ? "—" : typeof v === "object" ? JSON.stringify(v) : String(v) }))} />
-        </div>
-      ) : null}
     </div>
   );
 }

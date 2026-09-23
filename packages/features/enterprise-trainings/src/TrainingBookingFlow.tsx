@@ -99,7 +99,10 @@ export default function TrainingBookingFlow({ trainingId: trainingIdProp }: { tr
             : "Booking confirmed. Check your email for details.",
       );
       setStep("done");
-      void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "enrolments"] });
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "enrolments"] }),
+        queryClient.invalidateQueries({ queryKey: ["trainings", "list"] }),
+      ]);
     },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to complete booking."),
   });
@@ -190,7 +193,6 @@ export default function TrainingBookingFlow({ trainingId: trainingIdProp }: { tr
             <p role="status" className="mx-auto max-w-md rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">{doneMessage}</p>
             <div className="flex justify-center gap-3">
               <Link href={`/admin/trainings/${trainingId}`} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white inline-flex items-center">View training</Link>
-              <Link href="/admin/trainings/my-enrolments" className="h-11 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a] inline-flex items-center">My enrolments</Link>
             </div>
           </section>
         ) : null}

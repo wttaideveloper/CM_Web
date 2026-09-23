@@ -17,7 +17,7 @@ export { default as EditProgramScreen } from "./EditProgramScreen";
 export { default as ProgramDetailsScreen } from "./ProgramDetailsScreen";
 export { PlatformApprovalScreen } from "./PlatformApprovalScreen";
 export { ParticipantEnrolmentsScreen } from "./ParticipantEnrolmentsScreen";
-export { TrainingSectionsTab, TrainingEnrolmentsTab, TrainingLiveTab, TrainingContentTab, TrainingAssessmentsTab, TrainingAssignmentsTab } from "./TrainingDetailsSections";
+export { TrainingSectionsTab, TrainingEnrolmentsTab, TrainingAttendanceTab, TrainingOrdersTab, TrainingLiveTab, TrainingContentTab, TrainingAssessmentsTab, TrainingAssignmentsTab } from "./TrainingDetailsSections";
 export * from "./training-form-config.service";
 export * from "./training-form-configuration.queries";
 export { default as TrainingFormBuilderScreen } from "./TrainingFormBuilderScreen";

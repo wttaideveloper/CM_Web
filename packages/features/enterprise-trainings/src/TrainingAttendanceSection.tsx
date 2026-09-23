@@ -40,6 +40,20 @@ function humanizeStatus(value: string): string {
   return normalized ? normalized.replace(/\b\w/g, (character) => character.toUpperCase()) : "Status unavailable";
 }
 
+function isActiveRegistration(status: string): boolean {
+  const normalized = status.trim().toLowerCase().replace(/[_-]+/g, " ");
+  return normalized !== "cancelled" && normalized !== "canceled";
+}
+
+function isAttended(enrolment: AttendanceEnrolment): boolean {
+  const normalized = enrolment.status.trim().toLowerCase().replace(/[_-]+/g, " ");
+  return enrolment.checkedInAt !== null || normalized === "attended" || normalized === "checked in" || normalized === "completed";
+}
+
+function isNoShow(enrolment: AttendanceEnrolment): boolean {
+  return enrolment.status.trim().toLowerCase().replace(/[_-]+/g, " ") === "no show";
+}
+
 /**
  * Renders training enrolment QR check-in: camera scan, manual code entry,
  * validate-then-check-in, and per-enrolment check-in / undo with `checked_in_at`.
@@ -70,7 +84,11 @@ export default function TrainingAttendanceSection({ trainingId }: { trainingId: 
   if (enrolmentsQuery.isError) return <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm"><p role="alert" className="font-semibold text-[#b42318]">Unable to load check-in.</p><button type="button" onClick={() => void enrolmentsQuery.refetch()} className="mt-3 font-semibold text-[#1f6a58] underline">Retry</button></section>;
   const pending = (enrolment: AttendanceEnrolment) => (checkInMutation.isPending && checkInMutation.variables?.enrolmentId === enrolment.enrolmentId) || (uncheckInMutation.isPending && uncheckInMutation.variables?.enrolmentId === enrolment.enrolmentId);
   const error = checkInMutation.isError || uncheckInMutation.isError || validateQrMutation.isError || qrCheckInMutation.isError;
+  const registeredCount = enrolments.filter((enrolment) => isActiveRegistration(enrolment.status)).length;
+  const attendedCount = enrolments.filter(isAttended).length;
+  const noShowCount = enrolments.filter(isNoShow).length;
   return <section className="space-y-5">
+    <div className="grid gap-4 sm:grid-cols-3">{[{ label: "Registered", value: registeredCount }, { label: "Attended", value: attendedCount }, { label: "No Show", value: noShowCount }].map((metric) => <article key={metric.label} className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm"><p className="text-xs font-bold uppercase tracking-[.12em] text-[#7f9d94]">{metric.label}</p><p className="mt-2 text-3xl font-bold text-[#06201c]">{metric.value}</p></article>)}</div>
     <section className="rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-bold text-[#06201c]">Enrolment check-in</p><p className="mt-1 text-sm text-[#52736a]">Scan an enrolment QR code or enter it manually.</p></div><button ref={scanQrTriggerRef} type="button" onClick={() => setScannerOpen(true)} disabled={validateQrMutation.isPending || qrCheckInMutation.isPending} className="h-10 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">Scan QR</button></div><form onSubmit={(event) => { event.preventDefault(); validateQrCode(qrCode.trim()); }} className="mt-4 flex flex-col gap-3 border-t border-[#edf3f0] pt-4 sm:flex-row sm:items-end"><label className="flex-1"><span className="mb-1 block text-sm font-semibold text-[#31594d]">Or enter QR code manually</span><input value={qrCode} onChange={(event) => setQrCode(event.target.value)} placeholder="Enter QR code..." className="h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]" /></label><button type="submit" disabled={!qrCode.trim() || validateQrMutation.isPending || qrCheckInMutation.isPending} className="h-10 rounded-full border border-[#1f6a58] px-4 text-sm font-bold text-[#1f6a58] disabled:cursor-not-allowed disabled:opacity-60">{validateQrMutation.isPending ? "Validating..." : "Validate"}</button></form></section>
     {scannerOpen ? <QrScanner onClose={() => { setScannerOpen(false); window.requestAnimationFrame(() => scanQrTriggerRef.current?.focus()); }} onDetected={(code) => { setQrCode(code); setScannerOpen(false); window.requestAnimationFrame(() => scanQrTriggerRef.current?.focus()); validateQrCode(code); }} /> : null}
     {validatedEnrolment?.valid ? <section className="rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] p-4"><p className="text-sm font-bold text-[#1f6a58]">Valid enrolment</p><p className="mt-2 font-bold text-[#06201c]">{validatedEnrolment.participant_name}</p><p className="mt-1 text-sm text-[#52736a]">{validatedEnrolment.participant_email}</p><p className="mt-2 text-sm font-semibold text-[#31594d]">{humanizeStatus(validatedEnrolment.status)}</p>{validatedEnrolment.training_title ? <p className="mt-1 text-sm text-[#52736a]">{validatedEnrolment.training_title}</p> : null}{<button type="button" disabled={qrCheckInMutation.isPending} onClick={() => { if (!qrCheckInMutation.isPending) { setFeedback(null); qrCheckInMutation.mutate(qrCode.trim()); } }} className="mt-3 h-10 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">{qrCheckInMutation.isPending ? "Checking in..." : "Check In"}</button>}</section> : null}

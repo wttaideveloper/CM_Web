@@ -39,6 +39,9 @@ function TrainingCard({ training }: { training: TrainingListItem }) {
           <span className="text-[#52736a]">{training.delivery_mode || "—"} · {training.course_type || "—"}</span>
           <span className="font-semibold text-[#06201c]">{training.price ? `${training.price} ${training.currency ?? ""}`.trim() : "—"}</span>
         </div>
+        <Link href={`/trainings/${training.id}`} className="mt-4 block border-t border-[#edf3f0] pt-3 text-sm font-semibold text-[#1f6a58] hover:underline">
+          View training details
+        </Link>
       </div>
     </article>
   );
@@ -167,4 +170,3 @@ function PlatformTrainingsContent() {
     </>
   );
 }
-

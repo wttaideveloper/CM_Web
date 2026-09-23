@@ -6,7 +6,7 @@ import {
   useAuth,
 } from "@ihp/auth";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
   hasTemporaryPlatformWorkflowAccess,
@@ -17,11 +17,21 @@ type PlatformBuilderAuthGateProps = {
   children: ReactNode;
 };
 
+type SuperAdminSessionResponse = {
+  authenticated: true;
+  userId: string;
+};
+
 /**
  * Isolates Web Auth and the temporary fixed-user access check to Platform builder routes.
  */
 export default function PlatformBuilderAuthGate({ children }: PlatformBuilderAuthGateProps) {
   const { authenticated, isLoading, userId } = useAuth();
+  const [superAdminSession, setSuperAdminSession] = useState<{
+    isLoading: boolean;
+    authenticated: boolean;
+    userId: string | null;
+  }>({ isLoading: true, authenticated: false, userId: null });
   const pathname = usePathname();
   const hasRedirectedRef = useRef(false);
   const shellLoginUrl = useMemo(() => {
@@ -36,15 +46,84 @@ export default function PlatformBuilderAuthGate({ children }: PlatformBuilderAut
   }, [pathname]);
 
   useEffect(() => {
-    if (isLoading || authenticated || !shellLoginUrl || hasRedirectedRef.current) {
+    let cancelled = false;
+
+    fetch("/api/platform-super-admin/session", {
+      credentials: "include",
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          return null;
+        }
+
+        const body: unknown = await response.json();
+        if (
+          typeof body !== "object" ||
+          body === null ||
+          !("authenticated" in body) ||
+          body.authenticated !== true ||
+          !("userId" in body) ||
+          typeof body.userId !== "string"
+        ) {
+          return null;
+        }
+
+        return body as SuperAdminSessionResponse;
+      })
+      .then((session) => {
+        if (cancelled) {
+          return;
+        }
+
+        setSuperAdminSession({
+          isLoading: false,
+          authenticated: session !== null,
+          userId: session?.userId ?? null,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSuperAdminSession({
+            isLoading: false,
+            authenticated: false,
+            userId: null,
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const effectiveAuthenticated =
+    authenticated || superAdminSession.authenticated;
+  const effectiveUserId = superAdminSession.authenticated
+    ? superAdminSession.userId
+    : userId;
+
+  useEffect(() => {
+    if (
+      isLoading ||
+      superAdminSession.isLoading ||
+      effectiveAuthenticated ||
+      !shellLoginUrl ||
+      hasRedirectedRef.current
+    ) {
       return;
     }
 
     hasRedirectedRef.current = true;
     window.location.assign(shellLoginUrl);
-  }, [authenticated, isLoading, shellLoginUrl]);
+  }, [
+    effectiveAuthenticated,
+    isLoading,
+    shellLoginUrl,
+    superAdminSession.isLoading,
+  ]);
 
-  if (isLoading) {
+  if (isLoading || superAdminSession.isLoading) {
     return (
       <main
         aria-busy="true"
@@ -55,7 +134,7 @@ export default function PlatformBuilderAuthGate({ children }: PlatformBuilderAut
     );
   }
 
-  if (!authenticated) {
+  if (!effectiveAuthenticated) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-white px-6 text-center text-sm font-medium text-[#52736a]">
         {shellLoginUrl
@@ -76,7 +155,7 @@ export default function PlatformBuilderAuthGate({ children }: PlatformBuilderAut
     );
   }
 
-  if (!userId || !hasTemporaryPlatformWorkflowAccess(userId)) {
+  if (!effectiveUserId || !hasTemporaryPlatformWorkflowAccess(effectiveUserId)) {
     return (
       <main
         role="alert"
