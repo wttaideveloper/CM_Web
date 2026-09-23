@@ -3,27 +3,34 @@
 import {
   buildShellLoginUrlForPlatform,
   getPlatformAdminAppOrigin,
-  useAuth,
 } from "@ihp/auth";
+import { useQuery } from "@tanstack/react-query";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
-
-import {
-  hasTemporaryPlatformWorkflowAccess,
-  isTemporaryPlatformWorkflowAccessConfigured,
-} from "@/lib/temporary-platform-workflow-access";
 
 type PlatformBuilderAuthGateProps = {
   children: ReactNode;
 };
 
 /**
- * Isolates Web Auth and the temporary fixed-user access check to Platform builder routes.
+ * Protects Platform builder routes with the normal Web Auth session gate.
  */
 export default function PlatformBuilderAuthGate({ children }: PlatformBuilderAuthGateProps) {
-  const { authenticated, isLoading, userId } = useAuth();
   const pathname = usePathname();
   const hasRedirectedRef = useRef(false);
+  const sessionQuery = useQuery({
+    queryKey: ["platform", "super-admin-session"],
+    queryFn: async () => {
+      const response = await fetch("/api/platform-super-admin/session", { credentials: "include", cache: "no-store" });
+      const body: unknown = await response.json().catch(() => null);
+      if (response.status === 401 && typeof body === "object" && body !== null && "authenticated" in body && body.authenticated === false) return false;
+      if (!response.ok || typeof body !== "object" || body === null || !("authenticated" in body) || body.authenticated !== true) throw new Error("Unable to verify the Super Admin session.");
+      return true;
+    },
+    retry: false,
+    staleTime: 0,
+  });
+  const authenticated = sessionQuery.data === true;
   const shellLoginUrl = useMemo(() => {
     const platformAdminOrigin = getPlatformAdminAppOrigin();
     if (!platformAdminOrigin) {
@@ -36,15 +43,15 @@ export default function PlatformBuilderAuthGate({ children }: PlatformBuilderAut
   }, [pathname]);
 
   useEffect(() => {
-    if (isLoading || authenticated || !shellLoginUrl || hasRedirectedRef.current) {
+    if (sessionQuery.isPending || authenticated || !shellLoginUrl || hasRedirectedRef.current) {
       return;
     }
 
     hasRedirectedRef.current = true;
     window.location.assign(shellLoginUrl);
-  }, [authenticated, isLoading, shellLoginUrl]);
+  }, [authenticated, sessionQuery.isPending, shellLoginUrl]);
 
-  if (isLoading) {
+  if (sessionQuery.isPending) {
     return (
       <main
         aria-busy="true"
@@ -61,28 +68,6 @@ export default function PlatformBuilderAuthGate({ children }: PlatformBuilderAut
         {shellLoginUrl
           ? "Redirecting to secure sign in..."
           : "Secure sign-in is unavailable because the Platform or Shell origin is not configured."}
-      </main>
-    );
-  }
-
-  if (!isTemporaryPlatformWorkflowAccessConfigured()) {
-    return (
-      <main
-        role="alert"
-        className="flex min-h-screen items-center justify-center bg-white px-6 text-center text-sm font-medium text-[#8b3d1f]"
-      >
-        Temporary Platform workflow access is not configured for this environment.
-      </main>
-    );
-  }
-
-  if (!userId || !hasTemporaryPlatformWorkflowAccess(userId)) {
-    return (
-      <main
-        role="alert"
-        className="flex min-h-screen items-center justify-center bg-white px-6 text-center text-sm font-medium text-[#8b3d1f]"
-      >
-        Access denied. Your account is not approved for temporary Platform workflow access.
       </main>
     );
   }
