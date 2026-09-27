@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 
 import { usePathname } from "next/navigation";
 
-import type { ChatSocket } from "@ihp/chat-runtime";
+import { realtimeDebug, type ChatSocket } from "@ihp/chat-runtime";
 
 import {
   getCachedNotificationState,
@@ -252,12 +252,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function RealtimeProvider({
   adapter,
   children,
+  enabled = true,
 }: {
   adapter: RealtimeRuntimeAdapter;
   children: ReactNode;
+  enabled?: boolean;
 }) {
   const pathname = usePathname();
-  const shouldConnect = adapter.shouldConnect(pathname);
+  const shouldConnect = enabled && adapter.shouldConnect(pathname);
+
+  useEffect(() => {
+    realtimeDebug("provider", "shouldConnect", { value: shouldConnect });
+  }, [shouldConnect]);
   const socketRef = useRef<ChatSocket | null>(null);
   const socketTokenRef = useRef<string | null>(null);
   const [socket, setSocket] = useState<ChatSocket | null>(null);
@@ -345,6 +351,7 @@ export function RealtimeProvider({
   const refreshUnreadCounts = useCallback(async () => {
     try {
       const counts = await adapter.notificationClient.getUnreadCounts();
+      realtimeDebug("notification", "REST unread count loaded");
       commitNotificationState((current) => applyCountsSnapshot(current, counts));
     } catch (error) {
       commitNotificationState((current) => ({
@@ -358,6 +365,7 @@ export function RealtimeProvider({
   const refreshNotifications = useCallback(async () => {
     try {
       const history = await adapter.notificationClient.getNotificationHistory(1, 20);
+      realtimeDebug("notification", "REST history loaded");
       commitNotificationState((current) => mergeHistoryResponse(current, history, true));
     } catch (error) {
       commitNotificationState((current) => ({
@@ -458,6 +466,7 @@ export function RealtimeProvider({
 
   const handleNotification = useCallback(
     (payload: unknown) => {
+      realtimeDebug("notification", "socket notification received");
       if (process.env.NODE_ENV === "development") {
         console.log("[Admin socket] receive notification", payload);
       }
@@ -659,7 +668,7 @@ export function RealtimeProvider({
   }, [adapter.notificationClient, commitNotificationState]);
 
   useEffect(() => {
-    if (!shouldConnect) {
+    if (!enabled) {
       return;
     }
 
@@ -738,7 +747,26 @@ export function RealtimeProvider({
     return () => {
       active = false;
     };
-  }, [adapter.notificationClient, shouldConnect]);
+  }, [adapter.notificationClient, shouldConnect, enabled]);
+
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
+    const refresh = () => {
+      if (document.visibilityState === "visible") {
+        void Promise.all([refreshUnreadCounts(), refreshNotifications()]).catch(() => undefined);
+      }
+    };
+
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [refreshNotifications, refreshUnreadCounts, enabled]);
 
   useEffect(() => {
     if (!shouldConnect || !runtimeToken) {
@@ -767,20 +795,17 @@ export function RealtimeProvider({
         existingSocket.disconnect();
       }
 
-      nextSocket = adapter.createSocket(runtimeToken);
+      nextSocket = adapter.createSocket(runtimeToken ?? undefined);
       socketRef.current = nextSocket;
       socketTokenRef.current = runtimeToken;
       setSocket(nextSocket);
+      realtimeDebug("provider", "socket initialized");
       if (process.env.NODE_ENV === "development") {
         console.log("[Admin socket] instance created", {
           connected: nextSocket.connected,
           socketId: nextSocket.id,
         });
       }
-    } else if (nextSocket) {
-      nextSocket.auth = {
-        token: runtimeToken,
-      };
     }
 
     if (!nextSocket) {
@@ -796,6 +821,7 @@ export function RealtimeProvider({
 
       syncOnlinePresence();
       setStatus("connected");
+      realtimeDebug("socket", "connected", { socketId: nextSocket?.id, transport: nextSocket?.io.engine?.transport?.name });
       if (process.env.NODE_ENV === "development") {
         console.log("[Admin socket] connected", {
           socketId: nextSocket?.id,
@@ -811,6 +837,7 @@ export function RealtimeProvider({
       }
 
       setStatus("disconnected");
+      realtimeDebug("socket", "disconnected", { reason });
       if (process.env.NODE_ENV === "development") {
         console.log("[Admin socket] disconnected", {
           reason,
@@ -826,6 +853,10 @@ export function RealtimeProvider({
       }
 
       setStatus("reconnecting");
+      realtimeDebug("socket", "connect_error", {
+        name: error.name,
+        message: error.message,
+      });
       if (process.env.NODE_ENV === "development") {
         console.warn("[Admin socket] connect_error", {
           message: error.message,
@@ -847,6 +878,12 @@ export function RealtimeProvider({
           connected: nextSocket?.connected,
         });
       }
+
+      void adapter.getToken().then((token) => {
+        if (active && nextSocket) nextSocket.auth = { token };
+      }).catch(() => {
+        if (active) adapter.clearToken();
+      });
     };
 
     const handleReconnect = (attempt: number) => {
@@ -855,6 +892,7 @@ export function RealtimeProvider({
       }
 
       setStatus("connected");
+      realtimeDebug("socket", "reconnected", { attempt, socketId: nextSocket?.id });
       queueNotificationReconciliation("reconnect");
       if (process.env.NODE_ENV === "development") {
         console.log("[Admin socket] reconnect", {

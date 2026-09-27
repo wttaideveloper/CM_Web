@@ -6,16 +6,12 @@ export type ChatSocket = Socket;
 
 export function createChatSocket(token?: string): ChatSocket {
   const socketPath = "/api/socket.io";
-
-  return io(CHAT_SOCKET_URL, {
+  const socket = io(CHAT_SOCKET_URL, {
     path: socketPath,
     autoConnect: false,
-    transports: ["polling"],
+    auth: token ? { token } : undefined,
+    withCredentials: true,
     timeout: 10000,
-    auth: token
-      ? {
-          token,
-        }
-      : undefined,
   });
+  return socket;
 }
