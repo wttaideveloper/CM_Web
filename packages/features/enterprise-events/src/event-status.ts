@@ -185,3 +185,8 @@ export function canEditEvent(status: EventStatus): boolean {
 export function canDeleteEvent(status: EventStatus): boolean {
   return status === "draft";
 }
+
+/** Returns whether an Event may expose live or historical operational data. */
+export function hasOperationalEventDataAccess(status: EventStatus): boolean {
+  return status === "published" || status === "suspended" || status === "completed" || status === "cancelled";
+}

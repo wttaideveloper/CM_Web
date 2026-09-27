@@ -2,6 +2,8 @@ import { authenticatedFetch } from "@ihp/auth";
 
 const fetch = authenticatedFetch;
 
+export type EventLifecycleState = "upcoming" | "ongoing" | "finished";
+
 /** An event returned by the Events list API. */
 export interface Event {
   id: string;
@@ -42,6 +44,7 @@ export interface Event {
   custom_fields: EventCustomField[];
   sessions: EventSessionRecord[];
   status: EventStatus;
+  lifecycle_state?: EventLifecycleState | null;
   is_deleted: boolean;
   created_at: string;
   updated_at: string;
@@ -752,6 +755,7 @@ function normalizeEventResponse(value: unknown): Event | null {
     created_at: value.created_at as string,
     updated_at: value.updated_at as string,
     status: value.status as EventStatus,
+    lifecycle_state: value.lifecycle_state === "upcoming" || value.lifecycle_state === "ongoing" || value.lifecycle_state === "finished" ? value.lifecycle_state : null,
   };
 }
 
