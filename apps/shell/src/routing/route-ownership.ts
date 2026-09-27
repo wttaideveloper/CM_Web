@@ -99,7 +99,7 @@ export function isPublicAuthRoute(pathname: string) {
 }
 
 export function isRegistrationRoute(pathname: string) {
-  return pathname === ROUTE_PATHS.public.auth.register;
+  return pathname === ROUTE_PATHS.public.auth.register || pathname === "/auth/application-status";
 }
 
 export function isEnterpriseRoute(pathname: string) {

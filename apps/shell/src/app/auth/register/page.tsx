@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo } from "react";
 
 import { useRegistration, type RegistrationStep } from "@/contexts/RegistrationContext";
@@ -9,14 +9,18 @@ import OwnerDetailsStep from "@/components/auth/register/OwnerDetailsStep";
 import VerifyEmailStep from "@/components/auth/register/VerifyEmailStep";
 import OrganizationStep from "@/components/auth/register/OrganizationStep";
 import PlanStep from "@/components/auth/register/PlanStep";
-import RegistrationSuccessStep from "@/components/auth/register/RegistrationSuccessStep";
+import DocumentsStep from "@/components/auth/register/DocumentsStep";
+import ReviewApplicationStep from "@/components/auth/register/ReviewApplicationStep";
+import ApplicationStatusStep from "@/components/auth/register/ApplicationStatusStep";
 
 const stepLabels: Array<{ step: RegistrationStep; label: string }> = [
   { step: 1, label: "Account" },
   { step: 2, label: "Verify" },
   { step: 3, label: "Organization" },
   { step: 4, label: "Plan" },
-  { step: 5, label: "Complete" },
+  { step: 5, label: "Documents" },
+  { step: 6, label: "Review" },
+  { step: 7, label: "Status" },
 ];
 
 function CheckIcon() {
@@ -37,7 +41,7 @@ function Stepper({
   onStepClick: (step: RegistrationStep) => void;
 }) {
   return (
-    <div className="mb-4 grid grid-cols-5 gap-1.5">
+    <div className="mb-4 grid grid-cols-7 gap-1.5">
       {stepLabels.map((item) => {
         const completed = item.step < maxStepReached;
         const current = item.step === currentStep;
@@ -153,10 +157,9 @@ function LeftPanel() {
 }
 
 function AuthRegisterPageContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { authenticated, isLoading, membership, userId, user } = useAuth();
-  const { currentStep, maxStepReached, goToStep, advanceToStep, clearRegistrationState, updateRegistration, socialOwnerSignup } =
+  const { currentStep, maxStepReached, goToStep, advanceToStep, updateRegistration } =
     useRegistration();
 
   const isGoogleOwnerSignup = searchParams.get("owner_signup") === "google";
@@ -211,26 +214,18 @@ function AuthRegisterPageContent() {
           <PlanStep
             onBack={() => goToStep(3)}
             onCompleted={() => {
-              if (socialOwnerSignup) {
-                window.location.assign("/auth/validate");
-                return;
-              }
-
               advanceToStep(5);
             }}
           />
         );
       case 5:
-        return (
-          <RegistrationSuccessStep
-            onContinueToSignIn={() => {
-              clearRegistrationState();
-              router.push("/auth/login");
-            }}
-          />
-        );
+        return <DocumentsStep onBack={() => goToStep(4)} onContinue={() => advanceToStep(6)} />;
+      case 6:
+        return <ReviewApplicationStep onBack={() => goToStep(5)} onSubmitted={() => advanceToStep(7)} />;
+      case 7:
+        return <ApplicationStatusStep onBackToDocuments={() => goToStep(5)} />;
     }
-  }, [advanceToStep, clearRegistrationState, currentStep, goToStep, router, socialOwnerSignup, updateRegistration]);
+  }, [advanceToStep, currentStep, goToStep, updateRegistration]);
 
   return (
     <main className="min-h-screen bg-white text-[#06201c] lg:h-[100svh] lg:overflow-hidden">

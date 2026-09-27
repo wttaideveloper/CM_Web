@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import { useRegistration } from "@/contexts/RegistrationContext";
-import { registerOrganization, RegistrationApiError } from "@/services/registration-ui.service";
+import { createTenantApplication, getMyTenantApplication, RegistrationApiError } from "@/services/registration-ui.service";
 
 type PlanStepProps = {
   onBack: () => void;
@@ -66,13 +66,13 @@ function RadioIndicator({ selected }: { selected: boolean }) {
 export default function PlanStep({ onBack, onCompleted }: PlanStepProps) {
   const {
     userId,
-    password,
-    socialOwnerSignup,
     tenantName,
     tenantSlug,
     industryType,
     companySize,
+    country,
     plan,
+    tenantApplication,
     updateRegistration,
   } = useRegistration();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -83,7 +83,7 @@ export default function PlanStep({ onBack, onCompleted }: PlanStepProps) {
     setFormError(null);
   }
 
-  async function handleCompleteSetup() {
+  async function handleContinueToDocuments() {
     if (isSubmitting) {
       return;
     }
@@ -92,28 +92,39 @@ export default function PlanStep({ onBack, onCompleted }: PlanStepProps) {
     setFormError(null);
 
     try {
-      const response = await registerOrganization({
-        userId,
-        ...(socialOwnerSignup ? {} : { password }),
-        tenantName: tenantName.trim(),
-        tenantSlug: tenantSlug.trim(),
-        industryType,
-        companySize,
-        plan,
-        module: "enterprise",
+      let application = tenantApplication;
+      if (!application) {
+        try {
+          application = await getMyTenantApplication(userId);
+        } catch (error) {
+          const isMissingApplication = error instanceof RegistrationApiError &&
+            (error.status === 404 || error.message.toLowerCase().includes("tenant application does not exist"));
+          if (!isMissingApplication) throw error;
+        }
+      }
+
+      application ??= await createTenantApplication({
+      userId,
+      tenantName: tenantName.trim(),
+      tenantSlug: tenantSlug.trim(),
+      industryType,
+      companySize,
+      plan,
+      module: "enterprise",
+      country,
       });
 
       updateRegistration({
         password: "",
         confirmPassword: "",
-        createdTenant: response.data.tenant,
+        tenantApplication: application,
       });
       onCompleted();
     } catch (error) {
       if (error instanceof RegistrationApiError) {
         setFormError(error.message);
       } else {
-        setFormError(error instanceof Error ? error.message : "Unable to complete registration.");
+        setFormError(error instanceof Error ? error.message : "Unable to create your tenant application.");
       }
     } finally {
       setIsSubmitting(false);
@@ -202,11 +213,11 @@ export default function PlanStep({ onBack, onCompleted }: PlanStepProps) {
           </button>
           <button
             type="button"
-            onClick={() => void handleCompleteSetup()}
+            onClick={() => void handleContinueToDocuments()}
             disabled={isSubmitting || !plan}
             className="inline-flex h-11 items-center justify-center rounded-[14px] bg-[#1f6a58] px-4 text-sm font-bold text-white transition hover:bg-[#185746] disabled:cursor-not-allowed disabled:bg-[#8fb5aa] sm:ml-auto sm:w-auto"
           >
-            {isSubmitting ? "Completing Setup..." : "Complete Setup"}
+            {isSubmitting ? "Creating Application..." : "Continue to Documents"}
           </button>
         </div>
       </div>
