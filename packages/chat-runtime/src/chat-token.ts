@@ -4,6 +4,7 @@ import type { ChatTokenResponse, ChatTokenSession } from "./types";
 let chatTokenSession: ChatTokenSession | null = null;
 let chatTokenRequest: Promise<ChatTokenSession> | null = null;
 let chatSessionEnabled = false;
+let chatIdentity: { userId: string | null; tenantId: string | null } = { userId: null, tenantId: null };
 
 async function parseAuthResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -29,6 +30,14 @@ export function setChatSessionEnabled(enabled: boolean) {
 
   if (!enabled) {
     chatTokenSession = null;
+    chatIdentity = { userId: null, tenantId: null };
+  }
+}
+
+export function setChatSessionIdentity(userId: string | null, tenantId: string | null) {
+  if (chatIdentity.userId !== userId || chatIdentity.tenantId !== tenantId) {
+    clearChatTokenSession();
+    chatIdentity = { userId, tenantId };
   }
 }
 

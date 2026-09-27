@@ -3,7 +3,7 @@
 import { useAuth } from "@ihp/auth";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { clearChatTokenSession, setChatSessionEnabled } from "./chat-token";
+import { clearChatTokenSession, setChatSessionEnabled, setChatSessionIdentity } from "./chat-token";
 import { ChatAuthContext } from "./useChatAuth";
 
 export function ChatAuthProvider({ children }: { children: ReactNode }) {
@@ -13,6 +13,7 @@ export function ChatAuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setChatSessionEnabled(canUseProviderChat);
+    setChatSessionIdentity(user?.id ?? user?.userId ?? null, user?.membership?.tenantSlug ?? null);
     setIsReady(true);
 
     if (!canUseProviderChat) {
