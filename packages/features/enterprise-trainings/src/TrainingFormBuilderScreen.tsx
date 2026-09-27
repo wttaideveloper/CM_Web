@@ -104,7 +104,7 @@ function TrainingFormBuilderContent() {
                     <input value={fld.label} onChange={(e) => { const next = [...cfg.sections]; const fs = [...next[sIdx].fields]; fs[fIdx] = { ...fld, label: e.target.value }; next[sIdx] = { ...next[sIdx], fields: fs }; updateCfg({ sections: next }); }} className={inputClass} placeholder="Label" />
                     <input value={fld.key} onChange={(e) => { const next = [...cfg.sections]; const fs = [...next[sIdx].fields]; fs[fIdx] = { ...fld, key: e.target.value }; next[sIdx] = { ...next[sIdx], fields: fs }; updateCfg({ sections: next }); }} className={inputClass} placeholder="key e.g. title" />
                     <select value={fld.type} onChange={(e) => { const next = [...cfg.sections]; const fs = [...next[sIdx].fields]; fs[fIdx] = { ...fld, type: e.target.value as TrainingFormField["type"] }; next[sIdx] = { ...next[sIdx], fields: fs }; updateCfg({ sections: next }); }} className={inputClass}>
-                      <option value="text">text</option><option value="textarea">textarea</option><option value="select">select</option><option value="number">number</option><option value="date">date</option><option value="url">url</option><option value="checkbox">checkbox</option>
+                      <option value="text">text</option><option value="textarea">textarea</option><option value="select">select</option><option value="multiselect">multiselect</option><option value="number">number</option><option value="date">date</option><option value="datetime">datetime</option><option value="time">time</option><option value="url">url</option><option value="checkbox">checkbox</option>
                     </select>
                     <span className="flex items-center gap-1">
                       <button type="button" onClick={() => moveField(sIdx, fIdx, -1)} className="h-7 w-7 rounded border text-xs">↑</button>
@@ -112,7 +112,24 @@ function TrainingFormBuilderContent() {
                       <label className="ml-1 flex items-center gap-1 text-[11px]"><input type="checkbox" checked={!!fld.required} onChange={(e) => { const next = [...cfg.sections]; const fs = [...next[sIdx].fields]; fs[fIdx] = { ...fld, required: e.target.checked }; next[sIdx] = { ...next[sIdx], fields: fs }; updateCfg({ sections: next }); }} /> Req</label>
                       <button type="button" onClick={() => { const next = [...cfg.sections]; next[sIdx] = { ...next[sIdx], fields: next[sIdx].fields.filter((_, i) => i !== fIdx) }; updateCfg({ sections: next }); }} className="ml-1 text-xs font-bold text-[#b42318]">×</button>
                     </span>
-                    {fld.type === "select" ? <input value={(fld.options ?? []).join(", ")} onChange={(e) => { const next = [...cfg.sections]; const fs = [...next[sIdx].fields]; fs[fIdx] = { ...fld, options: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) }; next[sIdx] = { ...next[sIdx], fields: fs }; updateCfg({ sections: next }); }} placeholder="options, comma-separated" className={`${inputClass} col-span-4`} /> : null}
+                    <div className="col-span-4 grid gap-1 md:grid-cols-2">
+                      <input value={fld.placeholder ?? ""} onChange={(e) => { const next = [...cfg.sections]; const fs = [...next[sIdx].fields]; fs[fIdx] = { ...fld, placeholder: e.target.value || undefined }; next[sIdx] = { ...next[sIdx], fields: fs }; updateCfg({ sections: next }); }} placeholder="Placeholder" className={inputClass} />
+                      <input value={fld.helpText ?? ""} onChange={(e) => { const next = [...cfg.sections]; const fs = [...next[sIdx].fields]; fs[fIdx] = { ...fld, helpText: e.target.value || null }; next[sIdx] = { ...next[sIdx], fields: fs }; updateCfg({ sections: next }); }} placeholder="Help text" className={inputClass} />
+                    </div>
+                    {fld.type === "select" || fld.type === "multiselect" ? <input value={(fld.options ?? []).join(", ")} onChange={(e) => { const next = [...cfg.sections]; const fs = [...next[sIdx].fields]; fs[fIdx] = { ...fld, options: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) }; next[sIdx] = { ...next[sIdx], fields: fs }; updateCfg({ sections: next }); }} placeholder="Options, comma-separated" className={`${inputClass} col-span-4`} /> : null}
+                    {["text", "textarea", "url"].includes(fld.type) ? (
+                      <div className="col-span-4 grid gap-1 md:grid-cols-3">
+                        <input type="number" min="0" value={fld.validation?.minLength ?? ""} onChange={(e) => { const next = [...cfg.sections]; const fs = [...next[sIdx].fields]; fs[fIdx] = { ...fld, validation: { ...fld.validation, minLength: e.target.value ? Number(e.target.value) : null } }; next[sIdx] = { ...next[sIdx], fields: fs }; updateCfg({ sections: next }); }} placeholder="Min length" className={inputClass} />
+                        <input type="number" min="0" value={fld.validation?.maxLength ?? ""} onChange={(e) => { const next = [...cfg.sections]; const fs = [...next[sIdx].fields]; fs[fIdx] = { ...fld, validation: { ...fld.validation, maxLength: e.target.value ? Number(e.target.value) : null } }; next[sIdx] = { ...next[sIdx], fields: fs }; updateCfg({ sections: next }); }} placeholder="Max length" className={inputClass} />
+                        <input value={fld.validation?.pattern ?? ""} onChange={(e) => { const next = [...cfg.sections]; const fs = [...next[sIdx].fields]; fs[fIdx] = { ...fld, validation: { ...fld.validation, pattern: e.target.value || null } }; next[sIdx] = { ...next[sIdx], fields: fs }; updateCfg({ sections: next }); }} placeholder="Pattern (regex)" className={inputClass} />
+                      </div>
+                    ) : null}
+                    {fld.type === "number" ? (
+                      <div className="col-span-4 grid gap-1 md:grid-cols-2">
+                        <input type="number" value={fld.validation?.min ?? ""} onChange={(e) => { const next = [...cfg.sections]; const fs = [...next[sIdx].fields]; fs[fIdx] = { ...fld, validation: { ...fld.validation, min: e.target.value ? Number(e.target.value) : null } }; next[sIdx] = { ...next[sIdx], fields: fs }; updateCfg({ sections: next }); }} placeholder="Minimum value" className={inputClass} />
+                        <input type="number" value={fld.validation?.max ?? ""} onChange={(e) => { const next = [...cfg.sections]; const fs = [...next[sIdx].fields]; fs[fIdx] = { ...fld, validation: { ...fld.validation, max: e.target.value ? Number(e.target.value) : null } }; next[sIdx] = { ...next[sIdx], fields: fs }; updateCfg({ sections: next }); }} placeholder="Maximum value" className={inputClass} />
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </section>

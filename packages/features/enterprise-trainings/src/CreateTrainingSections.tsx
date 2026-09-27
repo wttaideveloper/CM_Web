@@ -1,6 +1,7 @@
 "use client";
 
 import type { CreateTrainingFormValues } from "./create-training-form";
+import TrainingMediaUploadButton from "./TrainingMediaUploadButton";
 
 type UpdateForm = <Key extends keyof CreateTrainingFormValues>(key: Key, value: CreateTrainingFormValues[Key]) => void;
 
@@ -62,15 +63,13 @@ export function TrainingDeliverySection({ values, update }: SectionProps) {
     <section className="space-y-5">
       <SectionHeading title="Delivery & Instructor" description="Hybrid builds community — online scales it. Pick the format your learners prefer." tip="Physical needs a venue, Online needs a meeting link, Hybrid needs both. Learners filter by this." />
       <div className="grid gap-4 md:grid-cols-2">
-        <label className={labelClass}>Delivery mode<select value={values.delivery_mode} onChange={(event) => update("delivery_mode", event.target.value)} className={inputClass}><option value="online">Live online</option><option value="physical">Offline (physical venue)</option><option value="hybrid">Hybrid</option><option value="self_paced">Self-paced</option></select></label>
+        <label className={labelClass}>Delivery mode<select value={values.delivery_mode} onChange={(event) => update("delivery_mode", event.target.value)} className={inputClass}><option value="online">Live</option><option value="physical">Venue</option><option value="hybrid">Hybrid</option><option value="self_paced">Self-paced</option></select></label>
         <label className={labelClass}>Course type<input value={values.course_type} onChange={(event) => update("course_type", event.target.value)} placeholder="e.g. Workshop" className={inputClass} /></label>
       </div>
       {values.delivery_mode === "hybrid" ? (
         <div className="rounded-xl border border-[#d6e9fd] bg-[#f2f9ff] px-4 py-3 text-sm text-[#1a5c91]">
           <p className="font-bold text-[#0b3d66]">Hybrid mode needs both</p>
           <p className="mt-1 text-xs">1. A live Google Meet / Zoom link below — learners join the online sessions with it.</p>
-          <p className="text-xs">2. The QR code / pass code in the check-in group — used for attendance on the day.</p>
-          {!values.meeting_link.trim() || !values.qr_payload.trim() ? <p className="mt-2 text-xs font-bold text-[#b42318]">You are missing: {!values.meeting_link.trim() ? "meeting link" : ""}{!values.meeting_link.trim() && !values.qr_payload.trim() ? " and " : ""}{!values.qr_payload.trim() ? "QR payload" : ""}.</p> : null}
         </div>
       ) : null}
       {(values.delivery_mode === "physical" || values.delivery_mode === "hybrid" || values.delivery_mode === "in_person" || values.delivery_mode === "blended") ? (
@@ -79,7 +78,6 @@ export function TrainingDeliverySection({ values, update }: SectionProps) {
             <label className={labelClass}>Venue<input value={values.venue} onChange={(event) => update("venue", event.target.value)} placeholder="e.g. Main Hall" className={inputClass} /></label>
             <label className={labelClass}>Address<input value={values.address} onChange={(event) => update("address", event.target.value)} placeholder="Full address" className={inputClass} /></label>
           </div>
-          <label className={labelClass}>Location ID<input value={values.location_id} onChange={(event) => update("location_id", event.target.value)} placeholder="Select or paste location ID" className={inputClass} /></label>
         </>
       ) : null}
       {(values.delivery_mode === "online" || values.delivery_mode === "hybrid" || values.delivery_mode === "instructor_led" || values.delivery_mode === "blended") ? (
@@ -106,17 +104,18 @@ export function TrainingDeliverySection({ values, update }: SectionProps) {
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Instructor role<input value={values.instructor_role} onChange={(e) => update("instructor_role", e.target.value)} placeholder="e.g. Lead, Mentor" className={inputClass} /></label>
-        <label className={labelClass}>Meeting provider<select value={values.meeting_provider} onChange={(e) => update("meeting_provider", e.target.value)} className={inputClass}><option value="">Select</option><option value="zoom">Zoom</option><option value="meet">Google Meet</option><option value="teams">Teams</option><option value="in_person">In person</option></select></label>
+        {(values.delivery_mode === "online" || values.delivery_mode === "hybrid") ? (
+          <label className={labelClass}>Meeting provider<select value={values.meeting_provider} onChange={(e) => update("meeting_provider", e.target.value)} className={inputClass}><option value="">Select</option><option value="zoom">Zoom</option><option value="meet">Google Meet</option><option value="teams">Teams</option></select></label>
+        ) : null}
       </div>
-      <label className={labelClass}>Access information<textarea value={values.access_information} onChange={(e) => update("access_information", e.target.value)} rows={2} placeholder="How to access, prerequisites for entry" className={`${inputClass} h-auto py-3`} /></label>
+      {(values.delivery_mode === "online" || values.delivery_mode === "hybrid") ? (
+        <label className={labelClass}>Access information<textarea value={values.access_information} onChange={(e) => update("access_information", e.target.value)} rows={2} placeholder="How to access, prerequisites for entry" className={`${inputClass} h-auto py-3`} /></label>
+      ) : null}
       <div className="grid gap-4 md:grid-cols-3">
         <label className={labelClass}>Session mode<input value={values.session_mode} onChange={(e) => update("session_mode", e.target.value)} placeholder="e.g. live, self-paced" className={inputClass} /></label>
-        {values.delivery_mode !== "online" && values.delivery_mode !== "self_paced" ? <label className="flex items-center gap-2 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={values.check_in} onChange={(e) => update("check_in", e.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58] focus:ring-[#1f6a58]" />Enable check-in</label> : null}
-        {values.delivery_mode !== "online" && values.delivery_mode !== "self_paced" ? <label className={labelClass}>Pass code<input value={values.pass_code} onChange={(e) => update("pass_code", e.target.value)} placeholder="e.g. 1234" className={inputClass} /></label> : null}
       </div>
-      {values.delivery_mode !== "online" && values.delivery_mode !== "self_paced" ? <label className={labelClass}>QR payload<input value={values.qr_payload} onChange={(e) => update("qr_payload", e.target.value)} placeholder="QR data" className={inputClass} /></label> : null}
       <label className={labelClass}>Requirements<textarea value={values.requirements} onChange={(event) => update("requirements", event.target.value)} rows={3} className={`${inputClass} h-auto py-3`} /></label>
-      <p className="text-xs text-[#7f9d94]">Hybrid = venue + online link + QR (check-in) · Physical = venue only · Online = meeting link only (mirrors Event In Person/Online/Hybrid).</p>
+      <p className="text-xs text-[#7f9d94]">Hybrid = venue + online link · Physical = venue only · Online = meeting link only.</p>
     </section>
   );
 }
@@ -171,25 +170,44 @@ export function TrainingAdvancedSection({ values, update }: SectionProps) {
 }
 
 /** Media input shared by the Training create/edit wizard. */
-function UrlList({ label, values, update }: { label: string; values?: string[]; update: (next: string[]) => void }) {
+function UrlList({ label, values, update, uploadImages = false, uploadVideo = false, alwaysShowField = false }: { label: string; values?: string[]; update: (next: string[]) => void; uploadImages?: boolean; uploadVideo?: boolean; alwaysShowField?: boolean }) {
   const safeValues = Array.isArray(values) ? values : [];
+  const displayedValues = alwaysShowField && safeValues.length === 0 ? [""] : safeValues;
   return (
     <div>
       <div className="flex items-center justify-between">
         <p className={labelClass}>{label}</p>
-        <button type="button" onClick={() => update([...safeValues, ""])} className="text-sm font-semibold text-[#1f6a58]">+ Add</button>
+        {!alwaysShowField ? <button type="button" onClick={() => update([...safeValues, ""])} className="text-sm font-semibold text-[#1f6a58]">+ Add</button> : null}
       </div>
       <div className="mt-2 space-y-2">
-        {safeValues.map((value, index) => (
-          <div key={index} className="flex gap-2">
+        {displayedValues.map((value, index) => (
+          <div key={index} className="flex flex-nowrap items-center gap-2">
             <input
               type="url"
               value={value}
-              onChange={(event) => update(safeValues.map((current, item) => (item === index ? event.target.value : current)))}
-              className={inputClass.replace("mt-1.5 ", "")}
+              onChange={(event) => update(displayedValues.map((current, item) => (item === index ? event.target.value : current)))}
+              className={`${inputClass.replace("mt-1.5 ", "")} min-w-0 flex-1`}
               placeholder="https://…"
             />
-            <button type="button" onClick={() => update(safeValues.filter((_item, item) => item !== index))} className="shrink-0 rounded-xl px-3 text-sm font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button>
+            {safeValues.length > 0 ? <button type="button" onClick={() => update(safeValues.filter((_item, item) => item !== index))} className="shrink-0 rounded-xl px-3 text-sm font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button> : null}
+            {uploadImages ? (
+              <TrainingMediaUploadButton
+                fieldKey="gallery_images"
+                label="Upload image"
+                accept="image/*"
+                purpose="image"
+                onUploaded={(file) => update(displayedValues.map((current, item) => (item === index ? file.url : current)))}
+              />
+            ) : null}
+            {uploadVideo ? (
+              <TrainingMediaUploadButton
+                fieldKey="promotional_video"
+                label="Upload video"
+                accept="video/*"
+                purpose="lesson_video"
+                onUploaded={(file) => update([file.url])}
+              />
+            ) : null}
           </div>
         ))}
       </div>
@@ -202,14 +220,19 @@ export function TrainingPricingSection({ values, update }: SectionProps) {
   return (
     <section className="space-y-5">
       <SectionHeading title="Pricing & Tickets" description="Free trainings get 8× more views — consider a free preview lesson." tip="Leave price empty for free. Early-bird? Use Promo price + coupon — learners love it." />
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className={labelClass}>Price<input value={values.price} onChange={(event) => update("price", event.target.value)} className={inputClass} /></label>
-        <label className={labelClass}>Currency<input value={values.currency} onChange={(event) => update("currency", event.target.value)} className={inputClass} /></label>
-      </div>
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className={labelClass}>Promo price<input value={values.promo_price} onChange={(event) => update("promo_price", event.target.value)} className={inputClass} /></label>
-        <label className={labelClass}>Coupon code<input value={values.coupon_code} onChange={(event) => update("coupon_code", event.target.value)} className={inputClass} /></label>
-      </div>
+      <label className={labelClass}>Pricing<select value={values.pricing_type} onChange={(event) => update("pricing_type", event.target.value as "free" | "paid")} className={inputClass}><option value="free">Free</option><option value="paid">Paid</option></select></label>
+      {values.pricing_type === "paid" ? (
+        <>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className={labelClass}>Price<input value={values.price} onChange={(event) => update("price", event.target.value)} className={inputClass} /></label>
+            <label className={labelClass}>Currency<input value={values.currency} onChange={(event) => update("currency", event.target.value)} className={inputClass} /></label>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className={labelClass}>Promo price<input value={values.promo_price} onChange={(event) => update("promo_price", event.target.value)} className={inputClass} /></label>
+            <label className={labelClass}>Coupon code<input value={values.coupon_code} onChange={(event) => update("coupon_code", event.target.value)} className={inputClass} /></label>
+          </div>
+        </>
+      ) : null}
     </section>
   );
 }
@@ -235,26 +258,30 @@ export function TrainingCapacitySection({ values, update }: SectionProps) {
 }
 
 function DocumentsList({ values, update }: { values: Array<{ url: string; visibility: string; downloadable: boolean }>; update: (next: Array<{ url: string; visibility: string; downloadable: boolean }>) => void }) {
+  const displayedValues = values.length === 0 ? [{ url: "", visibility: "public", downloadable: true }] : values;
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <p className={labelClass}>Documents</p>
-        <button type="button" onClick={() => update([...values, { url: "", visibility: "public", downloadable: true }])} className="text-sm font-semibold text-[#1f6a58]">+ Add</button>
-      </div>
+      <p className={labelClass}>Documents</p>
       <div className="mt-2 space-y-3">
-        {values.map((doc, idx) => (
+        {displayedValues.map((doc, idx) => (
           <div key={idx} className="rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-3">
-            <div className="flex gap-2">
-              <input type="url" value={doc.url} onChange={(e) => update(values.map((d, i) => (i === idx ? { ...d, url: e.target.value } : d)))} placeholder="https://…" className={inputClass.replace("mt-1.5 ", "") + " flex-1"} />
-              <button type="button" onClick={() => update(values.filter((_, i) => i !== idx))} className="shrink-0 rounded-xl px-3 text-sm font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button>
+            <div className="flex flex-nowrap items-center gap-2">
+              <input type="url" value={doc.url} onChange={(e) => update(displayedValues.map((d, i) => (i === idx ? { ...d, url: e.target.value } : d)))} placeholder="https://…" className={`${inputClass.replace("mt-1.5 ", "")} min-w-0 flex-1`} />
+              {values.length > 0 ? <button type="button" onClick={() => update(values.filter((_, i) => i !== idx))} className="shrink-0 rounded-xl px-3 text-sm font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button> : null}
+              <TrainingMediaUploadButton
+                fieldKey="documents"
+                label="Upload document"
+                accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.rtf,application/pdf,text/plain"
+                purpose="lesson_document"
+                onUploaded={(file) => update(displayedValues.map((current, item) => (item === idx ? { ...current, url: file.url } : current)))}
+              />
             </div>
             <div className="mt-2 flex gap-3">
-              <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]">Visibility<select value={doc.visibility} onChange={(e) => update(values.map((d, i) => (i === idx ? { ...d, visibility: e.target.value } : d)))} className="ml-1 rounded-lg border border-[#d7e5df] bg-white px-2 py-1 text-xs"><option value="public">public</option><option value="private">private</option></select></label>
-              <label className="flex items-center gap-2 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={doc.downloadable} onChange={(e) => update(values.map((d, i) => (i === idx ? { ...d, downloadable: e.target.checked } : d)))} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Downloadable</label>
+              <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]">Visibility<select value={doc.visibility} onChange={(e) => update(displayedValues.map((d, i) => (i === idx ? { ...d, visibility: e.target.value } : d)))} className="ml-1 rounded-lg border border-[#d7e5df] bg-white px-2 py-1 text-xs"><option value="public">public</option><option value="private">private</option></select></label>
+              <label className="flex items-center gap-2 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={doc.downloadable} onChange={(e) => update(displayedValues.map((d, i) => (i === idx ? { ...d, downloadable: e.target.checked } : d)))} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Downloadable</label>
             </div>
           </div>
         ))}
-        {values.length === 0 ? <p className="text-xs text-[#7f9d94]">No documents yet — click + Add.</p> : null}
       </div>
     </div>
   );
@@ -265,11 +292,23 @@ export function TrainingMediaSection({ values, update }: SectionProps) {
   return (
     <section className="space-y-5">
       <SectionHeading title="Images & Media" description="A great cover image lifts enrolments. Use 16:9, ≥1280px." tip="Primary image is the card + header. Gallery builds trust — add 2–3 real photos." />
-      <label className={labelClass}>Primary image URL<input value={values.primary_image} onChange={(event) => update("primary_image", event.target.value)} className={inputClass} /></label>
+      <div>
+        <label htmlFor="training-primary-image-url" className={labelClass}>Primary image URL</label>
+        <div className="flex flex-nowrap items-center gap-2">
+          <input id="training-primary-image-url" type="url" value={values.primary_image} onChange={(event) => update("primary_image", event.target.value)} placeholder="https://…" className={`${inputClass} min-w-0 flex-1`} />
+          <TrainingMediaUploadButton
+            fieldKey="primary_image"
+            label="Upload image"
+            accept="image/*"
+            purpose="image"
+            onUploaded={(file) => update("primary_image", file.url)}
+          />
+        </div>
+      </div>
       <p className="mt-1 text-xs text-[#7f9d94]">Shows on the training card and detail header when set.</p>
-      <UrlList label="Gallery images" values={values.gallery_images} update={(next) => update("gallery_images", next)} />
+      <UrlList label="Gallery images" values={values.gallery_images} update={(next) => update("gallery_images", next)} uploadImages alwaysShowField />
       <DocumentsList values={values.documents} update={(next) => update("documents", next)} />
-      <UrlList label="Videos" values={[values.promotional_video]} update={(next) => update("promotional_video", next[0] || "")} />
+      <UrlList label="Videos" values={[values.promotional_video]} update={(next) => update("promotional_video", next[0] || "")} uploadVideo />
     </section>
   );
 }

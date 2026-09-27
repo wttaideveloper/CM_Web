@@ -16,10 +16,30 @@ export interface TrainingFormFieldOption { value: string; label: string; positio
 /** Validation metadata accepted by the Training Form Configuration API. */
 export interface TrainingFormFieldValidation { min_length?: number | null; max_length?: number | null; min?: number | null; max?: number | null; pattern?: string | null; }
 
-/** Persisted settings for a backend-defined composite Training core field. */
+/** Declarative field visibility rule persisted and enforced by the Training Form API. */
+export interface TrainingFormVisibilityCondition {
+  field_key: string;
+  operator: "equals" | "not_equals" | "has_value" | "is_empty";
+  value?: string;
+}
+
+/** Upload restrictions persisted with a configured Training media field. */
+export interface TrainingFormUploadSettings {
+  allowed_mime_types?: string[];
+  max_file_size_mb?: number | null;
+}
+
+/** Declarative Training field settings persisted in composite_config.frontend_settings. */
+export interface TrainingFormFrontendSettings {
+  visibility?: TrainingFormVisibilityCondition | null;
+  upload?: TrainingFormUploadSettings | null;
+}
+
+/** Composite Training metadata accepted by the Training Form Configuration API. */
 export interface TrainingFormCompositeConfig {
   enabled_fields?: string[];
   required_fields?: string[];
+  frontend_settings?: TrainingFormFrontendSettings | null;
   [key: string]: unknown;
 }
 

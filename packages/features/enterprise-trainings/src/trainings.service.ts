@@ -368,7 +368,7 @@ export interface CreateTrainingLessonPayload {
 /** Payload for `PUT /api/v1/trainings/{id}/sections/{sid}/lessons/{lid}`. */
 export type UpdateTrainingLessonPayload = Partial<CreateTrainingLessonPayload>;
 
-/** Payload for `POST /api/v1/trainings/{id}/sections/reorder` and friends. */
+/** Payload for `POST /api/v1/trainings/{id}/sections/reorder` and lesson reorder endpoints. */
 export interface ReorderPayload {
   order: string[];
 }
@@ -379,10 +379,13 @@ export interface ReorderPayload {
 export interface CreateTrainingAssessmentPayload {
   title: string;
   description?: string | null;
+  instructions?: string | null;
   type?: string | null;
   passing_score?: number | null;
   time_limit_minutes?: number | null;
   max_attempts?: number | null;
+  randomise?: boolean;
+  is_published?: boolean;
   section_id?: string | null;
   lesson_id?: string | null;
   [key: string]: unknown;
@@ -695,21 +698,34 @@ export interface TrainingUploadResponse {
   purpose?: string | null;
 }
 
-/** Uploads lesson media and returns the hosted URL accepted by lesson APIs. */
+/** Uploads Training or lesson media and returns the hosted URL accepted by Training APIs. */
 export async function uploadTrainingMedia(
   file: File,
-  purpose: "lesson_video" | "lesson_pdf" | "lesson_document",
+  purpose: "lesson_video" | "lesson_pdf" | "lesson_document" | "image",
+  fieldKey?: string,
 ): Promise<TrainingUploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("purpose", purpose);
+  if (fieldKey) formData.append("field_key", fieldKey);
   const res = await fetch(`${trainingsBasePath}upload`, {
     method: "POST",
     body: formData,
     credentials: "include",
   });
   if (!res.ok) throw await createTrainingsApiError(res, "upload training media");
-  return (await res.json()) as TrainingUploadResponse;
+  const value = (await res.json()) as unknown;
+  if (
+    !isRecord(value) ||
+    typeof value.url !== "string" ||
+    !value.url.trim() ||
+    typeof value.name !== "string" ||
+    typeof value.size !== "number" ||
+    !Number.isFinite(value.size)
+  ) {
+    throw new Error("Trainings API returned an invalid media upload response.");
+  }
+  return { url: value.url, name: value.name, size: value.size };
 }
 
 function normaliseTrainingListItem(item: TrainingListItem): TrainingListItem {
@@ -1966,6 +1982,65 @@ export interface TrainingBatchCheckInResponse {
   results: readonly TrainingBatchCheckInResult[];
 }
 
+/** Attendance status accepted and returned by the lesson attendance API. */
+export type LessonAttendanceStatus = "attended" | "absent" | "not_marked";
+
+/** User metadata for the latest lesson attendance update. */
+export interface LessonAttendanceMarkedBy {
+  id?: string | null;
+  name?: string | null;
+  email?: string | null;
+}
+
+/** One enrolled participant's attendance record for a lesson. */
+export interface LessonAttendanceParticipant {
+  enrolment_id: string;
+  participant_name: string;
+  participant_email: string;
+  enrolment_status: string;
+  status: LessonAttendanceStatus;
+  marked_by?: LessonAttendanceMarkedBy | null;
+  marked_at?: string | null;
+}
+
+/** Roster returned by GET/POST `/lessons/{lesson_id}/attendance/roster`. */
+export interface LessonAttendanceRosterResponse {
+  training_id: string;
+  lesson_id: string;
+  lesson_title?: string | null;
+  lesson_type?: string | null;
+  participants: readonly LessonAttendanceParticipant[];
+}
+
+/** One participant attendance update in a lesson roster batch. */
+export interface LessonAttendanceMarkItem {
+  enrolment_id: string;
+  status: LessonAttendanceStatus;
+}
+
+/** Request body for batch lesson attendance updates. */
+export interface LessonAttendanceBatchRequest {
+  records: readonly LessonAttendanceMarkItem[];
+}
+
+/** Request body for QR check-in against a selected lesson. */
+export interface LessonQrCheckInRequest {
+  qr_code: string;
+}
+
+/** Result of marking lesson attendance from a participant QR scan. */
+export interface LessonQrCheckInResponse {
+  enrolment_id: string;
+  participant_name: string;
+  participant_email: string;
+  enrolment_status: string;
+  status: LessonAttendanceStatus;
+  marked_by?: LessonAttendanceMarkedBy | null;
+  marked_at?: string | null;
+  result: "marked" | "already_attended";
+  message: string;
+}
+
 function isValidateTrainingQrResponse(value: unknown): value is ValidateTrainingQrResponse {
   return isRecord(value) &&
     typeof value.valid === "boolean" &&
@@ -2028,6 +2103,51 @@ function isTrainingBatchCheckInResponse(value: unknown): value is TrainingBatchC
     Array.isArray(value.results) && value.results.every(isTrainingBatchCheckInResult);
 }
 
+function isLessonAttendanceStatus(value: unknown): value is LessonAttendanceStatus {
+  return value === "attended" || value === "absent" || value === "not_marked";
+}
+
+function isLessonAttendanceMarkedBy(value: unknown): value is LessonAttendanceMarkedBy {
+  return isRecord(value) &&
+    (value.id === undefined || value.id === null || typeof value.id === "string") &&
+    (value.name === undefined || value.name === null || typeof value.name === "string") &&
+    (value.email === undefined || value.email === null || typeof value.email === "string");
+}
+
+function isLessonAttendanceParticipant(value: unknown): value is LessonAttendanceParticipant {
+  return isRecord(value) &&
+    typeof value.enrolment_id === "string" &&
+    typeof value.participant_name === "string" &&
+    typeof value.participant_email === "string" &&
+    typeof value.enrolment_status === "string" &&
+    isLessonAttendanceStatus(value.status) &&
+    (value.marked_by === undefined || value.marked_by === null || isLessonAttendanceMarkedBy(value.marked_by)) &&
+    (value.marked_at === undefined || value.marked_at === null || typeof value.marked_at === "string");
+}
+
+function isLessonAttendanceRosterResponse(value: unknown): value is LessonAttendanceRosterResponse {
+  return isRecord(value) &&
+    typeof value.training_id === "string" &&
+    typeof value.lesson_id === "string" &&
+    (value.lesson_title === undefined || value.lesson_title === null || typeof value.lesson_title === "string") &&
+    (value.lesson_type === undefined || value.lesson_type === null || typeof value.lesson_type === "string") &&
+    Array.isArray(value.participants) &&
+    value.participants.every(isLessonAttendanceParticipant);
+}
+
+function isLessonQrCheckInResponse(value: unknown): value is LessonQrCheckInResponse {
+  return isRecord(value) &&
+    typeof value.enrolment_id === "string" &&
+    typeof value.participant_name === "string" &&
+    typeof value.participant_email === "string" &&
+    typeof value.enrolment_status === "string" &&
+    isLessonAttendanceStatus(value.status) &&
+    (value.marked_by === undefined || value.marked_by === null || isLessonAttendanceMarkedBy(value.marked_by)) &&
+    (value.marked_at === undefined || value.marked_at === null || typeof value.marked_at === "string") &&
+    (value.result === "marked" || value.result === "already_attended") &&
+    typeof value.message === "string";
+}
+
 /** Validates a backend-issued enrolment QR code without changing attendance state. */
 export async function validateTrainingQr(trainingId: string, payload: ValidateTrainingQrPayload): Promise<ValidateTrainingQrResponse> {
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/enrolments/validate-qr`, {
@@ -2053,6 +2173,60 @@ export async function checkInTrainingParticipant(trainingId: string, payload: Ch
   if (!res.ok) throw await createTrainingsApiError(res, "check in this participant");
   const value = (await res.json()) as unknown;
   if (!isCheckInTrainingParticipantResponse(value)) throw new Error("Trainings API returned an invalid check-in response.");
+  return value;
+}
+
+/** Loads the enrolled participants and current statuses for one lesson. */
+export async function getLessonAttendanceRoster(trainingId: string, lessonId: string): Promise<LessonAttendanceRosterResponse> {
+  const res = await fetch(
+    `${trainingsBasePath}${encodeURIComponent(trainingId)}/lessons/${encodeURIComponent(lessonId)}/attendance/roster`,
+    { credentials: "include", cache: "no-store" },
+  );
+  if (!res.ok) throw await createTrainingsApiError(res, "load lesson attendance");
+  const value = (await res.json()) as unknown;
+  if (!isLessonAttendanceRosterResponse(value)) throw new Error("Trainings API returned an invalid lesson attendance roster.");
+  return value;
+}
+
+/** Saves changed attendance statuses for one lesson in a single batch. */
+export async function saveLessonAttendanceRoster(
+  trainingId: string,
+  lessonId: string,
+  payload: LessonAttendanceBatchRequest,
+): Promise<LessonAttendanceRosterResponse> {
+  const res = await fetch(
+    `${trainingsBasePath}${encodeURIComponent(trainingId)}/lessons/${encodeURIComponent(lessonId)}/attendance/roster`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!res.ok) throw await createTrainingsApiError(res, "save lesson attendance");
+  const value = (await res.json()) as unknown;
+  if (!isLessonAttendanceRosterResponse(value)) throw new Error("Trainings API returned an invalid lesson attendance roster.");
+  return value;
+}
+
+/** Scans an enrolment QR and marks that participant attended for the selected lesson. */
+export async function scanLessonAttendanceQr(
+  trainingId: string,
+  lessonId: string,
+  payload: LessonQrCheckInRequest,
+): Promise<LessonQrCheckInResponse> {
+  const res = await fetch(
+    `${trainingsBasePath}${encodeURIComponent(trainingId)}/lessons/${encodeURIComponent(lessonId)}/attendance/scan`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!res.ok) throw await createTrainingsApiError(res, "check in this participant for the lesson");
+  const value = (await res.json()) as unknown;
+  if (!isLessonQrCheckInResponse(value)) throw new Error("Trainings API returned an invalid lesson QR check-in response.");
   return value;
 }
 

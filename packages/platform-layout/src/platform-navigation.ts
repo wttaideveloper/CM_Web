@@ -31,7 +31,6 @@ export const platformNavigationGroups: readonly PlatformNavigationGroup[] = [
       { label: "Services", href: "/services", icon: "service" },
       { label: "Events", href: "/events", icon: "calendar" },
       { label: "Trainings", href: "/trainings", icon: "training" },
-      { label: "Programs", href: "/programs", icon: "program" },
       { label: "Integrations", href: "/integrations", icon: "integration" },
     ],
   },

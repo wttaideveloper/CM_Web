@@ -36,30 +36,72 @@ function AdminNoteBanner({ trainingId, status }: { trainingId: string; status: s
     staleTime: 30_000,
     retry: 1,
   });
+
+  if (adminNotesQuery.isLoading) {
+    return (
+      <section className="mt-6 rounded-2xl border border-[#eadbb8] bg-[#fffaf0] px-5 py-4" aria-live="polite" aria-busy="true">
+        <p className="text-sm font-semibold text-[#765018]">Loading Super Admin feedback...</p>
+      </section>
+    );
+  }
+
+  if (adminNotesQuery.isError) {
+    return (
+      <section className="mt-6 rounded-2xl border border-[#f0d1c9] bg-[#fff7f6] px-5 py-4">
+        <p role="alert" className="text-sm font-semibold text-[#b42318]">Unable to load Super Admin feedback.</p>
+        <button type="button" onClick={() => void adminNotesQuery.refetch()} className="mt-2 text-sm font-semibold text-[#1f6a58] underline">
+          Retry
+        </button>
+      </section>
+    );
+  }
+
   const data = adminNotesQuery.data;
-  if (adminNotesQuery.isLoading || adminNotesQuery.isError || !data) return null;
   let note: string | null = null;
   let by: string | null = null;
+  let reviewedAt: string | null = null;
   if (typeof data === "string") {
     note = data.trim() || null;
-  } else if (typeof data === "object") {
+  } else if (data && typeof data === "object" && !Array.isArray(data)) {
     const record = data as Record<string, unknown>;
     note = [record.note, record.message, record.reason, record.comment, record.notes].find((value): value is string => typeof value === "string" && value.trim().length > 0) ?? null;
     by = typeof record.performed_by === "string" && record.performed_by.trim() ? record.performed_by : typeof record.admin_name === "string" && record.admin_name.trim() ? record.admin_name : null;
+    reviewedAt = typeof record.created_at === "string" ? record.created_at : typeof record.performed_at === "string" ? record.performed_at : null;
   }
-  if (!note) return null;
   return (
-    <div role="status" className="mt-6 rounded-2xl border border-[#eadbb8] bg-[#fffaf0] px-5 py-4">
-      <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#8a5a00]">{status === "needs_revision" ? "Changes requested" : "Not approved"}{by ? ` by ${by}` : ""}</p>
-      <p className="mt-1 text-sm leading-6 text-[#6b5a1e]">{note}</p>
-    </div>
+    <section role="status" className="mt-6 rounded-2xl border border-[#eadbb8] bg-[#fffaf0] px-5 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#8a5a00]">
+            {status === "needs_revision" ? "Changes requested" : "Training not approved"}
+          </p>
+          {by || reviewedAt ? (
+            <p className="mt-1 text-xs text-[#8a6b37]">
+              {[by ? `Reviewed by ${by}` : null, reviewedAt ? formatTrainingDate(reviewedAt) : null].filter(Boolean).join(" · ")}
+            </p>
+          ) : null}
+          <p className="mt-2 text-sm leading-6 text-[#6b5a1e]">
+            {note ?? "No review reason was provided. Check the review history or contact your platform administrator."}
+          </p>
+        </div>
+        <Link
+          href={`/admin/trainings/${trainingId}/edit`}
+          className="inline-flex h-10 shrink-0 items-center justify-center rounded-full bg-[#8a5a00] px-4 text-sm font-bold text-white hover:bg-[#704900]"
+        >
+          Edit training
+        </Link>
+      </div>
+      <p className="mt-3 text-xs leading-5 text-[#8a6b37]">
+        Update the requested details, then choose “Submit for approval” from Training actions.
+      </p>
+    </section>
   );
 }
 
 function ParticipantToolbar({ trainingId, status, trainingMeetingLink }: { trainingId: string; status: string; trainingMeetingLink?: string | null }) {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [meetingLink, setMeetingLink] = useState<string | null>(null);
-  const [moderationExpanded, setModerationExpanded] = useState(false);
+  const [moderationExpanded, setModerationExpanded] = useState(status === "needs_revision" || status === "rejected");
   const fileDownload = (data: { blob: Blob; filename: string | null }, fallback: string, success: string) => {
     const url = URL.createObjectURL(data.blob);
     const anchor = document.createElement("a");
@@ -149,7 +191,7 @@ function ParticipantToolbar({ trainingId, status, trainingMeetingLink }: { train
           {meetingMutation.isPending ? "..." : "Meeting Link"}
         </button>
         <button type="button" onClick={() => setModerationExpanded(!moderationExpanded)} className="h-9 rounded-full border border-[#d7e5df] px-4 text-xs font-bold text-[#52736a] hover:bg-white">
-          {moderationExpanded ? "Hide" : "Moderation History"}
+          {moderationExpanded ? "Hide review history" : "Review history"}
         </button>
       </div>
       {feedback ? <p role="status" className="mt-3 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-2 text-xs font-semibold text-[#167550]">{feedback}</p> : null}
@@ -161,8 +203,17 @@ function ParticipantToolbar({ trainingId, status, trainingMeetingLink }: { train
       ) : null}
       {moderationExpanded ? (
         <div className="mt-3 space-y-2">
-          {moderationQuery.isLoading ? <p className="text-xs text-[#52736a]">Loading...</p> : null}
-          {moderationHistory.length === 0 && !moderationQuery.isLoading ? <p className="text-xs text-[#7f9d94]">No moderation history.</p> : null}
+          <h3 className="text-sm font-bold text-[#31594d]">Review history</h3>
+          {moderationQuery.isLoading ? <p role="status" className="text-xs text-[#52736a]">Loading review history...</p> : null}
+          {moderationQuery.isError ? (
+            <div className="rounded-xl border border-[#f0d1c9] bg-[#fff7f6] p-3">
+              <p role="alert" className="text-xs font-semibold text-[#b42318]">Unable to load review history.</p>
+              <button type="button" onClick={() => void moderationQuery.refetch()} className="mt-2 text-xs font-semibold text-[#1f6a58] underline">
+                Retry
+              </button>
+            </div>
+          ) : null}
+          {moderationHistory.length === 0 && !moderationQuery.isLoading && !moderationQuery.isError ? <p className="text-xs text-[#7f9d94]">No review history is available.</p> : null}
           {moderationHistory.map((raw, index) => {
             const record = raw as Record<string, unknown>;
             const action = typeof record.action === "string" ? record.action : typeof record.status === "string" ? record.status : "";
@@ -499,7 +550,7 @@ export default function TrainingDetailsScreen({
       ) : null}
 
       {activeTab === "content" ? <TrainingContentTab trainingId={trainingId} /> : null}
-      {activeTab === "sections" ? <div className="mt-6"><TrainingSectionsTab trainingId={trainingId} /></div> : null}
+      {activeTab === "sections" ? <div className="mt-6"><TrainingSectionsTab trainingId={trainingId} trainingDeliveryMode={training.delivery_mode ?? ""} /></div> : null}
       {activeTab === "enrolments" ? <div className="mt-6"><TrainingEnrolmentsTab trainingId={trainingId} /></div> : null}
       {activeTab === "attendance" ? <div className="mt-6"><TrainingAttendanceTab trainingId={trainingId} /></div> : null}
       {activeTab === "assessments" ? <div className="mt-6"><TrainingAssessmentsTab trainingId={trainingId} /></div> : null}

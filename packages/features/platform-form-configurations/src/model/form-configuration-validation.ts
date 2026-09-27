@@ -11,7 +11,7 @@ export type PersistedAssignmentState = {
 
 /** A client-detectable publish issue tied to the configuration, a section, or a field. */
 export type FormConfigurationValidationIssue = {
-  code: "domain-required" | "invalid-renderer" | "invalid-composite-required-fields" | "missing-core-registry-entry" | "selective-tenant-required" | "selective-assignments-dirty" | "selective-assignments-loading" | "duplicate-core-key";
+  code: "domain-required" | "invalid-renderer" | "invalid-composite-required-fields" | "missing-core-registry-entry" | "selective-tenant-required" | "selective-assignments-dirty" | "selective-assignments-loading" | "duplicate-core-key" | "invalid-training-visibility" | "invalid-training-upload-settings";
   message: string;
   sectionLocalId?: string;
   fieldLocalId?: string;
@@ -23,7 +23,8 @@ function fieldName(field: ConfiguredField): string { return field.label || field
 export function validateFormConfiguration(configuration: FormConfiguration, registry: readonly CoreFieldRegistryItem[], persistedAssignments?: PersistedAssignmentState): FormConfigurationValidationIssue[] {
   const scopeIssues = validateSelectiveAssignments(configuration, persistedAssignments);
   const duplicateCoreKeyIssues = validateDuplicateCoreKeys(configuration.fields);
-  return [...scopeIssues, ...duplicateCoreKeyIssues, ...configuration.fields.flatMap((field) => {
+  const trainingSettingsIssues = configuration.type === "training" ? validateTrainingFrontendSettings(configuration.fields) : [];
+  return [...scopeIssues, ...duplicateCoreKeyIssues, ...trainingSettingsIssues, ...configuration.fields.flatMap((field) => {
     if (field.source !== "core") return validateCompositeRequiredFields(field);
     const definition = registry.find((item) => item.key === field.coreKey);
     // Training registry is still backfilling 23 keys (tags, learning_objectives, start_time etc.) — allow publish and let server validate instead of blocking UI with 23 "not available" issues. Event still enforces strictly.
@@ -38,6 +39,43 @@ export function validateFormConfiguration(configuration: FormConfiguration, regi
     }
     return [...issues, ...validateCompositeRequiredFields(field)];
   })];
+}
+
+function validateTrainingFrontendSettings(fields: readonly ConfiguredField[]): FormConfigurationValidationIssue[] {
+  const result: FormConfigurationValidationIssue[] = [];
+  for (const field of fields) {
+    const settings = field.compositeConfig?.frontend_settings;
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) continue;
+    const raw = settings as Record<string, unknown>;
+    const visibility = raw.visibility;
+    if (visibility && typeof visibility === "object" && !Array.isArray(visibility)) {
+      const condition = visibility as Record<string, unknown>;
+      const hasSource = typeof condition.field_key === "string"
+        && fields.some((candidate) => candidate.localId !== field.localId && trainingFieldKey(candidate) === condition.field_key);
+      const validOperator = ["equals", "not_equals", "has_value", "is_empty"].includes(String(condition.operator));
+      const requiresValue = condition.operator === "equals" || condition.operator === "not_equals";
+      if (!hasSource || !validOperator || (requiresValue && typeof condition.value !== "string")) {
+        result.push({ code: "invalid-training-visibility", message: `${fieldName(field)} has an invalid visibility rule. Choose an available field and a valid condition.`, sectionLocalId: field.sectionLocalId, fieldLocalId: field.localId });
+      }
+    }
+    const upload = raw.upload;
+    if (upload && typeof upload === "object" && !Array.isArray(upload)) {
+      const settings = upload as Record<string, unknown>;
+      const allowedTypes = settings.allowed_mime_types;
+      const maximum = settings.max_file_size_mb;
+      const invalidTypes = !Array.isArray(allowedTypes) || allowedTypes.length === 0 || !allowedTypes.every((item) => typeof item === "string");
+      const invalidMaximum = maximum !== undefined && maximum !== null
+        && (typeof maximum !== "number" || !Number.isInteger(maximum) || maximum < 1 || maximum > 500);
+      if (invalidTypes || invalidMaximum) {
+        result.push({ code: "invalid-training-upload-settings", message: `${fieldName(field)} must allow at least one file type and use a whole-number size limit from 1 to 500 MB.`, sectionLocalId: field.sectionLocalId, fieldLocalId: field.localId });
+      }
+    }
+  }
+  return result;
+}
+
+function trainingFieldKey(field: ConfiguredField): string {
+  return (field.coreKey ?? field.stableKey ?? field.localId).replace(/^(core_|custom_)/, "");
 }
 
 function validateSelectiveAssignments(configuration: FormConfiguration, persisted?: PersistedAssignmentState): FormConfigurationValidationIssue[] {

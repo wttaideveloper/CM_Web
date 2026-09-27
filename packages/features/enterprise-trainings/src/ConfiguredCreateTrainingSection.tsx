@@ -2,6 +2,8 @@
 
 import type { CreateTrainingFormValues } from "./create-training-form";
 import type { TrainingFormField, TrainingFormSection } from "./training-form-config.service";
+import { isTrainingFormFieldVisible } from "./training-form-field-settings";
+import TrainingMediaUploadButton from "./TrainingMediaUploadButton";
 
 type UpdateForm = <Key extends keyof CreateTrainingFormValues>(key: Key, value: CreateTrainingFormValues[Key]) => void;
 
@@ -37,6 +39,7 @@ const CORE_FIELDS: Record<string, keyof CreateTrainingFormValues> = {
   enrolment_end: "enrolment_end",
   time_zone: "time_zone",
   capacity: "capacity",
+  pricing_type: "pricing_type",
   price: "price",
   currency: "currency",
   promo_price: "promo_price",
@@ -66,9 +69,6 @@ const CORE_FIELDS: Record<string, keyof CreateTrainingFormValues> = {
   difficulty_level: "difficulty_level",
   offline_enabled: "offline_enabled",
   session_mode: "session_mode",
-  check_in: "check_in",
-  pass_code: "pass_code",
-  qr_payload: "qr_payload",
   discussions: "discussions",
   announcements: "announcements",
   moderation_history: "moderation_history",
@@ -79,13 +79,48 @@ const CORE_FIELDS: Record<string, keyof CreateTrainingFormValues> = {
   badges: "badges",
 };
 
+const DELIVERY_FIELDS_REMOVED_FROM_TRAINING = ["check_in", "pass_code", "qr_payload"];
+
 function scalar(value: unknown): string {
   return typeof value === "string" || typeof value === "number" ? String(value) : "";
+}
+
+function isDeliveryFieldApplicable(field: TrainingFormField, deliveryMode: string): boolean {
+  const identifiers = [field.key, field.stable_key ?? "", field.label].map((value) => value.trim().toLowerCase().replace(/[\s-]+/g, "_"));
+  const isLocationField = identifiers.some((value) => ["location", "location_id"].includes(value))
+    || identifiers.some((value) => value.includes("location_id"));
+  if (isLocationField) return false;
+  const isVenueField = identifiers.some((value) => ["venue", "address", "venue_name", "venue_address"].includes(value));
+  const isLiveField = identifiers.some((value) => ["meeting_link", "meeting_provider", "meeting_id", "meeting_passcode", "access_information", "delivery_instructions"].includes(value))
+    || identifiers.some((value) => value.includes("meeting_provider") || value.includes("meeting_link") || value.includes("delivery_instruction") || value.includes("access_information"));
+  if (isVenueField) return deliveryMode === "physical" || deliveryMode === "hybrid";
+  if (isLiveField) return deliveryMode === "online" || deliveryMode === "hybrid";
+  return true;
+}
+
+function isPricingFieldApplicable(field: TrainingFormField, pricingType: string): boolean {
+  const identifiers = [field.key, field.stable_key ?? "", field.label].map((value) => value.trim().toLowerCase().replace(/[\s-]+/g, "_"));
+  const isPricingField = identifiers.some((value) => ["price", "currency", "promo_price", "coupon_code"].includes(value))
+    || identifiers.some((value) => value.includes("promo_price") || value.includes("coupon_code"));
+  return !isPricingField || pricingType === "paid";
+}
+
+function getTrainingSectionTip(title: string): string | null {
+  const normalized = title.trim().toLowerCase();
+  if (normalized.includes("basic")) return "Use a specific, benefit-driven title and explain who the training is for and what learners will achieve.";
+  if (normalized.includes("schedule")) return "Set the enrolment window carefully: closing enrolment hides the enrolment action from learners.";
+  if (normalized.includes("location") || normalized.includes("delivery")) return "Physical needs a venue, Live needs a meeting link, and Hybrid needs both.";
+  if (normalized.includes("pricing")) return "Choose Free or Paid first. Paid trainings can include a promo price and coupon code.";
+  if (normalized.includes("capacity") || normalized.includes("registration")) return "Require approval for selective cohorts and set access expiry when learners should lose access automatically.";
+  if (normalized.includes("media") || normalized.includes("image")) return "Use a clear 16:9 primary image; adding a few gallery images helps learners understand the experience.";
+  if (normalized.includes("additional") || normalized.includes("configuration")) return "Use prerequisites and release rules to control the learning journey and drip content.";
+  return null;
 }
 
 /** Renders one server-authoritative Training form section in configured field order. */
 export default function ConfiguredCreateTrainingSection({
   section,
+  allFields,
   values,
   update,
   errors,
@@ -93,28 +128,44 @@ export default function ConfiguredCreateTrainingSection({
   setCustomValues,
 }: {
   section: TrainingFormSection;
+  allFields: readonly TrainingFormField[];
   values: CreateTrainingFormValues;
   update: UpdateForm;
   errors: Record<string, string[]>;
   customValues: Record<string, unknown>;
   setCustomValues: (next: Record<string, unknown>) => void;
 }) {
-  const fields = [...section.fields].sort((a, b) => a.order - b.order);
+  const fields = [...section.fields]
+    .filter((field) => !DELIVERY_FIELDS_REMOVED_FROM_TRAINING.includes(field.key))
+    .filter((field) => isDeliveryFieldApplicable(field, values.delivery_mode))
+    .filter((field) => isPricingFieldApplicable(field, values.pricing_type))
+    .filter((field) => isTrainingFormFieldVisible(field, allFields, values, customValues))
+    .sort((a, b) => a.order - b.order);
+  const isPricingSection = section.title.trim().toLowerCase().includes("pricing");
+  const sectionTip = getTrainingSectionTip(section.title);
   return (
     <section className="space-y-4">
       <div>
         <h2 className="text-xl font-bold text-[#06201c]">{section.title || "Section"}</h2>
         {section.description ? <p className="mt-1 text-sm text-[#52736a]">{section.description}</p> : null}
+        {sectionTip ? <p className="mt-2 rounded-lg border border-[#e1ebe6] bg-white px-3 py-2 text-xs leading-4 text-[#1f6a58]"><span className="font-semibold">Tip:</span> {sectionTip}</p> : null}
       </div>
-      {values.delivery_mode === "hybrid" ? (
-        <div className="rounded-xl border border-[#d6e9fd] bg-[#f2f9ff] px-4 py-3 text-sm text-[#1a5c91]">
-          <p className="font-bold text-[#0b3d66]">Hybrid mode requires both a meeting link (Google Meet / Zoom) and a QR payload (check-in code).</p>
-          {!values.meeting_link.trim() || !values.qr_payload.trim() ? <p className="mt-1 text-xs font-bold text-[#b42318]">Missing: {!values.meeting_link.trim() ? "meeting link" : ""}{!values.meeting_link.trim() && !values.qr_payload.trim() ? " and " : ""}{!values.qr_payload.trim() ? "QR payload" : ""}.</p> : null}
-        </div>
+      {isPricingSection ? (
+        <label className="block text-sm font-semibold text-[#06201c]">
+          Pricing
+          <select
+            value={values.pricing_type}
+            onChange={(event) => update("pricing_type", event.target.value as "free" | "paid")}
+            className={inputClass}
+          >
+            <option value="free">Free</option>
+            <option value="paid">Paid</option>
+          </select>
+        </label>
       ) : null}
       {values.delivery_mode === "online" ? (
         <div className="rounded-xl border border-[#d6e9fd] bg-[#f2f9ff] px-4 py-3 text-sm text-[#1a5c91]">
-          <p className="font-bold text-[#0b3d66]">Online mode only needs the meeting link — Google Meet or Zoom. No QR code required.</p>
+          <p className="font-bold text-[#0b3d66]">Online mode only needs the meeting link — Google Meet or Zoom.</p>
         </div>
       ) : null}
       <div className="grid gap-4 md:grid-cols-2">
@@ -130,66 +181,7 @@ export default function ConfiguredCreateTrainingSection({
           />
         ))}
       </div>
-      <ConfiguredDeliveryFields values={values} update={update} errors={errors} />
     </section>
-  );
-}
-
-const deliveryInputClass = "mt-1.5 h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]";
-
-/** Auto-renders delivery-mode fields (meeting link / QR payload / pass code / check-in) in the configurable
- * form even when the Super Admin form config does not include them. Mirrors the static builder's rules:
- * hybrid → meeting link + QR (required); online → meeting link only; physical/offline → QR (optional);
- * self-paced → hidden entirely. */
-function ConfiguredDeliveryFields({
-  values,
-  update,
-  errors,
-}: {
-  values: CreateTrainingFormValues;
-  update: UpdateForm;
-  errors: Record<string, string[]>;
-}) {
-  const mode = values.delivery_mode;
-  if (!mode) return null;
-  if (mode === "self_paced") return null;
-  const showMeeting = mode === "hybrid" || mode === "online";
-  const showQr = mode !== "online";
-  const required = mode === "hybrid";
-  const errFor = (k: string) => (errors[k]?.length ? <p className="mt-1 text-xs text-[#b42318]">{errors[k][0]}</p> : null);
-  return (
-    <div className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] px-4 py-3">
-      <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Live session access (auto for {mode})</p>
-      <div className="mt-3 grid gap-4 md:grid-cols-2">
-        {showMeeting ? (
-          <label className="block text-sm font-semibold text-[#06201c]">Meeting link{required ? " *" : ""} (Google Meet / Zoom)
-            <input type="url" value={values.meeting_link} onChange={(e) => update("meeting_link", e.target.value)} placeholder="https://meet.google.com/..." className={deliveryInputClass} />
-            {errFor("meeting_link")}
-          </label>
-        ) : null}
-        {showQr ? (
-          <label className="block text-sm font-semibold text-[#06201c]">QR payload{required ? " *" : ""} (check-in code)
-            <input value={values.qr_payload} onChange={(e) => update("qr_payload", e.target.value)} placeholder={required ? "e.g. TRAINING-2026" : "Optional check-in code"} className={deliveryInputClass} />
-            {errFor("qr_payload")}
-          </label>
-        ) : null}
-        {showQr ? (
-          <label className="block text-sm font-semibold text-[#06201c]">Pass code{required ? " *" : ""}
-            <input value={values.pass_code} onChange={(e) => update("pass_code", e.target.value)} placeholder="e.g. 1234" className={deliveryInputClass} />
-            {errFor("pass_code")}
-          </label>
-        ) : null}
-        {showQr ? (
-          <label className="flex items-center gap-2 text-sm font-semibold text-[#06201c]">
-            <input type="checkbox" checked={values.check_in} onChange={(e) => update("check_in", e.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58] focus:ring-[#1f6a58]" />
-            Enable check-in for this training{required ? " *" : ""}
-          </label>
-        ) : null}
-      </div>
-      {mode === "hybrid" ? <p className="mt-2 text-xs text-[#7f9d94]">Hybrid = venue + online link + QR. Fill the meeting link and QR payload before submitting.</p> : null}
-      {mode === "online" ? <p className="mt-2 text-xs text-[#7f9d94]">Online = meeting link only. No venue or QR code needed.</p> : null}
-      {mode === "physical" ? <p className="mt-2 text-xs text-[#7f9d94]">Physical = venue only. QR is optional — you can submit without a check-in code.</p> : null}
-    </div>
   );
 }
 
@@ -212,13 +204,8 @@ function ConfiguredField({
   const required = field.required ? " *" : "";
   const error = errors[key]?.[0];
   const coreField = CORE_FIELDS[key];
-  // Delivery-mode visibility — mirror static builder: hybrid shows meeting link + QR, online shows
-  // meeting link only, physical/offline shows QR (optional) only.
   const deliveryMode = values.delivery_mode;
-  const isMeetingLinkField = key === "meeting_link" || key === "delivery_instructions";
-  const isQrField = key === "qr_payload" || key === "pass_code" || key === "check_in";
-  if (isMeetingLinkField && deliveryMode !== "online" && deliveryMode !== "hybrid") return null;
-  if (isQrField && deliveryMode === "online") return null;
+  if (!isPricingFieldApplicable(field, values.pricing_type)) return null;
   // Core field - bind to values
   if (coreField) {
     const value = coreField === "tags" ? values.tags.join(", ") : Array.isArray((values as unknown as Record<string, unknown>)[coreField]) ? ((values as unknown as Record<string, unknown>)[coreField] as string[]).join(", ") : scalar((values as unknown as Record<string, unknown>)[coreField]);
@@ -230,6 +217,9 @@ function ConfiguredField({
       else update(coreField as keyof CreateTrainingFormValues, (isBoolean ? next === "true" : isNumber ? next : next) as never);
     };
     const options = field.options ?? [];
+    if (coreField === "pricing_type") {
+      return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}<select value={value || "free"} onChange={(e) => setValue(e.target.value)} className={inputClass}><option value="free">Free</option><option value="paid">Paid</option></select>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
+    }
     // Tags / learning_objectives / badges chip editor (press Enter)
     if (coreField === "tags" || coreField === "learning_objectives" || coreField === "badges") {
       const arr = coreField === "tags" ? values.tags : coreField === "badges" ? values.badges : values.learning_objectives;
@@ -243,23 +233,83 @@ function ConfiguredField({
         </div>
       );
     }
-    // Gallery UrlList with + Add — like TrainingMediaSection:219
-    if (coreField === "gallery_images") {
-      const arr = (values[coreField as keyof CreateTrainingFormValues] as string[]) ?? [];
+    if (coreField === "primary_image") {
       return (
         <div className="block text-sm font-semibold text-[#06201c] md:col-span-2">
-          <div className="flex items-center justify-between">
-            <label>{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</label>
-            <button type="button" onClick={() => update(coreField as keyof CreateTrainingFormValues, [...arr, ""] as never)} className="text-sm font-semibold text-[#1f6a58]">+ Add</button>
+          <label htmlFor="configured-training-primary-image-url">{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</label>
+          <div className="flex flex-nowrap items-center gap-2">
+            <input
+              id="configured-training-primary-image-url"
+              type="url"
+              value={scalar(values.primary_image)}
+              onChange={(event) => update("primary_image", event.target.value)}
+              placeholder={field.placeholder ?? "https://…"}
+              className={`${inputClass} min-w-0 flex-1`}
+            />
+            <TrainingMediaUploadButton
+              fieldKey={field.key}
+              label="Upload image"
+              accept={field.frontendSettings?.upload?.allowed_mime_types?.join(",") ?? "image/*"}
+              purpose="image"
+              allowedMimeTypes={field.frontendSettings?.upload?.allowed_mime_types}
+              maxFileSizeMb={field.frontendSettings?.upload?.max_file_size_mb}
+              onUploaded={(file) => update("primary_image", file.url)}
+            />
           </div>
+          {error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}
+        </div>
+      );
+    }
+    if (coreField === "promotional_video") {
+      return (
+        <div className="block text-sm font-semibold text-[#06201c] md:col-span-2">
+          <label htmlFor="configured-training-video-url">{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</label>
+          <div className="flex flex-nowrap items-center gap-2">
+            <input
+              id="configured-training-video-url"
+              type="url"
+              value={scalar(values.promotional_video)}
+              onChange={(event) => update("promotional_video", event.target.value)}
+              placeholder={field.placeholder ?? "https://…"}
+              className={`${inputClass} min-w-0 flex-1`}
+            />
+            <TrainingMediaUploadButton
+              fieldKey={field.key}
+              label="Upload video"
+              accept={field.frontendSettings?.upload?.allowed_mime_types?.join(",") ?? "video/*"}
+              purpose="lesson_video"
+              allowedMimeTypes={field.frontendSettings?.upload?.allowed_mime_types}
+              maxFileSizeMb={field.frontendSettings?.upload?.max_file_size_mb}
+              onUploaded={(file) => update("promotional_video", file.url)}
+            />
+          </div>
+          {error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}
+        </div>
+      );
+    }
+    // Keep one gallery URL field visible even when no images are set.
+    if (coreField === "gallery_images") {
+      const arr = (values[coreField as keyof CreateTrainingFormValues] as string[]) ?? [];
+      const displayedValues = arr.length === 0 ? [""] : arr;
+      return (
+        <div className="block text-sm font-semibold text-[#06201c] md:col-span-2">
+          <label>{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</label>
           <div className="mt-2 space-y-2">
-            {arr.map((val, idx) => (
-              <div key={idx} className="flex gap-2">
-                <input type="url" value={val} onChange={(e) => update(coreField as keyof CreateTrainingFormValues, arr.map((c, i) => (i === idx ? e.target.value : c)) as never)} placeholder={field.placeholder ?? "https://…"} className={inputClass.replace("mt-1.5 ", "")} />
-                <button type="button" onClick={() => update(coreField as keyof CreateTrainingFormValues, arr.filter((_, i) => i !== idx) as never)} className="shrink-0 rounded-xl px-3 text-sm font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button>
+            {displayedValues.map((val, idx) => (
+              <div key={idx} className="flex flex-nowrap items-center gap-2">
+                <input type="url" value={val} onChange={(e) => update(coreField as keyof CreateTrainingFormValues, displayedValues.map((current, i) => (i === idx ? e.target.value : current)) as never)} placeholder={field.placeholder ?? "https://…"} className={`${inputClass.replace("mt-1.5 ", "")} min-w-0 flex-1`} />
+                {arr.length > 0 ? <button type="button" onClick={() => update(coreField as keyof CreateTrainingFormValues, arr.filter((_, i) => i !== idx) as never)} className="shrink-0 rounded-xl px-3 text-sm font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button> : null}
+                <TrainingMediaUploadButton
+                  fieldKey={field.key}
+                  label="Upload image"
+                  accept={field.frontendSettings?.upload?.allowed_mime_types?.join(",") ?? "image/*"}
+                  purpose="image"
+                  allowedMimeTypes={field.frontendSettings?.upload?.allowed_mime_types}
+                  maxFileSizeMb={field.frontendSettings?.upload?.max_file_size_mb}
+                  onUploaded={(file) => update(coreField as keyof CreateTrainingFormValues, displayedValues.map((current, i) => (i === idx ? file.url : current)) as never)}
+                />
               </div>
             ))}
-            {arr.length === 0 ? <p className="text-xs text-[#7f9d94]">No {field.label.toLowerCase()} yet — click + Add.</p> : null}
           </div>
           {error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}
         </div>
@@ -267,26 +317,32 @@ function ConfiguredField({
     }
     if (coreField === "documents") {
       const docs = (values.documents as Array<{ url: string; visibility: string; downloadable: boolean }>) ?? [];
+      const displayedDocs = docs.length === 0 ? [{ url: "", visibility: "public", downloadable: true }] : docs;
       return (
         <div className="block text-sm font-semibold text-[#06201c] md:col-span-2">
-          <div className="flex items-center justify-between">
-            <label>{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</label>
-            <button type="button" onClick={() => update("documents", [...docs, { url: "", visibility: "public", downloadable: true }] as never)} className="text-sm font-semibold text-[#1f6a58]">+ Add</button>
-          </div>
+          <label>{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</label>
           <div className="mt-2 space-y-3">
-            {docs.map((doc, idx) => (
+            {displayedDocs.map((doc, idx) => (
               <div key={idx} className="rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-3">
-                <div className="flex gap-2">
-                  <input type="url" value={doc.url} onChange={(e) => update("documents", docs.map((d, i) => (i === idx ? { ...d, url: e.target.value } : d)) as never)} placeholder={field.placeholder ?? "https://…"} className={inputClass.replace("mt-1.5 ", "") + " flex-1"} />
-                  <button type="button" onClick={() => update("documents", docs.filter((_, i) => i !== idx) as never)} className="shrink-0 rounded-xl px-3 text-sm font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button>
+                <div className="flex flex-nowrap items-center gap-2">
+                  <input type="url" value={doc.url} onChange={(e) => update("documents", displayedDocs.map((d, i) => (i === idx ? { ...d, url: e.target.value } : d)) as never)} placeholder={field.placeholder ?? "https://…"} className={`${inputClass.replace("mt-1.5 ", "")} min-w-0 flex-1`} />
+                  {docs.length > 0 ? <button type="button" onClick={() => update("documents", docs.filter((_, i) => i !== idx) as never)} className="shrink-0 rounded-xl px-3 text-sm font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button> : null}
+                  <TrainingMediaUploadButton
+                    fieldKey={field.key}
+                    label="Upload document"
+                    accept={field.frontendSettings?.upload?.allowed_mime_types?.join(",") ?? ".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.rtf,application/pdf,text/plain"}
+                    purpose="lesson_document"
+                    allowedMimeTypes={field.frontendSettings?.upload?.allowed_mime_types}
+                    maxFileSizeMb={field.frontendSettings?.upload?.max_file_size_mb}
+                    onUploaded={(file) => update("documents", displayedDocs.map((current, item) => (item === idx ? { ...current, url: file.url } : current)) as never)}
+                  />
                 </div>
                 <div className="mt-2 flex gap-3">
-                  <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]">Visibility<select value={doc.visibility} onChange={(e) => update("documents", docs.map((d, i) => (i === idx ? { ...d, visibility: e.target.value } : d)) as never)} className="ml-1 rounded-lg border border-[#d7e5df] bg-white px-2 py-1 text-xs"><option value="public">public</option><option value="private">private</option></select></label>
-                  <label className="flex items-center gap-2 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={doc.downloadable} onChange={(e) => update("documents", docs.map((d, i) => (i === idx ? { ...d, downloadable: e.target.checked } : d)) as never)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Downloadable</label>
+                  <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]">Visibility<select value={doc.visibility} onChange={(e) => update("documents", displayedDocs.map((d, i) => (i === idx ? { ...d, visibility: e.target.value } : d)) as never)} className="ml-1 rounded-lg border border-[#d7e5df] bg-white px-2 py-1 text-xs"><option value="public">public</option><option value="private">private</option></select></label>
+                  <label className="flex items-center gap-2 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={doc.downloadable} onChange={(e) => update("documents", displayedDocs.map((d, i) => (i === idx ? { ...d, downloadable: e.target.checked } : d)) as never)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Downloadable</label>
                 </div>
               </div>
             ))}
-            {docs.length === 0 ? <p className="text-xs text-[#7f9d94]">No documents yet — click + Add.</p> : null}
           </div>
           {error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}
         </div>
@@ -295,10 +351,14 @@ function ConfiguredField({
     if (isBoolean) {
       return <label className="flex items-center gap-2 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={Boolean(values[coreField as keyof CreateTrainingFormValues])} onChange={(e) => setValue(String(e.target.checked))} />{field.label}{required}</label>;
     }
+    if (field.type === "multiselect") {
+      const selected = Array.isArray((values as unknown as Record<string, unknown>)[coreField]) ? ((values as unknown as Record<string, unknown>)[coreField] as string[]) : [];
+      return <fieldset className="block text-sm font-semibold text-[#06201c]"><legend>{field.label}{required}</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{options.map((option) => <label key={option} className="flex items-center gap-2 text-sm font-normal"><input type="checkbox" checked={selected.includes(option)} onChange={(event) => update(coreField as keyof CreateTrainingFormValues, (event.target.checked ? [...selected, option] : selected.filter((item) => item !== option)) as never)} />{option}</label>)}</div>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</fieldset>;
+    }
     if (options.length) {
-      // Delivery mode shows only Live online | Offline | Hybrid | Self-paced, defaulting to Self-paced instead of a placeholder; keep a legacy stored value visible for old trainings.
+      // Delivery mode keeps the API's online/physical values while showing learner-facing Live/Venue labels.
       // Language codes from the server config render and submit as full names (English, not en).
-      const DELIVERY_LABELS: Record<string, string> = { online: "Live online", physical: "Offline (physical venue)", hybrid: "Hybrid", self_paced: "Self-paced" };
+      const DELIVERY_LABELS: Record<string, string> = { online: "Live", physical: "Venue", hybrid: "Hybrid", self_paced: "Self-paced" };
       const LANGUAGE_NAMES: Record<string, string> = { en: "English", hi: "Hindi", es: "Spanish", fr: "French" };
       const isDelivery = coreField === "delivery_mode";
       const isLang = coreField === "language";
@@ -315,7 +375,7 @@ function ConfiguredField({
     }
      const isTimeField = key === "start_time" || key === "end_time" || field.type === "time";
      const inputType = isTimeField ? "time" : field.type === "number" ? "number" : field.type === "date" ? "date" : field.type === "datetime" ? "datetime-local" : field.type === "url" ? "url" : "text";
-    return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}<input type={inputType} value={value} placeholder={field.placeholder} onChange={(e) => setValue(e.target.value)} pattern={field.validation?.pattern ?? undefined} className={inputClass} />{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
+    return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}<input type={inputType} value={value} placeholder={field.placeholder} min={field.validation?.min ?? undefined} max={field.validation?.max ?? undefined} minLength={field.validation?.minLength ?? undefined} maxLength={field.validation?.maxLength ?? undefined} onChange={(e) => setValue(e.target.value)} pattern={field.validation?.pattern ?? undefined} className={inputClass} />{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
   }
   // Custom field
   const raw = customValues[key];
@@ -323,11 +383,15 @@ function ConfiguredField({
   const isBoolean = field.type === "checkbox";
   const isNumber = field.type === "number";
   const options = field.options ?? [];
-  const setValue = (next: string | boolean | number) => setCustomValues({ ...customValues, [key]: next });
+  const setValue = (next: string | boolean | number | string[]) => setCustomValues({ ...customValues, [key]: next });
   if (isBoolean) return <label className="flex items-center gap-2 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={raw === true || raw === "true"} onChange={(e) => setValue(e.target.checked)} />{field.label}{required}</label>;
+  if (field.type === "multiselect") {
+    const selected = Array.isArray(raw) ? raw.map(String) : [];
+    return <fieldset className="block text-sm font-semibold text-[#06201c]"><legend>{field.label}{required}</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{options.map((option) => <label key={option} className="flex items-center gap-2 text-sm font-normal"><input type="checkbox" checked={selected.includes(option)} onChange={(event) => setValue(event.target.checked ? [...selected, option] : selected.filter((item) => item !== option))} />{option}</label>)}</div>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</fieldset>;
+  }
   if (options.length) return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}<select value={value} onChange={(e) => setValue(e.target.value)} className={inputClass}><option value="">Select</option>{options.map((o) => <option key={o} value={o}>{o}</option>)}</select>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
-  if (field.type === "textarea") return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}<textarea value={value} placeholder={field.placeholder} onChange={(e) => setValue(e.target.value)} className={`${inputClass} h-24 resize-y py-2`} />{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
+  if (field.type === "textarea") return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}<textarea value={value} placeholder={field.placeholder} minLength={field.validation?.minLength ?? undefined} maxLength={field.validation?.maxLength ?? undefined} onChange={(e) => setValue(e.target.value)} className={`${inputClass} h-24 resize-y py-2`} />{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
   const isTimeField2 = key === "start_time" || key === "end_time" || field.type === "time";
   const inputType2 = isTimeField2 ? "time" : field.type === "number" ? "number" : field.type === "date" ? "date" : field.type === "datetime" ? "datetime-local" : field.type === "url" ? "url" : "text";
-  return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}<input type={inputType2} value={value} placeholder={field.placeholder} pattern={field.validation?.pattern ?? undefined} onChange={(e) => setValue(isNumber ? Number(e.target.value) : e.target.value)} className={inputClass} />{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
+  return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}<input type={inputType2} value={value} placeholder={field.placeholder} min={field.validation?.min ?? undefined} max={field.validation?.max ?? undefined} minLength={field.validation?.minLength ?? undefined} maxLength={field.validation?.maxLength ?? undefined} pattern={field.validation?.pattern ?? undefined} onChange={(e) => setValue(isNumber ? Number(e.target.value) : e.target.value)} className={inputClass} />{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
 }

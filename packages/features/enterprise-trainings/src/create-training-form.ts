@@ -35,6 +35,7 @@ export interface CreateTrainingFormValues {
   enrolment_end: string;
   time_zone: string;
   capacity: string;
+  pricing_type: "free" | "paid";
   price: string;
   currency: string;
   promo_price: string;
@@ -65,9 +66,6 @@ export interface CreateTrainingFormValues {
   difficulty_level: string;
   offline_enabled: boolean;
   session_mode: string;
-  check_in: boolean;
-  pass_code: string;
-  qr_payload: string;
   discussions: string;
   announcements: string;
   moderation_history: string;
@@ -111,6 +109,7 @@ export function createEmptyTrainingForm(): CreateTrainingFormValues {
     enrolment_end: "",
     time_zone: "Asia/Kolkata",
     capacity: "",
+    pricing_type: "free",
     price: "",
     currency: "INR",
     promo_price: "",
@@ -140,9 +139,6 @@ export function createEmptyTrainingForm(): CreateTrainingFormValues {
     difficulty_level: "",
     offline_enabled: false,
     session_mode: "",
-    check_in: false,
-    pass_code: "",
-    qr_payload: "",
     discussions: "",
     announcements: "",
     moderation_history: "",
@@ -181,6 +177,7 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
     enrolment_end: stringValue("enrolment_end"),
     time_zone: stringValue("time_zone", "Asia/Kolkata"),
     capacity: training.capacity ?? "",
+    pricing_type: stringValue("pricing_type", training.price ? "paid" : "free") === "paid" ? "paid" : "free",
     price: training.price ?? "",
     currency: stringValue("currency", "INR"),
     promo_price: stringValue("promo_price"),
@@ -219,9 +216,6 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
     difficulty_level: stringValue("difficulty_level") || stringValue("difficultyLevel") || stringValue("level", "beginner"),
     offline_enabled: record.offline_enabled === true || record.offline_access_enabled === true,
     session_mode: stringValue("session_mode"),
-    check_in: (() => { const v = record.check_in; return typeof v === "boolean" ? v : v === true || v === "true"; })(),
-    pass_code: stringValue("pass_code"),
-    qr_payload: stringValue("qr_payload"),
     release_rule: (() => { const v = record.release_rule; if (typeof v === "string") return v; if (v && typeof v === "object") return typeof (v as Record<string, unknown>).type === "string" ? (v as Record<string, unknown>).type as string : "immediate"; return "immediate"; })(),
     discussions: (() => { const v = record.discussions; return Array.isArray(v) ? JSON.stringify(v) : typeof v === "string" ? v : ""; })(),
     announcements: (() => { const v = record.announcements; return Array.isArray(v) ? JSON.stringify(v) : typeof v === "string" ? v : ""; })(),
@@ -237,6 +231,22 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
 /** Builds a confirmed Create Training payload without response-only fields.
  * NOTE: delivery_mode is restricted to "where" values only: hybrid/physical/online. */
 export function buildCreateTrainingPayload(values: CreateTrainingFormValues, tenantId: string, enterpriseId: string): CreateTrainingPayload {
+  const isLive = values.delivery_mode === "online" || values.delivery_mode === "hybrid";
+  const isVenue = values.delivery_mode === "physical" || values.delivery_mode === "hybrid";
+  const isPaid = values.pricing_type === "paid";
+  const galleryImages = values.gallery_images.map((url) => url.trim()).filter(Boolean);
+  const documents = values.documents
+    .filter((doc) => doc.url.trim())
+    .map((doc, idx) => ({
+      id: `doc-${idx}`,
+      url: doc.url.trim(),
+      name: doc.url.trim().split("/").pop() || `document-${idx}.pdf`,
+      type: doc.url.trim().endsWith(".pdf") ? "pdf" : "file",
+      size: null,
+      visibility: doc.visibility,
+      downloadable: doc.downloadable,
+      title: doc.url.trim().split("/").pop() || `Document ${idx + 1}`,
+    }));
   return {
     tenant_id: tenantId,
     enterprise_id: enterpriseId,
@@ -251,9 +261,9 @@ export function buildCreateTrainingPayload(values: CreateTrainingFormValues, ten
     requirements: values.requirements.trim() || null,
     learning_objectives: values.learning_objectives.length ? values.learning_objectives : null,
     primary_image: values.primary_image.trim() || null,
-    gallery_images: values.gallery_images.length ? values.gallery_images : null,
+    gallery_images: galleryImages.length ? galleryImages : null,
     promotional_video: values.promotional_video.trim() || null,
-    documents: values.documents.length ? values.documents.map((doc, idx) => ({ id: `doc-${idx}`, url: doc.url, name: doc.url.split("/").pop() || `document-${idx}.pdf`, type: doc.url.endsWith(".pdf") ? "pdf" : "file", size: null, visibility: doc.visibility, downloadable: doc.downloadable, title: doc.url.split("/").pop() || `Document ${idx+1}` })) : null,
+    documents: documents.length ? documents : null,
     delivery_mode: values.delivery_mode || null,
     course_type: values.course_type.trim() || null,
     duration: values.duration.trim() || null,
@@ -261,21 +271,21 @@ export function buildCreateTrainingPayload(values: CreateTrainingFormValues, ten
     end_date: values.end_date || null,
     start_time: values.start_time || null,
     end_time: values.end_time || null,
-    venue: values.venue.trim() || null,
-    address: values.address.trim() || null,
-    meeting_link: values.meeting_link.trim() || null,
-    delivery_instructions: values.delivery_instructions.trim() || null,
+    venue: isVenue ? values.venue.trim() || null : null,
+    address: isVenue ? values.address.trim() || null : null,
+    meeting_link: isLive ? values.meeting_link.trim() || null : null,
+    delivery_instructions: isLive ? values.delivery_instructions.trim() || null : null,
     enrolment_start: values.enrolment_start || null,
     enrolment_end: values.enrolment_end || null,
     time_zone: values.time_zone || null,
     capacity: values.capacity.trim() || null,
-    price: values.price.trim() || null,
-    currency: values.currency.trim() || null,
-    promo_price: values.promo_price.trim() || null,
-    coupon_code: values.coupon_code.trim() || null,
+    price: isPaid ? values.price.trim() || null : null,
+    currency: isPaid ? values.currency.trim() || null : null,
+    promo_price: isPaid ? values.promo_price.trim() || null : null,
+    coupon_code: isPaid ? values.coupon_code.trim() || null : null,
     requires_approval: values.requires_approval,
     access_duration_days: values.access_duration_days.trim() || null,
-location_id: values.location_id.trim() || null,
+location_id: isVenue ? values.location_id.trim() || null : null,
     level: values.level || values.difficulty_level || null,
     language: values.language || null,
     prerequisites: values.prerequisites.trim() || null,
@@ -285,8 +295,8 @@ release_rule: values.release_rule.trim() ? { type: values.release_rule.trim() } 
     is_mandatory: values.is_mandatory,
     recurring: values.recurring.trim() || null,
     schedule_exceptions: (() => { try { return values.schedule_exceptions.trim() ? JSON.parse(values.schedule_exceptions) : null; } catch { return values.schedule_exceptions.trim() || null; } })(),
-    access_information: values.access_information.trim() || null,
-    meeting_provider: values.meeting_provider.trim() || null,
+    access_information: isLive ? values.access_information.trim() || null : null,
+    meeting_provider: isLive ? values.meeting_provider.trim() || null : null,
     instructor: values.instructor_role.trim() ? { id: values.instructor_id.trim() || null, name: values.instructor_name.trim() || null, bio: values.instructor_bio.trim() || null, role: values.instructor_role.trim() || null } : null,
     instructor_notes: values.instructor_notes.length ? values.instructor_notes.map((url, idx) => ({ id: `note-${idx}`, title: `Note ${idx+1}`, url })) : null,
     notes_pdf_url: values.notes_pdf_url.trim() || null,
@@ -294,9 +304,6 @@ release_rule: values.release_rule.trim() ? { type: values.release_rule.trim() } 
     offline_enabled: values.offline_enabled,
     offline_access_enabled: values.offline_enabled,
     session_mode: values.session_mode.trim() || null,
-    check_in: values.check_in,
-    pass_code: values.pass_code.trim() || null,
-    qr_payload: values.qr_payload.trim() || null,
     discussions: (() => { try { return values.discussions.trim() ? JSON.parse(values.discussions) : null; } catch { return values.discussions.trim() || null; } })(),
     announcements: (() => { try { return values.announcements.trim() ? JSON.parse(values.announcements) : null; } catch { return values.announcements.trim() || null; } })(),
     moderation_history: (() => { try { return values.moderation_history.trim() ? JSON.parse(values.moderation_history) : null; } catch { return values.moderation_history.trim() || null; } })(),
@@ -310,6 +317,22 @@ release_rule: values.release_rule.trim() ? { type: values.release_rule.trim() } 
 
 /** Builds a partial Update payload from changed form values. */
 export function buildUpdateTrainingPayload(values: CreateTrainingFormValues): UpdateTrainingPayload {
+  const isLive = values.delivery_mode === "online" || values.delivery_mode === "hybrid";
+  const isVenue = values.delivery_mode === "physical" || values.delivery_mode === "hybrid";
+  const isPaid = values.pricing_type === "paid";
+  const galleryImages = values.gallery_images.map((url) => url.trim()).filter(Boolean);
+  const documents = values.documents
+    .filter((doc) => doc.url.trim())
+    .map((doc, idx) => ({
+      id: `doc-${idx}`,
+      url: doc.url.trim(),
+      name: doc.url.trim().split("/").pop() || `document-${idx}.pdf`,
+      type: doc.url.trim().endsWith(".pdf") ? "pdf" : "file",
+      size: null,
+      visibility: doc.visibility,
+      downloadable: doc.downloadable,
+      title: doc.url.trim().split("/").pop() || `Document ${idx + 1}`,
+    }));
   return {
     title: values.title.trim(),
     description: values.description.trim() || null,
@@ -322,9 +345,9 @@ export function buildUpdateTrainingPayload(values: CreateTrainingFormValues): Up
     requirements: values.requirements.trim() || null,
     learning_objectives: values.learning_objectives.length ? values.learning_objectives : null,
     primary_image: values.primary_image.trim() || null,
-    gallery_images: values.gallery_images.length ? values.gallery_images : null,
+    gallery_images: galleryImages.length ? galleryImages : null,
     promotional_video: values.promotional_video.trim() || null,
-    documents: values.documents.length ? values.documents.map((doc, idx) => ({ id: `doc-${idx}`, url: doc.url, name: doc.url.split("/").pop() || `document-${idx}.pdf`, type: doc.url.endsWith(".pdf") ? "pdf" : "file", size: null, visibility: doc.visibility, downloadable: doc.downloadable, title: doc.url.split("/").pop() || `Document ${idx+1}` })) : null,
+    documents: documents.length ? documents : null,
     delivery_mode: values.delivery_mode || null,
     course_type: values.course_type.trim() || null,
     duration: values.duration.trim() || null,
@@ -332,21 +355,21 @@ export function buildUpdateTrainingPayload(values: CreateTrainingFormValues): Up
     end_date: values.end_date || null,
     start_time: values.start_time || null,
     end_time: values.end_time || null,
-    venue: values.venue || null,
-    address: values.address || null,
-    meeting_link: values.meeting_link.trim() || null,
-    delivery_instructions: values.delivery_instructions || null,
+    venue: isVenue ? values.venue.trim() || null : null,
+    address: isVenue ? values.address.trim() || null : null,
+    meeting_link: isLive ? values.meeting_link.trim() || null : null,
+    delivery_instructions: isLive ? values.delivery_instructions.trim() || null : null,
     enrolment_start: values.enrolment_start || null,
     enrolment_end: values.enrolment_end || null,
     time_zone: values.time_zone || null,
     capacity: values.capacity.trim() || null,
-    price: values.price.trim() || null,
-    currency: values.currency.trim() || null,
-    promo_price: values.promo_price.trim() || null,
-    coupon_code: values.coupon_code.trim() || null,
+    price: isPaid ? values.price.trim() || null : null,
+    currency: isPaid ? values.currency.trim() || null : null,
+    promo_price: isPaid ? values.promo_price.trim() || null : null,
+    coupon_code: isPaid ? values.coupon_code.trim() || null : null,
     requires_approval: values.requires_approval,
     access_duration_days: values.access_duration_days.trim() || null,
-    location_id: values.location_id.trim() || null,
+    location_id: isVenue ? values.location_id.trim() || null : null,
     level: values.level || values.difficulty_level || null,
     language: values.language || null,
     prerequisites: values.prerequisites.trim() || null,
@@ -356,8 +379,8 @@ release_rule: values.release_rule.trim() ? { type: values.release_rule.trim() } 
     is_mandatory: values.is_mandatory,
 recurring: values.recurring.trim() || null,
     schedule_exceptions: (() => { try { return values.schedule_exceptions.trim() ? JSON.parse(values.schedule_exceptions) : null; } catch { return values.schedule_exceptions.trim() || null; } })(),
-    access_information: values.access_information.trim() || null,
-    meeting_provider: values.meeting_provider.trim() || null,
+    access_information: isLive ? values.access_information.trim() || null : null,
+    meeting_provider: isLive ? values.meeting_provider.trim() || null : null,
     instructor: values.instructor_role.trim() ? { id: values.instructor_id.trim() || null, name: values.instructor_name.trim() || null, bio: values.instructor_bio.trim() || null, role: values.instructor_role.trim() || null } : null,
     instructor_notes: values.instructor_notes.length ? values.instructor_notes.map((url, idx) => ({ id: `note-${idx}`, title: `Note ${idx+1}`, url })) : null,
     notes_pdf_url: values.notes_pdf_url.trim() || null,
@@ -365,9 +388,6 @@ recurring: values.recurring.trim() || null,
     offline_enabled: values.offline_enabled,
     offline_access_enabled: values.offline_enabled,
     session_mode: values.session_mode.trim() || null,
-    check_in: values.check_in,
-    pass_code: values.pass_code.trim() || null,
-    qr_payload: values.qr_payload.trim() || null,
     discussions: (() => { try { return values.discussions.trim() ? JSON.parse(values.discussions) : null; } catch { return values.discussions.trim() || null; } })(),
     announcements: (() => { try { return values.announcements.trim() ? JSON.parse(values.announcements) : null; } catch { return values.announcements.trim() || null; } })(),
     moderation_history: (() => { try { return values.moderation_history.trim() ? JSON.parse(values.moderation_history) : null; } catch { return values.moderation_history.trim() || null; } })(),
@@ -380,22 +400,36 @@ recurring: values.recurring.trim() || null,
 }
 
 /** Validates the current form values, returning per-field messages. */
-export function validateTrainingForm(values: CreateTrainingFormValues): Record<string, string[]> {
+export function validateTrainingForm(values: CreateTrainingFormValues, configuredRequiredKeys?: ReadonlySet<string>): Record<string, string[]> {
   const errors: Record<string, string[]> = {};
   const timeRe = /^([01]\d|2[0-3]):([0-5]\d)$/;
-  if (!values.title.trim()) errors.title = ["Title is required."];
-  if (!values.description.trim()) errors.description = ["Description is required."];
-  if (!values.category.trim()) errors.category = ["Category is required."];
-  if (values.delivery_mode === "hybrid" && !values.meeting_link.trim()) errors.meeting_link = ["Hybrid mode requires the Google Meet / Zoom meeting link."];
-  if (values.delivery_mode === "hybrid" && !values.qr_payload.trim()) errors.qr_payload = ["Hybrid mode requires the QR payload (check-in code)."];
-  if (values.delivery_mode === "online" && !values.meeting_link.trim()) errors.meeting_link = ["Online mode requires the Google Meet / Zoom meeting link."];
+  const required = (key: string, value: string, message: string) => {
+    if ((configuredRequiredKeys === undefined || configuredRequiredKeys.has(key)) && !value.trim()) errors[key] = [message];
+  };
+  required("title", values.title, "Title is required.");
+  required("description", values.description, "Description is required.");
+  required("category", values.category, "Category is required.");
+  const isLive = values.delivery_mode === "online" || values.delivery_mode === "hybrid";
+  const isVenue = values.delivery_mode === "physical" || values.delivery_mode === "hybrid";
+  if (isLive && !values.meeting_link.trim()) errors.meeting_link = ["Meeting link is required for Live mode."];
+  if (isVenue && !values.venue.trim()) errors.venue = ["Venue is required for Venue or Hybrid mode."];
+  if (isVenue && !values.address.trim()) errors.address = ["Address is required for Venue or Hybrid mode."];
   if (values.start_time && !timeRe.test(values.start_time)) errors.start_time = ["Start time must be HH:MM (00:00–23:59)."];
   if (values.end_time && !timeRe.test(values.end_time)) errors.end_time = ["End time must be HH:MM (00:00–23:59)."];
   if (values.start_date && values.end_date && values.end_date < values.start_date) {
     errors.end_date = ["End date cannot be before the start date."];
   }
+  if (values.start_date && values.end_date && values.start_date === values.end_date && values.start_time && values.end_time && timeRe.test(values.start_time) && timeRe.test(values.end_time) && values.end_time <= values.start_time) {
+    errors.end_time = ["End time must be after start time on the same day."];
+  }
   if (values.enrolment_start && values.enrolment_end && values.enrolment_end < values.enrolment_start) {
     errors.enrolment_end = ["Enrolment end cannot be before enrolment start."];
   }
+  const capacity = values.capacity.trim() ? Number(values.capacity) : null;
+  if (capacity !== null && (!Number.isFinite(capacity) || capacity <= 0)) errors.capacity = ["Capacity must be greater than zero."];
+  const price = values.pricing_type === "paid" && values.price.trim() ? Number(values.price) : null;
+  if (values.pricing_type === "paid" && !values.price.trim()) errors.price = ["Price is required for Paid training."];
+  if (price !== null && (!Number.isFinite(price) || price < 0)) errors.price = ["Price must be zero or greater."];
+  if (values.pricing_type === "paid" && !values.currency.trim()) errors.currency = ["Currency is required for Paid training."];
   return errors;
 }

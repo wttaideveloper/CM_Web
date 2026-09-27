@@ -1,11 +1,15 @@
 import type { NextConfig } from "next";
 
-const authApiBaseUrl = process.env.AUTH_API_BASE_URL;
+const authApiBaseUrl =
+  process.env.AUTH_API_BASE_URL ?? "https://admin.apis.invigor8.app";
 const chatApiBaseUrl = process.env.CHAT_API_BASE_URL;
 const eventsApiBaseUrl = process.env.EVENTS_API_BASE_URL;
 const workflowApiBaseUrl = process.env.WORKFLOW_API_BASE_URL;
 
 const nextConfig: NextConfig = {
+  experimental: {
+    proxyClientMaxBodySize: "310mb",
+  },
   transpilePackages: [
     "@ihp/auth",
     "@ihp/attributes",
@@ -32,18 +36,16 @@ const nextConfig: NextConfig = {
   async rewrites() {
     const fallback = [];
 
-    if (authApiBaseUrl) {
-      fallback.push(
-        {
-          source: "/api/v1/auth/:path*",
-          destination: `${authApiBaseUrl}/api/v1/auth/:path*`,
-        },
-        {
-          source: "/api/v1/tenant/:path*",
-          destination: `${authApiBaseUrl}/api/v1/tenant/:path*`,
-        },
-      );
-    }
+    fallback.push(
+      {
+        source: "/api/v1/auth/:path*",
+        destination: `${authApiBaseUrl}/api/v1/auth/:path*`,
+      },
+      {
+        source: "/api/v1/tenant/:path*",
+        destination: `${authApiBaseUrl}/api/v1/tenant/:path*`,
+      },
+    );
 
     if (chatApiBaseUrl) {
       const chatBaseHttps = chatApiBaseUrl.replace(/^http:/, "https:");

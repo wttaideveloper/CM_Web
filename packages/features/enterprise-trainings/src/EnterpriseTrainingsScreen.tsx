@@ -167,6 +167,15 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
           </div>
           <div className={hasPrimaryImage ? "flex shrink-0 items-center gap-2" : "flex shrink-0 flex-col items-end gap-2"}>
             <span className={`rounded-full px-3 py-1 text-[11px] font-bold shadow-sm ${getTrainingStatusBadgeClass(training.status)}`}>{getTrainingStatusLabel(training.status)}</span>
+            {training.status === "needs_revision" || training.status === "rejected" ? (
+              <Link
+                href={`/admin/trainings/${training.id}`}
+                className={`rounded-full px-3 py-1 text-[11px] font-bold underline underline-offset-2 ${hasPrimaryImage ? "bg-white text-[#8a5a00]" : "bg-[#fff6e8] text-[#8a5a00]"}`}
+                aria-label={`Review Super Admin feedback for ${training.title}`}
+              >
+                Review feedback
+              </Link>
+            ) : null}
             <div className={hasPrimaryImage ? "rounded-full bg-white/90 shadow-sm" : undefined}>
               <TrainingActionsMenu training={training} onStatusSuccess={onStatusSuccess} onDuplicateSuccess={onDuplicateSuccess} onDeleteSuccess={onDeleteSuccess} />
             </div>
@@ -174,6 +183,11 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
         </div>
 
         <p className={`mt-2 line-clamp-2 min-h-10 text-sm leading-5 ${secondaryTextClass}`}>{training.description || "—"}</p>
+        {training.status === "needs_revision" || training.status === "rejected" ? (
+          <p className={`mt-2 text-xs font-semibold ${hasPrimaryImage ? "text-white" : "text-[#8a5a00]"}`}>
+            Super Admin feedback is available on the Training details page.
+          </p>
+        ) : null}
 
         <div className={`mt-3 grid grid-cols-1 gap-x-8 gap-y-4 border-t pt-3 text-sm sm:grid-cols-2 lg:grid-cols-4 ${dividerClass}`}>
           <div className="min-w-0">

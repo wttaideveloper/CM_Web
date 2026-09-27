@@ -16,7 +16,30 @@ function isStatus(value: unknown): boolean { return value === "draft" || value =
 function isValidation(value: unknown): boolean { return isRecord(value) && isNullableFiniteNumber(value.min_length) && isNullableFiniteNumber(value.max_length) && isNullableFiniteNumber(value.min) && isNullableFiniteNumber(value.max) && isNullableString(value.pattern); }
 function isOption(value: unknown): boolean { return isRecord(value) && isString(value.value) && isString(value.label) && Number.isInteger(value.position); }
 function isStringArray(value: unknown): value is string[] { return Array.isArray(value) && value.every(isString); }
-function isCompositeConfig(value: unknown): value is TrainingFormCompositeConfig { return isRecord(value) && (value.enabled_fields === undefined || isStringArray(value.enabled_fields)) && (value.required_fields === undefined || isStringArray(value.required_fields)); }
+function isFrontendSettings(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const visibility = value.visibility;
+  if (visibility !== undefined && visibility !== null) {
+    if (!isRecord(visibility) || !isString(visibility.field_key) || !visibility.field_key.trim()) return false;
+    const operator = visibility.operator;
+    if (operator !== "equals" && operator !== "not_equals" && operator !== "has_value" && operator !== "is_empty") return false;
+    if ((operator === "equals" || operator === "not_equals") && !isString(visibility.value)) return false;
+    if (visibility.value !== undefined && !isString(visibility.value)) return false;
+  }
+  const upload = value.upload;
+  if (upload !== undefined && upload !== null) {
+    if (!isRecord(upload)
+      || (upload.allowed_mime_types !== undefined && !isStringArray(upload.allowed_mime_types))
+      || !isNullableFiniteNumber(upload.max_file_size_mb)) return false;
+  }
+  return true;
+}
+function isCompositeConfig(value: unknown): value is TrainingFormCompositeConfig {
+  return isRecord(value)
+    && (value.enabled_fields === undefined || isStringArray(value.enabled_fields))
+    && (value.required_fields === undefined || isStringArray(value.required_fields))
+    && (value.frontend_settings === undefined || value.frontend_settings === null || isFrontendSettings(value.frontend_settings));
+}
 function isNullableCompositeConfig(value: unknown): value is TrainingFormCompositeConfig | null | undefined { return value === undefined || value === null || isCompositeConfig(value); }
 function isField(value: unknown): boolean { return isRecord(value) && isString(value.id) && (value.source === "core" || value.source === "custom") && isNullableString(value.core_key) && isNullableString(value.stable_key) && isString(value.label) && isString(value.renderer) && isString(value.value_type) && typeof value.required === "boolean" && typeof value.is_enabled === "boolean" && Number.isInteger(value.position) && isNullableString(value.placeholder) && isNullableString(value.help_text) && Array.isArray(value.options) && value.options.every(isOption) && isValidation(value.validation) && isNullableCompositeConfig(value.composite_config); }
 function isSection(value: unknown): boolean { return isRecord(value) && isString(value.id) && isString(value.stable_key) && isString(value.label) && isNullableString(value.description) && Number.isInteger(value.position) && typeof value.is_enabled === "boolean" && Array.isArray(value.fields) && value.fields.every(isField); }
