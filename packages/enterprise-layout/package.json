@@ -6,6 +6,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@ihp/realtime": "0.1.0",
     "@ihp/ui": "0.1.0"
   },
   "peerDependencies": {

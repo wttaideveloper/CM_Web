@@ -11,6 +11,7 @@ export const platformNavigationGroups: readonly PlatformNavigationGroup[] = [
     title: "APPROVALS & CONFIG",
     items: [
       { label: "Approval Queue", href: "/approval-queue", icon: "queue" },
+      { label: "Tenant Applications", href: "/tenant-applications", icon: "building" },
       { label: "Form Builder", href: "/onboarding-forms", icon: "forms" },
       { label: "Form Builder New", href: "/form-builder-new", icon: "forms" },
       { label: "Workflow Builder New", href: "/workflow-builder-new", icon: "forms" },

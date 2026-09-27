@@ -17,6 +17,8 @@ export function PlatformAdminLayout({
   messagesHref = null,
   profileHref,
   profileInitials = "IH",
+  profileName = null,
+  profileEmail = null,
   navigationGroups = platformNavigationGroups,
   resolveNavigationHref = (item) => item.href,
   onLogout,
@@ -41,6 +43,8 @@ export function PlatformAdminLayout({
           messagesHref={messagesHref}
           profileHref={profileHref}
           profileInitials={profileInitials}
+          profileName={profileName}
+          profileEmail={profileEmail}
           onLogout={onLogout}
           onMenuClick={() => setMobileSidebarOpen((current) => !current)}
         />
