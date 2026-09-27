@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 
-import { useRealtime } from "@ihp/realtime";
+import { parseBackendTimestamp, useRealtime } from "@ihp/realtime";
 
 type NotificationLike = {
   id: string;
@@ -29,7 +29,7 @@ function formatNotificationTime(value: string | null) {
     return "Just now";
   }
 
-  const date = new Date(value);
+  const date = parseBackendTimestamp(value);
   if (Number.isNaN(date.getTime())) {
     return "Just now";
   }
@@ -114,9 +114,12 @@ export default function EnterpriseNotificationHistoryScreen({ messagesRoute }: N
           </div>
         </div>
 
-        {isLoadingNotifications ? (
+        {notificationError && notificationPagination !== null ? (
+          <div className="px-5 py-2 text-xs text-[#8f3b2f]">Refresh failed. Showing the last successful notifications.</div>
+        ) : null}
+        {isLoadingNotifications && notificationPagination === null ? (
           <div className="px-5 py-8 text-sm text-[#52736a]">Loading notifications...</div>
-        ) : notificationError ? (
+        ) : notificationError && notificationPagination === null ? (
           <div className="px-5 py-8 text-sm text-[#b42318]">{notificationError}</div>
         ) : notifications.length === 0 ? (
           <div className="px-5 py-10 text-sm text-[#52736a]">No notifications yet.</div>

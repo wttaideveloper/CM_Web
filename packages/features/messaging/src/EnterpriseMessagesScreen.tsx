@@ -1,8 +1,8 @@
 "use client";
 
 import { useAuth } from "@ihp/auth";
-import { getChatTokenUserId, type ChatSocket, useChatAuth } from "@ihp/chat-runtime";
-import { useRealtime } from "@ihp/realtime";
+import { realtimeDebug, type ChatSocket, useChatAuth } from "@ihp/chat-runtime";
+import { parseBackendTimestamp, useRealtime } from "@ihp/realtime";
 import EmojiPicker from "emoji-picker-react";
 import { useSearchParams } from "next/navigation";
 import {
@@ -245,9 +245,6 @@ function ConversationUrlSync({
   return null;
 }
 
-function getCurrentChatUserId() {
-  return getChatTokenUserId() ?? "";
-}
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const emojiOptions = ["😀", "😊", "👍", "🙏", "❤️", "👋", "✅", "🩺", "💬", "📎"];
 
@@ -300,8 +297,7 @@ function firstString(...values: Array<unknown>): string | undefined {
 }
 
 function parseBackendDate(value: string) {
-  const hasTimezone = /(?:Z|[+-]\d{2}:\d{2})$/i.test(value);
-  return new Date(hasTimezone ? value : `${value}Z`);
+  return parseBackendTimestamp(value);
 }
 
 function getSpeechRecognitionConstructor(): SpeechRecognitionConstructorLike | undefined {
@@ -562,7 +558,7 @@ function applyPresenceToConversation(
 
   return {
     ...conversation,
-    otherParticipantPresenceStatus: presence?.status,
+    otherParticipantPresenceStatus: presence?.status ?? "offline",
     otherParticipantLastSeenAt: presence?.lastSeenAt ?? conversation.otherParticipantLastSeenAt,
   };
 }
@@ -901,13 +897,19 @@ function mapConversationDetail(data: BackendConversation): Conversation {
   };
 }
 
-function mapMessage(data: BackendMessage): ChatMessage {
-  const isMine = data.sender_id === getCurrentChatUserId();
+let currentChatUserId = "";
+
+function getCurrentChatUserId() {
+  return currentChatUserId;
+}
+
+function mapMessage(data: BackendMessage, currentChatUserId: string): ChatMessage {
+  const isMine = data.sender_id === currentChatUserId;
   const readByUserIds = Array.isArray(data.read_by)
     ? data.read_by.filter((value): value is string => typeof value === "string")
     : [];
   const hasBeenReadByOtherParticipant = readByUserIds.some(
-    (value) => typeof value === "string" && value !== getCurrentChatUserId(),
+    (value) => typeof value === "string" && value !== currentChatUserId,
   );
   const attachment = data.attachment;
 
@@ -950,7 +952,7 @@ function mapMessage(data: BackendMessage): ChatMessage {
 
 function updateMessageReadStatus(message: ChatMessage, userId: string, readAt?: string) {
   const readByUserIds = Array.from(new Set([...(message.readByUserIds ?? []), userId]));
-  const hasBeenReadByOtherParticipant = readByUserIds.some((value) => value !== getCurrentChatUserId());
+  const hasBeenReadByOtherParticipant = readByUserIds.some((value) => value !== currentChatUserId);
 
   return {
     ...message,
@@ -1120,7 +1122,6 @@ function mergeConversationPresence(
   current: Conversation,
   next: Conversation,
 ): Conversation {
-  const hasLivePresence = current.otherParticipantPresenceStatus === "online";
   const nextPresenceStatus =
     next.otherParticipantPresenceStatus ?? current.otherParticipantPresenceStatus;
   const nextLastSeenAt =
@@ -1129,12 +1130,8 @@ function mergeConversationPresence(
   return {
     ...next,
     otherParticipantUserId: next.otherParticipantUserId ?? current.otherParticipantUserId,
-    otherParticipantPresenceStatus: hasLivePresence
-      ? "online"
-      : nextPresenceStatus,
-    otherParticipantLastSeenAt: hasLivePresence
-      ? current.otherParticipantLastSeenAt ?? nextLastSeenAt
-      : nextLastSeenAt,
+    otherParticipantPresenceStatus: nextPresenceStatus,
+    otherParticipantLastSeenAt: nextLastSeenAt,
   };
 }
 
@@ -1622,8 +1619,9 @@ function getVisibleTypingUsers(value: unknown) {
 }
 
 export default function EnterpriseMessagesScreen() {
-  const { authenticated, authReady } = useAuth();
+  const { authenticated, authReady, userId: authUserId } = useAuth();
   const { canUseProviderChat, isReady: isChatAuthReady } = useChatAuth();
+  currentChatUserId = authUserId ?? "";
   const canInitializeProviderChat = authenticated && authReady && canUseProviderChat && isChatAuthReady;
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterKind>("ALL");
@@ -1639,6 +1637,7 @@ export default function EnterpriseMessagesScreen() {
   const [voiceRecordingError, setVoiceRecordingError] = useState<string | null>(null);
   const [pendingVoice, setPendingVoice] = useState<PendingVoice | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [hasLoadedConversations, setHasLoadedConversations] = useState(false);
   const [messagesByConversation, setMessagesByConversation] = useState<Record<string, ChatMessage[]>>(
     {},
   );
@@ -1876,7 +1875,7 @@ export default function EnterpriseMessagesScreen() {
             return;
           }
 
-          const mappedMessages = response.items.map(mapMessage);
+          const mappedMessages = response.items.map((message) => mapMessage(message, authUserId ?? ""));
 
           setMediaDrawerMessagesByConversation((current) => {
             const existingMessages = current[conversationId] ?? [];
@@ -2385,7 +2384,7 @@ export default function EnterpriseMessagesScreen() {
             const createdMessage = extractObjectResponse<BackendMessage>(sendResponse);
 
             mappedMessage = createdMessage
-              ? mapMessage(createdMessage)
+              ? mapMessage(createdMessage, authUserId ?? "")
               : {
                   id: replaceTempId ?? `temp-${Date.now()}`,
                   conversationId,
@@ -2731,6 +2730,7 @@ export default function EnterpriseMessagesScreen() {
 
   const handleSocketTyping = useCallback(
     (payload: unknown) => {
+      realtimeDebug("typing", "received");
       if (!isRecord(payload)) {
         return;
       }
@@ -2789,6 +2789,7 @@ export default function EnterpriseMessagesScreen() {
 
   const handleSocketMessageRead = useCallback(
     (payload: unknown) => {
+      realtimeDebug("message", "message_read received");
       if (!isRecord(payload)) {
         return;
       }
@@ -2884,6 +2885,7 @@ export default function EnterpriseMessagesScreen() {
   );
 
   const handleSocketUserOnline = useCallback((payload: unknown) => {
+    realtimeDebug("presence", "user_online");
     if (!isRecord(payload)) {
       return;
     }
@@ -2934,6 +2936,7 @@ export default function EnterpriseMessagesScreen() {
   }, []);
 
   const handleSocketUserOffline = useCallback((payload: unknown) => {
+    realtimeDebug("presence", "user_offline");
     if (!isRecord(payload)) {
       return;
     }
@@ -3053,6 +3056,7 @@ export default function EnterpriseMessagesScreen() {
       setArchivedConversations(archivedItems);
       setArchivedConversationIds(archivedIds);
       setConversations(items);
+      setHasLoadedConversations(true);
 
       const selectedId = selectedConversationIdRef.current;
       if (selectedId) {
@@ -3227,7 +3231,7 @@ export default function EnterpriseMessagesScreen() {
           return;
         }
 
-        let results = extractListResponse<BackendMessage>(response).map(mapMessage);
+        let results = extractListResponse<BackendMessage>(response).map((message) => mapMessage(message, authUserId ?? ""));
 
         if (results.length === 0) {
           const fallbackResponse = await searchMessages<unknown>({
@@ -3241,7 +3245,7 @@ export default function EnterpriseMessagesScreen() {
             return;
           }
 
-          results = extractListResponse<BackendMessage>(fallbackResponse).map(mapMessage);
+          results = extractListResponse<BackendMessage>(fallbackResponse).map((message) => mapMessage(message, authUserId ?? ""));
         }
 
         if (results.length === 0) {
@@ -3326,7 +3330,7 @@ export default function EnterpriseMessagesScreen() {
         }
 
         const detail = extractObjectResponse<BackendConversation>(conversationResponse);
-        const messages = messagesResponse.items.map(mapMessage);
+        const messages = messagesResponse.items.map((message) => mapMessage(message, authUserId ?? ""));
         const nextCursor = messagesResponse.pagination.next_cursor;
         const hasMoreOlder = messagesResponse.pagination.has_more;
 
@@ -3503,7 +3507,7 @@ export default function EnterpriseMessagesScreen() {
       window.clearTimeout(timer);
       pendingInitialScrollToBottomRef.current = false;
     };
-  }, [canInitializeProviderChat, selectedConversationId, emitMarkRead, markConversationNotificationsAsRead]);
+  }, [selectedConversationId, emitMarkRead, markConversationNotificationsAsRead]);
 
   useEffect(() => {
     const conversationId = selectedConversationDetail?.id ?? null;
@@ -3711,13 +3715,14 @@ export default function EnterpriseMessagesScreen() {
 
   const handleSocketNewMessage = useCallback(
     (payload: unknown) => {
+      realtimeDebug("message", "new_message received");
       const message = normalizeSocketMessage(payload);
 
       if (!message) {
         return;
       }
 
-      const mappedMessage = mapMessage(message);
+      const mappedMessage = mapMessage(message, authUserId ?? "");
       const conversationId = mappedMessage.conversationId;
       const selectedConversationIdCurrent = selectedConversationIdRef.current;
       const isSelectedConversation = selectedConversationIdCurrent === conversationId;
@@ -3833,6 +3838,7 @@ export default function EnterpriseMessagesScreen() {
 
   const handleConversationUpdated = useCallback(
     (payload: unknown) => {
+      realtimeDebug("message", "conversation_updated received");
       const conversation = normalizeSocketConversation(payload);
 
       if (!conversation) {
@@ -3938,6 +3944,7 @@ export default function EnterpriseMessagesScreen() {
     }
 
     const handleConnect = () => {
+      realtimeDebug("socket", "connected", { socketId: socket.id, transport: socket.io.engine?.transport?.name });
       if (process.env.NODE_ENV !== "production") {
         console.log("[Chat socket] connected", {
           socketId: socket.id ?? undefined,
@@ -3961,6 +3968,7 @@ export default function EnterpriseMessagesScreen() {
     };
 
     const handleDisconnect = (reason: string) => {
+      realtimeDebug("socket", "disconnected", { reason });
       if (process.env.NODE_ENV !== "production") {
         console.log("[Chat socket] disconnected", {
           reason,
@@ -3971,6 +3979,10 @@ export default function EnterpriseMessagesScreen() {
     };
 
     const handleConnectError = (error: Error) => {
+      realtimeDebug("socket", "connect_error", {
+        name: error.name,
+        message: error.message,
+      });
       if (process.env.NODE_ENV !== "production") {
         console.log("[Chat socket] connection error", {
           message: error?.message ?? "connection_error",
@@ -3979,6 +3991,7 @@ export default function EnterpriseMessagesScreen() {
     };
 
     const handleSocketErrorEvent = (payload: unknown) => {
+      realtimeDebug("socket", "error");
       if (process.env.NODE_ENV !== "production") {
         console.log("[Chat socket] receive error", {
           error:
@@ -4017,7 +4030,7 @@ export default function EnterpriseMessagesScreen() {
             if (createdMessage) {
               applyMessageToConversation(
                 fallbackPendingMessage.conversationId,
-                mapMessage(createdMessage),
+                mapMessage(createdMessage, authUserId ?? ""),
                 fallbackPendingMessage.tempId,
               );
             } else {
@@ -4072,6 +4085,11 @@ export default function EnterpriseMessagesScreen() {
     };
 
     const handleReconnect = () => {
+      const activeConversationId = activeRoomConversationIdRef.current;
+      if (activeConversationId && socket.connected) {
+        realtimeDebug("room", "rejoin after reconnect", { conversationId: activeConversationId });
+        socket.emit("join_room", { conversation_id: activeConversationId });
+      }
       if (process.env.NODE_ENV !== "production") {
         console.log("[Chat socket] reconnected", {
           socketId: socket.id ?? undefined,
@@ -4218,18 +4236,6 @@ export default function EnterpriseMessagesScreen() {
     typingPollConversationIdRef.current = conversationId;
 
     void syncTypingIndicator(conversationId);
-
-    const interval = window.setInterval(() => {
-      const activeConversationId = typingPollConversationIdRef.current;
-
-      if (!activeConversationId) {
-        return;
-      }
-
-      void syncTypingIndicator(activeConversationId);
-    }, 3000);
-
-    typingPollTimerRef.current = interval;
 
     return () => {
       if (typingPollTimerRef.current !== null) {
@@ -4401,7 +4407,7 @@ export default function EnterpriseMessagesScreen() {
         return;
       }
 
-      const olderMessages = response.items.map(mapMessage);
+      const olderMessages = response.items.map((message) => mapMessage(message, authUserId ?? ""));
       const nextMessages = prependUniqueChatMessages(
         messagesByConversationRef.current[conversationId] ?? [],
         olderMessages,
@@ -4555,7 +4561,7 @@ export default function EnterpriseMessagesScreen() {
         const response = await editMessage(editingMessageId, text);
         const updatedMessage = extractObjectResponse<BackendMessage>(response);
         const mappedUpdatedMessage = updatedMessage
-          ? mapMessage(updatedMessage)
+          ? mapMessage(updatedMessage, authUserId ?? "")
           : {
               ...targetMessage,
               text,
@@ -4642,6 +4648,7 @@ export default function EnterpriseMessagesScreen() {
     const conversationId = selectedConversation.id;
     const socket = socketRef.current;
     const shouldUseSocket = Boolean(socket?.connected);
+    realtimeDebug("message", shouldUseSocket ? "send via socket" : "send via REST", { conversationId });
     const optimisticTempId = shouldUseSocket ? `temp-${Date.now()}` : null;
     const messageType: "text" | "image" | "document" | "audio" | "video" =
       attachment?.attachmentType ?? "text";
@@ -4692,6 +4699,8 @@ export default function EnterpriseMessagesScreen() {
     const sendViaRest = async (replaceTempId?: string, restoreDraftOnFailure = false) => {
       try {
         const response = await sendMessage(sendPayload);
+        const createdMessageForDebug = extractObjectResponse<BackendMessage>(response);
+        realtimeDebug("message", "REST send success", { messageId: createdMessageForDebug?.id, conversationId });
 
         stopTypingForConversation(conversationId);
         if (typingStopTimerRef.current !== null) {
@@ -4699,10 +4708,10 @@ export default function EnterpriseMessagesScreen() {
           typingStopTimerRef.current = null;
         }
 
-        const createdMessage = extractObjectResponse<BackendMessage>(response);
+        const createdMessage = createdMessageForDebug;
 
         if (createdMessage) {
-          applyMessageToState(mapMessage(createdMessage), replaceTempId);
+          applyMessageToState(mapMessage(createdMessage, authUserId ?? ""), replaceTempId);
         } else {
           applyMessageToState(
             {
@@ -5429,7 +5438,13 @@ export default function EnterpriseMessagesScreen() {
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto">
-              {conversationsError ? (
+              {conversationsError && hasLoadedConversations ? (
+                <div className="mx-4 mt-3 flex items-center justify-between gap-3 rounded-xl border border-[#f0d8d2] bg-[#fffaf8] px-3 py-2 text-[12px] text-[#8f3b2f]">
+                  <span>Refresh failed. Showing the last successful conversations.</span>
+                  <button type="button" onClick={() => void refreshConversationList()} className="shrink-0 font-bold underline">Retry</button>
+                </div>
+              ) : null}
+              {conversationsError && !hasLoadedConversations ? (
                 <div className="flex min-h-[320px] items-center justify-center px-5 py-10 text-center">
                   <div className="max-w-sm rounded-2xl border border-[#f0d8d2] bg-[#fff6f4] px-4 py-4">
                     <p className="text-sm font-semibold text-[#8f3b2f]">
@@ -5453,7 +5468,7 @@ export default function EnterpriseMessagesScreen() {
                     </button>
                   </div>
                 </div>
-              ) : isConversationsLoading ? (
+              ) : isConversationsLoading && !hasLoadedConversations ? (
                 <div className="divide-y divide-[#edf3f0]">
                   {Array.from({ length: 5 }).map((_, index) => (
                     <div key={index} className="flex gap-3 px-4 py-3">
@@ -5739,6 +5754,11 @@ export default function EnterpriseMessagesScreen() {
                         visibleSelectedConversation.otherParticipantLastSeenAt ? (
                         <span className="inline-flex items-center rounded-full bg-[#f4f7f5] px-2.5 py-1 text-[11px] font-medium text-[#6b7f79]">
                           Last seen {formatLastSeen(visibleSelectedConversation.otherParticipantLastSeenAt)}
+                        </span>
+                      ) : visibleSelectedConversation.otherParticipantUserId ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-[#f4f7f5] px-2.5 py-1 text-[11px] font-semibold text-[#6b7f79]">
+                          <span className="h-2 w-2 rounded-full bg-[#9aa9a4]" />
+                          Offline
                         </span>
                       ) : null}
                       <span
