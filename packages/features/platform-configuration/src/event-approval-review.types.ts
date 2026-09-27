@@ -39,6 +39,8 @@ export type EventCustomValue = {
   value: string | string[] | boolean | number | null;
 };
 
+export type EventLifecycleState = "upcoming" | "ongoing" | "finished";
+
 export type EventApprovalReview = {
   id: string;
   tenant_id?: string | null;
@@ -77,6 +79,7 @@ export type EventApprovalReview = {
   custom_fields?: EventCustomField[] | null;
   custom_values?: EventCustomValue[] | null;
   sessions?: EventSession[] | null;
+  lifecycle_state?: EventLifecycleState | null;
   status: string;
   is_deleted?: boolean | null;
   created_at?: string | null;

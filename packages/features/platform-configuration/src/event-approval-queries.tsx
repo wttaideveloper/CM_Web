@@ -6,7 +6,7 @@ import { useState, type ReactNode } from "react";
 import { isRecord, type EventApprovalReview } from "./event-approval-review.types";
 
 export type EventApprovalStatus = "pending_approval" | "needs_revision" | "approved";
-export type EventApprovalListItem = Pick<EventApprovalReview, "id" | "enterprise_id" | "enterprise_name" | "title" | "category" | "start_date" | "end_date" | "venue" | "status" | "primary_image">;
+export type EventApprovalListItem = Pick<EventApprovalReview, "id" | "enterprise_id" | "enterprise_name" | "title" | "category" | "start_date" | "end_date" | "venue" | "status" | "lifecycle_state" | "primary_image">;
 export type EventApprovalList = {
   items: EventApprovalListItem[];
   pagination: { total: number; page: number; page_size: number; total_pages: number };

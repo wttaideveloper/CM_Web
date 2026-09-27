@@ -193,7 +193,7 @@ function ApprovalEventCard({ event, label, onReview }: { event: EventApprovalLis
           {hasPrimaryImage ? <><img src={primaryImage} alt="" aria-hidden="true" onError={() => setImageFailed(true)} className="h-full w-full object-cover object-center" /><div aria-hidden="true" className="absolute inset-0 bg-[#06201c]/25" /></> : <div aria-hidden="true" className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(255,255,255,0.3)_0_1px,transparent_1px)] bg-[length:20px_20px]" />}
         </div>
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2"><h3 className="text-lg font-bold text-[#06201c]">{event.title}</h3><span className={event.status === "approved" ? "rounded-full bg-[#e9f4ee] px-3 py-1 text-xs font-bold text-[#1f6a58]" : "rounded-full bg-[#fff4d6] px-3 py-1 text-xs font-bold text-[#8a5a00]"}>{label}</span></div>
+          <div className="flex flex-wrap items-center gap-2"><h3 className="text-lg font-bold text-[#06201c]">{event.title}</h3><span className={event.status === "approved" ? "rounded-full bg-[#e9f4ee] px-3 py-1 text-xs font-bold text-[#1f6a58]" : "rounded-full bg-[#fff4d6] px-3 py-1 text-xs font-bold text-[#8a5a00]"}>{label}</span>{event.lifecycle_state ? <span className="rounded-full bg-[#f1f7f4] px-3 py-1 text-xs font-bold capitalize text-[#52736a]">{event.lifecycle_state}</span> : null}</div>
           <dl className="mt-3 grid gap-x-6 gap-y-3 text-sm text-[#52736a] sm:grid-cols-2">
             <ApprovalField label="Enterprise"><EnterpriseDisplayName enterpriseId={event.enterprise_id} eventEnterpriseName={event.enterprise_name} /></ApprovalField>
             <ApprovalField label="Category">{event.category}</ApprovalField>
