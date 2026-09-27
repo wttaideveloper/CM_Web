@@ -7,6 +7,8 @@ const shellEnglish = {
     email: "Email",
     sendCode: "Send verification code",
     sendingCode: "Sending code...",
+    resendCode: "Resend verification code",
+    resendingCode: "Sending...",
     neutralSent: "If the account is eligible, a verification code has been sent.",
     otpTitle: "Verify your code",
     otpDescription: "Enter the six-digit verification code sent to your email.",
@@ -25,6 +27,9 @@ const shellEnglish = {
     successDescription: "Your password has been reset. Return to login to continue.",
     returnToLogin: "Return to login",
     genericError: "Unable to complete this password-reset step. Please try again.",
+    notEligible: "This email is not eligible for Super Admin password reset. If you need Super Admin access, request an invitation from your administrator.",
+    serviceUnavailable: "The password reset service is temporarily unavailable. Please try again later or contact your administrator.",
+    rateLimited: "Too many reset requests. Please wait a few minutes before trying again.",
   },
 } as const;
 

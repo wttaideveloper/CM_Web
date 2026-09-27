@@ -47,8 +47,8 @@ export type {
   InviteUserPayload,
   UpdateAuthProfilePayload,
 } from "./account.service";
-export { getPasswordRequirements } from "./password-requirements.service";
-export type { PasswordRequirementsResponse } from "./password-requirements.service";
+export { getPasswordRequirementRules, getPasswordRequirements } from "./password-requirements.service";
+export type { PasswordRequirementRule, PasswordRequirementsResponse } from "./password-requirements.service";
 export { default as InviteUserModal } from "./components/InviteUserModal";
 export { default as PasswordResetModal } from "./components/PasswordResetModal";
 export { default as ProfileEditModal } from "./components/ProfileEditModal";

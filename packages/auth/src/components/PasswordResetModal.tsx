@@ -8,7 +8,9 @@ import {
   verifyPasswordResetCode,
 } from "../account.service";
 import {
+  getPasswordRequirementRules,
   getPasswordRequirements,
+  type PasswordRequirementRule,
   type PasswordRequirementsResponse,
 } from "../password-requirements.service";
 
@@ -19,67 +21,8 @@ type PasswordResetModalProps = {
 };
 
 type ResetStep = "send" | "verify" | "password" | "success";
-type PasswordRule = { label: string; passes: boolean };
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function readPositiveNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
-}
-
-function findRequirementValue(response: PasswordRequirementsResponse | null, keys: string[]) {
-  const candidates: unknown[] = [];
-  if (response) {
-    candidates.push(response.data, response.raw);
-  }
-
-  for (const source of candidates) {
-    if (!isRecord(source)) {
-      continue;
-    }
-
-    for (const container of [source, source.policy, source.requirements, source.rules, source.data]) {
-      if (!isRecord(container)) {
-        continue;
-      }
-
-      for (const key of keys) {
-        if (key in container) {
-          return container[key];
-        }
-      }
-    }
-  }
-
-  return null;
-}
-
-function getPasswordRules(response: PasswordRequirementsResponse | null, password: string): PasswordRule[] | null {
-  const minimumLength = ["minLength", "minimumLength", "min_length", "passwordMinLength", "password_min_length"]
-    .map((key) => readPositiveNumber(findRequirementValue(response, [key])))
-    .find((value): value is number => value !== null);
-
-  const rules: PasswordRule[] = [];
-  if (minimumLength) {
-    rules.push({ label: `At least ${minimumLength} characters`, passes: password.length >= minimumLength });
-  }
-
-  const ruleDefinitions = [
-    { label: "At least one uppercase letter", keys: ["requireUppercase", "requiresUppercase", "uppercaseRequired", "uppercase"] as string[], test: /[A-Z]/ },
-    { label: "At least one lowercase letter", keys: ["requireLowercase", "requiresLowercase", "lowercaseRequired", "lowercase"] as string[], test: /[a-z]/ },
-    { label: "At least one number", keys: ["requireNumber", "requiresNumber", "numberRequired", "number"] as string[], test: /\d/ },
-    { label: "At least one special character", keys: ["requireSpecialCharacter", "requiresSpecialCharacter", "specialCharacterRequired", "special"] as string[], test: /[^A-Za-z0-9]/ },
-  ];
-
-  for (const definition of ruleDefinitions) {
-    if (findRequirementValue(response, definition.keys) === true) {
-      rules.push({ label: definition.label, passes: definition.test.test(password) });
-    }
-  }
-
-  return rules.length > 0 ? rules : null;
 }
 
 function getApiErrorMessage(error: unknown, fallback: string) {
@@ -163,7 +106,10 @@ export default function PasswordResetModal({ email, onClose, onSuccess }: Passwo
   }, [onClose, onSuccess, step]);
 
   const passwordRules = useMemo(
-    () => getPasswordRules(passwordRequirements, password),
+    () => getPasswordRequirementRules(passwordRequirements)?.map((rule: PasswordRequirementRule) => ({
+      label: rule.label,
+      passes: rule.test(password),
+    })) ?? null,
     [password, passwordRequirements],
   );
   const passwordsMatch = password.length > 0 && password === confirmPassword;
@@ -348,4 +294,3 @@ export default function PasswordResetModal({ email, onClose, onSuccess }: Passwo
     </div>
   );
 }
-
