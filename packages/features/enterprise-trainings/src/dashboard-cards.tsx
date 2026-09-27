@@ -153,18 +153,18 @@ function rowLabel(item: unknown, fallback: string): { label: string; sub: string
 }
 
 /** Renders the participant dashboard for a training or program. */
-export function ParticipantDashboardCard({ dashboard, trainingId }: { dashboard: TrainingParticipantDashboard; trainingId: string }) {
+export function ParticipantDashboardCard({ dashboard, trainingId }: { dashboard: TrainingParticipantDashboard; trainingId?: string }) {
   const [participantEmail, setParticipantEmail] = useState("");
   const [expandedProgressSession, setExpandedProgressSession] = useState<string | null>(null);
   const enrolmentsQuery = useQuery({
     queryKey: ["trainings", trainingId, "dashboard", "participant-enrolments"],
-    queryFn: () => listTrainingEnrolments(trainingId),
+    queryFn: () => (trainingId ? listTrainingEnrolments(trainingId) : Promise.resolve([])),
     enabled: Boolean(trainingId),
     staleTime: 30_000,
   });
   const contentQuery = useQuery({
     queryKey: ["trainings", trainingId, "dashboard", "participant-content"],
-    queryFn: () => getTrainingContent(trainingId, true),
+    queryFn: () => (trainingId ? getTrainingContent(trainingId, true) : Promise.resolve(null)),
     enabled: Boolean(trainingId),
     staleTime: 30_000,
   });
@@ -181,7 +181,7 @@ export function ParticipantDashboardCard({ dashboard, trainingId }: { dashboard:
   }, [enrolledEmails, participantEmail]);
   const progressQuery = useQuery({
     queryKey: ["trainings", trainingId, "dashboard", "participant-progress", participantEmail],
-    queryFn: () => getTrainingProgress(trainingId, participantEmail),
+    queryFn: () => (trainingId ? getTrainingProgress(trainingId, participantEmail) : Promise.resolve(null)),
     enabled: Boolean(participantEmail),
     staleTime: 30_000,
   });
