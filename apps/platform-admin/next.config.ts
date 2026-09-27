@@ -2,7 +2,6 @@ import type { NextConfig } from "next";
 
 const authApiBaseUrl =
   process.env.AUTH_API_BASE_URL ?? "https://admin.apis.invigor8.app";
-const workflowApiBaseUrl = process.env.WORKFLOW_API_BASE_URL;
 
 function normalizePlatformApiBaseUrl(value: string): string {
   const url = new URL(value);
@@ -169,23 +168,6 @@ const nextConfig: NextConfig = {
         {
           source: "/api/v1/tenant/:path*",
           destination: `${authApiBaseUrl}/api/v1/tenant/:path*`,
-        },
-      );
-    }
-
-    if (workflowApiBaseUrl) {
-      fallback.push(
-        {
-          source: "/api/v1/forms/:path*",
-          destination: `${workflowApiBaseUrl}/api/v1/forms/:path*`,
-        },
-        {
-          source: "/api/v1/workflows/:path*",
-          destination: `${workflowApiBaseUrl}/api/v1/workflows/:path*`,
-        },
-        {
-          source: "/api/v1/media/:path*",
-          destination: `${workflowApiBaseUrl}/api/v1/media/:path*`,
         },
       );
     }

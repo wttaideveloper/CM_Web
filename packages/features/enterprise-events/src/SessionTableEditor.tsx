@@ -9,14 +9,16 @@ export interface SessionDraft {
   id?: string;
   session_date: string;
   title: string;
+  description: string;
   speaker: string;
+  speaker_bio: string;
   start_time: string;
   end_time: string;
   location: string;
   meeting_link?: string | null;
 }
 
-type SessionField = "session_date" | "title" | "speaker" | "start_time" | "end_time" | "location" | "meeting_link";
+type SessionField = "session_date" | "title" | "description" | "speaker" | "speaker_bio" | "start_time" | "end_time" | "location" | "meeting_link";
 
 interface Props {
   mode: "create" | "manage";
@@ -43,9 +45,11 @@ type Range = { start: number; end: number };
 const fields: Array<{ key: SessionField; label: string }> = [
   { key: "title", label: "Session Name" },
   { key: "session_date", label: "Date" },
+  { key: "description", label: "Description" },
   { key: "start_time", label: "Start" },
   { key: "end_time", label: "End" },
   { key: "speaker", label: "Speaker" },
+  { key: "speaker_bio", label: "Speaker Bio" },
   { key: "location", label: "Location" },
   { key: "meeting_link", label: "Meeting Link" },
 ];
@@ -206,6 +210,7 @@ function SessionCell({ field, session, eventStart, eventEnd, required, onChange 
   }
   const type = field === "start_time" || field === "end_time" ? "time" : field === "meeting_link" ? "url" : "text";
   const bounds = getSessionTimeBounds(session.session_date, eventStart, eventEnd);
+  if (field === "description" || field === "speaker_bio") return <textarea value={value} required={required} onChange={(event) => onChange(event.target.value)} className="min-h-20 min-w-40 rounded-lg border border-[#d7e5df] px-2 py-1" />;
   return <input type={type} value={value} required={required} min={type === "time" ? bounds.min : undefined} max={type === "time" ? bounds.max : undefined} onChange={(event) => onChange(event.target.value)} placeholder={field === "meeting_link" ? "https://" : undefined} className="h-9 min-w-28 rounded-lg border border-[#d7e5df] px-2" />;
 }
 
@@ -216,8 +221,8 @@ function renderPersistedValue(session: SessionDraft, field: SessionField) {
   return <span>{field === "session_date" ? formatDate(String(value)) : String(value)}</span>;
 }
 
-function blankSession(date: string): SessionDraft { return { session_date: date, title: "", speaker: "", start_time: "", end_time: "", location: "", meeting_link: "" }; }
-function toDraft(session: EventSessionRecord): SessionDraft { return { ...(session.id ? { id: session.id } : {}), session_date: session.session_date ?? "", title: session.title, speaker: session.speaker ?? "", start_time: session.start_time ?? "", end_time: session.end_time ?? "", location: session.location ?? "", meeting_link: session.meeting_link ?? "" }; }
+function blankSession(date: string): SessionDraft { return { session_date: date, title: "", description: "", speaker: "", speaker_bio: "", start_time: "", end_time: "", location: "", meeting_link: "" }; }
+function toDraft(session: EventSessionRecord): SessionDraft { return { ...(session.id ? { id: session.id } : {}), session_date: session.session_date ?? "", title: session.title, description: session.description ?? "", speaker: session.speaker ?? "", speaker_bio: session.speaker_bio ?? "", start_time: session.start_time ?? "", end_time: session.end_time ?? "", location: session.location ?? "", meeting_link: session.meeting_link ?? "" }; }
 function compareSessions(left: SessionDraft, right: SessionDraft): number { return `${left.session_date}T${left.start_time || "99:99"}`.localeCompare(`${right.session_date}T${right.start_time || "99:99"}`); }
 function formatDate(value: string): string { return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`)); }
 function formatMinutes(value: number): string { if (value < 60) return `${value}m`; const hours = Math.floor(value / 60); const minutes = value % 60; return minutes ? `${hours}h ${minutes}m` : `${hours}h`; }

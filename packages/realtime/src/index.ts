@@ -1,6 +1,7 @@
 export { defineRealtimeAdapter } from "./adapters";
 export { createNotificationClient } from "./notification-client";
 export { RealtimeProvider } from "./RealtimeProvider";
+export { formatRelativeBackendTimestamp, parseBackendTimestamp } from "./backend-timestamp";
 export { RealtimeContext, useRealtime } from "./useRealtime";
 export type {
   NotificationClient,

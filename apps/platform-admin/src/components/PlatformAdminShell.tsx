@@ -10,6 +10,8 @@ import { PlatformApprovalDataProvider, PlatformEnterpriseReadProvider, usePendin
 import { getPlatformEnterpriseById } from "@ihp/platform-enterprises";
 import { usePathname } from "next/navigation";
 import { useCallback, useMemo, type ReactNode } from "react";
+import { useEffect, useState } from "react";
+import { getProfileDisplayName, getProfileInitials, getSuperAdminProfile, type SuperAdminProfile } from "@/lib/super-admin-profile";
 
 function getShellRoute(pathname: string) {
   const shellOrigin = getShellAppOrigin();
@@ -20,6 +22,7 @@ function getShellRoute(pathname: string) {
 const platformOwnedNavigationRoutes = new Set([
   "/dashboard",
   "/approval-queue",
+  "/tenant-applications",
   "/onboarding-forms",
   "/form-builder-new",
   "/workflow-builder-new",
@@ -51,6 +54,8 @@ export default function PlatformAdminShell({ children }: { children: ReactNode }
 }
 
 function PlatformAdminShellContent({ children }: { children: ReactNode }) {
+  const [profile, setProfile] = useState<SuperAdminProfile | null>(null);
+  useEffect(() => { void getSuperAdminProfile().then(setProfile); }, []);
   const pathname = usePathname();
   const pendingEventApprovals = usePendingEventApprovalCount();
   const pendingTrainingApprovals = usePendingTrainingApprovalCount();
@@ -95,6 +100,9 @@ function PlatformAdminShellContent({ children }: { children: ReactNode }) {
       onLogout={handleLogout}
       resolveNavigationHref={resolveNavigationHref}
       navigationGroups={navigationGroups}
+      profileInitials={getProfileInitials(profile) ?? undefined}
+      profileName={getProfileDisplayName(profile)}
+      profileEmail={profile?.email ?? null}
     >
       {children}
     </PlatformAdminLayout>

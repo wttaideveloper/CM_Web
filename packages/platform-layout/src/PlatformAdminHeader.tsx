@@ -57,6 +57,8 @@ export function PlatformAdminHeader({
   messagesHref,
   profileHref,
   profileInitials = "IH",
+  profileName = null,
+  profileEmail = null,
   onLogout,
   onMenuClick,
 }: PlatformAdminHeaderProps) {
@@ -156,6 +158,7 @@ export function PlatformAdminHeader({
               {profileInitials}
             </button>
             <div className={`absolute right-0 top-[calc(100%+10px)] w-60 origin-top-right rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 ${openMenu === "profile" ? "pointer-events-auto scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"}`}>
+              {profileName || profileEmail ? <div className="border-b border-[#edf3f0] px-3 pb-2 pt-1"><p className="truncate text-sm font-bold text-[#06201c]">{profileName || "Profile"}</p>{profileEmail ? <p className="truncate text-xs text-[#52736a]">{profileEmail}</p> : null}</div> : null}
               {profileItems.map((item) => (
                 item === "View Profile" && profileHref ? (
                   <Link key={item} href={profileHref} onClick={closeMenu} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]">

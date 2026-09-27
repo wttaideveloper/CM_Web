@@ -16,7 +16,9 @@ export type EventSession = {
   id?: string;
   session_date?: string | null;
   title: string;
+  description?: string | null;
   speaker?: string | null;
+  speaker_bio?: string | null;
   start_time?: string | null;
   end_time?: string | null;
   location?: string | null;
@@ -29,12 +31,15 @@ export type EventCustomField = {
   label: string;
   type: string;
   options: string[];
+  position?: number;
 };
 
 export type EventCustomValue = {
   field_id: string;
   value: string | string[] | boolean | number | null;
 };
+
+export type EventLifecycleState = "upcoming" | "ongoing" | "finished";
 
 export type EventApprovalReview = {
   id: string;
@@ -69,14 +74,45 @@ export type EventApprovalReview = {
   max_participants?: string | null;
   registration_open_at?: string | null;
   registration_close_at?: string | null;
+  form_configuration_id?: string | null;
+  form_configuration_version_id?: string | null;
   custom_fields?: EventCustomField[] | null;
   custom_values?: EventCustomValue[] | null;
   sessions?: EventSession[] | null;
+  lifecycle_state?: EventLifecycleState | null;
   status: string;
   is_deleted?: boolean | null;
   created_at?: string | null;
   updated_at?: string | null;
   last_admin_notes?: string | null;
+};
+
+/** Historical field metadata used to label submitted Event custom values. */
+export type HistoricalEventFormField = {
+  id: string;
+  stable_key: string | null;
+  label: string;
+  value_type: string;
+  position: number;
+  section_position: number;
+};
+
+/** Exact immutable Event form version returned by the Platform form-config BFF. */
+export type HistoricalEventFormConfigurationVersion = {
+  id: string;
+  configuration_id: string;
+  sections: Array<{
+    position: number;
+    is_enabled: boolean;
+    fields: Array<{
+      id: string;
+      stable_key: string | null;
+      label: string;
+      value_type: string;
+      position: number;
+      is_enabled: boolean;
+    }>;
+  }>;
 };
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -104,11 +140,24 @@ function isSession(value: unknown): value is EventSession {
 }
 
 function isCustomField(value: unknown): value is EventCustomField {
-  return isRecord(value) && (value.id === undefined || typeof value.id === "string") && (value.stable_key === undefined || value.stable_key === null || typeof value.stable_key === "string") && typeof value.label === "string" && typeof value.type === "string" && Array.isArray(value.options) && value.options.every((option) => typeof option === "string");
+  return isRecord(value) && (value.id === undefined || typeof value.id === "string") && (value.stable_key === undefined || value.stable_key === null || typeof value.stable_key === "string") && typeof value.label === "string" && typeof value.type === "string" && Array.isArray(value.options) && value.options.every((option) => typeof option === "string") && (value.position === undefined || (typeof value.position === "number" && Number.isFinite(value.position)));
 }
 
 function isCustomValue(value: unknown): value is EventCustomValue {
   return isRecord(value) && typeof value.field_id === "string" && (value.value === null || typeof value.value === "string" || typeof value.value === "number" || typeof value.value === "boolean" || (Array.isArray(value.value) && value.value.every((item) => typeof item === "string")));
+}
+
+function isHistoricalVersionField(value: unknown): boolean {
+  return isRecord(value) && typeof value.id === "string" && (value.stable_key === null || typeof value.stable_key === "string") && typeof value.label === "string" && typeof value.value_type === "string" && Number.isInteger(value.position) && typeof value.is_enabled === "boolean";
+}
+
+function isHistoricalVersionSection(value: unknown): boolean {
+  return isRecord(value) && Number.isInteger(value.position) && typeof value.is_enabled === "boolean" && Array.isArray(value.fields) && value.fields.every(isHistoricalVersionField);
+}
+
+/** Validates the historical version fields required for label resolution. */
+export function isHistoricalEventFormConfigurationVersion(value: unknown): value is HistoricalEventFormConfigurationVersion {
+  return isRecord(value) && typeof value.id === "string" && typeof value.configuration_id === "string" && Array.isArray(value.sections) && value.sections.every(isHistoricalVersionSection);
 }
 
 function isOptionalArray<T>(value: unknown, guard: (item: unknown) => item is T): value is T[] | null | undefined {

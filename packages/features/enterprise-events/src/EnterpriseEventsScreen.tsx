@@ -76,6 +76,11 @@ function formatCardLocation(event: Event): string {
   return venue || formatEventDeliveryMode(event.delivery_mode);
 }
 
+function lifecycleLabel(value: Event["lifecycle_state"]): string | null {
+  if (!value) return null;
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 function EventCard({ event, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess }: { event: Event; onStatusSuccess: () => void; onDuplicateSuccess: () => void; onDeleteSuccess: () => void }) {
   const primaryImage = event.primary_image?.trim() ?? "";
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
@@ -114,7 +119,7 @@ function EventCard({ event, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess
           </p>
           <h3 className={`mt-2 text-lg font-bold ${primaryTextClass}`}>{event.title}</h3>
         </div>
-        <div className="flex shrink-0 items-center gap-2"><span className={`rounded-full px-3 py-1 text-[11px] font-bold shadow-sm ${getEventStatusBadgeClass(event.status)}`}>{getEventStatusLabel(event.status)}</span><div className={hasPrimaryImage ? "rounded-full bg-white/90 shadow-sm" : undefined}><EventActionsMenu event={event} onStatusSuccess={onStatusSuccess} onDuplicateSuccess={onDuplicateSuccess} onDeleteSuccess={onDeleteSuccess} /></div></div>
+        <div className="flex shrink-0 items-center gap-2"><span className={`rounded-full px-3 py-1 text-[11px] font-bold shadow-sm ${getEventStatusBadgeClass(event.status)}`}>{getEventStatusLabel(event.status)}</span>{lifecycleLabel(event.lifecycle_state) ? <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${hasPrimaryImage ? "bg-white/20 text-white" : "bg-[#f1f7f4] text-[#52736a]"}`}>{lifecycleLabel(event.lifecycle_state)}</span> : null}<div className={hasPrimaryImage ? "rounded-full bg-white/90 shadow-sm" : undefined}><EventActionsMenu event={event} onStatusSuccess={onStatusSuccess} onDuplicateSuccess={onDuplicateSuccess} onDeleteSuccess={onDeleteSuccess} /></div></div>
       </div>
 
       <p className={`mt-2 line-clamp-2 min-h-10 text-sm leading-5 ${secondaryTextClass}`}>{event.description || "—"}</p>

@@ -6,11 +6,13 @@ import { useEffect, useState } from "react";
 import { getEnterprises } from "@ihp/enterprises";
 import { getProducts } from "@ihp/products";
 
-import type { PlatformDashboardScreenProps } from "./types";
+import type { PendingApplication, PlatformDashboardScreenProps } from "./types";
 
 type KpiState = {
   enterprises: number | null;
   products: number | null;
+  pendingApplications: PendingApplication[] | null;
+  profile: { fullName?: string; name?: string; username?: string } | null;
   loading: boolean;
 };
 
@@ -20,13 +22,6 @@ const activities = [
   "New enterprise registered: MindFlow Center",
   "Revenue milestone: $280K reached",
   "FlexFit Academy published training course",
-];
-
-const approvalQueue = [
-  { name: "Sunrise Family Clinic", meta: "Healthcare · Jun 15, 2026", status: "Pending" },
-  { name: "Dr. Alex Turner", meta: "Physiotherapy · Jun 14, 2026", status: "Pending" },
-  { name: "MindFlow Center", meta: "Mental Health · Jun 13, 2026", status: "Info" },
-  { name: "GreenLeaf Nutrition", meta: "Nutrition · Jun 12, 2026", status: "Pending" },
 ];
 
 const platformHealth = [
@@ -81,32 +76,36 @@ export default function PlatformDashboardScreen({
   newEnterpriseHref = "/enterprises/create",
   approvalQueueHref = "/admin/enterprise",
   enterprisesLoader = getEnterprises,
+  profileLoader,
+  pendingApplicationsLoader,
 }: PlatformDashboardScreenProps) {
-  const [kpis, setKpis] = useState<KpiState>({ enterprises: null, products: null, loading: true });
+  const [kpis, setKpis] = useState<KpiState>({ enterprises: null, products: null, pendingApplications: null, profile: null, loading: true });
 
   async function loadDashboardCounts() {
     setKpis((current) => ({ ...current, loading: true }));
     try {
-      const [enterpriseData, productData] = await Promise.all([enterprisesLoader(), getProducts()]);
-      setKpis({ enterprises: enterpriseData.length, products: productData.length, loading: false });
+      const [enterpriseData, productData, applications, profile] = await Promise.all([enterprisesLoader(), getProducts(), pendingApplicationsLoader?.() ?? Promise.resolve([]), profileLoader?.() ?? Promise.resolve(null)]);
+      setKpis({ enterprises: enterpriseData.length, products: productData.length, pendingApplications: applications, profile, loading: false });
     } catch {
-      setKpis({ enterprises: null, products: null, loading: false });
+      setKpis((current) => ({ ...current, enterprises: null, products: null, pendingApplications: null, loading: false }));
     }
   }
 
   useEffect(() => { void loadDashboardCounts(); }, [enterprisesLoader]);
 
+  const displayName = kpis.profile?.fullName?.trim() || kpis.profile?.name?.trim() || kpis.profile?.username?.trim();
+  const today = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(new Date()).toUpperCase();
   const stats = [
-    { label: "Total Enterprises", value: kpis.loading ? "Loading" : kpis.enterprises === null ? "Unavailable" : String(kpis.enterprises), change: "+7" },
-    { label: "Platform Revenue", value: "$284,521", subtitle: "Platform Revenue", change: "+18.4%" },
-    { label: "Active Users", value: "8,294", subtitle: "Active Users", change: "+12.3%" },
-    { label: "Pending Approvals", value: "4", subtitle: "Needs your attention", change: "" },
+    { label: "Total Enterprises", value: kpis.loading ? "Loading" : kpis.enterprises === null ? "Unavailable" : String(kpis.enterprises), change: "" },
+    { label: "Platform Revenue", value: "$0", subtitle: "Platform Revenue", change: "" },
+    { label: "Active Users", value: "Unavailable", subtitle: "Active Users", change: "" },
+    { label: "Pending Approvals", value: kpis.loading ? "Loading" : kpis.pendingApplications === null ? "Unavailable" : String(kpis.pendingApplications.length), subtitle: "Needs your attention", change: "" },
   ] as const;
 
   return (
     <div className="w-full min-w-0 overflow-x-hidden">
       <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div><p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">OVERVIEW &middot; JUNE 2026</p><h2 className="mt-1 text-2xl font-bold text-[#06201c]">Good morning, Sarah &#128075;</h2></div>
+        <div><p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">OVERVIEW &middot; {today}</p><h2 className="mt-1 text-2xl font-bold text-[#06201c]">Good morning{displayName ? `, ${displayName}` : ""} &#128075;</h2></div>
         <div className="flex items-center gap-3"><button onClick={() => void loadDashboardCounts()} className="rounded-full border border-[#d7e5df] px-4 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#f5faf7]">Refresh</button><Link href={newEnterpriseHref} className="rounded-full bg-[#1f6a58] px-5 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#195646]">+ New Enterprise</Link></div>
       </div>
       <div className="grid w-full min-w-0 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -114,7 +113,7 @@ export default function PlatformDashboardScreen({
       </div>
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.6fr_0.8fr]">
         <section className="w-full min-w-0 rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm sm:p-5"><div className="mb-5 flex items-center justify-between"><div><h3 className="text-lg font-semibold text-[#06201c]">Platform Revenue</h3><p className="text-sm text-[#52736a]">Monthly GMV across all enterprises</p></div><select defaultValue="2026" className="h-9 rounded-full border border-[#d7e5df] bg-white px-3 text-sm text-[#52736a] outline-none transition hover:border-[#b9cfc7] focus:border-[#1f6a58]"><option value="2026">2026</option><option value="2025">2025</option></select></div><div className="flex h-36 items-end gap-1.5 sm:h-48 sm:gap-3">{[42, 58, 49, 74, 65, 82, 76, 91, 84, 98, 93, 106].map((height, index) => <div key={index} className="flex min-w-0 flex-1 flex-col items-center gap-1.5 sm:gap-2"><div className={`w-full rounded-t-xl transition-colors duration-200 hover:bg-[#8fb0a8] ${index === 11 ? "bg-[#1f6a58]" : "bg-[#c8d8d3]"}`} style={{ height: `${Math.max(24, Math.round(height * 0.7))}px` }} /><span className="text-[10px] leading-none text-[#52736a] sm:text-xs">{["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][index]}</span></div>)}</div></section>
-        <section className="w-full min-w-0 rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm sm:p-5"><div className="mb-4 flex items-center justify-between"><h3 className="text-lg font-bold text-[#06201c]">Approval Queue</h3><Link href={approvalQueueHref} className="text-sm font-semibold text-[#1f6a58] transition-colors duration-200 hover:text-[#185746] hover:underline">Review All &rarr;</Link></div><div className="space-y-2.5">{approvalQueue.map((item) => <div key={item.name} className="flex min-w-0 items-center justify-between gap-3 rounded-2xl px-3 py-2.5 transition-all duration-200 hover:bg-[#f4faf7]"><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#06201c]">{item.name}</p><p className="truncate text-xs text-[#52736a]">{item.meta}</p></div><span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${item.status === "Pending" ? "bg-[#fff7e5] text-[#b7791f]" : "bg-[#eef4ff] text-[#2563eb]"}`}>{item.status}</span></div>)}</div></section>
+        <section className="w-full min-w-0 rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm sm:p-5"><div className="mb-4 flex items-center justify-between"><h3 className="text-lg font-bold text-[#06201c]">Approval Queue</h3><Link href={approvalQueueHref} className="text-sm font-semibold text-[#1f6a58] transition-colors duration-200 hover:text-[#185746] hover:underline">Review All &rarr;</Link></div><div className="space-y-2.5">{kpis.pendingApplications?.length ? kpis.pendingApplications.slice(0, 4).map((item) => <div key={item.id} className="flex min-w-0 items-center justify-between gap-3 rounded-2xl px-3 py-2.5"><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#06201c]">{item.tenantName || item.name || "Unnamed application"}</p><p className="truncate text-xs text-[#52736a]">{item.industryType || "Tenant application"}{item.submittedAt ? ` · ${new Date(item.submittedAt).toLocaleDateString()}` : ""}</p></div><span className="shrink-0 rounded-full bg-[#fff7e5] px-2.5 py-1 text-[11px] font-bold text-[#b7791f]">Pending</span></div>) : <p className="px-3 py-6 text-center text-sm text-[#52736a]">{kpis.loading ? "Loading" : kpis.pendingApplications === null ? "Unavailable" : "No pending applications"}</p>}</div></section>
       </div>
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
         <section className="w-full min-w-0 rounded-2xl border border-[#e1ebe6] bg-white shadow-sm"><div className="flex items-center justify-between border-b border-[#edf3f0] p-5"><h3 className="text-lg font-bold text-[#06201c]">Recent Activity</h3><button type="button" className="text-sm font-semibold text-[#1f6a58] transition-colors duration-200 hover:text-[#185746] hover:underline">View all</button></div><div>{activities.map((item, index) => <div key={item} className="flex cursor-pointer gap-3 border-b border-[#edf3f0] p-4 transition-colors duration-200 hover:bg-[#f4faf7] last:border-0"><ActivityIcon kind={index === 0 ? "package" : index === 1 ? "video" : index === 2 ? "building" : index === 3 ? "trend" : "grad"} /><div><p className="text-sm font-medium text-[#06201c]">{item}</p><p className="text-xs text-[#52736a]">{index + 2} min ago</p></div></div>)}</div></section>

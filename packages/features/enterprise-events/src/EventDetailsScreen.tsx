@@ -15,6 +15,7 @@ import {
 import EventCommunicationsActions from "./EventCommunicationsActions";
 import EventRefundAction from "./EventRefundAction";
 import EventOrdersSection from "./EventOrdersSection";
+import EventOverviewSection from "./EventOverviewSection";
 import EventReportsSection from "./EventReportsSection";
 import {
   displayValue,
@@ -28,6 +29,7 @@ import {
   canEditEvent,
   getEventStatusBadgeClass,
   getEventStatusLabel,
+  hasOperationalEventDataAccess,
 } from "./event-status";
 import {
   formatSessionDate,
@@ -48,6 +50,7 @@ import {
   resubmitEvent,
   updateEventSession,
   type AddEventSessionPayload,
+  type ActiveEventFormConfiguration,
   type ActiveEventFormField,
   type Event,
   type EventRegistration,
@@ -61,7 +64,7 @@ type DetailItem = {
   label: string;
   value: string | number | boolean | null | undefined;
 };
-type EventDetailsTab = "details" | "registrations" | "attendance" | "feedback" | "reports" | "orders";
+type EventDetailsTab = "overview" | "details" | "registrations" | "attendance" | "feedback" | "reports" | "orders";
 type RegistrationsSubview = "registered" | "waitlist";
 
 function AdminNoteBanner({ eventId, status }: { eventId: string; status: string }) {
@@ -99,6 +102,7 @@ function AdminNoteBanner({ eventId, status }: { eventId: string; status: string 
 
 const eventDetailsTabs: ReadonlyArray<{ id: EventDetailsTab; label: string }> =
   [
+    { id: "overview", label: "Overview" },
     { id: "details", label: "Details" },
     { id: "registrations", label: "Registrations" },
     { id: "attendance", label: "Attendance" },
@@ -120,7 +124,7 @@ function isHistoricalSessionsField(field: ActiveEventFormField): boolean {
   return field.source === "core" && key === "sessions" && field.renderer === "sessions" && field.is_enabled !== false;
 }
 
-type SessionSubfield = "session_date" | "title" | "speaker" | "start_time" | "end_time" | "location" | "meeting_link";
+type SessionSubfield = "session_date" | "title" | "description" | "speaker" | "speaker_bio" | "start_time" | "end_time" | "location" | "meeting_link";
 
 function isSessionSubfieldEnabled(field: ActiveEventFormField | null | undefined, name: SessionSubfield): boolean {
   const enabledFields = field?.composite_config?.enabled_fields;
@@ -144,7 +148,7 @@ export default function EventDetailsScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<EventDetailsTab>("details");
+  const [activeTab, setActiveTab] = useState<EventDetailsTab>("overview");
   const eventQuery = useQuery({
     queryKey: ["events", "detail", eventId],
     queryFn: () => getEventById(eventId),
@@ -171,6 +175,12 @@ export default function EventDetailsScreen() {
     },
     onError: () => setStatusFeedback("Unable to resubmit this Event for approval. Please try again."),
   });
+  useEffect(() => {
+    const status = eventQuery.data?.status;
+    if (status && !hasOperationalEventDataAccess(status) && activeTab !== "overview" && activeTab !== "details") {
+      setActiveTab("overview");
+    }
+  }, [activeTab, eventQuery.data?.status]);
 
   if (eventQuery.isLoading) return <EventDetailsSkeleton />;
   if (eventQuery.isError)
@@ -183,6 +193,9 @@ export default function EventDetailsScreen() {
   if (!eventQuery.data) return <EventDetailsSkeleton />;
 
   const event = eventQuery.data;
+  const hasOperationalDataAccess = hasOperationalEventDataAccess(event.status);
+  const visibleTabs = hasOperationalDataAccess ? eventDetailsTabs : eventDetailsTabs.slice(0, 2);
+  const effectiveActiveTab = visibleTabs.some((tab) => tab.id === activeTab) ? activeTab : "overview";
   const coordinates = event.venue?.coordinates;
   return (
     <div className="w-full">
@@ -212,6 +225,7 @@ export default function EventDetailsScreen() {
           >
             {getEventStatusLabel(event.status)}
           </span>
+          {event.lifecycle_state ? <span className="rounded-full bg-[#f1f7f4] px-3 py-1 text-xs font-bold capitalize text-[#52736a]">{event.lifecycle_state}</span> : null}
         </div>
       </header>
       {(event.status === "needs_revision" || event.status === "rejected") ? <AdminNoteBanner eventId={event.id} status={event.status} /> : null}
@@ -254,12 +268,23 @@ export default function EventDetailsScreen() {
           <EventCalendarDownloadAction eventId={event.id} />
         </div>
       </div>
-      <EventDetailsTabs activeTab={activeTab} onChange={setActiveTab} />
+      <EventDetailsTabs tabs={visibleTabs} activeTab={effectiveActiveTab} onChange={setActiveTab} />
+      {effectiveActiveTab === "overview" ? (
+        <section id="event-overview-panel" role="tabpanel" aria-labelledby="event-overview-tab" className="mt-6">
+          <EventOverviewSection
+            event={event}
+            timeZone={event.time_zone}
+            operationalDataEnabled={hasOperationalDataAccess}
+            onViewDetails={() => setActiveTab("details")}
+            onViewRegistrations={() => setActiveTab("registrations")}
+          />
+        </section>
+      ) : null}
       <div
         id="event-details-panel"
         role="tabpanel"
         aria-labelledby="event-details-tab"
-        hidden={activeTab !== "details"}
+        hidden={effectiveActiveTab !== "details"}
         className="mt-6 space-y-5"
       >
         {historicalConfiguration.data ? <ConfiguredEventDetails
@@ -270,7 +295,7 @@ export default function EventDetailsScreen() {
             deliveryMode={event.delivery_mode}
             startDate={event.start_date}
             endDate={event.end_date}
-            enabled={activeTab === "details"}
+            enabled={effectiveActiveTab === "details"}
             sessionField={historicalSessionsField}
           /> : undefined}
         /> : <>
@@ -390,7 +415,7 @@ export default function EventDetailsScreen() {
           deliveryMode={event.delivery_mode}
           startDate={event.start_date}
           endDate={event.end_date}
-          enabled={activeTab === "details"}
+          enabled={effectiveActiveTab === "details"}
         />
         <DetailSection title="Custom Registration Fields">
           <CustomFields event={event} />
@@ -419,32 +444,32 @@ export default function EventDetailsScreen() {
         </DetailSection>
         </>}
       </div>
-      {activeTab === "registrations" ? (
+      {effectiveActiveTab === "registrations" ? (
         <section
           id="event-registrations-panel"
           role="tabpanel"
           aria-labelledby="event-registrations-tab"
           className="mt-6"
         >
-          <RegistrationsSection eventId={event.id} timeZone={event.time_zone} />
+          <RegistrationsSection eventId={event.id} timeZone={event.time_zone} ticketTypes={event.ticket_types} sessions={event.sessions} historicalConfiguration={historicalConfiguration.data ?? undefined} />
         </section>
       ) : null}
-      {activeTab === "attendance" ? (
+      {effectiveActiveTab === "attendance" ? (
         <section id="event-attendance-panel" role="tabpanel" aria-labelledby="event-attendance-tab" className="mt-6">
           <EventAttendanceSection eventId={event.id} eventStatus={event.status} timeZone={event.time_zone} />
         </section>
       ) : null}
-      {activeTab === "feedback" ? (
+      {effectiveActiveTab === "feedback" ? (
         <section id="event-feedback-panel" role="tabpanel" aria-labelledby="event-feedback-tab" className="mt-6">
           <FeedbackSection eventId={event.id} />
         </section>
       ) : null}
-      {activeTab === "reports" ? (
+      {effectiveActiveTab === "reports" ? (
         <section id="event-reports-panel" role="tabpanel" aria-labelledby="event-reports-tab" className="mt-6">
           <EventReportsSection eventId={event.id} />
         </section>
       ) : null}
-      {activeTab === "orders" ? (
+      {effectiveActiveTab === "orders" ? (
         <section id="event-orders-panel" role="tabpanel" aria-labelledby="event-orders-tab" className="mt-6">
           <EventOrdersSection eventId={event.id} timeZone={event.time_zone} />
         </section>
@@ -490,9 +515,11 @@ function formatFeedbackResponse(value: unknown): string {
 }
 
 function EventDetailsTabs({
+  tabs,
   activeTab,
   onChange,
 }: {
+  tabs: ReadonlyArray<{ id: EventDetailsTab; label: string }>;
   activeTab: EventDetailsTab;
   onChange: (tab: EventDetailsTab) => void;
 }) {
@@ -502,7 +529,7 @@ function EventDetailsTabs({
       role="tablist"
       aria-label="Event details sections"
     >
-      {eventDetailsTabs.map((tab, index) => (
+      {tabs.map((tab, index) => (
         <button
           key={tab.id}
           id={`event-${tab.id}-tab`}
@@ -548,12 +575,13 @@ function handleTabKeyDown(
   event.preventDefault();
 }
 
-function RegistrationsSection({ eventId, timeZone }: { eventId: string; timeZone: string }) {
+function RegistrationsSection({ eventId, timeZone, ticketTypes, sessions, historicalConfiguration }: { eventId: string; timeZone: string; ticketTypes: Event["ticket_types"]; sessions: Event["sessions"]; historicalConfiguration?: ActiveEventFormConfiguration }) {
   const [activeSubview, setActiveSubview] =
     useState<RegistrationsSubview>("registered");
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [registrationSearch, setRegistrationSearch] = useState("");
+  const [selectedRegistration, setSelectedRegistration] = useState<EventRegistration | null>(null);
   const registrationsQuery = useQuery({
     queryKey: ["event-registrations", eventId],
     queryFn: () => getEventRegistrations(eventId),
@@ -767,13 +795,17 @@ function RegistrationsSection({ eventId, timeZone }: { eventId: string; timeZone
       subview={activeSubview}
       error={exportError}
     >
-      <RegistrationTable
-        eventId={eventId}
+        <RegistrationTable
+          eventId={eventId}
         registrations={filteredRegistrations}
         totalRegistrations={registrationsQuery.data.filter(isActiveRegistration).length}
         search={registrationSearch}
-        onSearchChange={setRegistrationSearch}
-      />
+          onSearchChange={setRegistrationSearch}
+          onSelect={setSelectedRegistration}
+          sessions={sessions}
+          ticketTypes={ticketTypes}
+        />
+        {selectedRegistration ? <RegistrationDetailsDrawer registration={selectedRegistration} ticketTypes={ticketTypes} sessions={sessions} historicalConfiguration={historicalConfiguration} timeZone={timeZone} onClose={() => setSelectedRegistration(null)} /> : null}
     </RegistrationsPanel>
   );
 }
@@ -800,15 +832,21 @@ function RegistrationTable({
   totalRegistrations,
   search,
   onSearchChange,
+  onSelect,
+  sessions,
+  ticketTypes,
 }: {
   eventId: string;
   registrations: readonly EventRegistration[];
   totalRegistrations: number;
   search: string;
   onSearchChange: (value: string) => void;
+  onSelect: (registration: EventRegistration) => void;
+  sessions: Event["sessions"];
+  ticketTypes: Event["ticket_types"];
 }) {
   const countLabel = totalRegistrations === 1 ? "registered participant" : "registered participants";
-  return <section className="space-y-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><label className="w-full sm:max-w-sm"><span className="sr-only">Search registrations</span><input type="search" value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search registrations..." className="h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]" /></label><p aria-live="polite" className="text-sm text-[#52736a]">{search.trim() ? registrations.length + " of " + totalRegistrations + " registrations" : totalRegistrations + " " + countLabel}</p></div>{registrations.length === 0 ? <div className="rounded-xl border border-dashed border-[#d7e5df] bg-[#f9fcfa] px-4 py-8 text-center"><p className="text-sm font-bold text-[#06201c]">No registrations found.</p></div> : <div className="overflow-x-auto"><table className="min-w-[760px] w-full table-fixed text-left text-sm"><thead className="border-y border-[#e1ebe6] bg-[#f9fcfa] text-xs font-bold uppercase tracking-[.08em] text-[#52736a]"><tr><th scope="col" className="w-12 px-3 py-2">#</th><th scope="col" className="w-[25%] px-3 py-2">Name</th><th scope="col" className="w-[38%] px-3 py-2">Email</th><th scope="col" className="w-[17%] px-3 py-2">Status</th><th scope="col" className="w-[120px] px-3 py-2"><span className="sr-only">Actions</span></th></tr></thead><tbody>{registrations.map((registration, index) => <tr key={registration.id} className="border-b border-[#edf3f0] text-[#06201c] last:border-b-0"><td className="px-3 py-2.5 text-[#52736a]">{index + 1}</td><td className="truncate px-3 py-2.5 font-semibold" title={registration.participant_name}>{registration.participant_name}</td><td className="truncate px-3 py-2.5 text-[#52736a]" title={registration.participant_email}>{registration.participant_email}</td><td className="px-3 py-2.5"><span className="inline-flex rounded-full bg-[#edf3f0] px-2.5 py-1 text-xs font-semibold text-[#31594d]">{humanizeRegistrationStatus(registration.status)}</span></td><td className="px-3 py-2.5"><EventRefundAction eventId={eventId} target="registration" targetId={registration.id} refundState={getRegistrationRefundState(registration.status)} /></td></tr>)}</tbody></table></div>}</section>;
+  return <section className="space-y-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><label className="w-full sm:max-w-sm"><span className="sr-only">Search registrations</span><input type="search" value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search attendees by name or email" className="h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]" /></label><p aria-live="polite" className="text-sm text-[#52736a]">{search.trim() ? registrations.length + " of " + totalRegistrations + " registrations" : totalRegistrations + " " + countLabel}</p></div>{registrations.length === 0 ? <div className="rounded-xl border border-dashed border-[#d7e5df] bg-[#f9fcfa] px-4 py-8 text-center"><p className="text-sm font-bold text-[#06201c]">No registrations found.</p></div> : <div className="overflow-x-auto"><table className="min-w-[900px] w-full table-fixed text-left text-sm"><thead className="border-y border-[#e1ebe6] bg-[#f9fcfa] text-xs font-bold uppercase tracking-[.08em] text-[#52736a]"><tr><th className="w-[28%] px-3 py-2">Attendee</th><th className="w-[17%] px-3 py-2">Ticket</th><th className="w-[16%] px-3 py-2">Registration</th><th className="w-[15%] px-3 py-2">Check-in</th><th className="w-[16%] px-3 py-2">Registered at</th><th className="w-[100px] px-3 py-2"><span className="sr-only">Actions</span></th></tr></thead><tbody>{registrations.map((registration) => { const ticket = ticketTypes.find((item) => item.id === registration.ticket_type_id)?.name ?? "Unknown ticket"; const session = sessions.find((item) => item.id === registration.session_id); const checkIn = registration.checked_out_at ? "Checked out" : registration.checked_in_at ? "Checked in" : "Not checked in"; return <tr key={registration.id} onClick={() => onSelect(registration)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(registration); } }} role="button" tabIndex={0} className="cursor-pointer border-b border-[#edf3f0] text-[#06201c] last:border-b-0 hover:bg-[#f4faf7]"><td className="px-3 py-2.5"><div className="truncate font-semibold">{registration.participant_name}</div><div className="truncate text-xs text-[#52736a]">{registration.participant_email}</div></td><td className="px-3 py-2.5 text-[#52736a]">{ticket}</td><td className="px-3 py-2.5"><span className="inline-flex rounded-full bg-[#edf3f0] px-2.5 py-1 text-xs font-semibold text-[#31594d]">{humanizeRegistrationStatus(registration.status)}</span></td><td className="px-3 py-2.5"><div className="font-semibold">{checkIn}</div>{registration.checked_in_at ? <div className="text-xs text-[#52736a]">{formatEventDateTime(registration.checked_in_at, "UTC")}</div> : null}</td><td className="px-3 py-2.5 text-[#52736a]">{formatEventDateTime(registration.created_at, "UTC")}</td><td className="px-3 py-2.5" onClick={(event) => event.stopPropagation()}><EventRefundAction eventId={eventId} target="registration" targetId={registration.id} refundState={getRegistrationRefundState(registration.status)} /></td></tr>; })}</tbody></table></div>}</section>;
 }
 
 function RegistrationsHeader({
@@ -837,6 +875,28 @@ function RegistrationsHeader({
     </div>
   );
 }
+
+function formatRegistrationValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (Array.isArray(value)) return value.map((item) => formatRegistrationValue(item)).join(", ");
+  if (typeof value === "object") return "—";
+  return String(value);
+}
+
+function RegistrationDetailsDrawer({ registration, ticketTypes, sessions, historicalConfiguration, timeZone, onClose }: { registration: EventRegistration; ticketTypes: Event["ticket_types"]; sessions: Event["sessions"]; historicalConfiguration?: ActiveEventFormConfiguration; timeZone: string; onClose: () => void }) {
+  const fields = historicalConfiguration?.sections.flatMap((section) => section.fields) ?? [];
+  const ticket = ticketTypes.find((item) => item.id === registration.ticket_type_id);
+  const session = sessions.find((item) => item.id === registration.session_id);
+  const fieldLabel = (key: string) => fields.find((field) => field.id === key || field.stable_key === key)?.label ?? key;
+  const customEntries = Object.entries(registration.custom_fields ?? {});
+  return <div className="fixed inset-0 z-50"><button type="button" aria-label="Close attendee details" className="absolute inset-0 bg-[#06201c]/30" onClick={onClose} /><aside role="dialog" aria-modal="true" aria-label="Attendee Details" className="absolute right-0 top-0 h-full w-full max-w-lg overflow-y-auto bg-white p-6 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Registration</p><h2 className="mt-1 text-xl font-bold text-[#06201c]">Attendee Details</h2></div><button type="button" onClick={onClose} className="rounded-full px-3 py-1 text-sm font-bold text-[#52736a] hover:bg-[#f4faf7]">Close</button></div><section className="mt-6 space-y-2"><h3 className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Participant</h3><DetailRow label="Name" value={registration.participant_name} /><DetailRow label="Email" value={registration.participant_email} /></section><section className="mt-6 space-y-2"><h3 className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Registration</h3><DetailRow label="Status" value={humanizeRegistrationStatus(registration.status)} /><DetailRow label="Ticket" value={ticket?.name ?? registration.ticket_type_id ?? "—"} /><DetailRow label="Registered" value={formatEventDateTime(registration.created_at, timeZone)} />{registration.session_id ? <DetailRow label="Session" value={session?.title ?? "Unknown session"} /> : null}</section><section className="mt-6 space-y-2"><h3 className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Attendance</h3><DetailRow label="Check-in" value={registration.checked_in_at ? formatEventDateTime(registration.checked_in_at, timeZone) : "Not checked in"} />{registration.checked_out_at ? <DetailRow label="Checked out" value={formatEventDateTime(registration.checked_out_at, timeZone)} /> : null}</section><section className="mt-6 space-y-2"><h3 className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Custom Answers</h3>{customEntries.length === 0 ? <p className="text-sm text-[#52736a]">No additional registration information</p> : customEntries.map(([key, value]) => <DetailRow key={key} label={fieldLabel(key)} value={formatRegistrationValue(value)} />)}</section></aside></div>;
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return <div className="flex flex-col gap-0.5 rounded-xl bg-[#f9fcfa] px-3 py-2"><span className="text-xs font-semibold text-[#7f9d94]">{label}</span><span className="break-words text-sm font-semibold text-[#06201c]">{value}</span></div>;
+}
+
 function RegistrationsSubviewTabs({
   activeSubview,
   onChange,
@@ -1148,7 +1208,9 @@ function SessionsSection({
     const payloads = drafts.map((session) => ({
       session_date: session.session_date,
       title: session.title.trim(),
+      description: session.description.trim() || null,
       speaker: session.speaker.trim() || null,
+      speaker_bio: session.speaker_bio.trim() || null,
       start_time: session.start_time || null,
       end_time: session.end_time || null,
       location: session.location.trim() || null,
@@ -1273,7 +1335,9 @@ function AddSessionDialog({
   const [values, setValues] = useState({
     session_date: initialSession?.session_date ?? (dates.length === 1 ? dates[0] : ""),
     title: initialSession?.title ?? "",
+    description: initialSession?.description ?? "",
     speaker: initialSession?.speaker ?? "",
+    speaker_bio: initialSession?.speaker_bio ?? "",
     start_time: initialSession?.start_time ?? "",
     end_time: initialSession?.end_time ?? "",
     location: initialSession?.location ?? "",
@@ -1321,7 +1385,9 @@ function AddSessionDialog({
     const normalized = Object.fromEntries(Object.entries({
       session_date: values.session_date,
       title: values.title.trim(),
+      description: values.description.trim() || null,
       speaker: values.speaker.trim() || null,
+      speaker_bio: values.speaker_bio.trim() || null,
       start_time: values.start_time || null,
       end_time: values.end_time || null,
       location: values.location.trim() || null,
@@ -1334,7 +1400,9 @@ function AddSessionDialog({
     const original = {
       session_date: initialSession?.session_date ?? "",
       title: initialSession?.title ?? "",
+      description: initialSession?.description ?? "",
       speaker: initialSession?.speaker ?? "",
+      speaker_bio: initialSession?.speaker_bio ?? "",
       start_time: initialSession?.start_time ?? "",
       end_time: initialSession?.end_time ?? "",
       location: initialSession?.location ?? "",
@@ -1404,6 +1472,10 @@ function AddSessionDialog({
               className="mt-1 h-10 w-full rounded-lg border border-[#d7e5df] px-3 font-normal outline-none focus:border-[#1f6a58] focus:ring-2 focus:ring-[#1f6a58]/20"
             />
           </label> : null}
+          {fieldEnabled("description") ? <label className="block text-sm font-bold text-[#06201c]">
+            Description{fieldRequired("description") ? " *" : ""}
+            <textarea value={values.description} onChange={(event) => setValues((current) => ({ ...current, description: event.target.value }))} className="mt-1 min-h-24 w-full rounded-lg border border-[#d7e5df] px-3 py-2 font-normal" />
+          </label> : null}
           <div className="grid gap-4 sm:grid-cols-2">
             {fieldEnabled("speaker") ? <SessionInput
               label="Speaker"
@@ -1411,6 +1483,10 @@ function AddSessionDialog({
               value={values.speaker}
               onChange={update("speaker")}
             /> : null}
+            {fieldEnabled("speaker_bio") ? <label className="block text-sm font-bold text-[#06201c]">
+              Speaker bio{fieldRequired("speaker_bio") ? " *" : ""}
+              <textarea value={values.speaker_bio} onChange={(event) => setValues((current) => ({ ...current, speaker_bio: event.target.value }))} className="mt-1 min-h-24 w-full rounded-lg border border-[#d7e5df] px-3 py-2 font-normal" />
+            </label> : null}
             {fieldEnabled("start_time") ? <SessionInput
               label="Start time"
               required={fieldRequired("start_time")}
@@ -1455,7 +1531,7 @@ function AddSessionDialog({
           <div className="flex justify-end gap-3">
             <button
               type="button"
-              disabled={isPending || (mode === "edit" && Object.keys(Object.fromEntries(Object.entries(values).filter(([key, value]) => value !== ({ session_date: initialSession?.session_date ?? "", title: initialSession?.title ?? "", speaker: initialSession?.speaker ?? "", start_time: initialSession?.start_time ?? "", end_time: initialSession?.end_time ?? "", location: initialSession?.location ?? "", meeting_link: initialSession?.meeting_link ?? "" })[key as keyof typeof values]))).length === 0)}
+              disabled={isPending || (mode === "edit" && Object.keys(Object.fromEntries(Object.entries(values).filter(([key, value]) => value !== ({ session_date: initialSession?.session_date ?? "", title: initialSession?.title ?? "", description: initialSession?.description ?? "", speaker: initialSession?.speaker ?? "", speaker_bio: initialSession?.speaker_bio ?? "", start_time: initialSession?.start_time ?? "", end_time: initialSession?.end_time ?? "", location: initialSession?.location ?? "", meeting_link: initialSession?.meeting_link ?? "" })[key as keyof typeof values]))).length === 0)}
               onClick={onClose}
               className="h-10 rounded-full border border-[#d7e5df] px-4 text-sm font-semibold text-[#52736a] disabled:opacity-60"
             >

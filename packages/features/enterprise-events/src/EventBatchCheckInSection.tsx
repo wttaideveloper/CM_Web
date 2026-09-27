@@ -16,7 +16,7 @@ import {
 
 const COPY = {
   title: "Batch check-in",
-  description: "Review backend-eligible participants, then check them in with one operation.",
+  description: "Check in multiple registered attendees at once.",
   open: "Batch check-in",
   selectAll: "Select all eligible",
   clear: "Clear selection",

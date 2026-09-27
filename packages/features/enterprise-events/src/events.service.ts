@@ -2,6 +2,81 @@ import { authenticatedFetch } from "@ihp/auth";
 
 const fetch = authenticatedFetch;
 
+export type EventLifecycleState = "upcoming" | "ongoing" | "finished";
+export type EventType = "conference" | "workshop" | "marathon" | "camp" | "private_function" | "webinar" | "other";
+
+export interface EventModules {
+  registration: boolean;
+  tickets: boolean;
+  sessions: boolean;
+  check_in: boolean;
+  online_meeting: boolean;
+  custom_questions: boolean;
+  meals: boolean;
+  accommodation: boolean;
+}
+
+export interface EventModulesInput {
+  registration?: boolean | null;
+  tickets?: boolean | null;
+  sessions?: boolean | null;
+  check_in?: boolean | null;
+  online_meeting?: boolean | null;
+  custom_questions?: boolean | null;
+  meals?: boolean | null;
+  accommodation?: boolean | null;
+}
+
+export interface MealOption {
+  id: string;
+  name: string;
+  description: string | null;
+  date: string | null;
+  active: boolean;
+}
+
+export interface MealOptionInput {
+  id?: string | null;
+  name: string;
+  description?: string | null;
+  date?: string | null;
+  active?: boolean;
+}
+
+export interface EventMeals {
+  enabled: boolean;
+  options: MealOption[];
+}
+
+export interface EventMealsInput {
+  enabled?: boolean | null;
+  options?: MealOptionInput[] | null;
+}
+
+export interface AccommodationOption {
+  id: string;
+  name: string;
+  description: string | null;
+  active: boolean;
+}
+
+export interface AccommodationOptionInput {
+  id?: string | null;
+  name: string;
+  description?: string | null;
+  active?: boolean;
+}
+
+export interface EventAccommodation {
+  enabled: boolean;
+  options: AccommodationOption[];
+}
+
+export interface EventAccommodationInput {
+  enabled?: boolean | null;
+  options?: AccommodationOptionInput[] | null;
+}
+
 /** An event returned by the Events list API. */
 export interface Event {
   id: string;
@@ -42,6 +117,7 @@ export interface Event {
   custom_fields: EventCustomField[];
   sessions: EventSessionRecord[];
   status: EventStatus;
+  lifecycle_state?: EventLifecycleState | null;
   is_deleted: boolean;
   created_at: string;
   updated_at: string;
@@ -53,6 +129,107 @@ export interface Event {
   registration_open?: boolean;
   delivery_mode_display?: string;
   requires_reapproval?: boolean;
+  event_type?: EventType | null;
+  modules?: EventModules | null;
+  meals?: EventMeals | null;
+  accommodation?: EventAccommodation | null;
+}
+
+export interface EventDashboardRegistrations {
+  total: number;
+  active: number;
+  confirmed: number;
+  attended: number;
+  cancelled: number;
+  no_show: number;
+  other: number;
+  online: number;
+  walk_in: number;
+}
+
+export interface EventDashboardCapacity {
+  capacity: number | null;
+  unlimited: boolean;
+  seats_taken: number;
+  seats_reserved: number;
+  available_seats: number | null;
+  is_full: boolean | null;
+  fill_percentage: number | null;
+}
+
+export interface EventDashboardAttendance {
+  checked_in: number;
+  not_checked_in: number;
+  attendance_percentage: number | null;
+}
+
+export interface EventDashboardWaitlist {
+  total: number;
+  waiting: number;
+  payment_pending: number;
+  promoted: number;
+  expired: number;
+  left: number;
+  other: number;
+}
+
+export interface EventDashboardOrders {
+  total: number;
+  successful: number;
+  pending: number;
+  refund_requested: number;
+  refunded: number;
+  cancelled: number;
+  failed: number;
+}
+
+export interface EventDashboardRevenue {
+  currency: string | null;
+  total_revenue: number | null;
+  refunded_amount: number | null;
+  pending_refund_amount: number | null;
+  paid_orders: number;
+  mixed_currency: boolean;
+  by_currency: readonly Record<string, unknown>[];
+  unparseable_orders: number;
+}
+
+export interface EventDashboardSession {
+  session_id: string;
+  title?: string | null;
+  session_date?: string | null;
+  start_time?: string | null;
+  registered_count: number;
+  checked_in_count: number;
+  attendance_percentage?: number | null;
+}
+
+export interface EventDashboardMeal {
+  meal_id: string;
+  name: string;
+  selected_count: number;
+  active: boolean;
+}
+
+export interface EventDashboardAccommodation {
+  accommodation_id: string;
+  name: string;
+  selected_count: number;
+  active: boolean;
+}
+
+export interface EventDashboard {
+  event: Record<string, unknown>;
+  registrations: EventDashboardRegistrations;
+  capacity: EventDashboardCapacity;
+  attendance: EventDashboardAttendance;
+  waitlist: EventDashboardWaitlist;
+  orders: EventDashboardOrders;
+  revenue: EventDashboardRevenue;
+  sessions: readonly EventDashboardSession[];
+  meals: readonly EventDashboardMeal[];
+  accommodation: readonly EventDashboardAccommodation[];
+  generated_at: string;
 }
 
 /** One typed value captured for a configuration-owned custom Event field. */
@@ -412,7 +589,9 @@ export interface CreateEventCustomField extends EventCustomField {
 export interface EventSessionInput {
   session_date: string;
   title: string;
+  description?: string | null;
   speaker: string;
+  speaker_bio?: string | null;
   start_time: string;
   end_time: string;
   location?: string | null;
@@ -430,7 +609,9 @@ export interface EventSession {
   id: string;
   session_date?: string | null;
   title: string;
+  description?: string | null;
   speaker: string | null;
+  speaker_bio?: string | null;
   start_time: string | null;
   end_time: string | null;
   location: string | null;
@@ -444,7 +625,9 @@ export type EventSessionRecord = EventEmbeddedSession | EventSession;
 export interface AddEventSessionPayload {
   session_date: string;
   title: string;
+  description?: string | null;
   speaker?: string | null;
+  speaker_bio?: string | null;
   start_time?: string | null;
   end_time?: string | null;
   location?: string | null;
@@ -455,7 +638,9 @@ export interface AddEventSessionPayload {
 export interface UpdateEventSessionPayload {
   session_date?: string | null;
   title?: string | null;
+  description?: string | null;
   speaker?: string | null;
+  speaker_bio?: string | null;
   start_time?: string | null;
   end_time?: string | null;
   location?: string | null;
@@ -501,6 +686,10 @@ export interface CreateEventPayload {
   status: "draft";
   form_configuration_version_id?: string;
   custom_values?: Array<{ field_id: string; value: string | string[] | boolean | number | null }>;
+  event_type?: EventType | null;
+  modules?: EventModulesInput | null;
+  meals?: EventMealsInput | null;
+  accommodation?: EventAccommodationInput | null;
 }
 
 /**
@@ -543,6 +732,10 @@ export interface UpdateEventPayload {
   custom_fields?: EventCustomField[] | null;
   sessions?: EventSessionInput[] | null;
   custom_values?: EventCustomValue[] | null;
+  event_type?: EventType | null;
+  modules?: EventModulesInput | null;
+  meals?: EventMealsInput | null;
+  accommodation?: EventAccommodationInput | null;
 }
 
 /** Runtime-confirmed JSON response returned after a successful Event deletion. */
@@ -643,10 +836,12 @@ function isEventEmbeddedSession(value: unknown): value is EventEmbeddedSession {
 function isEventSession(value: unknown): value is EventSession {
   return isRecord(value) && typeof value.id === "string" && typeof value.title === "string" &&
     (value.session_date === undefined || value.session_date === null || typeof value.session_date === "string") &&
-    (value.speaker === null || typeof value.speaker === "string") &&
-    (value.start_time === null || typeof value.start_time === "string") &&
-    (value.end_time === null || typeof value.end_time === "string") &&
-    (value.location === null || typeof value.location === "string") &&
+    (value.speaker === undefined || value.speaker === null || typeof value.speaker === "string") &&
+    (value.description === undefined || value.description === null || typeof value.description === "string") &&
+    (value.speaker_bio === undefined || value.speaker_bio === null || typeof value.speaker_bio === "string") &&
+    (value.start_time === undefined || value.start_time === null || typeof value.start_time === "string") &&
+    (value.end_time === undefined || value.end_time === null || typeof value.end_time === "string") &&
+    (value.location === undefined || value.location === null || typeof value.location === "string") &&
     (value.meeting_link === undefined || value.meeting_link === null || typeof value.meeting_link === "string");
 }
 
@@ -667,7 +862,9 @@ function normalizeEventSession(value: unknown): EventSessionRecord | null {
   const common = {
     session_date: value.session_date,
     title: value.title,
+    description: optionalText(value.description),
     speaker: optionalText(value.speaker),
+    speaker_bio: optionalText(value.speaker_bio),
     start_time: optionalText(value.start_time),
     end_time: optionalText(value.end_time),
     location: optionalText(value.location),
@@ -740,6 +937,7 @@ function normalizeEventResponse(value: unknown): Event | null {
     created_at: value.created_at as string,
     updated_at: value.updated_at as string,
     status: value.status as EventStatus,
+    lifecycle_state: value.lifecycle_state === "upcoming" || value.lifecycle_state === "ongoing" || value.lifecycle_state === "finished" ? value.lifecycle_state : null,
   };
 }
 
@@ -1158,6 +1356,20 @@ export async function getEventById(eventId: string): Promise<Event> {
   }
 
   return normalizeNullableEventFields(value);
+}
+
+/** Reads the backend-authoritative dashboard summary for one Event. */
+export async function getEventDashboard(eventId: string): Promise<EventDashboard> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/dashboard`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw await createEventsApiError(response, "load the Event dashboard");
+  }
+
+  return (await response.json()) as EventDashboard;
 }
 
 /** Reads the latest Platform review note for an Event through the authenticated Events API. */

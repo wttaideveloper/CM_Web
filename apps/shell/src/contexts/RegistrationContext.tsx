@@ -2,9 +2,9 @@
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 
-import type { CreatedTenant, RegistrationPlan } from "@/services/registration-ui.service";
+import type { DocumentRequirement, RegistrationPlan, TenantApplication } from "@/services/registration-ui.service";
 
-export type RegistrationStep = 1 | 2 | 3 | 4 | 5;
+export type RegistrationStep = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 type RegistrationState = {
   currentStep: RegistrationStep;
@@ -26,7 +26,8 @@ type RegistrationState = {
   industryType: string;
   companySize: string;
   plan: RegistrationPlan;
-  createdTenant: CreatedTenant | null;
+  tenantApplication: TenantApplication | null;
+  documentRequirements: DocumentRequirement[];
 };
 
 type RegistrationUpdate = Partial<
@@ -49,7 +50,8 @@ type RegistrationUpdate = Partial<
     | "industryType"
     | "companySize"
     | "plan"
-    | "createdTenant"
+    | "tenantApplication"
+    | "documentRequirements"
   >
 >;
 
@@ -80,7 +82,8 @@ const INITIAL_REGISTRATION_STATE: RegistrationState = {
   industryType: "",
   companySize: "",
   plan: "starter",
-  createdTenant: null,
+  tenantApplication: null,
+  documentRequirements: [],
 };
 
 const RegistrationContext = createContext<RegistrationContextValue | null>(null);

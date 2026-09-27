@@ -1,5 +1,41 @@
 export type RegistrationPlan = "starter" | "professional" | "enterprise";
 
+export type TenantApplicationStatus = "documents_pending" | "under_review" | "approved" | "rejected" | string;
+
+export type TenantApplicationDocument = {
+  id: string;
+  documentType: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  uploadedAt: string;
+  downloadUrl: string | null;
+};
+
+export type TenantApplication = {
+  id: string;
+  ownerUserId: string;
+  slug: string;
+  name: string;
+  module: string;
+  plan: string;
+  status: TenantApplicationStatus;
+  industryType: string;
+  companySize: string;
+  country: string;
+  ownerEmail: string;
+  ownerPhone: string;
+  ownerFullName: string;
+  submittedAt: string | null;
+  reviewedAt: string | null;
+  reviewNotes: string | null;
+  tenantId: string | null;
+  documents: TenantApplicationDocument[];
+  tenantName: string;
+};
+
+export type DocumentRequirement = { documentType: string; label: string; description: string; required: boolean };
+
 export type CreatedTenant = {
   id: string;
   slug: string;
@@ -58,6 +94,8 @@ export type RegisterOrganizationResponse = {
   };
   raw: unknown;
 };
+
+export type TenantApplicationCreatePayload = { userId: string; tenantName: string; tenantSlug: string; industryType: string; companySize: string; module: string; plan: string; country: string };
 
 export class RegistrationApiError extends Error {
   constructor(
@@ -163,6 +201,66 @@ async function requestJson(path: string, payload: unknown, fallback: string): Pr
   if (!response.ok) throw apiError(response, text, json, fallback);
   if (!isRecord(json)) throw new RegistrationApiError(fallback, "invalid_response", response.status);
   return json;
+}
+
+async function requestJsonWithMethod(path: string, method: "GET" | "POST", payload: unknown, fallback: string) {
+  if (method === "GET") {
+    const response = await fetch(path, { credentials: "include" });
+    const { text, json } = await readResponseBody(response);
+    if (!response.ok) throw apiError(response, text, json, fallback);
+    if (!isRecord(json)) throw new RegistrationApiError(fallback, "invalid_response", response.status);
+    return json;
+  }
+  return requestJson(path, payload, fallback);
+}
+
+function isTenantApplicationDocument(value: unknown): value is TenantApplicationDocument {
+  return isRecord(value) && typeof value.id === "string" && typeof value.documentType === "string" && typeof value.fileName === "string" && typeof value.contentType === "string" && typeof value.sizeBytes === "number" && typeof value.uploadedAt === "string" && (typeof value.downloadUrl === "string" || value.downloadUrl === null);
+}
+
+function isTenantApplication(value: unknown): value is TenantApplication {
+  return isRecord(value) && typeof value.id === "string" && typeof value.ownerUserId === "string" && typeof value.slug === "string" && (typeof value.name === "string" || typeof value.tenantName === "string") && typeof value.module === "string" && typeof value.plan === "string" && typeof value.status === "string" && typeof value.industryType === "string" && typeof value.companySize === "string" && typeof value.country === "string" && typeof value.ownerEmail === "string" && typeof value.ownerPhone === "string" && typeof value.ownerFullName === "string" && (typeof value.submittedAt === "string" || value.submittedAt === null) && (typeof value.reviewedAt === "string" || value.reviewedAt === null) && (typeof value.reviewNotes === "string" || value.reviewNotes === null) && (typeof value.tenantId === "string" || value.tenantId === null) && Array.isArray(value.documents) && value.documents.every(isTenantApplicationDocument);
+}
+
+function unwrapApplication(raw: Record<string, unknown>, fallback: string): TenantApplication {
+  if (!isRecord(raw.data) || !isTenantApplication(raw.data)) throw new RegistrationApiError(fallback, "invalid_response");
+  const name = typeof raw.data.name === "string" ? raw.data.name : raw.data.tenantName as string;
+  const tenantName = typeof raw.data.tenantName === "string" ? raw.data.tenantName : name;
+  return { ...raw.data, name, tenantName };
+}
+
+export async function getDocumentRequirements(): Promise<DocumentRequirement[]> {
+  const raw = await requestJsonWithMethod("/api/v1/auth/tenant-applications/document-requirements", "GET", null, "Invalid document requirements response.");
+  if (!Array.isArray(raw.data) || !raw.data.every((item) => isRecord(item) && typeof item.documentType === "string" && typeof item.label === "string" && typeof item.description === "string" && typeof item.required === "boolean")) throw new RegistrationApiError("Invalid document requirements response.", "invalid_response");
+  return raw.data as DocumentRequirement[];
+}
+
+export async function createTenantApplication(payload: TenantApplicationCreatePayload): Promise<TenantApplication> {
+  return unwrapApplication(await requestJson("/api/v1/auth/tenant-applications", payload, "Invalid tenant application response."), "Invalid tenant application response.");
+}
+
+export async function getMyTenantApplication(userId?: string): Promise<TenantApplication> {
+  const query = userId ? `?userId=${encodeURIComponent(userId)}` : "";
+  return unwrapApplication(await requestJsonWithMethod(`/api/v1/auth/tenant-applications/mine${query}`, "GET", null, "Invalid tenant application response."), "Invalid tenant application response.");
+}
+
+export async function initTenantApplicationUpload(applicationId: string, userId: string, payload: { documentType: string; fileName: string; contentType: string; fileSizeBytes: number }) {
+  const raw = await requestJson(`/api/v1/auth/tenant-applications/${encodeURIComponent(applicationId)}/documents/upload/init?userId=${encodeURIComponent(userId)}`, { userId, ...payload }, "Unable to initialize document upload.");
+  if (!isRecord(raw.data) || typeof raw.data.uploadUrl !== "string" || typeof raw.data.storageKey !== "string" || typeof raw.data.documentType !== "string" || typeof raw.data.expiresInSeconds !== "number") throw new RegistrationApiError("Invalid upload-init response.", "invalid_response");
+  return raw.data as { uploadUrl: string; storageKey: string; documentType: string; expiresInSeconds: number };
+}
+
+export async function uploadTenantApplicationFile(uploadUrl: string, file: File) {
+  const response = await fetch(uploadUrl, { method: "PUT", headers: file.type ? { "Content-Type": file.type } : undefined, body: file });
+  if (!response.ok) throw new RegistrationApiError("Unable to upload document.", "unknown", response.status);
+}
+
+export async function completeTenantApplicationUpload(applicationId: string, userId: string, payload: { documentType: string; storageKey: string; fileName: string; contentType: string; fileSizeBytes: number }): Promise<TenantApplication> {
+  return unwrapApplication(await requestJson(`/api/v1/auth/tenant-applications/${encodeURIComponent(applicationId)}/documents/upload/complete?userId=${encodeURIComponent(userId)}`, { userId, ...payload }, "Unable to complete document upload."), "Invalid upload-complete response.");
+}
+
+export async function submitTenantApplication(applicationId: string, userId: string): Promise<TenantApplication> {
+  return unwrapApplication(await requestJson(`/api/v1/auth/tenant-applications/${encodeURIComponent(applicationId)}/submit?userId=${encodeURIComponent(userId)}`, undefined, "Unable to submit tenant application."), "Invalid tenant application response.");
 }
 
 function isCreatedTenant(value: unknown): value is CreatedTenant {

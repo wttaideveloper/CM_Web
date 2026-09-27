@@ -1,5 +1,6 @@
 import { getEventCompositeFieldDefinition } from "./event-composite-field-definitions";
 import type { ConfiguredField, CoreFieldRegistryItem, FormConfiguration } from "./form-configuration.types";
+import { EVENT_DELIVERY_BUNDLE } from "./event-delivery-bundle";
 
 export type PersistedAssignmentState = {
   isPersisted: boolean;
@@ -11,7 +12,8 @@ export type PersistedAssignmentState = {
 
 /** A client-detectable publish issue tied to the configuration, a section, or a field. */
 export type FormConfigurationValidationIssue = {
-  code: "domain-required" | "invalid-renderer" | "invalid-composite-required-fields" | "missing-core-registry-entry" | "selective-tenant-required" | "selective-assignments-dirty" | "selective-assignments-loading" | "duplicate-core-key" | "invalid-training-visibility" | "invalid-training-upload-settings";
+  severity?: "error" | "warning";
+  code: "domain-required" | "missing-domain-required" | "invalid-renderer" | "invalid-composite-required-fields" | "missing-core-registry-entry" | "selective-tenant-required" | "selective-assignments-dirty" | "selective-assignments-loading" | "duplicate-core-key" | "invalid-delivery-bundle" | "subcategory-requires-category" | "paid-pricing-input-missing" | "invalid-training-visibility" | "invalid-training-upload-settings";
   message: string;
   sectionLocalId?: string;
   fieldLocalId?: string;
@@ -24,18 +26,21 @@ export function validateFormConfiguration(configuration: FormConfiguration, regi
   const scopeIssues = validateSelectiveAssignments(configuration, persistedAssignments);
   const duplicateCoreKeyIssues = validateDuplicateCoreKeys(configuration.fields);
   const trainingSettingsIssues = configuration.type === "training" ? validateTrainingFrontendSettings(configuration.fields) : [];
-  return [...scopeIssues, ...duplicateCoreKeyIssues, ...trainingSettingsIssues, ...configuration.fields.flatMap((field) => {
+  const deliveryIssues = configuration.type === "event" ? validateEventDeliveryBundle(configuration) : [];
+  const eventIssues = configuration.type === "event" ? validateEventConfiguration(configuration) : [];
+  const requiredFieldIssues = configuration.type === "event" ? registry.filter((item) => item.requiredByDomain && !configuration.fields.some((field) => field.enabled !== false && field.source === "core" && field.coreKey === item.key)).map((item) => ({ severity: "error" as const, code: "missing-domain-required" as const, message: `${item.displayName} is required by the Event domain. Add it from + Add field.`, sectionLocalId: configuration.sections[0]?.localId })) : [];
+  return [...scopeIssues, ...duplicateCoreKeyIssues, ...trainingSettingsIssues, ...deliveryIssues, ...eventIssues, ...requiredFieldIssues, ...configuration.fields.flatMap((field) => {
     if (field.source !== "core") return validateCompositeRequiredFields(field);
     const definition = registry.find((item) => item.key === field.coreKey);
     // Training registry is still backfilling 23 keys (tags, learning_objectives, start_time etc.) — allow publish and let server validate instead of blocking UI with 23 "not available" issues. Event still enforces strictly.
     if (!definition) {
       if (configuration.type === "training") return validateCompositeRequiredFields(field);
-      return [{ code: "missing-core-registry-entry" as const, message: `${fieldName(field)} is not available in the authoritative field registry.`, sectionLocalId: field.sectionLocalId, fieldLocalId: field.localId }];
+      return [{ severity: "error" as const, code: "missing-core-registry-entry" as const, message: `${fieldName(field)} is not available in the authoritative field registry. Remove this field and add it again from + Add field after the registry loads.`, sectionLocalId: field.sectionLocalId, fieldLocalId: field.localId }];
     }
     const issues: FormConfigurationValidationIssue[] = [];
-    if (definition.requiredByDomain && !field.required) issues.push({ code: "domain-required", message: `${fieldName(field)} must be required by the Event domain.`, sectionLocalId: field.sectionLocalId, fieldLocalId: field.localId });
+    if (definition.requiredByDomain && !field.required) issues.push({ severity: "error", code: "domain-required", message: `${fieldName(field)} is required by the Event domain. Open the field editor and enable Required.`, sectionLocalId: field.sectionLocalId, fieldLocalId: field.localId });
     if (!definition.allowedRenderers.includes(field.renderer)) {
-      if (configuration.type !== "training") issues.push({ code: "invalid-renderer", message: `${fieldName(field)} uses renderer '${field.renderer}', which is not allowed by the field registry.`, sectionLocalId: field.sectionLocalId, fieldLocalId: field.localId });
+        if (configuration.type !== "training") issues.push({ severity: "error", code: "invalid-renderer", message: `${fieldName(field)} uses renderer '${field.renderer}', which is not allowed by the field registry. Open the field editor and choose an allowed renderer.`, sectionLocalId: field.sectionLocalId, fieldLocalId: field.localId });
     }
     return [...issues, ...validateCompositeRequiredFields(field)];
   })];
@@ -78,16 +83,47 @@ function trainingFieldKey(field: ConfiguredField): string {
   return (field.coreKey ?? field.stableKey ?? field.localId).replace(/^(core_|custom_)/, "");
 }
 
+function coreKeys(configuration: FormConfiguration): Set<string> { return new Set(configuration.fields.filter((field) => field.enabled !== false && field.source === "core" && field.coreKey).map((field) => field.coreKey as string)); }
+
+function validateEventConfiguration(configuration: FormConfiguration): FormConfigurationValidationIssue[] {
+  const keys = coreKeys(configuration);
+  const issues: FormConfigurationValidationIssue[] = [];
+  if (keys.has("subcategory") && !keys.has("category")) issues.push({ severity: "error", code: "subcategory-requires-category", message: "Subcategory requires Category to be included in the form. You can add Category from + Add field in the relevant section." });
+  if (keys.has("pricing_type")) {
+    const pricing = configuration.fields.find((field) => field.coreKey === "pricing_type");
+    const hasPaid = !pricing || pricing.options.length === 0 || pricing.options.some((option) => option.value.toLowerCase() === "paid");
+    if (hasPaid && !keys.has("price") && !keys.has("ticket_types")) issues.push({ severity: "error", code: "paid-pricing-input-missing", message: "When Pricing Type is included, keep either Price or Ticket Types in the form so paid events can be configured. You can add the missing field from + Add field in the Pricing & Tickets section." });
+  }
+  return issues;
+}
+
+function validateEventDeliveryBundle(configuration: FormConfiguration): FormConfigurationValidationIssue[] {
+  const fields = configuration.fields.filter((field) => field.enabled !== false && field.source === "core" && field.coreKey);
+  const present = new Map(EVENT_DELIVERY_BUNDLE.map((key) => [key, fields.filter((field) => field.coreKey === key)]));
+  const delivery = present.get("delivery_mode")?.[0];
+  const dependents = EVENT_DELIVERY_BUNDLE.slice(1).flatMap((key) => present.get(key) ?? []);
+  if (!delivery && dependents.length === 0) return [];
+  if (!delivery) return [{ severity: "error", code: "invalid-delivery-bundle", message: "Venue, Meeting Provider, and Meeting Link are managed by Delivery Mode and cannot remain independently. Re-add Delivery Mode from + Add field to restore the complete group." }];
+  const missing = EVENT_DELIVERY_BUNDLE.slice(1).filter((key) => !(present.get(key)?.length));
+  if (missing.length) return [{ severity: "error", code: "invalid-delivery-bundle", message: `Delivery Mode must stay together with Venue, Meeting Provider, and Meeting Link. Missing: ${missing.join(", ")}. Re-add Delivery Mode from + Add field to restore the complete group.`, sectionLocalId: delivery.sectionLocalId, fieldLocalId: delivery.localId }];
+  const bundle = EVENT_DELIVERY_BUNDLE.map((key) => present.get(key)![0]);
+  if (bundle.some((field) => field.sectionLocalId !== delivery.sectionLocalId)) return [{ severity: "error", code: "invalid-delivery-bundle", message: "Delivery Mode, Venue, Meeting Provider, and Meeting Link must remain in one section. Move the Delivery Mode group together or re-add Delivery Mode from + Add field.", sectionLocalId: delivery.sectionLocalId, fieldLocalId: delivery.localId }];
+  const ordered = configuration.fields.filter((field) => field.sectionLocalId === delivery.sectionLocalId).sort((left, right) => left.position - right.position);
+  const start = ordered.findIndex((field) => field.localId === delivery.localId);
+  const actual = start >= 0 ? ordered.slice(start, start + EVENT_DELIVERY_BUNDLE.length).map((field) => field.coreKey) : [];
+  return JSON.stringify(actual) === JSON.stringify(EVENT_DELIVERY_BUNDLE) ? [] : [{ severity: "error", code: "invalid-delivery-bundle", message: "Delivery Mode, Venue, Meeting Provider, and Meeting Link must be contiguous and in that order. Move the Delivery Mode group together or re-add Delivery Mode from + Add field.", sectionLocalId: delivery.sectionLocalId, fieldLocalId: delivery.localId }];
+}
+
 function validateSelectiveAssignments(configuration: FormConfiguration, persisted?: PersistedAssignmentState): FormConfigurationValidationIssue[] {
   if (configuration.scope !== "selective") return [];
-  const noAssignmentsMessage = "Select at least one tenant or enterprise before publishing this selective configuration.";
+  const noAssignmentsMessage = "Select at least one tenant or enterprise in Assignment before saving or publishing this selective configuration.";
   if (!persisted?.isPersisted) {
     return configuration.tenantIds.length === 0 && (configuration.enterpriseIds ?? []).length === 0
       ? [{ code: "selective-tenant-required", message: noAssignmentsMessage }]
       : [];
   }
-  if (!persisted.isLoaded) return [{ code: "selective-assignments-loading", message: "Tenant assignments are still loading. Please wait before publishing." }];
-  if (persisted.isDirty) return [{ code: "selective-assignments-dirty", message: "Save tenant assignments before publishing." }];
+  if (!persisted.isLoaded) return [{ severity: "error", code: "selective-assignments-loading", message: "Tenant assignments are still loading. Wait for Assignment to finish loading before saving or publishing." }];
+  if (persisted.isDirty) return [{ severity: "error", code: "selective-assignments-dirty", message: "Save the changed tenant or enterprise assignments before saving or publishing this configuration." }];
   return persisted.tenantIds.length === 0 && persisted.enterpriseIds.length === 0
     ? [{ code: "selective-tenant-required", message: noAssignmentsMessage }]
     : [];
@@ -100,7 +136,7 @@ function validateDuplicateCoreKeys(fields: readonly ConfiguredField[]): FormConf
   }, new Map());
   return [...counts.entries()]
     .filter(([, count]) => count > 1)
-    .map(([coreKey]) => ({ code: "duplicate-core-key" as const, message: `Core field '${coreKey}' appears more than once. Remove duplicate core fields before publishing.` }));
+    .map(([coreKey]) => ({ severity: "error" as const, code: "duplicate-core-key" as const, message: `Core field '${coreKey}' appears more than once. Remove the duplicate field before saving or publishing.` }));
 }
 
 function validateCompositeRequiredFields(field: ConfiguredField): FormConfigurationValidationIssue[] {
@@ -109,5 +145,5 @@ function validateCompositeRequiredFields(field: ConfiguredField): FormConfigurat
   const composite = getEventCompositeFieldDefinition(field.coreKey);
   const enabledFields = field.compositeConfig?.enabled_fields ?? composite?.subfields.map((subfield) => subfield.key) ?? [];
   const invalidRequiredFields = requiredFields.filter((key) => !enabledFields.includes(key));
-  return invalidRequiredFields.length ? [{ code: "invalid-composite-required-fields", message: `${fieldName(field)} has required nested fields that are not enabled: ${invalidRequiredFields.join(", ")}.`, sectionLocalId: field.sectionLocalId, fieldLocalId: field.localId }] : [];
+  return invalidRequiredFields.length ? [{ severity: "error", code: "invalid-composite-required-fields", message: `${fieldName(field)} has required nested fields that are not enabled: ${invalidRequiredFields.join(", ")}. Open ${fieldName(field)} in the field editor and enable those subfields, or remove them from Required.`, sectionLocalId: field.sectionLocalId, fieldLocalId: field.localId }] : [];
 }

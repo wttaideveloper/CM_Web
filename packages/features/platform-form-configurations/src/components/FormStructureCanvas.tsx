@@ -8,6 +8,7 @@ import { formConfigurationCopy as copy } from "../constants/form-configuration-c
 import { trainingFormConfigurationCopy } from "../constants/training-form-configuration-copy";
 import { getEventCoreFieldSemantic } from "../model/event-core-field-semantics";
 import type { ConfiguredField, FormSection } from "../model/form-configuration.types";
+import { isEventDeliveryDependentKey } from "../model/event-delivery-bundle";
 
 export type BuilderSelection = { kind: "section" | "field"; id: string } | null;
 type DragKind = "section" | "field" | "field-drop";
@@ -16,9 +17,11 @@ type CanvasProps = { sections: readonly FormSection[]; fields: readonly Configur
 function Handle() { return <span aria-hidden="true" className="select-none text-base leading-none text-[#8ca69e]">⠿</span>; }
 
 function FieldRow({ field, selected, onSelect }: { field: ConfiguredField; selected: boolean; onSelect: () => void }) {
-  const sortable = useSortable({ id: `field-${field.localId}`, data: { dragKind: "field" satisfies DragKind } });
+  const isDeliveryDependent = isEventDeliveryDependentKey(field.coreKey);
+  const sortable = useSortable({ id: `field-${field.localId}`, disabled: isDeliveryDependent, data: { dragKind: "field" satisfies DragKind } });
   const taxonomySemantic = field.source === "core" ? getEventCoreFieldSemantic(field.coreKey) : undefined;
   const rendererLabel = taxonomySemantic ? copy.taxonomySelect : copy.fieldTypes[field.renderer as keyof typeof copy.fieldTypes] ?? field.renderer;
+  if (isDeliveryDependent) return <button ref={sortable.setNodeRef} {...sortable.attributes} type="button" onPointerDown={(event) => event.stopPropagation()} onClick={onSelect} style={{ transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition }} className={`flex w-full items-center gap-3 rounded-xl border p-2.5 text-left transition ${selected ? "border-[#1f6a58] bg-[#e9f4ee]" : "border-[#edf3f0] bg-white hover:border-[#b9d4c8]"}`}><span className="w-4 shrink-0" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-[#06201c]">{field.label}</span><span className="block text-xs text-[#52736a]">{rendererLabel} · {field.required ? copy.required : copy.optional}</span></span><span className="rounded-full bg-[#eef6f2] px-2 py-0.5 text-[10px] font-bold uppercase text-[#176347]">{field.source === "core" ? copy.core : copy.custom}</span></button>;
   return <button ref={sortable.setNodeRef} {...sortable.attributes} type="button" onPointerDown={(event) => event.stopPropagation()} onClick={onSelect} style={{ transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition }} className={`flex w-full items-center gap-3 rounded-xl border p-2.5 text-left transition ${selected ? "border-[#1f6a58] bg-[#e9f4ee]" : "border-[#edf3f0] bg-white hover:border-[#b9d4c8]"}`}><span {...sortable.listeners} onClick={(event) => event.stopPropagation()} aria-label={copy.moveUp} className="cursor-grab touch-none"><Handle /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-[#06201c]">{field.label}</span><span className="block text-xs text-[#52736a]">{rendererLabel} · {field.required ? copy.required : copy.optional}</span></span><span className="rounded-full bg-[#eef6f2] px-2 py-0.5 text-[10px] font-bold uppercase text-[#176347]">{field.source === "core" ? copy.core : copy.custom}</span></button>;
 }
 

@@ -39,6 +39,8 @@ export type PlatformAdminLayoutProps = {
   messagesHref?: string | null;
   profileHref?: string;
   profileInitials?: string;
+  profileName?: string | null;
+  profileEmail?: string | null;
   navigationGroups?: readonly PlatformNavigationGroup[];
   resolveNavigationHref?: (item: PlatformNavigationItem) => string;
   onLogout?: () => Promise<void> | void;
@@ -46,7 +48,7 @@ export type PlatformAdminLayoutProps = {
 
 export type PlatformAdminHeaderProps = Pick<
   PlatformAdminLayoutProps,
-  "homeHref" | "notificationsHref" | "messagesHref" | "profileHref" | "profileInitials" | "onLogout"
+  "homeHref" | "notificationsHref" | "messagesHref" | "profileHref" | "profileInitials" | "profileName" | "profileEmail" | "onLogout"
 > & {
   onMenuClick: () => void;
 };

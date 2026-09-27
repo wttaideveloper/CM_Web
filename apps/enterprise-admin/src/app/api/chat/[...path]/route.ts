@@ -4,6 +4,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const TOKEN_COOKIE_NAME = "access_token";
+const CHAT_TOKEN_UPSTREAM = "https://chat.wisdomtooth.tech";
 const RESPONSE_HEADERS_TO_COPY = [
   "content-type",
   "content-disposition",
@@ -27,12 +28,18 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
     return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
   }
 
+  const requestPath = `/${path.join("/")}`;
+  const isChatTokenRequest = request.method === "POST" && requestPath === "/auth/chat-token";
   const proxyTarget = getChatProxyTarget();
-  if (!proxyTarget) {
+  if (!proxyTarget && !isChatTokenRequest) {
     return NextResponse.json({ detail: "Chat proxy target is not configured." }, { status: 503 });
   }
 
-  const targetUrl = `${proxyTarget}/api/v1/${path.join("/")}${request.nextUrl.search}`;
+  const upstreamPath = requestPath === "/messages" ? "messages/" : requestPath.slice(1);
+  const upstreamUrl = isChatTokenRequest
+    ? `${CHAT_TOKEN_UPSTREAM}/api/v1/auth/chat-token`
+    : `${proxyTarget}/api/v1/${upstreamPath}${request.nextUrl.search}`;
+  console.info("[chat-proxy] request", { path: requestPath, upstreamUrl });
   const headers = new Headers();
   const contentType = request.headers.get("content-type");
   const accept = request.headers.get("accept");
@@ -54,7 +61,7 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   let upstream: Response;
   const fetchStartedAt = Date.now();
   try {
-    upstream = await fetch(targetUrl, {
+    upstream = await fetch(upstreamUrl, {
       method: request.method,
       headers,
       body,
@@ -85,7 +92,7 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
 
     let hostname = "unknown";
     try {
-      hostname = new URL(proxyTarget).hostname;
+      hostname = new URL(upstreamUrl).hostname;
     } catch {
       // Keep diagnostics safe even if configuration contains an invalid URL.
     }
@@ -104,6 +111,8 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
 
     return NextResponse.json({ detail: "Chat proxy request failed." }, { status: 502 });
   }
+
+  console.info("[chat-proxy] response", { path: requestPath, upstreamUrl, status: upstream.status });
 
   const responseHeaders = new Headers();
   for (const name of RESPONSE_HEADERS_TO_COPY) {

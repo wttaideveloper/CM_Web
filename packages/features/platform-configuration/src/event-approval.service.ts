@@ -1,7 +1,10 @@
 import {
   isEventApprovalReview,
+  isHistoricalEventFormConfigurationVersion,
   type EventApprovalReview,
+  type HistoricalEventFormConfigurationVersion,
 } from "./event-approval-review.types";
+import { useQuery } from "@tanstack/react-query";
 
 export class EventApprovalError extends Error {
   constructor(readonly status?: number, message = "Unable to approve this Event. Please try again.") {
@@ -64,6 +67,26 @@ export async function getEventApprovalReview(eventId: string): Promise<EventAppr
     { credentials: "include" },
   );
   return parseEvent(response);
+}
+
+/** Loads the immutable form version recorded on an Event without consulting active configuration state. */
+export async function getHistoricalEventFormConfigurationVersion(configurationId: string, versionId: string): Promise<HistoricalEventFormConfigurationVersion> {
+  const response = await fetch(`/api/platform-super-admin/form-configurations/${encodeURIComponent(configurationId)}/versions/${encodeURIComponent(versionId)}`, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw new EventApprovalError(response.status);
+  const value: unknown = await response.json();
+  if (!isHistoricalEventFormConfigurationVersion(value) || value.id !== versionId || value.configuration_id !== configurationId) throw new EventApprovalError(undefined, "Historical Event form metadata is unavailable.");
+  return value;
+}
+
+/** Provides non-blocking historical metadata for one Event approval review. */
+export function useHistoricalEventFormConfigurationVersion(configurationId: string | null | undefined, versionId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["platform", "event-approval", "form-version", configurationId ?? "", versionId ?? ""],
+    queryFn: () => getHistoricalEventFormConfigurationVersion(configurationId ?? "", versionId ?? ""),
+    enabled: Boolean(configurationId && versionId),
+    retry: 1,
+    staleTime: 5 * 60 * 1000,
+  });
 }
 
 /** Approves one pending Event, then verifies the persisted lifecycle state. */

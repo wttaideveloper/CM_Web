@@ -1,16 +1,16 @@
 "use client";
 
-import { usePathname } from "next/navigation";
 import { useCallback, type ReactNode } from "react";
 
 import { useAuth } from "@ihp/auth";
 import { EnterpriseAdminLayout } from "@ihp/enterprise-layout";
+import { useRealtime } from "@ihp/realtime";
 
 import EnterpriseRealtimeRouteProviders from "@/providers/EnterpriseRealtimeRouteProviders";
 
-export default function EnterpriseAdminShell({ children }: { children: ReactNode }) {
+function EnterpriseAdminShellContent({ children }: { children: ReactNode }) {
   const { logout, user } = useAuth();
-  const pathname = usePathname();
+  const realtime = useRealtime();
 
   const handleLogout = useCallback(async () => {
     try {
@@ -26,6 +26,10 @@ export default function EnterpriseAdminShell({ children }: { children: ReactNode
       profileHref="/admin/profile"
       notificationsHref="/admin/notifications"
       messagesHref="/admin/messages"
+      notifications={realtime.notifications}
+      totalUnreadCount={realtime.totalUnreadCount}
+      onNotificationRead={realtime.markNotificationAsRead}
+      onMarkAllNotificationsRead={realtime.markAllNotificationsAsRead}
       user={user}
       onLogout={handleLogout}
     >
@@ -33,11 +37,9 @@ export default function EnterpriseAdminShell({ children }: { children: ReactNode
     </EnterpriseAdminLayout>
   );
 
-  const isRealtimeRoute = pathname === "/admin/messages" || pathname === "/admin/notifications";
+  return layout;
+}
 
-  return isRealtimeRoute ? (
-    <EnterpriseRealtimeRouteProviders>{layout}</EnterpriseRealtimeRouteProviders>
-  ) : (
-    layout
-  );
+export default function EnterpriseAdminShell({ children }: { children: ReactNode }) {
+  return <EnterpriseRealtimeRouteProviders><EnterpriseAdminShellContent>{children}</EnterpriseAdminShellContent></EnterpriseRealtimeRouteProviders>;
 }
