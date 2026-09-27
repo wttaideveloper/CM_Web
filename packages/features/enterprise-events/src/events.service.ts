@@ -3,6 +3,79 @@ import { authenticatedFetch } from "@ihp/auth";
 const fetch = authenticatedFetch;
 
 export type EventLifecycleState = "upcoming" | "ongoing" | "finished";
+export type EventType = "conference" | "workshop" | "marathon" | "camp" | "private_function" | "webinar" | "other";
+
+export interface EventModules {
+  registration: boolean;
+  tickets: boolean;
+  sessions: boolean;
+  check_in: boolean;
+  online_meeting: boolean;
+  custom_questions: boolean;
+  meals: boolean;
+  accommodation: boolean;
+}
+
+export interface EventModulesInput {
+  registration?: boolean | null;
+  tickets?: boolean | null;
+  sessions?: boolean | null;
+  check_in?: boolean | null;
+  online_meeting?: boolean | null;
+  custom_questions?: boolean | null;
+  meals?: boolean | null;
+  accommodation?: boolean | null;
+}
+
+export interface MealOption {
+  id: string;
+  name: string;
+  description: string | null;
+  date: string | null;
+  active: boolean;
+}
+
+export interface MealOptionInput {
+  id?: string | null;
+  name: string;
+  description?: string | null;
+  date?: string | null;
+  active?: boolean;
+}
+
+export interface EventMeals {
+  enabled: boolean;
+  options: MealOption[];
+}
+
+export interface EventMealsInput {
+  enabled?: boolean | null;
+  options?: MealOptionInput[] | null;
+}
+
+export interface AccommodationOption {
+  id: string;
+  name: string;
+  description: string | null;
+  active: boolean;
+}
+
+export interface AccommodationOptionInput {
+  id?: string | null;
+  name: string;
+  description?: string | null;
+  active?: boolean;
+}
+
+export interface EventAccommodation {
+  enabled: boolean;
+  options: AccommodationOption[];
+}
+
+export interface EventAccommodationInput {
+  enabled?: boolean | null;
+  options?: AccommodationOptionInput[] | null;
+}
 
 /** An event returned by the Events list API. */
 export interface Event {
@@ -56,6 +129,107 @@ export interface Event {
   registration_open?: boolean;
   delivery_mode_display?: string;
   requires_reapproval?: boolean;
+  event_type?: EventType | null;
+  modules?: EventModules | null;
+  meals?: EventMeals | null;
+  accommodation?: EventAccommodation | null;
+}
+
+export interface EventDashboardRegistrations {
+  total: number;
+  active: number;
+  confirmed: number;
+  attended: number;
+  cancelled: number;
+  no_show: number;
+  other: number;
+  online: number;
+  walk_in: number;
+}
+
+export interface EventDashboardCapacity {
+  capacity: number | null;
+  unlimited: boolean;
+  seats_taken: number;
+  seats_reserved: number;
+  available_seats: number | null;
+  is_full: boolean | null;
+  fill_percentage: number | null;
+}
+
+export interface EventDashboardAttendance {
+  checked_in: number;
+  not_checked_in: number;
+  attendance_percentage: number | null;
+}
+
+export interface EventDashboardWaitlist {
+  total: number;
+  waiting: number;
+  payment_pending: number;
+  promoted: number;
+  expired: number;
+  left: number;
+  other: number;
+}
+
+export interface EventDashboardOrders {
+  total: number;
+  successful: number;
+  pending: number;
+  refund_requested: number;
+  refunded: number;
+  cancelled: number;
+  failed: number;
+}
+
+export interface EventDashboardRevenue {
+  currency: string | null;
+  total_revenue: number | null;
+  refunded_amount: number | null;
+  pending_refund_amount: number | null;
+  paid_orders: number;
+  mixed_currency: boolean;
+  by_currency: readonly Record<string, unknown>[];
+  unparseable_orders: number;
+}
+
+export interface EventDashboardSession {
+  session_id: string;
+  title?: string | null;
+  session_date?: string | null;
+  start_time?: string | null;
+  registered_count: number;
+  checked_in_count: number;
+  attendance_percentage?: number | null;
+}
+
+export interface EventDashboardMeal {
+  meal_id: string;
+  name: string;
+  selected_count: number;
+  active: boolean;
+}
+
+export interface EventDashboardAccommodation {
+  accommodation_id: string;
+  name: string;
+  selected_count: number;
+  active: boolean;
+}
+
+export interface EventDashboard {
+  event: Record<string, unknown>;
+  registrations: EventDashboardRegistrations;
+  capacity: EventDashboardCapacity;
+  attendance: EventDashboardAttendance;
+  waitlist: EventDashboardWaitlist;
+  orders: EventDashboardOrders;
+  revenue: EventDashboardRevenue;
+  sessions: readonly EventDashboardSession[];
+  meals: readonly EventDashboardMeal[];
+  accommodation: readonly EventDashboardAccommodation[];
+  generated_at: string;
 }
 
 /** One typed value captured for a configuration-owned custom Event field. */
@@ -512,6 +686,10 @@ export interface CreateEventPayload {
   status: "draft";
   form_configuration_version_id?: string;
   custom_values?: Array<{ field_id: string; value: string | string[] | boolean | number | null }>;
+  event_type?: EventType | null;
+  modules?: EventModulesInput | null;
+  meals?: EventMealsInput | null;
+  accommodation?: EventAccommodationInput | null;
 }
 
 /**
@@ -554,6 +732,10 @@ export interface UpdateEventPayload {
   custom_fields?: EventCustomField[] | null;
   sessions?: EventSessionInput[] | null;
   custom_values?: EventCustomValue[] | null;
+  event_type?: EventType | null;
+  modules?: EventModulesInput | null;
+  meals?: EventMealsInput | null;
+  accommodation?: EventAccommodationInput | null;
 }
 
 /** Runtime-confirmed JSON response returned after a successful Event deletion. */
@@ -1174,6 +1356,20 @@ export async function getEventById(eventId: string): Promise<Event> {
   }
 
   return normalizeNullableEventFields(value);
+}
+
+/** Reads the backend-authoritative dashboard summary for one Event. */
+export async function getEventDashboard(eventId: string): Promise<EventDashboard> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/dashboard`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw await createEventsApiError(response, "load the Event dashboard");
+  }
+
+  return (await response.json()) as EventDashboard;
 }
 
 /** Reads the latest Platform review note for an Event through the authenticated Events API. */
