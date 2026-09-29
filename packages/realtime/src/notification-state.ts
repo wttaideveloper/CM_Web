@@ -190,9 +190,6 @@ export function mergeNotificationRecords(
       notificationSortValue(incoming) > notificationSortValue(existing);
 
     if (!shouldReplace) {
-      if (process.env.NODE_ENV === "development") {
-        console.log("[Notifications] duplicate ignored", incoming.id);
-      }
       return;
     }
 

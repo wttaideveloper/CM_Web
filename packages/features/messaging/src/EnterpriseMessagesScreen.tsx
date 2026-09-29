@@ -42,6 +42,12 @@ import {
 } from "react";
 
 type ChatStatus = "open" | "closed" | "archived" | "read_only";
+
+type CanonicalPresence = {
+  status: "online" | "offline";
+  lastSeenAt?: string;
+};
+
 type LimitReason = "CHAT_WINDOW_CLOSED" | "FREE_LIMIT_REACHED" | "BOOKING_REQUIRED";
 type FilterKind = "ALL" | "UNREAD" | "CLOSED" | "ARCHIVED";
 type ConversationMediaTab = "media" | "links" | "docs";
@@ -151,9 +157,12 @@ type BackendPresenceEntry = {
 type BackendMessage = {
   id: string;
   _id?: string;
+  message_id?: string;
   conversation_id: string;
   sender_id?: string;
+  senderId?: string;
   content?: string;
+  text?: string;
   message_type?: string;
   attachment_id?: string | null;
   file_name?: string;
@@ -166,6 +175,7 @@ type BackendMessage = {
   is_edited?: boolean;
   edited_at?: string;
   created_at?: string;
+  createdAt?: string;
   read_by?: unknown;
 };
 
@@ -1038,7 +1048,7 @@ function prependUniqueChatMessages(existingMessages: ChatMessage[], incomingMess
     next.unshift(message);
   }
 
-  return next;
+  return next.sort((left, right) => getChatMessageSortTimestamp(left) - getChatMessageSortTimestamp(right));
 }
 
 function getChatMessageSortTimestamp(message: ChatMessage) {
@@ -1637,6 +1647,7 @@ export default function EnterpriseMessagesScreen() {
   const [voiceRecordingError, setVoiceRecordingError] = useState<string | null>(null);
   const [pendingVoice, setPendingVoice] = useState<PendingVoice | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [presenceByUserId, setPresenceByUserId] = useState<Record<string, CanonicalPresence>>({});
   const [hasLoadedConversations, setHasLoadedConversations] = useState(false);
   const [messagesByConversation, setMessagesByConversation] = useState<Record<string, ChatMessage[]>>(
     {},
@@ -1692,15 +1703,20 @@ export default function EnterpriseMessagesScreen() {
   const {
     socket: adminSocket,
     status: socketStatus,
+    notifications,
     markConversationNotificationsAsRead,
     setActiveConversationId,
   } = useRealtime();
   const [conversationIdFromUrl, setConversationIdFromUrl] = useState<string | null>(null);
   const socketRef = useRef<ChatSocket | null>(null);
+  // Keep imperative handlers aligned with the provider socket immediately after replacement.
+  socketRef.current = adminSocket;
   const activeRoomConversationIdRef = useRef<string | null>(null);
   const selectedConversationIdRef = useRef<string | null>(null);
   const handledConversationIdRef = useRef<string | null>(null);
+  const latestNotificationIdRef = useRef<string | null>(null);
   const selectedConversationOtherParticipantUserIdRef = useRef<string | null>(null);
+  const socketPresenceUserIdsRef = useRef<Set<string>>(new Set());
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const emojiPickerRef = useRef<HTMLDivElement | null>(null);
   const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -2130,6 +2146,8 @@ export default function EnterpriseMessagesScreen() {
           isTyping ? "[Chat socket] emit typing_start" : "[Chat socket] emit typing_stop",
           {
             conversation_id: conversationId,
+            socketId: socket.id ?? null,
+            connected: socket.connected,
           },
         );
       }
@@ -2474,6 +2492,8 @@ export default function EnterpriseMessagesScreen() {
               conversation_id: sendPayload.conversation_id,
               message_type: sendPayload.message_type,
               has_attachment: Boolean(sendPayload.attachment_id),
+              socketId: socket.id ?? null,
+              connected: socket.connected,
             });
           }
 
@@ -2907,6 +2927,15 @@ export default function EnterpriseMessagesScreen() {
       });
     }
 
+    socketPresenceUserIdsRef.current.add(userId);
+    setPresenceByUserId((current) => ({
+      ...current,
+      [userId]: {
+        status: "online",
+        lastSeenAt: current[userId]?.lastSeenAt,
+      },
+    }));
+
     const now = new Date().toISOString();
     const applyPresence = (conversation: Conversation) =>
       conversation.otherParticipantUserId === userId
@@ -2959,6 +2988,14 @@ export default function EnterpriseMessagesScreen() {
     }
 
     const now = new Date().toISOString();
+    socketPresenceUserIdsRef.current.add(userId);
+    setPresenceByUserId((current) => ({
+      ...current,
+      [userId]: {
+        status: "offline",
+        lastSeenAt: getPresenceLastSeenAt(payload) ?? current[userId]?.lastSeenAt ?? now,
+      },
+    }));
     const applyPresence = (conversation: Conversation) =>
       conversation.otherParticipantUserId === userId
         ? {
@@ -3042,6 +3079,16 @@ export default function EnterpriseMessagesScreen() {
 
       const onlinePresenceMap = buildOnlinePresenceMap(onlineResponse);
 
+      setPresenceByUserId((current) => {
+        const next = { ...current };
+        onlinePresenceMap.forEach((presence, userId) => {
+          if (!socketPresenceUserIdsRef.current.has(userId)) {
+            next[userId] = presence;
+          }
+        });
+        return next;
+      });
+
       const archivedItems = extractListResponse<BackendConversation>(archivedResponse)
         .map(mapConversationSummary)
         .map((conversation) => applyPresenceToConversation(conversation, onlinePresenceMap))
@@ -3102,6 +3149,29 @@ export default function EnterpriseMessagesScreen() {
       setIsConversationsLoading(false);
     }
   }, [applyDeletedPreviewOverride, canInitializeProviderChat, clearAttachmentUploadState, clearEditMode, resetMessagePaginationState, stopTypingTimers]);
+
+  useEffect(() => {
+    const latestNotification = notifications[0];
+    if (!latestNotification || latestNotification.id === latestNotificationIdRef.current) {
+      return;
+    }
+
+    latestNotificationIdRef.current = latestNotification.id;
+    const raw = isRecord(latestNotification.raw) ? latestNotification.raw : undefined;
+    const notificationData = isRecord(raw?.data) ? raw.data : undefined;
+    const conversationId = firstString(
+      latestNotification.data.conversation_id,
+      latestNotification.data.conversationId,
+      notificationData?.conversation_id,
+      notificationData?.conversationId,
+      raw?.conversation_id,
+      raw?.conversationId,
+    );
+
+    if (conversationId && !selectedConversationIdRef.current) {
+      void refreshConversationList();
+    }
+  }, [notifications, refreshConversationList]);
 
   const runConversationSearch = useCallback(
     async (query: string) => {
@@ -3319,6 +3389,16 @@ export default function EnterpriseMessagesScreen() {
       setSelectedConversationError(null);
       setIsLoadingOlderMessages(false);
 
+      const socket = socketRef.current;
+      if (socket?.connected && activeRoomConversationIdRef.current !== activeConversationId) {
+        const previousRoomConversationId = activeRoomConversationIdRef.current;
+        if (previousRoomConversationId) {
+          socket.emit("leave_room", { conversation_id: previousRoomConversationId });
+        }
+        socket.emit("join_room", { conversation_id: activeConversationId });
+        activeRoomConversationIdRef.current = activeConversationId;
+      }
+
       try {
         const [conversationResponse, messagesResponse] = await Promise.all([
           getConversationById(activeConversationId),
@@ -3345,7 +3425,10 @@ export default function EnterpriseMessagesScreen() {
 
         setMessagesByConversation((current) => ({
           ...current,
-          [activeConversationId]: messages,
+          [activeConversationId]: prependUniqueChatMessages(
+            current[activeConversationId] ?? [],
+            messages,
+          ),
         }));
         setOlderMessagesCursor(nextCursor);
         setHasMoreOlderMessages(hasMoreOlder);
@@ -3424,7 +3507,14 @@ export default function EnterpriseMessagesScreen() {
           }
         });
 
-        await markConversationRead(activeConversationId).catch(() => undefined);
+        let conversationReadSucceeded = false;
+        try {
+          await markConversationRead(activeConversationId);
+          conversationReadSucceeded = true;
+        } catch {
+          conversationReadSucceeded = false;
+        }
+
         await markConversationNotificationsAsRead(activeConversationId).catch(() => undefined);
 
         const fulfilledMessageIds = new Set(
@@ -3464,25 +3554,27 @@ export default function EnterpriseMessagesScreen() {
           });
         }
 
-        setConversations((current) =>
-          current.map((conversation) =>
-            conversation.id === activeConversationId
+        if (conversationReadSucceeded) {
+          setConversations((current) =>
+            current.map((conversation) =>
+              conversation.id === activeConversationId
+                ? {
+                    ...conversation,
+                    unreadCount: 0,
+                  }
+                : conversation,
+            ),
+          );
+
+          setSelectedConversationDetail((current) =>
+            current && current.id === activeConversationId
               ? {
-                  ...conversation,
+                  ...current,
                   unreadCount: 0,
                 }
-              : conversation,
-          ),
-        );
-
-        setSelectedConversationDetail((current) =>
-          current && current.id === activeConversationId
-            ? {
-                ...current,
-                unreadCount: 0,
-              }
-            : current,
-        );
+              : current,
+          );
+        }
       } catch (error) {
         if (!active) {
           return;
@@ -3540,6 +3632,16 @@ export default function EnterpriseMessagesScreen() {
 
         const presence = normalizePresenceResponse(response);
 
+        if (!socketPresenceUserIdsRef.current.has(activeUserId) && presence.status) {
+          setPresenceByUserId((current) => ({
+            ...current,
+            [activeUserId]: {
+              status: presence.status === "online" ? "online" : "offline",
+              lastSeenAt: presence.lastSeenAt ?? current[activeUserId]?.lastSeenAt,
+            },
+          }));
+        }
+
         setSelectedConversationDetail((current) => {
           if (!current || current.id !== activeConversationId) {
             return current;
@@ -3595,15 +3697,21 @@ export default function EnterpriseMessagesScreen() {
     const conversationId =
       typeof payload.conversation_id === "string"
         ? payload.conversation_id
-        : typeof candidate.conversation_id === "string"
-          ? candidate.conversation_id
-          : undefined;
+        : typeof payload.conversationId === "string"
+          ? payload.conversationId
+          : typeof candidate.conversation_id === "string"
+            ? candidate.conversation_id
+            : typeof candidate.conversationId === "string"
+              ? candidate.conversationId
+              : undefined;
     const messageId =
       typeof candidate.id === "string"
         ? candidate.id
         : typeof candidate._id === "string"
           ? candidate._id
-          : undefined;
+          : typeof candidate.message_id === "string"
+            ? candidate.message_id
+            : undefined;
     const attachment = isRecord(candidate.attachment) ? candidate.attachment : undefined;
 
     if (!isRecord(candidate) || !messageId || !conversationId) {
@@ -3613,9 +3721,12 @@ export default function EnterpriseMessagesScreen() {
     return {
       id: messageId,
       _id: typeof candidate._id === "string" ? candidate._id : undefined,
+      message_id: typeof candidate.message_id === "string" ? candidate.message_id : undefined,
       conversation_id: conversationId,
-      sender_id: typeof candidate.sender_id === "string" ? candidate.sender_id : undefined,
-      content: typeof candidate.content === "string" ? candidate.content : undefined,
+      sender_id: typeof candidate.sender_id === "string" ? candidate.sender_id : typeof candidate.senderId === "string" ? candidate.senderId : undefined,
+      senderId: typeof candidate.senderId === "string" ? candidate.senderId : undefined,
+      content: typeof candidate.content === "string" ? candidate.content : typeof candidate.text === "string" ? candidate.text : undefined,
+      text: typeof candidate.text === "string" ? candidate.text : undefined,
       message_type: typeof candidate.message_type === "string" ? candidate.message_type : undefined,
       attachment_id:
         typeof candidate.attachment_id === "string" || candidate.attachment_id === null
@@ -3656,7 +3767,8 @@ export default function EnterpriseMessagesScreen() {
       is_deleted: typeof candidate.is_deleted === "boolean" ? candidate.is_deleted : false,
       is_edited: typeof candidate.is_edited === "boolean" ? candidate.is_edited : false,
       edited_at: typeof candidate.edited_at === "string" ? candidate.edited_at : undefined,
-      created_at: typeof candidate.created_at === "string" ? candidate.created_at : undefined,
+      created_at: typeof candidate.created_at === "string" ? candidate.created_at : typeof candidate.createdAt === "string" ? candidate.createdAt : typeof candidate.timestamp === "string" ? candidate.timestamp : undefined,
+      createdAt: typeof candidate.createdAt === "string" ? candidate.createdAt : undefined,
       read_by: candidate.read_by,
     };
   }
@@ -3743,6 +3855,7 @@ export default function EnterpriseMessagesScreen() {
           conversation_id: conversationId,
           message_type: mappedMessage.messageType,
         });
+
       }
 
       setMessagesByConversation((current) => {
@@ -3851,6 +3964,7 @@ export default function EnterpriseMessagesScreen() {
         console.log("[Chat socket] receive conversation_updated", {
           conversation_id: conversationId,
         });
+
       }
 
       setConversations((current) => {
@@ -3893,6 +4007,76 @@ export default function EnterpriseMessagesScreen() {
     [refreshConversationList],
   );
 
+  const handleSocketMessageUpdated = useCallback(
+    (payload: unknown) => {
+      const conversationId = isRecord(payload) && typeof payload.conversation_id === "string"
+        ? payload.conversation_id
+        : undefined;
+      const updatedMessage = isRecord(payload) && isRecord(payload.message) ? payload.message : undefined;
+      if (!conversationId || !updatedMessage || typeof updatedMessage.id !== "string") return;
+      const normalizedPayload = { ...updatedMessage, conversation_id: conversationId };
+      const normalizedMessage = normalizeSocketMessage(normalizedPayload);
+      if (!normalizedMessage) return;
+
+      const mappedMessage = mapMessage(normalizedMessage, getCurrentChatUserId());
+
+      const messageId = mappedMessage.id;
+      const existingMessage = (messagesByConversationRef.current[conversationId] ?? []).find(
+        (message) => message.id === messageId,
+      );
+      const conversationMessages = messagesByConversationRef.current[conversationId] ?? [];
+      const isLatestMessage = conversationMessages[conversationMessages.length - 1]?.id === messageId;
+      setMessagesByConversation((current) => {
+        const messages = current[conversationId] ?? [];
+        return messages.some((message) => message.id === messageId)
+          ? { ...current, [conversationId]: messages.map((message) => message.id === messageId ? { ...message, ...mappedMessage, isPending: false } : message) }
+          : current;
+      });
+      if (!existingMessage) return;
+      const reconciledMessage = { ...existingMessage, ...mappedMessage };
+      if (isLatestMessage) {
+        setConversations((current) => current.map((conversation) =>
+          conversation.id === conversationId
+            ? mergeConversationWithMessage(conversation, reconciledMessage, selectedConversationIdRef.current === conversationId)
+            : conversation,
+        ));
+        setSelectedConversationDetail((current) => current && current.id === conversationId
+          ? mergeConversationWithMessage(current, reconciledMessage, true)
+          : current);
+      }
+    },
+    [],
+  );
+
+  const handleSocketMessageDeleted = useCallback((payload: unknown) => {
+    if (!isRecord(payload) || typeof payload.conversation_id !== "string" || typeof payload.message_id !== "string") return;
+    const conversationId = payload.conversation_id;
+    const messageId = payload.message_id;
+    const existingMessage = (messagesByConversationRef.current[conversationId] ?? []).find(
+      (message) => message.id === messageId,
+    );
+    const conversationMessages = messagesByConversationRef.current[conversationId] ?? [];
+    const isLatestMessage = conversationMessages[conversationMessages.length - 1]?.id === messageId;
+    setMessagesByConversation((current) => {
+      const messages = current[conversationId] ?? [];
+      return messages.some((message) => message.id === messageId)
+        ? { ...current, [conversationId]: messages.map((message) => message.id === messageId ? { ...message, isDeleted: true, isEdited: false, text: "" } : message) }
+        : current;
+    });
+    if (!existingMessage) return;
+    const deletedMessage = { ...existingMessage, isDeleted: true, isEdited: false, text: "" };
+    if (isLatestMessage) {
+      setConversations((current) => current.map((conversation) =>
+        conversation.id === conversationId
+          ? mergeConversationWithMessage(conversation, deletedMessage, selectedConversationIdRef.current === conversationId)
+          : conversation,
+      ));
+      setSelectedConversationDetail((current) => current && current.id === conversationId
+        ? mergeConversationWithMessage(current, deletedMessage, true)
+        : current);
+    }
+  }, []);
+
   const applyMessageToConversation = useCallback(
     (conversationId: string, mappedMessage: ChatMessage, replaceTempId?: string) => {
       setMessagesByConversation((current) => ({
@@ -3932,10 +4116,6 @@ export default function EnterpriseMessagesScreen() {
   );
 
   useEffect(() => {
-    socketRef.current = adminSocket;
-  }, [adminSocket]);
-
-  useEffect(() => {
     const socket = adminSocket;
 
     if (!socket) {
@@ -3963,7 +4143,6 @@ export default function EnterpriseMessagesScreen() {
 
         socket.emit("join_room", { conversation_id: conversationId });
         activeRoomConversationIdRef.current = conversationId;
-        void emitMarkRead(conversationId);
       }
     };
 
@@ -4106,6 +4285,8 @@ export default function EnterpriseMessagesScreen() {
     socket.on("typing", handleSocketTyping);
     socket.on("message_read", handleSocketMessageRead);
     socket.on("new_message", handleSocketNewMessage);
+    socket.on("message_updated", handleSocketMessageUpdated);
+    socket.on("message_deleted", handleSocketMessageDeleted);
     socket.on("conversation_updated", handleConversationUpdated);
     socket.on("user_online", handleSocketUserOnline);
     socket.on("user_offline", handleSocketUserOffline);
@@ -4131,6 +4312,8 @@ export default function EnterpriseMessagesScreen() {
       socket.off("typing", handleSocketTyping);
       socket.off("message_read", handleSocketMessageRead);
       socket.off("new_message", handleSocketNewMessage);
+      socket.off("message_updated", handleSocketMessageUpdated);
+      socket.off("message_deleted", handleSocketMessageDeleted);
       socket.off("conversation_updated", handleConversationUpdated);
       socket.off("user_online", handleSocketUserOnline);
       socket.off("user_offline", handleSocketUserOffline);
@@ -4147,6 +4330,8 @@ export default function EnterpriseMessagesScreen() {
     adminSocket,
     handleConversationUpdated,
     handleSocketNewMessage,
+    handleSocketMessageUpdated,
+    handleSocketMessageDeleted,
     handleSocketMessageRead,
     handleSocketUserOnline,
     handleSocketUserOffline,
@@ -4273,7 +4458,19 @@ export default function EnterpriseMessagesScreen() {
         ? archivedConversations
         : conversations.filter((conversation) => !isConversationArchived(conversation, archivedConversationIds));
 
-    return sourceConversations.filter((conversation) => {
+    return sourceConversations.map((conversation) => {
+      const presence = conversation.otherParticipantUserId
+        ? presenceByUserId[conversation.otherParticipantUserId]
+        : undefined;
+
+      return presence
+        ? {
+            ...conversation,
+            otherParticipantPresenceStatus: presence.status,
+            otherParticipantLastSeenAt: presence.lastSeenAt ?? conversation.otherParticipantLastSeenAt,
+          }
+        : conversation;
+    }).filter((conversation) => {
       const preview = getConversationPreview(conversation);
       const matchesSearch =
         !normalized ||
@@ -4295,7 +4492,7 @@ export default function EnterpriseMessagesScreen() {
 
       return matchesSearch && matchesFilter;
     });
-  }, [archivedConversationIds, archivedConversations, conversations, filter, getConversationPreview, search]);
+  }, [archivedConversationIds, archivedConversations, conversations, filter, getConversationPreview, presenceByUserId, search]);
 
   const selectedConversation =
     selectedConversationDetail?.id === selectedConversationId
@@ -4304,11 +4501,24 @@ export default function EnterpriseMessagesScreen() {
           (conversation) => conversation.id === selectedConversationId,
         ) ?? null;
 
+  const participantUserId = selectedConversation?.otherParticipantUserId ?? null;
+  const participantPresence = participantUserId ? presenceByUserId[participantUserId] : undefined;
+  const selectedConversationWithPresence = selectedConversation
+    ? {
+        ...selectedConversation,
+        otherParticipantPresenceStatus:
+          participantPresence?.status ?? selectedConversation.otherParticipantPresenceStatus,
+        otherParticipantLastSeenAt:
+          participantPresence?.lastSeenAt ?? selectedConversation.otherParticipantLastSeenAt,
+      }
+    : null;
+
   const visibleSelectedConversation =
     selectedConversationId &&
     filteredConversations.some((conversation) => conversation.id === selectedConversationId)
-      ? selectedConversation
+      ? selectedConversationWithPresence
       : null;
+
 
   const visibleSelectedConversationId = visibleSelectedConversation?.id ?? null;
 
@@ -4797,6 +5007,8 @@ export default function EnterpriseMessagesScreen() {
               conversation_id: sendPayload.conversation_id,
               message_type: sendPayload.message_type,
               has_attachment: Boolean(sendPayload.attachment_id),
+              socketId: socket.id ?? null,
+              connected: socket.connected,
             });
           }
           socket.emit("send_message", sendPayload);
@@ -4894,7 +5106,7 @@ export default function EnterpriseMessagesScreen() {
     ],
   );
 
-  const handleCloseConversation = useCallback(() => {
+  const handleCloseConversation = useCallback((reason: "close" | "visibility-hidden" = "close") => {
     const conversationId = activeRoomConversationIdRef.current ?? selectedConversationIdRef.current;
     const socket = socketRef.current;
 
@@ -4902,7 +5114,10 @@ export default function EnterpriseMessagesScreen() {
     setSpeechError(null);
     resetMediaDrawerState();
     if (conversationId && socket?.connected) {
+      if (process.env.NODE_ENV !== "production") {
+      }
       socket.emit("leave_room", { conversation_id: conversationId });
+    } else if (process.env.NODE_ENV !== "production") {
     }
 
     activeRoomConversationIdRef.current = null;
@@ -4944,6 +5159,17 @@ export default function EnterpriseMessagesScreen() {
     stopTypingForConversation,
     stopVoiceRecording,
   ]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden" && selectedConversationIdRef.current) {
+        handleCloseConversation("visibility-hidden");
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [handleCloseConversation]);
 
   const updateConversationLifecycleState = useCallback(
     (conversationId: string, nextStatus: ChatStatus, updatedAt?: string) => {
@@ -5875,6 +6101,7 @@ export default function EnterpriseMessagesScreen() {
                         const showEditAction = canEditMessage(message);
                         const showMessageActions = true;
                         const isActionOpen = openMessageActionId === message.id;
+                        const menuOpensUpward = index === selectedMessages.length - 1;
                         const attachmentLabel = getMessageAttachmentLabel(message);
                         const attachmentCaption = getAttachmentCaption(message);
                         const hasAttachmentId = Boolean(message.attachmentId);
@@ -5903,13 +6130,13 @@ export default function EnterpriseMessagesScreen() {
 
                             <div
                               data-message-id={message.id}
-                              className={`group relative flex ${isMine ? "justify-end" : "justify-start"}`}
+                              className={`group/message relative flex ${isMine ? "justify-end" : "justify-start"}`}
                             >
                               <div
                                 className={`relative w-fit max-w-[65%] rounded-xl border px-3 py-1.5 shadow-sm sm:max-w-[60%] ${
                                   isMine
-                                    ? "border-[#cdebd8] bg-[#dcf8e6] text-[#06201c]"
-                                    : "border-[#dfeee6] bg-white text-[#06201c]"
+                                    ? "border-[#cdebd8] bg-[#dcf8e6] pr-9 text-[#06201c]"
+                                    : "border-[#dfeee6] bg-white pl-9 text-[#06201c]"
                                 }`}
                               >
                               {showMessageActions ? (
@@ -5927,11 +6154,7 @@ export default function EnterpriseMessagesScreen() {
                                         current === message.id ? null : message.id,
                                       );
                                     }}
-                                    className={`inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#d7e5df] bg-white/95 text-[#52736a] shadow-sm transition hover:border-[#1f6a58] hover:text-[#1f6a58] ${
-                                      isActionOpen
-                                        ? "opacity-100"
-                                        : "opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto"
-                                    }`}
+                                    className="inline-flex h-5 w-4 items-center justify-center border-0 bg-transparent p-0 text-base font-semibold leading-none text-[#52736a] shadow-none transition hover:text-[#1f6a58]"
                                     aria-label="More actions"
                                   >
                                     <MoreVerticalIcon />
@@ -5939,7 +6162,7 @@ export default function EnterpriseMessagesScreen() {
 
                                   {isActionOpen ? (
                                     <div
-                                      className={`absolute top-full mt-1 min-w-[110px] max-w-[180px] overflow-hidden whitespace-nowrap rounded-xl border border-[#dfeee6] bg-white shadow-[0_12px_24px_rgba(15,61,51,0.12)] z-30 ${
+                                      className={`${menuOpensUpward ? "absolute bottom-full mb-1" : "absolute top-full mt-1"} min-w-[110px] max-w-[180px] overflow-hidden whitespace-nowrap rounded-xl border border-[#dfeee6] bg-white shadow-[0_12px_24px_rgba(15,61,51,0.12)] z-30 ${
                                         isMine ? "right-0" : "left-0"
                                       }`}
                                     >
