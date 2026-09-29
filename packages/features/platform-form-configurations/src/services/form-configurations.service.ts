@@ -53,10 +53,28 @@ function jsonRequest(method: "POST" | "PATCH" | "PUT", body?: object): RequestIn
 function configurationPath(configurationId: string, suffix = ""): string { return `${eventFormConfigurationsPath}/${encodeURIComponent(configurationId)}${suffix}`; }
 function expect<T>(value: unknown, predicate: (candidate: unknown) => boolean, label: string): T { if (!predicate(value)) throw new FormConfigurationsApiError(null, `Event Form Configurations returned invalid ${label}.`); return value as T; }
 
+export type EventModuleKey = "registration" | "tickets" | "sessions" | "check_in" | "online_meeting" | "custom_questions" | "meals" | "accommodation";
+export type EventModules = Record<EventModuleKey, boolean>;
+export type ManagedEventType = { id: string; key: string; name: string; active: boolean; default_modules: EventModules; allowed_modules: EventModules; required_modules: EventModules; created_at?: string; updated_at?: string };
+export type EventTypeMutation = Omit<ManagedEventType, "id" | "created_at" | "updated_at">;
+function isModules(value: unknown): value is EventModules { return isRecord(value) && ["registration", "tickets", "sessions", "check_in", "online_meeting", "custom_questions", "meals", "accommodation"].every((key) => typeof value[key] === "boolean"); }
+function isManagedEventType(value: unknown): value is ManagedEventType { return isRecord(value) && isString(value.id) && isString(value.key) && isString(value.name) && typeof value.active === "boolean" && isModules(value.default_modules) && isModules(value.allowed_modules) && isModules(value.required_modules) && (value.created_at === undefined || isString(value.created_at)) && (value.updated_at === undefined || isString(value.updated_at)); }
+function eventTypePath(id?: string): string { return id ? `/api/platform-super-admin/event-types/${encodeURIComponent(id)}` : "/api/platform-super-admin/event-types"; }
+
 /** Reads the backend-authoritative Event core field registry. */
 export async function getEventFormFieldRegistry(): Promise<EventCoreFieldRegistryEntry[]> { const value = await requestJson(`${eventFormConfigurationsPath}/field-registry`); return expect(value, (candidate) => Array.isArray(candidate) && candidate.every(isRegistryEntry), "field registry"); }
 /** Reads Event Types used to enrich the Super Admin core-field picker. */
 export async function getEventTypeRegistryDefinitions(): Promise<EventTypeRegistryDefinition[]> { const value = await requestJson("/api/platform-super-admin/event-types"); return expect(value, (candidate) => Array.isArray(candidate) && candidate.every(isEventTypeRegistryDefinition), "Event Types"); }
+/** Lists all Event Types for Super Admin management, including inactive records. */
+export async function listManagedEventTypes(): Promise<ManagedEventType[]> { const value = await requestJson(`${eventTypePath()}?include_inactive=true`); return expect(value, (candidate) => Array.isArray(candidate) && candidate.every(isManagedEventType), "Event Types"); }
+/** Creates a backend-authoritative Event Type. */
+export async function createManagedEventType(payload: EventTypeMutation): Promise<ManagedEventType> { return expect(await requestJson(eventTypePath(), jsonRequest("POST", payload)), isManagedEventType, "created Event Type"); }
+/** Retrieves one managed Event Type. */
+export async function getManagedEventType(id: string): Promise<ManagedEventType> { return expect(await requestJson(eventTypePath(id)), isManagedEventType, "Event Type"); }
+/** Updates a managed Event Type without allowing key changes. */
+export async function updateManagedEventType(id: string, payload: Partial<Omit<EventTypeMutation, "key">>): Promise<ManagedEventType> { return expect(await requestJson(eventTypePath(id), jsonRequest("PATCH", payload)), isManagedEventType, "updated Event Type"); }
+/** Deletes a managed Event Type. */
+export async function deleteManagedEventType(id: string): Promise<void> { await request(eventTypePath(id), { method: "DELETE" }); }
 /** Lists Event form configuration summaries. */
 export async function listEventFormConfigurations(): Promise<EventFormConfigurationSummary[]> { const value = await requestJson(eventFormConfigurationsPath); return expect(value, (candidate) => Array.isArray(candidate) && candidate.every(isSummary), "configuration list"); }
 /** Creates one draft Event form configuration. */

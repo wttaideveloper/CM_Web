@@ -18,6 +18,7 @@ import EventOrdersSection from "./EventOrdersSection";
 import EventOverviewSection from "./EventOverviewSection";
 import EventReportsSection from "./EventReportsSection";
 import SessionAttendancePanel from "./SessionAttendancePanel";
+import RegistrationServicesEditor from "./RegistrationServicesEditor";
 import {
   displayValue,
   formatEventDate,
@@ -448,7 +449,7 @@ export default function EventDetailsScreen() {
           aria-labelledby="event-registrations-tab"
           className="mt-6"
         >
-          <RegistrationsSection eventId={event.id} timeZone={event.time_zone} ticketTypes={event.ticket_types} sessions={event.sessions} modules={event.modules} historicalConfiguration={historicalConfiguration.data ?? undefined} />
+          <RegistrationsSection eventId={event.id} timeZone={event.time_zone} ticketTypes={event.ticket_types} sessions={event.sessions} modules={event.modules} meals={event.meals} accommodation={event.accommodation} historicalConfiguration={historicalConfiguration.data ?? undefined} />
         </section>
       ) : null}
       {effectiveActiveTab === "sessions" ? <section id="event-sessions-panel" role="tabpanel" aria-labelledby="event-sessions-tab" className="mt-6"><SessionsSection eventId={event.id} deliveryMode={event.delivery_mode} startDate={event.start_date} endDate={event.end_date} enabled={event.modules?.sessions !== false || event.sessions.length > 0} /><SessionAttendancePanel eventId={event.id} sessions={event.sessions} enabled={event.modules?.sessions !== false || event.sessions.length > 0} /></section> : null}
@@ -573,7 +574,7 @@ function handleTabKeyDown(
   event.preventDefault();
 }
 
-function RegistrationsSection({ eventId, timeZone, ticketTypes, sessions, modules, historicalConfiguration }: { eventId: string; timeZone: string; ticketTypes: Event["ticket_types"]; sessions: Event["sessions"]; modules: Event["modules"]; historicalConfiguration?: ActiveEventFormConfiguration }) {
+function RegistrationsSection({ eventId, timeZone, ticketTypes, sessions, modules, meals, accommodation, historicalConfiguration }: { eventId: string; timeZone: string; ticketTypes: Event["ticket_types"]; sessions: Event["sessions"]; modules: Event["modules"]; meals: Event["meals"]; accommodation: Event["accommodation"]; historicalConfiguration?: ActiveEventFormConfiguration }) {
   const [activeSubview, setActiveSubview] =
     useState<RegistrationsSubview>("registered");
   const [isExporting, setIsExporting] = useState(false);
@@ -818,7 +819,7 @@ function RegistrationsSection({ eventId, timeZone, ticketTypes, sessions, module
           ticketTypes={ticketTypes}
         />
         <div className="mt-4 flex items-center justify-between gap-3 text-sm"><label>Rows<select value={attendeePageSize} onChange={(event) => { setAttendeePageSize(Number(event.target.value)); setAttendeePage(1); }} className="ml-2 rounded-lg border border-[#d7e5df] px-2 py-1"><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></label><span>Page {registrationsQuery.data.pagination.page} of {registrationsQuery.data.pagination.total_pages} · {registrationsQuery.data.pagination.total} attendees</span><div className="flex gap-2"><button type="button" disabled={attendeePage <= 1 || registrationsQuery.isFetching} onClick={() => setAttendeePage((page) => page - 1)} className="rounded-full border border-[#d7e5df] px-3 py-1 disabled:opacity-50">Previous</button><button type="button" disabled={attendeePage >= registrationsQuery.data.pagination.total_pages || registrationsQuery.isFetching} onClick={() => setAttendeePage((page) => page + 1)} className="rounded-full border border-[#d7e5df] px-3 py-1 disabled:opacity-50">Next</button></div></div>
-        {selectedRegistration ? <RegistrationDetailsDrawer registration={selectedRegistration} ticketTypes={ticketTypes} sessions={sessions} historicalConfiguration={historicalConfiguration} timeZone={timeZone} onClose={() => setSelectedRegistration(null)} /> : null}
+         {selectedRegistration ? <><RegistrationDetailsDrawer registration={selectedRegistration} ticketTypes={ticketTypes} sessions={sessions} historicalConfiguration={historicalConfiguration} timeZone={timeZone} onClose={() => setSelectedRegistration(null)} /><RegistrationServicesEditor eventId={eventId} registration={selectedRegistration} meals={meals} accommodation={accommodation} onSaved={(next) => setSelectedRegistration((current) => current ? { ...current, ...next } : current)} /></> : null}
     </RegistrationsPanel>
   );
 }

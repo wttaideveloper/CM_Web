@@ -5,7 +5,7 @@ import { getPlatformEnterpriseTenants } from "@ihp/platform-enterprises";
 import type { AssignmentTenantOption } from "./components/AssignmentEditor";
 import type { CreateEventFormConfigurationRequest, UpdateEventFormConfigurationAssignmentsRequest, UpdateEventFormConfigurationRequest } from "./model/event-form-configuration-api.types";
 import type { CoreFieldRegistryItem, FormConfigurationListItem } from "./model/form-configuration.types";
-import { activateEventFormConfiguration, createEventFormConfiguration, deactivateEventFormConfiguration, deleteEventFormConfiguration, getEventFormConfiguration, getEventFormConfigurationAssignments, getEventFormConfigurationAudit, getEventFormConfigurationVersion, getEventFormFieldRegistry, getEventTypeRegistryDefinitions, listEventFormConfigurationVersions, listEventFormConfigurations, publishEventFormConfiguration, retireEventFormConfiguration, updateEventFormConfiguration, updateEventFormConfigurationAssignments } from "./services/form-configurations.service";
+import { activateEventFormConfiguration, createEventFormConfiguration, createManagedEventType, deactivateEventFormConfiguration, deleteEventFormConfiguration, deleteManagedEventType, getEventFormConfiguration, getEventFormConfigurationAssignments, getEventFormConfigurationAudit, getEventFormConfigurationVersion, getEventFormFieldRegistry, getEventTypeRegistryDefinitions, listEventFormConfigurationVersions, listEventFormConfigurations, listManagedEventTypes, publishEventFormConfiguration, retireEventFormConfiguration, updateEventFormConfiguration, updateEventFormConfigurationAssignments, updateManagedEventType, type EventTypeMutation } from "./services/form-configurations.service";
 
 /** Stable query-key factory for the Event Form Configuration domain. */
 export const eventFormConfigurationKeys = {
@@ -18,6 +18,7 @@ export const eventFormConfigurationKeys = {
   assignments: (configurationId: string) => [...eventFormConfigurationKeys.detail(configurationId), "assignments"] as const,
   audit: (configurationId: string) => [...eventFormConfigurationKeys.detail(configurationId), "audit"] as const,
   assignableTenants: () => [...eventFormConfigurationKeys.all, "assignable-tenants"] as const,
+  eventTypes: () => ["platform", "event-types"] as const,
 };
 
 /** Backward-compatible key for the existing list screen. */
@@ -39,6 +40,8 @@ function toListItem(configuration: Awaited<ReturnType<typeof listEventFormConfig
 
 /** Reads configuration summaries for the existing Platform Admin list screen. */
 export function useEventFormConfigurations() { return useQuery({ queryKey: eventFormConfigurationKeys.list(), queryFn: async () => (await listEventFormConfigurations()).map(toListItem), retry: 1 }); }
+/** Lists all Event Types for Super Admin management. */
+export function useManagedEventTypes() { return useQuery({ queryKey: eventFormConfigurationKeys.eventTypes(), queryFn: listManagedEventTypes, retry: 1 }); }
 /** Reads and maps the backend registry for the existing builder model. */
 export function useEventFormFieldRegistry() { return useQuery({ queryKey: eventFormConfigurationKeys.fieldRegistry(), queryFn: async () => { const [registry, eventTypes] = await Promise.all([getEventFormFieldRegistry(), getEventTypeRegistryDefinitions()]); const mapped = registry.map(toBuilderRegistryItem); return mapped.some((field) => field.key === "event_type") ? mapped : [...mapped, toEventTypeRegistryItem(eventTypes)]; }, retry: 1, staleTime: 60_000 }); }
 /** Reads one persisted configuration. */
@@ -81,3 +84,9 @@ export function useDeactivateEventFormConfiguration() { const queryClient = useQ
 export function useRetireEventFormConfiguration() { const queryClient = useQueryClient(); return useMutation({ mutationFn: retireEventFormConfiguration, onSuccess: async (_data, configurationId) => { await Promise.all([queryClient.invalidateQueries({ queryKey: eventFormConfigurationKeys.list() }), queryClient.invalidateQueries({ queryKey: eventFormConfigurationKeys.detail(configurationId) }), queryClient.invalidateQueries({ queryKey: eventFormConfigurationKeys.versions(configurationId) })]); } }); }
 /** Replaces assignments and refreshes their detail projection. */
 export function useUpdateEventFormConfigurationAssignments() { const queryClient = useQueryClient(); return useMutation({ mutationFn: ({ configurationId, payload }: { configurationId: string; payload: UpdateEventFormConfigurationAssignmentsRequest }) => updateEventFormConfigurationAssignments(configurationId, payload), onSuccess: async (_data, variables) => { await Promise.all([queryClient.invalidateQueries({ queryKey: eventFormConfigurationKeys.assignments(variables.configurationId) }), queryClient.invalidateQueries({ queryKey: eventFormConfigurationKeys.detail(variables.configurationId) })]); } }); }
+/** Creates an Event Type and refreshes Event Type caches. */
+export function useCreateManagedEventType() { const queryClient = useQueryClient(); return useMutation({ mutationFn: (payload: EventTypeMutation) => createManagedEventType(payload), onSuccess: async () => { await Promise.all([queryClient.invalidateQueries({ queryKey: eventFormConfigurationKeys.eventTypes() }), queryClient.invalidateQueries({ queryKey: ["enterprise", "event-types"] })]); } }); }
+/** Updates an Event Type and refreshes Event Type caches. */
+export function useUpdateManagedEventType() { const queryClient = useQueryClient(); return useMutation({ mutationFn: ({ id, payload }: { id: string; payload: Partial<Omit<EventTypeMutation, "key">> }) => updateManagedEventType(id, payload), onSuccess: async () => { await Promise.all([queryClient.invalidateQueries({ queryKey: eventFormConfigurationKeys.eventTypes() }), queryClient.invalidateQueries({ queryKey: ["enterprise", "event-types"] })]); } }); }
+/** Deletes an Event Type and refreshes Event Type caches. */
+export function useDeleteManagedEventType() { const queryClient = useQueryClient(); return useMutation({ mutationFn: deleteManagedEventType, onSuccess: async () => { await Promise.all([queryClient.invalidateQueries({ queryKey: eventFormConfigurationKeys.eventTypes() }), queryClient.invalidateQueries({ queryKey: ["enterprise", "event-types"] })]); } }); }

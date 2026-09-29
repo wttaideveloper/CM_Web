@@ -12,7 +12,7 @@ import { BasicInformationSection, LocationAndHostSection, ScheduleSection } from
 import { buildCreateEventPayload, buildUpdateEventPayload, createEmptyEventForm, eventToFormValues, mapSessionForPayload, mergeLatestEventSessions, validateEventForm, validateParticipantCapacity, type CreateEventFormValues } from "./create-event-form";
 import { useEventCategories, useEventTypes } from "./event-categories.queries";
 import { useActiveEventFormConfiguration, useEventHistoricalFormConfiguration } from "./event-form-configuration.queries";
-import { createEvent, EventsApiError, getEventById, updateEvent, type ActiveEventFormConfiguration, type ActiveEventFormField, type Event, type EventCategory } from "./events.service";
+import { createEvent, EventsApiError, getEventById, updateEvent, type ActiveEventFormConfiguration, type ActiveEventFormField, type Event, type EventCategory, type EventModules } from "./events.service";
 import { canEditEvent } from "./event-status";
 import ConfiguredCreateEventSection from "./ConfiguredCreateEventSection";
 import ConfiguredCreateEventReview from "./ConfiguredCreateEventReview";
@@ -25,6 +25,11 @@ const stepFields: ReadonlyArray<readonly string[]> = [["title", "description", "
 function fieldDomId(key: string): string { return `event-field-${key.replace(/[^a-zA-Z0-9_-]/g, "-")}`; }
 function firstErrorKey(order: readonly string[], errors: Record<string, string[]>): string | null { return order.find((key) => Boolean(errors[key]?.length)) ?? null; }
 function errorCount(errors: Record<string, string[]>): number { return Object.values(errors).filter((messages) => messages.length > 0).length; }
+const moduleKeys: ReadonlyArray<keyof EventModules> = ["registration", "tickets", "sessions", "check_in", "online_meeting", "custom_questions", "meals", "accommodation"];
+function reconcileEventModules(eventType: { default_modules: EventModules; allowed_modules: EventModules; required_modules: EventModules }, current: EventModules | null, preserveChoices: boolean): EventModules {
+  const source = preserveChoices && current ? current : eventType.default_modules;
+  return Object.fromEntries(moduleKeys.map((key) => [key, eventType.required_modules[key] ? true : eventType.allowed_modules[key] === false ? false : source[key]])) as EventModules;
+}
 
 type EventEditorProps = { mode?: "create" | "edit"; initialEvent?: Event };
 type CustomFieldValue = string | string[] | boolean | number | null;
@@ -53,6 +58,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const [initialValues] = useState(() => initialEvent ? eventToFormValues(initialEvent) : createEmptyEventForm());
   const [values, setValues] = useState(() => initialEvent ? eventToFormValues(initialEvent) : createEmptyEventForm());
   const [modulesManuallyChanged, setModulesManuallyChanged] = useState(false);
+  const previousEventType = useRef(values.event_type);
   const [initialLocationId] = useState(initialEvent?.location_id ?? "");
   const [locationId, setLocationId] = useState(initialEvent?.location_id ?? "");
   const [errors, setErrors] = useState<Record<string, string[]>>({});
@@ -67,7 +73,18 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const locationsQuery = useQuery({ queryKey: ["enterprise", enterpriseId, "locations"], queryFn: () => getEnterpriseLocations(enterpriseId ?? ""), enabled: Boolean(enterpriseId), staleTime: 30_000, retry: 1 });
   const activeFormConfiguration = useActiveEventFormConfiguration(mode === "create");
   const eventTypesQuery = useEventTypes(Boolean(activeFormConfiguration.data));
-  useEffect(() => { if (mode !== "create" || !values.event_type || modulesManuallyChanged) return; const selected = eventTypesQuery.data?.find((item) => item.key === values.event_type); if (selected) setValues((current) => ({ ...current, modules: selected.default_modules })); }, [eventTypesQuery.data, mode, modulesManuallyChanged, values.event_type]);
+  useEffect(() => {
+    if (mode !== "create" || !values.event_type) return;
+    const selected = eventTypesQuery.data?.find((item) => item.key === values.event_type);
+    if (!selected) return;
+    const eventTypeChanged = previousEventType.current !== values.event_type;
+    previousEventType.current = values.event_type;
+    setValues((current) => {
+      const modules = reconcileEventModules(selected, current.modules, modulesManuallyChanged && (eventTypeChanged || current.modules !== null));
+      const pricing_type = modules.tickets ? current.pricing_type : "free";
+      return JSON.stringify(current.modules) === JSON.stringify(modules) && current.pricing_type === pricing_type ? current : { ...current, modules, pricing_type };
+    });
+  }, [eventTypesQuery.data, mode, modulesManuallyChanged, values.event_type]);
   const selectedEventType = eventTypesQuery.data?.find((item) => item.key === values.event_type);
   const hasHistoricalConfiguration = Boolean(initialEvent?.form_configuration_id && initialEvent?.form_configuration_version_id);
   const historicalFormConfiguration = useEventHistoricalFormConfiguration(initialEvent?.id, mode === "edit" && hasHistoricalConfiguration);
@@ -104,7 +121,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ["events", "list"] }); if (initialEvent) { await queryClient.invalidateQueries({ queryKey: ["events", "detail", initialEvent.id] }); router.push(`/admin/events/${initialEvent.id}`); } else router.push("/admin/events"); },
     onError: (error) => { if (error instanceof EventsApiError) { setErrors((current) => ({ ...current, ...error.fieldErrors })); setSubmitError(error.status === 401 || error.status === 403 ? "Your session cannot save this event. Please sign in again." : error.message); } else setSubmitError(error instanceof Error ? error.message : "Unable to save event."); },
   });
-  const update = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => { if (key === "modules") setModulesManuallyChanged(true); setValues((current) => ({ ...current, [key]: value })); setErrors((current) => ({ ...current, [key]: [] })); setSubmitError(null); };
+  const update = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => { if (key === "modules") setModulesManuallyChanged(true); setValues((current) => key === "modules" && value && !(value as CreateEventFormValues["modules"])?.tickets ? { ...current, modules: value as CreateEventFormValues["modules"], pricing_type: "free" } : { ...current, [key]: value }); setErrors((current) => ({ ...current, [key]: [] })); setSubmitError(null); };
   const updateLocationId = (value: string) => { setLocationId(value); setErrors((current) => ({ ...current, location_id: [] })); setSubmitError(null); };
   const updateCustomValues = (next: Record<string, string | string[] | boolean | number | null>) => { const changedKey = Object.keys(next).find((key) => JSON.stringify(next[key]) !== JSON.stringify(customValues[key])); setCustomValues(next); if (changedKey) setErrors((current) => ({ ...current, [changedKey]: [] })); setSubmitError(null); };
   useEffect(() => { if (!pendingFocusField) return; const element = document.getElementById(fieldDomId(pendingFocusField)); if (!element) return; element.scrollIntoView({ behavior: "smooth", block: "center" }); if (element instanceof HTMLElement) element.focus({ preventScroll: true }); setPendingFocusField(null); }, [activeStep, pendingFocusField]);

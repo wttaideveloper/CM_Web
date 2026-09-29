@@ -37,8 +37,8 @@ export interface EventAttendee {
   checked_out_at: string | null;
   registered_at: string;
   registration_source: AttendeeSource;
-  meal_selections: readonly unknown[];
-  accommodation_selections: readonly unknown[];
+  meal_selections: readonly string[];
+  accommodation_selections: readonly string[];
   custom_answers: Record<string, unknown>;
   session_attendance: readonly EventSessionAttendance[];
 }
@@ -390,8 +390,8 @@ export interface EventRegistration {
   order_status?: string | null;
   amount?: string | null;
   currency?: string | null;
-  meal_selections?: readonly unknown[];
-  accommodation_selections?: readonly unknown[];
+  meal_selections?: readonly string[];
+  accommodation_selections?: readonly string[];
   session_attendance?: readonly EventSessionAttendance[];
 }
 
@@ -1551,6 +1551,18 @@ export function batchCheckInEventSessionAttendees(eventId: string, sessionId: st
 export async function createEventWalkIn(eventId: string, payload: EventWalkInPayload): Promise<unknown> {
   const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/walk-in`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
   if (!response.ok) throw await createEventsApiError(response, "register this walk-in attendee");
+  return (await response.json().catch(() => null)) as unknown;
+}
+
+export async function updateRegistrationMealSelections(eventId: string, registrationId: string, mealSelections: readonly string[]): Promise<unknown> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/registrations/${encodeURIComponent(registrationId)}/meals`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meal_selections: mealSelections }) });
+  if (!response.ok) throw await createEventsApiError(response, "update meal selections");
+  return (await response.json().catch(() => null)) as unknown;
+}
+
+export async function updateRegistrationAccommodationSelections(eventId: string, registrationId: string, accommodationSelections: readonly string[]): Promise<unknown> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/registrations/${encodeURIComponent(registrationId)}/accommodation`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accommodation_selections: accommodationSelections }) });
+  if (!response.ok) throw await createEventsApiError(response, "update accommodation selections");
   return (await response.json().catch(() => null)) as unknown;
 }
 
