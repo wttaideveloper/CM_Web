@@ -10,12 +10,13 @@ import { useRouter } from "next/navigation";
 import { AdditionalConfigurationSection, CapacityAndRegistrationSection, MediaSection, PricingAndTicketsSection, ReviewSection } from "./CreateEventConfigurationSections";
 import { BasicInformationSection, LocationAndHostSection, ScheduleSection } from "./CreateEventDetailsSections";
 import { buildCreateEventPayload, buildUpdateEventPayload, createEmptyEventForm, eventToFormValues, mapSessionForPayload, mergeLatestEventSessions, validateEventForm, validateParticipantCapacity, type CreateEventFormValues } from "./create-event-form";
-import { useEventCategories } from "./event-categories.queries";
+import { useEventCategories, useEventTypes } from "./event-categories.queries";
 import { useActiveEventFormConfiguration, useEventHistoricalFormConfiguration } from "./event-form-configuration.queries";
 import { createEvent, EventsApiError, getEventById, updateEvent, type ActiveEventFormConfiguration, type ActiveEventFormField, type Event, type EventCategory } from "./events.service";
 import { canEditEvent } from "./event-status";
 import ConfiguredCreateEventSection from "./ConfiguredCreateEventSection";
 import ConfiguredCreateEventReview from "./ConfiguredCreateEventReview";
+import EventModulesControls from "./EventModulesControls";
 import { validateSessions } from "./SessionTableEditor";
 
 const steps = ["Basic Information", "Schedule", "Location & Host", "Pricing & Tickets", "Capacity & Registration", "Images & Media", "Additional Configuration", "Review & Submit"] as const;
@@ -51,6 +52,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const [activeStep, setActiveStep] = useState(0);
   const [initialValues] = useState(() => initialEvent ? eventToFormValues(initialEvent) : createEmptyEventForm());
   const [values, setValues] = useState(() => initialEvent ? eventToFormValues(initialEvent) : createEmptyEventForm());
+  const [modulesManuallyChanged, setModulesManuallyChanged] = useState(false);
   const [initialLocationId] = useState(initialEvent?.location_id ?? "");
   const [locationId, setLocationId] = useState(initialEvent?.location_id ?? "");
   const [errors, setErrors] = useState<Record<string, string[]>>({});
@@ -64,6 +66,9 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   useEffect(() => { if (mode === "create") setValues((current) => ({ ...current, organiser_name: current.organiser_name || enterpriseName, organiser_contact: current.organiser_contact || organiserContact })); }, [enterpriseName, mode, organiserContact]);
   const locationsQuery = useQuery({ queryKey: ["enterprise", enterpriseId, "locations"], queryFn: () => getEnterpriseLocations(enterpriseId ?? ""), enabled: Boolean(enterpriseId), staleTime: 30_000, retry: 1 });
   const activeFormConfiguration = useActiveEventFormConfiguration(mode === "create");
+  const eventTypesQuery = useEventTypes(Boolean(activeFormConfiguration.data));
+  useEffect(() => { if (mode !== "create" || !values.event_type || modulesManuallyChanged) return; const selected = eventTypesQuery.data?.find((item) => item.key === values.event_type); if (selected) setValues((current) => ({ ...current, modules: selected.default_modules })); }, [eventTypesQuery.data, mode, modulesManuallyChanged, values.event_type]);
+  const selectedEventType = eventTypesQuery.data?.find((item) => item.key === values.event_type);
   const hasHistoricalConfiguration = Boolean(initialEvent?.form_configuration_id && initialEvent?.form_configuration_version_id);
   const historicalFormConfiguration = useEventHistoricalFormConfiguration(initialEvent?.id, mode === "edit" && hasHistoricalConfiguration);
   const formConfiguration = mode === "create" ? activeFormConfiguration.data : historicalFormConfiguration.data;
@@ -99,7 +104,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ["events", "list"] }); if (initialEvent) { await queryClient.invalidateQueries({ queryKey: ["events", "detail", initialEvent.id] }); router.push(`/admin/events/${initialEvent.id}`); } else router.push("/admin/events"); },
     onError: (error) => { if (error instanceof EventsApiError) { setErrors((current) => ({ ...current, ...error.fieldErrors })); setSubmitError(error.status === 401 || error.status === 403 ? "Your session cannot save this event. Please sign in again." : error.message); } else setSubmitError(error instanceof Error ? error.message : "Unable to save event."); },
   });
-  const update = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => { setValues((current) => ({ ...current, [key]: value })); setErrors((current) => ({ ...current, [key]: [] })); setSubmitError(null); };
+  const update = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => { if (key === "modules") setModulesManuallyChanged(true); setValues((current) => ({ ...current, [key]: value })); setErrors((current) => ({ ...current, [key]: [] })); setSubmitError(null); };
   const updateLocationId = (value: string) => { setLocationId(value); setErrors((current) => ({ ...current, location_id: [] })); setSubmitError(null); };
   const updateCustomValues = (next: Record<string, string | string[] | boolean | number | null>) => { const changedKey = Object.keys(next).find((key) => JSON.stringify(next[key]) !== JSON.stringify(customValues[key])); setCustomValues(next); if (changedKey) setErrors((current) => ({ ...current, [changedKey]: [] })); setSubmitError(null); };
   useEffect(() => { if (!pendingFocusField) return; const element = document.getElementById(fieldDomId(pendingFocusField)); if (!element) return; element.scrollIntoView({ behavior: "smooth", block: "center" }); if (element instanceof HTMLElement) element.focus({ preventScroll: true }); setPendingFocusField(null); }, [activeStep, pendingFocusField]);
@@ -164,7 +169,7 @@ function validateConfiguredEventForm(configuration: ActiveEventFormConfiguration
     if (values.pricing_type === "free" && ["price", "currency", "ticket_types"].includes(key)) continue;
     if (!isDeliveryFieldApplicable(key, values.delivery_mode)) continue;
     if (key === "location" || key === "location_id") { if (!hasLocation) errors[key] = [`${field.label} is required.`]; continue; }
-    const coreKey = ({ title: "title", description: "description", category: "category", subcategory: "subcategory", organiser_name: "organiser_name", organiser_contact: "organiser_contact", start_date: "start_date", start_datetime: "start_date", end_date: "end_date", end_datetime: "end_date", duration_type: "duration_type", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", time_zone: "time_zone", timezone: "time_zone", delivery_mode: "delivery_mode", event_type: "delivery_mode", pricing_type: "pricing_type", price: "price", currency: "currency", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image" } as Record<string, keyof CreateEventFormValues>)[key];
+    const coreKey = ({ title: "title", description: "description", category: "category", subcategory: "subcategory", organiser_name: "organiser_name", organiser_contact: "organiser_contact", start_date: "start_date", start_datetime: "start_date", end_date: "end_date", end_datetime: "end_date", duration_type: "duration_type", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", time_zone: "time_zone", timezone: "time_zone", event_type: "event_type", delivery_mode: "delivery_mode", pricing_type: "pricing_type", price: "price", currency: "currency", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image" } as Record<string, keyof CreateEventFormValues>)[key];
     const value = coreKey ? values[coreKey] : customValues[key];
     if ((Array.isArray(value) && value.length === 0) || value === null || value === undefined || String(value).trim() === "") errors[key] = [`${field.label} is required.`];
   }

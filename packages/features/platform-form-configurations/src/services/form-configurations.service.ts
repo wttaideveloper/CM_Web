@@ -47,12 +47,16 @@ function errorMessages(value: unknown): string[] {
 async function errorMessage(response: Response): Promise<string> { if (response.status === 401) return "Super Admin authentication is required."; if (response.status === 403) return "You do not have permission to manage form configurations."; const body = await response.json().catch(() => null) as unknown; const messages = errorMessages(body); return messages.length ? messages.join("\n") : `Event Form Configurations request failed (HTTP ${response.status}).`; }
 async function request(path: string, init?: RequestInit): Promise<Response> { let response: Response; try { response = await fetch(path, init); } catch { throw new FormConfigurationsApiError(null, "Unable to reach Event Form Configurations."); } if (!response.ok) throw new FormConfigurationsApiError(response.status, await errorMessage(response)); return response; }
 async function requestJson(path: string, init?: RequestInit): Promise<unknown> { const response = await request(path, init); if (response.status === 204) return undefined; return response.json().catch(() => { throw new FormConfigurationsApiError(response.status, "Event Form Configurations returned invalid JSON."); }); }
+type EventTypeRegistryDefinition = { id: string; key: string; name: string; active: boolean };
+function isEventTypeRegistryDefinition(value: unknown): value is EventTypeRegistryDefinition { if (!isRecord(value)) return false; return isString(value.id) && isString(value.key) && isString(value.name) && typeof value.active === "boolean"; }
 function jsonRequest(method: "POST" | "PATCH" | "PUT", body?: object): RequestInit { return { method, headers: { "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) }; }
 function configurationPath(configurationId: string, suffix = ""): string { return `${eventFormConfigurationsPath}/${encodeURIComponent(configurationId)}${suffix}`; }
 function expect<T>(value: unknown, predicate: (candidate: unknown) => boolean, label: string): T { if (!predicate(value)) throw new FormConfigurationsApiError(null, `Event Form Configurations returned invalid ${label}.`); return value as T; }
 
 /** Reads the backend-authoritative Event core field registry. */
 export async function getEventFormFieldRegistry(): Promise<EventCoreFieldRegistryEntry[]> { const value = await requestJson(`${eventFormConfigurationsPath}/field-registry`); return expect(value, (candidate) => Array.isArray(candidate) && candidate.every(isRegistryEntry), "field registry"); }
+/** Reads Event Types used to enrich the Super Admin core-field picker. */
+export async function getEventTypeRegistryDefinitions(): Promise<EventTypeRegistryDefinition[]> { const value = await requestJson("/api/platform-super-admin/event-types"); return expect(value, (candidate) => Array.isArray(candidate) && candidate.every(isEventTypeRegistryDefinition), "Event Types"); }
 /** Lists Event form configuration summaries. */
 export async function listEventFormConfigurations(): Promise<EventFormConfigurationSummary[]> { const value = await requestJson(eventFormConfigurationsPath); return expect(value, (candidate) => Array.isArray(candidate) && candidate.every(isSummary), "configuration list"); }
 /** Creates one draft Event form configuration. */

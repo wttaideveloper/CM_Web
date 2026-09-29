@@ -5,7 +5,7 @@ import { getPlatformEnterpriseTenants } from "@ihp/platform-enterprises";
 import type { AssignmentTenantOption } from "./components/AssignmentEditor";
 import type { CreateEventFormConfigurationRequest, UpdateEventFormConfigurationAssignmentsRequest, UpdateEventFormConfigurationRequest } from "./model/event-form-configuration-api.types";
 import type { CoreFieldRegistryItem, FormConfigurationListItem } from "./model/form-configuration.types";
-import { activateEventFormConfiguration, createEventFormConfiguration, deactivateEventFormConfiguration, deleteEventFormConfiguration, getEventFormConfiguration, getEventFormConfigurationAssignments, getEventFormConfigurationAudit, getEventFormConfigurationVersion, getEventFormFieldRegistry, listEventFormConfigurationVersions, listEventFormConfigurations, publishEventFormConfiguration, retireEventFormConfiguration, updateEventFormConfiguration, updateEventFormConfigurationAssignments } from "./services/form-configurations.service";
+import { activateEventFormConfiguration, createEventFormConfiguration, deactivateEventFormConfiguration, deleteEventFormConfiguration, getEventFormConfiguration, getEventFormConfigurationAssignments, getEventFormConfigurationAudit, getEventFormConfigurationVersion, getEventFormFieldRegistry, getEventTypeRegistryDefinitions, listEventFormConfigurationVersions, listEventFormConfigurations, publishEventFormConfiguration, retireEventFormConfiguration, updateEventFormConfiguration, updateEventFormConfigurationAssignments } from "./services/form-configurations.service";
 
 /** Stable query-key factory for the Event Form Configuration domain. */
 export const eventFormConfigurationKeys = {
@@ -29,6 +29,10 @@ function toBuilderRegistryItem(field: Awaited<ReturnType<typeof getEventFormFiel
   return { key: field.key, displayName: field.display_name, valueType: field.value_type, allowedRenderers: field.allowed_renderers, defaultRenderer: field.default_renderer, requiredByDomain: field.required_by_domain, removable: field.removable, hideable: field.hideable, options: field.options ?? [], valueSource: field.value_source, sourceEndpoint: field.source_endpoint, dependsOn: field.depends_on, configurable: { label: field.configurable.label, section: field.configurable.section, position: field.configurable.position, required: field.configurable.required, renderer: field.configurable.renderer, placeholder: field.configurable.placeholder, helpText: field.configurable.help_text, validation: field.configurable.validation } };
 }
 
+function toEventTypeRegistryItem(eventTypes: Awaited<ReturnType<typeof getEventTypeRegistryDefinitions>>): CoreFieldRegistryItem {
+  return { key: "event_type", displayName: "Event Type", valueType: "string", allowedRenderers: ["select"], defaultRenderer: "select", requiredByDomain: false, removable: false, hideable: true, options: eventTypes.filter((item) => item.active).map((item, index) => ({ value: item.key, label: item.name, position: index + 1 })), valueSource: "event_types", sourceEndpoint: "/api/v1/event-types/", dependsOn: null, configurable: { label: false, section: true, position: true, required: true, renderer: false, placeholder: false, helpText: false, validation: false } };
+}
+
 function toListItem(configuration: Awaited<ReturnType<typeof listEventFormConfigurations>>[number]): FormConfigurationListItem {
   return { id: configuration.id, name: configuration.name, description: configuration.description, scope: configuration.scope, status: configuration.status, active: configuration.is_active, currentVersion: configuration.current_version, createdAt: configuration.created_at, updatedAt: configuration.updated_at, publishedAt: configuration.published_at };
 }
@@ -36,7 +40,7 @@ function toListItem(configuration: Awaited<ReturnType<typeof listEventFormConfig
 /** Reads configuration summaries for the existing Platform Admin list screen. */
 export function useEventFormConfigurations() { return useQuery({ queryKey: eventFormConfigurationKeys.list(), queryFn: async () => (await listEventFormConfigurations()).map(toListItem), retry: 1 }); }
 /** Reads and maps the backend registry for the existing builder model. */
-export function useEventFormFieldRegistry() { return useQuery({ queryKey: eventFormConfigurationKeys.fieldRegistry(), queryFn: async () => (await getEventFormFieldRegistry()).map(toBuilderRegistryItem), retry: 1, staleTime: 60_000 }); }
+export function useEventFormFieldRegistry() { return useQuery({ queryKey: eventFormConfigurationKeys.fieldRegistry(), queryFn: async () => { const [registry, eventTypes] = await Promise.all([getEventFormFieldRegistry(), getEventTypeRegistryDefinitions()]); const mapped = registry.map(toBuilderRegistryItem); return mapped.some((field) => field.key === "event_type") ? mapped : [...mapped, toEventTypeRegistryItem(eventTypes)]; }, retry: 1, staleTime: 60_000 }); }
 /** Reads one persisted configuration. */
 export function useEventFormConfiguration(configurationId: string | undefined) { return useQuery({ queryKey: eventFormConfigurationKeys.detail(configurationId ?? ""), queryFn: () => getEventFormConfiguration(configurationId ?? ""), enabled: Boolean(configurationId), retry: 1 }); }
 /** Reads immutable versions for one configuration. */

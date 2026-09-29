@@ -18,6 +18,7 @@ const TAXONOMY_SELECT_SEMANTICS: Readonly<Record<string, EventCoreFieldSemantic>
   duration_type: { displayRenderer: "taxonomy_select", optionsSource: "domain_owned", description: "Options come from the backend registry's static Event values." },
   delivery_mode: { displayRenderer: "taxonomy_select", optionsSource: "domain_owned", description: "Options come from the backend registry's static Event values." },
   pricing_type: { displayRenderer: "taxonomy_select", optionsSource: "domain_owned", description: "Options come from the backend registry's static Free or Paid Event values." },
+  event_type: { displayRenderer: "taxonomy_select", optionsSource: "domain_owned", description: "Options come from the backend Event Type definitions." },
 };
 
 /**

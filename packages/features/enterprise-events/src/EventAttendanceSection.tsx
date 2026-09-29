@@ -12,9 +12,10 @@ function humanizeStatus(value: string): string {
   const normalized = value.trim().replace(/[_-]+/g, " ");
   return normalized ? normalized.replace(/\b\w/g, (character) => character.toUpperCase()) : "Status unavailable";
 }
-function canCheckIn(participant: EventAttendanceParticipant): boolean { return participant.status.trim().toLowerCase() === "confirmed" && participant.checked_in_at === null; }
-function canUndoCheckIn(participant: EventAttendanceParticipant): boolean { return participant.checked_in_at !== null; }
-function canCheckOut(participant: EventAttendanceParticipant): boolean { return participant.checked_in_at !== null && participant.checked_out_at === null; }
+function isCancelled(participant: EventAttendanceParticipant): boolean { const status = participant.status.trim().toLowerCase(); return status === "cancelled" || status === "canceled"; }
+function canCheckIn(participant: EventAttendanceParticipant): boolean { return !isCancelled(participant) && participant.status.trim().toLowerCase() === "confirmed" && participant.checked_in_at === null; }
+function canUndoCheckIn(participant: EventAttendanceParticipant): boolean { return !isCancelled(participant) && participant.checked_in_at !== null; }
+function canCheckOut(participant: EventAttendanceParticipant): boolean { return !isCancelled(participant) && participant.checked_in_at !== null && participant.checked_out_at === null; }
 function canManageAttendance(status: EventStatus): boolean { return status === "published"; }
 function isActiveRegistrationStatus(status: string): boolean {
   const normalized = status.trim().toLowerCase().replace(/[_-]+/g, " ");
@@ -32,7 +33,7 @@ export default function EventAttendanceSection({ eventId, eventStatus, timeZone 
   const scanQrTriggerRef = useRef<HTMLButtonElement | null>(null);
   const attendanceOperational = canManageAttendance(eventStatus);
   const attendanceQuery = useQuery({ queryKey: ["event-attendance", eventId], queryFn: () => getEventAttendance(eventId), enabled: Boolean(eventId), staleTime: 30_000, retry: 1 });
-  const refresh = async () => { await queryClient.invalidateQueries({ queryKey: ["event-attendance", eventId] }); };
+  const refresh = async () => { await Promise.all([queryClient.invalidateQueries({ queryKey: ["event-attendance", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-attendees", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-registrations", eventId] }), queryClient.invalidateQueries({ queryKey: ["events", "dashboard", eventId] })]); };
   const checkInMutation = useMutation({ mutationFn: (participant: EventAttendanceParticipant) => checkInEventParticipant(eventId, { registration_id: participant.registration_id }), onSuccess: async (_response, participant) => { setFeedback("Attendee checked in successfully."); await refresh(); }, onError: () => setFeedback("Unable to check in this participant. Please try again.") });
   const uncheckInMutation = useMutation({ mutationFn: (participant: EventAttendanceParticipant) => uncheckInEventParticipant(eventId, { registration_id: participant.registration_id }), onSuccess: async (_response, participant) => { setFeedback(participant.participant_name + " check-in undone."); await refresh(); }, onError: () => setFeedback("Unable to undo this participant check-in. Please try again.") });
   const checkOutMutation = useMutation({ mutationFn: (participant: EventAttendanceParticipant) => checkOutEventParticipant(eventId, { registration_id: participant.registration_id }), onSuccess: async (_response, participant) => { setFeedback("Attendee checked out successfully."); await refresh(); }, onError: () => setFeedback("Unable to check out this participant. Please try again.") });

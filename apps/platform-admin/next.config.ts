@@ -94,6 +94,14 @@ const nextConfig: NextConfig = {
         destination: `${platformApiBaseUrl}/events/:path*`,
       },
       {
+        source: "/api/v1/event-types/",
+        destination: `${platformApiBaseUrl}/event-types/`,
+      },
+      {
+        source: "/api/v1/event-types/:path*",
+        destination: `${platformApiBaseUrl}/event-types/:path*`,
+      },
+      {
         source: "/api/v1/admin/event-form-configurations",
         destination: `${platformApiBaseUrl}/admin/event-form-configurations/`,
       },
