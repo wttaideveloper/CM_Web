@@ -25,6 +25,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function PasswordVisibilityIcon({ visible }: { visible: boolean }) {
+  return (
+    <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      {visible
+        ? <><path d="M3 3l18 18" /><path d="M10.6 10.6a2 2 0 002.8 2.8" /><path d="M9.9 5.2A10.8 10.8 0 0112 5c5 0 8.5 4.3 9.5 7-.4 1.1-1.3 2.4-2.5 3.5" /><path d="M6.2 6.2C4.4 7.4 3.1 9.3 2.5 12c.9 2.6 4.4 7 9.5 7 1 0 2-.2 2.9-.5" /></>
+        : <><path d="M2.5 12s3.4-7 9.5-7 9.5 7 9.5 7-3.4 7-9.5 7-9.5-7-9.5-7z" /><circle cx="12" cy="12" r="3" /></>}
+    </svg>
+  );
+}
+
 function readString(value: Record<string, unknown>, ...keys: string[]): string {
   for (const key of keys) {
     if (typeof value[key] === "string" && value[key].trim()) return value[key].trim();
@@ -71,19 +81,29 @@ function parsePreview(value: unknown): InvitePreview {
 }
 
 async function previewInvite(token: string): Promise<InvitePreview> {
-  const response = await fetch(`/api/v1/auth/invite/preview?token=${encodeURIComponent(token)}`, { cache: "no-store" });
+  let response: Response;
+  try {
+    response = await fetch(`/api/v1/auth/invite/preview?token=${encodeURIComponent(token)}`, { cache: "no-store" });
+  } catch {
+    throw new InviteApiError(0, "Unable to connect to the invitation service. Check your connection and try again.");
+  }
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok) throw new InviteApiError(response.status, errorMessage(body, response.status, "Unable to validate this invitation."));
   return parsePreview(body);
 }
 
 async function acceptInvite(payload: { token: string; password: string }): Promise<void> {
-  const response = await fetch("/api/v1/auth/accept-invite", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    cache: "no-store",
-  });
+  let response: Response;
+  try {
+    response = await fetch("/api/v1/auth/accept-invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    });
+  } catch {
+    throw new InviteApiError(0, "Unable to connect to the invitation service. Check your connection and try again.");
+  }
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null);
     throw new InviteApiError(response.status, errorMessage(body, response.status, "Unable to accept this invitation."));
@@ -97,13 +117,18 @@ function AcceptInviteContent() {
   const passwordRequirementsQuery = useQuery({ queryKey: ["auth", "password-requirements"], queryFn: getPasswordRequirements, enabled: Boolean(token), retry: false, staleTime: 5 * 60 * 1000 });
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [accepted, setAccepted] = useState(false);
   const acceptMutation = useMutation({ mutationFn: acceptInvite, onSuccess: () => setAccepted(true) });
   const preview = previewQuery.data;
   const passwordRules = getPasswordRequirementRules(passwordRequirementsQuery.data ?? null);
   const unmetPasswordRules = passwordRules?.filter((rule) => !rule.test(password)) ?? [];
-  const passwordError = password && confirmPassword && password !== confirmPassword ? "Passwords do not match." : null;
-  const canSubmit = Boolean(token && preview && passwordRules?.length && !unmetPasswordRules.length && password === confirmPassword && !acceptMutation.isPending);
+  const passwordTooLong = password.length > 500 || confirmPassword.length > 500;
+  const passwordError = passwordTooLong
+    ? "Password must be 500 characters or fewer."
+    : password && confirmPassword && password !== confirmPassword ? "Passwords do not match." : null;
+  const canSubmit = Boolean(token && preview && passwordRules?.length && !unmetPasswordRules.length && !passwordTooLong && password === confirmPassword && !acceptMutation.isPending);
 
   useEffect(() => {
     if (!accepted) return;
@@ -139,31 +164,41 @@ function AcceptInviteContent() {
             >
               <label className="block text-sm font-semibold">
                 New password
-                <input
-                  required
-                  type="password"
-                  autoComplete="new-password"
-                  value={password}
-                  onChange={(event) => {
-                    setPassword(event.target.value);
-                    acceptMutation.reset();
-                  }}
-                  className="mt-1.5 h-10 w-full rounded-xl border border-[#d7e5df] px-3 font-normal"
-                />
+                <span className="relative mt-1.5 block">
+                  <input
+                    required
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="new-password"
+                    value={password}
+                    onChange={(event) => {
+                      setPassword(event.target.value);
+                      acceptMutation.reset();
+                    }}
+                    className="h-10 w-full rounded-xl border border-[#d7e5df] px-3 pr-12 font-normal"
+                  />
+                  <button type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} className="absolute inset-y-0 right-0 rounded-r-xl px-3 text-[#52736a] transition hover:text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58]">
+                    <PasswordVisibilityIcon visible={showPassword} />
+                  </button>
+                </span>
               </label>
               <label className="block text-sm font-semibold">
                 Confirm password
-                <input
-                  required
-                  type="password"
-                  autoComplete="new-password"
-                  value={confirmPassword}
-                  onChange={(event) => {
-                    setConfirmPassword(event.target.value);
-                    acceptMutation.reset();
-                  }}
-                  className="mt-1.5 h-10 w-full rounded-xl border border-[#d7e5df] px-3 font-normal"
-                />
+                <span className="relative mt-1.5 block">
+                  <input
+                    required
+                    type={showConfirmPassword ? "text" : "password"}
+                    autoComplete="new-password"
+                    value={confirmPassword}
+                    onChange={(event) => {
+                      setConfirmPassword(event.target.value);
+                      acceptMutation.reset();
+                    }}
+                    className="h-10 w-full rounded-xl border border-[#d7e5df] px-3 pr-12 font-normal"
+                  />
+                  <button type="button" onClick={() => setShowConfirmPassword((visible) => !visible)} aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"} aria-pressed={showConfirmPassword} className="absolute inset-y-0 right-0 rounded-r-xl px-3 text-[#52736a] transition hover:text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58]">
+                    <PasswordVisibilityIcon visible={showConfirmPassword} />
+                  </button>
+                </span>
               </label>
               {passwordRequirementsQuery.isLoading ? <p role="status" className="text-sm text-[#52736a]">Loading password requirements...</p> : null}
               {passwordRequirementsQuery.isError || (!passwordRequirementsQuery.isLoading && !passwordRules) ? (

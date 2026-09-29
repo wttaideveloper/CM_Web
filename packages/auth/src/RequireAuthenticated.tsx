@@ -20,12 +20,12 @@ export function RequireAuthenticated({
   redirect,
   loadingFallback = null,
 }: RequireAuthenticatedProps) {
-  const { authenticated, isLoading } = useAuth();
+  const { authenticated, hasSessionError, isLoading, refreshSession } = useAuth();
   const clientConfig = resolveAuthClientConfig(config);
   const redirectPath = unauthenticatedRedirectPath ?? clientConfig.unauthenticatedRedirectPath;
 
   useEffect(() => {
-    if (isLoading || authenticated) {
+    if (isLoading || authenticated || hasSessionError) {
       return;
     }
 
@@ -35,9 +35,24 @@ export function RequireAuthenticated({
     }
 
     window.location.replace(redirectPath);
-  }, [authenticated, isLoading, redirect, redirectPath]);
+  }, [authenticated, hasSessionError, isLoading, redirect, redirectPath]);
 
   if (isLoading || !authenticated) {
+    if (hasSessionError) {
+      return (
+        <main role="alert" className="flex min-h-screen flex-col items-center justify-center gap-3 bg-white px-6 text-sm text-[#52736a]">
+          <p>Unable to verify your session right now.</p>
+          <button
+            type="button"
+            onClick={() => void refreshSession()}
+            className="rounded-lg px-3 py-2 font-semibold text-[#1f6a58] transition hover:bg-[#f1f7f4] hover:text-[#124a3c] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58]"
+          >
+            Retry
+          </button>
+        </main>
+      );
+    }
+
     return loadingFallback;
   }
 

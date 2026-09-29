@@ -76,8 +76,6 @@ function AdminNoteBanner({ eventId, status }: { eventId: string; status: string 
     retry: 1,
   });
 
-  if (adminNoteQuery.isLoading || adminNoteQuery.isError || !adminNoteQuery.data) return null;
-
   const data = adminNoteQuery.data;
   let note: string | null = null;
   let by: string | null = null;
@@ -91,11 +89,18 @@ function AdminNoteBanner({ eventId, status }: { eventId: string; status: string 
       .find((value): value is string => typeof value === "string" && value.trim().length > 0) ?? null;
   }
 
-  if (!note) return null;
+  if (!note && status !== "needs_revision") return null;
   return (
     <section role="status" className="mt-3 max-w-2xl rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-3">
-      <p className="text-sm font-bold text-[#735c1e]">{status === "needs_revision" ? "Changes requested" : "Not approved"}{by ? ` by ${by}` : ""}</p>
-      <p className="mt-1 whitespace-pre-line text-sm leading-6 text-[#735c1e]">{note}</p>
+      <p className="text-sm font-bold text-[#735c1e]">{status === "needs_revision" ? "Needs Revision" : "Not approved"}{by ? ` by ${by}` : ""}</p>
+      {adminNoteQuery.isLoading ? <p className="mt-1 text-sm text-[#735c1e]">Loading review feedback...</p> : null}
+      {adminNoteQuery.isError ? (
+        <div className="mt-1">
+          <p role="alert" className="text-sm text-[#b42318]">Unable to load review feedback.</p>
+          <button type="button" onClick={() => void adminNoteQuery.refetch()} className="mt-1 text-sm font-semibold text-[#1f6a58] underline">Retry</button>
+        </div>
+      ) : null}
+      {note ? <p className="mt-1 whitespace-pre-line text-sm leading-6 text-[#735c1e]">{note}</p> : null}
     </section>
   );
 }

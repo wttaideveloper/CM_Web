@@ -3,7 +3,9 @@
 import type { CreateTrainingFormValues } from "./create-training-form";
 import type { TrainingFormField, TrainingFormSection } from "./training-form-config.service";
 import { isTrainingFormFieldVisible } from "./training-form-field-settings";
-import TrainingMediaUploadButton from "./TrainingMediaUploadButton";
+import TrainingMediaField from "./TrainingMediaField";
+import TrainingTaxonomyField from "./TrainingTaxonomyField";
+import type { TrainingCategoryOption } from "./training-categories.service";
 
 type UpdateForm = <Key extends keyof CreateTrainingFormValues>(key: Key, value: CreateTrainingFormValues[Key]) => void;
 
@@ -126,6 +128,11 @@ export default function ConfiguredCreateTrainingSection({
   errors,
   customValues,
   setCustomValues,
+  trainingCategories,
+  categoriesLoading,
+  categoriesError,
+  retryCategories,
+  preserveLegacyCategoryValues,
 }: {
   section: TrainingFormSection;
   allFields: readonly TrainingFormField[];
@@ -134,6 +141,11 @@ export default function ConfiguredCreateTrainingSection({
   errors: Record<string, string[]>;
   customValues: Record<string, unknown>;
   setCustomValues: (next: Record<string, unknown>) => void;
+  trainingCategories: readonly TrainingCategoryOption[];
+  categoriesLoading: boolean;
+  categoriesError: boolean;
+  retryCategories: () => void;
+  preserveLegacyCategoryValues: boolean;
 }) {
   const fields = [...section.fields]
     .filter((field) => !DELIVERY_FIELDS_REMOVED_FROM_TRAINING.includes(field.key))
@@ -170,15 +182,21 @@ export default function ConfiguredCreateTrainingSection({
       ) : null}
       <div className="grid gap-4 md:grid-cols-2">
         {fields.map((field) => (
-          <ConfiguredField
-            key={field.id}
-            field={field}
-            values={values}
-            update={update}
-            errors={errors}
-            customValues={customValues}
-            setCustomValues={setCustomValues}
-          />
+          <div key={field.id} data-training-field={field.key}>
+            <ConfiguredField
+              field={field}
+              values={values}
+              update={update}
+              errors={errors}
+              customValues={customValues}
+              setCustomValues={setCustomValues}
+              trainingCategories={trainingCategories}
+              categoriesLoading={categoriesLoading}
+              categoriesError={categoriesError}
+              retryCategories={retryCategories}
+              preserveLegacyCategoryValues={preserveLegacyCategoryValues}
+            />
+          </div>
         ))}
       </div>
     </section>
@@ -192,6 +210,11 @@ function ConfiguredField({
   errors,
   customValues,
   setCustomValues,
+  trainingCategories,
+  categoriesLoading,
+  categoriesError,
+  retryCategories,
+  preserveLegacyCategoryValues,
 }: {
   field: TrainingFormField;
   values: CreateTrainingFormValues;
@@ -199,11 +222,16 @@ function ConfiguredField({
   errors: Record<string, string[]>;
   customValues: Record<string, unknown>;
   setCustomValues: (next: Record<string, unknown>) => void;
+  trainingCategories: readonly TrainingCategoryOption[];
+  categoriesLoading: boolean;
+  categoriesError: boolean;
+  retryCategories: () => void;
+  preserveLegacyCategoryValues: boolean;
 }) {
   const key = field.key;
   const required = field.required ? " *" : "";
-  const error = errors[key]?.[0];
-  const coreField = CORE_FIELDS[key];
+  const error = errors[key]?.[0] ?? (field.apiKey ? errors[field.apiKey]?.[0] : undefined) ?? (field.stable_key ? errors[field.stable_key]?.[0] : undefined);
+  const coreField = CORE_FIELDS[key] ?? (field.apiKey ? CORE_FIELDS[field.apiKey] : undefined) ?? (field.stable_key ? CORE_FIELDS[field.stable_key] : undefined);
   const deliveryMode = values.delivery_mode;
   if (!isPricingFieldApplicable(field, values.pricing_type)) return null;
   // Core field - bind to values
@@ -216,6 +244,26 @@ function ConfiguredField({
       else if (coreField === "gallery_images") update("gallery_images", next.split(",").map((s) => s.trim()).filter(Boolean) as never);
       else update(coreField as keyof CreateTrainingFormValues, (isBoolean ? next === "true" : isNumber ? next : next) as never);
     };
+    if (coreField === "category" || coreField === "subcategory") {
+      return (
+        <TrainingTaxonomyField
+          field={coreField}
+          label={field.label}
+          value={value}
+          categoryValue={values.category}
+          categories={trainingCategories}
+          update={update}
+          required={field.required}
+          error={error}
+          categoriesLoading={categoriesLoading}
+          categoriesError={categoriesError}
+          onRetry={retryCategories}
+          preserveLegacyValue={preserveLegacyCategoryValues}
+          helpText={field.helpText}
+          includeOther
+        />
+      );
+    }
     const options = field.options ?? [];
     if (coreField === "pricing_type") {
       return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}<select value={value || "free"} onChange={(e) => setValue(e.target.value)} className={inputClass}><option value="free">Free</option><option value="paid">Paid</option></select>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
@@ -226,7 +274,7 @@ function ConfiguredField({
       const placeholder = field.placeholder ?? (coreField === "tags" ? "Type a tag and press Enter" : coreField === "badges" ? "Type badge and press Enter" : "Type objective and press Enter");
       return (
         <div className="block text-sm font-semibold text-[#06201c] md:col-span-2">
-          <label>{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</label>
+          <p>{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</p>
           <input defaultValue="" placeholder={placeholder} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); const v = (e.currentTarget as HTMLInputElement).value.trim(); if (v && !(arr as string[]).includes(v)) update(coreField as keyof CreateTrainingFormValues, [...(arr as string[]), v] as never); (e.currentTarget as HTMLInputElement).value = ""; } }} className={inputClass} />
           {(arr as string[]).length > 0 ? <div className="mt-2 flex flex-wrap gap-2">{(arr as string[]).map((item) => <span key={item} className="inline-flex items-center gap-1 rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{item}<button type="button" onClick={() => update(coreField as keyof CreateTrainingFormValues, (arr as string[]).filter((t) => t !== item) as never)}>×</button></span>)}</div> : null}
           {error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}
@@ -236,26 +284,19 @@ function ConfiguredField({
     if (coreField === "primary_image") {
       return (
         <div className="block text-sm font-semibold text-[#06201c] md:col-span-2">
-          <label htmlFor="configured-training-primary-image-url">{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</label>
-          <div className="flex flex-nowrap items-center gap-2">
-            <input
-              id="configured-training-primary-image-url"
-              type="url"
-              value={scalar(values.primary_image)}
-              onChange={(event) => update("primary_image", event.target.value)}
-              placeholder={field.placeholder ?? "https://…"}
-              className={`${inputClass} min-w-0 flex-1`}
-            />
-            <TrainingMediaUploadButton
-              fieldKey={field.key}
-              label="Upload image"
-              accept={field.frontendSettings?.upload?.allowed_mime_types?.join(",") ?? "image/*"}
-              purpose="image"
-              allowedMimeTypes={field.frontendSettings?.upload?.allowed_mime_types}
-              maxFileSizeMb={field.frontendSettings?.upload?.max_file_size_mb}
-              onUploaded={(file) => update("primary_image", file.url)}
-            />
-          </div>
+          <p>{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</p>
+          <TrainingMediaField
+            fieldKey={field.key}
+            label={field.label}
+            value={scalar(values.primary_image)}
+            kind="image"
+            accept={field.frontendSettings?.upload?.allowed_mime_types?.join(",") ?? "image/*"}
+            purpose="image"
+            allowedMimeTypes={field.frontendSettings?.upload?.allowed_mime_types}
+            maxFileSizeMb={field.frontendSettings?.upload?.max_file_size_mb}
+            placeholder={field.placeholder ?? "https://…"}
+            onChange={(url) => update("primary_image", url)}
+          />
           {error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}
         </div>
       );
@@ -263,26 +304,19 @@ function ConfiguredField({
     if (coreField === "promotional_video") {
       return (
         <div className="block text-sm font-semibold text-[#06201c] md:col-span-2">
-          <label htmlFor="configured-training-video-url">{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</label>
-          <div className="flex flex-nowrap items-center gap-2">
-            <input
-              id="configured-training-video-url"
-              type="url"
-              value={scalar(values.promotional_video)}
-              onChange={(event) => update("promotional_video", event.target.value)}
-              placeholder={field.placeholder ?? "https://…"}
-              className={`${inputClass} min-w-0 flex-1`}
-            />
-            <TrainingMediaUploadButton
-              fieldKey={field.key}
-              label="Upload video"
-              accept={field.frontendSettings?.upload?.allowed_mime_types?.join(",") ?? "video/*"}
-              purpose="lesson_video"
-              allowedMimeTypes={field.frontendSettings?.upload?.allowed_mime_types}
-              maxFileSizeMb={field.frontendSettings?.upload?.max_file_size_mb}
-              onUploaded={(file) => update("promotional_video", file.url)}
-            />
-          </div>
+          <label>{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</label>
+          <TrainingMediaField
+            fieldKey={field.key}
+            label={field.label}
+            value={scalar(values.promotional_video)}
+            kind="video"
+            accept={field.frontendSettings?.upload?.allowed_mime_types?.join(",") ?? "video/*"}
+            purpose="lesson_video"
+            allowedMimeTypes={field.frontendSettings?.upload?.allowed_mime_types}
+            maxFileSizeMb={field.frontendSettings?.upload?.max_file_size_mb}
+            placeholder={field.placeholder ?? "https://…"}
+            onChange={(url) => update("promotional_video", url)}
+          />
           {error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}
         </div>
       );
@@ -296,18 +330,22 @@ function ConfiguredField({
           <label>{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</label>
           <div className="mt-2 space-y-2">
             {displayedValues.map((val, idx) => (
-              <div key={idx} className="flex flex-nowrap items-center gap-2">
-                <input type="url" value={val} onChange={(e) => update(coreField as keyof CreateTrainingFormValues, displayedValues.map((current, i) => (i === idx ? e.target.value : current)) as never)} placeholder={field.placeholder ?? "https://…"} className={`${inputClass.replace("mt-1.5 ", "")} min-w-0 flex-1`} />
-                {arr.length > 0 ? <button type="button" onClick={() => update(coreField as keyof CreateTrainingFormValues, arr.filter((_, i) => i !== idx) as never)} className="shrink-0 rounded-xl px-3 text-sm font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button> : null}
-                <TrainingMediaUploadButton
-                  fieldKey={field.key}
-                  label="Upload image"
-                  accept={field.frontendSettings?.upload?.allowed_mime_types?.join(",") ?? "image/*"}
-                  purpose="image"
-                  allowedMimeTypes={field.frontendSettings?.upload?.allowed_mime_types}
-                  maxFileSizeMb={field.frontendSettings?.upload?.max_file_size_mb}
-                  onUploaded={(file) => update(coreField as keyof CreateTrainingFormValues, displayedValues.map((current, i) => (i === idx ? file.url : current)) as never)}
-                />
+              <div key={idx} className="flex flex-wrap items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <TrainingMediaField
+                    fieldKey={field.key}
+                    label={`${field.label} ${idx + 1}`}
+                    value={val}
+                    kind="image"
+                    accept={field.frontendSettings?.upload?.allowed_mime_types?.join(",") ?? "image/*"}
+                    purpose="image"
+                    allowedMimeTypes={field.frontendSettings?.upload?.allowed_mime_types}
+                    maxFileSizeMb={field.frontendSettings?.upload?.max_file_size_mb}
+                    placeholder={field.placeholder ?? "https://…"}
+                    onChange={(url) => update(coreField as keyof CreateTrainingFormValues, displayedValues.map((current, i) => (i === idx ? url : current)) as never)}
+                  />
+                </div>
+                {arr.length > 0 ? <button type="button" onClick={() => update(coreField as keyof CreateTrainingFormValues, arr.filter((_, i) => i !== idx) as never)} className="mt-2 shrink-0 rounded-xl px-3 py-2 text-sm font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button> : null}
               </div>
             ))}
           </div>
@@ -324,18 +362,22 @@ function ConfiguredField({
           <div className="mt-2 space-y-3">
             {displayedDocs.map((doc, idx) => (
               <div key={idx} className="rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-3">
-                <div className="flex flex-nowrap items-center gap-2">
-                  <input type="url" value={doc.url} onChange={(e) => update("documents", displayedDocs.map((d, i) => (i === idx ? { ...d, url: e.target.value } : d)) as never)} placeholder={field.placeholder ?? "https://…"} className={`${inputClass.replace("mt-1.5 ", "")} min-w-0 flex-1`} />
-                  {docs.length > 0 ? <button type="button" onClick={() => update("documents", docs.filter((_, i) => i !== idx) as never)} className="shrink-0 rounded-xl px-3 text-sm font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button> : null}
-                  <TrainingMediaUploadButton
-                    fieldKey={field.key}
-                    label="Upload document"
-                    accept={field.frontendSettings?.upload?.allowed_mime_types?.join(",") ?? ".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.rtf,application/pdf,text/plain"}
-                    purpose="lesson_document"
-                    allowedMimeTypes={field.frontendSettings?.upload?.allowed_mime_types}
-                    maxFileSizeMb={field.frontendSettings?.upload?.max_file_size_mb}
-                    onUploaded={(file) => update("documents", displayedDocs.map((current, item) => (item === idx ? { ...current, url: file.url } : current)) as never)}
-                  />
+                <div className="flex flex-wrap items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <TrainingMediaField
+                      fieldKey={field.key}
+                      label={`${field.label} ${idx + 1}`}
+                      value={doc.url}
+                      kind="document"
+                      accept={field.frontendSettings?.upload?.allowed_mime_types?.join(",") ?? ".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.rtf,application/pdf,text/plain"}
+                      purpose="lesson_document"
+                      allowedMimeTypes={field.frontendSettings?.upload?.allowed_mime_types}
+                      maxFileSizeMb={field.frontendSettings?.upload?.max_file_size_mb}
+                      placeholder={field.placeholder ?? "https://…"}
+                      onChange={(url) => update("documents", displayedDocs.map((current, item) => (item === idx ? { ...current, url } : current)) as never)}
+                    />
+                  </div>
+                  {docs.length > 0 ? <button type="button" onClick={() => update("documents", docs.filter((_, i) => i !== idx) as never)} className="mt-2 shrink-0 rounded-xl px-3 py-2 text-sm font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button> : null}
                 </div>
                 <div className="mt-2 flex gap-3">
                   <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]">Visibility<select value={doc.visibility} onChange={(e) => update("documents", displayedDocs.map((d, i) => (i === idx ? { ...d, visibility: e.target.value } : d)) as never)} className="ml-1 rounded-lg border border-[#d7e5df] bg-white px-2 py-1 text-xs"><option value="public">public</option><option value="private">private</option></select></label>
@@ -368,7 +410,16 @@ function ConfiguredField({
       const langOptions = isLang ? [...new Set(visibleOptions.map((opt) => LANGUAGE_NAMES[opt.toLowerCase()] ?? opt))] : visibleOptions;
       const selectValue = isDelivery && !value ? "self_paced" : isLang ? (LANGUAGE_NAMES[(value || "").toLowerCase()] ?? value) : value;
       const shownOptions = isLang ? langOptions : visibleOptions;
-      return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}<select value={selectValue} onChange={(e) => setValue(e.target.value)} className={inputClass}>{isDelivery ? null : <option value="">Select an option</option>}{shownOptions.map((opt) => <option key={opt} value={opt}>{isDelivery ? (DELIVERY_LABELS[opt] ?? opt) : opt}</option>)}</select>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
+      return (
+        <label className="block text-sm font-semibold text-[#06201c]">
+          {field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}
+          <select value={selectValue} onChange={(event) => { setValue(event.target.value); }} className={inputClass}>
+            {isDelivery ? null : <option value="">Select an option</option>}
+            {shownOptions.map((opt) => <option key={opt} value={opt}>{isDelivery ? (DELIVERY_LABELS[opt] ?? opt) : opt}</option>)}
+          </select>
+          {error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}
+        </label>
+      );
     }
     if (field.type === "textarea") {
       return <label className="block text-sm font-semibold text-[#06201c] md:col-span-2">{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}<textarea value={value} placeholder={field.placeholder} onChange={(e) => setValue(e.target.value)} className={`${inputClass} h-24 resize-y py-2`} />{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;

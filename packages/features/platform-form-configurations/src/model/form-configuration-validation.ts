@@ -13,7 +13,7 @@ export type PersistedAssignmentState = {
 /** A client-detectable publish issue tied to the configuration, a section, or a field. */
 export type FormConfigurationValidationIssue = {
   severity?: "error" | "warning";
-  code: "domain-required" | "missing-domain-required" | "invalid-renderer" | "invalid-composite-required-fields" | "missing-core-registry-entry" | "selective-tenant-required" | "selective-assignments-dirty" | "selective-assignments-loading" | "duplicate-core-key" | "invalid-delivery-bundle" | "subcategory-requires-category" | "paid-pricing-input-missing" | "invalid-training-visibility" | "invalid-training-upload-settings";
+  code: "domain-required" | "missing-domain-required" | "invalid-renderer" | "invalid-composite-required-fields" | "missing-core-registry-entry" | "selective-tenant-required" | "selective-assignments-dirty" | "selective-assignments-loading" | "duplicate-core-key" | "invalid-delivery-bundle" | "subcategory-requires-category" | "paid-pricing-input-missing" | "invalid-training-visibility" | "invalid-training-upload-settings" | "missing-section-name" | "missing-field-label" | "invalid-field-validation" | "invalid-field-options";
   message: string;
   sectionLocalId?: string;
   fieldLocalId?: string;
@@ -29,21 +29,70 @@ export function validateFormConfiguration(configuration: FormConfiguration, regi
   const deliveryIssues = configuration.type === "event" ? validateEventDeliveryBundle(configuration) : [];
   const eventIssues = configuration.type === "event" ? validateEventConfiguration(configuration) : [];
   const requiredFieldIssues = configuration.type === "event" ? registry.filter((item) => item.requiredByDomain && !configuration.fields.some((field) => field.enabled !== false && field.source === "core" && field.coreKey === item.key)).map((item) => ({ severity: "error" as const, code: "missing-domain-required" as const, message: `${item.displayName} is required by the Event domain. Add it from + Add field.`, sectionLocalId: configuration.sections[0]?.localId })) : [];
-  return [...scopeIssues, ...duplicateCoreKeyIssues, ...trainingSettingsIssues, ...deliveryIssues, ...eventIssues, ...requiredFieldIssues, ...configuration.fields.flatMap((field) => {
-    if (field.source !== "core") return validateCompositeRequiredFields(field);
+  const requiredSectionIssues = configuration.sections.flatMap((section) => section.enabled && !section.name.trim()
+    ? [{ code: "missing-section-name" as const, message: "Give every enabled section a name before saving or publishing.", sectionLocalId: section.localId }]
+    : []);
+  return [...scopeIssues, ...duplicateCoreKeyIssues, ...trainingSettingsIssues, ...deliveryIssues, ...eventIssues, ...requiredFieldIssues, ...requiredSectionIssues, ...configuration.fields.flatMap((field) => {
+    const runtimeSourced = field.source === "core" && Boolean(registry.find((item) => item.key === field.coreKey)?.valueSource || registry.find((item) => item.key === field.coreKey)?.sourceEndpoint);
+    const commonIssues = validateFieldSettings(field, runtimeSourced);
+    if (field.enabled && !field.label.trim()) commonIssues.push({ code: "missing-field-label", message: "Give every enabled field a label before saving or publishing.", sectionLocalId: field.sectionLocalId, fieldLocalId: field.localId });
+    if (field.source !== "core") return [...commonIssues, ...validateCompositeRequiredFields(field)];
     const definition = registry.find((item) => item.key === field.coreKey);
     // Training registry is still backfilling 23 keys (tags, learning_objectives, start_time etc.) — allow publish and let server validate instead of blocking UI with 23 "not available" issues. Event still enforces strictly.
     if (!definition) {
-      if (configuration.type === "training") return validateCompositeRequiredFields(field);
-      return [{ severity: "error" as const, code: "missing-core-registry-entry" as const, message: `${fieldName(field)} is not available in the authoritative field registry. Remove this field and add it again from + Add field after the registry loads.`, sectionLocalId: field.sectionLocalId, fieldLocalId: field.localId }];
+      if (configuration.type === "training") return [...commonIssues, ...validateCompositeRequiredFields(field)];
+      return [...commonIssues, { severity: "error" as const, code: "missing-core-registry-entry" as const, message: `${fieldName(field)} is not available in the authoritative field registry. Remove this field and add it again from + Add field after the registry loads.`, sectionLocalId: field.sectionLocalId, fieldLocalId: field.localId }];
     }
-    const issues: FormConfigurationValidationIssue[] = [];
+    const issues: FormConfigurationValidationIssue[] = [...commonIssues];
     if (definition.requiredByDomain && !field.required) issues.push({ severity: "error", code: "domain-required", message: `${fieldName(field)} is required by the Event domain. Open the field editor and enable Required.`, sectionLocalId: field.sectionLocalId, fieldLocalId: field.localId });
     if (!definition.allowedRenderers.includes(field.renderer)) {
         if (configuration.type !== "training") issues.push({ severity: "error", code: "invalid-renderer", message: `${fieldName(field)} uses renderer '${field.renderer}', which is not allowed by the field registry. Open the field editor and choose an allowed renderer.`, sectionLocalId: field.sectionLocalId, fieldLocalId: field.localId });
     }
     return [...issues, ...validateCompositeRequiredFields(field)];
   })];
+}
+
+function validateFieldSettings(field: ConfiguredField, runtimeSourced: boolean): FormConfigurationValidationIssue[] {
+  const issues: FormConfigurationValidationIssue[] = [];
+  const { min, max, minLength, maxLength, pattern } = field.validation;
+  const invalidLength = [minLength, maxLength].some((value) => value !== undefined && value !== null && (!Number.isInteger(value) || value < 0));
+  const invalidRange = minLength != null && maxLength != null && minLength > maxLength;
+  const invalidNumberRange = (min != null && !Number.isFinite(min)) || (max != null && !Number.isFinite(max)) || (min != null && max != null && min > max);
+  let invalidPattern = false;
+  try {
+    if (pattern) new RegExp(pattern);
+  } catch {
+    invalidPattern = true;
+  }
+  if (invalidLength || invalidRange || invalidNumberRange || invalidPattern) {
+    const problem = invalidPattern
+      ? "format rule is invalid"
+      : invalidRange
+        ? "minimum length exceeds maximum length"
+        : invalidNumberRange
+          ? "minimum value exceeds maximum value or contains an invalid number"
+          : "length limits must be whole numbers of zero or greater";
+    issues.push({
+      code: "invalid-field-validation",
+      message: `${fieldName(field)} has invalid validation settings: ${problem}. Correct them before saving or publishing.`,
+      sectionLocalId: field.sectionLocalId,
+      fieldLocalId: field.localId,
+    });
+  }
+  if (!runtimeSourced && (field.renderer === "select" || field.renderer === "multi_select")) {
+    const invalidOptions = field.enabled && (field.options.length === 0
+      || field.options.some((option) => !option.label.trim() || !option.value.trim())
+      || new Set(field.options.map((option) => option.value)).size !== field.options.length);
+    if (invalidOptions) {
+      issues.push({
+        code: "invalid-field-options",
+        message: `${fieldName(field)} needs at least one option with a label and unique value.`,
+        sectionLocalId: field.sectionLocalId,
+        fieldLocalId: field.localId,
+      });
+    }
+  }
+  return issues;
 }
 
 function validateTrainingFrontendSettings(fields: readonly ConfiguredField[]): FormConfigurationValidationIssue[] {

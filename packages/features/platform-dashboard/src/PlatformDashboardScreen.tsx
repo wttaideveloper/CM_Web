@@ -74,7 +74,7 @@ function ActivityIcon({ kind }: { kind: "package" | "video" | "building" | "tren
 
 export default function PlatformDashboardScreen({
   newEnterpriseHref = "/enterprises/create",
-  approvalQueueHref = "/admin/enterprise",
+  approvalQueueHref = "/approval-queue",
   enterprisesLoader = getEnterprises,
   profileLoader,
   pendingApplicationsLoader,
@@ -87,16 +87,15 @@ export default function PlatformDashboardScreen({
       const [enterpriseData, productData, applications, profile] = await Promise.all([enterprisesLoader(), getProducts(), pendingApplicationsLoader?.() ?? Promise.resolve([]), profileLoader?.() ?? Promise.resolve(null)]);
       setKpis({ enterprises: enterpriseData.length, products: productData.length, pendingApplications: applications, profile, loading: false });
     } catch {
-      setKpis((current) => ({ ...current, enterprises: null, products: null, pendingApplications: null, loading: false }));
+      setKpis((current) => ({ ...current, loading: false }));
     }
   }
 
   useEffect(() => { void loadDashboardCounts(); }, [enterprisesLoader]);
 
   const displayName = kpis.profile?.fullName?.trim() || kpis.profile?.name?.trim() || kpis.profile?.username?.trim();
-  const today = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(new Date()).toUpperCase();
   const stats = [
-    { label: "Total Enterprises", value: kpis.loading ? "Loading" : kpis.enterprises === null ? "Unavailable" : String(kpis.enterprises), change: "" },
+    { label: "Total Enterprises", value: kpis.enterprises === null ? kpis.loading ? "Loading" : "Unavailable" : String(kpis.enterprises), change: "" },
     { label: "Platform Revenue", value: "$0", subtitle: "Platform Revenue", change: "" },
     { label: "Active Users", value: "Unavailable", subtitle: "Active Users", change: "" },
     { label: "Pending Approvals", value: kpis.loading ? "Loading" : kpis.pendingApplications === null ? "Unavailable" : String(kpis.pendingApplications.length), subtitle: "Needs your attention", change: "" },
@@ -105,7 +104,7 @@ export default function PlatformDashboardScreen({
   return (
     <div className="w-full min-w-0 overflow-x-hidden">
       <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div><p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">OVERVIEW &middot; {today}</p><h2 className="mt-1 text-2xl font-bold text-[#06201c]">Good morning{displayName ? `, ${displayName}` : ""} &#128075;</h2></div>
+        <div><h2 className="text-2xl font-bold text-[#06201c]">Good morning{displayName ? `, ${displayName}` : ""} &#128075;</h2></div>
         <div className="flex items-center gap-3"><button onClick={() => void loadDashboardCounts()} className="rounded-full border border-[#d7e5df] px-4 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#f5faf7]">Refresh</button><Link href={newEnterpriseHref} className="rounded-full bg-[#1f6a58] px-5 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#195646]">+ New Enterprise</Link></div>
       </div>
       <div className="grid w-full min-w-0 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">

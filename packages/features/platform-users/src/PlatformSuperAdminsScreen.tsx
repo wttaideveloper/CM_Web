@@ -115,7 +115,7 @@ function SuperAdminsContent() {
       </div>
       <section className="mt-5 overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-sm">
         <div className="flex items-center gap-2 border-b border-[#edf3f0] px-5 py-4">
-          <span className="text-base font-bold text-[#06201c]">{superAdminsQuery.isSuccess ? superAdminsQuery.data.total : "—"}</span>
+          {superAdminsQuery.isSuccess ? <span className="text-base font-bold text-[#06201c]">{superAdminsQuery.data.total}</span> : null}
           <h3 className="text-base font-bold text-[#06201c]">{t("superAdmins.countLabel")}</h3>
         </div>
         {superAdminsQuery.isLoading ? <div className="px-5 py-16 text-center"><p className="font-bold text-[#06201c]">{t("superAdmins.loading")}</p></div> : null}

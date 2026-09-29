@@ -106,6 +106,7 @@ export type AuthContextValue = {
   userId: string | null;
   authenticated: boolean;
   isLoading: boolean;
+  hasSessionError: boolean;
   authReady: boolean;
   membership: AuthMembership | null;
   roles: AuthRoles | null;

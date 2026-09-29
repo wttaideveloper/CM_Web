@@ -12,7 +12,9 @@ import {
   getSafeEnterpriseAdminReturnUrl,
   getPlatformAdminAppOrigin,
   getSafePlatformAdminReturnUrl,
+  getSafeShellReturnPath,
   loginSuperAdmin,
+  SuperAdminAuthError,
   startLogin,
   useAuth,
 } from "@ihp/auth";
@@ -26,7 +28,8 @@ function LoginPageContent() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [superAdminEmail, setSuperAdminEmail] = useState("");
   const [superAdminPassword, setSuperAdminPassword] = useState("");
-  const [superAdminRememberMe, setSuperAdminRememberMe] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [superAdminResetOpen, setSuperAdminResetOpen] = useState(false);
   const enterpriseAdminReturnUrl = getSafeEnterpriseAdminReturnUrl(
     searchParams.get("return_to"),
@@ -34,6 +37,7 @@ function LoginPageContent() {
   const platformAdminReturnUrl = getSafePlatformAdminReturnUrl(
     searchParams.get("return_to"),
   );
+  const shellReturnPath = getSafeShellReturnPath(searchParams.get("return_to"));
   const crossAppReturnUrl = enterpriseAdminReturnUrl ?? platformAdminReturnUrl;
   const isSuperAdmin = loginType === "super-admin";
 
@@ -47,13 +51,18 @@ function LoginPageContent() {
       return;
     }
 
+    if (shellReturnPath) {
+      window.location.replace(shellReturnPath);
+      return;
+    }
+
     const enterpriseAdminOrigin = getEnterpriseAdminAppOrigin();
     if (enterpriseAdminOrigin) {
       window.location.replace(
         new URL("/admin/dashboard", enterpriseAdminOrigin).toString(),
       );
     }
-  }, [authenticated, crossAppReturnUrl, isLoading, isSuperAdmin]);
+  }, [authenticated, crossAppReturnUrl, isLoading, isSuperAdmin, shellReturnPath]);
 
   const subtitle = isSuperAdmin
     ? "Sign in to the Super Admin portal"
@@ -88,17 +97,34 @@ function LoginPageContent() {
         if (!email || !password) {
           throw new Error("Enter your Super Admin email and password.");
         }
+        if (email.length > 500) {
+          throw new Error("Email must be 500 characters or fewer.");
+        }
+        if (password.length > 500) {
+          throw new Error("Password must be 500 characters or fewer.");
+        }
         setSuperAdminEmail(email);
         setSuperAdminPassword(password);
-        await loginSuperAdmin({ email, password, rememberMe: superAdminRememberMe });
+        await loginSuperAdmin({ email, password, rememberMe });
         window.location.assign(platformAdminReturnUrl ?? new URL("/dashboard", platformAdminOrigin).toString());
         return;
       }
 
       const callbackPath = buildAuthCallbackPath(searchParams.get("return_to"));
-      startLogin(callbackPath === "/auth/validate" ? undefined : { callbackPath });
+      startLogin({
+        ...(callbackPath === "/auth/validate" ? {} : { callbackPath }),
+        rememberMe,
+      });
     } catch (error) {
-      setLoginError(error instanceof Error ? error.message : "Unable to start secure login.");
+      setLoginError(
+        error instanceof SuperAdminAuthError && error.kind === "transport"
+          ? t("superAdminLogin.networkError")
+          : error instanceof SuperAdminAuthError && error.kind === "login"
+            ? "Email or password is incorrect."
+            : error instanceof Error
+              ? error.message
+              : "Unable to start secure login.",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -285,25 +311,28 @@ function LoginPageContent() {
             {!superAdminResetOpen ? <form onSubmit={handleSubmit} className="mt-6 space-y-3.5">
               {isSuperAdmin ? <>
                 <label className="block text-[13px] font-semibold text-[#35544b]">Email<input required name="email" type="email" autoComplete="email" value={superAdminEmail} onChange={(event) => setSuperAdminEmail(event.target.value)} className="mt-1.5 h-10 w-full rounded-[13px] border border-[#c9ddd7] px-3 text-[14px]" /></label>
-                <label className="block text-[13px] font-semibold text-[#35544b]">Password<input required name="password" type="password" autoComplete="current-password" value={superAdminPassword} onChange={(event) => setSuperAdminPassword(event.target.value)} className="mt-1.5 h-10 w-full rounded-[13px] border border-[#c9ddd7] px-3 text-[14px]" /></label>
-                <label className="flex items-center gap-2 text-[13px] text-[#55746b]"><input type="checkbox" checked={superAdminRememberMe} onChange={(event) => setSuperAdminRememberMe(event.target.checked)} />Remember me</label>
-                <button type="button" onClick={() => { setLoginError(null); setSuperAdminResetOpen(true); }} className="text-left text-[13px] font-semibold text-[#0b5b4e] underline">{t("superAdminReset.forgotPassword")}</button>
+                <label className="block text-[13px] font-semibold text-[#35544b]">Password<span className="relative mt-1.5 block"><input required name="password" type={showPassword ? "text" : "password"} autoComplete="current-password" value={superAdminPassword} onChange={(event) => setSuperAdminPassword(event.target.value)} className="h-10 w-full rounded-[13px] border border-[#c9ddd7] px-3 pr-12 text-[14px] focus:border-[#1f6a58] focus:outline-none focus:ring-4 focus:ring-[#226b58]/10" /><button type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} className="absolute inset-y-0 right-0 rounded-r-[13px] px-3 text-[12px] font-semibold text-[#52736a] transition hover:text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58]">{showPassword ? "Hide" : "Show"}</button></span></label>
+                <button type="button" onClick={() => { setLoginError(null); setSuperAdminResetOpen(true); }} className="text-left text-[13px] font-semibold text-[#0b5b4e] underline transition hover:text-[#083f35] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58]">{t("superAdminReset.forgotPassword")}</button>
               </> : (
                 <p className="rounded-[13px] border border-[#c9ddd7] bg-[#f1f7f4] px-4 py-3 text-[13px] leading-5 text-[#55746b]">
                   Continue to the secure Invigorate Health sign-in page.
                 </p>
               )}
+              <label className="flex items-center gap-2 text-[13px] text-[#55746b]">
+                <input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} />
+                Remember me
+              </label>
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className="h-10 w-full rounded-[13px] bg-[#1f6a58] text-[14px] font-bold text-white shadow-[0_3px_6px_rgba(0,0,0,0.14)] transition hover:bg-[#185746] focus:outline-none focus:ring-4 focus:ring-[#226b58]/20"
+                className="h-10 w-full rounded-[13px] bg-[#1f6a58] text-[14px] font-bold text-white shadow-[0_3px_6px_rgba(0,0,0,0.14)] transition hover:bg-[#185746] focus:outline-none focus:ring-4 focus:ring-[#226b58]/20 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isSubmitting ? "Signing in..." : buttonLabel}
               </button>
             </form> : null}
 
             {!superAdminResetOpen && loginError ? (
-              <p className="mt-3 text-sm font-medium text-[#b42318]">{loginError}</p>
+              <p role="alert" className="mt-3 text-sm font-medium text-[#b42318]">{loginError}</p>
             ) : null}
 
             {!superAdminResetOpen ? <div className="mt-5">

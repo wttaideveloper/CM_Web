@@ -54,7 +54,7 @@ export interface TrainingListItem {
   address?: string | null;
   meeting_link?: string | null;
   delivery_instructions?: string | null;
-  learning_objectives?: string[] | null;
+  learning_objectives?: string | string[] | null;
   documents?: unknown[] | null;
   requirements?: string | null;
   sections: unknown[] | null;

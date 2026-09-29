@@ -13,13 +13,10 @@ type OpenMenu = "notifications" | "settings" | "profile" | null;
 type SettingsMenuItem = { key: string; href?: string };
 
 const settingsItems: readonly SettingsMenuItem[] = [
-  { key: "settingsMenu.accountSettings" },
-  { key: "settingsMenu.platformPreferences" },
+  { key: "settingsMenu.accountSettings", href: "/account-settings" },
   { key: "settingsMenu.superAdmins", href: "/super-admins" },
-  { key: "settingsMenu.billingSettings" },
-  { key: "settingsMenu.integrations" },
+  { key: "settingsMenu.integrations", href: "/integrations" },
 ];
-const profileItems = ["View Profile", "My Enterprise", "Help Center"] as const;
 
 function BellIcon() {
   return <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /><path d="M13.7 21a2 2 0 0 1-3.4 0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>;
@@ -109,15 +106,8 @@ export function PlatformAdminHeader({
               <BellIcon />
             </button>
             <div className={`fixed left-3 right-3 top-[76px] z-50 max-h-[70vh] w-auto max-w-none origin-top overflow-y-auto rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 sm:absolute sm:left-auto sm:right-0 sm:top-12 sm:w-[360px] sm:max-w-sm sm:origin-top-right sm:p-3 ${openMenu === "notifications" ? "pointer-events-auto scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"}`}>
-              <div className="flex items-center justify-between border-b border-[#edf3f0] px-2 pb-3">
-                <div>
-                  <p className="text-sm font-bold text-[#06201c]">Notifications</p>
-                  <p className="text-xs font-semibold text-[#7f9d94]">0 unread</p>
-                </div>
-                <span className="rounded-full bg-[#e8f6ee] px-2.5 py-1 text-[11px] font-bold text-[#16825b]">0 unread</span>
-              </div>
-              <div className="space-y-1 py-2">
-                <div className="rounded-xl px-3 py-4 text-sm text-[#52736a]">No notifications yet.</div>
+              <div className="border-b border-[#edf3f0] px-2 pb-3">
+                <p className="text-sm font-bold text-[#06201c]">Notifications</p>
               </div>
               <Link href={notificationsHref} onClick={closeMenu} className="mt-1 flex items-center justify-between rounded-xl bg-[#f7fbf9] px-3 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#eef7f2]">
                 <span>View all notifications</span>
@@ -136,7 +126,7 @@ export function PlatformAdminHeader({
             <button type="button" onClick={() => toggleMenu("settings")} className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4]" aria-label="Settings" aria-expanded={openMenu === "settings"}>
               <SettingsIcon />
             </button>
-            <div className={`absolute right-0 top-[calc(100%+10px)] w-64 origin-top-right rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 ${openMenu === "settings" ? "pointer-events-auto scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"}`}>
+            <div className={`absolute right-0 top-[calc(100%+10px)] z-50 w-64 origin-top-right rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 ${openMenu === "settings" ? "pointer-events-auto scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"}`}>
               {settingsItems.map((item) => (
                 item.href ? (
                   <Link key={item.key} href={item.href} onClick={closeMenu} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]">
@@ -157,21 +147,14 @@ export function PlatformAdminHeader({
             <button type="button" onClick={() => toggleMenu("profile")} className="flex h-9 w-9 items-center justify-center rounded-full bg-[#e8f6ee] font-bold text-[#1f6a58] hover:bg-[#def0e7]" aria-label="Profile" aria-expanded={openMenu === "profile"}>
               {profileInitials}
             </button>
-            <div className={`absolute right-0 top-[calc(100%+10px)] w-60 origin-top-right rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 ${openMenu === "profile" ? "pointer-events-auto scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"}`}>
+            <div className={`absolute right-0 top-[calc(100%+10px)] z-50 w-60 origin-top-right rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 ${openMenu === "profile" ? "pointer-events-auto scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"}`}>
               {profileName || profileEmail ? <div className="border-b border-[#edf3f0] px-3 pb-2 pt-1"><p className="truncate text-sm font-bold text-[#06201c]">{profileName || "Profile"}</p>{profileEmail ? <p className="truncate text-xs text-[#52736a]">{profileEmail}</p> : null}</div> : null}
-              {profileItems.map((item) => (
-                item === "View Profile" && profileHref ? (
-                  <Link key={item} href={profileHref} onClick={closeMenu} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]">
-                    <span>{item}</span>
-                    <ChevronRightIcon />
-                  </Link>
-                ) : (
-                  <button key={item} type="button" onClick={closeMenu} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]">
-                    <span>{item}</span>
-                    <ChevronRightIcon />
-                  </button>
-                )
-              ))}
+              {profileHref ? (
+                <Link href={profileHref} onClick={closeMenu} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]">
+                  <span>View Profile</span>
+                  <ChevronRightIcon />
+                </Link>
+              ) : null}
               <button type="button" onClick={() => { closeMenu(); void onLogout?.(); }} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]">
                 <span>Logout</span>
                 <ChevronRightIcon />

@@ -56,7 +56,7 @@ function formatEventDate(value: string): string {
     return "—";
   }
 
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value));
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
 function formatSeatAvailability(event: Event): string {
@@ -65,6 +65,14 @@ function formatSeatAvailability(event: Event): string {
     return `${event.available_seats} ${event.available_seats === 1 ? "seat" : "seats"} left`;
   }
   return "—";
+}
+
+function getEventCapacityProgress(event: Event): { capacity: number; registered: number; percent: number } | null {
+  const capacity = Number.parseInt(event.capacity, 10);
+  if (!Number.isFinite(capacity) || capacity <= 0 || typeof event.available_seats !== "number" || !Number.isFinite(event.available_seats)) return null;
+  const remaining = Math.max(0, Math.min(capacity, event.available_seats));
+  const registered = capacity - remaining;
+  return { capacity, registered, percent: Math.round((registered / capacity) * 100) };
 }
 
 function formatCardLocation(event: Event): string {
@@ -104,14 +112,15 @@ function EventCard({ event, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess
   const primaryTextClass = hasPrimaryImage ? "text-white" : "text-[#06201c]";
   const secondaryTextClass = hasPrimaryImage ? "text-white/85" : "text-[#52736a]";
   const dividerClass = hasPrimaryImage ? "border-white/25" : "border-[#edf3f0]";
+  const capacityProgress = getEventCapacityProgress(event);
   const interactionClass = hasPrimaryImage
     ? "hover:-translate-y-0.5 hover:border-[#4f9f76] hover:shadow-lg focus-within:border-[#1f6a58] focus-within:ring-2 focus-within:ring-[#1f6a58]/20"
     : "hover:-translate-y-0.5 hover:border-[#4f9f76] hover:bg-[#edf8f1] hover:shadow-lg focus-within:border-[#1f6a58] focus-within:bg-[#f4faf7] focus-within:ring-2 focus-within:ring-[#1f6a58]/20";
 
   return (
-    <article className={`group relative rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-200 ${interactionClass}`}>
+    <article className={`group relative flex h-full flex-col rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-200 ${interactionClass}`}>
       {hasPrimaryImage ? <div aria-hidden="true" className="absolute inset-0 overflow-hidden rounded-[inherit] bg-cover bg-center" style={{ backgroundImage: `url(${JSON.stringify(primaryImage)})` }}><div className="absolute inset-0 bg-gradient-to-br from-[#06201c]/60 via-[#0c382e]/48 to-[#1f6a58]/38" /></div> : null}
-      <div className="relative z-10">
+      <div className="relative z-10 flex flex-1 flex-col">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className={`text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>
@@ -124,26 +133,37 @@ function EventCard({ event, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess
 
       <p className={`mt-2 line-clamp-2 min-h-10 text-sm leading-5 ${secondaryTextClass}`}>{event.description || "—"}</p>
 
-      <div className={`mt-3 grid grid-cols-1 gap-x-6 gap-y-4 border-t pt-3 text-sm sm:grid-cols-2 xl:grid-cols-4 ${dividerClass}`}>
+      <div className={`mt-auto grid grid-cols-1 gap-x-6 gap-y-4 border-t pt-3 text-sm sm:grid-cols-2 xl:grid-cols-4 ${dividerClass}`}>
         <div className="min-w-0">
           <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Date</p>
-          <p className={`mt-1 font-semibold ${primaryTextClass}`}>{formatEventDate(event.start_date)}</p>
+          <p className={`mt-1 min-h-10 break-words font-medium leading-5 ${primaryTextClass}`}>{formatEventDate(event.start_date)}</p>
         </div>
         <div className="min-w-0">
           <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Location / Delivery</p>
-          <p className={`mt-1 font-semibold ${primaryTextClass}`}>{formatCardLocation(event)}</p>
+          <p className={`mt-1 min-h-10 break-words font-medium leading-5 ${primaryTextClass}`}>{formatCardLocation(event)}</p>
         </div>
         <div className="min-w-0">
           <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Registrations</p>
-          <p className={`mt-1 font-semibold ${primaryTextClass}`}>—</p>
+          <p className={`mt-1 min-h-10 break-words font-medium leading-5 ${primaryTextClass}`}>{capacityProgress ? capacityProgress.registered : "—"}</p>
         </div>
         <div className="min-w-0">
           <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Availability</p>
-          <p className={`mt-1 font-semibold ${primaryTextClass}`}>{formatSeatAvailability(event)}</p>
+          <p className={`mt-1 min-h-10 break-words font-medium leading-5 ${primaryTextClass}`}>{formatSeatAvailability(event)}</p>
         </div>
       </div>
+      {capacityProgress && capacityProgress.percent > 0 ? (
+        <div className="mt-3" aria-label={`${capacityProgress.registered} of ${capacityProgress.capacity} places filled`}>
+          <div className="mb-1 flex items-center justify-between text-xs">
+            <span className={secondaryTextClass}>Capacity used</span>
+            <span className={`font-bold ${primaryTextClass}`}>{capacityProgress.percent}%</span>
+          </div>
+          <div role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={capacityProgress.percent} aria-label="Event capacity used" className={`h-2 overflow-hidden rounded-full ${hasPrimaryImage ? "bg-white/30" : "bg-[#e8f6ee]"}`}>
+            <div className="h-full rounded-full bg-[#1f6a58]" style={{ width: `${capacityProgress.percent}%` }} />
+          </div>
+        </div>
+      ) : null}
 
-      <Link href={`/admin/events/${event.id}`} className={`mt-3 block border-t pt-3 text-sm font-semibold outline-none transition-colors hover:underline focus-visible:rounded focus-visible:ring-2 focus-visible:ring-offset-2 ${hasPrimaryImage ? "border-white/25 text-white hover:text-white focus-visible:ring-white focus-visible:ring-offset-[#1f6a58]" : "border-[#edf3f0] text-[#1f6a58] hover:text-[#195646] focus-visible:ring-[#1f6a58]"}`}>
+      <Link href={`/admin/events/${event.id}`} className={`mt-auto flex min-h-11 items-center border-t pt-3 text-sm font-semibold outline-none transition-colors hover:underline focus-visible:rounded focus-visible:ring-2 focus-visible:ring-offset-2 ${hasPrimaryImage ? "border-white/25 text-white hover:text-white focus-visible:ring-white focus-visible:ring-offset-[#1f6a58]" : "border-[#edf3f0] text-[#1f6a58] hover:text-[#195646] focus-visible:ring-[#1f6a58]"}`}>
         View event details
       </Link>
       </div>
@@ -197,6 +217,12 @@ export default function EnterpriseEventsScreen() {
   const showStatusFeedback = () => setStatusFeedback("Event status updated.");
   const showDuplicateFeedback = () => setStatusFeedback("Event duplicated.");
   const showDeleteFeedback = () => setStatusFeedback("Event deleted.");
+
+  useEffect(() => {
+    if (!statusFeedback) return;
+    const timeoutId = window.setTimeout(() => setStatusFeedback(null), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [statusFeedback]);
 
   return (
     <div className="w-full">

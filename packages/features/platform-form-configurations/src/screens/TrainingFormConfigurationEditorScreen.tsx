@@ -78,7 +78,7 @@ export function TrainingFormConfigurationEditorScreen({ id, mode }: { id?: strin
         throw new Error(`Configuration was created, but tenant assignments could not be saved. ${message}`);
       }
     }
-    router.push("/training-form-configurations");
+    router.replace(`/training-form-configurations/${saved.id}/edit`);
     return toBuilderTrainingFormConfiguration(saved, saved.draft_version);
   };
   const publishConfiguration = async (builder: FormConfiguration): Promise<FormConfiguration> => {
@@ -100,6 +100,7 @@ export function TrainingFormConfigurationEditorScreen({ id, mode }: { id?: strin
   const runLifecycle = async (action: "activate" | "deactivate" | "retire" | "delete") => {
     if (!id) return;
     if (action === "delete" && !window.confirm("Delete configuration?\n\nThis permanently deletes this draft configuration. This action cannot be undone.")) return;
+    if (action === "retire" && !window.confirm("Retire this configuration?\n\nIt will no longer be available for new Trainings, but existing Training records will retain their configuration.")) return;
     setLifecycleError("");
     try {
       if (action === "activate") await activate.mutateAsync(id);

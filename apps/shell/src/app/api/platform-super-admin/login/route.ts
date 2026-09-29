@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
 const SESSION_COOKIE_NAME = "ihp_super_admin_refresh";
+const REMEMBER_ME_COOKIE_NAME = "ihp_super_admin_remember_me";
+const REMEMBER_ME_MAX_AGE = 60 * 60 * 24 * 30;
 const SUPER_ADMIN_AUTH_API_BASE_URL = process.env.SUPER_ADMIN_AUTH_API_BASE_URL;
 
 type SuperAdminIdentity = {
@@ -50,7 +52,7 @@ function getCookieDomain(): string | undefined {
   return configuredDomain;
 }
 
-function sessionCookieOptions() {
+function sessionCookieOptions(rememberMe: boolean) {
   const domain = getCookieDomain();
 
   return {
@@ -58,6 +60,7 @@ function sessionCookieOptions() {
     path: "/",
     sameSite: "strict" as const,
     secure: process.env.NODE_ENV === "production",
+    ...(rememberMe ? { maxAge: REMEMBER_ME_MAX_AGE } : {}),
     ...(domain ? { domain } : {}),
   };
 }
@@ -126,6 +129,12 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   const response = NextResponse.json({ data: verificationBody.data }, { headers: { "Cache-Control": "no-store" } });
-  response.cookies.set(SESSION_COOKIE_NAME, loginBody.tokens.refreshToken, sessionCookieOptions());
+  const rememberMe = payload.rememberMe === true;
+  response.cookies.set(SESSION_COOKIE_NAME, loginBody.tokens.refreshToken, sessionCookieOptions(rememberMe));
+  if (rememberMe) {
+    response.cookies.set(REMEMBER_ME_COOKIE_NAME, "true", sessionCookieOptions(true));
+  } else {
+    response.cookies.set(REMEMBER_ME_COOKIE_NAME, "", { ...sessionCookieOptions(false), maxAge: 0 });
+  }
   return response;
 }

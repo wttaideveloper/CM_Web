@@ -1,8 +1,31 @@
-const platformAdminSafeReturnPaths = new Set([
+const platformAdminSafeReturnPrefixes = [
   "/",
+  "/profile",
+  "/account-settings",
   "/form-builder-new",
   "/workflow-builder-new",
-]);
+  "/dashboard",
+  "/approval-queue",
+  "/tenant-applications",
+  "/onboarding-forms",
+  "/form-configurations",
+  "/training-forms",
+  "/training-form-configurations",
+  "/enterprise-types",
+  "/categories",
+  "/sub-admins",
+  "/attributes",
+  "/products",
+  "/services",
+  "/enterprises",
+  "/users",
+  "/super-admins",
+  "/events",
+  "/trainings",
+  "/integrations",
+] as const;
+
+const shellSafeReturnPrefixes = ["/admin", "/trainings", "/training-forms"] as const;
 
 function normalizeOrigin(value: string | undefined) {
   if (!value?.trim()) {
@@ -70,6 +93,33 @@ export function getSafeEnterpriseAdminReturnUrl(value: string | null | undefined
   }
 }
 
+/** Returns a same-origin Shell route allowed after authentication, without query data. */
+export function getSafeShellReturnPath(value: string | null | undefined) {
+  if (!value?.trim()) {
+    return null;
+  }
+
+  try {
+    const shellOrigin = getShellAppOrigin();
+    const url = new URL(value, shellOrigin ?? "https://invalid.local");
+    if (
+      !shellOrigin ||
+      url.origin !== shellOrigin ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      !shellSafeReturnPrefixes.some((prefix) => url.pathname === prefix || url.pathname.startsWith(`${prefix}/`))
+    ) {
+      return null;
+    }
+
+    return url.pathname;
+  } catch {
+    return null;
+  }
+}
+
 export function getSafePlatformAdminReturnUrl(value: string | null | undefined) {
   const platformAdminOrigin = getPlatformAdminAppOrigin();
   if (!platformAdminOrigin || !value?.trim()) {
@@ -82,7 +132,9 @@ export function getSafePlatformAdminReturnUrl(value: string | null | undefined) 
       url.origin !== platformAdminOrigin ||
       url.username ||
       url.password ||
-      !platformAdminSafeReturnPaths.has(url.pathname)
+      url.search ||
+      url.hash ||
+      !platformAdminSafeReturnPrefixes.some((prefix) => url.pathname === prefix || url.pathname.startsWith(`${prefix}/`))
     ) {
       return null;
     }
@@ -119,10 +171,16 @@ export function buildShellLoginUrlForPlatform(returnUrl: string) {
 
 export function buildAuthCallbackPath(returnUrl: string | null | undefined) {
   const safeReturnUrl =
-    getSafeEnterpriseAdminReturnUrl(returnUrl) ?? getSafePlatformAdminReturnUrl(returnUrl);
+    getSafeEnterpriseAdminReturnUrl(returnUrl) ??
+    getSafePlatformAdminReturnUrl(returnUrl) ??
+    getSafeShellReturnPath(returnUrl);
   if (!safeReturnUrl) {
     return "/auth/validate";
   }
 
-  return `/auth/validate?return_to=${encodeURIComponent(safeReturnUrl)}`;
+  const serializedReturnUrl = safeReturnUrl.startsWith("/")
+    ? new URL(safeReturnUrl, getShellAppOrigin() ?? "https://invalid.local").toString()
+    : safeReturnUrl;
+
+  return `/auth/validate?return_to=${encodeURIComponent(serializedReturnUrl)}`;
 }

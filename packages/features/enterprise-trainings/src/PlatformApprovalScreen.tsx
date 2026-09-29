@@ -11,7 +11,7 @@ import {
   requestChangesTraining,
   TrainingsApiError,
 } from "./trainings.service";
-import { formatTrainingDate, humanizeLabel } from "./detail-formatters";
+import { formatTrainingDateTime, humanizeLabel } from "./detail-formatters";
 import { getTrainingStatusBadgeClass, getTrainingStatusLabel, type TrainingStatus } from "./training-status";
 
 /** Platform Admin approval calls go through the bearer-token BFF (Super Admin session),
@@ -120,6 +120,7 @@ function AdminDetail({ trainingId, onBack }: { trainingId: string; onBack: () =>
   const currency = typeof training.currency === "string" ? training.currency : "USD";
   const capacity = typeof training.capacity === "number" ? training.capacity : null;
   const createdAt = typeof training.created_at === "string" ? training.created_at : null;
+  const updatedAt = typeof training.updated_at === "string" ? training.updated_at : null;
   const sections = Array.isArray(training.sections) ? training.sections : [];
   const moderationHistory = Array.isArray(moderationQuery.data) ? moderationQuery.data : [];
 
@@ -195,7 +196,11 @@ function AdminDetail({ trainingId, onBack }: { trainingId: string; onBack: () =>
           </div>
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Created</p>
-            <p className="mt-1 text-sm font-semibold text-[#06201c]">{formatTrainingDate(createdAt)}</p>
+            <p className="mt-1 text-sm font-semibold text-[#06201c]">{formatTrainingDateTime(createdAt)}</p>
+          </div>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Updated</p>
+            <p className="mt-1 text-sm font-semibold text-[#06201c]">{formatTrainingDateTime(updatedAt)}</p>
           </div>
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Sections</p>
@@ -248,7 +253,7 @@ function AdminDetail({ trainingId, onBack }: { trainingId: string; onBack: () =>
                     <div className="flex items-center gap-2">
                       <span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-[10px] font-bold text-[#2563eb]">{humanizeLabel(action)}</span>
                       {performedBy ? <span className="text-xs text-[#7f9d94]">by {performedBy}</span> : null}
-                      {performedAt ? <span className="text-xs text-[#7f9d94]">{formatTrainingDate(performedAt)}</span> : null}
+                      {performedAt ? <span className="text-xs text-[#7f9d94]">{formatTrainingDateTime(performedAt)}</span> : null}
                     </div>
                     {note ? <p className="mt-1 text-sm text-[#52736a]">{note}</p> : null}
                   </li>
@@ -310,6 +315,7 @@ export function PlatformApprovalScreen() {
           const status = typeof training.status === "string" ? training.status : "pending";
           const category = typeof training.category === "string" ? training.category : "";
           const createdAt = typeof training.created_at === "string" ? training.created_at : null;
+          const updatedAt = typeof training.updated_at === "string" ? training.updated_at : null;
           const enterpriseName = typeof training.enterprise_name === "string" ? training.enterprise_name : typeof training.enterprise === "string" ? training.enterprise : null;
           return (
             <li key={id} className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
@@ -322,7 +328,8 @@ export function PlatformApprovalScreen() {
                 </div>
                 {category ? <p className="mt-1 text-xs text-[#7f9d94]">{category}</p> : null}
                 {enterpriseName ? <p className="mt-1 text-xs text-[#7f9d94]">by {enterpriseName}</p> : null}
-                {createdAt ? <p className="mt-1 text-xs text-[#7f9d94]">{formatTrainingDate(createdAt)}</p> : null}
+                {createdAt ? <p className="mt-1 text-xs text-[#7f9d94]">Created {formatTrainingDateTime(createdAt)}</p> : null}
+                {updatedAt ? <p className="mt-1 text-xs text-[#7f9d94]">Updated {formatTrainingDateTime(updatedAt)}</p> : null}
               </div>
               <button
                 type="button"

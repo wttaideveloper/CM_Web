@@ -1,7 +1,12 @@
 const shellEnglish = {
+  superAdminLogin: {
+    networkError: "Unable to reach the Super Admin sign-in service. Check your connection and try again.",
+  },
   superAdminReset: {
     forgotPassword: "Forgot password?",
     backToLogin: "Back to Super Admin login",
+    backToEmail: "Back to email",
+    backToVerificationCode: "Back to verification code",
     emailTitle: "Reset your password",
     emailDescription: "Enter your Super Admin email address to receive a verification code.",
     email: "Email",
@@ -27,7 +32,7 @@ const shellEnglish = {
     successDescription: "Your password has been reset. Return to login to continue.",
     returnToLogin: "Return to login",
     genericError: "Unable to complete this password-reset step. Please try again.",
-    notEligible: "This email is not eligible for Super Admin password reset. If you need Super Admin access, request an invitation from your administrator.",
+    idNotRegistered: "ID not registered. Please enter your registered email.",
     serviceUnavailable: "The password reset service is temporarily unavailable. Please try again later or contact your administrator.",
     rateLimited: "Too many reset requests. Please wait a few minutes before trying again.",
   },

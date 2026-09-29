@@ -1,6 +1,9 @@
 import type { CreateTrainingFormValues } from "./create-training-form";
 import type { TrainingFormField } from "./training-form-config.service";
 
+/** Local-only sentinel for the temporary, unsaveable Training taxonomy choice. */
+export const TRAINING_OTHER_OPTION_VALUE = "__ihp_training_other_option__";
+
 function hasValue(value: unknown): boolean {
   if (typeof value === "string") return value.trim().length > 0;
   if (Array.isArray(value)) return value.length > 0;

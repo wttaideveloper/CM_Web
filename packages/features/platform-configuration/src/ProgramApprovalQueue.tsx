@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import ProgramApprovalReviewPanel from "./ProgramApprovalReview";
 import { EnterpriseDisplayName } from "./EventOwnershipNames";
@@ -38,7 +38,12 @@ export default function ProgramApprovalQueue() {
   const [search, setSearch] = useState("");
   const [pages, setPages] = useState<Record<Status, number>>({ pending_approval: 1, needs_revision: 1, approved: 1 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const reviewPanelRef = useRef<HTMLDivElement | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (selectedId) reviewPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [selectedId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -120,7 +125,7 @@ export default function ProgramApprovalQueue() {
       {!active.isLoading && !active.isError && list?.items.length === 0 ? <div className="mt-6 rounded-2xl bg-white p-10 text-center shadow-sm"><p className="font-bold">{emptyTitle}</p><p className="mt-2 text-sm text-[#52736a]">{emptyText}</p></div> : null}
       {!active.isLoading && !active.isError && list?.items.length ? <>
         <div className="mt-6 space-y-4">{list.items.map((program) => <ApprovalProgramCard key={program.id} program={program} label={label} onReview={() => setSelectedId(program.id)} />)}</div>
-        {selectedId ? <ReviewPanel selectedId={selectedId} fallback={list.items.find((program) => program.id === selectedId)} reviewQuery={reviewQuery} approval={approval} onClose={() => setSelectedId(null)} /> : null}
+        {selectedId ? <div ref={reviewPanelRef} className="scroll-mt-24"><ReviewPanel selectedId={selectedId} fallback={list.items.find((program) => program.id === selectedId)} reviewQuery={reviewQuery} approval={approval} onClose={() => setSelectedId(null)} /></div> : null}
         {list.pagination.total_pages > 1 ? <nav aria-label={`${label} Program pages`} className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><button type="button" disabled={list.pagination.page <= 1} onClick={() => setPages((current) => ({ ...current, [status]: current[status] - 1 }))} className="h-10 rounded-full border border-[#1f6a58] px-4 text-sm font-bold text-[#1f6a58] disabled:cursor-not-allowed disabled:opacity-50">Previous</button><span className="text-sm text-[#52736a]">Page {list.pagination.page} of {list.pagination.total_pages}</span><button type="button" disabled={list.pagination.page >= list.pagination.total_pages} onClick={() => setPages((current) => ({ ...current, [status]: current[status] + 1 }))} className="h-10 rounded-full border border-[#1f6a58] px-4 text-sm font-bold text-[#1f6a58] disabled:cursor-not-allowed disabled:opacity-50">Next</button></nav> : null}
       </> : null}
     </div>
@@ -128,7 +133,7 @@ export default function ProgramApprovalQueue() {
 }
 
 function StatusTab({ id, active, onClick, children }: { id: string; active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return <button id={id} type="button" role="tab" aria-selected={active} aria-controls="program-approval-events" onClick={onClick} className={active ? "border-b-2 border-[#1f6a58] px-4 py-3 font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2" : "px-4 py-3 font-bold text-[#52736a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2"}>{children}</button>;
+  return <button id={id} type="button" role="tab" aria-selected={active} aria-controls="program-approval-events" onClick={onClick} className={active ? "border-b-2 border-[#1f6a58] -mb-px px-4 py-3 font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2" : "px-4 py-3 font-bold text-[#52736a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2"}>{children}</button>;
 }
 
 function ApprovalProgramCard({ program, label, onReview }: { program: ProgramApprovalListItem; label: string; onReview: () => void }) {
@@ -150,7 +155,7 @@ function ApprovalProgramCard({ program, label, onReview }: { program: ProgramApp
           </dl>
         </div>
       </div>
-      <button type="button" onClick={onReview} className="h-10 shrink-0 rounded-full border border-[#1f6a58] px-4 text-sm font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2">Review</button>
+      <button type="button" onClick={onReview} className="h-10 shrink-0 rounded-full border border-[#1f6a58] px-4 text-sm font-bold text-[#1f6a58] transition-colors hover:bg-[#f1f7f4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2">Review</button>
     </div>
   </article>;
 }
@@ -161,5 +166,5 @@ function ApprovalField({ label, children }: { label: string; children: React.Rea
 
 function ReviewPanel({ selectedId, fallback, reviewQuery, approval, onClose }: { selectedId: string; fallback?: ProgramApprovalListItem; reviewQuery: { data?: ProgramApprovalReview; isLoading: boolean; isError: boolean; refetch: () => Promise<unknown> }; approval: { isPending: boolean; isError: boolean; mutate: (variables: ApprovalMutationVariables) => void }; onClose: () => void }) {
   const program = reviewQuery.data ?? fallback;
-  return <section aria-labelledby="program-review-title" className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.14em] text-[#7f9d94]">READ-ONLY PROGRAM REVIEW</p><h2 id="program-review-title" className="mt-1 text-xl font-bold text-[#06201c]">{program?.title ?? "Program review"}</h2></div><button type="button" onClick={onClose} className="font-semibold text-[#1f6a58] underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2">Close</button></div>{!program ? (reviewQuery.isLoading ? <div role="status" className="mt-5 space-y-3"><div className="h-8 animate-pulse rounded bg-[#edf3f0]" /><div className="h-24 animate-pulse rounded bg-[#edf3f0]" /></div> : <div className="mt-5"><p role="alert" className="font-semibold text-[#b42318]">Unable to load program details.</p><button type="button" onClick={() => void reviewQuery.refetch()} className="mt-3 font-semibold text-[#1f6a58] underline">Retry</button></div>) : <ProgramApprovalReviewPanel program={program} approvalPending={approval.isPending} approvalError={approval.isError ? "Unable to apply this Program approval decision. Please try again." : null} onDecision={(action, reason) => approval.mutate({ programId: selectedId, action, reason })} />}</section>;
+  return <section aria-labelledby="program-review-title" className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.14em] text-[#7f9d94]">READ-ONLY PROGRAM REVIEW</p><h2 id="program-review-title" className="mt-1 text-xl font-bold text-[#06201c]">{program?.title ?? "Program review"}</h2></div><button type="button" onClick={onClose} className="rounded-md px-2 py-1 font-semibold text-[#1f6a58] underline transition-colors hover:bg-[#f1f7f4] hover:text-[#185746] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2">Close</button></div>{!program ? (reviewQuery.isLoading ? <div role="status" className="mt-5 space-y-3"><div className="h-8 animate-pulse rounded bg-[#edf3f0]" /><div className="h-24 animate-pulse rounded bg-[#edf3f0]" /></div> : <div className="mt-5"><p role="alert" className="font-semibold text-[#b42318]">Unable to load program details.</p><button type="button" onClick={() => void reviewQuery.refetch()} className="mt-3 font-semibold text-[#1f6a58] underline">Retry</button></div>) : <ProgramApprovalReviewPanel program={program} approvalPending={approval.isPending} approvalError={approval.isError ? "Unable to apply this Program approval decision. Please try again." : null} onDecision={(action, reason) => approval.mutate({ programId: selectedId, action, reason })} />}</section>;
 }

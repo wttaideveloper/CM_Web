@@ -46,7 +46,7 @@ export function useTrainingFormConfigurationVersion(configurationId: string | un
 /** Reads tenant assignments for one configuration. */
 export function useTrainingFormConfigurationAssignments(configurationId: string | undefined) { return useQuery({ queryKey: trainingFormConfigurationKeys.assignments(configurationId ?? ""), queryFn: () => getTrainingFormConfigurationAssignments(configurationId ?? ""), enabled: Boolean(configurationId), retry: 1 }); }
 /** Reads audit history for one configuration. */
-export function useTrainingFormConfigurationAudit(configurationId: string | undefined) { return useQuery({ queryKey: trainingFormConfigurationKeys.audit(configurationId ?? ""), queryFn: () => getTrainingFormConfigurationAudit(configurationId ?? ""), enabled: Boolean(configurationId), retry: 1 }); }
+export function useTrainingFormConfigurationAudit(configurationId: string | undefined, isEnabled = true) { return useQuery({ queryKey: trainingFormConfigurationKeys.audit(configurationId ?? ""), queryFn: () => getTrainingFormConfigurationAudit(configurationId ?? ""), enabled: Boolean(configurationId) && isEnabled, retry: 1 }); }
 /** Reads canonical Enterprise-module tenant UUIDs through the authenticated Platform BFF — same source as Event Form Configuration. */
 export function useTrainingFormConfigurationTenantOptions() {
   return useQuery({

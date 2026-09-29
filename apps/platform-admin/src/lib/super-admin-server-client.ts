@@ -4,10 +4,12 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 const SESSION_COOKIE_NAME = "ihp_super_admin_refresh";
+const REMEMBER_ME_COOKIE_NAME = "ihp_super_admin_remember_me";
+const REMEMBER_ME_MAX_AGE = 60 * 60 * 24 * 30;
 const SUPER_ADMIN_AUTH_API_BASE_URL = process.env.SUPER_ADMIN_AUTH_API_BASE_URL;
 
 type RefreshResponse = { tokens: { accessToken: string; refreshToken?: string } };
-type SuperAdminAccessToken = { accessToken: string; rotatedRefreshToken?: string };
+type SuperAdminAccessToken = { accessToken: string; rotatedRefreshToken?: string; rememberMe: boolean };
 
 /** Error returned by the dedicated Super Admin gateway after server-side normalization. */
 export class SuperAdminServerError extends Error {
@@ -18,7 +20,7 @@ export class SuperAdminServerError extends Error {
 }
 
 /** Successful dedicated gateway result, including an optional rotated refresh credential. */
-export type SuperAdminServerResult = { body: unknown; rotatedRefreshToken?: string };
+export type SuperAdminServerResult = { body: unknown; rotatedRefreshToken?: string; rememberMe?: boolean };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -31,14 +33,22 @@ function getCookieDomain(): string | undefined {
   return configuredDomain;
 }
 
-function sessionCookieOptions() {
+function sessionCookieOptions(rememberMe = false) {
   const domain = getCookieDomain();
-  return { httpOnly: true, path: "/", sameSite: "strict" as const, secure: process.env.NODE_ENV === "production", ...(domain ? { domain } : {}) };
+  return {
+    httpOnly: true,
+    path: "/",
+    sameSite: "strict" as const,
+    secure: process.env.NODE_ENV === "production",
+    ...(rememberMe ? { maxAge: REMEMBER_ME_MAX_AGE } : {}),
+    ...(domain ? { domain } : {}),
+  };
 }
 
 /** Clears the Platform bridge credential using the same scope used when it was issued. */
 export function clearSuperAdminSessionCookie(response: NextResponse): NextResponse {
   response.cookies.set(SESSION_COOKIE_NAME, "", { ...sessionCookieOptions(), maxAge: 0 });
+  response.cookies.set(REMEMBER_ME_COOKIE_NAME, "", { ...sessionCookieOptions(), maxAge: 0 });
   return response;
 }
 
@@ -66,8 +76,10 @@ function refreshFailure(status: number): SuperAdminServerError {
 /** Obtains the short-lived dedicated access token without exposing it outside this server module. */
 async function getSuperAdminAccessToken(): Promise<SuperAdminAccessToken> {
   if (!SUPER_ADMIN_AUTH_API_BASE_URL) throw new SuperAdminServerError(503, "Super Admin authentication is not configured.");
-  const refreshToken = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
+  const requestCookies = await cookies();
+  const refreshToken = requestCookies.get(SESSION_COOKIE_NAME)?.value;
   if (!refreshToken) throw new SuperAdminServerError(401, "Super Admin authentication is required.");
+  const rememberMe = requestCookies.get(REMEMBER_ME_COOKIE_NAME)?.value === "true";
 
   let refreshResponse: Response;
   try {
@@ -89,6 +101,7 @@ async function getSuperAdminAccessToken(): Promise<SuperAdminAccessToken> {
   const refresh = refreshBody as RefreshResponse;
   return {
     accessToken: refresh.tokens.accessToken,
+    rememberMe,
     ...(typeof refresh.tokens.refreshToken === "string" && refresh.tokens.refreshToken ? { rotatedRefreshToken: refresh.tokens.refreshToken } : {}),
   };
 }
@@ -99,7 +112,7 @@ export async function requestSuperAdminJson(
   init: Pick<RequestInit, "body" | "headers" | "method"> = {},
 ): Promise<SuperAdminServerResult & { status: number }> {
   if (!SUPER_ADMIN_AUTH_API_BASE_URL) throw new SuperAdminServerError(503, "Super Admin authentication is not configured.");
-  const { accessToken, rotatedRefreshToken } = await getSuperAdminAccessToken();
+  const { accessToken, rotatedRefreshToken, rememberMe } = await getSuperAdminAccessToken();
 
   let upstreamResponse: Response;
   try {
@@ -114,7 +127,7 @@ export async function requestSuperAdminJson(
   }
 
   const body: unknown = await upstreamResponse.json().catch(() => null);
-  return { body: redactSensitiveValues(body), status: upstreamResponse.status, ...(rotatedRefreshToken ? { rotatedRefreshToken } : {}) };
+  return { body: redactSensitiveValues(body), status: upstreamResponse.status, rememberMe, ...(rotatedRefreshToken ? { rotatedRefreshToken } : {}) };
 }
 
 /** Calls one dedicated Super Admin endpoint using a server-only, short-lived bearer token. */
@@ -132,7 +145,7 @@ export async function requestSuperAdminUpstreamJson(
   upstreamUrl: string,
   init: Pick<RequestInit, "body" | "headers" | "method"> = {},
 ): Promise<SuperAdminServerResult & { status: number }> {
-  const { accessToken, rotatedRefreshToken } = await getSuperAdminAccessToken();
+  const { accessToken, rotatedRefreshToken, rememberMe } = await getSuperAdminAccessToken();
 
   let upstreamResponse: Response;
   try {
@@ -147,7 +160,7 @@ export async function requestSuperAdminUpstreamJson(
   }
 
   const body: unknown = await upstreamResponse.json().catch(() => null);
-  return { body: redactSensitiveValues(body), status: upstreamResponse.status, ...(rotatedRefreshToken ? { rotatedRefreshToken } : {}) };
+  return { body: redactSensitiveValues(body), status: upstreamResponse.status, rememberMe, ...(rotatedRefreshToken ? { rotatedRefreshToken } : {}) };
 }
 
 /** Calls an explicitly approved upstream GET using the dedicated bearer token. */
@@ -160,11 +173,17 @@ export function getSuperAdminUpstreamJson(upstreamUrl: string): Promise<SuperAdm
 export function superAdminJsonResponse(result: SuperAdminServerResult & { status?: number }): NextResponse {
   if (result.status === 204) {
     const response = new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
-    if (result.rotatedRefreshToken) response.cookies.set(SESSION_COOKIE_NAME, result.rotatedRefreshToken, sessionCookieOptions());
+    if (result.rotatedRefreshToken) {
+      response.cookies.set(SESSION_COOKIE_NAME, result.rotatedRefreshToken, sessionCookieOptions(result.rememberMe));
+      if (result.rememberMe) response.cookies.set(REMEMBER_ME_COOKIE_NAME, "true", sessionCookieOptions(true));
+    }
     return response;
   }
   const response = NextResponse.json(result.body, { status: result.status, headers: { "Cache-Control": "no-store" } });
-  if (result.rotatedRefreshToken) response.cookies.set(SESSION_COOKIE_NAME, result.rotatedRefreshToken, sessionCookieOptions());
+  if (result.rotatedRefreshToken) {
+    response.cookies.set(SESSION_COOKIE_NAME, result.rotatedRefreshToken, sessionCookieOptions(result.rememberMe));
+    if (result.rememberMe) response.cookies.set(REMEMBER_ME_COOKIE_NAME, "true", sessionCookieOptions(true));
+  }
   return response;
 }
 

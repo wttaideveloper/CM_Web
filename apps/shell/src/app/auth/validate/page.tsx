@@ -8,6 +8,7 @@ import {
   getEnterpriseAdminAppOrigin,
   getSafeEnterpriseAdminReturnUrl,
   getSafePlatformAdminReturnUrl,
+  getSafeShellReturnPath,
   restartLogin,
   useAuth,
 } from "@ihp/auth";
@@ -23,6 +24,7 @@ function ValidateLoginContent() {
   const enterpriseAdminReturnUrl = getSafeEnterpriseAdminReturnUrl(searchParams.get("return_to"));
   const platformAdminReturnUrl = getSafePlatformAdminReturnUrl(searchParams.get("return_to"));
   const crossAppReturnUrl = enterpriseAdminReturnUrl ?? platformAdminReturnUrl;
+  const shellReturnPath = getSafeShellReturnPath(searchParams.get("return_to"));
   const callbackError = searchParams.get("error")?.trim() || null;
   const isGoogleOwnerSignup = searchParams.get("owner_signup") === "google";
   const missingCodeError =
@@ -79,7 +81,13 @@ function ValidateLoginContent() {
           await loginMarketplaceDemoUser().catch(() => undefined);
           setHasCompletedSessionCode(true);
         } catch (loginError) {
-          setError(loginError instanceof Error ? loginError.message : "Unable to complete login.");
+          setError(
+            loginError instanceof TypeError
+              ? "Unable to connect to the sign-in service. Check your connection and try again."
+              : loginError instanceof Error
+                ? loginError.message
+                : "Unable to complete login.",
+          );
         }
       };
 
@@ -98,6 +106,8 @@ function ValidateLoginContent() {
       }
       if (crossAppReturnUrl) {
         window.location.replace(crossAppReturnUrl);
+      } else if (shellReturnPath) {
+        window.location.replace(shellReturnPath);
       } else {
         const enterpriseAdminOrigin = getEnterpriseAdminAppOrigin();
         if (!enterpriseAdminOrigin) {
@@ -111,6 +121,7 @@ function ValidateLoginContent() {
     authenticated,
     callbackError,
     crossAppReturnUrl,
+    shellReturnPath,
     hasCompletedSessionCode,
     isGoogleOwnerSignup,
     isLoading,

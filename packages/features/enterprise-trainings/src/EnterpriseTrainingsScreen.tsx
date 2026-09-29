@@ -49,11 +49,17 @@ function sortTrainings(items: TrainingListItem[], sort: SortOption) {
   });
 }
 
-function formatTrainingDate(value: string): string {
+function formatTrainingDate(value: string, separateTime?: string | null): string {
   if (!isValidDate(value)) {
     return "—";
   }
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value));
+  const hasEmbeddedTime = /T\d{2}:\d{2}/.test(value);
+  const formattedDate = new Intl.DateTimeFormat(undefined, hasEmbeddedTime
+    ? { dateStyle: "medium", timeStyle: "short" }
+    : { dateStyle: "medium" }).format(new Date(value));
+  if (hasEmbeddedTime || !separateTime || !/^([01]\d|2[0-3]):[0-5]\d/.test(separateTime)) return formattedDate;
+  const timeValue = new Date(`1970-01-01T${separateTime.slice(0, 5)}:00`);
+  return `${formattedDate}, ${new Intl.DateTimeFormat(undefined, { timeStyle: "short" }).format(timeValue)}`;
 }
 
 function formatTrainingAvailability(training: TrainingListItem, registrationCount: number | undefined): string {
@@ -153,13 +159,13 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
   const bodyBackgroundClass = hasPrimaryImage ? "bg-[#06201c]/95" : "bg-white";
 
   return (
-    <article className={`group relative rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-200 ${hasPrimaryImage ? "hover:-translate-y-0.5 hover:border-[#4f9f76] hover:shadow-lg" : "hover:-translate-y-0.5 hover:border-[#c6ddd3] hover:shadow-md"}`}>
+    <article className={`group relative flex h-full flex-col rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-200 ${hasPrimaryImage ? "hover:-translate-y-0.5 hover:border-[#4f9f76] hover:shadow-lg" : "hover:-translate-y-0.5 hover:border-[#c6ddd3] hover:shadow-md"}`}>
       {hasPrimaryImage ? (
         <div aria-hidden="true" className="absolute inset-0 overflow-hidden rounded-[inherit] bg-cover bg-center" style={{ backgroundImage: `url(${JSON.stringify(primaryImage)})` }}>
           <div className="absolute inset-0 bg-gradient-to-br from-[#06201c]/60 via-[#0c382e]/45 to-[#1f6a58]/35" />
         </div>
       ) : null}
-      <div className="relative z-10">
+      <div className="relative z-10 flex flex-1 flex-col">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className={`text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>{training.category || "—"}</p>
@@ -189,28 +195,28 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
           </p>
         ) : null}
 
-        <div className={`mt-3 grid grid-cols-1 gap-x-8 gap-y-4 border-t pt-3 text-sm sm:grid-cols-2 lg:grid-cols-4 ${dividerClass}`}>
+        <div className={`mt-auto grid grid-cols-1 gap-x-6 gap-y-4 border-t pt-3 text-sm sm:grid-cols-2 xl:grid-cols-4 ${dividerClass}`}>
           <div className="min-w-0">
-            <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Date</p>
-            <p className={`mt-1 font-semibold ${primaryTextClass}`}>{formatTrainingDate(training.start_date ?? "")}</p>
+            <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Date</p>
+            <p className={`mt-1 min-h-10 break-words font-bold leading-5 ${primaryTextClass}`}>{formatTrainingDate(training.start_date ?? "", training.start_time)}</p>
           </div>
           <div className="min-w-0">
-            <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Location / Delivery</p>
-            <p className={`mt-1 font-semibold ${primaryTextClass}`}>{formatTrainingLocation(training)}</p>
+            <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Location / Delivery</p>
+            <p className={`mt-1 min-h-10 break-words font-bold leading-5 ${primaryTextClass}`}>{formatTrainingLocation(training)}</p>
           </div>
           <div className="min-w-0">
-            <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Registrations</p>
-            <p className={`mt-1 font-semibold ${primaryTextClass}`}>{typeof registrationCount === "number" ? registrationCount : "—"}</p>
+            <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Registrations</p>
+            <p className={`mt-1 min-h-10 break-words font-bold leading-5 ${primaryTextClass}`}>{typeof registrationCount === "number" ? registrationCount : "—"}</p>
           </div>
           <div className="min-w-0">
-            <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Availability</p>
-            <p className={`mt-1 font-semibold ${primaryTextClass}`}>{formatTrainingAvailability(training, registrationCount)}</p>
+            <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Availability</p>
+            <p className={`mt-1 min-h-10 break-words font-bold leading-5 ${primaryTextClass}`}>{formatTrainingAvailability(training, registrationCount)}</p>
           </div>
         </div>
 
         <Link
           href={`/admin/trainings/${training.id}`}
-          className={`mt-3 block border-t pt-3 text-sm font-semibold outline-none transition-colors hover:underline focus-visible:rounded focus-visible:ring-2 focus-visible:ring-offset-2 ${hasPrimaryImage ? "border-white/25 text-white hover:text-white focus-visible:ring-white focus-visible:ring-offset-[#1f6a58]" : "border-[#edf3f0] text-[#1f6a58] hover:text-[#195646] focus-visible:ring-[#1f6a58]"}`}
+          className={`mt-auto flex min-h-11 items-center border-t pt-3 text-sm font-semibold outline-none transition-colors hover:underline focus-visible:rounded focus-visible:ring-2 focus-visible:ring-offset-2 ${hasPrimaryImage ? "border-white/25 text-white hover:text-white focus-visible:ring-white focus-visible:ring-offset-[#1f6a58]" : "border-[#edf3f0] text-[#1f6a58] hover:text-[#195646] focus-visible:ring-[#1f6a58]"}`}
         >
           View training details
         </Link>
@@ -240,6 +246,12 @@ export default function EnterpriseTrainingsScreen() {
     }, 300);
     return () => window.clearTimeout(timeoutId);
   }, [query]);
+
+  useEffect(() => {
+    if (!statusFeedback) return;
+    const timeoutId = window.setTimeout(() => setStatusFeedback(null), 5_000);
+    return () => window.clearTimeout(timeoutId);
+  }, [statusFeedback]);
 
   const trainingsQuery = useQuery({
     queryKey: ["trainings", "list", tenantId, enterpriseId, debouncedQuery, statusFilter, levelFilter, languageFilter, page, TRAININGS_PAGE_SIZE],

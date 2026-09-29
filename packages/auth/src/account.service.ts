@@ -1,5 +1,6 @@
 import type { AuthRoles, AuthUser } from "./types";
 import { getEnterpriseAdminAppOrigin } from "./cross-app";
+import { normalizeAuthUserName } from "./profile-name";
 
 const WEB_AUTH_BASE_URL = "/api/v1/auth";
 
@@ -120,7 +121,8 @@ export async function getAuthMe() {
     credentials: "include",
   });
 
-  return parseAuthResponse<AuthMeResponse>(response);
+  const result = await parseAuthResponse<AuthMeResponse>(response);
+  return { ...result, data: normalizeAuthUserName(result.data) };
 }
 
 /** Retrieves the current user's role and permission assignments. */

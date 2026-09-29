@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCurrentEnterprise, useTenant } from "@ihp/enterprise-runtime";
 import Link from "next/link";
@@ -8,22 +8,23 @@ import { useRouter } from "next/navigation";
 
 import { TrainingBasicsSection, TrainingCapacitySection, TrainingCourseBuilderSection, TrainingDeliverySection, TrainingMediaSection, TrainingPricingSection, TrainingScheduleSection } from "./CreateTrainingSections";
 import { buildCreateTrainingPayload, buildUpdateTrainingPayload, createEmptyTrainingForm, trainingToFormValues, validateTrainingForm, type CreateTrainingFormValues } from "./create-training-form";
-import { createTraining, resubmitTraining, TrainingsApiError, updateTraining, updateTrainingStatus, type Training } from "./trainings.service";
+import { createTraining, TrainingsApiError, updateTraining, type Training } from "./trainings.service";
 import { useActiveTrainingFormConfiguration, useTrainingHistoricalFormConfiguration } from "./training-form-configuration.queries";
 import type { TrainingFormConfig, TrainingFormField, TrainingFormSection } from "./training-form-config.service";
+import { useTrainingCategories } from "./training-categories.queries";
 import { canEditTraining } from "./training-status";
 import ConfiguredCreateTrainingSection from "./ConfiguredCreateTrainingSection";
-import { isTrainingFormFieldVisible } from "./training-form-field-settings";
+import { isTrainingFormFieldVisible, TRAINING_OTHER_OPTION_VALUE } from "./training-form-field-settings";
 
 const steps = ["Basic Information", "Schedule", "Location & Host", "Pricing & Tickets", "Capacity & Registration", "Images & Media", "Additional Configuration"] as const;
 const stepFields: ReadonlyArray<readonly string[]> = [
   ["title", "description", "category", "subcategory", "tags", "instructor_id", "requirements"],
-  ["start_date", "end_date", "enrolment_start", "enrolment_end", "time_zone", "duration"],
+  ["start_date", "end_date", "start_time", "end_time", "enrolment_start", "enrolment_end", "time_zone", "duration", "schedule_exceptions"],
   ["location_id", "delivery_mode", "course_type"],
   ["price", "currency", "promo_price", "coupon_code"],
   ["capacity", "requires_approval", "access_duration_days", "group_enrolment", "max_group_size", "access_expiry_type", "access_expiry_days"],
   ["primary_image", "gallery_images", "promotional_video"],
-  ["prerequisites", "release_rule", "randomise", "scheduled_publication", "is_mandatory"],
+  ["prerequisites", "release_rule", "randomise", "scheduled_publication", "is_mandatory", "faqs", "discussions", "announcements", "moderation_history"],
 ];
 // One static section component per entry in `steps`, in the same order — this is the
 // static/default Training form used whenever no dynamic Super Admin form configuration
@@ -39,6 +40,28 @@ const staticSectionComponents = [
 ] as const;
 
 type TrainingEditorProps = { mode?: "create" | "edit"; initialTraining?: Training };
+
+function trainingFieldId(key: string): string {
+  return `training-field-${key.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
+function getTrainingFieldAliases(field: TrainingFormField): string[] {
+  return [field.key, field.apiKey ?? "", field.stable_key ?? ""].filter(Boolean);
+}
+
+function getTrainingFieldIdentityAliases(field: TrainingFormField): string[] {
+  return [...getTrainingFieldAliases(field), field.id, field.label].filter(Boolean);
+}
+
+function normalizeTrainingFieldKey(value: string): string {
+  return value
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^(core|custom)_/, "")
+    .replace(/^_+|_+$/g, "");
+}
 
 function hasConfiguredValue(value: unknown): boolean {
   if (typeof value === "string") return value.trim().length > 0;
@@ -73,8 +96,16 @@ function validateConfiguredSection(
   for (const field of section.fields) {
     if (!isConfiguredTrainingFieldApplicable(field, values.delivery_mode, values.pricing_type)
       || !isTrainingFormFieldVisible(field, allFields, values, customValues)) continue;
-    const key = field.key as keyof CreateTrainingFormValues;
-    const value = key in values ? values[key] : customValues[field.key];
+    const aliases = getTrainingFieldAliases(field);
+    const valueKey = aliases.find((candidate) => candidate in values);
+    const key = (valueKey ?? field.key) as keyof CreateTrainingFormValues;
+    const value = valueKey
+      ? values[key]
+      : aliases.map((candidate) => customValues[candidate]).find((candidate) => candidate !== undefined);
+    if (value === TRAINING_OTHER_OPTION_VALUE) {
+      errors[field.key] = ["Custom entries are not saveable until the Training API documents their configuration and submission format. Select a configured option to save."];
+      continue;
+    }
     if (field.required && !hasConfiguredValue(value)) {
       errors[field.key] = [`${field.label} is required.`];
       continue;
@@ -143,13 +174,19 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   const activeForm = (mode === "create" ? activeFormQ.data : historicalFormQ.data) ?? null;
   const formConfigLoading = mode === "create" ? activeFormQ.isLoading : historicalFormQ.isLoading;
   const formConfigError = mode === "create" ? activeFormQ.error : historicalFormQ.error;
+  const configuredFields = activeForm?.sections.flatMap((section) => section.fields) ?? [];
+  const needsTrainingCategories = !activeForm || configuredFields.some((field) =>
+    field.source === "core" && getTrainingFieldAliases(field).some((key) => key === "category" || key === "subcategory"),
+  );
+  const trainingCategoriesQuery = useTrainingCategories(!formConfigLoading && needsTrainingCategories);
+  const trainingCategories = useMemo(() => trainingCategoriesQuery.data ?? [], [trainingCategoriesQuery.data]);
   const [activeStep, setActiveStep] = useState(0);
   const [initialValues] = useState(() => (initialTraining ? trainingToFormValues(initialTraining) : createEmptyTrainingForm()));
   const [values, setValues] = useState<CreateTrainingFormValues>(() => (initialTraining ? trainingToFormValues(initialTraining) : createEmptyTrainingForm()));
   const [customValues, setCustomValues] = useState<Record<string, unknown>>(() => hydrateConfiguredCustomValues(initialTraining, activeForm));
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitForApprovalMode, setSubmitForApprovalMode] = useState(false);
+  const [pendingFocusField, setPendingFocusField] = useState<string | null>(null);
 
   // Backend rejects custom_values keys that collide with top-level TrainingCreate fields
   // (e.g. stale `tags` stored as custom → `400 Unknown custom field: tags`). Only send
@@ -170,21 +207,24 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
     const canonicalFieldKeys = new Map<string, string>();
     for (const section of activeForm?.sections ?? []) {
       for (const field of section.fields) {
-        const aliases = [field.key ?? "", field.apiKey ?? ""].filter((key): key is string => Boolean(key) && key.trim().length > 0);
-        const preferred = field.apiKey ?? field.key ?? "";
+        const aliases = getTrainingFieldIdentityAliases(field).map(normalizeTrainingFieldKey).filter(Boolean);
+        const preferred = normalizeTrainingFieldKey(field.apiKey ?? field.key);
         if (!preferred) continue;
-        for (const alias of aliases) canonicalFieldKeys.set(alias, preferred);
+        const coreField = aliases.find((alias) => knownCoreKeys.has(alias));
+        for (const alias of aliases) canonicalFieldKeys.set(alias, coreField ?? preferred);
       }
     }
     const formKeys = new Set((activeForm?.sections ?? []).flatMap((sec) => sec.fields.flatMap((fld) => [fld.key, fld.apiKey].filter((key): key is string => Boolean(key)))));
     const selected = new Map<string, unknown>();
     for (const [key, value] of Object.entries(raw)) {
-      const preferredKey = canonicalFieldKeys.get(key) ?? key;
+      const rawNormalizedKey = normalizeTrainingFieldKey(key);
+      const normalizedKey = canonicalFieldKeys.get(rawNormalizedKey) ?? rawNormalizedKey;
       if (!key || value === undefined || value === null || value === "") continue;
-      if (topLevelKeys.has(preferredKey)) continue;
-      if (knownCoreKeys.size > 0 && [...knownCoreKeys].some((coreKey) => preferredKey.startsWith(`${coreKey}_`)) && !formKeys.has(preferredKey)) continue;
-      if (formKeys.size > 0 && !formKeys.has(preferredKey) && !formKeys.has(key)) continue;
-      selected.set(preferredKey, value);
+      if (topLevelKeys.has(key)) continue;
+      if (knownCoreKeys.has(normalizedKey)) continue;
+      if ([...knownCoreKeys].some((coreKey) => normalizedKey.startsWith(`${coreKey}_`)) && !formKeys.has(key)) continue;
+      if (formKeys.size > 0 && !formKeys.has(key) && !formKeys.has(normalizedKey)) continue;
+      selected.set(key, value);
     }
     return selected.size ? Object.fromEntries(selected) : undefined;
   };
@@ -202,7 +242,12 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
             ?? (field.key in values ? values[field.key as keyof CreateTrainingFormValues] : undefined)
             ?? customValues[field.key]
             ?? customValues[field.apiKey ?? field.key];
-          return [configuredKey, value] as const;
+          const normalizedAliases = getTrainingFieldIdentityAliases(field).map(normalizeTrainingFieldKey);
+          const isLearningObjectives = normalizedAliases.includes("learning_objectives");
+          const customValue = isLearningObjectives && Array.isArray(value)
+            ? value.filter((objective): objective is string => typeof objective === "string").join("\n")
+            : value;
+          return [configuredKey, customValue] as const;
         })
         .filter(([, value]) => value !== undefined && value !== null && value !== ""),
     );
@@ -220,7 +265,11 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
     const allFields = activeForm.sections.flatMap((section) => section.fields);
     const configuredKeys = new Set(allFields
       .filter((field) => isTrainingFormFieldVisible(field, allFields, values, customValues))
-      .map((field) => field.key));
+      .flatMap((field) => {
+        const aliases = getTrainingFieldIdentityAliases(field).map(normalizeTrainingFieldKey);
+        const coreField = aliases.find((alias) => Object.prototype.hasOwnProperty.call(payload, alias));
+        return coreField ? [coreField] : [field.key];
+      }));
     const alwaysIncluded = new Set([
       "tenant_id",
       "enterprise_id",
@@ -252,13 +301,6 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
         const initialRaw = initialTraining as unknown as Record<string, unknown>;
         const keptSessions = Array.isArray(initialRaw.sessions) ? (initialRaw.sessions as unknown[]) : undefined;
         const updated = await updateTraining(initialTraining.id, { ...baseUpdate, ...(keptSessions ? { sessions: keptSessions } : {}), ...(custom ? { custom_values: custom } : {}) } as Parameters<typeof updateTraining>[1]);
-        if (submitForApprovalMode) {
-          if (initialTraining.status === "needs_revision" || initialTraining.status === "rejected") {
-            await resubmitTraining(initialTraining.id);
-          } else {
-            await updateTrainingStatus(initialTraining.id, { status: "pending_approval" });
-          }
-        }
         return updated;
       }
       if (!tenantId || !enterpriseId) throw new Error("A tenant and enterprise are required.");
@@ -267,14 +309,11 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
       const payload = (activeForm
         ? { ...basePayload, form_configuration_version_id: activeForm.version_id ?? activeForm.id, ...(custom ? { custom_values: custom } : {}) }
         : basePayload) as unknown as Parameters<typeof createTraining>[0];
-      const created = await createTraining(payload);
-      if (submitForApprovalMode) {
-        await updateTrainingStatus(created.id, { status: "pending_approval" });
-      }
-      return created;
+      return createTraining(payload);
     },
     onSuccess: async (data) => {
       await queryClient.invalidateQueries({ queryKey: ["trainings", "list"] });
+      window.scrollTo({ top: 0, behavior: "auto" });
       if (initialTraining) {
         await queryClient.invalidateQueries({ queryKey: ["trainings", "detail", initialTraining.id] });
         router.push(`/admin/trainings/${initialTraining.id}`);
@@ -297,15 +336,54 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
     setErrors((current) => ({ ...current, [key]: [] }));
     setSubmitError(null);
   };
+  useEffect(() => {
+    if (!pendingFocusField) return;
+    const direct = document.getElementById(trainingFieldId(pendingFocusField));
+    const wrapper = [...document.querySelectorAll<HTMLElement>("[data-training-field]")]
+      .find((element) => element.dataset.trainingField === pendingFocusField);
+    const target = direct ?? wrapper?.querySelector<HTMLElement>("input, select, textarea, button") ?? wrapper;
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.focus({ preventScroll: true });
+    setPendingFocusField(null);
+  }, [activeStep, pendingFocusField]);
 
   const allErrors = useMemo(() => {
     const allFields = activeForm?.sections.flatMap((section) => section.fields) ?? [];
     const configuredRequiredKeys = activeForm
-      ? new Set(allFields.filter((field) => field.required && isTrainingFormFieldVisible(field, allFields, values, customValues)).map((field) => field.key))
+      ? new Set(allFields.filter((field) => field.required && isTrainingFormFieldVisible(field, allFields, values, customValues)).flatMap(getTrainingFieldAliases))
       : undefined;
     const validationErrors = validateTrainingForm(values, configuredRequiredKeys);
+    if (mode === "create" && trainingCategoriesQuery.data) {
+      const visibleTaxonomyFields = allFields.filter((field) =>
+        isTrainingFormFieldVisible(field, allFields, values, customValues),
+      );
+      const categoryEnabled = !activeForm || visibleTaxonomyFields.some((field) =>
+        field.source === "core" && getTrainingFieldAliases(field).includes("category"),
+      );
+      const subcategoryField = activeForm
+        ? visibleTaxonomyFields.find((field) => field.source === "core" && getTrainingFieldAliases(field).includes("subcategory"))
+        : undefined;
+      const category = trainingCategories.find((item) => item.parent_id === null && item.name === values.category);
+      if (categoryEnabled && values.category && !category) {
+        validationErrors.category = ["Choose a valid Training category."];
+      }
+      if (subcategoryField) {
+        const subcategories = category
+          ? trainingCategories.filter((item) => item.parent_id === category.id)
+          : [];
+        if (!category && subcategoryField.required) {
+          validationErrors.subcategory = ["Choose a Training category before selecting a subcategory."];
+        } else if (values.subcategory && !subcategories.some((item) => item.name === values.subcategory)) {
+          validationErrors.subcategory = ["Choose a valid subcategory for the selected Training category."];
+        }
+      } else if (!activeForm && values.subcategory && category
+        && !trainingCategories.some((item) => item.parent_id === category.id && item.name === values.subcategory)) {
+        validationErrors.subcategory = ["Choose a valid subcategory for the selected Training category."];
+      }
+    }
     if (!activeForm) return validationErrors;
-    const configuredKeys = new Set(activeForm.sections.flatMap((section) => section.fields.map((field) => field.key)));
+    const configuredKeys = new Set(activeForm.sections.flatMap((section) => section.fields.flatMap(getTrainingFieldAliases)));
     const businessRuleKeys = new Set(["delivery_mode", "meeting_link", "venue", "address", "price", "currency"]);
     for (const key of Object.keys(validationErrors)) {
       if (!configuredKeys.has(key) && !businessRuleKeys.has(key)) delete validationErrors[key];
@@ -313,7 +391,9 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
     for (const section of activeForm.sections) {
       for (const field of section.fields) {
         if (!isConfiguredTrainingFieldApplicable(field, values.delivery_mode, values.pricing_type)
-          || !isTrainingFormFieldVisible(field, allFields, values, customValues)) delete validationErrors[field.key];
+          || !isTrainingFormFieldVisible(field, allFields, values, customValues)) {
+          for (const alias of getTrainingFieldAliases(field)) delete validationErrors[alias];
+        }
       }
     }
     const configuredErrors = activeForm.sections
@@ -321,8 +401,15 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
       .reduce<Record<string, string[]>>((result, [key, messages]) => ({ ...result, [key]: messages }), {});
     Object.assign(validationErrors, configuredErrors);
     return validationErrors;
-  }, [activeForm, customValues, values]);
+  }, [activeForm, customValues, mode, trainingCategories, trainingCategoriesQuery.data, values]);
   const isDirty = JSON.stringify(values) !== JSON.stringify(initialValues);
+  const getSectionFieldKeys = (index: number): string[] => activeForm
+    ? configuredSections[index]?.fields.flatMap(getTrainingFieldAliases) ?? []
+    : [...(stepFields[index] ?? [])];
+  const focusValidationError = (key: string, nextErrors: Record<string, string[]>) => {
+    setErrors(nextErrors);
+    setPendingFocusField(key);
+  };
   const continueToNext = () => {
     if (activeForm) {
       const currentSection = configuredSections[activeStep];
@@ -331,11 +418,12 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
         const configuredErrors = validateConfiguredSection(currentSection, values, customValues, allFields);
         const currentErrors = Object.fromEntries(
           Object.entries({ ...allErrors, ...configuredErrors }).filter(([field]) =>
-            currentSection.fields.some((configuredField: TrainingFormField) => configuredField.key === field),
+            currentSection.fields.some((configuredField: TrainingFormField) => getTrainingFieldAliases(configuredField).includes(field)),
           ),
         );
         if (Object.keys(currentErrors).length > 0) {
-          setErrors(currentErrors);
+          const firstError = Object.keys(currentErrors)[0];
+          focusValidationError(firstError, currentErrors);
           return;
         }
       }
@@ -346,7 +434,8 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
     const currentFields = stepFields[activeStep] ?? [];
     const currentErrors = Object.fromEntries(Object.entries(allErrors).filter(([field]) => currentFields.includes(field)));
     if (Object.keys(currentErrors).length > 0) {
-      setErrors(currentErrors);
+      const firstError = Object.keys(currentErrors)[0];
+      focusValidationError(firstError, currentErrors);
       return;
     }
     setErrors({});
@@ -355,29 +444,31 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   const submit = () => {
     if (mode === "edit" && !isDirty) return;
     if (Object.keys(allErrors).length > 0) {
-      setErrors(allErrors);
+      const firstError = Object.keys(allErrors).find((key) => allErrors[key]?.length);
+      if (firstError) {
+        const sectionIndex = editorSteps.findIndex((_, index) => getSectionFieldKeys(index).includes(firstError));
+        if (sectionIndex >= 0) setActiveStep(sectionIndex);
+        focusValidationError(firstError, allErrors);
+      } else setErrors(allErrors);
       setSubmitError("Review the highlighted fields before saving.");
       return;
     }
     setSubmitError(null);
-    setSubmitForApprovalMode(false);
     saveMutation.mutate();
   };
-  const submitForApproval = () => {
-    if (Object.keys(allErrors).length > 0) {
-      setErrors(allErrors);
-      setSubmitError("Review the highlighted fields before submitting for approval.");
-      return;
-    }
-    setSubmitError(null);
-    setSubmitForApprovalMode(true);
-    saveMutation.mutate();
-  };
-  const canSubmitForApproval = mode === "create" || Boolean(initialTraining && ["draft", "rejected", "needs_revision"].includes(initialTraining.status));
 
   const configuredSections = activeForm ? [...activeForm.sections].filter(s => s.fields.length > 0).sort((a, b) => a.order - b.order) : [];
   const editorSteps = activeForm ? [...configuredSections.map(s => s.title || "Section"), "Review & Submit"] : [...steps];
-  const sharedProps = { values, update, errors };
+  const sharedProps = {
+    values,
+    update,
+    errors,
+    trainingCategories,
+    categoriesLoading: trainingCategoriesQuery.isLoading,
+    categoriesError: trainingCategoriesQuery.isError,
+    retryCategories: () => { void trainingCategoriesQuery.refetch(); },
+    preserveLegacyCategoryValues: mode === "edit",
+  };
   const StaticSection = staticSectionComponents[activeStep] ?? staticSectionComponents[0];
   const backHref = initialTraining ? `/admin/trainings/${initialTraining.id}` : "/admin/trainings";
   const title = mode === "edit" ? "Edit Training" : "Create Training";
@@ -389,7 +480,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
     return <div role="status" className="rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-5 py-12 text-center text-sm font-semibold text-[#52736a]">{mode === "edit" ? "Loading this Training's form configuration…" : "Loading the Training form configuration…"}</div>;
   }
   const refetchFormConfig = () => void (mode === "edit" ? historicalFormQ.refetch() : activeFormQ.refetch());
-  if (mode === "create" && !activeForm) {
+  if (mode === "create" && formConfigError && !activeForm) {
     return (
       <div className="w-full">
         <header className="flex flex-col gap-4 border-b border-[#edf3f0] pb-6 sm:flex-row sm:items-start sm:justify-between">
@@ -405,7 +496,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
             {formConfigError ? "Unable to load the active Training form configuration." : "No active Super Admin Training form configuration is available."}
           </h2>
           <p className="mt-2 text-sm text-[#735c1e]">
-            Training creation is unavailable until a Super Admin publishes and activates a Training form configuration.
+            Retry loading the active form configuration before creating a Training.
           </p>
           <button type="button" onClick={refetchFormConfig} className="mt-4 h-10 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white">
             Retry
@@ -417,8 +508,12 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
 
   return (
     <div className="w-full">
-      {activeForm ? (
+      {mode === "create" && formConfigError ? (
+        <div role="alert" className="mb-3 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-2 text-xs font-semibold text-[#735c1e]">Could not refresh the active Training form configuration. The previously loaded form remains available. <button type="button" onClick={refetchFormConfig} className="underline">Retry</button></div>
+      ) : activeForm ? (
         <div className="mb-3 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-2 text-xs font-semibold text-[#167550]">{mode === "edit" ? `Historical form: ${activeForm.title}` : `Using Super Admin form: ${activeForm.title}`} {activeForm.is_global ? "(Global)" : `(${activeForm.enterprise_ids.length} enterprises)`} — {configuredSections.length} sections, {configuredSections.reduce((sum, s) => sum + s.fields.length, 0)} fields.</div>
+      ) : mode === "create" ? (
+        <div role="status" className="mb-3 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-4 py-2 text-xs font-semibold text-[#52736a]">No active Super Admin Training form configuration is available. Using the standard Training form.</div>
       ) : formConfigError ? (
         <div role="alert" className="mb-3 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-2 text-xs font-semibold text-[#735c1e]">Could not load the historical Training form configuration — using the standard edit form instead. <button type="button" onClick={refetchFormConfig} className="underline">Retry</button></div>
       ) : null}
@@ -436,15 +531,15 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
         <nav aria-label="Training editor sections" className="rounded-2xl border border-[#e1ebe6] bg-white p-3 shadow-sm">
           {activeForm ? (
             editorSteps.map((step, index) => (
-              <button key={`${step}-${index}`} type="button" onClick={() => setActiveStep(index)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${activeStep === index ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f9fcfa]"}`}>
-                <span className="flex h-6 w-6 items-center justify-center rounded-full border border-current text-xs">{index + 1}</span>
+              <button key={`${step}-${index}`} type="button" onClick={() => setActiveStep(index)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${getSectionFieldKeys(index).some((key) => errors[key]?.length) ? "text-[#b42318]" : activeStep === index ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f9fcfa]"}`}>
+                <span className={`flex h-6 w-6 items-center justify-center rounded-full border border-current text-xs ${getSectionFieldKeys(index).some((key) => errors[key]?.length) ? "bg-[#fff1f0] font-bold" : ""}`}>{getSectionFieldKeys(index).some((key) => errors[key]?.length) ? "!" : index + 1}</span>
                 {step}
               </button>
             ))
           ) : (
             steps.map((step, index) => (
-              <button key={step} type="button" onClick={() => setActiveStep(index)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${activeStep === index ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f9fcfa]"}`}>
-                <span className="flex h-6 w-6 items-center justify-center rounded-full border border-current text-xs">{index + 1}</span>
+              <button key={step} type="button" onClick={() => setActiveStep(index)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${getSectionFieldKeys(index).some((key) => errors[key]?.length) ? "text-[#b42318]" : activeStep === index ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f9fcfa]"}`}>
+                <span className={`flex h-6 w-6 items-center justify-center rounded-full border border-current text-xs ${getSectionFieldKeys(index).some((key) => errors[key]?.length) ? "bg-[#fff1f0] font-bold" : ""}`}>{getSectionFieldKeys(index).some((key) => errors[key]?.length) ? "!" : index + 1}</span>
                 {step}
               </button>
             ))
@@ -453,7 +548,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
         <main className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm sm:p-7">
           {activeForm ? (
             activeStep < configuredSections.length ? (
-              <ConfiguredCreateTrainingSection section={configuredSections[activeStep]} allFields={activeForm.sections.flatMap((section) => section.fields)} values={values} update={update} errors={errors} customValues={customValues} setCustomValues={setCustomValues} />
+              <ConfiguredCreateTrainingSection section={configuredSections[activeStep]} allFields={activeForm.sections.flatMap((section) => section.fields)} values={values} update={update} errors={errors} customValues={customValues} setCustomValues={setCustomValues} trainingCategories={trainingCategories} categoriesLoading={trainingCategoriesQuery.isLoading} categoriesError={trainingCategoriesQuery.isError} retryCategories={() => { void trainingCategoriesQuery.refetch(); }} preserveLegacyCategoryValues={mode === "edit"} />
             ) : (
               <section className="space-y-4">
                 <h2 className="text-xl font-bold text-[#06201c]">Review & Submit</h2>
@@ -480,14 +575,11 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
           {isCreateBlockedByEnterprise ? <div role="status" className="mt-6 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-3 text-sm font-semibold text-[#735c1e]">Creating a Training is unavailable until an Enterprise is linked. The current backend TrainingCreate contract requires an enterprise_id.</div> : null}
           {submitError ? <div role="alert" className="mt-6 rounded-xl border border-[#f3d0cb] bg-[#fff6f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{submitError}</div> : null}
           <div className="mt-8 flex flex-col-reverse gap-3 border-t border-[#edf3f0] pt-5 sm:flex-row sm:justify-between">
-            <button type="button" onClick={() => setActiveStep((current) => Math.max(current - 1, 0))} disabled={activeStep === 0 || saveMutation.isPending} className="h-11 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a] disabled:opacity-50">Back</button>
+            {activeStep > 0 ? <button type="button" onClick={() => setActiveStep((current) => current - 1)} disabled={saveMutation.isPending} className="h-11 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a] disabled:opacity-50">Back</button> : null}
             {(activeForm ? activeStep === editorSteps.length - 1 : activeStep === steps.length - 1) ? (
-              <div className="flex flex-col-reverse gap-3 sm:flex-row">
-                {canSubmitForApproval ? <button type="button" onClick={submitForApproval} disabled={saveMutation.isPending || isCreateBlockedByEnterprise} className="h-11 rounded-full border-2 border-[#d9a24a] bg-[#fffaf0] px-5 text-sm font-bold text-[#8a5a00] shadow-sm transition-colors hover:bg-[#fff4d6] disabled:cursor-not-allowed disabled:opacity-60">{saveMutation.isPending && submitForApprovalMode ? "Submitting..." : "Submit for approval"}</button> : null}
-                <button type="button" onClick={submit} disabled={saveMutation.isPending || isCreateBlockedByEnterprise || (mode === "edit" && !isDirty)} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm disabled:opacity-60">
-                  {saveMutation.isPending && !submitForApprovalMode ? (mode === "edit" ? "Saving..." : "Creating...") : mode === "edit" ? "Save Changes" : "Create Training"}
-                </button>
-              </div>
+              <button type="button" onClick={submit} disabled={saveMutation.isPending || isCreateBlockedByEnterprise || (mode === "edit" && !isDirty)} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm disabled:opacity-60">
+                {saveMutation.isPending ? (mode === "edit" ? "Saving..." : "Creating...") : mode === "edit" ? "Save Changes" : "Create Training"}
+              </button>
             ) : (
               <button type="button" onClick={continueToNext} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm">Continue</button>
             )}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import EventApprovalReviewPanel from "./EventApprovalReview";
 import { EnterpriseDisplayName } from "./EventOwnershipNames";
@@ -67,9 +67,9 @@ export default function PlatformApprovalQueueScreen() {
       </div>
 
       <div role="tablist" aria-label="Approval types" className="mt-7 flex gap-2 border-b border-[#d7e5df]">
-        <button id="approval-type-events-tab" type="button" role="tab" aria-selected={approvalType === "events"} aria-controls="approval-type-events-panel" onClick={() => setApprovalType("events")} className="border-b-2 border-[#1f6a58] px-4 py-3 font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2">Events</button>
-        <button id="approval-type-trainings-tab" type="button" role="tab" aria-selected={approvalType === "trainings"} aria-controls="approval-type-trainings-panel" onClick={() => setApprovalType("trainings")} className={approvalType === "trainings" ? "border-b-2 border-[#1f6a58] px-4 py-3 font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2" : "px-4 py-3 font-bold text-[#52736a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2"}>Trainings</button>
-        <button id="approval-type-programs-tab" type="button" role="tab" aria-selected={approvalType === "programs"} aria-controls="approval-type-programs-panel" onClick={() => setApprovalType("programs")} className={approvalType === "programs" ? "border-b-2 border-[#1f6a58] px-4 py-3 font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2" : "px-4 py-3 font-bold text-[#52736a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2"}>Programs</button>
+        <button id="approval-type-events-tab" type="button" role="tab" aria-selected={approvalType === "events"} aria-controls="approval-type-events-panel" onClick={() => setApprovalType("events")} className={approvalType === "events" ? "border-b-2 border-[#1f6a58] -mb-px px-4 py-3 font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2" : "px-4 py-3 font-bold text-[#52736a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2"}>Events</button>
+        <button id="approval-type-trainings-tab" type="button" role="tab" aria-selected={approvalType === "trainings"} aria-controls="approval-type-trainings-panel" onClick={() => setApprovalType("trainings")} className={approvalType === "trainings" ? "border-b-2 border-[#1f6a58] -mb-px px-4 py-3 font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2" : "px-4 py-3 font-bold text-[#52736a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2"}>Trainings</button>
+        <button id="approval-type-programs-tab" type="button" role="tab" aria-selected={approvalType === "programs"} aria-controls="approval-type-programs-panel" onClick={() => setApprovalType("programs")} className={approvalType === "programs" ? "border-b-2 border-[#1f6a58] -mb-px px-4 py-3 font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2" : "px-4 py-3 font-bold text-[#52736a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2"}>Programs</button>
       </div>
 
       {approvalType === "events" ? <EventsQueue /> : approvalType === "trainings" ? <TrainingApprovalQueue /> : <ProgramApprovalQueue />}
@@ -84,7 +84,12 @@ function EventsQueue() {
   const [search, setSearch] = useState("");
   const [pages, setPages] = useState<Record<Status, number>>({ pending_approval: 1, needs_revision: 1, approved: 1 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const reviewPanelRef = useRef<HTMLDivElement | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (selectedId) reviewPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [selectedId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -169,7 +174,7 @@ function EventsQueue() {
         {!active.isLoading && !active.isError && list?.items.length === 0 ? <div className="mt-6 rounded-2xl bg-white p-10 text-center shadow-sm"><p className="font-bold">{emptyTitle}</p><p className="mt-2 text-sm text-[#52736a]">{emptyText}</p></div> : null}
         {!active.isLoading && !active.isError && list?.items.length ? <>
           <div className="mt-6 space-y-4">{list.items.map((event) => <ApprovalEventCard key={event.id} event={event} label={label} onReview={() => setSelectedId(event.id)} />)}</div>
-          {selectedId ? <ReviewPanel selectedId={selectedId} reviewQuery={reviewQuery} approval={approval} onClose={() => setSelectedId(null)} /> : null}
+          {selectedId ? <div ref={reviewPanelRef} className="scroll-mt-24"><ReviewPanel selectedId={selectedId} reviewQuery={reviewQuery} approval={approval} onClose={() => setSelectedId(null)} /></div> : null}
           {list.pagination.total_pages > 1 ? <nav aria-label={`${label} Event pages`} className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><button type="button" disabled={list.pagination.page <= 1} onClick={() => setPages((current) => ({ ...current, [status]: current[status] - 1 }))}>Previous</button><span>Page {list.pagination.page} of {list.pagination.total_pages}</span><button type="button" disabled={list.pagination.page >= list.pagination.total_pages} onClick={() => setPages((current) => ({ ...current, [status]: current[status] + 1 }))}>Next</button></nav> : null}
         </> : null}
       </div>
@@ -178,7 +183,7 @@ function EventsQueue() {
 }
 
 function StatusTab({ id, active, onClick, children }: { id: string; active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return <button id={id} type="button" role="tab" aria-selected={active} aria-controls="event-approval-events" onClick={onClick} className={active ? "border-b-2 border-[#1f6a58] px-4 py-3 font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2" : "px-4 py-3 font-bold text-[#52736a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2"}>{children}</button>;
+  return <button id={id} type="button" role="tab" aria-selected={active} aria-controls="event-approval-events" onClick={onClick} className={active ? "border-b-2 border-[#1f6a58] -mb-px px-4 py-3 font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2" : "px-4 py-3 font-bold text-[#52736a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2"}>{children}</button>;
 }
 
 function ApprovalEventCard({ event, label, onReview }: { event: EventApprovalListItem; label: string; onReview: () => void }) {
@@ -202,7 +207,7 @@ function ApprovalEventCard({ event, label, onReview }: { event: EventApprovalLis
           </dl>
         </div>
       </div>
-      <button type="button" onClick={onReview} className="h-10 shrink-0 rounded-full border border-[#1f6a58] px-4 text-sm font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2">Review</button>
+      <button type="button" onClick={onReview} className="h-10 shrink-0 rounded-full border border-[#1f6a58] px-4 text-sm font-bold text-[#1f6a58] transition-colors hover:bg-[#f1f7f4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2">Review</button>
     </div>
   </article>;
 }
@@ -214,7 +219,7 @@ function ApprovalField({ label, children }: { label: string; children: React.Rea
 function ReviewPanel({ selectedId, reviewQuery, approval, onClose }: { selectedId: string; reviewQuery: { data?: EventApprovalReview; error?: unknown; isLoading: boolean; isError: boolean; refetch: () => Promise<unknown> }; approval: { isPending: boolean; isError: boolean; error?: unknown; mutate: (variables: ApprovalMutationVariables) => void }; onClose: () => void }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const historyQuery = useQuery({ queryKey: ["platform", "event-approval-history", selectedId], queryFn: () => getEventApprovalHistory(selectedId), enabled: historyOpen, retry: 1 });
-  return <section aria-labelledby="event-review-title" className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.14em] text-[#7f9d94]">READ-ONLY EVENT REVIEW</p><h2 id="event-review-title" className="mt-1 text-xl font-bold text-[#06201c]">{reviewQuery.data?.title ?? "Event review"}</h2></div><button type="button" onClick={onClose} className="font-semibold text-[#1f6a58] underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2">Close</button></div>{reviewQuery.isLoading ? <div role="status" className="mt-5 space-y-3"><div className="h-8 animate-pulse rounded bg-[#edf3f0]" /><div className="h-24 animate-pulse rounded bg-[#edf3f0]" /></div> : reviewQuery.isError ? <div className="mt-5"><p role="alert" className="font-semibold text-[#b42318]">Unable to load event details.</p><button type="button" onClick={() => void reviewQuery.refetch()} className="mt-3 font-semibold text-[#1f6a58] underline">Retry</button></div> : reviewQuery.data ? <><EventApprovalReviewPanel event={reviewQuery.data} approvalPending={approval.isPending} approvalError={approval.isError ? "Unable to apply this Event approval decision. Please try again." : null} onDecision={(action, reason) => approval.mutate({ eventId: selectedId, action, reason })} /><section className="mt-6 border-t border-[#e1ebe6] pt-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-bold text-[#06201c]">Approval History</h3><p className="mt-1 text-sm text-[#52736a]">Backend audit history for this Event.</p></div><button type="button" onClick={() => setHistoryOpen((open) => !open)} className="h-10 rounded-full border border-[#1f6a58] px-4 text-sm font-bold text-[#1f6a58]">{historyOpen ? "Hide history" : "Show history"}</button></div>{historyOpen ? <ApprovalHistory query={historyQuery} /> : null}</section></> : null}</section>;
+  return <section aria-labelledby="event-review-title" className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.14em] text-[#7f9d94]">READ-ONLY EVENT REVIEW</p><h2 id="event-review-title" className="mt-1 text-xl font-bold text-[#06201c]">{reviewQuery.data?.title ?? "Event review"}</h2></div><button type="button" onClick={onClose} className="rounded-md px-2 py-1 font-semibold text-[#1f6a58] underline transition-colors hover:bg-[#f1f7f4] hover:text-[#185746] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2">Close</button></div>{reviewQuery.isLoading ? <div role="status" className="mt-5 space-y-3"><div className="h-8 animate-pulse rounded bg-[#edf3f0]" /><div className="h-24 animate-pulse rounded bg-[#edf3f0]" /></div> : reviewQuery.isError ? <div className="mt-5"><p role="alert" className="font-semibold text-[#b42318]">Unable to load event details.</p><button type="button" onClick={() => void reviewQuery.refetch()} className="mt-3 font-semibold text-[#1f6a58] underline">Retry</button></div> : reviewQuery.data ? <><EventApprovalReviewPanel event={reviewQuery.data} approvalPending={approval.isPending} approvalError={approval.isError ? "Unable to apply this Event approval decision. Please try again." : null} onDecision={(action, reason) => approval.mutate({ eventId: selectedId, action, reason })} /><section className="mt-6 border-t border-[#e1ebe6] pt-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-bold text-[#06201c]">Approval History</h3><p className="mt-1 text-sm text-[#52736a]">Backend audit history for this Event.</p></div><button type="button" onClick={() => setHistoryOpen((open) => !open)} className="h-10 rounded-full border border-[#1f6a58] px-4 text-sm font-bold text-[#1f6a58]">{historyOpen ? "Hide history" : "Show history"}</button></div>{historyOpen ? <ApprovalHistory query={historyQuery} /> : null}</section></> : null}</section>;
 }
 
 function ApprovalHistory({ query }: { query: { data?: EventApprovalHistoryResponse; error?: unknown; isLoading: boolean; isError: boolean; refetch: () => Promise<unknown> } }) {

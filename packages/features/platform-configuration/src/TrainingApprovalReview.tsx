@@ -103,12 +103,13 @@ export default function TrainingApprovalReview({
       const from = entry.from_status;
       const to = entry.to_status ?? entry.status;
       const reason = entry.reason;
+      const isCancellation = [label, to].some((value) => typeof value === "string" && value.toLowerCase().includes("cancel"));
       const who = entry.performed_by;
       const when = entry.created_at ?? entry.timestamp;
       return <li key={entry.id ?? `history-${index}`} className="pl-6 relative before:absolute before:left-[-5px] before:top-1 before:h-2 before:w-2 before:rounded-full before:bg-[#1f6a58]">
         <p className="font-bold text-[#284940]">{enumLabel(String(label))}{from && to ? <span className="font-normal text-[#52736a]"> — {enumLabel(String(from))} → {enumLabel(String(to))}</span> : null}</p>
         {hasText(who) ? <p className="text-xs text-[#7f9d94]">by {who}</p> : null}
-        {hasText(reason) ? <p className="mt-1 rounded-lg bg-[#f9fcfa] px-3 py-2 text-xs text-[#52736a]">{reason}</p> : null}
+        {hasText(reason) ? <p className="mt-1 rounded-lg bg-[#f9fcfa] px-3 py-2 text-xs text-[#52736a]">{isCancellation ? "Cancellation reason: " : ""}{reason}</p> : null}
         {hasText(when) ? <p className="mt-1 text-xs text-[#7f9d94]">{wallClockDateTime(when)}</p> : null}
       </li>;
     })}</ol>}</ReviewSection>

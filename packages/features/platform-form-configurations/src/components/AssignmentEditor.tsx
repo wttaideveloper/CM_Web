@@ -138,6 +138,8 @@ export function AssignmentEditor({
       </div>
     </div>
 
+    <p className="mt-3 text-sm leading-5 text-[#52736a]">{scope === "global" ? copy.globalScopeHelp : copy.selectiveScopeHelp}</p>
+
     {scope === "selective" ? <div className="pt-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span className="rounded-full bg-[#e8f5ee] px-2.5 py-1 text-xs font-bold text-[#1f6a58]">{copy.selectedCount.replace("{count}", String(tenantIds.length))}</span>
@@ -152,6 +154,7 @@ export function AssignmentEditor({
           <span className="text-sm font-bold text-[#06201c]">Enterprises</span>
           <span className="rounded-full bg-[#e8f5ee] px-2.5 py-1 text-xs font-bold text-[#1f6a58]">{enterpriseIds.length} selected</span>
         </div>
+        <p className="mt-1 text-sm leading-5 text-[#52736a]">{copy.enterpriseAssignmentHelp}</p>
         {isLoadingEnterprises ? <p className="py-3 text-sm text-[#52736a]">{copy.loading}</p> : null}
         {enterpriseError ? <p role="alert" className="py-3 text-sm font-medium text-[#b42318]">{copy.unableToLoadAvailableTenants}</p> : null}
         {!isLoadingEnterprises && !enterpriseError ? <>

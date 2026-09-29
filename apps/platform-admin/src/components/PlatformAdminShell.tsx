@@ -8,10 +8,11 @@ import {
 } from "@ihp/platform-layout";
 import { PlatformApprovalDataProvider, PlatformEnterpriseReadProvider, usePendingEventApprovalCount, usePendingProgramApprovalCount, usePendingTrainingApprovalCount } from "@ihp/platform-configuration";
 import { getPlatformEnterpriseById } from "@ihp/platform-enterprises";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { usePathname } from "next/navigation";
-import { useCallback, useMemo, type ReactNode } from "react";
-import { useEffect, useState } from "react";
-import { getProfileDisplayName, getProfileInitials, getSuperAdminProfile, type SuperAdminProfile } from "@/lib/super-admin-profile";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
+import PlatformBuilderAuthGate from "@/components/PlatformBuilderAuthGate";
+import { getProfileDisplayName, getProfileInitials, getSuperAdminProfile, superAdminProfileQueryKey } from "@/lib/super-admin-profile";
 
 function getShellRoute(pathname: string) {
   const shellOrigin = getShellAppOrigin();
@@ -41,27 +42,41 @@ const platformOwnedNavigationRoutes = new Set([
   "/events",
   "/trainings",
   "/integrations",
+  "/profile",
+  "/account-settings",
 ]);
 
 export default function PlatformAdminShell({ children }: { children: ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient());
+
   return (
-    <PlatformEnterpriseReadProvider enterpriseLoader={getPlatformEnterpriseById}>
-      <PlatformApprovalDataProvider>
-        <PlatformAdminShellContent>{children}</PlatformAdminShellContent>
-      </PlatformApprovalDataProvider>
-    </PlatformEnterpriseReadProvider>
+    <QueryClientProvider client={queryClient}>
+      <PlatformBuilderAuthGate>
+        <PlatformEnterpriseReadProvider enterpriseLoader={getPlatformEnterpriseById}>
+          <PlatformApprovalDataProvider>
+            <PlatformAdminShellContent>{children}</PlatformAdminShellContent>
+          </PlatformApprovalDataProvider>
+        </PlatformEnterpriseReadProvider>
+      </PlatformBuilderAuthGate>
+    </QueryClientProvider>
   );
 }
 
 function PlatformAdminShellContent({ children }: { children: ReactNode }) {
-  const [profile, setProfile] = useState<SuperAdminProfile | null>(null);
-  useEffect(() => { void getSuperAdminProfile().then(setProfile); }, []);
+  const profileQuery = useQuery({
+    queryKey: superAdminProfileQueryKey,
+    queryFn: getSuperAdminProfile,
+    staleTime: 30_000,
+    retry: 1,
+    refetchOnWindowFocus: true,
+  });
+  const profile = profileQuery.data ?? null;
   const pathname = usePathname();
   const pendingEventApprovals = usePendingEventApprovalCount();
   const pendingTrainingApprovals = usePendingTrainingApprovalCount();
   const pendingProgramApprovals = usePendingProgramApprovalCount();
   const homeHref = useMemo(() => "/dashboard", []);
-  const notificationsHref = useMemo(() => getShellRoute("/notifications"), []);
+  const notificationsHref = useMemo(() => getShellRoute("/admin/notifications"), []);
   const handleLogout = useCallback(async () => {
     const shellOrigin = getShellAppOrigin();
 
@@ -83,20 +98,29 @@ function PlatformAdminShellContent({ children }: { children: ReactNode }) {
     [],
   );
   const navigationGroups = useMemo(() => {
-    const approvalBadge = (pendingEventApprovals.data?.pagination.total ?? 0) + (pendingTrainingApprovals.data?.pagination.total ?? 0) + (pendingProgramApprovals.data?.pagination.total ?? 0);
+    const approvalBadge = pendingEventApprovals.data?.pagination.total !== undefined
+      && pendingTrainingApprovals.data?.pagination.total !== undefined
+      && pendingProgramApprovals.data?.pagination.total !== undefined
+      ? pendingEventApprovals.data.pagination.total + pendingTrainingApprovals.data.pagination.total + pendingProgramApprovals.data.pagination.total
+      : 0;
     return platformNavigationGroups.map((group) => ({
       ...group,
       items: group.items.map((item) => item.href === "/approval-queue"
         ? { ...item, badge: approvalBadge && approvalBadge > 0 ? String(approvalBadge) : undefined }
         : item),
     }));
-  }, [pendingEventApprovals.data?.pagination.total, pendingTrainingApprovals.data?.pagination.total, pendingProgramApprovals.data?.pagination.total]);
+  }, [
+    pendingEventApprovals.data,
+    pendingTrainingApprovals.data,
+    pendingProgramApprovals.data,
+  ]);
 
   return (
     <PlatformAdminLayout
       currentPath={pathname}
       homeHref={homeHref}
       notificationsHref={notificationsHref}
+      profileHref="/profile"
       onLogout={handleLogout}
       resolveNavigationHref={resolveNavigationHref}
       navigationGroups={navigationGroups}

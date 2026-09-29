@@ -1,11 +1,22 @@
 "use client";
 
 import type { CreateTrainingFormValues } from "./create-training-form";
-import TrainingMediaUploadButton from "./TrainingMediaUploadButton";
+import TrainingTaxonomyField from "./TrainingTaxonomyField";
+import type { TrainingCategoryOption } from "./training-categories.service";
+import TrainingMediaField from "./TrainingMediaField";
 
 type UpdateForm = <Key extends keyof CreateTrainingFormValues>(key: Key, value: CreateTrainingFormValues[Key]) => void;
 
-type SectionProps = { values: CreateTrainingFormValues; update: UpdateForm; errors: Record<string, string[]> };
+type SectionProps = {
+  values: CreateTrainingFormValues;
+  update: UpdateForm;
+  errors: Record<string, string[]>;
+  trainingCategories?: readonly TrainingCategoryOption[];
+  categoriesLoading?: boolean;
+  categoriesError?: boolean;
+  retryCategories?: () => void;
+  preserveLegacyCategoryValues?: boolean;
+};
 
 const inputClass = "mt-1.5 h-11 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]";
 const labelClass = "block text-sm font-semibold text-[#06201c]";
@@ -24,7 +35,16 @@ function SectionHeading({ title, description, tip }: { title: string; descriptio
 }
 
 /** Renders the required Training basics: title, category, description, and tags. */
-export function TrainingBasicsSection({ values, update, errors }: SectionProps) {
+export function TrainingBasicsSection({
+  values,
+  update,
+  errors,
+  trainingCategories = [],
+  categoriesLoading = false,
+  categoriesError = false,
+  retryCategories,
+  preserveLegacyCategoryValues = false,
+}: SectionProps) {
   const addTag = (value: string) => {
     const tag = value.trim();
     if (tag && !values.tags.includes(tag)) update("tags", [...values.tags, tag]);
@@ -37,12 +57,37 @@ export function TrainingBasicsSection({ values, update, errors }: SectionProps) 
   return (
     <section className="space-y-5">
       <SectionHeading title="Basic Information" description="Tell learners what this training is about — clear titles get 3× more enrolments." tip="Use a specific, benefit-driven title like ‘Diabetes Reversal — 12-Week Lifestyle Program’ instead of ‘Health Training’." />
-      <label className={labelClass}>Training name <span className="text-[#b42318]">*</span><input value={values.title} onChange={(event) => update("title", event.target.value)} placeholder="e.g. Diabetes Reversal — 12-Week Program" className={inputClass} /><FieldError error={errors.title} /></label>
+      <label className={labelClass}>Training name <span className="text-[#b42318]">*</span><input id="training-field-title" value={values.title} onChange={(event) => update("title", event.target.value)} placeholder="e.g. Diabetes Reversal — 12-Week Program" className={inputClass} /><FieldError error={errors.title} /></label>
       <label className={labelClass}>Subtitle<input value={values.subtitle} onChange={(event) => update("subtitle", event.target.value)} placeholder="e.g. Reverse T2D with food, movement & sleep" className={inputClass} /></label>
-      <label className={labelClass}>Description <span className="text-[#b42318]">*</span><textarea value={values.description} onChange={(event) => update("description", event.target.value)} rows={5} placeholder="What will learners achieve? Who is it for? What’s included?" className={`${inputClass} h-auto py-3`} /><FieldError error={errors.description} /></label>
+      <label className={labelClass}>Description <span className="text-[#b42318]">*</span><textarea id="training-field-description" value={values.description} onChange={(event) => update("description", event.target.value)} rows={5} placeholder="What will learners achieve? Who is it for? What’s included?" className={`${inputClass} h-auto py-3`} /><FieldError error={errors.description} /></label>
       <div className="grid gap-4 md:grid-cols-2">
-        <label className={labelClass}>Category<input value={values.category} onChange={(event) => update("category", event.target.value)} className={inputClass} /><FieldError error={errors.category} /></label>
-        <label className={labelClass}>Subcategory<input value={values.subcategory} onChange={(event) => update("subcategory", event.target.value)} className={inputClass} /></label>
+        <TrainingTaxonomyField
+          field="category"
+          label="Category"
+          value={values.category}
+          categoryValue={values.category}
+          categories={trainingCategories}
+          update={update}
+          required
+          error={errors.category?.[0]}
+          categoriesLoading={categoriesLoading}
+          categoriesError={categoriesError}
+          onRetry={retryCategories}
+          preserveLegacyValue={preserveLegacyCategoryValues}
+        />
+        <TrainingTaxonomyField
+          field="subcategory"
+          label="Subcategory"
+          value={values.subcategory}
+          categoryValue={values.category}
+          categories={trainingCategories}
+          update={update}
+          error={errors.subcategory?.[0]}
+          categoriesLoading={categoriesLoading}
+          categoriesError={categoriesError}
+          onRetry={retryCategories}
+          preserveLegacyValue={preserveLegacyCategoryValues}
+        />
       </div>
       <label className={labelClass}>Tags<input onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addTag(event.currentTarget.value); event.currentTarget.value = ""; } }} placeholder="Type a tag and press Enter" className={inputClass} /></label>
       <div className="flex flex-wrap gap-2">{values.tags.map((tag) => <button key={tag} type="button" onClick={() => update("tags", values.tags.filter((item) => item !== tag))} className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{tag} ×</button>)}</div>
@@ -58,7 +103,7 @@ export function TrainingBasicsSection({ values, update, errors }: SectionProps) 
   );
 }
 /** Renders delivery mode, duration, and instructor — hybrid/physical/online like Event. */
-export function TrainingDeliverySection({ values, update }: SectionProps) {
+export function TrainingDeliverySection({ values, update, errors }: SectionProps) {
   return (
     <section className="space-y-5">
       <SectionHeading title="Delivery & Instructor" description="Hybrid builds community — online scales it. Pick the format your learners prefer." tip="Physical needs a venue, Online needs a meeting link, Hybrid needs both. Learners filter by this." />
@@ -88,7 +133,7 @@ export function TrainingDeliverySection({ values, update }: SectionProps) {
       ) : null}
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Duration<input value={values.duration} onChange={(event) => update("duration", event.target.value)} placeholder="e.g. 4 weeks" className={inputClass} /></label>
-        <label className={labelClass}>Instructor ID<input value={values.instructor_id} onChange={(event) => update("instructor_id", event.target.value)} className={inputClass} /></label>
+        <label className={labelClass}>Instructor ID<input id="training-field-instructor_id" value={values.instructor_id} onChange={(event) => update("instructor_id", event.target.value)} className={inputClass} /><FieldError error={errors.instructor_id} /></label>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Level<select value={values.level} onChange={(e) => update("level", e.target.value)} className={inputClass}><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option><option value="all">All levels</option></select></label>
@@ -126,21 +171,21 @@ export function TrainingScheduleSection({ values, update, errors }: SectionProps
     <section className="space-y-5">
       <SectionHeading title="Schedule" description="When does it run and when can people join? Dates drive calendar invites and reminders." tip="Start date powers the calendar file and ‘Upcoming’ filter. Enrolment closes auto-hides the Enrol button." />
       <div className="grid gap-4 md:grid-cols-2">
-        <label className={labelClass}>Start date<input type="datetime-local" value={values.start_date} onChange={(event) => update("start_date", event.target.value)} className={inputClass} /><FieldError error={errors.start_date} /></label>
-        <label className={labelClass}>End date<input type="datetime-local" value={values.end_date} onChange={(event) => update("end_date", event.target.value)} className={inputClass} /><FieldError error={errors.end_date} /></label>
+        <label className={labelClass}>Start date<input id="training-field-start_date" type="datetime-local" value={values.start_date} onChange={(event) => update("start_date", event.target.value)} className={inputClass} /><FieldError error={errors.start_date} /></label>
+        <label className={labelClass}>End date<input id="training-field-end_date" type="datetime-local" value={values.end_date} onChange={(event) => update("end_date", event.target.value)} className={inputClass} /><FieldError error={errors.end_date} /></label>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
-        <label className={labelClass}>Start time<input type="time" value={values.start_time} onChange={(event) => update("start_time", event.target.value)} className={inputClass} /></label>
-        <label className={labelClass}>End time<input type="time" value={values.end_time} onChange={(event) => update("end_time", event.target.value)} className={inputClass} /></label>
+        <label className={labelClass}>Start time<input id="training-field-start_time" type="time" value={values.start_time} onChange={(event) => update("start_time", event.target.value)} className={inputClass} /><FieldError error={errors.start_time} /></label>
+        <label className={labelClass}>End time<input id="training-field-end_time" type="time" value={values.end_time} onChange={(event) => update("end_time", event.target.value)} className={inputClass} /><FieldError error={errors.end_time} /></label>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
-        <label className={labelClass}>Enrolment opens<input type="datetime-local" value={values.enrolment_start} onChange={(event) => update("enrolment_start", event.target.value)} className={inputClass} /><FieldError error={errors.enrolment_start} /></label>
-        <label className={labelClass}>Enrolment closes<input type="datetime-local" value={values.enrolment_end} onChange={(event) => update("enrolment_end", event.target.value)} className={inputClass} /><FieldError error={errors.enrolment_end} /></label>
+        <label className={labelClass}>Enrolment opens<input id="training-field-enrolment_start" type="datetime-local" value={values.enrolment_start} onChange={(event) => update("enrolment_start", event.target.value)} className={inputClass} /><FieldError error={errors.enrolment_start} /></label>
+        <label className={labelClass}>Enrolment closes<input id="training-field-enrolment_end" type="datetime-local" value={values.enrolment_end} onChange={(event) => update("enrolment_end", event.target.value)} className={inputClass} /><FieldError error={errors.enrolment_end} /></label>
       </div>
       <label className={labelClass}>Time zone<input value={values.time_zone} onChange={(event) => update("time_zone", event.target.value)} className={inputClass} /></label>
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Recurring<input value={values.recurring} onChange={(e) => update("recurring", e.target.value)} placeholder="e.g. weekly, none" className={inputClass} /></label>
-        <label className={labelClass}>Schedule exceptions<textarea value={values.schedule_exceptions} onChange={(e) => update("schedule_exceptions", e.target.value)} placeholder='JSON e.g. ["2026-09-25"]' rows={2} className={`${inputClass} h-auto py-2`} /></label>
+        <label className={labelClass}>Schedule exceptions<textarea id="training-field-schedule_exceptions" value={values.schedule_exceptions} onChange={(e) => update("schedule_exceptions", e.target.value)} placeholder='JSON e.g. ["2026-09-25"]' rows={2} className={`${inputClass} h-auto py-2`} /><FieldError error={errors.schedule_exceptions} /></label>
       </div>
       <label className={labelClass}>Access duration (days)<input value={values.access_duration_days} onChange={(event) => update("access_duration_days", event.target.value)} placeholder="e.g. 90" className={inputClass} /></label>
     </section>
@@ -148,14 +193,14 @@ export function TrainingScheduleSection({ values, update, errors }: SectionProps
 }
 
 /** Training Advanced — discussions, announcements, moderation, instructor notes, notes pdf, etc. */
-export function TrainingAdvancedSection({ values, update }: SectionProps) {
+export function TrainingAdvancedSection({ values, update, errors }: SectionProps) {
   return (
     <section className="space-y-5">
       <SectionHeading title="Advanced & Collaboration" description="Discussions, announcements, moderation and supplemental notes." tip="JSON fields accept an array or object, e.g. [] or [{}]. Leave empty to omit." />
       <UrlList label="Notes / Handouts (URLs)" values={values.instructor_notes} update={(next) => update("instructor_notes", next)} />
       <label className={labelClass}>Instructor notes<input value={values.instructor_notes.join(", ")} onChange={(e) => update("instructor_notes", e.target.value.split(",").map((note) => note.trim()).filter(Boolean))} placeholder="Internal notes for the instructor, not shown to learners" className={inputClass} /></label>
       <label className={labelClass}>Notes PDF URL<input type="url" value={values.notes_pdf_url} onChange={(e) => update("notes_pdf_url", e.target.value)} placeholder="https://…" className={inputClass} /></label>
-      <label className={labelClass}>FAQs (JSON)<textarea value={values.faqs} onChange={(e) => update("faqs", e.target.value)} placeholder='[{"question":"...","answer":"..."}]' rows={3} className={`${inputClass} h-auto py-2`} /></label>
+      <label className={labelClass}>FAQs (JSON)<textarea id="training-field-faqs" value={values.faqs} onChange={(e) => update("faqs", e.target.value)} placeholder='[{"question":"...","answer":"..."}]' rows={3} className={`${inputClass} h-auto py-2`} /><FieldError error={errors.faqs} /></label>
       <div>
         <label className={labelClass}>Milestone badges<input onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); const v = event.currentTarget.value.trim(); if (v && !values.badges.includes(v)) update("badges", [...values.badges, v]); event.currentTarget.value = ""; } }} placeholder="Type badge and press Enter" className={inputClass} /></label>
         <div className="mt-2 flex flex-wrap gap-2">{values.badges.map((badge) => <button key={badge} type="button" onClick={() => update("badges", values.badges.filter((item) => item !== badge))} className="rounded-full bg-[#eef4ff] px-3 py-1 text-xs font-bold text-[#2563eb]">{badge} ×</button>)}</div>
@@ -181,33 +226,29 @@ function UrlList({ label, values, update, uploadImages = false, uploadVideo = fa
       </div>
       <div className="mt-2 space-y-2">
         {displayedValues.map((value, index) => (
-          <div key={index} className="flex flex-nowrap items-center gap-2">
-            <input
-              type="url"
-              value={value}
-              onChange={(event) => update(displayedValues.map((current, item) => (item === index ? event.target.value : current)))}
-              className={`${inputClass.replace("mt-1.5 ", "")} min-w-0 flex-1`}
-              placeholder="https://…"
-            />
-            {safeValues.length > 0 ? <button type="button" onClick={() => update(safeValues.filter((_item, item) => item !== index))} className="shrink-0 rounded-xl px-3 text-sm font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button> : null}
-            {uploadImages ? (
-              <TrainingMediaUploadButton
-                fieldKey="gallery_images"
-                label="Upload image"
-                accept="image/*"
-                purpose="image"
-                onUploaded={(file) => update(displayedValues.map((current, item) => (item === index ? file.url : current)))}
-              />
-            ) : null}
-            {uploadVideo ? (
-              <TrainingMediaUploadButton
-                fieldKey="promotional_video"
-                label="Upload video"
-                accept="video/*"
-                purpose="lesson_video"
-                onUploaded={(file) => update([file.url])}
-              />
-            ) : null}
+          <div key={index} className="flex flex-wrap items-start gap-2">
+            <div className="min-w-0 flex-1">
+              {uploadImages || uploadVideo ? (
+                <TrainingMediaField
+                  fieldKey={uploadImages ? "gallery_images" : "promotional_video"}
+                  label={uploadImages ? `${label} ${index + 1}` : label}
+                  value={value}
+                  kind={uploadImages ? "image" : "video"}
+                  accept={uploadImages ? "image/*" : "video/*"}
+                  purpose={uploadImages ? "image" : "lesson_video"}
+                  onChange={(next) => update(displayedValues.map((current, item) => (item === index ? next : current)))}
+                />
+              ) : (
+                <input
+                  type="url"
+                  value={value}
+                  onChange={(event) => update(displayedValues.map((current, item) => (item === index ? event.target.value : current)))}
+                  className={`${inputClass.replace("mt-1.5 ", "")} min-w-0 flex-1`}
+                  placeholder="https://…"
+                />
+              )}
+            </div>
+            {safeValues.length > 0 ? <button type="button" onClick={() => update(safeValues.filter((_item, item) => item !== index))} className="mt-2 shrink-0 rounded-xl px-3 py-2 text-sm font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button> : null}
           </div>
         ))}
       </div>
@@ -265,16 +306,19 @@ function DocumentsList({ values, update }: { values: Array<{ url: string; visibi
       <div className="mt-2 space-y-3">
         {displayedValues.map((doc, idx) => (
           <div key={idx} className="rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-3">
-            <div className="flex flex-nowrap items-center gap-2">
-              <input type="url" value={doc.url} onChange={(e) => update(displayedValues.map((d, i) => (i === idx ? { ...d, url: e.target.value } : d)))} placeholder="https://…" className={`${inputClass.replace("mt-1.5 ", "")} min-w-0 flex-1`} />
-              {values.length > 0 ? <button type="button" onClick={() => update(values.filter((_, i) => i !== idx))} className="shrink-0 rounded-xl px-3 text-sm font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button> : null}
-              <TrainingMediaUploadButton
-                fieldKey="documents"
-                label="Upload document"
-                accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.rtf,application/pdf,text/plain"
-                purpose="lesson_document"
-                onUploaded={(file) => update(displayedValues.map((current, item) => (item === idx ? { ...current, url: file.url } : current)))}
-              />
+            <div className="flex flex-wrap items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <TrainingMediaField
+                  fieldKey="documents"
+                  label={`Document ${idx + 1}`}
+                  value={doc.url}
+                  kind="document"
+                  accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.rtf,application/pdf,text/plain"
+                  purpose="lesson_document"
+                  onChange={(url) => update(displayedValues.map((item, index) => (index === idx ? { ...item, url } : item)))}
+                />
+              </div>
+              {values.length > 0 ? <button type="button" onClick={() => update(values.filter((_, i) => i !== idx))} className="mt-2 shrink-0 rounded-xl px-3 py-2 text-sm font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button> : null}
             </div>
             <div className="mt-2 flex gap-3">
               <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]">Visibility<select value={doc.visibility} onChange={(e) => update(displayedValues.map((d, i) => (i === idx ? { ...d, visibility: e.target.value } : d)))} className="ml-1 rounded-lg border border-[#d7e5df] bg-white px-2 py-1 text-xs"><option value="public">public</option><option value="private">private</option></select></label>
@@ -293,17 +337,16 @@ export function TrainingMediaSection({ values, update }: SectionProps) {
     <section className="space-y-5">
       <SectionHeading title="Images & Media" description="A great cover image lifts enrolments. Use 16:9, ≥1280px." tip="Primary image is the card + header. Gallery builds trust — add 2–3 real photos." />
       <div>
-        <label htmlFor="training-primary-image-url" className={labelClass}>Primary image URL</label>
-        <div className="flex flex-nowrap items-center gap-2">
-          <input id="training-primary-image-url" type="url" value={values.primary_image} onChange={(event) => update("primary_image", event.target.value)} placeholder="https://…" className={`${inputClass} min-w-0 flex-1`} />
-          <TrainingMediaUploadButton
-            fieldKey="primary_image"
-            label="Upload image"
-            accept="image/*"
-            purpose="image"
-            onUploaded={(file) => update("primary_image", file.url)}
-          />
-        </div>
+        <p className={labelClass}>Primary image</p>
+        <TrainingMediaField
+          fieldKey="primary_image"
+          label="Primary image"
+          value={values.primary_image}
+          kind="image"
+          accept="image/*"
+          purpose="image"
+          onChange={(url) => update("primary_image", url)}
+        />
       </div>
       <p className="mt-1 text-xs text-[#7f9d94]">Shows on the training card and detail header when set.</p>
       <UrlList label="Gallery images" values={values.gallery_images} update={(next) => update("gallery_images", next)} uploadImages alwaysShowField />
@@ -314,11 +357,11 @@ export function TrainingMediaSection({ values, update }: SectionProps) {
 }
 
 /** Additional Configuration — prerequisites, release, randomise, publication. */
-export function TrainingCourseBuilderSection({ values, update }: SectionProps) {
+export function TrainingCourseBuilderSection({ values, update, errors }: SectionProps) {
   return (
     <section className="space-y-5">
       <SectionHeading title="Additional Configuration" description="Fine-tune the learning journey — when content unlocks and how it’s completed." tip="Prerequisites = ‘Complete Module 1 first’. Release = ‘Enrolment day + 3’ for drip content." />
-      <label className={labelClass}>Prerequisites<textarea value={values.prerequisites} onChange={(e) => update("prerequisites", e.target.value)} placeholder="e.g. Complete Module 1" rows={2} className={`${inputClass} h-auto py-3`} /></label>
+      <label className={labelClass}>Prerequisites<textarea id="training-field-prerequisites" value={values.prerequisites} onChange={(e) => update("prerequisites", e.target.value)} placeholder="e.g. Complete Module 1" rows={2} className={`${inputClass} h-auto py-3`} /><FieldError error={errors.prerequisites} /></label>
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Release rule<select value={values.release_rule} onChange={(e) => update("release_rule", e.target.value)} className={inputClass}><option value="immediate">Immediate</option><option value="date">By date</option><option value="enrolment_day">Enrolment day</option><option value="previous_lesson">Previous lesson</option></select></label>
         <label className={labelClass}>Scheduled publication<input type="datetime-local" value={values.scheduled_publication} onChange={(e) => update("scheduled_publication", e.target.value)} className={inputClass} /></label>

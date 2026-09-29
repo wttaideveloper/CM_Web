@@ -60,6 +60,7 @@ export {
   getSafeEnterpriseAdminReturnUrl,
   getPlatformAdminAppOrigin,
   getSafePlatformAdminReturnUrl,
+  getSafeShellReturnPath,
   getShellAppOrigin,
 } from "./cross-app";
 export type {

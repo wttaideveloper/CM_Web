@@ -19,6 +19,7 @@ type PasswordRuleState = Record<PasswordRuleKey, boolean>;
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DEFAULT_PASSWORD_MIN_LENGTH = 8;
+const MAX_PASSWORD_LENGTH = 500;
 
 function EyeIcon() {
   return (
@@ -347,11 +348,14 @@ export default function OwnerDetailsStep() {
   const isCountrySelected = Boolean(selectedCountry);
   const isPhoneValid = sanitizeLocalPhone(localPhone).length > 0;
   const arePasswordRulesMet = Object.values(passwordRules).every(Boolean);
+  const passwordExceedsMaximum =
+    password.length > MAX_PASSWORD_LENGTH || confirmPassword.length > MAX_PASSWORD_LENGTH;
   const arePasswordsMatching = confirmPassword.length > 0 && password.length > 0 && confirmPassword === password;
   const isFormReady =
     isFullNameValid &&
     isEmailValid &&
     arePasswordRulesMet &&
+    !passwordExceedsMaximum &&
     arePasswordsMatching &&
     isCountrySelected &&
     isPhoneValid &&
@@ -451,6 +455,10 @@ export default function OwnerDetailsStep() {
 
     if (!arePasswordRulesMet) {
       nextFieldErrors.password = "Please meet all password requirements.";
+    }
+
+    if (passwordExceedsMaximum) {
+      nextFieldErrors.password = "Password must be 500 characters or fewer.";
     }
 
     if (!trimmedConfirmPassword) {
@@ -706,7 +714,9 @@ export default function OwnerDetailsStep() {
               </div>
             </div>
           ) : null}
-          {getFieldError(fieldErrors.password)}
+          {passwordExceedsMaximum
+            ? <p role="alert" className="mt-1 text-xs font-medium text-[#b42318]">Password must be 500 characters or fewer.</p>
+            : getFieldError(fieldErrors.password)}
         </label>
 
         <label className="block">

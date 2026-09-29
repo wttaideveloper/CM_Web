@@ -1,6 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { Suspense, useEffect, useMemo } from "react";
 
 import { useRegistration, type RegistrationStep } from "@/contexts/RegistrationContext";
@@ -94,7 +95,7 @@ function LeftPanel() {
       </div>
 
       <div className="relative z-10 flex w-full max-w-[760px] flex-col lg:h-full">
-        <div className="flex items-center gap-4">
+        <Link href="/auth/login" aria-label="Back to login" className="flex w-fit items-center gap-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-white/70">
           <div className="flex h-14 w-14 items-center justify-center rounded-full border border-white/70 bg-white/10 lg:h-10 lg:w-10">
             <svg
               aria-hidden="true"
@@ -119,7 +120,7 @@ function LeftPanel() {
             </svg>
           </div>
           <p className="text-[28px] font-bold tracking-tight lg:text-[22px]">Invigorate Health</p>
-        </div>
+        </Link>
 
         <div className="mt-16 max-w-[620px] sm:mt-20 lg:mt-10">
           <p className="text-[12px] font-bold uppercase tracking-[0.28em] text-white/65 sm:text-[13px]">

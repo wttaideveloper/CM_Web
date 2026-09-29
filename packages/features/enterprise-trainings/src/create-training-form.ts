@@ -77,6 +77,16 @@ export interface CreateTrainingFormValues {
   badges: string[];
 }
 
+function parseLearningObjectives(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((objective): objective is string => typeof objective === "string" && objective.trim().length > 0);
+  }
+  if (typeof value === "string") {
+    return value.split(/\r?\n/).map((objective) => objective.trim()).filter(Boolean);
+  }
+  return [];
+}
+
 /** Returns blank values for a newly opened Training editor workspace. */
 export function createEmptyTrainingForm(): CreateTrainingFormValues {
   return {
@@ -195,7 +205,7 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
     location_id: stringValue("location_id"),
     instructor_name: stringValue("instructor_name"),
     instructor_bio: stringValue("instructor_bio"),
-    learning_objectives: Array.isArray(record.learning_objectives) ? record.learning_objectives.filter((v): v is string => typeof v === "string") : [],
+    learning_objectives: parseLearningObjectives(record.learning_objectives),
     documents: Array.isArray(record.documents) ? (record.documents as unknown[]).map((d) => { if (typeof d === "string" && d.trim()) return { url: d, visibility: "public", downloadable: true }; if (d && typeof d === "object" && typeof (d as Record<string, unknown>).url === "string") { const r = d as Record<string, unknown>; return { url: r.url as string, visibility: typeof r.visibility === "string" ? r.visibility as string : "public", downloadable: typeof r.downloadable === "boolean" ? r.downloadable as boolean : true }; } return null; }).filter((v): v is { url: string; visibility: string; downloadable: boolean } => v !== null && Boolean(v.url)) : [],
     start_time: stringValue("start_time"),
     end_time: stringValue("end_time"),
@@ -259,7 +269,7 @@ export function buildCreateTrainingPayload(values: CreateTrainingFormValues, ten
     instructor_name: values.instructor_name.trim() || null,
     instructor_bio: values.instructor_bio.trim() || null,
     requirements: values.requirements.trim() || null,
-    learning_objectives: values.learning_objectives.length ? values.learning_objectives : null,
+    learning_objectives: values.learning_objectives.map((objective) => objective.trim()).filter(Boolean),
     primary_image: values.primary_image.trim() || null,
     gallery_images: galleryImages.length ? galleryImages : null,
     promotional_video: values.promotional_video.trim() || null,
@@ -343,7 +353,7 @@ export function buildUpdateTrainingPayload(values: CreateTrainingFormValues): Up
     instructor_name: values.instructor_name.trim() || null,
     instructor_bio: values.instructor_bio.trim() || null,
     requirements: values.requirements.trim() || null,
-    learning_objectives: values.learning_objectives.length ? values.learning_objectives : null,
+    learning_objectives: values.learning_objectives.map((objective) => objective.trim()).filter(Boolean),
     primary_image: values.primary_image.trim() || null,
     gallery_images: galleryImages.length ? galleryImages : null,
     promotional_video: values.promotional_video.trim() || null,
@@ -419,11 +429,34 @@ export function validateTrainingForm(values: CreateTrainingFormValues, configure
   if (values.start_date && values.end_date && values.end_date < values.start_date) {
     errors.end_date = ["End date cannot be before the start date."];
   }
-  if (values.start_date && values.end_date && values.start_date === values.end_date && values.start_time && values.end_time && timeRe.test(values.start_time) && timeRe.test(values.end_time) && values.end_time <= values.start_time) {
+  const startCalendarDate = values.start_date.slice(0, 10);
+  const endCalendarDate = values.end_date.slice(0, 10);
+  if (startCalendarDate && startCalendarDate === endCalendarDate && values.start_time && values.end_time && timeRe.test(values.start_time) && timeRe.test(values.end_time) && values.end_time <= values.start_time) {
     errors.end_time = ["End time must be after start time on the same day."];
   }
   if (values.enrolment_start && values.enrolment_end && values.enrolment_end < values.enrolment_start) {
     errors.enrolment_end = ["Enrolment end cannot be before enrolment start."];
+  }
+  for (const [key, value] of [
+    ["schedule_exceptions", values.schedule_exceptions],
+    ["discussions", values.discussions],
+    ["announcements", values.announcements],
+    ["moderation_history", values.moderation_history],
+    ["faqs", values.faqs],
+  ] as const) {
+    if (!value.trim()) continue;
+    try {
+      JSON.parse(value);
+    } catch {
+      errors[key] = ["Enter valid JSON or leave this field empty."];
+    }
+  }
+  if (values.faqs.trim() && !errors.faqs) {
+    try {
+      if (!Array.isArray(JSON.parse(values.faqs))) errors.faqs = ["FAQs must be a JSON array."];
+    } catch {
+      // Invalid JSON is already reported above.
+    }
   }
   const capacity = values.capacity.trim() ? Number(values.capacity) : null;
   if (capacity !== null && (!Number.isFinite(capacity) || capacity <= 0)) errors.capacity = ["Capacity must be greater than zero."];

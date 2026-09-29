@@ -190,9 +190,9 @@ async function requestJson(path: string, payload: unknown, fallback: string): Pr
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-  } catch (error) {
+  } catch {
     throw new RegistrationApiError(
-      error instanceof Error ? error.message : "Network error while completing request.",
+      "Unable to connect to the registration service. Check your connection and try again.",
       "network_failure",
     );
   }

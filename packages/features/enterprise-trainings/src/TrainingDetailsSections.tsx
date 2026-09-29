@@ -276,6 +276,10 @@ function LessonFileDrop({
   const handleFile = (file: File | undefined) => {
     if (!file) return;
     setError(null);
+    if (file.size > MAX_LESSON_FILE_BYTES) {
+      setError(`${file.name} is larger than ${MAX_LESSON_FILE_SIZE_MB} MB.`);
+      return;
+    }
     onFile(file);
   };
   return (
@@ -283,7 +287,7 @@ function LessonFileDrop({
       onDragOver={(event) => { event.preventDefault(); setIsDragging(true); }}
       onDragLeave={() => setIsDragging(false)}
       onDrop={(event) => { event.preventDefault(); setIsDragging(false); try { handleFile(event.dataTransfer.files[0]); } catch (dropError) { setError(dropError instanceof Error ? dropError.message : "Unable to add file."); } }}
-      className={`rounded-lg border border-dashed px-3 py-4 text-center text-xs ${isDragging ? "border-[#1f6a58] bg-[#effaf4]" : "border-[#b9d3c8] bg-[#f9fcfa]"}`}
+      className={`rounded-lg border border-dashed px-3 py-4 text-center text-xs transition-colors ${isDragging ? "border-[#1f6a58] bg-[#effaf4]" : "border-[#b9d3c8] bg-[#f9fcfa] hover:border-[#1f6a58] hover:bg-[#effaf4]"}`}
     >
       <input
         type="file"
@@ -291,13 +295,11 @@ function LessonFileDrop({
         className="sr-only"
         id={`lesson-file-${label.toLowerCase().replace(/\s+/g, "-")}`}
         onChange={(event) => {
-          const file = event.target.files?.[0];
-          if (file && file.size > MAX_LESSON_FILE_BYTES) setError(`${file.name} is larger than ${MAX_LESSON_FILE_SIZE_MB} MB.`);
-          else handleFile(file);
+          handleFile(event.target.files?.[0]);
           event.currentTarget.value = "";
         }}
       />
-      <label htmlFor={`lesson-file-${label.toLowerCase().replace(/\s+/g, "-")}`} className="cursor-pointer font-semibold text-[#1f6a58]">
+      <label htmlFor={`lesson-file-${label.toLowerCase().replace(/\s+/g, "-")}`} className="cursor-pointer font-semibold text-[#1f6a58] hover:underline">
         {fileName || `Drop ${label.toLowerCase()} here or click to browse`}
       </label>
       <p className="mt-1 text-[10px] text-[#7f9d94]">Maximum file size: {MAX_LESSON_FILE_SIZE_MB} MB</p>
@@ -614,7 +616,10 @@ function AddLessonForm({ pending, trainingDeliveryMode, onSubmit }: { pending: b
       {isLessonType(type, "pdf", "notes") ? <input value={fileSize} onChange={(event) => setFileSize(event.target.value)} placeholder="File size (bytes)" type="number" min="0" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
       {isLessonType(type, "quiz", "assignment") ? <p className="rounded-lg bg-[#f9fcfa] px-3 py-2 text-xs text-[#52736a]">{type === "quiz" ? "After creating this lesson, attach or create the quiz questions below." : "After creating this lesson, use the Assignments tab to create the submission task."}</p> : null}
       <p className="text-[10px] text-[#7f9d94]">Only fields for the selected lesson type are shown.</p>
-      <button type="submit" disabled={pending || !title.trim()} className="h-9 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:opacity-60">{pending ? "Adding..." : "Add lesson"}</button>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="submit" disabled={pending || !title.trim()} className="h-9 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white hover:bg-[#195646] disabled:opacity-60">{pending ? "Adding..." : "Add lesson"}</button>
+        <button type="button" onClick={reset} disabled={pending} className="h-9 rounded-full border border-[#d7e5df] px-4 text-xs font-bold text-[#52736a] hover:bg-[#f4faf7] disabled:opacity-60">Clear</button>
+      </div>
     </form>
   );
 }
@@ -927,14 +932,14 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode }: { trai
                   </form>
                 ) : (
                   <>
-                    <div>
+                    <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className="text-sm font-bold text-[#06201c]">{title}</p>
-                        <span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-[10px] font-bold text-[#2563eb]">{SESSION_TYPE_OPTIONS.find((option) => option.value === normalizeSessionType(section.type))?.label ?? "Session"}</span>
+                        <p className="min-w-0 break-words text-sm font-bold text-[#06201c]">{title}</p>
+                        <span className="shrink-0 rounded-full bg-[#eef4ff] px-2 py-0.5 text-[10px] font-bold text-[#2563eb]">{SESSION_TYPE_OPTIONS.find((option) => option.value === normalizeSessionType(section.type))?.label ?? "Session"}</span>
                       </div>
                       {(normalizeSessionType(section.type) === "live" || normalizeSessionType(section.type) === "venue") && typeof section.scheduled_at === "string" && section.scheduled_at ? <p className="mt-1 text-xs text-[#52736a]">{formatTrainingDate(section.scheduled_at)}</p> : null}
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex shrink-0 items-center gap-1">
                       <button type="button" onClick={() => moveSectionMutation.mutate({ sectionId: id, direction: "up" })} disabled={sIndex === 0} className="rounded px-1.5 py-0.5 text-[10px] font-bold text-[#7f9d94] hover:bg-[#e8f6ee] disabled:opacity-30">↑</button>
                       <button type="button" onClick={() => moveSectionMutation.mutate({ sectionId: id, direction: "down" })} disabled={sIndex === sections.length - 1} className="rounded px-1.5 py-0.5 text-[10px] font-bold text-[#7f9d94] hover:bg-[#e8f6ee] disabled:opacity-30">↓</button>
                       <button type="button" onClick={() => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -27,6 +27,15 @@ const trainingDetailsTabs: ReadonlyArray<{ id: TrainingDetailsTab; label: string
   { id: "dashboards", label: "Dashboards" },
 ];
 
+function formatLearningObjectives(value: unknown): string {
+  const objectives = Array.isArray(value)
+    ? value.filter((objective): objective is string => typeof objective === "string")
+    : typeof value === "string"
+      ? value.split(/\r?\n/)
+      : [];
+  return objectives.map((objective) => objective.trim()).filter(Boolean).join(", ") || "—";
+}
+
 /** Shows the latest super-admin reject / request-changes note on the Training detail page. */
 function AdminNoteBanner({ trainingId, status }: { trainingId: string; status: string }) {
   const adminNotesQuery = useQuery({
@@ -37,25 +46,6 @@ function AdminNoteBanner({ trainingId, status }: { trainingId: string; status: s
     retry: 1,
   });
 
-  if (adminNotesQuery.isLoading) {
-    return (
-      <section className="mt-6 rounded-2xl border border-[#eadbb8] bg-[#fffaf0] px-5 py-4" aria-live="polite" aria-busy="true">
-        <p className="text-sm font-semibold text-[#765018]">Loading Super Admin feedback...</p>
-      </section>
-    );
-  }
-
-  if (adminNotesQuery.isError) {
-    return (
-      <section className="mt-6 rounded-2xl border border-[#f0d1c9] bg-[#fff7f6] px-5 py-4">
-        <p role="alert" className="text-sm font-semibold text-[#b42318]">Unable to load Super Admin feedback.</p>
-        <button type="button" onClick={() => void adminNotesQuery.refetch()} className="mt-2 text-sm font-semibold text-[#1f6a58] underline">
-          Retry
-        </button>
-      </section>
-    );
-  }
-
   const data = adminNotesQuery.data;
   let note: string | null = null;
   let by: string | null = null;
@@ -64,7 +54,8 @@ function AdminNoteBanner({ trainingId, status }: { trainingId: string; status: s
     note = data.trim() || null;
   } else if (data && typeof data === "object" && !Array.isArray(data)) {
     const record = data as Record<string, unknown>;
-    note = [record.note, record.message, record.reason, record.comment, record.notes].find((value): value is string => typeof value === "string" && value.trim().length > 0) ?? null;
+    note = [record.last_admin_notes, record.note, record.message, record.reason, record.comment, record.notes, record.admin_note, record.rejection_reason]
+      .find((value): value is string => typeof value === "string" && value.trim().length > 0) ?? null;
     by = typeof record.performed_by === "string" && record.performed_by.trim() ? record.performed_by : typeof record.admin_name === "string" && record.admin_name.trim() ? record.admin_name : null;
     reviewedAt = typeof record.created_at === "string" ? record.created_at : typeof record.performed_at === "string" ? record.performed_at : null;
   }
@@ -73,16 +64,21 @@ function AdminNoteBanner({ trainingId, status }: { trainingId: string; status: s
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#8a5a00]">
-            {status === "needs_revision" ? "Changes requested" : "Training not approved"}
+            {status === "needs_revision" ? "Needs Revision" : "Training not approved"}
           </p>
           {by || reviewedAt ? (
             <p className="mt-1 text-xs text-[#8a6b37]">
               {[by ? `Reviewed by ${by}` : null, reviewedAt ? formatTrainingDate(reviewedAt) : null].filter(Boolean).join(" · ")}
             </p>
           ) : null}
-          <p className="mt-2 text-sm leading-6 text-[#6b5a1e]">
-            {note ?? "No review reason was provided. Check the review history or contact your platform administrator."}
-          </p>
+          {adminNotesQuery.isLoading ? <p role="status" className="mt-2 text-sm text-[#6b5a1e]">Loading Super Admin feedback...</p> : null}
+          {adminNotesQuery.isError ? (
+            <div className="mt-2">
+              <p role="alert" className="text-sm font-semibold text-[#b42318]">Unable to load Super Admin feedback.</p>
+              <button type="button" onClick={() => void adminNotesQuery.refetch()} className="mt-1 text-sm font-semibold text-[#1f6a58] underline">Retry</button>
+            </div>
+          ) : null}
+          {note ? <p className="mt-2 text-sm leading-6 text-[#6b5a1e]">{note}</p> : null}
         </div>
         <Link
           href={`/admin/trainings/${trainingId}/edit`}
@@ -102,6 +98,12 @@ function ParticipantToolbar({ trainingId, status, trainingMeetingLink }: { train
   const [feedback, setFeedback] = useState<string | null>(null);
   const [meetingLink, setMeetingLink] = useState<string | null>(null);
   const [moderationExpanded, setModerationExpanded] = useState(status === "needs_revision" || status === "rejected");
+  // Transient action feedback (e.g. "Training notes downloaded.") auto-dismisses so it never sticks on the page.
+  useEffect(() => {
+    if (!feedback) return;
+    const timeoutId = window.setTimeout(() => setFeedback(null), 6000);
+    return () => window.clearTimeout(timeoutId);
+  }, [feedback]);
   const fileDownload = (data: { blob: Blob; filename: string | null }, fallback: string, success: string) => {
     const url = URL.createObjectURL(data.blob);
     const anchor = document.createElement("a");
@@ -252,7 +254,7 @@ function DetailItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="training-detail-item">
       <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-[#06201c]">{value}</p>
+      <p className="mt-1 break-words text-sm font-normal text-[#06201c]">{value}</p>
     </div>
   );
 }
@@ -340,6 +342,9 @@ export default function TrainingDetailsScreen({
 
   return (
     <div className="w-full">
+      <a href="/admin/trainings" className="mb-4 inline-flex h-10 items-center justify-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-semibold text-[#1f6a58] hover:bg-[#f4faf7]">
+        ← Back to Trainings
+      </a>
       {typeof training.primary_image === "string" && training.primary_image.trim().length > 0 ? (
         <div className="relative overflow-hidden rounded-2xl border border-[#e1ebe6] shadow-sm">
           <img alt={training.title} className="h-56 w-full object-cover sm:h-64" src={training.primary_image.trim()} onError={(event) => { (event.currentTarget as HTMLImageElement).style.display = "none" }} />
@@ -424,7 +429,7 @@ export default function TrainingDetailsScreen({
               <DetailItem label="End date" value={displayValue(training.end_date as string)} />
               <DetailItem label="End time" value={displayValue((training as unknown as Record<string, unknown>).end_time as string)} />
               <DetailGroupHeading>Additional Configuration</DetailGroupHeading>
-              <DetailItem label="Learning objectives" value={Array.isArray((training as unknown as Record<string, unknown>).learning_objectives) ? ((training as unknown as Record<string, unknown>).learning_objectives as string[]).join(", ") : "—"} />
+              <DetailItem label="Learning objectives" value={formatLearningObjectives((training as unknown as Record<string, unknown>).learning_objectives)} />
               <DetailItem label="PDFs" value={Array.isArray((training as unknown as Record<string, unknown>).documents) ? ((training as unknown as Record<string, unknown>).documents as unknown[]).length + " files" : Array.isArray(training.documents) ? (training.documents as unknown[]).length + " files" : "—"} />
               <DetailItem label="Prerequisites" value={displayValue((training as unknown as Record<string, unknown>).prerequisites as string)} />
               <DetailItem label="Release rule" value={((): string => { const v = (training as unknown as Record<string, unknown>).release_rule; if (typeof v === "string") return v; if (v && typeof v === "object" && typeof (v as Record<string, unknown>).type === "string") return (v as Record<string, unknown>).type as string; return "Not provided"; })()} />
