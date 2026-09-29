@@ -172,9 +172,6 @@ function mergeNotificationRecords(
       notificationSortValue(incoming) > notificationSortValue(existing);
 
     if (!shouldReplace) {
-      if (process.env.NODE_ENV === "development") {
-        console.log("[Notifications] duplicate ignored", incoming.id);
-      }
       return;
     }
 
@@ -278,12 +275,31 @@ export function RealtimeProvider({
   const notificationReconcileQueuedRef = useRef(false);
   const conversationNotificationReadGuardsRef = useRef<Set<string>>(new Set());
   const activeConversationIdRef = useRef<string | null>(null);
+  const presenceOnlinePublishedRef = useRef(false);
   const setActiveConversationId = useCallback((conversationId: string | null) => {
     activeConversationIdRef.current = conversationId;
   }, []);
-  const syncOnlinePresence = useCallback(() => {
-    void adapter.updatePresenceStatus("online").catch(() => undefined);
-  }, [adapter]);
+  useEffect(() => {
+    if (!shouldConnect || !runtimeToken) {
+      presenceOnlinePublishedRef.current = false;
+      return;
+    }
+
+    if (presenceOnlinePublishedRef.current) {
+      return;
+    }
+
+    presenceOnlinePublishedRef.current = true;
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[Web presence] publish", {
+        status: "online",
+        reason: "session-established",
+      });
+    }
+    void adapter.updatePresenceStatus("online").catch(() => {
+      presenceOnlinePublishedRef.current = false;
+    });
+  }, [adapter, runtimeToken, shouldConnect]);
 
   useEffect(() => {
     if (!shouldConnect) {
@@ -351,7 +367,6 @@ export function RealtimeProvider({
   const refreshUnreadCounts = useCallback(async () => {
     try {
       const counts = await adapter.notificationClient.getUnreadCounts();
-      realtimeDebug("notification", "REST unread count loaded");
       commitNotificationState((current) => applyCountsSnapshot(current, counts));
     } catch (error) {
       commitNotificationState((current) => ({
@@ -365,7 +380,6 @@ export function RealtimeProvider({
   const refreshNotifications = useCallback(async () => {
     try {
       const history = await adapter.notificationClient.getNotificationHistory(1, 20);
-      realtimeDebug("notification", "REST history loaded");
       commitNotificationState((current) => mergeHistoryResponse(current, history, true));
     } catch (error) {
       commitNotificationState((current) => ({
@@ -431,12 +445,6 @@ export function RealtimeProvider({
 
         notificationReconcileInFlightRef.current = true;
 
-        if (process.env.NODE_ENV === "development") {
-          console.log("[Notifications] reconnect reconciliation", {
-            reason,
-          });
-        }
-
         void (async () => {
           try {
             const [counts, history] = await Promise.all([
@@ -466,7 +474,6 @@ export function RealtimeProvider({
 
   const handleNotification = useCallback(
     (payload: unknown) => {
-      realtimeDebug("notification", "socket notification received");
       if (process.env.NODE_ENV === "development") {
         console.log("[Admin socket] receive notification", payload);
       }
@@ -819,7 +826,6 @@ export function RealtimeProvider({
         return;
       }
 
-      syncOnlinePresence();
       setStatus("connected");
       realtimeDebug("socket", "connected", { socketId: nextSocket?.id, transport: nextSocket?.io.engine?.transport?.name });
       if (process.env.NODE_ENV === "development") {
@@ -926,10 +932,6 @@ export function RealtimeProvider({
     nextSocket.on("notification", handleNotification);
     nextSocket.on("conversation_updated", handleConversationUpdated);
     nextSocket.connect();
-    if (nextSocket.connected) {
-      syncOnlinePresence();
-    }
-
     return () => {
       active = false;
 
@@ -965,7 +967,6 @@ export function RealtimeProvider({
     queueNotificationReconciliation,
     runtimeToken,
     shouldConnect,
-    syncOnlinePresence,
   ]);
 
   const value = useMemo<RealtimeContextValue>(

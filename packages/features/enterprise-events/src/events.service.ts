@@ -3,7 +3,76 @@ import { authenticatedFetch } from "@ihp/auth";
 const fetch = authenticatedFetch;
 
 export type EventLifecycleState = "upcoming" | "ongoing" | "finished";
-export type EventType = "conference" | "workshop" | "marathon" | "camp" | "private_function" | "webinar" | "other";
+export type EventType = string;
+
+export type AttendeeSource = "online" | "walk_in";
+export type AttendeeSort = "newest" | "oldest" | "name" | "email";
+
+export interface EventSessionAttendance {
+  session_id: string;
+  title: string;
+  checked_in: boolean;
+  checked_in_at: string | null;
+  checked_in_by: string | null;
+  checked_out_at: string | null;
+}
+
+export interface EventAttendee {
+  registration_id: string;
+  event_id: string;
+  participant_name: string;
+  participant_email: string;
+  registration_status: string;
+  registration_reference: string | null;
+  ticket_type_id: string | null;
+  ticket_type_name: string | null;
+  quantity: number;
+  payment_status: string;
+  order_id: string | null;
+  order_status: string | null;
+  amount: string | null;
+  currency: string | null;
+  is_checked_in: boolean;
+  checked_in_at: string | null;
+  checked_out_at: string | null;
+  registered_at: string;
+  registration_source: AttendeeSource;
+  meal_selections: readonly string[];
+  accommodation_selections: readonly string[];
+  custom_answers: Record<string, unknown>;
+  session_attendance: readonly EventSessionAttendance[];
+}
+
+export interface EventAttendeePagination { total: number; page: number; page_size: number; total_pages: number; }
+export interface EventAttendeesResponse { items: readonly EventAttendee[]; pagination: EventAttendeePagination; }
+export interface EventAttendeeFilters {
+  page?: number; page_size?: number; q?: string; status?: string; ticket_type_id?: string;
+  payment_status?: string; checked_in?: boolean; source?: AttendeeSource;
+  registered_from?: string; registered_to?: string; sort?: AttendeeSort;
+}
+
+export type SessionAttendancePayload = { registration_id: string } | { qr_code: string };
+export interface EventWalkInPayload {
+  participant_name: string;
+  participant_email: string;
+  ticket_type_id?: string | null;
+  quantity?: number;
+  session_id?: string | null;
+  custom_answers?: Record<string, unknown>;
+}
+
+/** Backend-owned Event Type definition with boolean module capability maps. */
+export interface EventTypeDefinition {
+  id: string;
+  key: string;
+  name: string;
+  active: boolean;
+  default_modules: EventModules;
+  allowed_modules: EventModules;
+  required_modules: EventModules;
+  created_at?: string;
+  updated_at?: string;
+}
 
 export interface EventModules {
   registration: boolean;
@@ -314,6 +383,16 @@ export interface EventRegistration {
   qr_code: string;
   checked_in_by: unknown | null;
   session_id: string | null;
+  registration_source?: AttendeeSource;
+  registration_reference?: string | null;
+  payment_status?: string;
+  order_id?: string | null;
+  order_status?: string | null;
+  amount?: string | null;
+  currency?: string | null;
+  meal_selections?: readonly string[];
+  accommodation_selections?: readonly string[];
+  session_attendance?: readonly EventSessionAttendance[];
 }
 
 /** The runtime-confirmed top-level registrations response for one Event. */
@@ -1277,6 +1356,17 @@ export async function getEventHistoricalFormConfiguration(eventId: string): Prom
   return value;
 }
 
+/** Loads attendee registration questions, separate from the Event Create/Edit form configuration. */
+export async function getEventRegistrationForm(eventId: string): Promise<ActiveEventFormField[]> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/registration-form`, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw await createEventsApiError(response, "load the Event registration form");
+  const value = (await response.json()) as unknown;
+  if (isRecord(value) && Array.isArray(value.fields)) return value.fields.filter(isActiveEventFormField);
+  if (isRecord(value) && Array.isArray(value.sections)) return value.sections.flatMap((section) => isRecord(section) && Array.isArray(section.fields) ? section.fields.filter(isActiveEventFormField) : []);
+  if (Array.isArray(value)) return value.filter(isActiveEventFormField);
+  throw new Error("Events API returned an invalid Event registration form.");
+}
+
 /** Reads the backend-owned Event taxonomy through the authenticated same-origin Events proxy. */
 export async function getEventCategories(): Promise<EventCategoriesResponse> {
   const response = await fetch("/api/v1/event-categories/", { credentials: "include", cache: "no-store" });
@@ -1285,6 +1375,39 @@ export async function getEventCategories(): Promise<EventCategoriesResponse> {
   if (!Array.isArray(value) || !value.every(isEventCategory)) {
     throw new EventsApiError("Events API returned invalid Event categories.", response.status);
   }
+  return value;
+}
+
+function isEventModules(value: unknown): value is EventModules {
+  if (!isRecord(value)) return false;
+  return ["registration", "tickets", "sessions", "check_in", "online_meeting", "custom_questions", "meals", "accommodation"]
+    .every((key) => typeof value[key] === "boolean");
+}
+
+function isEventTypeDefinition(value: unknown): value is EventTypeDefinition {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  return typeof item.id === "string" && typeof item.key === "string" && typeof item.name === "string" && typeof item.active === "boolean"
+    && isEventModules(item.default_modules) && isEventModules(item.allowed_modules) && isEventModules(item.required_modules)
+    && (item.created_at === undefined || typeof item.created_at === "string")
+    && (item.updated_at === undefined || typeof item.updated_at === "string");
+}
+
+/** Reads one backend-owned Event Type definition through the authenticated Events proxy. */
+export async function getEventType(eventTypeId: string): Promise<EventTypeDefinition> {
+  const response = await fetch(`/api/v1/event-types/${encodeURIComponent(eventTypeId)}`, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw await createEventsApiError(response, "load this Event Type");
+  const value = (await response.json()) as unknown;
+  if (!isEventTypeDefinition(value)) throw new EventsApiError("Events API returned an invalid Event Type.", response.status);
+  return value;
+}
+
+/** Reads Event Type definitions from the backend without a hardcoded UI fallback. */
+export async function getEventTypes(): Promise<EventTypeDefinition[]> {
+  const response = await fetch("/api/v1/event-types/", { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw await createEventsApiError(response, "load Event Types");
+  const value = (await response.json()) as unknown;
+  if (!Array.isArray(value) || !value.every(isEventTypeDefinition)) throw new EventsApiError("Events API returned invalid Event Types.", response.status);
   return value;
 }
 
@@ -1397,6 +1520,50 @@ export async function getEventRegistrations(eventId: string): Promise<EventRegis
   }
 
   return parseEventRegistrationsResponse((await response.json()) as unknown);
+}
+
+/** Lists backend-authoritative attendees with the supported management filters. */
+export async function getEventAttendees(eventId: string, filters: EventAttendeeFilters = {}): Promise<EventAttendeesResponse> {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => { if (value !== undefined && value !== "") params.set(key, String(value)); });
+  const suffix = params.size ? `?${params.toString()}` : "";
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/attendees${suffix}`, { credentials: "include" });
+  if (!response.ok) throw await createEventsApiError(response, "load attendees");
+  return (await response.json()) as EventAttendeesResponse;
+}
+
+async function postSessionAttendance(eventId: string, sessionId: string, action: string, payload: SessionAttendancePayload | { participants: readonly SessionAttendancePayload[] }): Promise<unknown> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/sessions/${encodeURIComponent(sessionId)}/${action}`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (!response.ok) throw await createEventsApiError(response, `perform session ${action}`);
+  return (await response.json().catch(() => null)) as unknown;
+}
+
+/** Performs session-level check-in without changing event-level attendance. */
+export function checkInEventSessionAttendee(eventId: string, sessionId: string, payload: SessionAttendancePayload) { return postSessionAttendance(eventId, sessionId, "check-in", payload); }
+/** Reverses one session-level check-in without changing event-level attendance. */
+export function uncheckInEventSessionAttendee(eventId: string, sessionId: string, payload: SessionAttendancePayload) { return postSessionAttendance(eventId, sessionId, "uncheck-in", payload); }
+/** Performs session-level checkout. */
+export function checkOutEventSessionAttendee(eventId: string, sessionId: string, payload: SessionAttendancePayload) { return postSessionAttendance(eventId, sessionId, "check-out", payload); }
+/** Performs independent per-attendee session batch check-in. */
+export function batchCheckInEventSessionAttendees(eventId: string, sessionId: string, payload: { participants: readonly SessionAttendancePayload[] }) { return postSessionAttendance(eventId, sessionId, "batch-check-in", payload); }
+
+/** Registers a walk-in using only fields supported by the confirmed request model. */
+export async function createEventWalkIn(eventId: string, payload: EventWalkInPayload): Promise<unknown> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/walk-in`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (!response.ok) throw await createEventsApiError(response, "register this walk-in attendee");
+  return (await response.json().catch(() => null)) as unknown;
+}
+
+export async function updateRegistrationMealSelections(eventId: string, registrationId: string, mealSelections: readonly string[]): Promise<unknown> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/registrations/${encodeURIComponent(registrationId)}/meals`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meal_selections: mealSelections }) });
+  if (!response.ok) throw await createEventsApiError(response, "update meal selections");
+  return (await response.json().catch(() => null)) as unknown;
+}
+
+export async function updateRegistrationAccommodationSelections(eventId: string, registrationId: string, accommodationSelections: readonly string[]): Promise<unknown> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/registrations/${encodeURIComponent(registrationId)}/accommodation`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accommodation_selections: accommodationSelections }) });
+  if (!response.ok) throw await createEventsApiError(response, "update accommodation selections");
+  return (await response.json().catch(() => null)) as unknown;
 }
 
 /** Lists backend-authoritative purchase records for one Event through the same-origin proxy. */

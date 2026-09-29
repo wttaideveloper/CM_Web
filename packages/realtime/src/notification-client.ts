@@ -53,19 +53,11 @@ export function createNotificationClient(requestClient: NotificationRequestClien
   const { requestJson, requestResponse } = requestClient;
 
   async function getUnreadCounts(): Promise<NotificationUnreadCounts> {
-    if (process.env.NODE_ENV !== "production") {
-      console.log("[Notifications] unread-count request");
-    }
-
     const response = await requestJson<unknown>("/notifications/unread-count");
     const counts = parseCountsResponse(response);
 
     if (!counts) {
       throw new Error("Invalid unread count response");
-    }
-
-    if (process.env.NODE_ENV !== "production") {
-      console.log("[Notifications] unread-count success", counts);
     }
 
     return counts;
@@ -75,13 +67,6 @@ export function createNotificationClient(requestClient: NotificationRequestClien
     page = 1,
     pageSize = 20,
   ): Promise<NotificationHistoryResponse> {
-    if (process.env.NODE_ENV !== "production") {
-      console.log("[Notifications] history request", {
-        page,
-        page_size: pageSize,
-      });
-    }
-
     const searchParams = new URLSearchParams({
       page: String(page),
       page_size: String(pageSize),
@@ -107,16 +92,6 @@ export function createNotificationClient(requestClient: NotificationRequestClien
       items,
       pagination,
     };
-
-    if (process.env.NODE_ENV !== "production") {
-      console.log("[Notifications] history success", {
-        page: result.pagination.page,
-        page_size: result.pagination.page_size,
-        total: result.pagination.total,
-        total_pages: result.pagination.total_pages,
-        items: result.items.length,
-      });
-    }
 
     return result;
   }

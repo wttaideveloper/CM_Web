@@ -3,6 +3,7 @@ export { FormConfigurationEditorScreen } from "./screens/FormConfigurationEditor
 export { TrainingFormConfigurationsScreen } from "./screens/TrainingFormConfigurationsScreen";
 export { TrainingFormConfigurationEditorScreen } from "./screens/TrainingFormConfigurationEditorScreen";
 export * from "./form-configurations.queries";
+export * from "./screens/EventTypesScreen";
 export * from "./training-form-configurations.queries";
 export * from "./model/event-form-configuration-api.types";
 export * from "./model/training-form-configuration-api.types";

@@ -17,6 +17,8 @@ import EventRefundAction from "./EventRefundAction";
 import EventOrdersSection from "./EventOrdersSection";
 import EventOverviewSection from "./EventOverviewSection";
 import EventReportsSection from "./EventReportsSection";
+import SessionAttendancePanel from "./SessionAttendancePanel";
+import RegistrationServicesEditor from "./RegistrationServicesEditor";
 import {
   displayValue,
   formatEventDate,
@@ -42,6 +44,8 @@ import {
   EventsApiError,
   exportEventRegistrations,
   getEventAdminNotes,
+  getEventAttendees,
+  createEventWalkIn,
   getEventById,
   getEventFeedback,
   getEventRegistrations,
@@ -64,7 +68,7 @@ type DetailItem = {
   label: string;
   value: string | number | boolean | null | undefined;
 };
-type EventDetailsTab = "overview" | "details" | "registrations" | "attendance" | "feedback" | "reports" | "orders";
+type EventDetailsTab = "overview" | "details" | "sessions" | "registrations" | "attendance" | "feedback" | "reports" | "orders";
 type RegistrationsSubview = "registered" | "waitlist";
 
 function AdminNoteBanner({ eventId, status }: { eventId: string; status: string }) {
@@ -109,6 +113,7 @@ const eventDetailsTabs: ReadonlyArray<{ id: EventDetailsTab; label: string }> =
   [
     { id: "overview", label: "Overview" },
     { id: "details", label: "Details" },
+    { id: "sessions", label: "Sessions" },
     { id: "registrations", label: "Registrations" },
     { id: "attendance", label: "Attendance" },
     { id: "feedback", label: "Feedback" },
@@ -415,13 +420,6 @@ export default function EventDetailsScreen() {
             values={event.documents}
           />
         </DetailSection>
-        <SessionsSection
-          eventId={event.id}
-          deliveryMode={event.delivery_mode}
-          startDate={event.start_date}
-          endDate={event.end_date}
-          enabled={effectiveActiveTab === "details"}
-        />
         <DetailSection title="Custom Registration Fields">
           <CustomFields event={event} />
         </DetailSection>
@@ -456,9 +454,10 @@ export default function EventDetailsScreen() {
           aria-labelledby="event-registrations-tab"
           className="mt-6"
         >
-          <RegistrationsSection eventId={event.id} timeZone={event.time_zone} ticketTypes={event.ticket_types} sessions={event.sessions} historicalConfiguration={historicalConfiguration.data ?? undefined} />
+          <RegistrationsSection eventId={event.id} timeZone={event.time_zone} ticketTypes={event.ticket_types} sessions={event.sessions} modules={event.modules} meals={event.meals} accommodation={event.accommodation} historicalConfiguration={historicalConfiguration.data ?? undefined} />
         </section>
       ) : null}
+      {effectiveActiveTab === "sessions" ? <section id="event-sessions-panel" role="tabpanel" aria-labelledby="event-sessions-tab" className="mt-6"><SessionsSection eventId={event.id} deliveryMode={event.delivery_mode} startDate={event.start_date} endDate={event.end_date} enabled={event.modules?.sessions !== false || event.sessions.length > 0} /><SessionAttendancePanel eventId={event.id} sessions={event.sessions} enabled={event.modules?.sessions !== false || event.sessions.length > 0} /></section> : null}
       {effectiveActiveTab === "attendance" ? (
         <section id="event-attendance-panel" role="tabpanel" aria-labelledby="event-attendance-tab" className="mt-6">
           <EventAttendanceSection eventId={event.id} eventStatus={event.status} timeZone={event.time_zone} />
@@ -471,7 +470,7 @@ export default function EventDetailsScreen() {
       ) : null}
       {effectiveActiveTab === "reports" ? (
         <section id="event-reports-panel" role="tabpanel" aria-labelledby="event-reports-tab" className="mt-6">
-          <EventReportsSection eventId={event.id} />
+          <EventReportsSection eventId={event.id} ticketTypes={event.ticket_types} />
         </section>
       ) : null}
       {effectiveActiveTab === "orders" ? (
@@ -580,19 +579,45 @@ function handleTabKeyDown(
   event.preventDefault();
 }
 
-function RegistrationsSection({ eventId, timeZone, ticketTypes, sessions, historicalConfiguration }: { eventId: string; timeZone: string; ticketTypes: Event["ticket_types"]; sessions: Event["sessions"]; historicalConfiguration?: ActiveEventFormConfiguration }) {
+function RegistrationsSection({ eventId, timeZone, ticketTypes, sessions, modules, meals, accommodation, historicalConfiguration }: { eventId: string; timeZone: string; ticketTypes: Event["ticket_types"]; sessions: Event["sessions"]; modules: Event["modules"]; meals: Event["meals"]; accommodation: Event["accommodation"]; historicalConfiguration?: ActiveEventFormConfiguration }) {
   const [activeSubview, setActiveSubview] =
     useState<RegistrationsSubview>("registered");
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [registrationSearch, setRegistrationSearch] = useState("");
+  const [debouncedRegistrationSearch, setDebouncedRegistrationSearch] = useState("");
+  const [attendeePage, setAttendeePage] = useState(1);
+  const [attendeePageSize, setAttendeePageSize] = useState(25);
+  const [attendeeSort, setAttendeeSort] = useState<"newest" | "oldest" | "name" | "email">("newest");
+  const [attendeeStatus, setAttendeeStatus] = useState("");
+  const [attendeeSource, setAttendeeSource] = useState<"" | "online" | "walk_in">("");
+  const [attendeeCheckedIn, setAttendeeCheckedIn] = useState<"" | "true" | "false">("");
+  const [attendeePaymentStatus, setAttendeePaymentStatus] = useState("");
+  const [attendeeTicketTypeId, setAttendeeTicketTypeId] = useState("");
+  const [registeredFrom, setRegisteredFrom] = useState("");
+  const [registeredTo, setRegisteredTo] = useState("");
   const [selectedRegistration, setSelectedRegistration] = useState<EventRegistration | null>(null);
+  useEffect(() => { const timer = window.setTimeout(() => setDebouncedRegistrationSearch(registrationSearch.trim()), 300); return () => window.clearTimeout(timer); }, [registrationSearch]);
   const registrationsQuery = useQuery({
-    queryKey: ["event-registrations", eventId],
-    queryFn: () => getEventRegistrations(eventId),
+    queryKey: ["event-registrations", eventId, attendeePage, attendeePageSize, debouncedRegistrationSearch, attendeeSort, attendeeStatus, attendeeSource, attendeeCheckedIn, attendeePaymentStatus, attendeeTicketTypeId, registeredFrom, registeredTo],
+    queryFn: async () => {
+      const response = await getEventAttendees(eventId, { page: attendeePage, page_size: attendeePageSize, q: debouncedRegistrationSearch || undefined, sort: attendeeSort, status: attendeeStatus || undefined, source: attendeeSource || undefined, checked_in: attendeeCheckedIn === "" ? undefined : attendeeCheckedIn === "true", payment_status: attendeePaymentStatus || undefined, ticket_type_id: attendeeTicketTypeId || undefined, registered_from: registeredFrom || undefined, registered_to: registeredTo || undefined });
+      return { items: response.items.map((attendee): EventRegistration => ({
+        event_id: attendee.event_id, id: attendee.registration_id, participant_email: attendee.participant_email,
+        ticket_type_id: attendee.ticket_type_id, status: attendee.registration_status,
+        checked_in_at: attendee.checked_in_at, checked_out_at: attendee.checked_out_at,
+        created_at: attendee.registered_at, participant_name: attendee.participant_name,
+        custom_fields: attendee.custom_answers, qr_code: "", checked_in_by: null, session_id: null,
+        registration_source: attendee.registration_source, registration_reference: attendee.registration_reference,
+        payment_status: attendee.payment_status, order_id: attendee.order_id, order_status: attendee.order_status,
+        amount: attendee.amount, currency: attendee.currency, meal_selections: attendee.meal_selections,
+        accommodation_selections: attendee.accommodation_selections, session_attendance: attendee.session_attendance,
+      })), pagination: response.pagination };
+    },
     enabled: Boolean(eventId),
     staleTime: 30_000,
     retry: 1,
+    placeholderData: (previousData) => previousData,
   });
   const waitlistQuery = useQuery({
     queryKey: ["event-waitlist", eventId],
@@ -601,18 +626,9 @@ function RegistrationsSection({ eventId, timeZone, ticketTypes, sessions, histor
     staleTime: 30_000,
     retry: 1,
   });
-  const normalizedRegistrationSearch = registrationSearch.trim().toLocaleLowerCase();
   const filteredRegistrations = useMemo(() => {
-    const registrations = registrationsQuery.data ?? [];
-    if (!normalizedRegistrationSearch) {
-      return registrations;
-    }
-
-    return registrations.filter((registration) =>
-      registration.participant_name.toLocaleLowerCase().includes(normalizedRegistrationSearch) ||
-      registration.participant_email.toLocaleLowerCase().includes(normalizedRegistrationSearch),
-    );
-  }, [normalizedRegistrationSearch, registrationsQuery.data]);
+    return registrationsQuery.data?.items ?? [];
+  }, [registrationsQuery.data]);
 
   const exportRegistrations = async () => {
     if (isExporting) return;
@@ -640,11 +656,7 @@ function RegistrationsSection({ eventId, timeZone, ticketTypes, sessions, histor
   };
 
   const registrationHeader = (
-    <RegistrationsHeader
-      activeSubview={activeSubview}
-      isExporting={isExporting}
-      onExport={() => void exportRegistrations()}
-    />
+    <><RegistrationsHeader activeSubview={activeSubview} isExporting={isExporting} onExport={() => void exportRegistrations()} />{activeSubview === "registered" ? <div className="mt-3 grid gap-2 sm:grid-cols-4"><select aria-label="Registration status" value={attendeeStatus} onChange={(event) => { setAttendeeStatus(event.target.value); setAttendeePage(1); }} className="h-10 rounded-xl border border-[#d7e5df] px-3 text-sm"><option value="">All statuses</option><option value="confirmed">Confirmed</option><option value="attended">Attended</option><option value="cancelled">Cancelled</option><option value="no_show">No show</option></select><select aria-label="Registration source" value={attendeeSource} onChange={(event) => { setAttendeeSource(event.target.value as typeof attendeeSource); setAttendeePage(1); }} className="h-10 rounded-xl border border-[#d7e5df] px-3 text-sm"><option value="">All sources</option><option value="online">Online</option><option value="walk_in">Walk-in</option></select><select aria-label="Checked-in status" value={attendeeCheckedIn} onChange={(event) => { setAttendeeCheckedIn(event.target.value as typeof attendeeCheckedIn); setAttendeePage(1); }} className="h-10 rounded-xl border border-[#d7e5df] px-3 text-sm"><option value="">All check-in states</option><option value="true">Checked in</option><option value="false">Not checked in</option></select><select aria-label="Attendee sort" value={attendeeSort} onChange={(event) => { setAttendeeSort(event.target.value as typeof attendeeSort); setAttendeePage(1); }} className="h-10 rounded-xl border border-[#d7e5df] px-3 text-sm"><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="name">Name</option><option value="email">Email</option></select><select aria-label="Payment status" value={attendeePaymentStatus} onChange={(event) => { setAttendeePaymentStatus(event.target.value); setAttendeePage(1); }} className="h-10 rounded-xl border border-[#d7e5df] px-3 text-sm"><option value="">All payment states</option><option value="free">Free</option><option value="unpaid">Unpaid</option><option value="pending">Pending</option><option value="paid">Paid</option><option value="refund_requested">Refund requested</option><option value="refunded">Refunded</option><option value="cancelled">Cancelled</option><option value="failed">Failed</option></select>{ticketTypes.length > 0 ? <select aria-label="Ticket type" value={attendeeTicketTypeId} onChange={(event) => { setAttendeeTicketTypeId(event.target.value); setAttendeePage(1); }} className="h-10 rounded-xl border border-[#d7e5df] px-3 text-sm"><option value="">All ticket types</option>{ticketTypes.map((ticket) => <option key={ticket.id} value={ticket.id}>{ticket.name}</option>)}</select> : null}</div> : null}{activeSubview === "registered" && modules?.registration !== false ? <WalkInRegistration eventId={eventId} ticketTypes={ticketTypes} sessions={sessions} sessionsEnabled={modules?.sessions === true} onSuccess={() => void registrationsQuery.refetch()} /> : null}</>
   );
   const subviewNavigation = (
     <RegistrationsSubviewTabs
@@ -773,7 +785,7 @@ function RegistrationsSection({ eventId, timeZone, ticketTypes, sessions, histor
     );
   }
 
-  if (registrationsQuery.data.length === 0) {
+  if (registrationsQuery.data.items.length === 0) {
     return (
       <RegistrationsPanel
         header={registrationHeader}
@@ -800,24 +812,49 @@ function RegistrationsSection({ eventId, timeZone, ticketTypes, sessions, histor
       subview={activeSubview}
       error={exportError}
     >
+        {registrationsQuery.isFetching ? <p role="status" className="mb-2 text-xs font-semibold text-[#7f9d94]">Refreshing attendees…</p> : null}
         <RegistrationTable
           eventId={eventId}
         registrations={filteredRegistrations}
-        totalRegistrations={registrationsQuery.data.filter(isActiveRegistration).length}
+        totalRegistrations={registrationsQuery.data.items.filter(isActiveRegistration).length}
         search={registrationSearch}
-          onSearchChange={setRegistrationSearch}
+          onSearchChange={(value) => { setRegistrationSearch(value); setAttendeePage(1); }}
           onSelect={setSelectedRegistration}
           sessions={sessions}
           ticketTypes={ticketTypes}
         />
-        {selectedRegistration ? <RegistrationDetailsDrawer registration={selectedRegistration} ticketTypes={ticketTypes} sessions={sessions} historicalConfiguration={historicalConfiguration} timeZone={timeZone} onClose={() => setSelectedRegistration(null)} /> : null}
+        <div className="mt-4 flex items-center justify-between gap-3 text-sm"><label>Rows<select value={attendeePageSize} onChange={(event) => { setAttendeePageSize(Number(event.target.value)); setAttendeePage(1); }} className="ml-2 rounded-lg border border-[#d7e5df] px-2 py-1"><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></label><span>Page {registrationsQuery.data.pagination.page} of {registrationsQuery.data.pagination.total_pages} · {registrationsQuery.data.pagination.total} attendees</span><div className="flex gap-2"><button type="button" disabled={attendeePage <= 1 || registrationsQuery.isFetching} onClick={() => setAttendeePage((page) => page - 1)} className="rounded-full border border-[#d7e5df] px-3 py-1 disabled:opacity-50">Previous</button><button type="button" disabled={attendeePage >= registrationsQuery.data.pagination.total_pages || registrationsQuery.isFetching} onClick={() => setAttendeePage((page) => page + 1)} className="rounded-full border border-[#d7e5df] px-3 py-1 disabled:opacity-50">Next</button></div></div>
+         {selectedRegistration ? <><RegistrationDetailsDrawer registration={selectedRegistration} ticketTypes={ticketTypes} sessions={sessions} historicalConfiguration={historicalConfiguration} timeZone={timeZone} onClose={() => setSelectedRegistration(null)} /><RegistrationServicesEditor eventId={eventId} registration={selectedRegistration} meals={meals} accommodation={accommodation} onSaved={(next) => setSelectedRegistration((current) => current ? { ...current, ...next } : current)} /></> : null}
     </RegistrationsPanel>
   );
+}
+
+function WalkInRegistration({ eventId, ticketTypes, sessions, sessionsEnabled, onSuccess }: { eventId: string; ticketTypes: Event["ticket_types"]; sessions: Event["sessions"]; sessionsEnabled: boolean; onSuccess: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [successResult, setSuccessResult] = useState<unknown>(null);
+  const queryClient = useQueryClient();
+  const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [ticket, setTicket] = useState(""); const [session, setSession] = useState("");
+  const mutation = useMutation({ mutationFn: () => createEventWalkIn(eventId, { participant_name: name.trim(), participant_email: email.trim(), ticket_type_id: ticket || null, ...(session ? { session_id: session } : {}) }), onSuccess: async (result) => { setSuccessResult(result); setName(""); setEmail(""); setTicket(""); setSession(""); await Promise.all([queryClient.invalidateQueries({ queryKey: ["event-attendees", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-registrations", eventId] }), queryClient.invalidateQueries({ queryKey: ["events", "dashboard", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-attendance", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-orders", eventId] })]); onSuccess(); } });
+  if (!open) return <button type="button" onClick={() => { setSuccessResult(null); setOpen(true); }} className="mt-3 h-10 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white">Register walk-in</button>;
+  if (successResult) return <div className="mt-3 rounded-xl border border-[#b7dfc7] bg-[#f1fbf4] p-4"><p className="font-bold text-[#1f6a58]">Walk-In Registered</p><WalkInSuccessDetails result={successResult} /><button type="button" onClick={() => setSuccessResult(null)} className="mt-3 h-10 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white">Register another walk-in</button></div>;
+  return <form onSubmit={(event) => { event.preventDefault(); mutation.mutate(); }} className="mt-3 grid gap-3 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-4 md:grid-cols-4"><input required value={name} onChange={(event) => setName(event.target.value)} placeholder="Participant name" className="h-10 rounded-lg border border-[#d7e5df] px-3 text-sm" /><input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" className="h-10 rounded-lg border border-[#d7e5df] px-3 text-sm" /><select value={ticket} onChange={(event) => setTicket(event.target.value)} className="h-10 rounded-lg border border-[#d7e5df] px-3 text-sm"><option value="">Select ticket</option>{ticketTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{sessionsEnabled && sessions.length > 0 ? <label className="text-sm font-semibold text-[#31594d]"><span className="mb-1 block">Session (optional)</span><select aria-label="Session (optional)" value={session} onChange={(event) => setSession(event.target.value)} className="h-10 w-full rounded-lg border border-[#d7e5df] px-3 text-sm"><option value="">No session</option>{sessions.map((item) => item.id ? <option key={item.id} value={item.id}>{item.title}</option> : null)}</select></label> : null}<div className="md:col-span-4 flex items-center gap-3"><button type="submit" disabled={mutation.isPending} className="h-10 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white disabled:opacity-60">{mutation.isPending ? "Registering..." : "Register"}</button><button type="button" onClick={() => setOpen(false)} className="h-10 rounded-full border border-[#d7e5df] px-4 text-sm font-semibold">Cancel</button>{mutation.isError ? <p role="alert" className="text-sm font-semibold text-[#b42318]">{mutation.error instanceof EventsApiError ? mutation.error.message : "Unable to register walk-in."}</p> : null}</div></form>;
 }
 
 function humanizeRegistrationStatus(value: string): string {
   const normalized = value.trim().replace(/[_-]+/g, " ");
   return normalized ? normalized.replace(/\b\w/g, (character) => character.toUpperCase()) : "Status unavailable";
+}
+
+function WalkInSuccessDetails({ result }: { result: unknown }) {
+  if (!result || typeof result !== "object") return <p className="mt-2 text-sm text-[#31594d]">Registration created successfully.</p>;
+  const record = result as Record<string, unknown>;
+  const registration = record.registration && typeof record.registration === "object" ? record.registration as Record<string, unknown> : record;
+  const ticket = record.ticket && typeof record.ticket === "object" ? record.ticket as Record<string, unknown> : null;
+  const payment = record.payment && typeof record.payment === "object" ? record.payment as Record<string, unknown> : null;
+  const checkIn = record.check_in && typeof record.check_in === "object" ? record.check_in as Record<string, unknown> : null;
+  const sessionCheckIn = record.session_check_in && typeof record.session_check_in === "object" ? record.session_check_in as Record<string, unknown> : null;
+  const value = (source: Record<string, unknown> | null, ...keys: string[]) => { const found = keys.map((key) => source?.[key]).find((item) => item !== undefined && item !== null && item !== ""); return found === undefined ? null : String(found); };
+  return <div className="mt-2 space-y-1 text-sm text-[#31594d]">{value(registration, "registration_reference", "reference") ? <p>Registration Reference: {value(registration, "registration_reference", "reference")}</p> : null}{value(ticket, "qr_code") ? <p>QR: {value(ticket, "qr_code")}</p> : null}{value(payment, "status", "payment_status") ? <p>Payment: {value(payment, "status", "payment_status")}</p> : null}{value(checkIn, "status", "outcome", "reason") ? <p>Check-in: {value(checkIn, "status", "outcome", "reason")}</p> : null}{value(sessionCheckIn, "status", "outcome", "reason") ? <p>Session Check-in: {value(sessionCheckIn, "status", "outcome", "reason")}</p> : null}{!value(registration, "registration_reference", "reference") && !value(ticket, "qr_code") && !value(payment, "status", "payment_status") && !value(checkIn, "status", "outcome", "reason") && !value(sessionCheckIn, "status", "outcome", "reason") ? <p>Registration created successfully.</p> : null}</div>;
 }
 
 function isActiveRegistration(registration: { status: string }): boolean {
@@ -895,7 +932,7 @@ function RegistrationDetailsDrawer({ registration, ticketTypes, sessions, histor
   const session = sessions.find((item) => item.id === registration.session_id);
   const fieldLabel = (key: string) => fields.find((field) => field.id === key || field.stable_key === key)?.label ?? key;
   const customEntries = Object.entries(registration.custom_fields ?? {});
-  return <div className="fixed inset-0 z-50"><button type="button" aria-label="Close attendee details" className="absolute inset-0 bg-[#06201c]/30" onClick={onClose} /><aside role="dialog" aria-modal="true" aria-label="Attendee Details" className="absolute right-0 top-0 h-full w-full max-w-lg overflow-y-auto bg-white p-6 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Registration</p><h2 className="mt-1 text-xl font-bold text-[#06201c]">Attendee Details</h2></div><button type="button" onClick={onClose} className="rounded-full px-3 py-1 text-sm font-bold text-[#52736a] hover:bg-[#f4faf7]">Close</button></div><section className="mt-6 space-y-2"><h3 className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Participant</h3><DetailRow label="Name" value={registration.participant_name} /><DetailRow label="Email" value={registration.participant_email} /></section><section className="mt-6 space-y-2"><h3 className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Registration</h3><DetailRow label="Status" value={humanizeRegistrationStatus(registration.status)} /><DetailRow label="Ticket" value={ticket?.name ?? registration.ticket_type_id ?? "—"} /><DetailRow label="Registered" value={formatEventDateTime(registration.created_at, timeZone)} />{registration.session_id ? <DetailRow label="Session" value={session?.title ?? "Unknown session"} /> : null}</section><section className="mt-6 space-y-2"><h3 className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Attendance</h3><DetailRow label="Check-in" value={registration.checked_in_at ? formatEventDateTime(registration.checked_in_at, timeZone) : "Not checked in"} />{registration.checked_out_at ? <DetailRow label="Checked out" value={formatEventDateTime(registration.checked_out_at, timeZone)} /> : null}</section><section className="mt-6 space-y-2"><h3 className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Custom Answers</h3>{customEntries.length === 0 ? <p className="text-sm text-[#52736a]">No additional registration information</p> : customEntries.map(([key, value]) => <DetailRow key={key} label={fieldLabel(key)} value={formatRegistrationValue(value)} />)}</section></aside></div>;
+  return <div className="fixed inset-0 z-50"><button type="button" aria-label="Close attendee details" className="absolute inset-0 bg-[#06201c]/30" onClick={onClose} /><aside role="dialog" aria-modal="true" aria-label="Attendee Details" className="absolute right-0 top-0 h-full w-full max-w-lg overflow-y-auto bg-white p-6 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Registration</p><h2 className="mt-1 text-xl font-bold text-[#06201c]">Attendee Details</h2></div><button type="button" onClick={onClose} className="rounded-full px-3 py-1 text-sm font-bold text-[#52736a] hover:bg-[#f4faf7]">Close</button></div><section className="mt-6 space-y-2"><h3 className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Participant</h3><DetailRow label="Name" value={registration.participant_name} /><DetailRow label="Email" value={registration.participant_email} /></section><section className="mt-6 space-y-2"><h3 className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Registration</h3><DetailRow label="Status" value={humanizeRegistrationStatus(registration.status)} /><DetailRow label="Reference" value={registration.registration_reference ?? "—"} /><DetailRow label="Source" value={registration.registration_source ?? "—"} /><DetailRow label="Payment" value={registration.payment_status ?? "—"} /><DetailRow label="Ticket" value={ticket?.name ?? registration.ticket_type_id ?? "—"} /><DetailRow label="Registered" value={formatEventDateTime(registration.created_at, timeZone)} />{registration.session_id ? <DetailRow label="Session" value={session?.title ?? "Unknown session"} /> : null}</section><section className="mt-6 space-y-2"><h3 className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Attendance</h3><DetailRow label="Check-in" value={registration.checked_in_at ? formatEventDateTime(registration.checked_in_at, timeZone) : "Not checked in"} />{registration.checked_out_at ? <DetailRow label="Checked out" value={formatEventDateTime(registration.checked_out_at, timeZone)} /> : null}{registration.session_attendance?.map((item) => <DetailRow key={item.session_id} label={`${item.title} attendance`} value={item.checked_out_at ? "Checked out" : item.checked_in ? "Checked in" : "Not checked in"} />)}</section><section className="mt-6 space-y-2"><h3 className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Custom Answers</h3>{customEntries.length === 0 ? <p className="text-sm text-[#52736a]">No additional registration information</p> : customEntries.map(([key, value]) => <DetailRow key={key} label={fieldLabel(key)} value={formatRegistrationValue(value)} />)}</section></aside></div>;
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {

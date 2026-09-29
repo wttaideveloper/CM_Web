@@ -8,6 +8,9 @@ import type {
   CreateEventVenue,
   Event,
   UpdateEventPayload,
+  EventModules,
+  EventMealsInput,
+  EventAccommodationInput,
 } from "./events.service";
 import { validateSessions } from "./SessionTableEditor";
 
@@ -42,6 +45,7 @@ export interface CreateEventFormValues {
   registration_open_at: string;
   registration_close_at: string;
   time_zone: string;
+  event_type: string;
   delivery_mode: string;
   venue_name: string;
   venue_address: string;
@@ -63,6 +67,9 @@ export interface CreateEventFormValues {
   documents: string[];
   custom_fields: EventCustomFieldFormValue[];
   sessions: EventSessionFormValue[];
+  modules: EventModules | null;
+  meals: EventMealsInput | null;
+  accommodation: EventAccommodationInput | null;
 }
 
 /** Returns blank values for a newly opened Create Event workspace. */
@@ -70,11 +77,11 @@ export function createEmptyEventForm(): CreateEventFormValues {
   return {
     title: "", description: "", category: "", subcategory: "", tags: [], organiser_name: "",
     organiser_contact: "", start_date: "", end_date: "", duration_type: "", registration_cutoff: "",
-    registration_open_at: "", registration_close_at: "", time_zone: "Asia/Kolkata", delivery_mode: "in_person",
+    registration_open_at: "", registration_close_at: "", time_zone: "Asia/Kolkata", event_type: "", delivery_mode: "in_person",
     venue_name: "", venue_address: "", venue_city: "", venue_latitude: "", venue_longitude: "",
     meeting_link: "", meeting_provider: "", price: "", pricing_type: "paid", currency: "INR", ticket_types: [], capacity: "",
     min_participants: "", max_participants: "", primary_image: "", gallery_images: [], videos: [], documents: [],
-    custom_fields: [], sessions: [],
+    custom_fields: [], sessions: [], modules: null, meals: null, accommodation: null,
   };
 }
 
@@ -112,6 +119,7 @@ export function buildCreateEventPayload(
     end_date: toBackendLocalDateTime(values.end_date),
     duration_type: values.duration_type,
     time_zone: values.time_zone,
+    event_type: values.event_type,
     registration_cutoff: toBackendLocalDateTime(values.registration_cutoff),
     primary_image: values.primary_image.trim(),
     gallery_images: values.gallery_images,
@@ -135,9 +143,12 @@ export function buildCreateEventPayload(
     status: "draft",
     ...(formConfigurationVersionId ? { form_configuration_version_id: formConfigurationVersionId } : {}),
     ...(customValues ? { custom_values: customValues } : {}),
+    ...(values.modules ? { modules: values.modules } : {}),
+    ...(values.meals ? { meals: values.meals } : {}),
+    ...(values.accommodation ? { accommodation: values.accommodation } : {}),
   };
   if (configuredCoreKeys) {
-    const payloadFields: Record<string, keyof CreateEventPayload> = { title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", start_date: "start_date", start_datetime: "start_date", end_date: "end_date", end_datetime: "end_date", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", timezone: "time_zone", time_zone: "time_zone", event_type: "delivery_mode", delivery_mode: "delivery_mode", venue: "venue", pricing_type: "pricing_type", price: "price", currency: "currency", ticket_types: "ticket_types", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents", media: "primary_image", sessions: "sessions", custom_fields: "custom_fields", registration_questions: "custom_fields" };
+    const payloadFields: Record<string, keyof CreateEventPayload> = { title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", start_date: "start_date", start_datetime: "start_date", end_date: "end_date", end_datetime: "end_date", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", timezone: "time_zone", time_zone: "time_zone", event_type: "event_type", delivery_mode: "delivery_mode", venue: "venue", pricing_type: "pricing_type", price: "price", currency: "currency", ticket_types: "ticket_types", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents", media: "primary_image", sessions: "sessions", custom_fields: "custom_fields", registration_questions: "custom_fields" };
     const configuredPayloadFields = new Set(
       Object.entries(payloadFields)
         .filter(([configurationKey]) => configuredCoreKeys.has(configurationKey))
@@ -149,6 +160,9 @@ export function buildCreateEventPayload(
       }
     }
   }
+  if (values.modules) payload.modules = values.modules;
+  if (values.meals) payload.meals = values.meals;
+  if (values.accommodation) payload.accommodation = values.accommodation;
   return payload;
 }
 
@@ -159,7 +173,7 @@ export function eventToFormValues(event: Event): CreateEventFormValues {
     tags: event.tags, organiser_name: event.organiser_name, organiser_contact: event.organiser_contact,
     start_date: toDateTimeLocal(event.start_date), end_date: toDateTimeLocal(event.end_date), duration_type: event.duration_type,
     registration_cutoff: toDateTimeLocal(event.registration_cutoff), registration_open_at: toDateTimeLocal(event.registration_open_at),
-    registration_close_at: toDateTimeLocal(event.registration_close_at), time_zone: event.time_zone, delivery_mode: event.delivery_mode,
+    registration_close_at: toDateTimeLocal(event.registration_close_at), time_zone: event.time_zone, event_type: event.event_type ?? "", delivery_mode: event.delivery_mode,
     venue_name: event.venue?.name ?? "", venue_address: event.venue?.address ?? "", venue_city: event.venue?.city ?? "",
     venue_latitude: event.venue?.coordinates?.lat?.toString() ?? "", venue_longitude: event.venue?.coordinates?.lng?.toString() ?? "",
     meeting_link: event.meeting_link ?? "", meeting_provider: event.meeting_provider ?? "", price: event.price ?? "", pricing_type: event.pricing_type ?? (Number(event.price) === 0 ? "free" : "paid"),
@@ -167,6 +181,7 @@ export function eventToFormValues(event: Event): CreateEventFormValues {
     min_participants: event.min_participants, max_participants: event.max_participants, primary_image: event.primary_image ?? "",
     gallery_images: event.gallery_images, videos: event.videos, documents: event.documents,
     custom_fields: event.custom_fields, sessions: event.sessions.map((session) => ({ ...(session.id ? { id: session.id } : {}), session_date: session.session_date ?? "", title: session.title, description: session.description ?? "", speaker: session.speaker ?? "", speaker_bio: session.speaker_bio ?? "", start_time: session.start_time ?? "", end_time: session.end_time ?? "", location: session.location ?? "", meeting_link: session.meeting_link ?? null })),
+    modules: event.modules ?? null, meals: event.meals ?? null, accommodation: event.accommodation ?? null,
   };
 }
 
@@ -245,9 +260,12 @@ function mergeChangedSession(
 export function buildUpdateEventPayload(values: CreateEventFormValues, initialValues: CreateEventFormValues, locationId: string, initialLocationId: string, configuredCoreKeys?: ReadonlySet<string>, sessionsEnabledFields?: readonly string[]): UpdateEventPayload {
   const changed = <Key extends keyof CreateEventFormValues>(key: Key): boolean => JSON.stringify(values[key]) !== JSON.stringify(initialValues[key]);
   const payload: UpdateEventPayload = {};
-  const scalarKeys: Array<keyof Pick<CreateEventFormValues, "title" | "description" | "category" | "subcategory" | "tags" | "organiser_name" | "organiser_contact" | "duration_type" | "time_zone" | "delivery_mode" | "primary_image" | "gallery_images" | "videos" | "documents" | "price" | "pricing_type" | "currency" | "ticket_types" | "capacity" | "min_participants" | "max_participants" | "custom_fields" | "sessions">> = ["title", "description", "category", "subcategory", "tags", "organiser_name", "organiser_contact", "duration_type", "time_zone", "delivery_mode", "primary_image", "gallery_images", "videos", "documents", "price", "pricing_type", "currency", "ticket_types", "capacity", "min_participants", "max_participants", "custom_fields", "sessions"];
+  const scalarKeys: Array<keyof Pick<CreateEventFormValues, "title" | "description" | "category" | "subcategory" | "tags" | "organiser_name" | "organiser_contact" | "duration_type" | "time_zone" | "event_type" | "delivery_mode" | "primary_image" | "gallery_images" | "videos" | "documents" | "price" | "pricing_type" | "currency" | "ticket_types" | "capacity" | "min_participants" | "max_participants" | "custom_fields" | "sessions">> = ["title", "description", "category", "subcategory", "tags", "organiser_name", "organiser_contact", "duration_type", "time_zone", "event_type", "delivery_mode", "primary_image", "gallery_images", "videos", "documents", "price", "pricing_type", "currency", "ticket_types", "capacity", "min_participants", "max_participants", "custom_fields", "sessions"];
   for (const key of scalarKeys) if (changed(key)) Object.assign(payload, { [key]: values[key] });
   if (changed("sessions")) payload.sessions = values.sessions.map((session) => mapSessionForPayload(session, sessionsEnabledFields, values.delivery_mode));
+  if (changed("modules")) payload.modules = values.modules;
+  if (changed("meals")) payload.meals = values.meals;
+  if (changed("accommodation")) payload.accommodation = values.accommodation;
   const datetimeKeys: Array<keyof Pick<CreateEventFormValues, "start_date" | "end_date" | "registration_cutoff" | "registration_open_at" | "registration_close_at">> = ["start_date", "end_date", "registration_cutoff", "registration_open_at", "registration_close_at"];
   for (const key of datetimeKeys) if (changed(key)) Object.assign(payload, { [key]: toBackendLocalDateTime(values[key]) });
   const deliveryModeChanged = changed("delivery_mode");
@@ -268,7 +286,7 @@ export function buildUpdateEventPayload(values: CreateEventFormValues, initialVa
   }
   if (values.pricing_type === "free" && (changed("pricing_type") || changed("price"))) payload.price = null;
   if (configuredCoreKeys) {
-    const payloadKeys: Record<string, keyof UpdateEventPayload> = { title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", duration_type: "duration_type", start_date: "start_date", end_date: "end_date", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", time_zone: "time_zone", delivery_mode: "delivery_mode", venue: "venue", location_id: "location_id", meeting_link: "meeting_link", meeting_provider: "meeting_provider", pricing_type: "pricing_type", price: "price", currency: "currency", ticket_types: "ticket_types", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents", sessions: "sessions" };
+    const payloadKeys: Record<string, keyof UpdateEventPayload> = { title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", duration_type: "duration_type", start_date: "start_date", end_date: "end_date", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", time_zone: "time_zone", event_type: "event_type", delivery_mode: "delivery_mode", venue: "venue", location_id: "location_id", meeting_link: "meeting_link", meeting_provider: "meeting_provider", pricing_type: "pricing_type", price: "price", currency: "currency", ticket_types: "ticket_types", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents", sessions: "sessions" };
     for (const [configurationKey, payloadKey] of Object.entries(payloadKeys)) if (!configuredCoreKeys.has(configurationKey)) delete (payload as Partial<UpdateEventPayload>)[payloadKey];
   }
   return payload;

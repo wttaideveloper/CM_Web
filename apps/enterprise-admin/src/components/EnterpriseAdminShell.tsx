@@ -4,6 +4,7 @@ import { useCallback, type ReactNode } from "react";
 
 import { useAuth } from "@ihp/auth";
 import { EnterpriseAdminLayout } from "@ihp/enterprise-layout";
+import { updatePresenceStatus } from "@ihp/messaging";
 import { useRealtime } from "@ihp/realtime";
 
 import EnterpriseRealtimeRouteProviders from "@/providers/EnterpriseRealtimeRouteProviders";
@@ -14,6 +15,13 @@ function EnterpriseAdminShellContent({ children }: { children: ReactNode }) {
 
   const handleLogout = useCallback(async () => {
     try {
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[Web presence] publish", {
+          status: "offline",
+          reason: "logout",
+        });
+      }
+      await updatePresenceStatus("offline").catch(() => undefined);
       const logoutUrl = await logout();
       window.location.assign(logoutUrl);
     } catch {

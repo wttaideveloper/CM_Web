@@ -31,6 +31,7 @@ interface Props {
   deliveryMode?: string;
   label?: string;
   error?: string;
+  disabled?: boolean;
   onSessionsChange: (sessions: SessionDraft[]) => void;
   onAddSession?: () => void;
   onEditPersisted?: (session: EventSessionRecord & { id: string }) => void;
@@ -66,6 +67,7 @@ export default function SessionTableEditor({
   deliveryMode,
   label = "Sessions / Agenda",
   error,
+  disabled = false,
   onSessionsChange,
   onAddSession,
   onEditPersisted,
@@ -143,7 +145,7 @@ export default function SessionTableEditor({
   return <section className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <h2 className="text-lg font-bold text-[#06201c]">{label}</h2>
-      <button type="button" onClick={mode === "create" ? addLocalSession : onAddSession} className="inline-flex h-10 items-center justify-center rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white shadow-sm">+ Add Session</button>
+      <button type="button" onClick={mode === "create" ? addLocalSession : onAddSession} disabled={disabled} className="inline-flex h-10 items-center justify-center rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white shadow-sm disabled:opacity-50">+ Add Session</button>
     </div>
     <div className="mt-4 grid gap-3 rounded-xl bg-[#f4faf7] p-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
       <Summary label="Event start" value={event ? formatClock(event.start) : "Unavailable"} />
@@ -158,33 +160,33 @@ export default function SessionTableEditor({
     <div className="mt-5 rounded-xl border border-[#edf3f0] p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h3 className="font-bold text-[#06201c]">Generate sessions</h3><p className="mt-1 text-xs text-[#52736a]">Slots are placed in the earliest available continuous gaps.</p></div>
-        <button type="button" onClick={generate} disabled={!event || rules.reduce((total, rule) => total + rule.duration * rule.count, 0) <= 0} className="rounded-full bg-[#1f6a58] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Generate Sessions</button>
+        <button type="button" onClick={generate} disabled={disabled || !event || rules.reduce((total, rule) => total + rule.duration * rule.count, 0) <= 0} className="rounded-full bg-[#1f6a58] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Generate Sessions</button>
       </div>
       <div className="mt-3 space-y-2">
         {rules.map((rule, index) => <div key={rule.id} className="flex flex-wrap items-center gap-2 text-sm">
-          <select value={rule.custom ? "custom" : rule.duration} onChange={(event) => updateRule(rule.id, event.target.value)} className="h-9 rounded-lg border border-[#d7e5df] px-2">
+          <select value={rule.custom ? "custom" : rule.duration} disabled={disabled} onChange={(event) => updateRule(rule.id, event.target.value)} className="h-9 rounded-lg border border-[#d7e5df] px-2">
             {presets.map((preset) => <option key={preset} value={preset}>{preset} min</option>)}<option value="custom">Custom duration</option>
           </select>
-          {rule.custom ? <label className="flex items-center gap-2">Custom <input type="number" min="1" value={rule.duration} onChange={(event) => updateRuleDuration(rule.id, event.target.value)} className="h-9 w-24 rounded-lg border border-[#d7e5df] px-2" /></label> : null}
+          {rule.custom ? <label className="flex items-center gap-2">Custom <input type="number" min="1" disabled={disabled} value={rule.duration} onChange={(event) => updateRuleDuration(rule.id, event.target.value)} className="h-9 w-24 rounded-lg border border-[#d7e5df] px-2" /></label> : null}
           <span>×</span><button type="button" aria-label={`Decrease duration group ${index + 1} count`} onClick={() => updateRuleCount(rule.id, rule.count - 1)} className="h-8 w-8 rounded-full border border-[#d7e5df] font-bold">−</button><span className="min-w-5 text-center font-bold">{rule.count}</span><button type="button" aria-label={`Increase duration group ${index + 1} count`} onClick={() => updateRuleCount(rule.id, rule.count + 1)} className="h-8 w-8 rounded-full border border-[#d7e5df] font-bold">+</button>
           {rules.length > 1 ? <button type="button" onClick={() => setRules(rules.filter((item) => item.id !== rule.id))} className="ml-2 text-xs font-semibold text-[#b42318]">Remove</button> : null}
         </div>)}
       </div>
-      <button type="button" onClick={() => { setRules([...rules, { id: nextRuleId, duration: 60, count: 1, custom: false }]); setNextRuleId(nextRuleId + 1); }} className="mt-3 text-sm font-semibold text-[#1f6a58]">+ Add duration group</button>
+      <button type="button" disabled={disabled} onClick={() => { setRules([...rules, { id: nextRuleId, duration: 60, count: 1, custom: false }]); setNextRuleId(nextRuleId + 1); }} className="mt-3 text-sm font-semibold text-[#1f6a58] disabled:opacity-50">+ Add duration group</button>
       {generatorError ? <p role="alert" className="mt-3 text-sm font-semibold text-[#b42318]">{generatorError}</p> : null}
     </div>
     <div className="mt-5 overflow-x-auto rounded-xl border border-[#d7e5df]">
       <table className="w-full min-w-[980px] border-collapse text-left text-sm"><thead className="bg-[#f4faf7] text-xs uppercase tracking-wide text-[#52736a]"><tr>{availableFields.map((field) => <th key={field.key} className="whitespace-nowrap px-3 py-3">{field.label}{required(field.key) ? " *" : ""}</th>)}<th className="whitespace-nowrap px-3 py-3">Status</th><th className="whitespace-nowrap px-3 py-3">Actions</th></tr></thead><tbody>
         {rows.map(({ session, persisted, source }, rowIndex) => {
           const localIndex = sessions.findIndex((item) => item === session);
-          return <tr key={session.id ?? `new-${rowIndex}`} className="border-t border-[#edf3f0] align-top">{availableFields.map((field) => <td key={field.key} className="px-3 py-3">{persisted ? renderPersistedValue(session, field.key) : <SessionCell field={field.key} session={session} eventStart={eventStart} eventEnd={eventEnd} required={required(field.key)} onChange={(value) => updateLocal(localIndex, field.key, value)} />}</td>)}<td className="px-3 py-3">{persisted ? <span className="text-xs font-semibold text-[#52736a]">Persisted</span> : <span className="rounded-full bg-[#fff4d6] px-2 py-1 text-xs font-bold text-[#735c1e]">New</span>}</td><td className="px-3 py-3">{persisted && source && "id" in source && source.id ? <div className="flex flex-wrap gap-2 text-xs font-semibold"><button type="button" onClick={() => onEditPersisted?.(source as EventSessionRecord & { id: string })} className="text-[#1f6a58] underline">Edit</button><button type="button" onClick={() => onDeletePersisted?.(source as EventSessionRecord & { id: string })} className="text-[#b42318] underline">Delete</button>{renderPersistedActions?.(source as EventSessionRecord & { id: string })}</div> : !persisted ? <button type="button" onClick={() => onSessionsChange(sessions.filter((_, index) => index !== localIndex))} className="text-xs font-semibold text-[#b42318] underline">Remove</button> : null}</td></tr>;
+          return <tr key={session.id ?? `new-${rowIndex}`} className="border-t border-[#edf3f0] align-top">{availableFields.map((field) => <td key={field.key} className="px-3 py-3">{persisted ? renderPersistedValue(session, field.key) : <SessionCell field={field.key} session={session} eventStart={eventStart} eventEnd={eventEnd} required={required(field.key)} disabled={disabled} onChange={(value) => updateLocal(localIndex, field.key, value)} />}</td>)}<td className="px-3 py-3">{persisted ? <span className="text-xs font-semibold text-[#52736a]">Persisted</span> : <span className="rounded-full bg-[#fff4d6] px-2 py-1 text-xs font-bold text-[#735c1e]">New</span>}</td><td className="px-3 py-3">{persisted && source && "id" in source && source.id ? <div className="flex flex-wrap gap-2 text-xs font-semibold"><button type="button" disabled={disabled} onClick={() => onEditPersisted?.(source as EventSessionRecord & { id: string })} className="text-[#1f6a58] underline disabled:opacity-50">Edit</button><button type="button" disabled={disabled} onClick={() => onDeletePersisted?.(source as EventSessionRecord & { id: string })} className="text-[#b42318] underline disabled:opacity-50">Delete</button>{renderPersistedActions?.(source as EventSessionRecord & { id: string })}</div> : !persisted ? <button type="button" disabled={disabled} onClick={() => onSessionsChange(sessions.filter((_, index) => index !== localIndex))} className="text-xs font-semibold text-[#b42318] underline disabled:opacity-50">Remove</button> : null}</td></tr>;
         })}
         {rows.length === 0 ? <tr><td colSpan={availableFields.length + 2} className="px-3 py-8 text-center text-sm font-semibold text-[#52736a]">No sessions added.</td></tr> : null}
       </tbody></table>
     </div>
     {error ? <p role="alert" className="mt-3 text-sm font-semibold text-[#b42318]">{error}</p> : null}
     {saveError ? <p role="alert" className="mt-3 text-sm font-semibold text-[#b42318]">{saveError}</p> : null}
-    {mode === "manage" && sessions.length > 0 ? <button type="button" onClick={() => void saveGenerated()} disabled={isSaving} className="mt-4 rounded-full bg-[#1f6a58] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{isSaving ? "Saving New Sessions..." : "Save New Sessions"}</button> : null}
+    {mode === "manage" && sessions.length > 0 ? <button type="button" onClick={() => void saveGenerated()} disabled={disabled || isSaving} className="mt-4 rounded-full bg-[#1f6a58] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{isSaving ? "Saving New Sessions..." : "Save New Sessions"}</button> : null}
   </section>;
 
   function updateRule(id: number, value: string) {
@@ -203,15 +205,15 @@ export default function SessionTableEditor({
 
 function Summary({ label, value }: { label: string; value: string }) { return <div><p className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">{label}</p><p className="mt-1 font-bold text-[#06201c]">{value}</p></div>; }
 
-function SessionCell({ field, session, eventStart, eventEnd, required, onChange }: { field: SessionField; session: SessionDraft; eventStart: string; eventEnd: string; required: boolean; onChange: (value: string) => void }) {
+function SessionCell({ field, session, eventStart, eventEnd, required, disabled, onChange }: { field: SessionField; session: SessionDraft; eventStart: string; eventEnd: string; required: boolean; disabled?: boolean; onChange: (value: string) => void }) {
   const value = session[field] ?? "";
   if (field === "session_date") {
-    return <input type="date" value={value} required={required} min={getEventSessionDates(eventStart, eventEnd)[0]} max={getEventSessionDates(eventStart, eventEnd).at(-1)} onChange={(event) => onChange(event.target.value)} className="h-9 w-36 rounded-lg border border-[#d7e5df] px-2" />;
+    return <input type="date" value={value} disabled={disabled} required={required} min={getEventSessionDates(eventStart, eventEnd)[0]} max={getEventSessionDates(eventStart, eventEnd).at(-1)} onChange={(event) => onChange(event.target.value)} className="h-9 w-36 rounded-lg border border-[#d7e5df] px-2" />;
   }
   const type = field === "start_time" || field === "end_time" ? "time" : field === "meeting_link" ? "url" : "text";
   const bounds = getSessionTimeBounds(session.session_date, eventStart, eventEnd);
-  if (field === "description" || field === "speaker_bio") return <textarea value={value} required={required} onChange={(event) => onChange(event.target.value)} className="min-h-20 min-w-40 rounded-lg border border-[#d7e5df] px-2 py-1" />;
-  return <input type={type} value={value} required={required} min={type === "time" ? bounds.min : undefined} max={type === "time" ? bounds.max : undefined} onChange={(event) => onChange(event.target.value)} placeholder={field === "meeting_link" ? "https://" : undefined} className="h-9 min-w-28 rounded-lg border border-[#d7e5df] px-2" />;
+  if (field === "description" || field === "speaker_bio") return <textarea value={value} disabled={disabled} required={required} onChange={(event) => onChange(event.target.value)} className="min-h-20 min-w-40 rounded-lg border border-[#d7e5df] px-2 py-1" />;
+  return <input type={type} value={value} disabled={disabled} required={required} min={type === "time" ? bounds.min : undefined} max={type === "time" ? bounds.max : undefined} onChange={(event) => onChange(event.target.value)} placeholder={field === "meeting_link" ? "https://" : undefined} className="h-9 min-w-28 rounded-lg border border-[#d7e5df] px-2" />;
 }
 
 function renderPersistedValue(session: SessionDraft, field: SessionField) {

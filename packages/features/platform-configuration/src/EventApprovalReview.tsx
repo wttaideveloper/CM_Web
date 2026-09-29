@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import EventApprovalDialog from "./EventApprovalDialog";
 import { useHistoricalEventFormConfigurationVersion, type EventApprovalDecision } from "./event-approval.service";
-import type { EventApprovalReview, EventSession, HistoricalEventFormConfigurationVersion, HistoricalEventFormField } from "./event-approval-review.types";
+import type { EventApprovalReview, EventSession, HistoricalEventFormConfigurationVersion, HistoricalEventFormField, EventTypeReviewValue } from "./event-approval-review.types";
 import { EnterpriseDisplayName, TenantDisplayName } from "./EventOwnershipNames";
 
 type DisplayRow = { label: string; value: React.ReactNode };
@@ -15,6 +16,10 @@ function hasText(value: string | null | undefined): value is string {
 function enumLabel(value: string | null | undefined): string {
   return hasText(value) ? value.replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase()) : "Not provided";
 }
+
+function eventTypeKey(value: EventTypeReviewValue | null | undefined): string | null { if (typeof value === "string") return value || null; return value?.key ?? null; }
+function eventTypeInlineLabel(value: EventTypeReviewValue | null | undefined): string { if (typeof value === "string") return value || "Not provided"; return value?.name || value?.key || "Not provided"; }
+function moduleLabel(key: string): string { return key.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase()); }
 
 function customValueLabel(field: { id?: string; stable_key?: string | null; label: string }, value: { field_id: string }): string {
   return field.label || field.stable_key || field.id || value.field_id;
@@ -118,6 +123,7 @@ export default function EventApprovalReview({
 }) {
   const [decision, setDecision] = useState<EventApprovalDecision | null>(null);
   const historicalVersion = useHistoricalEventFormConfigurationVersion(event.form_configuration_id, event.form_configuration_version_id);
+  const eventTypesQuery = useQuery({ queryKey: ["platform", "event-types"], queryFn: async () => { const response = await fetch("/api/platform-super-admin/event-types", { credentials: "include" }); if (!response.ok) throw new Error(); return await response.json() as Array<{ key: string; name: string }>; }, staleTime: 60_000, retry: 1 });
   const approveButtonRef = useRef<HTMLButtonElement>(null);
   const closeConfirmation = () => {
     setDecision(null);
@@ -132,8 +138,8 @@ export default function EventApprovalReview({
     return (leftField && "section_position" in leftField ? leftField.section_position : Number.MAX_SAFE_INTEGER) - (rightField && "section_position" in rightField ? rightField.section_position : Number.MAX_SAFE_INTEGER) || (leftField?.position ?? Number.MAX_SAFE_INTEGER) - (rightField?.position ?? Number.MAX_SAFE_INTEGER);
   }), [event.custom_fields, event.custom_values, historicalFieldMetadata]);
 
-  return <div className="mt-5 space-y-6 text-sm text-[#52736a]">
-    <ReviewSection title="Event Overview"><DetailGrid rows={[{ label: "Event title", value: event.title }, ...(hasText(event.description) ? [{ label: "Description", value: event.description }] : []), { label: "Category", value: event.category }, ...(hasText(event.subcategory) ? [{ label: "Subcategory", value: event.subcategory }] : []), { label: "Status", value: enumLabel(event.status) }, ...(hasText(event.organiser_name) ? [{ label: "Organizer", value: event.organiser_name }] : []), ...(hasText(event.organiser_contact) ? [{ label: "Organizer contact", value: event.organiser_contact }] : [])]} />{event.tags?.length ? <div className="mt-4"><p className="text-xs font-bold uppercase tracking-[.08em] text-[#7f9d94]">Tags</p><div className="mt-2 flex flex-wrap gap-2">{event.tags.map((tag) => <span key={tag} className="rounded-full bg-[#edf3f0] px-3 py-1 font-semibold text-[#284940]">{tag}</span>)}</div></div> : null}</ReviewSection>
+  return <div className="mt-5 space-y-6 text-sm text-[#52736a]">{event.modules && Object.keys(event.modules).length ? <ReviewSection title="Event Capabilities"><DetailGrid rows={Object.entries(event.modules).map(([key, enabled]) => ({ label: moduleLabel(key), value: enabled ? "Enabled" : "Disabled" }))} /></ReviewSection> : null}{event.meals || event.accommodation ? <ReviewSection title="Event Services"><DetailGrid rows={[...(event.meals ? [{ label: "Meals", value: `${event.meals.enabled === false ? "Disabled" : "Enabled"}${event.meals.options?.length ? ` · ${event.meals.options.length} option${event.meals.options.length === 1 ? "" : "s"}` : ""}` }] : []), ...(event.accommodation ? [{ label: "Accommodation", value: `${event.accommodation.enabled === false ? "Disabled" : "Enabled"}${event.accommodation.options?.length ? ` · ${event.accommodation.options.length} option${event.accommodation.options.length === 1 ? "" : "s"}` : ""}` }] : [])]} /></ReviewSection> : null}
+    <ReviewSection title="Event Overview"><DetailGrid rows={[{ label: "Event title", value: event.title }, { label: "Event Type", value: eventTypesQuery.data?.find((item) => item.key === eventTypeKey(event.event_type))?.name ?? eventTypeInlineLabel(event.event_type) }, ...(hasText(event.description) ? [{ label: "Description", value: event.description }] : []), { label: "Category", value: event.category }, ...(hasText(event.subcategory) ? [{ label: "Subcategory", value: event.subcategory }] : []), { label: "Status", value: enumLabel(event.status) }, ...(hasText(event.organiser_name) ? [{ label: "Organizer", value: event.organiser_name }] : []), ...(hasText(event.organiser_contact) ? [{ label: "Organizer contact", value: event.organiser_contact }] : [])]} />{event.tags?.length ? <div className="mt-4"><p className="text-xs font-bold uppercase tracking-[.08em] text-[#7f9d94]">Tags</p><div className="mt-2 flex flex-wrap gap-2">{event.tags.map((tag) => <span key={tag} className="rounded-full bg-[#edf3f0] px-3 py-1 font-semibold text-[#284940]">{tag}</span>)}</div></div> : null}</ReviewSection>
     <ReviewSection title="Enterprise / Ownership"><DetailGrid rows={[{ label: "Enterprise", value: <EnterpriseDisplayName enterpriseId={event.enterprise_id} eventEnterpriseName={event.enterprise_name} /> }, { label: "Tenant", value: <TenantDisplayName tenantId={event.tenant_id} /> }]} /></ReviewSection>
     <ReviewSection title="Schedule & Registration Window"><DetailGrid rows={[...(hasText(event.start_date) ? [{ label: "Starts", value: wallClockDateTime(event.start_date) }] : []), ...(hasText(event.end_date) ? [{ label: "Ends", value: wallClockDateTime(event.end_date) }] : []), ...(hasText(event.time_zone) ? [{ label: "Time zone", value: event.time_zone }] : []), ...(hasText(event.registration_open_at) ? [{ label: "Registration opens", value: wallClockDateTime(event.registration_open_at) }] : []), ...(hasText(event.registration_close_at) ? [{ label: "Registration closes", value: wallClockDateTime(event.registration_close_at) }] : []), ...(hasText(event.registration_cutoff) ? [{ label: "Registration cutoff", value: wallClockDateTime(event.registration_cutoff) }] : [])]} /></ReviewSection>
     {(hasText(event.delivery_mode) || event.venue || hasText(event.meeting_link) || hasText(event.meeting_provider)) ? <ReviewSection title="Location & Delivery"><DetailGrid rows={[...(hasText(event.delivery_mode) ? [{ label: "Delivery mode", value: enumLabel(event.delivery_mode) }] : []), ...(hasText(event.venue?.name) ? [{ label: "Venue", value: event.venue.name }] : []), ...(hasText(event.venue?.address) ? [{ label: "Address", value: event.venue.address }] : []), ...(hasText(event.venue?.city) ? [{ label: "City", value: event.venue.city }] : []), ...(hasText(event.meeting_provider) ? [{ label: "Meeting provider", value: event.meeting_provider }] : []), ...(hasText(event.meeting_link) ? [{ label: "Meeting link", value: mediaUrl(event.meeting_link) }] : [])]} /></ReviewSection> : null}

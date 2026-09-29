@@ -75,6 +75,9 @@ export default function EventBatchCheckInSection({ eventId, enabled, timeZone }:
       await Promise.all([
         queryClient.invalidateQueries({ queryKey }),
         queryClient.invalidateQueries({ queryKey: ["event-attendance", eventId] }),
+        queryClient.invalidateQueries({ queryKey: ["event-attendees", eventId] }),
+        queryClient.invalidateQueries({ queryKey: ["event-registrations", eventId] }),
+        queryClient.invalidateQueries({ queryKey: ["events", "dashboard", eventId] }),
       ]);
     },
     onError: () => {
