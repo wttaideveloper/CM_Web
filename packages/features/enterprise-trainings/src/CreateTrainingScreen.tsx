@@ -126,20 +126,37 @@ function validateConfiguredSection(
     }
     if (!hasConfiguredValue(value)) continue;
     const validation = field.validation;
-    if (validation?.pattern && typeof value === "string") {
+    const textValues: string[] = typeof value === "string"
+      ? [value]
+      : Array.isArray(value)
+        ? value.filter((item): item is string => typeof item === "string")
+        : [];
+    const pattern = validation?.pattern;
+    if (pattern && textValues.length > 0) {
       try {
-        if (!new RegExp(validation.pattern).test(value)) errors[field.key] = [`${field.label} has an invalid format.`];
+        if (textValues.some((text) => !new RegExp(pattern).test(text))) {
+          errors[field.key] = [`${field.label} has an invalid format.`];
+        }
       } catch {
         errors[field.key] = [`${field.label} has an invalid validation pattern.`];
       }
     }
-    if (typeof value === "string" && validation?.minLength != null && value.length < validation.minLength) {
-      errors[field.key] = [`${field.label} must be at least ${validation.minLength} characters.`];
+    const minLength = validation?.minLength;
+    if (minLength != null && textValues.some((text) => text.length < minLength)) {
+      errors[field.key] = [`${field.label} must be at least ${minLength} characters.`];
     }
-    if (typeof value === "string" && validation?.maxLength != null && value.length > validation.maxLength) {
-      errors[field.key] = [`${field.label} must be at most ${validation.maxLength} characters.`];
+    const maxLength = validation?.maxLength;
+    if (maxLength != null && textValues.some((text) => text.length > maxLength)) {
+      errors[field.key] = [`${field.label} must be at most ${maxLength} characters.`];
     }
-    const numericValue = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : null;
+    const isNumber = field.type === "number" || field.valueType === "number";
+    const numericValue = isNumber
+      ? typeof value === "number"
+        ? value
+        : typeof value === "string" && value.trim()
+          ? Number(value)
+          : null
+      : null;
     if (numericValue !== null && Number.isFinite(numericValue) && validation?.min != null && numericValue < validation.min) {
       errors[field.key] = [`${field.label} must be at least ${validation.min}.`];
     }

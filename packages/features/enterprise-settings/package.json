@@ -6,9 +6,9 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.90.21",
     "@ihp/auth": "0.1.0",
-    "@ihp/enterprise-runtime": "0.1.0"
+    "@ihp/enterprise-runtime": "0.1.0",
+    "@tanstack/react-query": "^5.90.21"
   },
   "peerDependencies": {
     "next": "^16.2.9",
@@ -18,7 +18,7 @@
   "devDependencies": {
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "next": "16.2.9",
+    "next": "16.3.7",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "typescript": "^5"

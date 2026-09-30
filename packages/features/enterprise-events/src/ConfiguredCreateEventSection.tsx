@@ -212,14 +212,37 @@ function CategoryTaxonomySelect({ field, keyName, values, update, error, categor
 
 function TagsEditor({ field, values, update, error }: { field: ActiveEventFormField; values: CreateEventFormValues; update: UpdateForm; error?: string }) {
   const [draft, setDraft] = useState("");
+  const [draftError, setDraftError] = useState<string | null>(null);
   const addTag = () => {
     const tag = draft.trim();
-    if (!tag || values.tags.some((item) => item.toLocaleLowerCase() === tag.toLocaleLowerCase())) return;
+    if (!tag) return;
+    const { min_length: minLength, max_length: maxLength, pattern } = field.validation;
+    if (minLength != null && tag.length < minLength) {
+      setDraftError(`${field.label} must be at least ${minLength} characters.`);
+      return;
+    }
+    if (maxLength != null && tag.length > maxLength) {
+      setDraftError(`${field.label} must be at most ${maxLength} characters.`);
+      return;
+    }
+    if (pattern) {
+      try {
+        if (!new RegExp(pattern).test(tag)) {
+          setDraftError(`${field.label} has an invalid format.`);
+          return;
+        }
+      } catch {
+        setDraftError(`${field.label} has an invalid validation rule.`);
+        return;
+      }
+    }
+    if (values.tags.some((item) => item.toLocaleLowerCase() === tag.toLocaleLowerCase())) return;
     update("tags", [...values.tags, tag]);
     setDraft("");
+    setDraftError(null);
   };
 
-  return <div className="block text-sm font-semibold text-[#06201c]"><label htmlFor={`event-tags-${field.id}`}>{field.label}{field.required ? " *" : ""}{field.help_text ? <span className="ml-1 font-normal text-[#52736a]">{field.help_text}</span> : null}</label><input id={`event-tags-${field.id}`} value={draft} required={field.required && values.tags.length === 0} placeholder={field.placeholder ?? "Type a tag and press Enter"} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addTag(); } }} className={inputClass} />{values.tags.length > 0 ? <div className="mt-2 flex flex-wrap gap-2">{values.tags.map((tag) => <span key={tag} className="inline-flex items-center gap-1 rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{tag}<button type="button" onClick={() => update("tags", values.tags.filter((item) => item !== tag))} aria-label={`Remove ${tag}`} className="rounded-full px-0.5 text-[#1f6a58] hover:bg-[#cdebd8]">×</button></span>)}</div> : null}{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</div>;
+  return <div className="block text-sm font-semibold text-[#06201c]"><label htmlFor={`event-tags-${field.id}`}>{field.label}{field.required ? " *" : ""}{field.help_text ? <span className="ml-1 font-normal text-[#52736a]">{field.help_text}</span> : null}</label><input id={`event-tags-${field.id}`} value={draft} required={field.required && values.tags.length === 0} minLength={field.validation.min_length ?? undefined} maxLength={field.validation.max_length ?? undefined} pattern={field.validation.pattern ?? undefined} aria-invalid={Boolean(draftError || error) || undefined} onChange={(event) => { setDraft(event.target.value); setDraftError(null); }} placeholder={field.placeholder ?? "Type a tag and press Enter"} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addTag(); } }} className={inputClass} />{values.tags.length > 0 ? <div className="mt-2 flex flex-wrap gap-2">{values.tags.map((tag) => <span key={tag} className="inline-flex items-center gap-1 rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{tag}<button type="button" onClick={() => update("tags", values.tags.filter((item) => item !== tag))} aria-label={`Remove ${tag}`} className="rounded-full px-0.5 text-[#1f6a58] hover:bg-[#cdebd8]">×</button></span>)}</div> : null}{draftError ? <p role="alert" className="mt-1 text-xs text-[#b42318]">{draftError}</p> : error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</div>;
 }
 
 function CompositeField({ field, values, update, error, currencyOptions, selectedEventType, disabled = false }: { field: ActiveEventFormField; values: CreateEventFormValues; update: UpdateForm; error?: string; currencyOptions?: readonly ActiveEventFormFieldOption[]; selectedEventType?: EventTypeDefinition; disabled?: boolean }) {

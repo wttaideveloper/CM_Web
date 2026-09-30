@@ -243,19 +243,37 @@ function validateConfiguredEventForm(configuration: ActiveEventFormConfiguration
       errors[key] = [`${field.label} is required.`];
       continue;
     }
-    if (typeof value === "string") {
+    const textValues = typeof value === "string"
+      ? [value]
+      : Array.isArray(value)
+        ? value.filter((item): item is string => typeof item === "string")
+        : [];
+    if (textValues.length > 0) {
       const { min_length: minLength, max_length: maxLength, pattern } = field.validation;
-      if (minLength != null && value.length < minLength) errors[key] = [`${field.label} must be at least ${minLength} characters.`];
-      if (maxLength != null && value.length > maxLength) errors[key] = [`${field.label} must be at most ${maxLength} characters.`];
-      if (pattern) {
+      if (minLength != null && textValues.some((text) => text.length < minLength)) {
+        errors[key] = [`${field.label} must be at least ${minLength} characters.`];
+      }
+      if (maxLength != null && textValues.some((text) => text.length > maxLength)) {
+        errors[key] = [`${field.label} must be at most ${maxLength} characters.`];
+      }
+      if (pattern && !errors[key]) {
         try {
-          if (!new RegExp(pattern).test(value)) errors[key] = [`${field.label} has an invalid format.`];
+          if (textValues.some((text) => !new RegExp(pattern).test(text))) {
+            errors[key] = [`${field.label} has an invalid format.`];
+          }
         } catch {
           errors[key] = [`${field.label} has an invalid validation rule.`];
         }
       }
     }
-    const numericValue = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : null;
+    const isNumber = field.renderer === "number" || field.value_type === "number";
+    const numericValue = isNumber
+      ? typeof value === "number"
+        ? value
+        : typeof value === "string" && value.trim()
+          ? Number(value)
+          : null
+      : null;
     if (numericValue !== null && Number.isFinite(numericValue)) {
       if (field.validation.min != null && numericValue < field.validation.min) errors[key] = [`${field.label} must be at least ${field.validation.min}.`];
       if (field.validation.max != null && numericValue > field.validation.max) errors[key] = [`${field.label} must be at most ${field.validation.max}.`];

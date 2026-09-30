@@ -311,6 +311,7 @@ function ConfiguredField({
   preserveLegacyCategoryValues: boolean;
 }) {
   const [rangeAdjustment, setRangeAdjustment] = useState<"minimum" | "maximum" | null>(null);
+  const [tagDraftError, setTagDraftError] = useState<string | null>(null);
   const { t, i18n } = useTranslation("enterpriseTrainings");
   const key = field.key;
   const required = field.required ? " *" : "";
@@ -424,9 +425,52 @@ function ConfiguredField({
       return (
         <div className="block text-sm font-semibold text-[#06201c] md:col-span-2">
           <p>{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</p>
-          <input defaultValue="" placeholder={placeholder} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); const v = (e.currentTarget as HTMLInputElement).value.trim(); if (v && !(arr as string[]).includes(v)) update(coreField as keyof CreateTrainingFormValues, [...(arr as string[]), v] as never); (e.currentTarget as HTMLInputElement).value = ""; } }} className={inputClass} />
+          <input
+            defaultValue=""
+            placeholder={placeholder}
+            minLength={coreField === "tags" ? field.validation?.minLength ?? undefined : undefined}
+            maxLength={coreField === "tags" ? field.validation?.maxLength ?? undefined : undefined}
+            pattern={coreField === "tags" ? field.validation?.pattern ?? undefined : undefined}
+            aria-invalid={Boolean(tagDraftError || error) || undefined}
+            onChange={() => setTagDraftError(null)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              const input = event.currentTarget;
+              const tag = input.value.trim();
+              if (!tag) return;
+              if (coreField === "tags") {
+                const validation = field.validation;
+                if (validation?.minLength != null && tag.length < validation.minLength) {
+                  setTagDraftError(`${field.label} must be at least ${validation.minLength} characters.`);
+                  return;
+                }
+                if (validation?.maxLength != null && tag.length > validation.maxLength) {
+                  setTagDraftError(`${field.label} must be at most ${validation.maxLength} characters.`);
+                  return;
+                }
+                if (validation?.pattern) {
+                  try {
+                    if (!new RegExp(validation.pattern).test(tag)) {
+                      setTagDraftError(`${field.label} has an invalid format.`);
+                      return;
+                    }
+                  } catch {
+                    setTagDraftError(`${field.label} has an invalid validation pattern.`);
+                    return;
+                  }
+                }
+              }
+              if (!(arr as string[]).includes(tag)) {
+                update(coreField as keyof CreateTrainingFormValues, [...(arr as string[]), tag] as never);
+              }
+              input.value = "";
+              setTagDraftError(null);
+            }}
+            className={inputClass}
+          />
           {(arr as string[]).length > 0 ? <div className="mt-2 flex flex-wrap gap-2">{(arr as string[]).map((item) => <span key={item} className="inline-flex items-center gap-1 rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{item}<button type="button" onClick={() => update(coreField as keyof CreateTrainingFormValues, (arr as string[]).filter((t) => t !== item) as never)}>×</button></span>)}</div> : null}
-          {error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}
+          {tagDraftError ? <p role="alert" className="mt-1 text-xs text-[#b42318]">{tagDraftError}</p> : error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}
         </div>
       );
     }
