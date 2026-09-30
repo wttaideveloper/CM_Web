@@ -10,13 +10,14 @@ import { useRouter } from "next/navigation";
 import { AdditionalConfigurationSection, CapacityAndRegistrationSection, MediaSection, PricingAndTicketsSection, ReviewSection } from "./CreateEventConfigurationSections";
 import { BasicInformationSection, LocationAndHostSection, ScheduleSection } from "./CreateEventDetailsSections";
 import { buildCreateEventPayload, buildUpdateEventPayload, createEmptyEventForm, eventToFormValues, mapSessionForPayload, mergeLatestEventSessions, validateEventForm, validateParticipantCapacity, type CreateEventFormValues } from "./create-event-form";
-import { useEventCategories, useEventTypes } from "./event-categories.queries";
+import { useEventCategories, useEventType, useEventTypes } from "./event-categories.queries";
 import { useActiveEventFormConfiguration, useEventHistoricalFormConfiguration } from "./event-form-configuration.queries";
 import { createEvent, EventsApiError, getEventById, updateEvent, type ActiveEventFormConfiguration, type ActiveEventFormField, type Event, type EventCategory, type EventModules } from "./events.service";
 import { canEditEvent } from "./event-status";
 import ConfiguredCreateEventSection from "./ConfiguredCreateEventSection";
 import ConfiguredCreateEventReview from "./ConfiguredCreateEventReview";
 import EventModulesControls from "./EventModulesControls";
+import { reconcileEventModules, reconcileSelectedEventModules } from "./event-modules";
 import { validateSessions } from "./SessionTableEditor";
 
 const steps = ["Basic Information", "Schedule", "Location & Host", "Pricing & Tickets", "Capacity & Registration", "Images & Media", "Additional Configuration", "Review & Submit"] as const;
@@ -25,12 +26,6 @@ const stepFields: ReadonlyArray<readonly string[]> = [["title", "description", "
 function fieldDomId(key: string): string { return `event-field-${key.replace(/[^a-zA-Z0-9_-]/g, "-")}`; }
 function firstErrorKey(order: readonly string[], errors: Record<string, string[]>): string | null { return order.find((key) => Boolean(errors[key]?.length)) ?? null; }
 function errorCount(errors: Record<string, string[]>): number { return Object.values(errors).filter((messages) => messages.length > 0).length; }
-const moduleKeys: ReadonlyArray<keyof EventModules> = ["registration", "tickets", "sessions", "check_in", "online_meeting", "custom_questions", "meals", "accommodation"];
-function reconcileEventModules(eventType: { default_modules: EventModules; allowed_modules: EventModules; required_modules: EventModules }, current: EventModules | null, preserveChoices: boolean): EventModules {
-  const source = preserveChoices && current ? current : eventType.default_modules;
-  return Object.fromEntries(moduleKeys.map((key) => [key, eventType.required_modules[key] ? true : eventType.allowed_modules[key] === false ? false : source[key]])) as unknown as EventModules;
-}
-
 type EventEditorProps = { mode?: "create" | "edit"; initialEvent?: Event };
 type CustomFieldValue = string | string[] | boolean | number | null;
 
@@ -57,7 +52,6 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const [activeStep, setActiveStep] = useState(0);
   const [initialValues] = useState(() => initialEvent ? eventToFormValues(initialEvent) : createEmptyEventForm());
   const [values, setValues] = useState(() => initialEvent ? eventToFormValues(initialEvent) : createEmptyEventForm());
-  const [modulesManuallyChanged, setModulesManuallyChanged] = useState(false);
   const previousEventType = useRef(values.event_type);
   const [initialLocationId] = useState(initialEvent?.location_id ?? "");
   const [locationId, setLocationId] = useState(initialEvent?.location_id ?? "");
@@ -72,20 +66,30 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   useEffect(() => { if (mode === "create") setValues((current) => ({ ...current, organiser_name: current.organiser_name || enterpriseName, organiser_contact: current.organiser_contact || organiserContact })); }, [enterpriseName, mode, organiserContact]);
   const locationsQuery = useQuery({ queryKey: ["enterprise", enterpriseId, "locations"], queryFn: () => getEnterpriseLocations(enterpriseId ?? ""), enabled: Boolean(enterpriseId), staleTime: 30_000, retry: 1 });
   const activeFormConfiguration = useActiveEventFormConfiguration(mode === "create");
-  const eventTypesQuery = useEventTypes(Boolean(activeFormConfiguration.data));
+  const eventTypesQuery = useEventTypes(mode === "create" || mode === "edit");
+  const persistedEventTypeQuery = useEventType(initialEvent?.event_type_id, mode === "edit");
+  const availableEventTypes = useMemo(() => {
+    const active = eventTypesQuery.data ?? [];
+    const persisted = persistedEventTypeQuery.data;
+    return persisted && !active.some((item) => item.id === persisted.id || item.key === persisted.key) ? [...active, persisted] : active;
+  }, [eventTypesQuery.data, persistedEventTypeQuery.data]);
   useEffect(() => {
-    if (mode !== "create" || !values.event_type) return;
+    if (mode !== "create") return;
     const selected = eventTypesQuery.data?.find((item) => item.key === values.event_type);
-    if (!selected) return;
+    if (!values.event_type || !selected) {
+      previousEventType.current = values.event_type;
+      setValues((current) => current.modules === null ? current : { ...current, modules: null });
+      return;
+    }
     const eventTypeChanged = previousEventType.current !== values.event_type;
     previousEventType.current = values.event_type;
     setValues((current) => {
-      const modules = reconcileEventModules(selected, current.modules, modulesManuallyChanged && (eventTypeChanged || current.modules !== null));
+      const modules = reconcileEventModules(selected, current.modules, !eventTypeChanged);
       const pricing_type = modules.tickets ? current.pricing_type : "free";
       return JSON.stringify(current.modules) === JSON.stringify(modules) && current.pricing_type === pricing_type ? current : { ...current, modules, pricing_type };
     });
-  }, [eventTypesQuery.data, mode, modulesManuallyChanged, values.event_type]);
-  const selectedEventType = eventTypesQuery.data?.find((item) => item.key === values.event_type);
+  }, [eventTypesQuery.data, mode, values.event_type]);
+  const selectedEventType = availableEventTypes.find((item) => item.key === values.event_type || item.id === values.event_type);
   const hasHistoricalConfiguration = Boolean(initialEvent?.form_configuration_id && initialEvent?.form_configuration_version_id);
   const historicalFormConfiguration = useEventHistoricalFormConfiguration(initialEvent?.id, mode === "edit" && hasHistoricalConfiguration);
   const formConfiguration = mode === "create" ? activeFormConfiguration.data : historicalFormConfiguration.data;
@@ -125,7 +129,18 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ["events", "list"] }); if (initialEvent) { await queryClient.invalidateQueries({ queryKey: ["events", "detail", initialEvent.id] }); router.push(`/admin/events/${initialEvent.id}`); } else router.push("/admin/events"); },
     onError: (error) => { if (error instanceof EventsApiError) { setErrors((current) => ({ ...current, ...error.fieldErrors })); setSubmitError(error.status === 401 || error.status === 403 ? "Your session cannot save this event. Please sign in again." : error.message); } else setSubmitError(error instanceof Error ? error.message : "Unable to save event."); },
   });
-  const update = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => { if (key === "modules") setModulesManuallyChanged(true); setValues((current) => key === "modules" && value && !(value as CreateEventFormValues["modules"])?.tickets ? { ...current, modules: value as CreateEventFormValues["modules"], pricing_type: "free" } : { ...current, [key]: value }); setErrors((current) => ({ ...current, [key]: [] })); setSubmitError(null); };
+  const update = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => {
+    setValues((current) => {
+      if (key === "event_type") {
+        const selected = availableEventTypes.find((item) => item.key === value);
+        const modules = reconcileSelectedEventModules(selected, current.modules);
+        if (!modules) return { ...current, event_type: value as CreateEventFormValues["event_type"], modules: null, pricing_type: "free" };
+        return { ...current, event_type: value as CreateEventFormValues["event_type"], modules, pricing_type: modules.tickets ? current.pricing_type : "free" };
+      }
+      return key === "modules" && value && !(value as CreateEventFormValues["modules"])?.tickets ? { ...current, modules: value as CreateEventFormValues["modules"], pricing_type: "free" } : { ...current, [key]: value };
+    });
+    setErrors((current) => ({ ...current, [key]: [] })); setSubmitError(null);
+  };
   const updateLocationId = (value: string) => { setLocationId(value); setErrors((current) => ({ ...current, location_id: [] })); setSubmitError(null); };
   const updateCustomValues = (next: Record<string, string | string[] | boolean | number | null>) => { const changedKey = Object.keys(next).find((key) => JSON.stringify(next[key]) !== JSON.stringify(customValues[key])); setCustomValues(next); if (changedKey) setErrors((current) => ({ ...current, [changedKey]: [] })); setSubmitError(null); };
   useEffect(() => {
@@ -148,7 +163,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const focusError = (key: string, errorsToShow: Record<string, string[]>) => { setErrors(errorsToShow); setPendingFocusField(key); };
   const continueToNext = () => { const currentErrors = Object.fromEntries(Object.entries(allErrors).filter(([field]) => sectionFields(activeStep).includes(field))); const first = firstErrorKey(sectionFields(activeStep), currentErrors); if (first) { focusError(first, currentErrors); return; } setErrors({}); setActiveStep((current) => Math.min(current + 1, editorSteps.length - 1)); };
   const submit = () => { if (mode === "edit" && !isDirty) return; const first = firstErrorKey(allFieldOrder, allErrors); if (first) { const sectionIndex = editorSteps.findIndex((_, index) => sectionFields(index).includes(first)); focusError(first, allErrors); if (sectionIndex >= 0) setActiveStep(sectionIndex); const count = errorCount(allErrors); setSubmitError(`${count} validation error${count === 1 ? "" : "s"} need attention.`); return; } setSubmitError(null); saveMutation.mutate(); };
-  const sharedProps = { values, update, errors, currencyOptions };
+  const sharedProps = { values, update, errors, currencyOptions, eventTypes: availableEventTypes, eventTypesLoading: eventTypesQuery.isLoading, eventTypesError: eventTypesQuery.isError };
   const locationProps = { ...sharedProps, locations: locationsQuery.data ?? [], selectedLocationId: locationId, setSelectedLocationId: updateLocationId, isLoadingLocations: locationsQuery.isLoading, locationError: locationsQuery.isError ? "Unable to load enterprise locations." : null };
   const backHref = initialEvent ? `/admin/events/${initialEvent.id}` : "/admin/events";
   const title = mode === "edit" ? "Edit Event" : "Create Event";
@@ -175,6 +190,18 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     </div>;
   }
 
+  if (mode === "create" && activeFormConfiguration.isLoading) {
+    return <HistoricalFormStatus>Checking the active Event Form Configuration…</HistoricalFormStatus>;
+  }
+
+  if (mode === "create" && activeFormConfiguration.isError) {
+    return <HistoricalFormStatus error onRetry={() => void activeFormConfiguration.refetch()}>Unable to load the active Event Form Configuration.</HistoricalFormStatus>;
+  }
+
+  if (mode === "create" && !activeFormConfiguration.data) {
+    return <HistoricalFormStatus error onRetry={() => void activeFormConfiguration.refetch()}><strong>No Event Form Available</strong><br />There is currently no active Event Form Configuration available. Please contact your Super Admin to publish and activate one before creating an Event.</HistoricalFormStatus>;
+  }
+
   return <div className="w-full"><header className="flex flex-col gap-4 border-b border-[#edf3f0] pb-6 sm:flex-row sm:items-start sm:justify-between"><div>{mode === "edit" ? <Link href={backHref} className="text-sm font-semibold text-[#1f6a58]">Back to Event</Link> : null}<p className="mt-4 text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">{mode === "edit" ? initialEvent?.status ?? "EVENT" : "DRAFT EVENT"}</p><h1 className="mt-2 text-2xl font-bold text-[#06201c] sm:text-3xl">{title}</h1><p className="mt-2 text-sm text-[#52736a] sm:text-base">{mode === "edit" ? initialEvent?.title : "Build and review a new event for your enterprise."}</p></div><Link href={backHref} className="inline-flex h-11 items-center justify-center rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a]">Cancel</Link></header>
     {mode === "create" && !activeFormConfiguration.data && (activeFormConfiguration.isLoading || activeFormConfiguration.isError) ? <ActiveEventFormVerification query={activeFormConfiguration} /> : <div className="mt-6 grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]"><nav aria-label="Event editor sections" className="rounded-2xl border border-[#e1ebe6] bg-white p-3 shadow-sm">{editorSteps.map((step, index) => <button key={`${step}-${index}`} type="button" onClick={() => setActiveStep(index)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${activeStep === index ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f9fcfa]"}`}><span className="flex h-6 w-6 items-center justify-center rounded-full border border-current text-xs">{index + 1}</span>{step}</button>)}</nav>
       <main className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm sm:p-6">{mode === "create" && (activeFormConfiguration.isError || !activeFormConfiguration.data) ? <ActiveEventFormVerification query={activeFormConfiguration} /> : null}{mode === "create" && activeFormConfiguration.data && activeStep < configuredSections.length ? <ConfiguredCreateEventSection section={configuredSections[activeStep]} {...sharedProps} customValues={customValues} setCustomValues={setCustomValues} locations={locationsQuery.data ?? []} locationId={locationId} setLocationId={setLocationId} categories={eventCategoriesQuery.data ?? []} categoriesLoading={eventCategoriesQuery.isLoading} categoriesError={eventCategoriesQuery.isError} /> : null}{mode === "create" && activeFormConfiguration.data && activeStep === configuredSections.length ? <ConfiguredCreateEventReview configuration={activeFormConfiguration.data} values={values} customValues={customValues} locationName={selectedLocation ? `${selectedLocation.location_name} - ${selectedLocation.city}` : ""} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 0 ? <BasicInformationSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 1 ? <ScheduleSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 2 ? <LocationAndHostSection {...locationProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 3 ? <PricingAndTicketsSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 4 ? <CapacityAndRegistrationSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 5 ? <MediaSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 6 ? <AdditionalConfigurationSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 7 ? <ReviewSection values={values} selectedLocationName={selectedLocation ? `${selectedLocation.location_name} - ${selectedLocation.city}` : ""} /> : null}{mode === "edit" && activeStep === 0 ? <BasicInformationSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 1 ? <ScheduleSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 2 ? <LocationAndHostSection {...locationProps} /> : null}{mode === "edit" && activeStep === 3 ? <PricingAndTicketsSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 4 ? <CapacityAndRegistrationSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 5 ? <MediaSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 6 ? <AdditionalConfigurationSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 7 ? <ReviewSection values={values} selectedLocationName={selectedLocation ? `${selectedLocation.location_name} - ${selectedLocation.city}` : ""} /> : null}{isCreateBlockedByEnterprise ? <div role="status" className="mt-6 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-3 text-sm font-semibold text-[#735c1e]">Creating an Event is unavailable until an Enterprise is linked. The current backend EventCreate contract requires an enterprise_id.</div> : null}{submitError ? <div role="alert" className="mt-6 rounded-xl border border-[#f3d0cb] bg-[#fff6f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{submitError}</div> : null}
@@ -196,6 +223,7 @@ function ActiveEventFormVerification({ query }: { query: ReturnType<typeof useAc
 
 function validateConfiguredEventForm(configuration: ActiveEventFormConfiguration, values: CreateEventFormValues, customValues: Record<string, string | string[] | boolean | number | null>, hasLocation: boolean, categories: readonly EventCategory[], mode: "create" | "edit"): Record<string, string[]> {
   const errors: Record<string, string[]> = {};
+  if (mode === "create" && !values.event_type.trim()) errors.event_type = ["Event Type is required."];
   for (const section of configuration.sections.filter((item) => item.is_enabled)) for (const field of section.fields) {
     const key = field.source === "core" ? field.core_key ?? field.stable_key ?? field.id : field.stable_key ?? field.id;
     if (values.pricing_type === "free" && ["price", "currency", "ticket_types"].includes(key)) continue;

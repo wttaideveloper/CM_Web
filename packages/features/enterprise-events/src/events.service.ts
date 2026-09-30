@@ -58,7 +58,10 @@ export interface EventWalkInPayload {
   ticket_type_id?: string | null;
   quantity?: number;
   session_id?: string | null;
-  custom_answers?: Record<string, unknown>;
+  custom_fields?: Record<string, unknown>;
+  meal_selections?: readonly string[];
+  accommodation_selections?: readonly string[];
+  check_in?: boolean;
 }
 
 /** Backend-owned Event Type definition with boolean module capability maps. */
@@ -194,6 +197,7 @@ export interface Event {
   last_admin_notes: string | null;
   form_configuration_id?: string | null;
   form_configuration_version_id?: string | null;
+  event_type_id?: string | null;
   custom_values?: EventCustomValue[];
   registration_open?: boolean;
   delivery_mode_display?: string;

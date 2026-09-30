@@ -96,6 +96,8 @@ export function buildCreateEventPayload(
   configuredCoreKeys?: ReadonlySet<string>,
   sessionsEnabledFields?: readonly string[],
 ): CreateEventPayload {
+  const eventType = values.event_type.trim();
+  if (!eventType) throw new Error("Select an Event Type before creating this Event.");
   const coordinates = buildCoordinates(values.venue_latitude, values.venue_longitude);
   const venue: CreateEventVenue = {
     name: values.venue_name.trim(),
@@ -119,7 +121,7 @@ export function buildCreateEventPayload(
     end_date: toBackendLocalDateTime(values.end_date),
     duration_type: values.duration_type,
     time_zone: values.time_zone,
-    event_type: values.event_type,
+    event_type: eventType,
     registration_cutoff: toBackendLocalDateTime(values.registration_cutoff),
     primary_image: values.primary_image.trim(),
     gallery_images: values.gallery_images,
@@ -316,6 +318,7 @@ export function validateEventForm(values: CreateEventFormValues, hasLocation: bo
     if (!String(values[field]).trim()) errors[field] = [`${label} is required.`];
   };
   if (mode === "create") {
+    require("event_type", "Event Type");
     require("title", "Event name"); require("description", "Description"); require("category", "Category");
     require("organiser_name", "Organizer"); require("organiser_contact", "Organizer contact");
     require("start_date", "Start date and time"); require("end_date", "End date and time");

@@ -3,10 +3,12 @@
 import type { EnterpriseLocationDto } from "@ihp/enterprises";
 
 import type { CreateEventFormValues } from "./create-event-form";
+import type { EventTypeDefinition } from "./events.service";
+import EventModulesControls from "./EventModulesControls";
 
 type UpdateForm = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => void;
 
-type SectionProps = { values: CreateEventFormValues; update: UpdateForm; errors: Record<string, string[]> };
+type SectionProps = { values: CreateEventFormValues; update: UpdateForm; errors: Record<string, string[]>; eventTypes?: readonly EventTypeDefinition[]; eventTypesLoading?: boolean; eventTypesError?: boolean };
 
 const inputClass = "mt-1.5 h-11 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]";
 const labelClass = "block text-sm font-semibold text-[#06201c]";
@@ -16,7 +18,7 @@ function FieldError({ error, id }: { error?: string[]; id?: string }) {
 }
 
 /** Renders basic Event fields and the accessible tag chip editor. */
-export function BasicInformationSection({ values, update, errors }: SectionProps) {
+export function BasicInformationSection({ values, update, errors, eventTypes = [], eventTypesLoading = false, eventTypesError = false }: SectionProps) {
   const addTag = (value: string) => {
     const tag = value.trim();
     if (tag && !values.tags.includes(tag)) update("tags", [...values.tags, tag]);
@@ -25,6 +27,8 @@ export function BasicInformationSection({ values, update, errors }: SectionProps
   return <section className="space-y-5"><SectionHeading title="Basic Information" description="Describe the event and its organizer." />
     <label className={labelClass}>Event name<input value={values.title} onChange={(event) => update("title", event.target.value)} className={inputClass} /> <FieldError error={errors.title} /></label>
     <label className={labelClass}>Description<textarea value={values.description} onChange={(event) => update("description", event.target.value)} rows={5} className={`${inputClass} h-auto py-3`} /> <FieldError error={errors.description} /></label>
+    <label className={labelClass}>Event Type<select required value={values.event_type} disabled={eventTypesLoading || eventTypesError} onChange={(event) => update("event_type", event.target.value)} className={inputClass}><option value="">{eventTypesLoading ? "Loading Event Types..." : eventTypesError ? "Unable to load Event Types" : "Select an Event Type"}</option>{values.event_type && !eventTypes.some((item) => item.key === values.event_type || item.id === values.event_type) ? <option value={values.event_type}>{values.event_type} (legacy or inactive)</option> : null}{eventTypes.filter((item) => item.active || item.key === values.event_type || item.id === values.event_type).map((item) => <option key={item.id} value={item.key}>{item.name}{item.active ? "" : " (inactive)"}</option>)}</select><FieldError error={errors.event_type} />{eventTypesError ? <p className="mt-1 text-xs font-medium text-[#b42318]">Unable to load Event Types. Retry and try again.</p> : null}</label>
+    {values.event_type && values.modules ? <EventModulesControls modules={values.modules} eventType={eventTypes.find((item) => item.key === values.event_type || item.id === values.event_type)} hasConfiguredTickets={values.ticket_types.length > 0} onChange={(next) => update("modules", next)} /> : null}
     <div className="grid gap-4 md:grid-cols-2"><TextField label="Category" field="category" values={values} update={update} errors={errors} placeholder="Choose or enter an event category" /><TextField label="Subcategory" field="subcategory" values={values} update={update} errors={errors} placeholder="Choose or enter an event subcategory" /></div>
     <label className={labelClass}>Tags<input onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addTag(event.currentTarget.value); event.currentTarget.value = ""; } }} placeholder="Type a tag and press Enter" aria-describedby="event-tags-help" className={inputClass} /><span id="event-tags-help" className="mt-1 block text-xs font-normal text-[#52736a]">Add one tag at a time; press Enter after each tag. Select a tag to remove it.</span></label>
     <div className="flex flex-wrap gap-2">{values.tags.map((tag) => <button key={tag} type="button" onClick={() => update("tags", values.tags.filter((item) => item !== tag))} className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{tag} ×</button>)}</div>
