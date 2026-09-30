@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useCurrentEnterprise, useTenant } from "@ihp/enterprise-runtime";
 import Link from "next/link";
@@ -127,10 +127,29 @@ function TrainingsSummaryCard({ summary, isLoading, isError }: { summary: unknow
 }
 
 function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess }: { training: TrainingListItem; onStatusSuccess: () => void; onDuplicateSuccess: () => void; onDeleteSuccess: () => void }) {
+  const cardRef = useRef<HTMLElement | null>(null);
+  const [isNearViewport, setIsNearViewport] = useState(false);
+  const needsEnrolmentCount = training.enrolled_count === null || training.enrolled_count === undefined;
+  useEffect(() => {
+    if (!needsEnrolmentCount || isNearViewport) return;
+    const card = cardRef.current;
+    if (!card || typeof IntersectionObserver === "undefined") {
+      setIsNearViewport(true);
+      return;
+    }
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) return;
+      setIsNearViewport(true);
+      observer.disconnect();
+    }, { rootMargin: "200px" });
+    observer.observe(card);
+    return () => observer.disconnect();
+  }, [isNearViewport, needsEnrolmentCount]);
+
   const providerDashboardQuery = useQuery({
     queryKey: ["training", training.id, "provider-dashboard"],
     queryFn: () => getTrainingProviderDashboard(training.id),
-    enabled: training.enrolled_count === null || training.enrolled_count === undefined,
+    enabled: needsEnrolmentCount && isNearViewport,
     staleTime: 30_000,
     retry: 1,
   });
@@ -159,7 +178,7 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
   const bodyBackgroundClass = hasPrimaryImage ? "bg-[#06201c]/95" : "bg-white";
 
   return (
-    <article className={`group relative flex h-full flex-col rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-200 ${hasPrimaryImage ? "hover:-translate-y-0.5 hover:border-[#4f9f76] hover:shadow-lg" : "hover:-translate-y-0.5 hover:border-[#c6ddd3] hover:shadow-md"}`}>
+    <article ref={cardRef} className={`group relative flex h-full flex-col rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-200 ${hasPrimaryImage ? "hover:-translate-y-0.5 hover:border-[#4f9f76] hover:shadow-lg" : "hover:-translate-y-0.5 hover:border-[#c6ddd3] hover:shadow-md"}`}>
       {hasPrimaryImage ? (
         <div aria-hidden="true" className="absolute inset-0 overflow-hidden rounded-[inherit] bg-cover bg-center" style={{ backgroundImage: `url(${JSON.stringify(primaryImage)})` }}>
           <div className="absolute inset-0 bg-gradient-to-br from-[#06201c]/60 via-[#0c382e]/45 to-[#1f6a58]/35" />

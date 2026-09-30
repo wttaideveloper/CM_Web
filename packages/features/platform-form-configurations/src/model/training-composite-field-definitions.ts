@@ -18,7 +18,6 @@ export const trainingCompositeFieldDefinitions: Readonly<Record<string, EventCom
     subfields: [
       { key: "meeting_link", label: "Meeting link", requiredByDomain: true },
       { key: "meeting_provider", label: "Meeting provider" },
-      { key: "access_information", label: "Access information" },
       { key: "delivery_instructions", label: "Delivery instructions" },
     ],
   },
@@ -29,9 +28,10 @@ export function getTrainingCompositeFieldDefinition(fieldKey: string | null, lab
   const key = fieldKey?.replace(/^(core_|custom_)/, "").replace(/[^a-z0-9]+/gi, "_").toLowerCase();
   if (key && trainingCompositeFieldDefinitions[key]) return trainingCompositeFieldDefinitions[key];
   if (key?.endsWith("_venue")) return trainingCompositeFieldDefinitions.venue;
-  if (key?.endsWith("_meeting_link")) return trainingCompositeFieldDefinitions.meeting_link;
+  if (key && ["meeting_url", "online_meeting_url", "video_conference_link"].includes(key)) return trainingCompositeFieldDefinitions.meeting_link;
+  if (key?.endsWith("_meeting_link") || key?.endsWith("_meeting_url")) return trainingCompositeFieldDefinitions.meeting_link;
   const normalizedLabel = label?.trim().toLowerCase();
   if (normalizedLabel === "venue") return trainingCompositeFieldDefinitions.venue;
-  if (normalizedLabel === "meeting link" || normalizedLabel === "live meeting details") return trainingCompositeFieldDefinitions.meeting_link;
+  if (normalizedLabel && ["meeting link", "meeting url", "online meeting url", "video conference link", "live meeting details"].includes(normalizedLabel)) return trainingCompositeFieldDefinitions.meeting_link;
   return undefined;
 }

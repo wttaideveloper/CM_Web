@@ -47,7 +47,7 @@ export function CompositeFieldEditor({ field, core, definition, onChange }: Comp
     <div className="grid gap-3 sm:grid-cols-2">
       {!core || core.configurable.label ? <TextControl label="Label" value={field.label} onChange={(label) => onChange({ label })} /> : null}
       {!core || core.configurable.helpText ? <TextControl label="Help text" value={field.helpText} onChange={(helpText) => onChange({ helpText })} /> : null}
-      {!core || core.configurable.required ? <CheckboxControl label="Required" checked={field.required} disabled={Boolean(core?.requiredByDomain)} onChange={(required) => onChange({ required })} /> : null}
+      <CheckboxControl label={core && !core.configurable.required ? "Required (managed by the field definition)" : "Required"} checked={field.required} disabled={Boolean(core && (!core.configurable.required || core.requiredByDomain && field.required))} onChange={(required) => onChange({ required: core?.requiredByDomain ? true : required })} />
       <CheckboxControl label="Enabled" checked={field.enabled} disabled={Boolean(core && !core.hideable)} onChange={(enabled) => onChange({ enabled })} />
     </div>
     {definition.subfields.length ? <fieldset className="rounded-xl border border-[#edf3f0] p-3">

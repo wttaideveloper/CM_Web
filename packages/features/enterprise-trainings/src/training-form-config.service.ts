@@ -1,6 +1,23 @@
 /** Super Admin Training Form Configuration — global or enterprise-assigned, reorderable sections/fields, mapped to TrainingCreate. */
 
 export type TrainingFormFieldType = "text" | "textarea" | "select" | "multiselect" | "number" | "date" | "datetime" | "time" | "url" | "checkbox";
+export interface TrainingFormOption { value: string; label: string; position: number; }
+
+function mapConfiguredTrainingOptions(options: unknown): TrainingFormOption[] | undefined {
+  if (!Array.isArray(options)) return undefined;
+  return options.flatMap((item, index) => {
+    if (typeof item === "string") return [{ value: item, label: item, position: index + 1 }];
+    if (item === null || typeof item !== "object") return [];
+    const option = item as Record<string, unknown>;
+    const value = typeof option.value === "string" ? option.value : typeof option.label === "string" ? option.label : "";
+    if (!value) return [];
+    return [{
+      value,
+      label: typeof option.label === "string" && option.label ? option.label : value,
+      position: typeof option.position === "number" ? option.position : index + 1,
+    }];
+  });
+}
 
 /** Declarative field visibility rule returned by the resolved Training form configuration. */
 export interface TrainingFormVisibilityCondition {
@@ -36,11 +53,11 @@ function labelToKey(label: string): string | null {
   const map: Record<string, string> = {
     "title": "title", "description": "description", "category": "category", "subcategory": "subcategory", "tags": "tags", "learning objectives": "learning_objectives", "requirements": "requirements",
     "start date": "start_date", "end date": "end_date", "start time": "start_time", "end time": "end_time", "enrolment start": "enrolment_start", "enrolment end": "enrolment_end", "time zone": "time_zone", "duration": "duration", "access duration (days)": "access_duration_days",
-    "delivery mode": "delivery_mode", "course type": "course_type", "location": "location_id", "venue": "venue", "address": "address", "meeting link": "meeting_link", "meeting provider": "meeting_provider", "meeting passcode": "meeting_passcode", "delivery instructions": "delivery_instructions", "instructor": "instructor_id", "instructor name": "instructor_name", "instructor bio": "instructor_bio", "level": "level", "language": "language", "target audience": "target_audience", "access information": "access_information",
+    "delivery mode": "delivery_mode", "course type": "course_type", "location": "location_id", "venue": "venue", "address": "address", "meeting link": "meeting_link", "meeting provider": "meeting_provider", "meeting passcode": "meeting_passcode", "delivery instructions": "delivery_instructions", "instructor": "instructor_id", "instructor name": "instructor_name", "instructor bio": "instructor_bio", "level": "level", "language": "language", "target audience": "target_audience",
     "price": "price", "currency": "currency", "promo price": "promo_price", "coupon code": "coupon_code",
     "capacity": "capacity", "requires approval": "requires_approval", "access expiry": "access_expiry_type", "expiry days": "access_expiry_days", "group enrolment": "group_enrolment", "group enrollment": "group_enrollment", "max group size": "max_group_size",
     "primary image": "primary_image", "gallery images": "gallery_images", "documents": "documents", "videos": "promotional_video",
-    "notes": "notes_documents", "notes documents": "notes_documents", "notes / handouts": "notes_documents", "notes handouts": "notes_documents", "handouts": "notes_documents", "notes pdf": "notes_pdf_url", "notes pdf url": "notes_pdf_url", "instructor notes": "instructor_notes",
+    "notes": "instructor_notes", "notes documents": "instructor_notes", "notes / handouts": "instructor_notes", "notes handouts": "instructor_notes", "handouts": "instructor_notes", "notes pdf": "notes_pdf_url", "notes pdf url": "notes_pdf_url", "instructor notes": "instructor_notes",
     "prerequisites": "prerequisites", "release rule": "release_rule", "scheduled publication": "scheduled_publication",
     "randomise": "randomise", "randomize": "randomise", "is mandatory": "is_mandatory", "mandatory lessons": "is_mandatory",
     "subtitle": "subtitle", "faqs": "faqs", "faq": "faqs", "instructor photo": "instructor_photo", "instructor credentials": "instructor_credentials", "credentials": "instructor_credentials", "badges": "badges", "badge": "badges",
@@ -58,12 +75,13 @@ function getTrainingFieldKey(fld: Record<string, unknown>, fallbackIdx: number):
     return stable;
   }
   const derived = stable ? stable.replace(/^(core_|custom_)/, "") : core ? core.replace(/^(core_|custom_)/, "") : typeof fld.key === "string" ? fld.key.replace(/^(core_|custom_)/, "") : "";
+  if (derived === "notes_documents") return "instructor_notes";
   const coreKeys = new Set([
     "title", "description", "category", "subcategory", "tags", "learning_objectives", "requirements",
     "start_date", "end_date", "start_time", "end_time", "enrolment_start", "enrolment_end", "time_zone",
     "duration", "access_duration_days", "delivery_mode", "course_type", "location_id", "venue", "address",
     "meeting_link", "meeting_provider", "delivery_instructions", "instructor_id", "instructor_name",
-    "instructor_bio", "level", "language", "target_audience", "access_information", "price", "currency",
+    "instructor_bio", "level", "language", "target_audience", "price", "currency",
     "promo_price", "coupon_code", "capacity", "requires_approval", "primary_image", "gallery_images",
     "documents", "promotional_video", "notes_pdf_url", "instructor_notes", "prerequisites", "subtitle",
     "faqs", "instructor_photo",
@@ -138,7 +156,7 @@ function parseFrontendSettings(field: Record<string, unknown>): TrainingFormFron
 }
 
 const TRAINING_FORM_SEEDED_NAMES = ["Basic Information", "Schedule", "Location & Host", "Pricing & Tickets", "Capacity & Registration", "Images & Media", "Additional Configuration"];
-const HIDDEN_TRAINING_FIELD_KEYS = new Set(["group_enrolment", "group_enrollment", "max_group_size", "release_rule", "scheduled_publication", "randomise", "randomize", "is_mandatory"]);
+const HIDDEN_TRAINING_FIELD_KEYS = new Set(["group_enrolment", "group_enrollment", "max_group_size", "release_rule", "scheduled_publication", "randomise", "randomize", "is_mandatory", "access_information"]);
 
 /** Resolves a section title, replacing generic/empty labels with seeded names — shared by active and historical mapping. */
 function resolveTrainingSectionTitle(sec: Record<string, unknown>, sIdx: number): string {
@@ -157,15 +175,18 @@ function mapTrainingFormFields(fields: unknown): TrainingFormField[] {
     source: fld.source === "custom" ? "custom" : fld.source === "core" ? "core" : undefined,
     label: typeof fld.label === "string" && fld.label ? fld.label : typeof fld.title === "string" && fld.title ? fld.title : `Field ${fIdx + 1}`,
     type: (typeof fld.renderer === "string" ? fld.renderer : typeof fld.type === "string" ? fld.type : "text") as TrainingFormFieldType,
+    valueType: typeof fld.value_type === "string" ? fld.value_type : undefined,
     required: Boolean(fld.required),
     enabled: fld.is_enabled !== false && fld.enabled !== false,
     placeholder: typeof fld.placeholder === "string" ? fld.placeholder : undefined,
     helpText: typeof fld.help_text === "string" ? fld.help_text : typeof fld.helpText === "string" ? fld.helpText as string : null,
     options: Array.isArray(fld.options) ? (fld.options as Array<Record<string, unknown>>).map(o => typeof o.label === "string" ? o.label : typeof o.value === "string" ? o.value : String(o.value ?? "")) : undefined,
-    validation: fld.validation as TrainingFormField["validation"],
+    configuredOptions: mapConfiguredTrainingOptions(fld.options),
+    validation: mapTrainingFieldValidation(fld.validation),
     frontendSettings: parseFrontendSettings(fld),
     order: typeof fld.position === "number" ? fld.position : typeof fld.order === "number" ? fld.order as number : fIdx,
-  })).filter((field) => !HIDDEN_TRAINING_FIELD_KEYS.has(field.key)) : [];
+  })).filter((field) => !HIDDEN_TRAINING_FIELD_KEYS.has(field.key)
+    && field.label.trim().toLowerCase().replace(/[\s-]+/g, "_") !== "access_information") : [];
 }
 
 /** Maps a simple-shape form config (sections at top level) into TrainingFormSection[] with seeded names + normalized keys. */
@@ -213,6 +234,8 @@ export interface TrainingFormField {
   enabled?: boolean;
   label: string;
   type: TrainingFormFieldType;
+  valueType?: string;
+  configuredOptions?: TrainingFormOption[];
   required?: boolean;
   placeholder?: string;
   helpText?: string | null;
@@ -220,6 +243,26 @@ export interface TrainingFormField {
   validation?: { minLength?: number | null; maxLength?: number | null; min?: number | null; max?: number | null; pattern?: string | null } | null;
   frontendSettings?: TrainingFormFrontendSettings;
   order: number;
+}
+
+function mapTrainingFieldValidation(value: unknown): TrainingFormField["validation"] {
+  if (value === null) return null;
+  if (typeof value !== "object" || Array.isArray(value)) return undefined;
+
+  const raw = value as Record<string, unknown>;
+  const asNullableNumber = (candidate: unknown): number | null | undefined =>
+    candidate === null ? null : typeof candidate === "number" && Number.isFinite(candidate) ? candidate : undefined;
+  const minLength = asNullableNumber(raw.minLength ?? raw.min_length);
+  const maxLength = asNullableNumber(raw.maxLength ?? raw.max_length);
+  const min = asNullableNumber(raw.min);
+  const max = asNullableNumber(raw.max);
+  const pattern = raw.pattern === null || typeof raw.pattern === "string" ? raw.pattern : undefined;
+
+  if (minLength === undefined && maxLength === undefined && min === undefined && max === undefined && pattern === undefined) {
+    return undefined;
+  }
+
+  return { minLength, maxLength, min, max, pattern };
 }
 
 export interface TrainingFormSection {
@@ -316,12 +359,14 @@ export async function getTrainingHistoricalFormConfiguration(trainingId: string)
                 key: getTrainingFieldKey(fld as Record<string, unknown>, fIdx),
             label: typeof fld.label === "string" ? fld.label : `Field ${fIdx + 1}`,
             type: (typeof fld.renderer === "string" ? fld.renderer : typeof fld.type === "string" ? fld.type : "text") as TrainingFormFieldType,
+            valueType: typeof fld.value_type === "string" ? fld.value_type : undefined,
             required: Boolean(fld.required),
             enabled: fld.is_enabled !== false && fld.enabled !== false,
             placeholder: typeof fld.placeholder === "string" ? fld.placeholder : undefined,
             helpText: typeof fld.help_text === "string" ? fld.help_text : null,
             options: Array.isArray(fld.options) ? (fld.options as Array<Record<string, unknown>>).map(o => typeof o.label === "string" ? o.label : String(o.value ?? "")) : undefined,
-            validation: fld.validation as TrainingFormField["validation"],
+            configuredOptions: mapConfiguredTrainingOptions(fld.options),
+            validation: mapTrainingFieldValidation(fld.validation),
             frontendSettings: parseFrontendSettings(fld),
             order: typeof fld.position === "number" ? fld.position : fIdx,
           })) : [],
@@ -383,12 +428,14 @@ export async function getTrainingFormConfigActive(): Promise<TrainingFormConfig 
                 key: getTrainingFieldKey(fld as Record<string, unknown>, fIdx),
                 label: typeof fld.label === "string" ? fld.label : `Field ${fIdx + 1}`,
                 type: (typeof fld.renderer === "string" ? fld.renderer : typeof fld.type === "string" ? fld.type : "text") as TrainingFormFieldType,
+                valueType: typeof fld.value_type === "string" ? fld.value_type : undefined,
                 required: Boolean(fld.required),
                 enabled: fld.is_enabled !== false && fld.enabled !== false,
                 placeholder: typeof fld.placeholder === "string" ? fld.placeholder : undefined,
                 helpText: typeof fld.help_text === "string" ? fld.help_text : typeof (fld as Record<string, unknown>).helpText === "string" ? (fld as Record<string, unknown>).helpText as string : null,
                 options: Array.isArray(fld.options) ? (fld.options as Array<Record<string, unknown>>).map(o => typeof o.label === "string" ? o.label : typeof o.value === "string" ? o.value : String(o.value ?? "")) : undefined,
-                validation: fld.validation as TrainingFormField["validation"],
+                configuredOptions: mapConfiguredTrainingOptions(fld.options),
+                validation: mapTrainingFieldValidation(fld.validation),
                 frontendSettings: parseFrontendSettings(fld as Record<string, unknown>),
                 order: typeof fld.position === "number" ? fld.position : fIdx,
               })) : [],
@@ -427,11 +474,13 @@ export async function getTrainingFormConfigActive(): Promise<TrainingFormConfig 
               key: getTrainingFieldKey(fld as Record<string, unknown>, fIdx),
               label: typeof fld.label === "string" && fld.label ? fld.label : typeof (fld as Record<string, unknown>).title === "string" && (fld as Record<string, unknown>).title ? (fld as Record<string, unknown>).title as string : `Field ${fIdx + 1}`,
               type: (typeof (fld as Record<string, unknown>).renderer === "string" ? (fld as Record<string, unknown>).renderer : typeof fld.type === "string" ? fld.type : "text") as TrainingFormFieldType,
+              valueType: typeof (fld as Record<string, unknown>).value_type === "string" ? (fld as Record<string, unknown>).value_type as string : undefined,
               required: Boolean(fld.required),
               enabled: fld.is_enabled !== false && fld.enabled !== false,
               placeholder: typeof fld.placeholder === "string" ? fld.placeholder : undefined,
               helpText: typeof (fld as Record<string, unknown>).help_text === "string" ? (fld as Record<string, unknown>).help_text as string : typeof (fld as Record<string, unknown>).helpText === "string" ? (fld as Record<string, unknown>).helpText as string : null,
               options: Array.isArray(fld.options) ? (fld.options as Array<Record<string, unknown>>).map(o => typeof o.label === "string" ? o.label : typeof o.value === "string" ? o.value : String(o.value ?? "")) : undefined,
+              configuredOptions: mapConfiguredTrainingOptions(fld.options),
               validation: (fld as Record<string, unknown>).validation as TrainingFormField["validation"],
               order: typeof (fld as Record<string, unknown>).position === "number" ? (fld as Record<string, unknown>).position as number : typeof (fld as Record<string, unknown>).order === "number" ? (fld as Record<string, unknown>).order as number : fIdx,
             })) : [],
@@ -486,12 +535,14 @@ export async function getTrainingFormConfigActive(): Promise<TrainingFormConfig 
                 key: getTrainingFieldKey(fld as Record<string, unknown>, fIdx),
                 label: typeof fld.label === "string" ? fld.label : `Field ${fIdx + 1}`,
                 type: (typeof fld.renderer === "string" ? fld.renderer : typeof fld.type === "string" ? fld.type : "text") as TrainingFormFieldType,
+                valueType: typeof fld.value_type === "string" ? fld.value_type : undefined,
                 required: Boolean(fld.required),
                 enabled: fld.is_enabled !== false && fld.enabled !== false,
                 placeholder: typeof fld.placeholder === "string" ? fld.placeholder : undefined,
                 helpText: typeof fld.help_text === "string" ? fld.help_text : null,
                 options: Array.isArray(fld.options) ? (fld.options as Array<Record<string, unknown>>).map(o => typeof o.label === "string" ? o.label : String(o.value ?? "")) : undefined,
-                validation: fld.validation as TrainingFormField["validation"],
+                configuredOptions: mapConfiguredTrainingOptions(fld.options),
+                validation: mapTrainingFieldValidation(fld.validation),
                 frontendSettings: parseFrontendSettings(fld),
                 order: typeof fld.position === "number" ? fld.position : fIdx,
               })) : [],

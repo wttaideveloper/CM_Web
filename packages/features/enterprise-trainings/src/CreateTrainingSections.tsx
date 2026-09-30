@@ -1,9 +1,13 @@
 "use client";
 
+import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+
 import type { CreateTrainingFormValues } from "./create-training-form";
 import TrainingTaxonomyField from "./TrainingTaxonomyField";
 import type { TrainingCategoryOption } from "./training-categories.service";
 import TrainingMediaField from "./TrainingMediaField";
+import { getTrainingCurrencyOptions, getTrainingTimeZoneOptions } from "./training-reference-options";
 
 type UpdateForm = <Key extends keyof CreateTrainingFormValues>(key: Key, value: CreateTrainingFormValues[Key]) => void;
 
@@ -153,9 +157,6 @@ export function TrainingDeliverySection({ values, update, errors }: SectionProps
           <label className={labelClass}>Meeting provider<select value={values.meeting_provider} onChange={(e) => update("meeting_provider", e.target.value)} className={inputClass}><option value="">Select</option><option value="zoom">Zoom</option><option value="meet">Google Meet</option><option value="teams">Teams</option></select></label>
         ) : null}
       </div>
-      {(values.delivery_mode === "online" || values.delivery_mode === "hybrid") ? (
-        <label className={labelClass}>Access information<textarea value={values.access_information} onChange={(e) => update("access_information", e.target.value)} rows={2} placeholder="How to access, prerequisites for entry" className={`${inputClass} h-auto py-3`} /></label>
-      ) : null}
       <div className="grid gap-4 md:grid-cols-3">
         <label className={labelClass}>Session mode<input value={values.session_mode} onChange={(e) => update("session_mode", e.target.value)} placeholder="e.g. live, self-paced" className={inputClass} /></label>
       </div>
@@ -167,6 +168,8 @@ export function TrainingDeliverySection({ values, update, errors }: SectionProps
 
 /** Renders schedule and enrolment window fields. */
 export function TrainingScheduleSection({ values, update, errors }: SectionProps) {
+  const { t } = useTranslation("enterpriseTrainings");
+  const timeZoneOptions = useMemo(() => getTrainingTimeZoneOptions(values.time_zone), [values.time_zone]);
   return (
     <section className="space-y-5">
       <SectionHeading title="Schedule" description="When does it run and when can people join? Dates drive calendar invites and reminders." tip="Start date powers the calendar file and ‘Upcoming’ filter. Enrolment closes auto-hides the Enrol button." />
@@ -180,9 +183,9 @@ export function TrainingScheduleSection({ values, update, errors }: SectionProps
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Enrolment opens<input id="training-field-enrolment_start" type="datetime-local" value={values.enrolment_start} onChange={(event) => update("enrolment_start", event.target.value)} className={inputClass} /><FieldError error={errors.enrolment_start} /></label>
-        <label className={labelClass}>Enrolment closes<input id="training-field-enrolment_end" type="datetime-local" value={values.enrolment_end} onChange={(event) => update("enrolment_end", event.target.value)} className={inputClass} /><FieldError error={errors.enrolment_end} /></label>
+        <label className={labelClass}>Enrolment closes<input id="training-field-enrolment_end" type="datetime-local" value={values.enrolment_end} min={values.enrolment_start || undefined} max={values.start_date || undefined} onChange={(event) => update("enrolment_end", event.target.value)} className={inputClass} /><FieldError error={errors.enrolment_end} /></label>
       </div>
-      <label className={labelClass}>Time zone<input value={values.time_zone} onChange={(event) => update("time_zone", event.target.value)} className={inputClass} /></label>
+      <label className={labelClass}>Time zone<select id="training-field-time_zone" value={values.time_zone} onChange={(event) => update("time_zone", event.target.value)} className={inputClass}><option value="">{t("referenceOptions.selectTimeZone")}</option>{timeZoneOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Recurring<input value={values.recurring} onChange={(e) => update("recurring", e.target.value)} placeholder="e.g. weekly, none" className={inputClass} /></label>
         <label className={labelClass}>Schedule exceptions<textarea id="training-field-schedule_exceptions" value={values.schedule_exceptions} onChange={(e) => update("schedule_exceptions", e.target.value)} placeholder='JSON e.g. ["2026-09-25"]' rows={2} className={`${inputClass} h-auto py-2`} /><FieldError error={errors.schedule_exceptions} /></label>
@@ -197,7 +200,7 @@ export function TrainingAdvancedSection({ values, update, errors }: SectionProps
   return (
     <section className="space-y-5">
       <SectionHeading title="Advanced & Collaboration" description="Discussions, announcements, moderation and supplemental notes." tip="JSON fields accept an array or object, e.g. [] or [{}]. Leave empty to omit." />
-      <UrlList label="Notes / Handouts (URLs)" values={values.instructor_notes} update={(next) => update("instructor_notes", next)} />
+      <UrlList label="Notes / Handouts (URLs)" values={values.instructor_notes} update={(next) => update("instructor_notes", next)} addLabel="noteHandout" />
       <label className={labelClass}>Instructor notes<input value={values.instructor_notes.join(", ")} onChange={(e) => update("instructor_notes", e.target.value.split(",").map((note) => note.trim()).filter(Boolean))} placeholder="Internal notes for the instructor, not shown to learners" className={inputClass} /></label>
       <label className={labelClass}>Notes PDF URL<input type="url" value={values.notes_pdf_url} onChange={(e) => update("notes_pdf_url", e.target.value)} placeholder="https://…" className={inputClass} /></label>
       <label className={labelClass}>FAQs (JSON)<textarea id="training-field-faqs" value={values.faqs} onChange={(e) => update("faqs", e.target.value)} placeholder='[{"question":"...","answer":"..."}]' rows={3} className={`${inputClass} h-auto py-2`} /><FieldError error={errors.faqs} /></label>
@@ -215,40 +218,41 @@ export function TrainingAdvancedSection({ values, update, errors }: SectionProps
 }
 
 /** Media input shared by the Training create/edit wizard. */
-function UrlList({ label, values, update, uploadImages = false, uploadVideo = false, alwaysShowField = false }: { label: string; values?: string[]; update: (next: string[]) => void; uploadImages?: boolean; uploadVideo?: boolean; alwaysShowField?: boolean }) {
+function UrlList({ label, values, update, uploadImages = false, addLabel = "item" }: { label: string; values?: string[]; update: (next: string[]) => void; uploadImages?: boolean; addLabel?: "item" | "noteHandout" }) {
   const safeValues = Array.isArray(values) ? values : [];
-  const displayedValues = alwaysShowField && safeValues.length === 0 ? [""] : safeValues;
+  const { t } = useTranslation("enterpriseTrainings");
+  const itemLabel = uploadImages ? t("media.image") : addLabel === "noteHandout" ? t("media.noteHandout") : t("media.item");
   return (
     <div>
       <div className="flex items-center justify-between">
         <p className={labelClass}>{label}</p>
-        {!alwaysShowField ? <button type="button" onClick={() => update([...safeValues, ""])} className="text-sm font-semibold text-[#1f6a58]">+ Add</button> : null}
+        <button type="button" onClick={() => update([...safeValues, ""])} className="text-sm font-semibold text-[#1f6a58]">+ {t("media.addItem", { item: itemLabel })}</button>
       </div>
       <div className="mt-2 space-y-2">
-        {displayedValues.map((value, index) => (
+        {safeValues.map((value, index) => (
           <div key={index} className="flex flex-wrap items-start gap-2">
             <div className="min-w-0 flex-1">
-              {uploadImages || uploadVideo ? (
+              {uploadImages ? (
                 <TrainingMediaField
-                  fieldKey={uploadImages ? "gallery_images" : "promotional_video"}
-                  label={uploadImages ? `${label} ${index + 1}` : label}
+                  fieldKey="gallery_images"
+                  label={`${label} ${index + 1}`}
                   value={value}
-                  kind={uploadImages ? "image" : "video"}
-                  accept={uploadImages ? "image/*" : "video/*"}
-                  purpose={uploadImages ? "image" : "lesson_video"}
-                  onChange={(next) => update(displayedValues.map((current, item) => (item === index ? next : current)))}
+                  kind="image"
+                  accept="image/*"
+                  purpose="image"
+                  onChange={(next) => update(safeValues.map((current, item) => (item === index ? next : current)))}
                 />
               ) : (
                 <input
                   type="url"
                   value={value}
-                  onChange={(event) => update(displayedValues.map((current, item) => (item === index ? event.target.value : current)))}
+                  onChange={(event) => update(safeValues.map((current, item) => (item === index ? event.target.value : current)))}
                   className={`${inputClass.replace("mt-1.5 ", "")} min-w-0 flex-1`}
                   placeholder="https://…"
                 />
               )}
             </div>
-            {safeValues.length > 0 ? <button type="button" onClick={() => update(safeValues.filter((_item, item) => item !== index))} className="mt-2 shrink-0 rounded-xl px-3 py-2 text-sm font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button> : null}
+            <button type="button" onClick={() => update(safeValues.filter((_item, item) => item !== index))} className="mt-2 shrink-0 rounded-xl px-3 py-2 text-sm font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button>
           </div>
         ))}
       </div>
@@ -256,8 +260,33 @@ function UrlList({ label, values, update, uploadImages = false, uploadVideo = fa
   );
 }
 
+function OptionalTrainingVideo({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [isOpen, setIsOpen] = useState(Boolean(value));
+  const { t } = useTranslation("enterpriseTrainings");
+  if (!isOpen) {
+    return <button type="button" onClick={() => setIsOpen(true)} className="text-sm font-semibold text-[#1f6a58]">+ {t("media.addVideo")}</button>;
+  }
+  return (
+    <div>
+      <TrainingMediaField
+        fieldKey="promotional_video"
+        label="Promotional video"
+        value={value}
+        kind="video"
+        accept="video/*"
+        purpose="lesson_video"
+        onChange={onChange}
+      />
+      {!value ? <button type="button" onClick={() => setIsOpen(false)} className="mt-2 text-xs font-semibold text-[#52736a] underline">{t("media.cancel")}</button> : null}
+    </div>
+  );
+}
+
 /** Renders pricing. */
 export function TrainingPricingSection({ values, update }: SectionProps) {
+  const { t, i18n } = useTranslation("enterpriseTrainings");
+  const language = i18n.resolvedLanguage ?? i18n.language;
+  const currencyOptions = useMemo(() => getTrainingCurrencyOptions(values.currency, language), [values.currency, language]);
   return (
     <section className="space-y-5">
       <SectionHeading title="Pricing & Tickets" description="Free trainings get 8× more views — consider a free preview lesson." tip="Leave price empty for free. Early-bird? Use Promo price + coupon — learners love it." />
@@ -266,7 +295,7 @@ export function TrainingPricingSection({ values, update }: SectionProps) {
         <>
           <div className="grid gap-4 md:grid-cols-2">
             <label className={labelClass}>Price<input id="training-field-price" value={values.price} onChange={(event) => update("price", event.target.value)} className={inputClass} /></label>
-            <label className={labelClass}>Currency<input id="training-field-currency" value={values.currency} onChange={(event) => update("currency", event.target.value)} className={inputClass} /></label>
+            <label className={labelClass}>Currency<select id="training-field-currency" value={values.currency} onChange={(event) => update("currency", event.target.value)} className={inputClass}><option value="">{t("referenceOptions.selectCurrency")}</option>{currencyOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <label className={labelClass}>Promo price<input value={values.promo_price} onChange={(event) => update("promo_price", event.target.value)} className={inputClass} /></label>
@@ -295,12 +324,12 @@ export function TrainingCapacitySection({ values, update }: SectionProps) {
 }
 
 function DocumentsList({ values, update }: { values: Array<{ url: string; visibility: string; downloadable: boolean }>; update: (next: Array<{ url: string; visibility: string; downloadable: boolean }>) => void }) {
-  const displayedValues = values.length === 0 ? [{ url: "", visibility: "public", downloadable: true }] : values;
+  const { t } = useTranslation("enterpriseTrainings");
   return (
     <div>
-      <p className={labelClass}>Documents</p>
+      <div className="flex items-center justify-between"><p className={labelClass}>Documents</p><button type="button" onClick={() => update([...values, { url: "", visibility: "public", downloadable: true }])} className="text-sm font-semibold text-[#1f6a58]">+ {t("media.addDocument")}</button></div>
       <div className="mt-2 space-y-3">
-        {displayedValues.map((doc, idx) => (
+        {values.map((doc, idx) => (
           <div key={idx} className="rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-3">
             <div className="flex flex-wrap items-start gap-2">
               <div className="min-w-0 flex-1">
@@ -311,14 +340,14 @@ function DocumentsList({ values, update }: { values: Array<{ url: string; visibi
                   kind="document"
                   accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.rtf,application/pdf,text/plain"
                   purpose="lesson_document"
-                  onChange={(url) => update(displayedValues.map((item, index) => (index === idx ? { ...item, url } : item)))}
+                  onChange={(url) => update(values.map((item, index) => (index === idx ? { ...item, url } : item)))}
                 />
               </div>
-              {values.length > 0 ? <button type="button" onClick={() => update(values.filter((_, i) => i !== idx))} className="mt-2 shrink-0 rounded-xl px-3 py-2 text-sm font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button> : null}
+              <button type="button" onClick={() => update(values.filter((_, i) => i !== idx))} className="mt-2 shrink-0 rounded-xl px-3 py-2 text-sm font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button>
             </div>
             <div className="mt-2 flex gap-3">
-              <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]">Visibility<select value={doc.visibility} onChange={(e) => update(displayedValues.map((d, i) => (i === idx ? { ...d, visibility: e.target.value } : d)))} className="ml-1 rounded-lg border border-[#d7e5df] bg-white px-2 py-1 text-xs"><option value="public">public</option><option value="private">private</option></select></label>
-              <label className="flex items-center gap-2 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={doc.downloadable} onChange={(e) => update(displayedValues.map((d, i) => (i === idx ? { ...d, downloadable: e.target.checked } : d)))} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Downloadable</label>
+              <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]">Visibility<select value={doc.visibility} onChange={(e) => update(values.map((d, i) => (i === idx ? { ...d, visibility: e.target.value } : d)))} className="ml-1 rounded-lg border border-[#d7e5df] bg-white px-2 py-1 text-xs"><option value="public">public</option><option value="private">private</option></select></label>
+              <label className="flex items-center gap-2 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={doc.downloadable} onChange={(e) => update(values.map((d, i) => (i === idx ? { ...d, downloadable: e.target.checked } : d)))} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Downloadable</label>
             </div>
           </div>
         ))}
@@ -345,9 +374,9 @@ export function TrainingMediaSection({ values, update }: SectionProps) {
         />
       </div>
       <p className="mt-1 text-xs text-[#7f9d94]">Shows on the training card and detail header when set.</p>
-      <UrlList label="Gallery images" values={values.gallery_images} update={(next) => update("gallery_images", next)} uploadImages alwaysShowField />
+      <UrlList label="Gallery images" values={values.gallery_images} update={(next) => update("gallery_images", next)} uploadImages />
       <DocumentsList values={values.documents} update={(next) => update("documents", next)} />
-      <UrlList label="Videos" values={[values.promotional_video]} update={(next) => update("promotional_video", next[0] || "")} uploadVideo />
+      <div><p className={labelClass}>Videos</p><div className="mt-2"><OptionalTrainingVideo value={values.promotional_video} onChange={(next) => update("promotional_video", next)} /></div></div>
     </section>
   );
 }
@@ -362,7 +391,7 @@ export function TrainingCourseBuilderSection({ values, update, errors }: Section
         <label className={labelClass}>Notes PDF URL<input type="url" value={values.notes_pdf_url} onChange={(e) => update("notes_pdf_url", e.target.value)} placeholder="https://…" className={inputClass} /></label>
         <label className={labelClass}>Session mode<input value={values.session_mode} onChange={(e) => update("session_mode", e.target.value)} placeholder="e.g. live, cohort" className={inputClass} /></label>
       </div>
-      <UrlList label="Notes / Handouts (URLs)" values={values.instructor_notes} update={(next) => update("instructor_notes", next)} />
+      <UrlList label="Notes / Handouts (URLs)" values={values.instructor_notes} update={(next) => update("instructor_notes", next)} addLabel="noteHandout" />
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Discussions (JSON)<textarea value={values.discussions} onChange={(e) => update("discussions", e.target.value)} rows={3} placeholder='[]' className={`${inputClass} h-auto py-2`} /></label>
         <label className={labelClass}>Announcements (JSON)<textarea value={values.announcements} onChange={(e) => update("announcements", e.target.value)} rows={3} placeholder='[]' className={`${inputClass} h-auto py-2`} /></label>

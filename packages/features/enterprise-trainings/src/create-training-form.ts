@@ -48,10 +48,9 @@ export interface CreateTrainingFormValues {
   location_id: string;
   level: string;
   language: string;
-  // --- Missing schema gaps wired for POST/PUT ---
+  // --- Additional Training fields wired for POST/PUT ---
   recurring: string;
   schedule_exceptions: string;
-  access_information: string;
   meeting_provider: string;
   instructor_role: string;
   instructor_notes: string[];
@@ -128,7 +127,6 @@ export function createEmptyTrainingForm(): CreateTrainingFormValues {
     language: "en",
     recurring: "",
     schedule_exceptions: "",
-    access_information: "",
     meeting_provider: "",
     instructor_role: "",
     instructor_notes: [],
@@ -200,7 +198,6 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
     language: stringValue("language", "en"),
     recurring: stringValue("recurring"),
     schedule_exceptions: (() => { const v = record.schedule_exceptions; return Array.isArray(v) ? JSON.stringify(v) : typeof v === "string" ? v : ""; })(),
-    access_information: stringValue("access_information"),
     meeting_provider: stringValue("meeting_provider"),
     instructor_role: (() => { const ins = record.instructor as Record<string, unknown> | null; return typeof ins?.role === "string" ? ins.role : stringValue("instructor_role"); })(),
     instructor_notes: Array.isArray(record.instructor_notes) ? (record.instructor_notes as unknown[]).map(n => typeof (n as Record<string, unknown>)?.url === "string" ? (n as Record<string, unknown>).url as string : typeof n === "string" ? n : "").filter(Boolean) : Array.isArray(record.notes_pdf_url) ? [] : [],
@@ -285,7 +282,6 @@ location_id: isVenue ? values.location_id.trim() || null : null,
     prerequisites: values.prerequisites.trim() || null,
     recurring: values.recurring.trim() || null,
     schedule_exceptions: (() => { try { return values.schedule_exceptions.trim() ? JSON.parse(values.schedule_exceptions) : null; } catch { return values.schedule_exceptions.trim() || null; } })(),
-    access_information: isLive ? values.access_information.trim() || null : null,
     meeting_provider: isLive ? values.meeting_provider.trim() || null : null,
     instructor: values.instructor_role.trim() ? { id: values.instructor_id.trim() || null, name: values.instructor_name.trim() || null, bio: values.instructor_bio.trim() || null, role: values.instructor_role.trim() || null } : null,
     instructor_notes: values.instructor_notes.length ? values.instructor_notes.map((url, idx) => ({ id: `note-${idx}`, title: `Note ${idx+1}`, url })) : null,
@@ -367,7 +363,6 @@ export function buildUpdateTrainingPayload(values: CreateTrainingFormValues): Up
     prerequisites: values.prerequisites.trim() || null,
 recurring: values.recurring.trim() || null,
     schedule_exceptions: (() => { try { return values.schedule_exceptions.trim() ? JSON.parse(values.schedule_exceptions) : null; } catch { return values.schedule_exceptions.trim() || null; } })(),
-    access_information: isLive ? values.access_information.trim() || null : null,
     meeting_provider: isLive ? values.meeting_provider.trim() || null : null,
     instructor: values.instructor_role.trim() ? { id: values.instructor_id.trim() || null, name: values.instructor_name.trim() || null, bio: values.instructor_bio.trim() || null, role: values.instructor_role.trim() || null } : null,
     instructor_notes: values.instructor_notes.length ? values.instructor_notes.map((url, idx) => ({ id: `note-${idx}`, title: `Note ${idx+1}`, url })) : null,
@@ -412,8 +407,11 @@ export function validateTrainingForm(values: CreateTrainingFormValues, configure
   if (startCalendarDate && startCalendarDate === endCalendarDate && values.start_time && values.end_time && timeRe.test(values.start_time) && timeRe.test(values.end_time) && values.end_time <= values.start_time) {
     errors.end_time = ["End time must be after start time on the same day."];
   }
-  if (values.enrolment_start && values.enrolment_end && values.enrolment_end < values.enrolment_start) {
-    errors.enrolment_end = ["Enrolment end cannot be before enrolment start."];
+  if (values.enrolment_start && values.enrolment_end && values.enrolment_end <= values.enrolment_start) {
+    errors.enrolment_end = ["Enrolment end must be after enrolment start."];
+  }
+  if (values.enrolment_end && values.start_date && values.enrolment_end > values.start_date) {
+    errors.enrolment_end = ["Enrolment must close on or before the Training start date and time."];
   }
   for (const [key, value] of [
     ["schedule_exceptions", values.schedule_exceptions],

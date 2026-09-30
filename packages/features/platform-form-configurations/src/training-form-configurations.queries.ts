@@ -34,7 +34,7 @@ function toListItem(configuration: Awaited<ReturnType<typeof listTrainingFormCon
 }
 
 /** Reads configuration summaries for the existing Platform Admin list screen. */
-export function useTrainingFormConfigurations() { return useQuery({ queryKey: trainingFormConfigurationKeys.list(), queryFn: async () => (await listTrainingFormConfigurations()).map(toListItem), retry: 1 }); }
+export function useTrainingFormConfigurations(enabled = true) { return useQuery({ queryKey: trainingFormConfigurationKeys.list(), queryFn: async () => (await listTrainingFormConfigurations()).map(toListItem), enabled, retry: 1 }); }
 /** Reads and maps the backend registry for the existing builder model. */
 export function useTrainingFormFieldRegistry() { return useQuery({ queryKey: trainingFormConfigurationKeys.fieldRegistry(), queryFn: async () => (await getTrainingFormFieldRegistry()).map(toBuilderRegistryItem), retry: 1, staleTime: 60_000 }); }
 /** Reads one persisted configuration. */

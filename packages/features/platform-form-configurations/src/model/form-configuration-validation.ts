@@ -28,7 +28,7 @@ export function validateFormConfiguration(configuration: FormConfiguration, regi
   const trainingSettingsIssues = configuration.type === "training" ? validateTrainingFrontendSettings(configuration.fields) : [];
   const deliveryIssues = configuration.type === "event" ? validateEventDeliveryBundle(configuration) : [];
   const eventIssues = configuration.type === "event" ? validateEventConfiguration(configuration) : [];
-  const requiredFieldIssues = configuration.type === "event" ? registry.filter((item) => item.requiredByDomain && !configuration.fields.some((field) => field.enabled !== false && field.source === "core" && field.coreKey === item.key)).map((item) => ({ severity: "error" as const, code: "missing-domain-required" as const, message: `${item.displayName} is required by the Event domain. Add it from + Add field.`, sectionLocalId: configuration.sections[0]?.localId })) : [];
+  const requiredFieldIssues = registry.filter((item) => item.requiredByDomain && !configuration.fields.some((field) => field.enabled !== false && field.source === "core" && field.coreKey === item.key)).map((item) => ({ severity: "error" as const, code: "missing-domain-required" as const, message: `${item.displayName} is required by the ${configuration.type === "event" ? "Event" : "Training"} domain. Add it from + Add field.`, sectionLocalId: configuration.sections[0]?.localId }));
   const requiredSectionIssues = configuration.sections.flatMap((section) => section.enabled && !section.name.trim()
     ? [{ code: "missing-section-name" as const, message: "Give every enabled section a name before saving or publishing.", sectionLocalId: section.localId }]
     : []);
@@ -44,7 +44,7 @@ export function validateFormConfiguration(configuration: FormConfiguration, regi
       return [...commonIssues, { severity: "error" as const, code: "missing-core-registry-entry" as const, message: `${fieldName(field)} is not available in the authoritative field registry. Remove this field and add it again from + Add field after the registry loads.`, sectionLocalId: field.sectionLocalId, fieldLocalId: field.localId }];
     }
     const issues: FormConfigurationValidationIssue[] = [...commonIssues];
-    if (definition.requiredByDomain && !field.required) issues.push({ severity: "error", code: "domain-required", message: `${fieldName(field)} is required by the Event domain. Open the field editor and enable Required.`, sectionLocalId: field.sectionLocalId, fieldLocalId: field.localId });
+    if (definition.requiredByDomain && !field.required) issues.push({ severity: "error", code: "domain-required", message: `${fieldName(field)} is required by the ${configuration.type === "event" ? "Event" : "Training"} domain. Open the field editor and enable Required.`, sectionLocalId: field.sectionLocalId, fieldLocalId: field.localId });
     if (!definition.allowedRenderers.includes(field.renderer)) {
         if (configuration.type !== "training") issues.push({ severity: "error", code: "invalid-renderer", message: `${fieldName(field)} uses renderer '${field.renderer}', which is not allowed by the field registry. Open the field editor and choose an allowed renderer.`, sectionLocalId: field.sectionLocalId, fieldLocalId: field.localId });
     }

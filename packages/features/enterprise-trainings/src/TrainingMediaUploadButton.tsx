@@ -3,9 +3,25 @@
 import { useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { uploadTrainingMedia, type TrainingUploadResponse } from "./trainings.service";
 
 type TrainingMediaUploadPurpose = "image" | "lesson_document" | "lesson_video";
+const defaultMimeTypes: Record<TrainingMediaUploadPurpose, readonly string[]> = {
+  image: ["image/jpeg", "image/png", "image/webp", "image/gif"],
+  lesson_video: ["video/mp4", "video/webm", "video/quicktime"],
+  lesson_document: [
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "text/plain",
+    "application/rtf",
+  ],
+};
 const mimeExtensions: Record<string, readonly string[]> = {
   "image/jpeg": [".jpg", ".jpeg"],
   "image/png": [".png"],
@@ -32,7 +48,34 @@ interface TrainingMediaUploadButtonProps {
   purpose: TrainingMediaUploadPurpose;
   allowedMimeTypes?: readonly string[];
   maxFileSizeMb?: number | null;
-  onUploaded: (file: TrainingUploadResponse) => void;
+  onUploaded: (file: TrainingUploadResponse, imageQualityWarning?: string) => void;
+}
+
+function getExtension(fileName: string): string {
+  const lastDot = fileName.lastIndexOf(".");
+  return lastDot >= 0 ? fileName.slice(lastDot).toLowerCase() : "";
+}
+
+function isAllowedFileType(file: File, allowedTypes: readonly string[]): boolean {
+  if (allowedTypes.includes(file.type)) return true;
+  if (file.type && file.type !== "application/octet-stream") return false;
+
+  const extension = getExtension(file.name);
+  return allowedTypes.some((mimeType) => mimeExtensions[mimeType]?.includes(extension));
+}
+
+async function getImageDimensions(file: File): Promise<{ width: number; height: number } | null> {
+  if (typeof createImageBitmap !== "function") return null;
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    return null;
+  }
+
+  const { width, height } = bitmap;
+  bitmap.close();
+  return { width, height };
 }
 
 /** Uploads Training media through the authenticated Training media endpoint. */
@@ -46,41 +89,58 @@ export default function TrainingMediaUploadButton({
   onUploaded,
 }: TrainingMediaUploadButtonProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ message: string; isError: boolean } | null>(null);
+  const { t } = useTranslation("enterpriseTrainings");
   const uploadMutation = useMutation({
-    mutationFn: (file: File) => uploadTrainingMedia(file, purpose, fieldKey),
-    onSuccess: (uploaded) => {
-      onUploaded(uploaded);
-      setFeedback(`${uploaded.name} uploaded.`);
+    mutationFn: async (file: File) => {
+      const imageDimensions = purpose === "image" && fieldKey === "primary_image"
+        ? await getImageDimensions(file)
+        : undefined;
+      const uploaded = await uploadTrainingMedia(file, purpose, fieldKey);
+      return { uploaded, imageDimensions };
     },
-    onError: (error) => setFeedback(error instanceof Error ? error.message : "Unable to upload this file. Please try again."),
+    onSuccess: ({ uploaded, imageDimensions }) => {
+      let imageQualityWarning: string | undefined;
+      if (imageDimensions === null) {
+        imageQualityWarning = t("media.dimensionsUnavailable");
+      } else if (imageDimensions) {
+        const recommendations: string[] = [];
+        if (imageDimensions.width < 1280) recommendations.push(t("media.minimumImageWidth"));
+        if (Math.abs(imageDimensions.width / imageDimensions.height - 16 / 9) > 0.02) {
+          recommendations.push(t("media.imageAspectRatio"));
+        }
+        if (recommendations.length) {
+          imageQualityWarning = t("media.imageQualityWarning", {
+            recommendations: recommendations.join(" and "),
+            width: imageDimensions.width,
+            height: imageDimensions.height,
+          });
+        }
+      }
+      onUploaded(uploaded, imageQualityWarning);
+      setFeedback({ message: t("media.uploadComplete"), isError: false });
+    },
+    onError: (error) => setFeedback({
+      message: error instanceof Error ? error.message : t("media.uploadFailed"),
+      isError: true,
+    }),
   });
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = "";
     if (!file) return;
-    if (purpose === "image" && !file.type.startsWith("image/")) {
-      setFeedback(null);
-      setFeedback("Choose an image file to upload.");
+    const acceptedTypes = allowedMimeTypes ?? defaultMimeTypes[purpose];
+    if (!acceptedTypes.length) {
+      setFeedback({ message: t("media.noAllowedFormats"), isError: true });
       return;
     }
-    if (purpose === "lesson_video" && !file.type.startsWith("video/")) {
-      setFeedback(null);
-      setFeedback("Choose a video file to upload.");
-      return;
-    }
-    const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
-    const formatAllowed = allowedMimeTypes === undefined
-      || allowedMimeTypes.some((mimeType) =>
-        file.type === mimeType || (!file.type && mimeExtensions[mimeType]?.includes(extension)),
-      );
-    if (!formatAllowed) {
-      setFeedback(`Choose a file in an allowed format: ${allowedMimeTypes.join(", ")}.`);
+    if (!isAllowedFileType(file, acceptedTypes)) {
+      setFeedback({ message: t("media.allowedFormatError", { formats: acceptedTypes.join(", ") }), isError: true });
       return;
     }
     if (maxFileSizeMb != null && file.size > maxFileSizeMb * 1024 * 1024) {
-      setFeedback(`Choose a file smaller than ${maxFileSizeMb} MB.`);
+      setFeedback({ message: t("media.maxFileSizeError", { maxFileSizeMb }), isError: true });
       return;
     }
 
@@ -106,7 +166,7 @@ export default function TrainingMediaUploadButton({
       >
         {uploadMutation.isPending ? "Uploading..." : label}
       </button>
-      {feedback ? <span role={uploadMutation.isError || feedback.startsWith("Choose ") ? "alert" : "status"} className={`text-xs ${uploadMutation.isError || feedback.startsWith("Choose ") ? "font-semibold text-[#b42318]" : "text-[#1f6a58]"}`}>{feedback}</span> : null}
+      {feedback ? <span role={feedback.isError ? "alert" : "status"} className={`text-xs ${feedback.isError ? "font-semibold text-[#b42318]" : "text-[#1f6a58]"}`}>{feedback.message}</span> : null}
     </div>
   );
 }

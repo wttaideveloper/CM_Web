@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation";
 
 import { AdditionalConfigurationSection, CapacityAndRegistrationSection, MediaSection, PricingAndTicketsSection, ReviewSection } from "./CreateEventConfigurationSections";
 import { BasicInformationSection, LocationAndHostSection, ScheduleSection } from "./CreateEventDetailsSections";
-import { buildCreateEventPayload, buildUpdateEventPayload, createEmptyEventForm, eventToFormValues, mapSessionForPayload, mergeLatestEventSessions, validateEventForm, validateParticipantCapacity, type CreateEventFormValues } from "./create-event-form";
+import { buildCreateEventPayload, buildUpdateEventPayload, createEmptyEventForm, eventToFormValues, localDateTimeOrderValue, mapSessionForPayload, mergeLatestEventSessions, validateEventForm, validateParticipantCapacity, type CreateEventFormValues } from "./create-event-form";
 import { useEventCategories, useEventTypes } from "./event-categories.queries";
 import { useActiveEventFormConfiguration, useEventHistoricalFormConfiguration } from "./event-form-configuration.queries";
 import { createEvent, EventsApiError, getEventById, updateEvent, type ActiveEventFormConfiguration, type ActiveEventFormField, type Event, type EventCategory, type EventModules } from "./events.service";
@@ -151,7 +151,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const allFieldOrder = editorSteps.flatMap((_, index) => sectionFields(index));
   const focusError = (key: string, errorsToShow: Record<string, string[]>) => { setErrors(errorsToShow); setPendingFocusField(key); };
   const continueToNext = () => { const currentErrors = Object.fromEntries(Object.entries(allErrors).filter(([field]) => sectionFields(activeStep).includes(field))); const first = firstErrorKey(sectionFields(activeStep), currentErrors); if (first) { focusError(first, currentErrors); return; } setErrors({}); setActiveStep((current) => Math.min(current + 1, editorSteps.length - 1)); };
-  const submit = () => { if (mode === "edit" && !isDirty) return; const first = firstErrorKey(allFieldOrder, allErrors); if (first) { const sectionIndex = editorSteps.findIndex((_, index) => sectionFields(index).includes(first)); focusError(first, allErrors); if (sectionIndex >= 0) setActiveStep(sectionIndex); const count = errorCount(allErrors); setSubmitError(`${count} validation error${count === 1 ? "" : "s"} need attention.`); return; } setSubmitError(null); saveMutation.mutate(); };
+  const submit = () => { if (mode === "edit" && !isDirty) return; const first = firstErrorKey(allFieldOrder, allErrors) ?? Object.keys(allErrors).find((field) => allErrors[field]?.length); if (first) { const sectionIndex = editorSteps.findIndex((_, index) => sectionFields(index).includes(first)); focusError(first, allErrors); if (sectionIndex >= 0) setActiveStep(sectionIndex); const count = errorCount(allErrors); setSubmitError(`${count} validation error${count === 1 ? "" : "s"} need attention.`); return; } setSubmitError(null); saveMutation.mutate(); };
   const sharedProps = { values, update, errors, currencyOptions };
   const locationProps = { ...sharedProps, locations: locationsQuery.data ?? [], selectedLocationId: locationId, setSelectedLocationId: updateLocationId, isLoadingLocations: locationsQuery.isLoading, locationError: locationsQuery.isError ? "Unable to load enterprise locations." : null };
   const backHref = initialEvent ? `/admin/events/${initialEvent.id}` : "/admin/events";
@@ -201,15 +201,17 @@ function ActiveEventFormVerification({ query }: { query: ReturnType<typeof useAc
 function validateConfiguredEventForm(configuration: ActiveEventFormConfiguration, values: CreateEventFormValues, customValues: Record<string, string | string[] | boolean | number | null>, hasLocation: boolean, categories: readonly EventCategory[], mode: "create" | "edit"): Record<string, string[]> {
   const errors: Record<string, string[]> = {};
   for (const section of configuration.sections.filter((item) => item.is_enabled)) for (const field of section.fields) {
+    if (field.is_enabled === false) continue;
     const key = field.source === "core" ? field.core_key ?? field.stable_key ?? field.id : field.stable_key ?? field.id;
     if (values.pricing_type === "free" && ["price", "currency", "ticket_types"].includes(key)) continue;
     if (!isDeliveryFieldApplicable(key, values.delivery_mode)) continue;
-    if (key === "location" || key === "location_id") { if (!hasLocation) errors[key] = [`${field.label} is required.`]; continue; }
+    if (key === "location" || key === "location_id") { if (field.required && !hasLocation) errors[key] = [`${field.label} is required.`]; continue; }
     const coreKey = ({ title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", start_date: "start_date", start_datetime: "start_date", end_date: "end_date", end_datetime: "end_date", duration_type: "duration_type", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", time_zone: "time_zone", timezone: "time_zone", event_type: "event_type", delivery_mode: "delivery_mode", pricing_type: "pricing_type", price: "price", currency: "currency", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents" } as Record<string, keyof CreateEventFormValues>)[key]
       ?? (field.source === "core" && key in values ? key as keyof CreateEventFormValues : undefined);
     const value = coreKey ? values[coreKey] : customValues[key];
     const isEmpty = value === null || value === undefined || (typeof value === "string" && value.trim() === "") || (Array.isArray(value) && value.length === 0);
-    if (isEmpty && field.required) {
+    const isBoolean = field.value_type === "boolean" || field.renderer === "checkbox";
+    if (field.required && (isEmpty || (isBoolean && value !== true && value !== "true"))) {
       errors[key] = [`${field.label} is required.`];
       continue;
     }
@@ -239,7 +241,7 @@ function validateConfiguredEventForm(configuration: ActiveEventFormConfiguration
   validateConfiguredCategories(configuration, values, categories, errors, mode);
   validateConfiguredDateTimes(configuration, values, errors, mode);
   if (["capacity", "min_participants", "max_participants"].some((key) => configuredCoreKeys(configuration).has(key))) validateParticipantCapacity(values, errors);
-  const sessionField = configuration.sections.filter((section) => section.is_enabled).flatMap((section) => section.fields).find((field) => field.source === "core" && (field.core_key === "sessions" || field.stable_key === "sessions"));
+  const sessionField = configuration.sections.filter((section) => section.is_enabled).flatMap((section) => section.fields).find((field) => field.is_enabled !== false && field.source === "core" && (field.core_key === "sessions" || field.stable_key === "sessions"));
   if (sessionField) {
     const sessionError = validateSessions(values.sessions, values.start_date, values.end_date, sessionField.composite_config?.enabled_fields ?? undefined, sessionField.composite_config?.required_fields ?? [], [], values.delivery_mode);
     if (sessionError) errors.sessions = [sessionError];
@@ -251,7 +253,7 @@ function validateConfiguredCategories(configuration: ActiveEventFormConfiguratio
   const keys = configuredCoreKeys(configuration);
   const categoryEnabled = isConfigured(keys, "category");
   const subcategoryEnabled = isConfigured(keys, "subcategory");
-  const subcategoryField = configuration.sections.filter((section) => section.is_enabled).flatMap((section) => section.fields).find((field) => field.source === "core" && (field.core_key === "subcategory" || field.stable_key === "subcategory"));
+  const subcategoryField = configuration.sections.filter((section) => section.is_enabled).flatMap((section) => section.fields).find((field) => field.is_enabled !== false && field.source === "core" && (field.core_key === "subcategory" || field.stable_key === "subcategory"));
   const parents = categories.filter((category) => category.parent_id === null);
   const selectedCategory = parents.find((category) => category.name === values.category);
 
@@ -266,7 +268,7 @@ function validateConfiguredCategories(configuration: ActiveEventFormConfiguratio
 }
 
 function configuredCoreKeys(configuration: ActiveEventFormConfiguration): Set<string> {
-  return new Set(configuration.sections.filter((section) => section.is_enabled).flatMap((section) => section.fields).filter((field) => field.source === "core").map((field) => field.core_key ?? field.stable_key ?? field.id));
+  return new Set(configuration.sections.filter((section) => section.is_enabled).flatMap((section) => section.fields).filter((field) => field.is_enabled !== false && field.source === "core").map((field) => field.core_key ?? field.stable_key ?? field.id));
 }
 
 function isConfigured(keys: Set<string>, ...candidates: string[]): boolean {
@@ -280,20 +282,15 @@ function isDeliveryFieldApplicable(key: string, deliveryMode: string): boolean {
   return true;
 }
 
-function asLocalTimestamp(value: string): number | null {
-  const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) ? timestamp : null;
-}
-
 function validateConfiguredDateTimes(configuration: ActiveEventFormConfiguration, values: CreateEventFormValues, errors: Record<string, string[]>, mode: "create" | "edit"): void {
   const keys = configuredCoreKeys(configuration);
   const startKey = isConfigured(keys, "start_datetime") ? "start_datetime" : "start_date";
   const endKey = isConfigured(keys, "end_datetime") ? "end_datetime" : "end_date";
-  const start = asLocalTimestamp(values.start_date);
-  const end = asLocalTimestamp(values.end_date);
-  const opens = asLocalTimestamp(values.registration_open_at);
-  const closes = asLocalTimestamp(values.registration_close_at);
-  const cutoff = asLocalTimestamp(values.registration_cutoff);
+  const start = localDateTimeOrderValue(values.start_date);
+  const end = localDateTimeOrderValue(values.end_date);
+  const opens = localDateTimeOrderValue(values.registration_open_at);
+  const closes = localDateTimeOrderValue(values.registration_close_at);
+  const cutoff = localDateTimeOrderValue(values.registration_cutoff);
   const nowDate = new Date();
   nowDate.setSeconds(0, 0);
   const now = nowDate.getTime();
@@ -307,7 +304,7 @@ function validateConfiguredDateTimes(configuration: ActiveEventFormConfiguration
   if (isConfigured(keys, "registration_cutoff") && isConfigured(keys, "start_date", "start_datetime") && cutoff !== null && start !== null && cutoff > start) errors.registration_cutoff = ["Registration cutoff must be before the Event starts."];
   if (isConfigured(keys, "registration_cutoff") && isConfigured(keys, "registration_close_at") && cutoff !== null && closes !== null && cutoff > closes) errors.registration_cutoff = ["Registration cutoff must not be after registration closing time."];
 
-  const sessionField = configuration.sections.filter((section) => section.is_enabled).flatMap((section) => section.fields).find((field) => field.source === "core" && (field.core_key === "sessions" || field.stable_key === "sessions"));
+  const sessionField = configuration.sections.filter((section) => section.is_enabled).flatMap((section) => section.fields).find((field) => field.is_enabled !== false && field.source === "core" && (field.core_key === "sessions" || field.stable_key === "sessions"));
   if (!sessionField) return;
   const enabled = sessionField.composite_config?.enabled_fields ?? [];
   const isSessionSubfieldEnabled = (name: string) => enabled.length === 0 || enabled.includes(name);

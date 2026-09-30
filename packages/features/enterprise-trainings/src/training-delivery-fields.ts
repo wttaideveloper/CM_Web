@@ -10,15 +10,20 @@ export type TrainingDeliverySubfield = {
   requiredByDomain?: boolean;
 };
 
+/** Identifies the Training field removed from Enterprise and Super Admin forms. */
+export function isTrainingAccessInformationField(field: TrainingFormField): boolean {
+  return [field.key, field.apiKey ?? "", field.stable_key ?? "", field.label]
+    .some((value) => value.trim().toLowerCase().replace(/^(core_|custom_)/, "").replace(/[\s-]+/g, "_") === "access_information");
+}
+
 const TRAINING_DELIVERY_COMPOSITES: Readonly<Record<TrainingDeliveryCompositeKey, readonly TrainingDeliverySubfield[]>> = {
   venue: [
     { key: "name", valueKey: "venue", label: "Venue name", type: "text", requiredByDomain: true },
     { key: "address", valueKey: "address", label: "Address", type: "textarea", requiredByDomain: true },
   ],
   meeting_link: [
-    { key: "meeting_link", valueKey: "meeting_link", label: "Meeting link", type: "url", requiredByDomain: true },
+    { key: "meeting_link", valueKey: "meeting_link", label: "Meeting URL", type: "url", requiredByDomain: true },
     { key: "meeting_provider", valueKey: "meeting_provider", label: "Meeting provider", type: "select" },
-    { key: "access_information", valueKey: "access_information", label: "Access information", type: "textarea" },
     { key: "delivery_instructions", valueKey: "delivery_instructions", label: "Delivery instructions", type: "textarea" },
   ],
 };
@@ -56,13 +61,25 @@ export function getRequiredTrainingDeliverySubfields(field: TrainingFormField): 
 
 /** Checks whether a configured field is already rendered inside a delivery composite. */
 export function isTrainingDeliveryCompositeChild(field: TrainingFormField, allFields: readonly TrainingFormField[]): boolean {
-  const valueKey = field.key;
+  const fieldValueKeys = getTrainingDeliveryFieldValueKeys(field);
   return allFields.some((candidate) => {
     const compositeKey = getTrainingDeliveryCompositeKey(candidate);
     return compositeKey !== undefined
       && candidate.id !== field.id
-      && getEnabledTrainingDeliverySubfields(candidate, compositeKey).some((subfield) => subfield.valueKey === valueKey);
+      && getEnabledTrainingDeliverySubfields(candidate, compositeKey)
+        .some((subfield) => fieldValueKeys.has(subfield.valueKey));
   });
+}
+
+function getTrainingDeliveryFieldValueKeys(field: TrainingFormField): Set<string> {
+  const identifiers = [field.key, field.apiKey ?? "", field.stable_key ?? "", field.label]
+    .map((value) => value.trim().toLowerCase().replace(/^(core_|custom_)/, "").replace(/[\s-]+/g, "_"));
+  const valueKeys = new Set(identifiers);
+  if (identifiers.some((value) => ["venue_name", "venue_title"].includes(value))) valueKeys.add("venue");
+  if (identifiers.some((value) => ["venue_address", "venue_location"].includes(value))) valueKeys.add("address");
+  if (identifiers.some((value) => ["meeting_url", "online_meeting_url", "video_conference_link"].includes(value))) valueKeys.add("meeting_link");
+  if (identifiers.some((value) => ["meeting_platform", "video_conference_provider"].includes(value))) valueKeys.add("meeting_provider");
+  return valueKeys;
 }
 
 /** Lists value keys that are represented by an enabled composite field. */

@@ -275,7 +275,6 @@ export interface CreateTrainingPayload {
   // --- Missing schema gaps wired for POST/PUT ---
   recurring?: string | boolean | Record<string, unknown> | null;
   schedule_exceptions?: unknown[] | null;
-  access_information?: string | null;
   meeting_provider?: string | null;
   waitlist_count?: number | null;
   instructor?: TrainingInstructor | null;

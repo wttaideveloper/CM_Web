@@ -338,15 +338,37 @@ export function validateEventForm(values: CreateEventFormValues, hasLocation: bo
 }
 
 function validateDateOrder(values: CreateEventFormValues, errors: Record<string, string[]>): void {
-  const start = Date.parse(values.start_date); const end = Date.parse(values.end_date);
-  const opens = Date.parse(values.registration_open_at); const closes = Date.parse(values.registration_close_at);
-  const cutoff = Date.parse(values.registration_cutoff);
-  if (Number.isFinite(start) && Number.isFinite(end) && end <= start) errors.end_date = ["End date and time must be after the start date and time."];
-  if (Number.isFinite(opens) && Number.isFinite(closes) && closes <= opens) errors.registration_close_at = ["Registration closing time must be after registration opening time."];
-  if (Number.isFinite(closes) && Number.isFinite(start) && closes > start) errors.registration_close_at = ["Registration closing time must be on or before the Event start."];
-  if (Number.isFinite(cutoff) && Number.isFinite(opens) && cutoff <= opens) errors.registration_cutoff = ["Registration cutoff must be after registration opening time."];
-  if (Number.isFinite(cutoff) && Number.isFinite(closes) && cutoff > closes) errors.registration_cutoff = ["Registration cutoff must not be after registration closing time."];
-  if (Number.isFinite(cutoff) && Number.isFinite(start) && cutoff > start) errors.registration_cutoff = ["Registration cutoff must not be after the event starts."];
+  const start = localDateTimeOrderValue(values.start_date); const end = localDateTimeOrderValue(values.end_date);
+  const opens = localDateTimeOrderValue(values.registration_open_at); const closes = localDateTimeOrderValue(values.registration_close_at);
+  const cutoff = localDateTimeOrderValue(values.registration_cutoff);
+  if (start !== null && end !== null && end <= start) errors.end_date = ["End date and time must be after the start date and time."];
+  if (opens !== null && closes !== null && closes <= opens) errors.registration_close_at = ["Registration closing time must be after registration opening time."];
+  if (closes !== null && start !== null && closes > start) errors.registration_close_at = ["Registration closing time must be on or before the Event start."];
+  if (cutoff !== null && opens !== null && cutoff <= opens) errors.registration_cutoff = ["Registration cutoff must be after registration opening time."];
+  if (cutoff !== null && closes !== null && cutoff > closes) errors.registration_cutoff = ["Registration cutoff must not be after registration closing time."];
+  if (cutoff !== null && start !== null && cutoff > start) errors.registration_cutoff = ["Registration cutoff must not be after the event starts."];
+}
+
+/** Converts a timezone-less datetime-local value into an orderable wall-clock value. */
+export function localDateTimeOrderValue(value: string): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?$/.exec(value);
+  if (!match) return null;
+
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText = "0", fraction = ""] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const millisecond = Number((fraction + "000").slice(0, 3));
+  if (month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) return null;
+
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  date.setUTCHours(hour, minute, second, millisecond);
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  return date.getTime();
 }
 
 function validateNumbers(values: CreateEventFormValues, errors: Record<string, string[]>): void {

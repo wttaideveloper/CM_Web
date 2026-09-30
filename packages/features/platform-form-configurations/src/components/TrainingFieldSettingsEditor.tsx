@@ -61,7 +61,7 @@ function getMediaKind(field: ConfiguredField): keyof typeof mediaMimeTypes | nul
   const key = (field.coreKey ?? field.stableKey ?? "").replace(/^(core_|custom_)/, "");
   if (key === "primary_image" || key === "gallery_images") return "image";
   if (key === "promotional_video" || key === "videos") return "video";
-  if (key === "documents" || key === "notes_documents") return "document";
+  if (key === "documents" || key === "notes_documents" || key === "instructor_notes" || key === "notes_pdf_url") return "document";
   return null;
 }
 

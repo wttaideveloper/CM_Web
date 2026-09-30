@@ -3,6 +3,7 @@ export const trainingFormConfigurationCopy = {
   eyebrow: "SUPER ADMIN · CONFIGURATION",
   title: "Training Form Configurations",
   description: "Configure reusable Training creation forms for enterprise modules.",
+  confirmRetire: "Retire this configuration?\n\nIt will no longer be available for new Trainings, but existing Training records will retain their configuration.",
   create: "+ Create Configuration",
   createTitle: "Create Training Form Configuration",
   editTitle: "Edit Training Form Configuration",

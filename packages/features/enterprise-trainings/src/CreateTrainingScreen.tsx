@@ -15,7 +15,7 @@ import { useTrainingCategories } from "./training-categories.queries";
 import { canEditTraining } from "./training-status";
 import ConfiguredCreateTrainingSection from "./ConfiguredCreateTrainingSection";
 import { isTrainingFormFieldVisible, TRAINING_OTHER_OPTION_VALUE } from "./training-form-field-settings";
-import { getRequiredTrainingDeliverySubfields, getRequiredTrainingDeliveryValueKeys, getTrainingDeliveryCompositeValueKeys } from "./training-delivery-fields";
+import { getRequiredTrainingDeliverySubfields, getRequiredTrainingDeliveryValueKeys, getTrainingDeliveryCompositeValueKeys, isTrainingAccessInformationField } from "./training-delivery-fields";
 
 const steps = ["Basic Information", "Schedule", "Location & Host", "Pricing & Tickets", "Capacity & Registration", "Images & Media", "Additional Configuration"] as const;
 const stepFields: ReadonlyArray<readonly string[]> = [
@@ -79,8 +79,8 @@ function isConfiguredTrainingFieldApplicable(field: TrainingFormField, deliveryM
     || identifiers.some((value) => value.includes("promo_price") || value.includes("coupon_code"));
   if (isPricingField) return pricingType === "paid";
   const isVenueField = identifiers.some((value) => ["venue", "address", "venue_name", "venue_address"].includes(value));
-  const isLiveField = identifiers.some((value) => ["meeting_link", "meeting_provider", "meeting_id", "meeting_passcode", "access_information", "delivery_instructions"].includes(value))
-    || identifiers.some((value) => value.includes("meeting_provider") || value.includes("meeting_link") || value.includes("delivery_instruction") || value.includes("access_information"));
+  const isLiveField = identifiers.some((value) => ["meeting_link", "meeting_provider", "meeting_id", "meeting_passcode", "delivery_instructions"].includes(value))
+    || identifiers.some((value) => value.includes("meeting_provider") || value.includes("meeting_link") || value.includes("delivery_instruction"));
   if (isVenueField) return deliveryMode === "physical" || deliveryMode === "hybrid";
   if (isLiveField) return deliveryMode === "online" || deliveryMode === "hybrid";
   return true;
@@ -96,10 +96,11 @@ function validateConfiguredSection(
 
   for (const field of section.fields) {
     if (field.enabled === false
+      || isTrainingAccessInformationField(field)
       || !isConfiguredTrainingFieldApplicable(field, values.delivery_mode, values.pricing_type)
       || !isTrainingFormFieldVisible(field, allFields, values, customValues)) continue;
     const aliases = getTrainingFieldAliases(field);
-    const valueKey = aliases.find((candidate) => candidate in values);
+    const valueKey = field.source === "custom" ? undefined : aliases.find((candidate) => candidate in values);
     const key = (valueKey ?? field.key) as keyof CreateTrainingFormValues;
     const value = valueKey
       ? values[key]
@@ -108,8 +109,19 @@ function validateConfiguredSection(
       errors[field.key] = ["Custom entries are not saveable until the Training API documents their configuration and submission format. Select a configured option to save."];
       continue;
     }
-    if (field.required && !hasConfiguredValue(value)) {
+    const isBoolean = field.type === "checkbox";
+    if (field.required && (!hasConfiguredValue(value) || (isBoolean && value !== true && value !== "true"))) {
       errors[field.key] = [`${field.label} is required.`];
+      continue;
+    }
+    const normalizedFieldKey = normalizeTrainingFieldKey(field.apiKey ?? field.stable_key ?? field.key);
+    if (field.source !== "custom"
+      && field.configuredOptions?.length
+      && ["currency", "time_zone"].includes(normalizedFieldKey)
+      && typeof value === "string"
+      && value.trim()
+      && !field.configuredOptions.some((option) => option.value === value)) {
+      errors[field.key] = [`${field.label} is not an available option. Choose a value from the list.`];
       continue;
     }
     if (!hasConfiguredValue(value)) continue;
@@ -176,11 +188,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   const activeForm = (mode === "create" ? activeFormQ.data : historicalFormQ.data) ?? null;
   const formConfigLoading = mode === "create" ? activeFormQ.isLoading : historicalFormQ.isLoading;
   const formConfigError = mode === "create" ? activeFormQ.error : historicalFormQ.error;
-  const configuredFields = activeForm?.sections.flatMap((section) => section.fields).filter((field) => field.enabled !== false) ?? [];
-  const needsTrainingCategories = !activeForm || configuredFields.some((field) =>
-    field.source === "core" && getTrainingFieldAliases(field).some((key) => key === "category" || key === "subcategory"),
-  );
-  const trainingCategoriesQuery = useTrainingCategories(!formConfigLoading && needsTrainingCategories);
+  const trainingCategoriesQuery = useTrainingCategories(!formConfigLoading);
   const trainingCategories = useMemo(() => trainingCategoriesQuery.data ?? [], [trainingCategoriesQuery.data]);
   const [activeStep, setActiveStep] = useState(0);
   const [initialValues] = useState(() => (initialTraining ? trainingToFormValues(initialTraining) : createEmptyTrainingForm()));
@@ -200,7 +208,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
       "start_date", "end_date", "start_time", "end_time", "enrolment_start", "enrolment_end", "time_zone",
       "duration", "access_duration_days", "delivery_mode", "course_type", "location_id", "venue", "address",
       "meeting_link", "meeting_provider", "delivery_instructions", "instructor_id", "instructor_name",
-      "instructor_bio", "level", "language", "target_audience", "access_information", "price", "currency",
+      "instructor_bio", "level", "language", "target_audience", "price", "currency",
       "promo_price", "coupon_code", "capacity", "requires_approval", "access_expiry_type", "access_expiry_days",
       "primary_image", "gallery_images",
       "documents", "promotional_video", "notes_pdf_url", "instructor_notes", "prerequisites",
@@ -282,7 +290,6 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
       "address",
       "meeting_link",
       "delivery_instructions",
-      "access_information",
       "meeting_provider",
       "price",
       "currency",
@@ -366,7 +373,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   const allErrors = useMemo(() => {
     const allFields = activeForm?.sections.flatMap((section) => section.fields) ?? [];
     const configuredRequiredKeys = activeForm
-      ? new Set(allFields.filter((field) => field.enabled !== false && isTrainingFormFieldVisible(field, allFields, values, customValues)).flatMap((field) => [
+      ? new Set(allFields.filter((field) => field.enabled !== false && !isTrainingAccessInformationField(field) && isTrainingFormFieldVisible(field, allFields, values, customValues)).flatMap((field) => [
         ...(field.required ? getTrainingFieldAliases(field) : []),
         ...getRequiredTrainingDeliveryValueKeys(field),
       ]))
@@ -412,13 +419,14 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
       }
     }
     if (!activeForm) return validationErrors;
-    const configuredKeys = new Set(activeForm.sections.flatMap((section) => section.fields.flatMap(getTrainingFieldAliases)));
+    const configuredKeys = new Set(activeForm.sections.flatMap((section) => section.fields.filter((field) => !isTrainingAccessInformationField(field)).flatMap(getTrainingFieldAliases)));
     const businessRuleKeys = new Set(["delivery_mode", "meeting_link", "venue", "address", "price", "currency"]);
     for (const key of Object.keys(validationErrors)) {
       if (!configuredKeys.has(key) && !businessRuleKeys.has(key)) delete validationErrors[key];
     }
     for (const section of activeForm.sections) {
       for (const field of section.fields) {
+        if (isTrainingAccessInformationField(field)) continue;
         if (!isConfiguredTrainingFieldApplicable(field, values.delivery_mode, values.pricing_type)
           || !isTrainingFormFieldVisible(field, allFields, values, customValues)) {
           for (const alias of getTrainingFieldAliases(field)) delete validationErrors[alias];
@@ -590,7 +598,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
                     <div key={sec.id} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] px-4 py-3">
                       <p className="text-sm font-bold text-[#06201c]">{sec.title}</p>
                       <div className="mt-2 space-y-1 text-sm text-[#52736a]">
-                        {sec.fields.filter((field) => isConfiguredTrainingFieldApplicable(field, values.delivery_mode, values.pricing_type) && isTrainingFormFieldVisible(field, activeForm.sections.flatMap((section) => section.fields), values, customValues)).map((field) => {
+                        {sec.fields.filter((field) => !isTrainingAccessInformationField(field) && isConfiguredTrainingFieldApplicable(field, values.delivery_mode, values.pricing_type) && isTrainingFormFieldVisible(field, activeForm.sections.flatMap((section) => section.fields), values, customValues)).map((field) => {
                           const raw = field.key in values ? values[field.key as keyof CreateTrainingFormValues] : customValues[field.key];
                           const displayValue = Array.isArray(raw) ? raw.join(", ") : typeof raw === "boolean" ? (raw ? "Yes" : "No") : raw === null || raw === undefined || raw === "" ? "Not provided" : String(raw);
                           return <p key={field.id}><span className="font-semibold text-[#06201c]">{field.label}:</span> {displayValue}</p>;

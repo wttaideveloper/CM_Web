@@ -74,7 +74,7 @@ export function FormConfigurationEditorScreen({ id, mode }: { id?: string; mode:
   const runLifecycle = async (action: "activate" | "deactivate" | "retire" | "delete") => {
     if (!id) return;
     if (action === "delete" && !window.confirm("Delete configuration?\n\nThis permanently deletes this draft configuration. This action cannot be undone.")) return;
-    if (action === "retire" && !window.confirm("Retire this configuration?\n\nIt will no longer be available for new Events, but existing Event records will retain their configuration.")) return;
+    if (action === "retire" && !window.confirm(copy.confirmRetire)) return;
     setLifecycleError("");
     try {
       if (action === "activate") await activate.mutateAsync(id);

@@ -435,7 +435,6 @@ export default function TrainingDetailsScreen({
               <DetailItem label="Access expiry" value={displayValue((training as unknown as Record<string, unknown>).access_expiry_type as string) + " " + displayValue((training as unknown as Record<string, unknown>).access_expiry_days as string)} />
               <DetailItem label="Recurring" value={displayValue((training as unknown as Record<string, unknown>).recurring as string)} />
               <DetailItem label="Schedule exceptions" value={Array.isArray((training as unknown as Record<string, unknown>).schedule_exceptions) ? ((training as unknown as Record<string, unknown>).schedule_exceptions as unknown[]).length + " exceptions" : displayValue((training as unknown as Record<string, unknown>).schedule_exceptions as string)} />
-              <DetailItem label="Access information" value={displayValue((training as unknown as Record<string, unknown>).access_information as string)} />
               <DetailItem label="Meeting provider" value={displayValue((training as unknown as Record<string, unknown>).meeting_provider as string)} />
               <DetailItem label="Waitlist count" value={displayValue(String((training as unknown as Record<string, unknown>).waitlist_count ?? "—"))} />
               <DetailItem label="Subtitle" value={displayValue((training as unknown as Record<string, unknown>).subtitle as string)} />

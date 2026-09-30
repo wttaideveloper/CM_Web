@@ -20,6 +20,7 @@ const HIDDEN_TRAINING_FIELD_KEYS = new Set([
   "randomise",
   "randomize",
   "is_mandatory",
+  "access_information",
 ]);
 const HIDDEN_TRAINING_FIELD_LABELS = new Set([
   "group enrolment",
@@ -31,6 +32,7 @@ const HIDDEN_TRAINING_FIELD_LABELS = new Set([
   "randomize",
   "is mandatory",
   "mandatory lessons",
+  "access information",
 ]);
 const isHiddenTrainingField = (field: { stable_key?: string | null; core_key?: string | null; label?: string | null }) => {
   const keys = [field.stable_key, field.core_key].map((key) => key?.replace(/^(core_|custom_)/, "") ?? "");

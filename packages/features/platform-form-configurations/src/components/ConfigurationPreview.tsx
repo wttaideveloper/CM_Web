@@ -50,8 +50,8 @@ function isTrainingFieldVisible(field: ConfiguredField, deliveryMode: string, pr
   const isPricingField = identifiers.some((value) => ["price", "currency", "promo_price", "coupon_code"].includes(value))
     || identifiers.some((value) => value.includes("promo_price") || value.includes("coupon_code"));
   const isVenueField = identifiers.some((value) => ["venue", "address", "venue_name", "venue_address"].includes(value));
-  const isLiveField = identifiers.some((value) => ["meeting_link", "meeting_provider", "meeting_id", "meeting_passcode", "access_information", "delivery_instructions"].includes(value))
-    || identifiers.some((value) => value.includes("meeting_provider") || value.includes("meeting_link") || value.includes("delivery_instruction") || value.includes("access_information"));
+  const isLiveField = identifiers.some((value) => ["meeting_link", "meeting_provider", "meeting_id", "meeting_passcode", "delivery_instructions"].includes(value))
+    || identifiers.some((value) => value.includes("meeting_provider") || value.includes("meeting_link") || value.includes("delivery_instruction"));
 
   if (isDeliveryField || isPricingSelector) return true;
   if (isPricingField) return pricingType === "paid";
