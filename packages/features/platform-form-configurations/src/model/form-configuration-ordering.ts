@@ -1,4 +1,4 @@
-import type { ConfiguredField, FormFieldOption, FormSection } from "./form-configuration.types";
+import type { ConfiguredField, FormConfigurationType, FormFieldOption, FormSection } from "./form-configuration.types";
 import { EVENT_DELIVERY_BUNDLE, isEventDeliveryBundleKey } from "./event-delivery-bundle";
 
 /** Derives persisted section positions from the current local builder order. */
@@ -11,10 +11,10 @@ export function normalizeOptionPositions(options: readonly FormFieldOption[]): F
 export function normalizeConfigurationOrder(sections: readonly FormSection[], fields: readonly ConfiguredField[]) { const normalizedSections = normalizeSectionPositions(sections); return { sections: normalizedSections, fields: normalizeFieldPositions(normalizedSections, fields) }; }
 
 /** Moves a field into a target section and derives each section's positions from its resulting order. */
-export function moveConfiguredField(fields: readonly ConfiguredField[], fieldLocalId: string, targetSectionLocalId: string, targetIndex: number) {
+export function moveConfiguredField(fields: readonly ConfiguredField[], fieldLocalId: string, targetSectionLocalId: string, targetIndex: number, configurationType: FormConfigurationType = "event") {
   const movingField = fields.find((field) => field.localId === fieldLocalId);
   if (!movingField) return [...fields];
-  if (isEventDeliveryBundleKey(movingField.coreKey)) {
+  if (configurationType === "event" && isEventDeliveryBundleKey(movingField.coreKey)) {
     const movingIds = new Set(fields.filter((field) => isEventDeliveryBundleKey(field.coreKey)).map((field) => field.localId));
     const movingFields = EVENT_DELIVERY_BUNDLE.flatMap((key) => fields.filter((field) => field.coreKey === key));
     const remaining = fields.filter((field) => !movingIds.has(field.localId));

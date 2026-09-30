@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { CreateTrainingFormValues } from "./create-training-form";
 import type { TrainingCategoryOption } from "./training-categories.service";
@@ -9,7 +10,7 @@ import { TRAINING_OTHER_OPTION_VALUE } from "./training-form-field-settings";
 type TaxonomyField = "category" | "subcategory";
 type UpdateForm = <Key extends keyof CreateTrainingFormValues>(key: Key, value: CreateTrainingFormValues[Key]) => void;
 
-const inputClass = "mt-1.5 h-11 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none focus:border-[#1f6a58] disabled:cursor-not-allowed disabled:opacity-60";
+const inputClass = "mt-1.5 h-11 w-full min-w-0 max-w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm font-normal text-[#06201c] outline-none focus:border-[#1f6a58] disabled:cursor-not-allowed disabled:opacity-60";
 
 /** Renders a Training category selector backed by the shared Training taxonomy. */
 export default function TrainingTaxonomyField({
@@ -44,6 +45,7 @@ export default function TrainingTaxonomyField({
   onRetry?: () => void;
 }) {
   const [customOtherValue, setCustomOtherValue] = useState("");
+  const { t } = useTranslation("enterpriseTrainings");
   const category = categories.find((item) => item.parent_id === null && item.name === categoryValue);
   const options = field === "category"
     ? categories.filter((item) => item.parent_id === null)
@@ -61,7 +63,7 @@ export default function TrainingTaxonomyField({
   };
 
   return (
-    <div className="block text-sm font-semibold text-[#06201c]">
+    <div className="block min-w-0 break-words text-sm font-semibold text-[#06201c]">
       <label htmlFor={`training-field-${field}`}>
         {label}{required ? <span className="text-[#b42318]"> *</span> : null}
       </label>
@@ -78,10 +80,10 @@ export default function TrainingTaxonomyField({
           {categoriesLoading
             ? "Loading Training categories..."
             : field === "category"
-              ? "Choose a category"
+              ? t("taxonomy.chooseCategory")
               : categoryValue
-                ? "Choose a subcategory"
-                : "Choose a category first"}
+                ? t("taxonomy.chooseSubcategory")
+                : t("taxonomy.chooseCategoryFirst")}
         </option>
         {hasLegacyValue ? <option value={value}>{value} (existing value)</option> : null}
         {options.map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}

@@ -143,6 +143,7 @@ export interface TrainingDetail extends TrainingListItem {
   enterprise_name: string | null;
   promotional_video?: string | null;
   gallery_images?: string[] | null;
+  prerequisites?: string | null;
   // --- Missing fields & schema gaps (GET /api/v1/trainings/{id}) ---
   recurring?: string | boolean | Record<string, unknown> | null;
   schedule_exceptions?: unknown[] | null;
@@ -162,7 +163,6 @@ export interface TrainingDetail extends TrainingListItem {
   check_in?: boolean | null;
   pass_code?: string | null;
   qr_payload?: string | null;
-  release_rule?: { type?: string | null } | Record<string, unknown> | null;
   discussions?: unknown[] | null;
   announcements?: unknown[] | null;
   moderation_history?: unknown[] | null;
@@ -238,6 +238,7 @@ export interface CreateTrainingPayload {
   instructor_name?: string | null;
   instructor_bio?: string | null;
   requirements?: string | null;
+  prerequisites?: string | null;
   learning_objectives?: string[] | null;
   primary_image?: string | null;
   gallery_images?: unknown[] | null;
@@ -264,6 +265,8 @@ export interface CreateTrainingPayload {
   coupon_code?: string | null;
   requires_approval?: boolean;
   access_duration_days?: string | null;
+  access_expiry_type?: string | null;
+  access_expiry_days?: string | null;
   level?: string | null;
   language?: string | null;
   status?: string;
@@ -287,7 +290,6 @@ export interface CreateTrainingPayload {
   check_in?: boolean | null;
   pass_code?: string | null;
   qr_payload?: string | null;
-  release_rule?: { type?: string | null } | Record<string, unknown> | null;
   discussions?: unknown[] | null;
   announcements?: unknown[] | null;
   moderation_history?: unknown[] | null;

@@ -3,6 +3,7 @@ export type EventCompositeSubfieldDefinition = {
   key: string;
   label: string;
   group?: string;
+  requiredByDomain?: boolean;
 };
 
 /** Semantic metadata used to configure and preview composite Event core fields. */

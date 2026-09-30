@@ -1,15 +1,19 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 const SESSION_COOKIE_NAME = "ihp_super_admin_refresh";
 const REMEMBER_ME_COOKIE_NAME = "ihp_super_admin_remember_me";
 const REMEMBER_ME_MAX_AGE = 60 * 60 * 24 * 30;
-const SUPER_ADMIN_AUTH_API_BASE_URL = process.env.SUPER_ADMIN_AUTH_API_BASE_URL;
+const SUPER_ADMIN_AUTH_API_BASE_URL = process.env.SUPER_ADMIN_AUTH_API_BASE_URL?.replace(/\/+$/, "");
 
 type RefreshResponse = { tokens: { accessToken: string; refreshToken?: string } };
 type SuperAdminAccessToken = { accessToken: string; rotatedRefreshToken?: string; rememberMe: boolean };
+
+const refreshRequests = new Map<string, Promise<SuperAdminAccessToken>>();
+const REFRESH_REQUEST_CACHE_MS = 1_000;
 
 /** Error returned by the dedicated Super Admin gateway after server-side normalization. */
 export class SuperAdminServerError extends Error {
@@ -73,14 +77,7 @@ function refreshFailure(status: number): SuperAdminServerError {
   return gatewayError(status);
 }
 
-/** Obtains the short-lived dedicated access token without exposing it outside this server module. */
-async function getSuperAdminAccessToken(): Promise<SuperAdminAccessToken> {
-  if (!SUPER_ADMIN_AUTH_API_BASE_URL) throw new SuperAdminServerError(503, "Super Admin authentication is not configured.");
-  const requestCookies = await cookies();
-  const refreshToken = requestCookies.get(SESSION_COOKIE_NAME)?.value;
-  if (!refreshToken) throw new SuperAdminServerError(401, "Super Admin authentication is required.");
-  const rememberMe = requestCookies.get(REMEMBER_ME_COOKIE_NAME)?.value === "true";
-
+async function refreshSuperAdminAccessToken(refreshToken: string, rememberMe: boolean): Promise<SuperAdminAccessToken> {
   let refreshResponse: Response;
   try {
     refreshResponse = await fetch(`${SUPER_ADMIN_AUTH_API_BASE_URL}/api/v1/auth/refresh`, {
@@ -104,6 +101,32 @@ async function getSuperAdminAccessToken(): Promise<SuperAdminAccessToken> {
     rememberMe,
     ...(typeof refresh.tokens.refreshToken === "string" && refresh.tokens.refreshToken ? { rotatedRefreshToken: refresh.tokens.refreshToken } : {}),
   };
+}
+
+/** Obtains the short-lived dedicated access token without exposing it outside this server module. */
+async function getSuperAdminAccessToken(): Promise<SuperAdminAccessToken> {
+  if (!SUPER_ADMIN_AUTH_API_BASE_URL) throw new SuperAdminServerError(503, "Super Admin authentication is not configured.");
+  const requestCookies = await cookies();
+  const refreshToken = requestCookies.get(SESSION_COOKIE_NAME)?.value;
+  if (!refreshToken) throw new SuperAdminServerError(401, "Super Admin authentication is required.");
+  const rememberMe = requestCookies.get(REMEMBER_ME_COOKIE_NAME)?.value === "true";
+  const refreshKey = createHash("sha256").update(refreshToken).digest("hex");
+  const existingRequest = refreshRequests.get(refreshKey);
+  if (existingRequest) return existingRequest;
+
+  const refreshRequest = refreshSuperAdminAccessToken(refreshToken, rememberMe);
+  refreshRequests.set(refreshKey, refreshRequest);
+  void refreshRequest.then(
+    () => {
+      setTimeout(() => {
+        if (refreshRequests.get(refreshKey) === refreshRequest) refreshRequests.delete(refreshKey);
+      }, REFRESH_REQUEST_CACHE_MS);
+    },
+    () => {
+      if (refreshRequests.get(refreshKey) === refreshRequest) refreshRequests.delete(refreshKey);
+    },
+  );
+  return refreshRequest;
 }
 
 /** Calls a dedicated Super Admin endpoint with a server-only bearer token and preserves its HTTP result. */

@@ -18,7 +18,7 @@ type SectionProps = {
   preserveLegacyCategoryValues?: boolean;
 };
 
-const inputClass = "mt-1.5 h-11 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]";
+const inputClass = "mt-1.5 h-11 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm font-normal text-[#06201c] outline-none focus:border-[#1f6a58]";
 const labelClass = "block text-sm font-semibold text-[#06201c]";
 
 function FieldError({ error }: { error?: string[] }) {
@@ -120,14 +120,14 @@ export function TrainingDeliverySection({ values, update, errors }: SectionProps
       {(values.delivery_mode === "physical" || values.delivery_mode === "hybrid" || values.delivery_mode === "in_person" || values.delivery_mode === "blended") ? (
         <>
           <div className="grid gap-4 md:grid-cols-2">
-            <label className={labelClass}>Venue<input value={values.venue} onChange={(event) => update("venue", event.target.value)} placeholder="e.g. Main Hall" className={inputClass} /></label>
-            <label className={labelClass}>Address<input value={values.address} onChange={(event) => update("address", event.target.value)} placeholder="Full address" className={inputClass} /></label>
+            <label className={labelClass}>Venue<input id="training-field-venue" value={values.venue} onChange={(event) => update("venue", event.target.value)} placeholder="e.g. Main Hall" className={inputClass} /></label>
+            <label className={labelClass}>Address<input id="training-field-address" value={values.address} onChange={(event) => update("address", event.target.value)} placeholder="Full address" className={inputClass} /></label>
           </div>
         </>
       ) : null}
       {(values.delivery_mode === "online" || values.delivery_mode === "hybrid" || values.delivery_mode === "instructor_led" || values.delivery_mode === "blended") ? (
         <>
-          <label className={labelClass}>Meeting link<input type="url" value={values.meeting_link} onChange={(event) => update("meeting_link", event.target.value)} placeholder="https://..." className={inputClass} /></label>
+          <label className={labelClass}>Meeting link<input id="training-field-meeting_link" type="url" value={values.meeting_link} onChange={(event) => update("meeting_link", event.target.value)} placeholder="https://..." className={inputClass} /></label>
           <label className={labelClass}>Delivery instructions<textarea value={values.delivery_instructions} onChange={(event) => update("delivery_instructions", event.target.value)} rows={2} placeholder="How to join, setup, etc." className={`${inputClass} h-auto py-3`} /></label>
         </>
       ) : null}
@@ -265,8 +265,8 @@ export function TrainingPricingSection({ values, update }: SectionProps) {
       {values.pricing_type === "paid" ? (
         <>
           <div className="grid gap-4 md:grid-cols-2">
-            <label className={labelClass}>Price<input value={values.price} onChange={(event) => update("price", event.target.value)} className={inputClass} /></label>
-            <label className={labelClass}>Currency<input value={values.currency} onChange={(event) => update("currency", event.target.value)} className={inputClass} /></label>
+            <label className={labelClass}>Price<input id="training-field-price" value={values.price} onChange={(event) => update("price", event.target.value)} className={inputClass} /></label>
+            <label className={labelClass}>Currency<input id="training-field-currency" value={values.currency} onChange={(event) => update("currency", event.target.value)} className={inputClass} /></label>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <label className={labelClass}>Promo price<input value={values.promo_price} onChange={(event) => update("promo_price", event.target.value)} className={inputClass} /></label>
@@ -283,17 +283,13 @@ export function TrainingCapacitySection({ values, update }: SectionProps) {
   return (
     <section className="space-y-5">
       <SectionHeading title="Capacity & Registration" description="Control who gets in and for how long they keep access." tip="‘Require approval’ is great for coaching cohorts. Access expiry auto-revokes content — great for certifications." />
-      <label className={labelClass}>Capacity<input value={values.capacity} onChange={(event) => update("capacity", event.target.value)} className={inputClass} /></label>
+      <label className={labelClass}>Capacity<input id="training-field-capacity" value={values.capacity} onChange={(event) => update("capacity", event.target.value)} className={inputClass} /></label>
       <label className="flex items-center gap-3 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={values.requires_approval} onChange={(event) => update("requires_approval", event.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Require approval for enrolment</label>
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Access duration (days)<input value={values.access_duration_days} onChange={(event) => update("access_duration_days", event.target.value)} placeholder="e.g. 90" className={inputClass} /></label>
         <label className={labelClass}>Access expiry<select value={values.access_expiry_type} onChange={(e) => update("access_expiry_type", e.target.value)} className={inputClass}><option value="never">Never</option><option value="date">By date</option><option value="days">After N days</option><option value="enrolment_day">Enrolment day + N</option></select></label>
       </div>
       <label className={labelClass}>Expiry days<input value={values.access_expiry_days} onChange={(event) => update("access_expiry_days", event.target.value)} placeholder="e.g. 90" className={inputClass} /></label>
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="flex items-center gap-3 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={values.group_enrolment} onChange={(e) => update("group_enrolment", e.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Group enrolment</label>
-        <label className={labelClass}>Max group size<input value={values.max_group_size} onChange={(e) => update("max_group_size", e.target.value)} placeholder="e.g. 5" className={inputClass} /></label>
-      </div>
     </section>
   );
 }
@@ -356,20 +352,12 @@ export function TrainingMediaSection({ values, update }: SectionProps) {
   );
 }
 
-/** Additional Configuration — prerequisites, release, randomise, publication. */
+/** Additional Configuration — informational prerequisites and course resources. */
 export function TrainingCourseBuilderSection({ values, update, errors }: SectionProps) {
   return (
     <section className="space-y-5">
-      <SectionHeading title="Additional Configuration" description="Fine-tune the learning journey — when content unlocks and how it’s completed." tip="Prerequisites = ‘Complete Module 1 first’. Release = ‘Enrolment day + 3’ for drip content." />
+      <SectionHeading title="Additional Configuration" description="Share prerequisite information and course-related notes with learners." />
       <label className={labelClass}>Prerequisites<textarea id="training-field-prerequisites" value={values.prerequisites} onChange={(e) => update("prerequisites", e.target.value)} placeholder="e.g. Complete Module 1" rows={2} className={`${inputClass} h-auto py-3`} /><FieldError error={errors.prerequisites} /></label>
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className={labelClass}>Release rule<select value={values.release_rule} onChange={(e) => update("release_rule", e.target.value)} className={inputClass}><option value="immediate">Immediate</option><option value="date">By date</option><option value="enrolment_day">Enrolment day</option><option value="previous_lesson">Previous lesson</option></select></label>
-        <label className={labelClass}>Scheduled publication<input type="datetime-local" value={values.scheduled_publication} onChange={(e) => update("scheduled_publication", e.target.value)} className={inputClass} /></label>
-      </div>
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="flex items-center gap-3 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={values.randomise} onChange={(e) => update("randomise", e.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Randomise questions/answers</label>
-        <label className="flex items-center gap-3 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={values.is_mandatory} onChange={(e) => update("is_mandatory", e.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Mandatory lessons</label>
-      </div>
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Notes PDF URL<input type="url" value={values.notes_pdf_url} onChange={(e) => update("notes_pdf_url", e.target.value)} placeholder="https://…" className={inputClass} /></label>
         <label className={labelClass}>Session mode<input value={values.session_mode} onChange={(e) => update("session_mode", e.target.value)} placeholder="e.g. live, cohort" className={inputClass} /></label>

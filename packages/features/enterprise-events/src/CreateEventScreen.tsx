@@ -133,7 +133,11 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     const candidates = pendingFocusField === "media"
       ? ["primary_image", "gallery_images", "videos", "documents"]
       : [pendingFocusField];
+    const fieldWrapper = [...document.querySelectorAll<HTMLElement>("[data-event-field]")]
+      .find((element) => candidates.includes(element.dataset.eventField ?? ""));
     const element = candidates.map((key) => document.getElementById(fieldDomId(key))).find(Boolean)
+      ?? fieldWrapper?.querySelector<HTMLElement>("input, select, textarea, button")
+      ?? fieldWrapper
       ?? document.querySelector<HTMLElement>("main [aria-invalid='true']")
       ?? document.querySelector<HTMLElement>("main input, main select, main textarea, main button");
     if (!element) return;

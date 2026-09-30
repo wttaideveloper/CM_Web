@@ -1,5 +1,7 @@
 import { formConfigurationCopy as copy } from "../constants/form-configuration-copy";
 import { getEventCompositeFieldDefinition } from "./event-composite-field-definitions";
+import { getTrainingCompositeFieldDefinition } from "./training-composite-field-definitions";
+import { TRAINING_DELIVERY_MODE_OPTIONS } from "./training-delivery-mode-options";
 import type { ConfiguredField, CoreFieldRegistryItem, FormConfiguration, FormSection } from "./form-configuration.types";
 import { EVENT_DELIVERY_BUNDLE } from "./event-delivery-bundle";
 
@@ -36,13 +38,11 @@ export function createSeededFields(registry: readonly CoreFieldRegistryItem[], s
     { key: "duration", section: "section-schedule", placeholder: "e.g. 4 weeks", label: "Duration" },
     { key: "access_duration_days", section: "section-schedule", placeholder: "e.g. 90", label: "Access duration (days)" },
     // 3. Location & Host — mirrors TrainingDeliverySection:54 (hybrid/physical/online)
-    { key: "delivery_mode", section: "section-location", renderer: "select", options: ["hybrid", "physical", "online", "self_paced", "instructor_led", "blended"], label: "Delivery Mode" },
+    { key: "delivery_mode", section: "section-location", renderer: "select", options: TRAINING_DELIVERY_MODE_OPTIONS.map((option) => option.value), label: "Delivery Mode" },
     { key: "course_type", section: "section-location", placeholder: "e.g. Workshop", label: "Course Type" },
     { key: "location_id", section: "section-location", placeholder: "Select or paste location ID", label: "Location" },
     { key: "venue", section: "section-location", placeholder: "e.g. Main Hall", label: "Venue" },
-    { key: "address", section: "section-location", placeholder: "Full address", label: "Address" },
     { key: "meeting_link", section: "section-location", placeholder: "https://...", renderer: "url", label: "Meeting link" },
-    { key: "delivery_instructions", section: "section-location", placeholder: "How to join, setup, etc.", renderer: "textarea", label: "Delivery instructions" },
     { key: "instructor_id", section: "section-location", label: "Instructor" },
     { key: "instructor_name", section: "section-location", placeholder: "Display name", label: "Instructor name" },
     { key: "instructor_bio", section: "section-location", renderer: "textarea", placeholder: "Short bio", label: "Instructor bio" },
@@ -60,19 +60,10 @@ export function createSeededFields(registry: readonly CoreFieldRegistryItem[], s
     { key: "requires_approval", section: "section-capacity", renderer: "checkbox", label: "Requires approval" },
     { key: "access_expiry_type", section: "section-capacity", renderer: "select", options: ["never", "date", "days", "enrolment_day"], label: "Access expiry" },
     { key: "access_expiry_days", section: "section-capacity", placeholder: "e.g. 90", label: "Expiry days" },
-    { key: "group_enrolment", section: "section-capacity", renderer: "checkbox", label: "Group enrolment" },
-    { key: "max_group_size", section: "section-capacity", placeholder: "e.g. 5", label: "Max group size" },
     // 6. Images & Media — mirrors TrainingMediaSection:178
     { key: "primary_image", section: "section-media", renderer: "url", placeholder: "https://…", label: "Primary Image" },
-    { key: "gallery_images", section: "section-media", renderer: "url", placeholder: "https://…", label: "Gallery images" },
-    { key: "documents", section: "section-media", renderer: "url", placeholder: "https://…", label: "Documents" },
-    { key: "promotional_video", section: "section-media", renderer: "url", placeholder: "https://…", label: "Videos" },
     // 7. Additional Configuration — mirrors TrainingCourseBuilderSection:192
     { key: "prerequisites", section: "section-additional", placeholder: "e.g. Complete Module 1", renderer: "textarea", label: "Prerequisites" },
-    { key: "release_rule", section: "section-additional", renderer: "select", options: ["immediate", "date", "enrolment_day", "previous_lesson"], label: "Release rule" },
-    { key: "scheduled_publication", section: "section-additional", renderer: "datetime", label: "Scheduled publication" },
-    { key: "randomise", section: "section-additional", renderer: "checkbox", label: "Randomise" },
-    { key: "is_mandatory", section: "section-additional", renderer: "checkbox", label: "Is mandatory" },
     { key: "faqs", section: "section-additional", placeholder: '[{"question":"...","answer":"..."}]', renderer: "textarea", label: "FAQs" },
     { key: "badges", section: "section-additional", placeholder: "Type badge and press Enter", label: "Badges" },
   ];
@@ -85,16 +76,16 @@ export function createSeededFields(registry: readonly CoreFieldRegistryItem[], s
   // Training fields: core if in registry, else custom with generic stableKey — keeps tags etc. without "Unknown core_key: tags" / "Unknown custom field: tags"
   return trainingFields.flatMap((def, index) => {
     const definition = registry.find((field) => field.key === def.key);
-    const composite = getEventCompositeFieldDefinition(def.key);
     const displayName = def.label ?? definition?.displayName ?? def.key.replaceAll("_", " ").replace(/\b\w/g, c => c.toUpperCase());
+    const composite = getTrainingCompositeFieldDefinition(def.key, displayName);
     const sectionLocalId = sections.some((section) => section.localId === def.section) ? def.section : sections[0]?.localId ?? "";
     const fieldOptions = def.options ? def.options.map((value, position) => ({ value, label: value.replaceAll("_", " "), position: position + 1 })) : [];
     if (definition) {
-      return [{ localId: `field-${def.section}-${def.key}`, serverId: null, stableKey: `core_${def.key}`, source: "core" as const, coreKey: def.key, label: displayName, sectionLocalId, position: index + 1, valueType: definition.valueType, required: def.required ?? definition.requiredByDomain, renderer: definition.defaultRenderer, placeholder: def.placeholder ?? "", helpText: def.helpText ?? "", options: fieldOptions, validation: def.validation ?? {}, ...(composite ? { compositeConfig: { enabled_fields: composite.subfields.map((subfield) => subfield.key), required_fields: [] } } : {}), enabled: true } as ConfiguredField];
+      return [{ localId: `field-${def.section}-${def.key}`, serverId: null, stableKey: `core_${def.key}`, source: "core" as const, coreKey: def.key, label: displayName, sectionLocalId, position: index + 1, valueType: definition.valueType, required: def.required ?? definition.requiredByDomain, renderer: definition.defaultRenderer, placeholder: def.placeholder ?? "", helpText: def.helpText ?? "", options: fieldOptions, validation: def.validation ?? {}, ...(composite ? { compositeConfig: { enabled_fields: composite.subfields.map((subfield) => subfield.key), required_fields: composite.subfields.filter((subfield) => subfield.requiredByDomain).map((subfield) => subfield.key) } } : {}), enabled: true } as ConfiguredField];
     }
     // Not in registry — emit as deterministic generic custom key with label Tags etc.,
     // so backend accepts it as custom (never `custom_tags`/`core_tags`) and enterprise maps via label to tags
-    return [{ localId: `field-${def.section}-${def.key}`, serverId: null, stableKey: `field-custom-${def.section}-${def.key}`, source: "custom" as const, coreKey: null, label: displayName, sectionLocalId, position: index + 1, valueType: def.renderer === "url" ? "url" : def.renderer === "datetime" ? "datetime" : def.renderer === "checkbox" ? "boolean" : "string", required: def.required ?? false, renderer: def.renderer ?? "text", placeholder: def.placeholder ?? "", helpText: def.helpText ?? "", options: fieldOptions, validation: def.validation ?? {}, ...(composite ? { compositeConfig: { enabled_fields: composite.subfields.map((subfield) => subfield.key), required_fields: [] } } : {}), enabled: true } as ConfiguredField];
+    return [{ localId: `field-${def.section}-${def.key}`, serverId: null, stableKey: `field-custom-${def.section}-${def.key}`, source: "custom" as const, coreKey: null, label: displayName, sectionLocalId, position: index + 1, valueType: def.renderer === "url" ? "url" : def.renderer === "datetime" ? "datetime" : def.renderer === "checkbox" ? "boolean" : "string", required: def.required ?? false, renderer: def.renderer ?? "text", placeholder: def.placeholder ?? "", helpText: def.helpText ?? "", options: fieldOptions, validation: def.validation ?? {}, ...(composite ? { compositeConfig: { enabled_fields: composite.subfields.map((subfield) => subfield.key), required_fields: composite.subfields.filter((subfield) => subfield.requiredByDomain).map((subfield) => subfield.key) } } : {}), enabled: true } as ConfiguredField];
   });
 }
 

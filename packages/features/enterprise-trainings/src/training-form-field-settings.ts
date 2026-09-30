@@ -38,7 +38,7 @@ function evaluateFieldVisibility(
   customValues: Record<string, unknown>,
   visited: ReadonlySet<TrainingFormField>,
 ): boolean {
-  if (visited.has(field)) return false;
+  if (field.enabled === false || visited.has(field)) return false;
   const condition = field.frontendSettings?.visibility;
   if (!condition) return true;
   const source = allFields.find((candidate) =>

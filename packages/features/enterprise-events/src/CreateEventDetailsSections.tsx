@@ -8,7 +8,7 @@ type UpdateForm = <Key extends keyof CreateEventFormValues>(key: Key, value: Cre
 
 type SectionProps = { values: CreateEventFormValues; update: UpdateForm; errors: Record<string, string[]> };
 
-const inputClass = "mt-1.5 h-11 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]";
+const inputClass = "mt-1.5 h-11 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm font-normal text-[#06201c] outline-none focus:border-[#1f6a58]";
 const labelClass = "block text-sm font-semibold text-[#06201c]";
 
 function FieldError({ error, id }: { error?: string[]; id?: string }) {
@@ -23,12 +23,12 @@ export function BasicInformationSection({ values, update, errors }: SectionProps
   };
 
   return <section className="space-y-5"><SectionHeading title="Basic Information" description="Describe the event and its organizer." />
-    <label className={labelClass}>Event name<input value={values.title} onChange={(event) => update("title", event.target.value)} className={inputClass} /> <FieldError error={errors.title} /></label>
-    <label className={labelClass}>Description<textarea value={values.description} onChange={(event) => update("description", event.target.value)} rows={5} className={`${inputClass} h-auto py-3`} /> <FieldError error={errors.description} /></label>
+    <label className={labelClass}>Event name<input id="event-field-title" value={values.title} onChange={(event) => update("title", event.target.value)} className={inputClass} /> <FieldError error={errors.title} /></label>
+    <label className={labelClass}>Description<textarea id="event-field-description" value={values.description} onChange={(event) => update("description", event.target.value)} rows={5} className={`${inputClass} h-auto py-3`} /> <FieldError error={errors.description} /></label>
     <div className="grid gap-4 md:grid-cols-2"><TextField label="Category" field="category" values={values} update={update} errors={errors} placeholder="Choose or enter an event category" /><TextField label="Subcategory" field="subcategory" values={values} update={update} errors={errors} placeholder="Choose or enter an event subcategory" /></div>
     <label className={labelClass}>Tags<input onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addTag(event.currentTarget.value); event.currentTarget.value = ""; } }} placeholder="Type a tag and press Enter" aria-describedby="event-tags-help" className={inputClass} /><span id="event-tags-help" className="mt-1 block text-xs font-normal text-[#52736a]">Add one tag at a time; press Enter after each tag. Select a tag to remove it.</span></label>
     <div className="flex flex-wrap gap-2">{values.tags.map((tag) => <button key={tag} type="button" onClick={() => update("tags", values.tags.filter((item) => item !== tag))} className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{tag} ×</button>)}</div>
-    <div className="grid gap-4 md:grid-cols-2"><label className={labelClass}>Organizer / Business<input value={values.organiser_name} readOnly className={`${inputClass} cursor-not-allowed bg-[#f1f4f3]`} /><FieldError error={errors.organiser_name} /></label><TextField label="Organizer contact" field="organiser_contact" values={values} update={update} errors={errors} /></div>
+    <div className="grid gap-4 md:grid-cols-2"><label className={labelClass}>Organizer / Business<input id="event-field-organiser_name" value={values.organiser_name} readOnly className={`${inputClass} cursor-not-allowed bg-[#f1f4f3]`} /><FieldError error={errors.organiser_name} /></label><TextField label="Organizer contact" field="organiser_contact" values={values} update={update} errors={errors} /></div>
   </section>;
 }
 
@@ -48,7 +48,7 @@ type LocationSectionProps = SectionProps & { locations: EnterpriseLocationDto[];
 export function LocationAndHostSection({ values, update, errors, locations, selectedLocationId, setSelectedLocationId, isLoadingLocations, locationError }: LocationSectionProps) {
   return <section className="space-y-5"><SectionHeading title="Location & Host" description="Choose an existing enterprise location and describe the venue." />
     <label className={labelClass}>Delivery mode<select value={values.delivery_mode} className={inputClass} disabled><option value={values.delivery_mode}>{values.delivery_mode === "in_person" ? "In person" : values.delivery_mode}</option></select></label>
-    <label className={labelClass}>Enterprise location<select value={selectedLocationId} onChange={(event) => setSelectedLocationId(event.target.value)} className={inputClass} disabled={isLoadingLocations || Boolean(locationError)}><option value="">{isLoadingLocations ? "Loading locations..." : "Select a location"}</option>{locations.map((location) => <option key={location.id} value={location.id}>{location.location_name} — {location.city}</option>)}</select><FieldError error={errors.location_id} />{locationError ? <p className="mt-1 text-xs font-medium text-[#b42318]">{locationError}</p> : null}</label>
+    <label className={labelClass}>Enterprise location<select id="event-field-location_id" value={selectedLocationId} onChange={(event) => setSelectedLocationId(event.target.value)} className={inputClass} disabled={isLoadingLocations || Boolean(locationError)}><option value="">{isLoadingLocations ? "Loading locations..." : "Select a location"}</option>{locations.map((location) => <option key={location.id} value={location.id}>{location.location_name} — {location.city}</option>)}</select><FieldError error={errors.location_id} />{locationError ? <p className="mt-1 text-xs font-medium text-[#b42318]">{locationError}</p> : null}</label>
     <div className="grid gap-4 md:grid-cols-2"><TextField label="Venue name" field="venue_name" values={values} update={update} errors={errors} placeholder="e.g. Main Hall" /><TextField label="City" field="venue_city" values={values} update={update} errors={errors} placeholder="e.g. Chennai" /></div>
     <TextField label="Venue address" field="venue_address" values={values} update={update} errors={errors} placeholder="e.g. 123 Park Street" />
     <div className="grid gap-4 md:grid-cols-2"><TextField label="Latitude (optional)" field="venue_latitude" values={values} update={update} errors={errors} type="number" /><TextField label="Longitude (optional)" field="venue_longitude" values={values} update={update} errors={errors} type="number" /></div>

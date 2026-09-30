@@ -5911,7 +5911,7 @@ export default function EnterpriseMessagesScreen() {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={handleCloseConversation}
+                          onClick={() => handleCloseConversation()}
                           className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e5df] bg-white text-[#52736a] shadow-sm transition hover:border-[#1f6a58] hover:text-[#1f6a58]"
                           aria-label="Close conversation"
                           >

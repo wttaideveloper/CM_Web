@@ -1165,8 +1165,6 @@ function EnrolmentsSection({ trainingId }: { trainingId: string }) {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [enrolName, setEnrolName] = useState("");
   const [enrolEmail, setEnrolEmail] = useState("");
-  const [isGroupEnrol, setIsGroupEnrol] = useState(false);
-  const [groupSize, setGroupSize] = useState("");
 
   const enrolmentsQuery = useQuery({
     queryKey: ["trainings", trainingId, "enrolments"],
@@ -1175,8 +1173,8 @@ function EnrolmentsSection({ trainingId }: { trainingId: string }) {
   });
 
   const enrolMutation = useMutation({
-    mutationFn: () => enrolInTraining(trainingId, { participant_name: enrolName.trim(), participant_email: enrolEmail.trim(), group_enrol: isGroupEnrol || undefined, max_group_size: groupSize.trim() || undefined }),
-    onSuccess: () => { setEnrolName(""); setEnrolEmail(""); setIsGroupEnrol(false); setGroupSize(""); setFeedback("Enrolment submitted."); void Promise.all([queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "enrolments"] }), queryClient.invalidateQueries({ queryKey: ["trainings", "list"] })]); },
+    mutationFn: () => enrolInTraining(trainingId, { participant_name: enrolName.trim(), participant_email: enrolEmail.trim() }),
+    onSuccess: () => { setEnrolName(""); setEnrolEmail(""); setFeedback("Enrolment submitted."); void Promise.all([queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "enrolments"] }), queryClient.invalidateQueries({ queryKey: ["trainings", "list"] })]); },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to enrol participant."),
   });
 
@@ -1218,8 +1216,6 @@ function EnrolmentsSection({ trainingId }: { trainingId: string }) {
       <form className="mb-4 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); if (enrolName.trim() && enrolEmail.trim()) enrolMutation.mutate(); }}>
         <input value={enrolName} onChange={(e) => setEnrolName(e.target.value)} placeholder="Participant name" className="h-10 flex-1 min-w-[140px] rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm outline-none focus:border-[#1f6a58]" />
         <input value={enrolEmail} onChange={(e) => setEnrolEmail(e.target.value)} placeholder="Participant email" type="email" className="h-10 flex-1 min-w-[180px] rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm outline-none focus:border-[#1f6a58]" />
-        <label className="flex items-center gap-2 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={isGroupEnrol} onChange={(e) => setIsGroupEnrol(e.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Group</label>
-        {isGroupEnrol ? <input value={groupSize} onChange={(e) => setGroupSize(e.target.value)} placeholder="Group size" className="h-10 w-20 rounded-xl border border-[#d7e5df] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]" /> : null}
         <button type="submit" disabled={enrolMutation.isPending || !enrolName.trim() || !enrolEmail.trim()} className="h-10 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white disabled:opacity-60">{enrolMutation.isPending ? "Enrolling..." : "Enrol User"}</button>
       </form>
       {enrolmentsQuery.isLoading ? <p className="text-sm text-[#52736a]">Loading enrolments...</p> : null}

@@ -6,10 +6,12 @@ import { isTrainingFormFieldVisible } from "./training-form-field-settings";
 import TrainingMediaField from "./TrainingMediaField";
 import TrainingTaxonomyField from "./TrainingTaxonomyField";
 import type { TrainingCategoryOption } from "./training-categories.service";
+import { getEnabledTrainingDeliverySubfields, getTrainingDeliveryCompositeKey, isTrainingDeliveryCompositeChild } from "./training-delivery-fields";
 
 type UpdateForm = <Key extends keyof CreateTrainingFormValues>(key: Key, value: CreateTrainingFormValues[Key]) => void;
 
-const inputClass = "mt-1.5 h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]";
+const inputClass = "mt-1.5 h-10 w-full min-w-0 max-w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm font-normal text-[#06201c] outline-none focus:border-[#1f6a58]";
+const TRAINING_DELIVERY_MODE_OPTIONS = ["hybrid", "physical", "online", "self_paced"] as const;
 
 const CORE_FIELDS: Record<string, keyof CreateTrainingFormValues> = {
   title: "title",
@@ -49,12 +51,6 @@ const CORE_FIELDS: Record<string, keyof CreateTrainingFormValues> = {
   requires_approval: "requires_approval",
   access_duration_days: "access_duration_days",
   prerequisites: "prerequisites",
-  release_rule: "release_rule",
-  randomise: "randomise",
-  scheduled_publication: "scheduled_publication",
-  is_mandatory: "is_mandatory",
-  group_enrolment: "group_enrolment",
-  max_group_size: "max_group_size",
   access_expiry_type: "access_expiry_type",
   access_expiry_days: "access_expiry_days",
   location_id: "location_id",
@@ -148,7 +144,9 @@ export default function ConfiguredCreateTrainingSection({
   preserveLegacyCategoryValues: boolean;
 }) {
   const fields = [...section.fields]
+    .filter((field) => field.enabled !== false)
     .filter((field) => !DELIVERY_FIELDS_REMOVED_FROM_TRAINING.includes(field.key))
+    .filter((field) => !isTrainingDeliveryCompositeChild(field, allFields))
     .filter((field) => isDeliveryFieldApplicable(field, values.delivery_mode))
     .filter((field) => isPricingFieldApplicable(field, values.pricing_type))
     .filter((field) => isTrainingFormFieldVisible(field, allFields, values, customValues))
@@ -159,7 +157,7 @@ export default function ConfiguredCreateTrainingSection({
     <section className="space-y-4">
       <div>
         <h2 className="text-xl font-bold text-[#06201c]">{section.title || "Section"}</h2>
-        {section.description ? <p className="mt-1 text-sm text-[#52736a]">{section.description}</p> : null}
+        {section.description ? <p className="mt-1 break-words text-sm text-[#52736a]">{section.description}</p> : null}
         {sectionTip ? <p className="mt-2 rounded-lg border border-[#e1ebe6] bg-white px-3 py-2 text-xs leading-4 text-[#1f6a58]"><span className="font-semibold">Tip:</span> {sectionTip}</p> : null}
       </div>
       {isPricingSection ? (
@@ -180,9 +178,9 @@ export default function ConfiguredCreateTrainingSection({
           <p className="font-bold text-[#0b3d66]">Online mode only needs the meeting link — Google Meet or Zoom.</p>
         </div>
       ) : null}
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid min-w-0 gap-4 md:grid-cols-[repeat(2,minmax(0,1fr))]">
         {fields.map((field) => (
-          <div key={field.id} data-training-field={field.key}>
+          <div key={field.id} className="min-w-0 break-words" data-training-field={field.key}>
             <ConfiguredField
               field={field}
               values={values}
@@ -234,6 +232,41 @@ function ConfiguredField({
   const coreField = CORE_FIELDS[key] ?? (field.apiKey ? CORE_FIELDS[field.apiKey] : undefined) ?? (field.stable_key ? CORE_FIELDS[field.stable_key] : undefined);
   const deliveryMode = values.delivery_mode;
   if (!isPricingFieldApplicable(field, values.pricing_type)) return null;
+  const deliveryComposite = getTrainingDeliveryCompositeKey(field);
+  if (deliveryComposite) {
+    const requiredFields = new Set(field.frontendSettings?.requiredFields ?? []);
+    const subfields = getEnabledTrainingDeliverySubfields(field, deliveryComposite);
+    return (
+      <fieldset className="min-w-0 space-y-3 md:col-span-2">
+        <legend className="text-sm font-semibold text-[#06201c]">{field.label}{field.required ? " *" : ""}</legend>
+        {field.helpText ? <p className="-mt-2 text-xs font-normal text-[#52736a]">{field.helpText}</p> : null}
+        <div className="grid min-w-0 gap-3 md:grid-cols-2">
+          {subfields.map((subfield) => {
+            const required = Boolean(subfield.requiredByDomain || requiredFields.has(subfield.key));
+            const label = deliveryComposite === "venue" && subfield.key === "name" ? field.label : subfield.label;
+            return (
+              <label key={subfield.key} className="min-w-0 text-sm font-semibold text-[#06201c]">
+                {label}{required ? " *" : ""}
+                {subfield.type === "select" ? (
+                  <select id={`training-field-${subfield.valueKey}`} value={scalar(values[subfield.valueKey as keyof CreateTrainingFormValues])} onChange={(event) => update(subfield.valueKey as keyof CreateTrainingFormValues, event.target.value as never)} className={inputClass}>
+                    <option value="">Select a provider</option>
+                    <option value="zoom">Zoom</option>
+                    <option value="meet">Google Meet</option>
+                    <option value="teams">Microsoft Teams</option>
+                  </select>
+                ) : subfield.type === "textarea" ? (
+                  <textarea id={`training-field-${subfield.valueKey}`} value={scalar(values[subfield.valueKey as keyof CreateTrainingFormValues])} onChange={(event) => update(subfield.valueKey as keyof CreateTrainingFormValues, event.target.value as never)} rows={2} className={`${inputClass} h-auto py-2`} />
+                ) : (
+                  <input id={`training-field-${subfield.valueKey}`} type={subfield.type} value={scalar(values[subfield.valueKey as keyof CreateTrainingFormValues])} onChange={(event) => update(subfield.valueKey as keyof CreateTrainingFormValues, event.target.value as never)} placeholder={field.placeholder} className={inputClass} />
+                )}
+                {errors[subfield.valueKey]?.[0] ? <p className="mt-1 text-xs font-normal text-[#b42318]">{errors[subfield.valueKey][0]}</p> : null}
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+    );
+  }
   // Core field - bind to values
   if (coreField) {
     const value = coreField === "tags" ? values.tags.join(", ") : Array.isArray((values as unknown as Record<string, unknown>)[coreField]) ? ((values as unknown as Record<string, unknown>)[coreField] as string[]).join(", ") : scalar((values as unknown as Record<string, unknown>)[coreField]);
@@ -404,17 +437,18 @@ function ConfiguredField({
       const LANGUAGE_NAMES: Record<string, string> = { en: "English", hi: "Hindi", es: "Spanish", fr: "French" };
       const isDelivery = coreField === "delivery_mode";
       const isLang = coreField === "language";
-      const visibleOptions = isDelivery ? options.filter((opt) => opt === "online" || opt === "physical" || opt === "hybrid" || opt === "self_paced") : options;
-      if (isDelivery && !visibleOptions.includes("self_paced")) visibleOptions.push("self_paced");
-      if (isDelivery && value && !visibleOptions.includes(value)) visibleOptions.push(value);
+      const visibleOptions = isDelivery ? [...TRAINING_DELIVERY_MODE_OPTIONS] : options;
+      const isUnsupportedDeliveryValue = isDelivery && Boolean(value) && !visibleOptions.includes(value);
       const langOptions = isLang ? [...new Set(visibleOptions.map((opt) => LANGUAGE_NAMES[opt.toLowerCase()] ?? opt))] : visibleOptions;
-      const selectValue = isDelivery && !value ? "self_paced" : isLang ? (LANGUAGE_NAMES[(value || "").toLowerCase()] ?? value) : value;
+      const selectValue = isUnsupportedDeliveryValue ? "" : isDelivery && !value ? "self_paced" : isLang ? (LANGUAGE_NAMES[(value || "").toLowerCase()] ?? value) : value;
       const shownOptions = isLang ? langOptions : visibleOptions;
       return (
         <label className="block text-sm font-semibold text-[#06201c]">
           {field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}
           <select value={selectValue} onChange={(event) => { setValue(event.target.value); }} className={inputClass}>
-            {isDelivery ? null : <option value="">Select an option</option>}
+            {isDelivery
+              ? isUnsupportedDeliveryValue ? <option value="" disabled>Select a supported delivery mode</option> : null
+              : <option value="">Select an option</option>}
             {shownOptions.map((opt) => <option key={opt} value={opt}>{isDelivery ? (DELIVERY_LABELS[opt] ?? opt) : opt}</option>)}
           </select>
           {error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}

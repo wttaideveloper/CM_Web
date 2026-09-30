@@ -43,12 +43,6 @@ export interface CreateTrainingFormValues {
   requires_approval: boolean;
   access_duration_days: string;
   prerequisites: string;
-  release_rule: string;
-  randomise: boolean;
-  scheduled_publication: string;
-  is_mandatory: boolean;
-  group_enrolment: boolean;
-  max_group_size: string;
   access_expiry_type: string;
   access_expiry_days: string;
   location_id: string;
@@ -127,12 +121,6 @@ export function createEmptyTrainingForm(): CreateTrainingFormValues {
     requires_approval: false,
     access_duration_days: "",
     prerequisites: "",
-    release_rule: "immediate",
-    randomise: false,
-    scheduled_publication: "",
-    is_mandatory: false,
-    group_enrolment: false,
-    max_group_size: "",
     access_expiry_type: "never",
     access_expiry_days: "",
     location_id: "",
@@ -195,11 +183,6 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
     requires_approval: record.requires_approval === true,
     access_duration_days: stringValue("access_duration_days"),
     prerequisites: stringValue("prerequisites"),
-    randomise: record.randomise === true || record.randomize === true,
-    scheduled_publication: stringValue("scheduled_publication"),
-    is_mandatory: record.is_mandatory === true || record.mandatory === true,
-    group_enrolment: record.group_enrolment === true || record.group_enrollment === true,
-    max_group_size: stringValue("max_group_size"),
     access_expiry_type: stringValue("access_expiry_type", "never"),
     access_expiry_days: stringValue("access_expiry_days"),
     location_id: stringValue("location_id"),
@@ -226,7 +209,6 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
     difficulty_level: stringValue("difficulty_level") || stringValue("difficultyLevel") || stringValue("level", "beginner"),
     offline_enabled: record.offline_enabled === true || record.offline_access_enabled === true,
     session_mode: stringValue("session_mode"),
-    release_rule: (() => { const v = record.release_rule; if (typeof v === "string") return v; if (v && typeof v === "object") return typeof (v as Record<string, unknown>).type === "string" ? (v as Record<string, unknown>).type as string : "immediate"; return "immediate"; })(),
     discussions: (() => { const v = record.discussions; return Array.isArray(v) ? JSON.stringify(v) : typeof v === "string" ? v : ""; })(),
     announcements: (() => { const v = record.announcements; return Array.isArray(v) ? JSON.stringify(v) : typeof v === "string" ? v : ""; })(),
     moderation_history: (() => { const v = record.moderation_history; return Array.isArray(v) ? JSON.stringify(v) : typeof v === "string" ? v : ""; })(),
@@ -295,14 +277,12 @@ export function buildCreateTrainingPayload(values: CreateTrainingFormValues, ten
     coupon_code: isPaid ? values.coupon_code.trim() || null : null,
     requires_approval: values.requires_approval,
     access_duration_days: values.access_duration_days.trim() || null,
+    access_expiry_type: values.access_expiry_type || null,
+    access_expiry_days: values.access_expiry_days.trim() || null,
 location_id: isVenue ? values.location_id.trim() || null : null,
     level: values.level || values.difficulty_level || null,
     language: values.language || null,
     prerequisites: values.prerequisites.trim() || null,
-release_rule: values.release_rule.trim() ? { type: values.release_rule.trim() } : null,
-    randomise: values.randomise,
-    scheduled_publication: values.scheduled_publication.trim() || null,
-    is_mandatory: values.is_mandatory,
     recurring: values.recurring.trim() || null,
     schedule_exceptions: (() => { try { return values.schedule_exceptions.trim() ? JSON.parse(values.schedule_exceptions) : null; } catch { return values.schedule_exceptions.trim() || null; } })(),
     access_information: isLive ? values.access_information.trim() || null : null,
@@ -379,14 +359,12 @@ export function buildUpdateTrainingPayload(values: CreateTrainingFormValues): Up
     coupon_code: isPaid ? values.coupon_code.trim() || null : null,
     requires_approval: values.requires_approval,
     access_duration_days: values.access_duration_days.trim() || null,
+    access_expiry_type: values.access_expiry_type || null,
+    access_expiry_days: values.access_expiry_days.trim() || null,
     location_id: isVenue ? values.location_id.trim() || null : null,
     level: values.level || values.difficulty_level || null,
     language: values.language || null,
     prerequisites: values.prerequisites.trim() || null,
-release_rule: values.release_rule.trim() ? { type: values.release_rule.trim() } : null,
-    randomise: values.randomise,
-    scheduled_publication: values.scheduled_publication.trim() || null,
-    is_mandatory: values.is_mandatory,
 recurring: values.recurring.trim() || null,
     schedule_exceptions: (() => { try { return values.schedule_exceptions.trim() ? JSON.parse(values.schedule_exceptions) : null; } catch { return values.schedule_exceptions.trim() || null; } })(),
     access_information: isLive ? values.access_information.trim() || null : null,
@@ -421,9 +399,9 @@ export function validateTrainingForm(values: CreateTrainingFormValues, configure
   required("category", values.category, "Category is required.");
   const isLive = values.delivery_mode === "online" || values.delivery_mode === "hybrid";
   const isVenue = values.delivery_mode === "physical" || values.delivery_mode === "hybrid";
-  if (isLive && !values.meeting_link.trim()) errors.meeting_link = ["Meeting link is required for Live mode."];
-  if (isVenue && !values.venue.trim()) errors.venue = ["Venue is required for Venue or Hybrid mode."];
-  if (isVenue && !values.address.trim()) errors.address = ["Address is required for Venue or Hybrid mode."];
+  if (isLive && (configuredRequiredKeys === undefined || configuredRequiredKeys.has("meeting_link")) && !values.meeting_link.trim()) errors.meeting_link = ["Meeting link is required for Live mode."];
+  if (isVenue && (configuredRequiredKeys === undefined || configuredRequiredKeys.has("venue")) && !values.venue.trim()) errors.venue = ["Venue is required for Venue or Hybrid mode."];
+  if (isVenue && (configuredRequiredKeys === undefined || configuredRequiredKeys.has("address")) && !values.address.trim()) errors.address = ["Address is required for Venue or Hybrid mode."];
   if (values.start_time && !timeRe.test(values.start_time)) errors.start_time = ["Start time must be HH:MM (00:00–23:59)."];
   if (values.end_time && !timeRe.test(values.end_time)) errors.end_time = ["End time must be HH:MM (00:00–23:59)."];
   if (values.start_date && values.end_date && values.end_date < values.start_date) {

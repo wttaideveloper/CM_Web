@@ -32,8 +32,6 @@ export default function TrainingBookingFlow({ trainingId: trainingIdProp }: { tr
   const [step, setStep] = useState<BookingStep>("review");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [isGroup, setIsGroup] = useState(false);
-  const [groupSize, setGroupSize] = useState("");
   const [coupon, setCoupon] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [doneMessage, setDoneMessage] = useState("");
@@ -79,15 +77,12 @@ export default function TrainingBookingFlow({ trainingId: trainingIdProp }: { tr
         return checkoutTraining(trainingId, {
           participant_name: name.trim(),
           participant_email: email.trim(),
-          quantity: isGroup && groupSize.trim() ? Number(groupSize) || 1 : 1,
           coupon_code: coupon.trim() || undefined,
         });
       }
       return enrolInTraining(trainingId, {
         participant_name: name.trim(),
         participant_email: email.trim(),
-        group_enrol: isGroup || undefined,
-        max_group_size: groupSize.trim() || undefined,
       });
     },
     onSuccess: (_data, mode) => {
@@ -170,8 +165,6 @@ export default function TrainingBookingFlow({ trainingId: trainingIdProp }: { tr
             <h2 className="text-xl font-bold text-[#06201c]">Your details</h2>
             <label className="block text-sm font-semibold text-[#06201c]">Full name<input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" className="mt-1.5 h-11 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm outline-none focus:border-[#1f6a58]" /></label>
             <label className="block text-sm font-semibold text-[#06201c]">Email<input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" type="email" className="mt-1.5 h-11 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm outline-none focus:border-[#1f6a58]" /></label>
-            <label className="flex items-center gap-3 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={isGroup} onChange={(e) => setIsGroup(e.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Group booking</label>
-            {isGroup ? <label className="block text-sm font-semibold text-[#06201c]">Group size<input value={groupSize} onChange={(e) => setGroupSize(e.target.value)} placeholder="e.g. 4" type="number" min={1} className="mt-1.5 h-11 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm outline-none focus:border-[#1f6a58]" /></label> : null}
             {isPaid && !soldOut ? <label className="block text-sm font-semibold text-[#06201c]">Coupon code (optional)<input value={coupon} onChange={(e) => setCoupon(e.target.value)} placeholder="EARLY20" className="mt-1.5 h-11 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm outline-none focus:border-[#1f6a58]" /></label> : null}
           </section>
         ) : null}
@@ -181,7 +174,7 @@ export default function TrainingBookingFlow({ trainingId: trainingIdProp }: { tr
             <h2 className="text-xl font-bold text-[#06201c]">Confirm</h2>
             <div className="rounded-xl bg-[#f9fcfa] border border-[#e1ebe6] p-4 text-sm text-[#52736a]">
               <p><span className="font-bold text-[#06201c]">{training.title}</span></p>
-              <p className="mt-1">{name} · {email}{isGroup && groupSize.trim() ? ` · Group of ${groupSize.trim()}` : ""}</p>
+              <p className="mt-1">{name} · {email}</p>
               <p className="mt-1">Total: <span className="font-bold text-[#06201c]">{soldOut ? "Free (waitlist)" : formatTrainingPrice(training.price, training.currency)}</span></p>
             </div>
           </section>

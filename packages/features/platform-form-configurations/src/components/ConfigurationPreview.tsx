@@ -2,6 +2,8 @@
 
 import { formConfigurationCopy as copy } from "../constants/form-configuration-copy";
 import { getEventCompositeFieldDefinition } from "../model/event-composite-field-definitions";
+import { getTrainingCompositeFieldDefinition } from "../model/training-composite-field-definitions";
+import { isTrainingDeliveryModeField, TRAINING_DELIVERY_MODE_OPTIONS } from "../model/training-delivery-mode-options";
 import { getEventCoreFieldSemantic, isEventCoreFieldRuntimeSourced } from "../model/event-core-field-semantics";
 import type { ConfiguredField, CoreFieldRegistryItem, FormConfiguration, FormFieldOption } from "../model/form-configuration.types";
 import { useState } from "react";
@@ -10,10 +12,13 @@ function previewOptionKey(option: FormFieldOption, index: number): string {
   return `${option.value}\u001f${option.label}\u001f${option.position}\u001f${index}`;
 }
 
-function PreviewField({ field, registry }: { field: ConfiguredField; registry: readonly CoreFieldRegistryItem[] }) {
+function PreviewField({ field, registry, isTraining }: { field: ConfiguredField; registry: readonly CoreFieldRegistryItem[]; isTraining: boolean }) {
   const base = "mt-1.5 w-full rounded-lg border border-[#cfe0d8] bg-white px-3 py-2 text-sm";
-  const compositeDefinition = field.source === "core" ? getEventCompositeFieldDefinition(field.coreKey) : undefined;
+  const compositeDefinition = isTraining
+    ? getTrainingCompositeFieldDefinition(field.coreKey ?? field.stableKey, field.label)
+    : field.source === "core" ? getEventCompositeFieldDefinition(field.coreKey) : undefined;
   const taxonomySemantic = field.source === "core" ? getEventCoreFieldSemantic(field.coreKey) : undefined;
+  const trainingDeliveryMode = isTraining && isTrainingDeliveryModeField(field);
   const registryField = field.coreKey ? registry.find((item) => item.key === field.coreKey) : undefined;
   const registryRuntimeSourced = Boolean(registryField?.valueSource || registryField?.sourceEndpoint);
   if (compositeDefinition) {
@@ -22,12 +27,13 @@ function PreviewField({ field, registry }: { field: ConfiguredField; registry: r
     return <span className="mt-1.5 block rounded-lg border border-[#cfe0d8] bg-[#f7fbf8] p-3 font-normal"><span className="block font-semibold text-[#06201c]">{compositeDefinition.title}</span><span className="mt-1 block text-xs text-[#52736a]">{labels.length ? `${compositeDefinition.fieldNoun[0]?.toUpperCase()}${compositeDefinition.fieldNoun.slice(1)} fields: ${labels.join(", ")}` : compositeDefinition.description}</span></span>;
   }
   if (taxonomySemantic && isEventCoreFieldRuntimeSourced(field.coreKey)) return <div><select aria-label={field.label} disabled className={base}><option>{taxonomySemantic.optionsSource === "event_categories" ? "Event Categories (loaded at runtime)" : "Enterprise locations (loaded at runtime)"}</option></select><span className="mt-1 block text-xs font-normal text-[#52736a]">{taxonomySemantic.description}</span></div>;
-  if (registryRuntimeSourced) return <div><select aria-label={field.label} disabled className={base}><option>Training values (loaded at runtime)</option></select><span className="mt-1 block text-xs font-normal text-[#52736a]">Values are supplied by the Training runtime source.</span></div>;
+  if (registryRuntimeSourced && !trainingDeliveryMode) return <div><select aria-label={field.label} disabled className={base}><option>Training values (loaded at runtime)</option></select><span className="mt-1 block text-xs font-normal text-[#52736a]">Values are supplied by the Training runtime source.</span></div>;
   if (field.renderer === "textarea") return <textarea aria-label={field.label} placeholder={field.placeholder} className={`${base} min-h-20`} />;
   if (field.renderer === "select" || field.renderer === "multi_select") {
     const multiSelect = field.renderer === "multi_select";
     const selectClass = multiSelect ? `${base} min-h-24 max-h-40 overflow-y-auto leading-7` : base;
-    return <select aria-label={field.label} multiple={multiSelect} className={selectClass}>{!multiSelect && field.placeholder ? <option value="" disabled hidden>{field.placeholder}</option> : null}{field.options.map((option, index) => <option key={previewOptionKey(option, index)}>{option.label}</option>)}</select>;
+    const options = trainingDeliveryMode ? TRAINING_DELIVERY_MODE_OPTIONS : field.options;
+    return <select aria-label={field.label} multiple={multiSelect} className={selectClass}>{!multiSelect && field.placeholder ? <option value="" disabled hidden>{field.placeholder}</option> : null}{options.map((option, index) => <option key={previewOptionKey(option, index)}>{option.label}</option>)}</select>;
   }
   if (field.renderer === "checkbox") return <input aria-label={field.label} type="checkbox" className="ml-2 mt-1.5 inline-block h-4 w-4 align-middle accent-[#1f6a58]" />;
   return <input aria-label={field.label} type={field.renderer === "datetime" ? "datetime-local" : field.renderer} placeholder={field.placeholder} className={base} />;
@@ -86,7 +92,7 @@ export function ConfigurationPreview({ configuration, registry = [] }: { configu
         .filter((field) => field.sectionLocalId === section.localId && field.enabled)
         .filter((field) => !isTraining || isTrainingFieldVisible(field, deliveryMode, pricingType))
         .sort((a, b) => a.position - b.position);
-      return <div key={section.localId} className="rounded-xl border border-[#dfe9e4] bg-white p-4"><h4 className="font-bold text-[#06201c]">{section.name}</h4>{section.description ? <p className="mt-1 text-sm text-[#52736a]">{section.description}</p> : null}<div className="mt-4 grid gap-4 md:grid-cols-2">{fields.length ? fields.map((field) => <label key={field.localId} className="text-sm font-semibold text-[#355a51]">{field.label}{field.required ? " *" : ""}<PreviewField field={field} registry={registry} />{field.helpText ? <span className="mt-1 block text-xs font-normal text-[#52736a]">{field.helpText}</span> : null}</label>) : <p className="text-sm text-[#52736a]">{copy.noFields}</p>}</div></div>;
+      return <div key={section.localId} className="rounded-xl border border-[#dfe9e4] bg-white p-4"><h4 className="font-bold text-[#06201c]">{section.name}</h4>{section.description ? <p className="mt-1 text-sm text-[#52736a]">{section.description}</p> : null}<div className="mt-4 grid gap-4 md:grid-cols-2">{fields.length ? fields.map((field) => <label key={field.localId} className="text-sm font-semibold text-[#355a51]">{field.label}{field.required ? " *" : ""}<PreviewField field={field} registry={registry} isTraining={isTraining} />{field.helpText ? <span className="mt-1 block text-xs font-normal text-[#52736a]">{field.helpText}</span> : null}</label>) : <p className="text-sm text-[#52736a]">{copy.noFields}</p>}</div></div>;
     })}</div>
   </section>;
 }

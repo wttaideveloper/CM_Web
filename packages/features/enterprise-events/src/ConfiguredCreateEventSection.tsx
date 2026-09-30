@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { EnterpriseLocationDto } from "@ihp/enterprises";
 
@@ -14,7 +15,7 @@ import EventServicesEditor from "./EventServicesEditor";
 type UpdateForm = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => void;
 type Props = { section: ActiveEventFormSection; values: CreateEventFormValues; update: UpdateForm; errors: Record<string, string[]>; customValues: Record<string, string | string[] | boolean | number | null>; setCustomValues: (next: Record<string, string | string[] | boolean | number | null>) => void; locations: EnterpriseLocationDto[]; locationId: string; setLocationId: (value: string) => void; categories: readonly EventCategory[]; categoriesLoading: boolean; categoriesError: boolean; eventTypes?: readonly EventTypeDefinition[]; eventTypesLoading?: boolean; eventTypesError?: boolean; currencyOptions?: readonly ActiveEventFormFieldOption[]; allowPastTemporalValues?: boolean; modules?: CreateEventFormValues["modules"]; selectedEventType?: EventTypeDefinition; };
 
-const inputClass = "mt-1.5 h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]";
+const inputClass = "mt-1.5 h-10 w-full min-w-0 max-w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm font-normal text-[#06201c] outline-none focus:border-[#1f6a58]";
 const CORE_FIELDS: Record<string, keyof CreateEventFormValues> = { title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", start_date: "start_date", start_datetime: "start_date", end_date: "end_date", end_datetime: "end_date", duration_type: "duration_type", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", timezone: "time_zone", time_zone: "time_zone", event_type: "event_type", delivery_mode: "delivery_mode", pricing_type: "pricing_type", meeting_provider: "meeting_provider", meeting_link: "meeting_link", price: "price", currency: "currency", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents" };
 const COMPOSITES = new Set(["venue", "ticket_types", "sessions", "registration_questions", "registration_fields", "custom_fields", "media", "gallery_images", "videos", "documents"]);
 
@@ -64,7 +65,7 @@ export default function ConfiguredCreateEventSection({ section, values, update, 
   const selectedEventType = eventTypes?.find((item) => item.key === values.event_type);
   const dependent = fields.some((field) => ["venue", "location", "location_id", "meeting_provider", "meeting_link"].includes(keyFor(field)));
   const guidance = !values.delivery_mode ? "These fields depend on Delivery Mode. Online events use meeting details, In-Person events use venue details, and Hybrid events can use both. Their visibility may change after you choose a Delivery Mode." : values.delivery_mode === "online" ? "This event is Online. Venue and physical-location fields are not applicable." : values.delivery_mode === "hybrid" ? "This event is Hybrid. Both physical venue and online meeting details can be provided." : "This event is In Person. Online meeting fields are not applicable.";
-  return <><section className="space-y-4"><div><h2 className="text-xl font-bold text-[#06201c]">{section.label}</h2>{section.description ? <p className="mt-1 text-sm text-[#52736a]">{section.description}</p> : null}</div>{dependent ? <p className="rounded-xl bg-[#f4faf7] px-3 py-2 text-xs text-[#52736a]">{guidance}</p> : null}<div className="grid gap-4 md:grid-cols-2">{fields.map((field) => { const key = keyFor(field); if (values.pricing_type === "free" && ["price", "currency", "ticket_types"].includes(key)) return null; if (!isDeliveryFieldApplicable(key, values.delivery_mode)) return null; return <div key={field.id} className={isComplexField(field) ? "md:col-span-2" : "min-w-0"}><ConfiguredField field={field} values={values} update={update} errors={errors} customValues={customValues} setCustomValues={setCustomValues} locations={locations} locationId={locationId} setLocationId={setLocationId} categories={categories} categoriesLoading={categoriesLoading} categoriesError={categoriesError} eventTypes={eventTypes} eventTypesLoading={eventTypesLoading} eventTypesError={eventTypesError} currencyOptions={currencyOptions} allowPastTemporalValues={allowPastTemporalValues} selectedEventType={selectedEventType} /></div>; })}</div></section>{fields.some((field) => keyFor(field) === "event_type") ? <EventServicesEditor values={values} update={update} /> : null}</>;
+  return <><section className="min-w-0 space-y-4"><div className="min-w-0 break-words"><h2 className="break-words text-xl font-bold text-[#06201c]">{section.label}</h2>{section.description ? <p className="mt-1 break-words text-sm text-[#52736a]">{section.description}</p> : null}</div>{dependent ? <p className="rounded-xl bg-[#f4faf7] px-3 py-2 text-xs text-[#52736a]">{guidance}</p> : null}<div className="grid min-w-0 gap-4 md:grid-cols-[repeat(2,minmax(0,1fr))]">{fields.map((field) => { const key = keyFor(field); if (values.pricing_type === "free" && ["price", "currency", "ticket_types"].includes(key)) return null; if (!isDeliveryFieldApplicable(key, values.delivery_mode)) return null; return <div key={field.id} data-event-field={key} className={`min-w-0 break-words ${isComplexField(field) ? "md:col-span-2" : ""}`}><ConfiguredField field={field} values={values} update={update} errors={errors} customValues={customValues} setCustomValues={setCustomValues} locations={locations} locationId={locationId} setLocationId={setLocationId} categories={categories} categoriesLoading={categoriesLoading} categoriesError={categoriesError} eventTypes={eventTypes} eventTypesLoading={eventTypesLoading} eventTypesError={eventTypesError} currencyOptions={currencyOptions} allowPastTemporalValues={allowPastTemporalValues} selectedEventType={selectedEventType} /></div>; })}</div></section>{fields.some((field) => keyFor(field) === "event_type") ? <EventServicesEditor values={values} update={update} /> : null}</>;
 }
 
 function ConfiguredField(props: Omit<Props, "section"> & { field: ActiveEventFormField; selectedEventType?: EventTypeDefinition }) {
@@ -102,6 +103,7 @@ function MultiSelectField({ field, value, onChange, error }: { field: ActiveEven
 
 /** Renders backend-owned category taxonomy without persisting taxonomy identifiers in the Event payload. */
 function CategoryTaxonomySelect({ field, keyName, values, update, error, categories, loading, hasError }: { field: ActiveEventFormField; keyName: "category" | "subcategory"; values: CreateEventFormValues; update: UpdateForm; error?: string; categories: readonly EventCategory[]; loading: boolean; hasError: boolean }) {
+  const { t } = useTranslation("enterpriseEvents");
   const parents = categories.filter((category) => category.parent_id === null);
   const selectedParent = parents.find((category) => category.name === values.category);
   const children = selectedParent ? categories.filter((category) => category.parent_id === selectedParent.id) : [];
@@ -113,14 +115,14 @@ function CategoryTaxonomySelect({ field, keyName, values, update, error, categor
     : hasError
       ? "Unable to load categories"
       : isSubcategory && !selectedParent
-        ? "Select a category first"
+        ? t("taxonomy.chooseCategoryFirst")
         : isSubcategory && children.length === 0
           ? "No subcategories available"
           : isSubcategory
-            ? "Choose a subcategory"
+            ? t("taxonomy.chooseSubcategory")
             : parents.length === 0
               ? "No categories available"
-              : "Choose a category";
+              : t("taxonomy.chooseCategory");
   const queryError = hasError ? "Unable to load Event categories." : undefined;
 
   const options = isSubcategory ? children : parents;

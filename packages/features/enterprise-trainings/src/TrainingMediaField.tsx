@@ -130,7 +130,7 @@ export default function TrainingMediaField({
             }}
             placeholder={placeholder}
             aria-label={`${label} URL`}
-            className="mt-1.5 h-11 min-w-0 flex-1 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]"
+            className="mt-1.5 h-11 min-w-0 flex-1 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm font-normal text-[#06201c] outline-none focus:border-[#1f6a58]"
           />
           {value && previewUrl ? <button type="button" onClick={() => setEditingOverride(false)} className="shrink-0 text-xs font-semibold text-[#1f6a58] underline">Preview</button> : null}
         </div>

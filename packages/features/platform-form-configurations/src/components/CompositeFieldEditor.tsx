@@ -6,7 +6,7 @@ import type { ConfiguredField, CoreFieldRegistryItem } from "../model/form-confi
 
 type CompositeFieldEditorProps = {
   field: ConfiguredField;
-  core: CoreFieldRegistryItem;
+  core?: CoreFieldRegistryItem;
   definition: EventCompositeFieldDefinition;
   onChange: (patch: Partial<ConfiguredField>) => void;
 };
@@ -21,15 +21,22 @@ export function CompositeFieldEditor({ field, core, definition, onChange }: Comp
     const compositeConfig: EventFormCompositeConfig = {
       ...field.compositeConfig,
       enabled_fields: nextEnabledFields,
-      required_fields: nextRequiredFields.filter((key) => nextEnabledFields.includes(key)),
+      required_fields: [...new Set([
+        ...nextRequiredFields.filter((key) => nextEnabledFields.includes(key)),
+        ...definition.subfields.filter((subfield) => subfield.requiredByDomain).map((subfield) => subfield.key),
+      ])].filter((key) => nextEnabledFields.includes(key)),
     };
     onChange({ compositeConfig });
   };
   const setEnabled = (key: string, enabled: boolean) => {
+    if (definition.subfields.find((subfield) => subfield.key === key)?.requiredByDomain && !enabled) return;
     const nextEnabledFields = enabled ? [...enabledFields, key] : enabledFields.filter((item) => item !== key);
     updateCompositeConfig(nextEnabledFields, requiredFields);
   };
-  const setRequired = (key: string, required: boolean) => updateCompositeConfig(enabledFields, required ? [...requiredFields, key] : requiredFields.filter((item) => item !== key));
+  const setRequired = (key: string, required: boolean) => {
+    if (definition.subfields.find((subfield) => subfield.key === key)?.requiredByDomain && !required) return;
+    updateCompositeConfig(enabledFields, required ? [...requiredFields, key] : requiredFields.filter((item) => item !== key));
+  };
 
   return <div className="mt-4 space-y-4">
     <div className="rounded-xl border border-[#dfe9e4] bg-[#f7fbf8] p-3">
@@ -38,10 +45,10 @@ export function CompositeFieldEditor({ field, core, definition, onChange }: Comp
       <p className="mt-2 text-xs text-[#52736a]">Renderer: <code>{field.renderer}</code></p>
     </div>
     <div className="grid gap-3 sm:grid-cols-2">
-      {core.configurable.label ? <TextControl label="Label" value={field.label} onChange={(label) => onChange({ label })} /> : null}
-      {core.configurable.helpText ? <TextControl label="Help text" value={field.helpText} onChange={(helpText) => onChange({ helpText })} /> : null}
-      {core.configurable.required ? <CheckboxControl label="Required" checked={field.required} disabled={core.requiredByDomain} onChange={(required) => onChange({ required })} /> : null}
-      <CheckboxControl label="Enabled" checked={field.enabled} disabled={!core.hideable} onChange={(enabled) => onChange({ enabled })} />
+      {!core || core.configurable.label ? <TextControl label="Label" value={field.label} onChange={(label) => onChange({ label })} /> : null}
+      {!core || core.configurable.helpText ? <TextControl label="Help text" value={field.helpText} onChange={(helpText) => onChange({ helpText })} /> : null}
+      {!core || core.configurable.required ? <CheckboxControl label="Required" checked={field.required} disabled={Boolean(core?.requiredByDomain)} onChange={(required) => onChange({ required })} /> : null}
+      <CheckboxControl label="Enabled" checked={field.enabled} disabled={Boolean(core && !core.hideable)} onChange={(enabled) => onChange({ enabled })} />
     </div>
     {definition.subfields.length ? <fieldset className="rounded-xl border border-[#edf3f0] p-3">
       <legend className="px-1 text-sm font-semibold text-[#355a51]">Available {definition.fieldNoun} fields</legend>
@@ -49,8 +56,8 @@ export function CompositeFieldEditor({ field, core, definition, onChange }: Comp
         {definition.subfields.map((subfield, index) => <div key={subfield.key}>
           {subfield.group && (index === 0 || definition.subfields[index - 1]?.group !== subfield.group) ? <p className="pb-1 pt-2 text-xs font-bold uppercase tracking-wide text-[#52736a]">{subfield.group}</p> : null}
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg bg-[#f7fbf8] px-3 py-2">
-            <CheckboxControl label={subfield.label} checked={enabledFields.includes(subfield.key)} onChange={(enabled) => setEnabled(subfield.key, enabled)} />
-            <CheckboxControl label="Required" checked={requiredFields.includes(subfield.key)} disabled={!enabledFields.includes(subfield.key)} onChange={(required) => setRequired(subfield.key, required)} />
+            <CheckboxControl label={subfield.label} checked={enabledFields.includes(subfield.key) || Boolean(subfield.requiredByDomain)} disabled={Boolean(subfield.requiredByDomain)} onChange={(enabled) => setEnabled(subfield.key, enabled)} />
+            <CheckboxControl label="Required" checked={requiredFields.includes(subfield.key) || Boolean(subfield.requiredByDomain)} disabled={!enabledFields.includes(subfield.key) || Boolean(subfield.requiredByDomain)} onChange={(required) => setRequired(subfield.key, required)} />
           </div>
         </div>)}
       </div>

@@ -34,7 +34,7 @@ export function validateFormConfiguration(configuration: FormConfiguration, regi
     : []);
   return [...scopeIssues, ...duplicateCoreKeyIssues, ...trainingSettingsIssues, ...deliveryIssues, ...eventIssues, ...requiredFieldIssues, ...requiredSectionIssues, ...configuration.fields.flatMap((field) => {
     const runtimeSourced = field.source === "core" && Boolean(registry.find((item) => item.key === field.coreKey)?.valueSource || registry.find((item) => item.key === field.coreKey)?.sourceEndpoint);
-    const commonIssues = validateFieldSettings(field, runtimeSourced);
+    const commonIssues = validateFieldSettings(field, runtimeSourced, configuration.type);
     if (field.enabled && !field.label.trim()) commonIssues.push({ code: "missing-field-label", message: "Give every enabled field a label before saving or publishing.", sectionLocalId: field.sectionLocalId, fieldLocalId: field.localId });
     if (field.source !== "core") return [...commonIssues, ...validateCompositeRequiredFields(field)];
     const definition = registry.find((item) => item.key === field.coreKey);
@@ -52,7 +52,7 @@ export function validateFormConfiguration(configuration: FormConfiguration, regi
   })];
 }
 
-function validateFieldSettings(field: ConfiguredField, runtimeSourced: boolean): FormConfigurationValidationIssue[] {
+function validateFieldSettings(field: ConfiguredField, runtimeSourced: boolean, configurationType: FormConfiguration["type"]): FormConfigurationValidationIssue[] {
   const issues: FormConfigurationValidationIssue[] = [];
   const { min, max, minLength, maxLength, pattern } = field.validation;
   const invalidLength = [minLength, maxLength].some((value) => value !== undefined && value !== null && (!Number.isInteger(value) || value < 0));
@@ -80,10 +80,23 @@ function validateFieldSettings(field: ConfiguredField, runtimeSourced: boolean):
     });
   }
   if (!runtimeSourced && (field.renderer === "select" || field.renderer === "multi_select")) {
-    const invalidOptions = field.enabled && (field.options.length === 0
-      || field.options.some((option) => !option.label.trim() || !option.value.trim())
-      || new Set(field.options.map((option) => option.value)).size !== field.options.length);
-    if (invalidOptions) {
+    const courseTypeOptionsDeferred = configurationType === "training"
+      && field.source === "core"
+      && field.coreKey === "course_type"
+      && field.enabled
+      && field.options.length === 0;
+    const invalidOptions = field.enabled
+      && (field.options.some((option) => !option.label.trim() || !option.value.trim())
+        || new Set(field.options.map((option) => option.value)).size !== field.options.length);
+    if (courseTypeOptionsDeferred) {
+      issues.push({
+        severity: "warning",
+        code: "invalid-field-options",
+        message: `${fieldName(field)} has no options yet. Add options before publishing this Training configuration.`,
+        sectionLocalId: field.sectionLocalId,
+        fieldLocalId: field.localId,
+      });
+    } else if (invalidOptions || (field.enabled && field.options.length === 0)) {
       issues.push({
         code: "invalid-field-options",
         message: `${fieldName(field)} needs at least one option with a label and unique value.`,

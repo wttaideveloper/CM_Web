@@ -15,6 +15,7 @@ import { useTrainingCategories } from "./training-categories.queries";
 import { canEditTraining } from "./training-status";
 import ConfiguredCreateTrainingSection from "./ConfiguredCreateTrainingSection";
 import { isTrainingFormFieldVisible, TRAINING_OTHER_OPTION_VALUE } from "./training-form-field-settings";
+import { getRequiredTrainingDeliverySubfields, getRequiredTrainingDeliveryValueKeys, getTrainingDeliveryCompositeValueKeys } from "./training-delivery-fields";
 
 const steps = ["Basic Information", "Schedule", "Location & Host", "Pricing & Tickets", "Capacity & Registration", "Images & Media", "Additional Configuration"] as const;
 const stepFields: ReadonlyArray<readonly string[]> = [
@@ -22,9 +23,9 @@ const stepFields: ReadonlyArray<readonly string[]> = [
   ["start_date", "end_date", "start_time", "end_time", "enrolment_start", "enrolment_end", "time_zone", "duration", "schedule_exceptions"],
   ["location_id", "delivery_mode", "course_type"],
   ["price", "currency", "promo_price", "coupon_code"],
-  ["capacity", "requires_approval", "access_duration_days", "group_enrolment", "max_group_size", "access_expiry_type", "access_expiry_days"],
+  ["capacity", "requires_approval", "access_duration_days", "access_expiry_type", "access_expiry_days"],
   ["primary_image", "gallery_images", "promotional_video"],
-  ["prerequisites", "release_rule", "randomise", "scheduled_publication", "is_mandatory", "faqs", "discussions", "announcements", "moderation_history"],
+  ["prerequisites", "faqs", "discussions", "announcements", "moderation_history"],
 ];
 // One static section component per entry in `steps`, in the same order — this is the
 // static/default Training form used whenever no dynamic Super Admin form configuration
@@ -46,7 +47,7 @@ function trainingFieldId(key: string): string {
 }
 
 function getTrainingFieldAliases(field: TrainingFormField): string[] {
-  return [field.key, field.apiKey ?? "", field.stable_key ?? ""].filter(Boolean);
+  return [...new Set([field.key, field.apiKey ?? "", field.stable_key ?? "", ...getTrainingDeliveryCompositeValueKeys(field)])];
 }
 
 function getTrainingFieldIdentityAliases(field: TrainingFormField): string[] {
@@ -94,7 +95,8 @@ function validateConfiguredSection(
   const errors: Record<string, string[]> = {};
 
   for (const field of section.fields) {
-    if (!isConfiguredTrainingFieldApplicable(field, values.delivery_mode, values.pricing_type)
+    if (field.enabled === false
+      || !isConfiguredTrainingFieldApplicable(field, values.delivery_mode, values.pricing_type)
       || !isTrainingFormFieldVisible(field, allFields, values, customValues)) continue;
     const aliases = getTrainingFieldAliases(field);
     const valueKey = aliases.find((candidate) => candidate in values);
@@ -174,7 +176,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   const activeForm = (mode === "create" ? activeFormQ.data : historicalFormQ.data) ?? null;
   const formConfigLoading = mode === "create" ? activeFormQ.isLoading : historicalFormQ.isLoading;
   const formConfigError = mode === "create" ? activeFormQ.error : historicalFormQ.error;
-  const configuredFields = activeForm?.sections.flatMap((section) => section.fields) ?? [];
+  const configuredFields = activeForm?.sections.flatMap((section) => section.fields).filter((field) => field.enabled !== false) ?? [];
   const needsTrainingCategories = !activeForm || configuredFields.some((field) =>
     field.source === "core" && getTrainingFieldAliases(field).some((key) => key === "category" || key === "subcategory"),
   );
@@ -199,9 +201,10 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
       "duration", "access_duration_days", "delivery_mode", "course_type", "location_id", "venue", "address",
       "meeting_link", "meeting_provider", "delivery_instructions", "instructor_id", "instructor_name",
       "instructor_bio", "level", "language", "target_audience", "access_information", "price", "currency",
-      "promo_price", "coupon_code", "capacity", "requires_approval", "primary_image", "gallery_images",
-      "documents", "promotional_video", "notes_pdf_url", "instructor_notes", "prerequisites", "release_rule",
-      "scheduled_publication", "randomise", "is_mandatory", "subtitle", "faqs", "instructor_photo",
+      "promo_price", "coupon_code", "capacity", "requires_approval", "access_expiry_type", "access_expiry_days",
+      "primary_image", "gallery_images",
+      "documents", "promotional_video", "notes_pdf_url", "instructor_notes", "prerequisites",
+      "subtitle", "faqs", "instructor_photo",
       "instructor_credentials", "badges",
     ]);
     const canonicalFieldKeys = new Map<string, string>();
@@ -338,22 +341,48 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   };
   useEffect(() => {
     if (!pendingFocusField) return;
-    const direct = document.getElementById(trainingFieldId(pendingFocusField));
+    const configuredField = activeForm?.sections
+      .flatMap((section) => section.fields)
+      .find((field) => getTrainingFieldAliases(field).some((alias) =>
+        alias === pendingFocusField || normalizeTrainingFieldKey(alias) === normalizeTrainingFieldKey(pendingFocusField),
+      ));
+    const fieldKey = configuredField?.key ?? pendingFocusField;
+    const direct = [pendingFocusField, fieldKey]
+      .map((key) => document.getElementById(trainingFieldId(key)))
+      .find((element) => element !== null);
     const wrapper = [...document.querySelectorAll<HTMLElement>("[data-training-field]")]
-      .find((element) => element.dataset.trainingField === pendingFocusField);
+      .find((element) => element.dataset.trainingField === fieldKey);
     const target = direct ?? wrapper?.querySelector<HTMLElement>("input, select, textarea, button") ?? wrapper;
     if (!target) return;
     target.scrollIntoView({ behavior: "smooth", block: "center" });
-    target.focus({ preventScroll: true });
+    if (target instanceof HTMLElement && target.matches("input, select, textarea, button")) {
+      target.focus({ preventScroll: true });
+    } else {
+      target.querySelector<HTMLElement>("input, select, textarea, button")?.focus({ preventScroll: true });
+    }
     setPendingFocusField(null);
-  }, [activeStep, pendingFocusField]);
+  }, [activeForm, activeStep, pendingFocusField]);
 
   const allErrors = useMemo(() => {
     const allFields = activeForm?.sections.flatMap((section) => section.fields) ?? [];
     const configuredRequiredKeys = activeForm
-      ? new Set(allFields.filter((field) => field.required && isTrainingFormFieldVisible(field, allFields, values, customValues)).flatMap(getTrainingFieldAliases))
+      ? new Set(allFields.filter((field) => field.enabled !== false && isTrainingFormFieldVisible(field, allFields, values, customValues)).flatMap((field) => [
+        ...(field.required ? getTrainingFieldAliases(field) : []),
+        ...getRequiredTrainingDeliveryValueKeys(field),
+      ]))
       : undefined;
     const validationErrors = validateTrainingForm(values, configuredRequiredKeys);
+    if (activeForm) {
+      for (const field of allFields) {
+        if (field.enabled === false || !isTrainingFormFieldVisible(field, allFields, values, customValues)) continue;
+        for (const subfield of getRequiredTrainingDeliverySubfields(field)) {
+          const value = values[subfield.valueKey as keyof CreateTrainingFormValues];
+          if (!hasConfiguredValue(value) && !validationErrors[subfield.valueKey]) {
+            validationErrors[subfield.valueKey] = [`${subfield.label} is required.`];
+          }
+        }
+      }
+    }
     if (mode === "create" && trainingCategoriesQuery.data) {
       const visibleTaxonomyFields = allFields.filter((field) =>
         isTrainingFormFieldVisible(field, allFields, values, customValues),
@@ -457,7 +486,10 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
     saveMutation.mutate();
   };
 
-  const configuredSections = activeForm ? [...activeForm.sections].filter(s => s.fields.length > 0).sort((a, b) => a.order - b.order) : [];
+  const configuredSections = activeForm ? activeForm.sections
+    .map((section) => ({ ...section, fields: section.fields.filter((field) => field.enabled !== false) }))
+    .filter((section) => section.fields.length > 0)
+    .sort((left, right) => left.order - right.order) : [];
   const editorSteps = activeForm ? [...configuredSections.map(s => s.title || "Section"), "Review & Submit"] : [...steps];
   const sharedProps = {
     values,

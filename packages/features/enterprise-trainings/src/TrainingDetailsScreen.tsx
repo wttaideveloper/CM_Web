@@ -432,12 +432,6 @@ export default function TrainingDetailsScreen({
               <DetailItem label="Learning objectives" value={formatLearningObjectives((training as unknown as Record<string, unknown>).learning_objectives)} />
               <DetailItem label="PDFs" value={Array.isArray((training as unknown as Record<string, unknown>).documents) ? ((training as unknown as Record<string, unknown>).documents as unknown[]).length + " files" : Array.isArray(training.documents) ? (training.documents as unknown[]).length + " files" : "—"} />
               <DetailItem label="Prerequisites" value={displayValue((training as unknown as Record<string, unknown>).prerequisites as string)} />
-              <DetailItem label="Release rule" value={((): string => { const v = (training as unknown as Record<string, unknown>).release_rule; if (typeof v === "string") return v; if (v && typeof v === "object" && typeof (v as Record<string, unknown>).type === "string") return (v as Record<string, unknown>).type as string; return "Not provided"; })()} />
-              <DetailItem label="Randomise" value={String((training as unknown as Record<string, unknown>).randomise ?? (training as unknown as Record<string, unknown>).randomize ?? "—")} />
-              <DetailItem label="Scheduled publication" value={displayValue((training as unknown as Record<string, unknown>).scheduled_publication as string)} />
-              <DetailItem label="Mandatory" value={String((training as unknown as Record<string, unknown>).is_mandatory ?? "—")} />
-              <DetailItem label="Group enrolment" value={String((training as unknown as Record<string, unknown>).group_enrolment ?? "—")} />
-              <DetailItem label="Max group size" value={displayValue((training as unknown as Record<string, unknown>).max_group_size as string)} />
               <DetailItem label="Access expiry" value={displayValue((training as unknown as Record<string, unknown>).access_expiry_type as string) + " " + displayValue((training as unknown as Record<string, unknown>).access_expiry_days as string)} />
               <DetailItem label="Recurring" value={displayValue((training as unknown as Record<string, unknown>).recurring as string)} />
               <DetailItem label="Schedule exceptions" value={Array.isArray((training as unknown as Record<string, unknown>).schedule_exceptions) ? ((training as unknown as Record<string, unknown>).schedule_exceptions as unknown[]).length + " exceptions" : displayValue((training as unknown as Record<string, unknown>).schedule_exceptions as string)} />
