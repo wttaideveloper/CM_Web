@@ -183,7 +183,7 @@ export function TrainingScheduleSection({ values, update, errors }: SectionProps
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Enrolment opens<input id="training-field-enrolment_start" type="datetime-local" value={values.enrolment_start} onChange={(event) => update("enrolment_start", event.target.value)} className={inputClass} /><FieldError error={errors.enrolment_start} /></label>
-        <label className={labelClass}>Enrolment closes<input id="training-field-enrolment_end" type="datetime-local" value={values.enrolment_end} min={values.enrolment_start || undefined} max={values.start_date || undefined} onChange={(event) => update("enrolment_end", event.target.value)} className={inputClass} /><FieldError error={errors.enrolment_end} /></label>
+        <label className={labelClass}>Enrolment closes<input id="training-field-enrolment_end" type="datetime-local" value={values.enrolment_end} min={values.enrolment_start || undefined} max={values.enrolment_start && values.start_date && values.enrolment_start > values.start_date ? undefined : values.start_date || undefined} onChange={(event) => update("enrolment_end", event.target.value)} className={inputClass} /><FieldError error={errors.enrolment_end} /></label>
       </div>
       <label className={labelClass}>Time zone<select id="training-field-time_zone" value={values.time_zone} onChange={(event) => update("time_zone", event.target.value)} className={inputClass}><option value="">{t("referenceOptions.selectTimeZone")}</option>{timeZoneOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
       <div className="grid gap-4 md:grid-cols-2">

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useCurrentEnterprise, useTenant } from "@ihp/enterprise-runtime";
 import Link from "next/link";
+import { useTranslation } from "react-i18next";
 
 import TrainingActionsMenu from "./TrainingActionsMenu";
 import { humanizeLabel } from "./detail-formatters";
@@ -127,6 +128,7 @@ function TrainingsSummaryCard({ summary, isLoading, isError }: { summary: unknow
 }
 
 function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess }: { training: TrainingListItem; onStatusSuccess: () => void; onDuplicateSuccess: () => void; onDeleteSuccess: () => void }) {
+  const { t } = useTranslation("enterpriseTrainings");
   const cardRef = useRef<HTMLElement | null>(null);
   const [isNearViewport, setIsNearViewport] = useState(false);
   const needsEnrolmentCount = training.enrolled_count === null || training.enrolled_count === undefined;
@@ -157,6 +159,10 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
     ? training.enrolled_count
     : providerDashboardQuery.data?.total_enrolments;
   const primaryImage = typeof training.primary_image === "string" ? training.primary_image.trim() : "";
+  const tags = [...new Set((training.tags ?? [])
+    .filter((tag): tag is string => typeof tag === "string")
+    .map((tag) => tag.trim())
+    .filter(Boolean))];
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
   const hasPrimaryImage = primaryImage.length > 0 && failedImageUrl !== primaryImage;
   useEffect(() => {
@@ -208,6 +214,17 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
         </div>
 
         <p className={`mt-2 line-clamp-2 min-h-10 text-sm leading-5 ${secondaryTextClass}`}>{training.description || "—"}</p>
+        {tags.length > 0 ? (
+          <div className="mt-3">
+            <p className={`text-[10px] font-bold uppercase tracking-[0.12em] ${labelClass}`}>{t("list.tags")}</p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {tags.slice(0, 4).map((tag) => (
+                <span key={tag} className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${hasPrimaryImage ? "bg-white/90 text-[#1f6a58]" : "bg-[#e8f6ee] text-[#1f6a58]"}`}>{tag}</span>
+              ))}
+              {tags.length > 4 ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${hasPrimaryImage ? "bg-white/90 text-[#52736a]" : "bg-[#f0f3f2] text-[#52736a]"}`}>{t("list.moreTags", { count: tags.length - 4 })}</span> : null}
+            </div>
+          </div>
+        ) : null}
         {training.status === "needs_revision" || training.status === "rejected" ? (
           <p className={`mt-2 text-xs font-semibold ${hasPrimaryImage ? "text-white" : "text-[#8a5a00]"}`}>
             Super Admin feedback is available on the Training details page.

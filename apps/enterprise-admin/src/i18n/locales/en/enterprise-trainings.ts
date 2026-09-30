@@ -1,4 +1,8 @@
 const enterpriseTrainingsEnglish = {
+  list: {
+    tags: "Tags",
+    moreTags: "+{{count}} more",
+  },
   taxonomy: {
     chooseCategory: "Choose a category",
     chooseCategoryFirst: "Choose a category first",

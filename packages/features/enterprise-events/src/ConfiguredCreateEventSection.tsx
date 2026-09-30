@@ -63,14 +63,19 @@ function fieldType(field: ActiveEventFormField, key: string): string {
   return "text";
 }
 function toDateTimeLocalNow(): string { const now = new Date(); now.setSeconds(0, 0); const offset = now.getTimezoneOffset() * 60_000; return new Date(now.getTime() - offset).toISOString().slice(0, 16); }
+/** Drops the upper bound when intermediate values invert the range so the native picker never receives an impossible window. */
+function validDateTimeBounds(bounds: { min?: string; max?: string }): { min?: string; max?: string } {
+  if (bounds.min && bounds.max && bounds.min > bounds.max) return { min: bounds.min };
+  return bounds;
+}
 function temporalBounds(key: string, type: string, values: CreateEventFormValues, allowPastTemporalValues: boolean): { min?: string; max?: string } {
   if (type !== "datetime-local") return {};
   if (["start_date", "start_datetime", "registration_open_at"].includes(key)) return allowPastTemporalValues ? {} : { min: toDateTimeLocalNow() };
   if (["end_date", "end_datetime"].includes(key)) return { min: values.start_date || (allowPastTemporalValues ? undefined : toDateTimeLocalNow()) };
-  if (key === "registration_close_at") return { min: values.registration_open_at || (allowPastTemporalValues ? undefined : toDateTimeLocalNow()), ...(values.start_date ? { max: values.start_date } : {}) };
+  if (key === "registration_close_at") return validDateTimeBounds({ min: values.registration_open_at || (allowPastTemporalValues ? undefined : toDateTimeLocalNow()), ...(values.start_date ? { max: values.start_date } : {}) });
   if (key === "registration_cutoff") {
     const maximum = [values.start_date, values.registration_close_at].filter(Boolean).sort()[0];
-    return { ...(values.registration_open_at ? { min: values.registration_open_at } : {}), ...(maximum ? { max: maximum } : {}) };
+    return validDateTimeBounds({ ...(values.registration_open_at ? { min: values.registration_open_at } : {}), ...(maximum ? { max: maximum } : {}) });
   }
   return {};
 }
@@ -124,6 +129,8 @@ function ConfiguredField(props: Omit<Props, "section"> & { field: ActiveEventFor
   const constraints = field.validation;
   const rangeError = isNumber ? numberRangeError(coreField ? values[coreField] : customValues[key], field.label, constraints.min, constraints.max) : undefined;
   const displayedError = error ?? rangeError;
+  const isTextEntry = !isTemporal && !(options.length || field.value_type === "enum" || key === "currency");
+  const textLimit = isTextEntry ? constraints.max_length ?? undefined : undefined;
   return (
     <div className="block text-sm font-semibold text-[#06201c]">
       <label htmlFor={id}>
@@ -135,7 +142,7 @@ function ConfiguredField(props: Omit<Props, "section"> & { field: ActiveEventFor
             {options.length ? options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>) : <option value={value}>{value}</option>}
           </select>
       ) : type === "textarea" ? (
-          <textarea id={id} disabled={moduleDisabled} value={value} required={field.required} placeholder={field.placeholder ?? undefined} minLength={constraints.min_length ?? undefined} maxLength={constraints.max_length ?? undefined} onChange={(event) => setValue(event.target.value)} className={`${inputClass} h-24 resize-y py-2`} />
+          <textarea id={id} disabled={moduleDisabled} value={value} required={field.required} placeholder={field.placeholder ?? undefined} minLength={constraints.min_length ?? undefined} onChange={(event) => setValue(event.target.value)} className={`${inputClass} h-24 resize-y py-2`} />
       ) : isTemporal ? (
           <input id={id} disabled={moduleDisabled} type={type} value={value} required={field.required} placeholder={field.placeholder ?? undefined} min={bounds.min ?? constraints.min ?? undefined} max={bounds.max ?? constraints.max ?? undefined} onChange={(event) => setValue(event.target.value)} className={inputClass} />
       ) : (
@@ -147,7 +154,6 @@ function ConfiguredField(props: Omit<Props, "section"> & { field: ActiveEventFor
             required={field.required}
             placeholder={field.placeholder ?? undefined}
             minLength={constraints.min_length ?? undefined}
-            maxLength={constraints.max_length ?? undefined}
             min={bounds.min ?? constraints.min ?? undefined}
             max={bounds.max ?? constraints.max ?? undefined}
             pattern={constraints.pattern ?? undefined}
@@ -158,6 +164,7 @@ function ConfiguredField(props: Omit<Props, "section"> & { field: ActiveEventFor
             className={inputClass}
           />
       )}
+      {textLimit != null ? <p className="mt-1 text-xs text-[#7f9d94]">{value.length}/{textLimit} characters</p> : null}
       {displayedError ? <p id={`${id}-error`} role="alert" className="mt-1 text-xs text-[#b42318]">{displayedError}</p> : null}
       {rangeAdjustment ? <p role="status" className="mt-1 text-xs text-[#52736a]">{t(`numberRange.adjustedTo${rangeAdjustment === "minimum" ? "Minimum" : "Maximum"}`, { value: rangeAdjustment === "minimum" ? constraints.min : constraints.max })}</p> : null}
       {moduleDisabledMessage ? <p className="mt-2 rounded-xl bg-[#fff8f7] px-3 py-2 text-xs font-semibold text-[#b42318]">{moduleDisabledMessage}</p> : null}
@@ -242,7 +249,7 @@ function TagsEditor({ field, values, update, error }: { field: ActiveEventFormFi
     setDraftError(null);
   };
 
-  return <div className="block text-sm font-semibold text-[#06201c]"><label htmlFor={`event-tags-${field.id}`}>{field.label}{field.required ? " *" : ""}{field.help_text ? <span className="ml-1 font-normal text-[#52736a]">{field.help_text}</span> : null}</label><input id={`event-tags-${field.id}`} value={draft} required={field.required && values.tags.length === 0} minLength={field.validation.min_length ?? undefined} maxLength={field.validation.max_length ?? undefined} pattern={field.validation.pattern ?? undefined} aria-invalid={Boolean(draftError || error) || undefined} onChange={(event) => { setDraft(event.target.value); setDraftError(null); }} placeholder={field.placeholder ?? "Type a tag and press Enter"} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addTag(); } }} className={inputClass} />{values.tags.length > 0 ? <div className="mt-2 flex flex-wrap gap-2">{values.tags.map((tag) => <span key={tag} className="inline-flex items-center gap-1 rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{tag}<button type="button" onClick={() => update("tags", values.tags.filter((item) => item !== tag))} aria-label={`Remove ${tag}`} className="rounded-full px-0.5 text-[#1f6a58] hover:bg-[#cdebd8]">×</button></span>)}</div> : null}{draftError ? <p role="alert" className="mt-1 text-xs text-[#b42318]">{draftError}</p> : error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</div>;
+  return <div className="block text-sm font-semibold text-[#06201c]"><label htmlFor={`event-tags-${field.id}`}>{field.label}{field.required ? " *" : ""}{field.help_text ? <span className="ml-1 font-normal text-[#52736a]">{field.help_text}</span> : null}</label><input id={`event-tags-${field.id}`} value={draft} required={field.required && values.tags.length === 0} minLength={field.validation.min_length ?? undefined} pattern={field.validation.pattern ?? undefined} aria-invalid={Boolean(draftError || error) || undefined} onChange={(event) => { setDraft(event.target.value); setDraftError(null); }} placeholder={field.placeholder ?? "Type a tag and press Enter"} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addTag(); } }} className={inputClass} />{values.tags.length > 0 ? <div className="mt-2 flex flex-wrap gap-2">{values.tags.map((tag) => <span key={tag} className="inline-flex items-center gap-1 rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{tag}<button type="button" onClick={() => update("tags", values.tags.filter((item) => item !== tag))} aria-label={`Remove ${tag}`} className="rounded-full px-0.5 text-[#1f6a58] hover:bg-[#cdebd8]">×</button></span>)}</div> : null}{draftError ? <p role="alert" className="mt-1 text-xs text-[#b42318]">{draftError}</p> : error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</div>;
 }
 
 function CompositeField({ field, values, update, error, currencyOptions, selectedEventType, disabled = false }: { field: ActiveEventFormField; values: CreateEventFormValues; update: UpdateForm; error?: string; currencyOptions?: readonly ActiveEventFormFieldOption[]; selectedEventType?: EventTypeDefinition; disabled?: boolean }) {
