@@ -46,7 +46,9 @@ import {
   getEventAdminNotes,
   getEventAttendees,
   createEventWalkIn,
+  getEventRegistrationForm,
   getEventById,
+  getEventAttendance,
   getEventFeedback,
   getEventRegistrations,
   getEventSessions,
@@ -170,6 +172,13 @@ export default function EventDetailsScreen() {
     eventQuery.data?.id,
     Boolean(eventQuery.data?.form_configuration_id && eventQuery.data?.form_configuration_version_id),
   );
+  const attendanceHistoryQuery = useQuery({
+    queryKey: ["event-attendance", eventId],
+    queryFn: () => getEventAttendance(eventId),
+    enabled: Boolean(eventQuery.data?.id) && eventQuery.data?.modules?.check_in === false,
+    staleTime: 30_000,
+    retry: 1,
+  });
   const historicalSessionsField = useMemo(() => historicalConfiguration.data?.sections
     .filter((section) => section.is_enabled)
     .flatMap((section) => section.fields)
@@ -204,7 +213,10 @@ export default function EventDetailsScreen() {
 
   const event = eventQuery.data;
   const hasOperationalDataAccess = hasOperationalEventDataAccess(event.status);
-  const visibleTabs = hasOperationalDataAccess ? eventDetailsTabs : eventDetailsTabs.slice(0, 2);
+  const hasHistoricalAttendance = attendanceHistoryQuery.data?.participants.length ? attendanceHistoryQuery.data.participants.length > 0 : false;
+  const visibleTabs = hasOperationalDataAccess
+    ? eventDetailsTabs.filter((tab) => tab.id !== "attendance" || event.modules?.check_in !== false || hasHistoricalAttendance)
+    : eventDetailsTabs.slice(0, 2);
   const effectiveActiveTab = visibleTabs.some((tab) => tab.id === activeTab) ? activeTab : "overview";
   const coordinates = event.venue?.coordinates;
   return (
@@ -446,6 +458,7 @@ export default function EventDetailsScreen() {
           />
         </DetailSection>
         </>}
+        <EventServicesDetails event={event} />
       </div>
       {effectiveActiveTab === "registrations" ? (
         <section
@@ -460,7 +473,7 @@ export default function EventDetailsScreen() {
       {effectiveActiveTab === "sessions" ? <section id="event-sessions-panel" role="tabpanel" aria-labelledby="event-sessions-tab" className="mt-6"><SessionsSection eventId={event.id} deliveryMode={event.delivery_mode} startDate={event.start_date} endDate={event.end_date} enabled={event.modules?.sessions !== false || event.sessions.length > 0} /><SessionAttendancePanel eventId={event.id} sessions={event.sessions} enabled={event.modules?.sessions !== false || event.sessions.length > 0} /></section> : null}
       {effectiveActiveTab === "attendance" ? (
         <section id="event-attendance-panel" role="tabpanel" aria-labelledby="event-attendance-tab" className="mt-6">
-          <EventAttendanceSection eventId={event.id} eventStatus={event.status} timeZone={event.time_zone} />
+          <EventAttendanceSection eventId={event.id} eventStatus={event.status} timeZone={event.time_zone} checkInEnabled={event.modules?.check_in !== false} />
         </section>
       ) : null}
       {effectiveActiveTab === "feedback" ? (
@@ -829,12 +842,14 @@ function RegistrationsSection({ eventId, timeZone, ticketTypes, sessions, module
   );
 }
 
-function WalkInRegistration({ eventId, ticketTypes, sessions, sessionsEnabled, onSuccess }: { eventId: string; ticketTypes: Event["ticket_types"]; sessions: Event["sessions"]; sessionsEnabled: boolean; onSuccess: () => void }) {
+function WalkInRegistration({ eventId, ticketTypes, sessions, sessionsEnabled, modules = null, meals = null, accommodation = null, onSuccess }: { eventId: string; ticketTypes: Event["ticket_types"]; sessions: Event["sessions"]; sessionsEnabled: boolean; modules?: Event["modules"]; meals?: Event["meals"]; accommodation?: Event["accommodation"]; onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
   const [successResult, setSuccessResult] = useState<unknown>(null);
   const queryClient = useQueryClient();
   const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [ticket, setTicket] = useState(""); const [session, setSession] = useState("");
-  const mutation = useMutation({ mutationFn: () => createEventWalkIn(eventId, { participant_name: name.trim(), participant_email: email.trim(), ticket_type_id: ticket || null, ...(session ? { session_id: session } : {}) }), onSuccess: async (result) => { setSuccessResult(result); setName(""); setEmail(""); setTicket(""); setSession(""); await Promise.all([queryClient.invalidateQueries({ queryKey: ["event-attendees", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-registrations", eventId] }), queryClient.invalidateQueries({ queryKey: ["events", "dashboard", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-attendance", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-orders", eventId] })]); onSuccess(); } });
+  const registrationForm = useQuery({ queryKey: ["event-registration-form", eventId], queryFn: () => getEventRegistrationForm(eventId), enabled: open, staleTime: 60_000, retry: 1 });
+  const [customFields, setCustomFields] = useState<Record<string, unknown>>({});
+  const mutation = useMutation({ mutationFn: () => createEventWalkIn(eventId, { participant_name: name.trim(), participant_email: email.trim(), ticket_type_id: ticket || null, ...(session ? { session_id: session } : {}), custom_fields: customFields, meal_selections: modules?.meals === true ? meals?.options.filter((item) => item.active).map((item) => item.id) : [], accommodation_selections: modules?.accommodation === true ? accommodation?.options.filter((item) => item.active).map((item) => item.id) : [], check_in: modules?.check_in === true }), onSuccess: async (result) => { setSuccessResult(result); setName(""); setEmail(""); setTicket(""); setSession(""); await Promise.all([queryClient.invalidateQueries({ queryKey: ["event-attendees", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-registrations", eventId] }), queryClient.invalidateQueries({ queryKey: ["events", "dashboard", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-attendance", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-orders", eventId] })]); onSuccess(); } });
   if (!open) return <button type="button" onClick={() => { setSuccessResult(null); setOpen(true); }} className="mt-3 h-10 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white">Register walk-in</button>;
   if (successResult) return <div className="mt-3 rounded-xl border border-[#b7dfc7] bg-[#f1fbf4] p-4"><p className="font-bold text-[#1f6a58]">Walk-In Registered</p><WalkInSuccessDetails result={successResult} /><button type="button" onClick={() => setSuccessResult(null)} className="mt-3 h-10 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white">Register another walk-in</button></div>;
   return <form onSubmit={(event) => { event.preventDefault(); mutation.mutate(); }} className="mt-3 grid gap-3 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-4 md:grid-cols-4"><input required value={name} onChange={(event) => setName(event.target.value)} placeholder="Participant name" className="h-10 rounded-lg border border-[#d7e5df] px-3 text-sm" /><input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" className="h-10 rounded-lg border border-[#d7e5df] px-3 text-sm" /><select value={ticket} onChange={(event) => setTicket(event.target.value)} className="h-10 rounded-lg border border-[#d7e5df] px-3 text-sm"><option value="">Select ticket</option>{ticketTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{sessionsEnabled && sessions.length > 0 ? <label className="text-sm font-semibold text-[#31594d]"><span className="mb-1 block">Session (optional)</span><select aria-label="Session (optional)" value={session} onChange={(event) => setSession(event.target.value)} className="h-10 w-full rounded-lg border border-[#d7e5df] px-3 text-sm"><option value="">No session</option>{sessions.map((item) => item.id ? <option key={item.id} value={item.id}>{item.title}</option> : null)}</select></label> : null}<div className="md:col-span-4 flex items-center gap-3"><button type="submit" disabled={mutation.isPending} className="h-10 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white disabled:opacity-60">{mutation.isPending ? "Registering..." : "Register"}</button><button type="button" onClick={() => setOpen(false)} className="h-10 rounded-full border border-[#d7e5df] px-4 text-sm font-semibold">Cancel</button>{mutation.isError ? <p role="alert" className="text-sm font-semibold text-[#b42318]">{mutation.error instanceof EventsApiError ? mutation.error.message : "Unable to register walk-in."}</p> : null}</div></form>;
@@ -1042,6 +1057,17 @@ function sanitizeDownloadFilename(value: string | null): string | null {
   return safeValue && safeValue.toLowerCase().endsWith(".csv")
     ? safeValue
     : null;
+}
+
+function EventServicesDetails({ event }: { event: Event }) {
+  const meals = event.meals?.options ?? [];
+  const accommodation = event.accommodation?.options ?? [];
+  if (meals.length === 0 && accommodation.length === 0) return null;
+  return <DetailSection title="Event Services"><div className="grid gap-5 lg:grid-cols-2"><ServiceOptions title="Meals" options={meals} timeZone={event.time_zone} /><ServiceOptions title="Accommodation" options={accommodation} timeZone={event.time_zone} /></div></DetailSection>;
+}
+
+function ServiceOptions({ title, options, timeZone }: { title: string; options: readonly { id: string; name: string; description?: string | null; date?: string | null; active: boolean }[]; timeZone: string }) {
+  return <section><h3 className="font-bold text-[#06201c]">{title}</h3>{options.length === 0 ? <p className="mt-2 text-sm text-[#52736a]">No options configured.</p> : <div className="mt-3 space-y-3">{options.map((option) => <article key={option.id} className="rounded-xl border border-[#edf3f0] bg-[#f9fcfa] p-3"><div className="flex items-start justify-between gap-3"><p className="font-semibold text-[#06201c]">{option.name}</p><span className={`rounded-full px-2 py-1 text-xs font-bold ${option.active ? "bg-[#e8f6ee] text-[#1f6a58]" : "bg-[#f1f4f3] text-[#52736a]"}`}>{option.active ? "Active" : "Inactive"}</span></div>{option.description ? <p className="mt-1 whitespace-pre-wrap text-sm text-[#52736a]">{option.description}</p> : null}{option.date ? <p className="mt-1 text-xs font-semibold text-[#52736a]">Date: {formatEventDate(option.date, timeZone)}</p> : null}</article>)}</div>}</section>;
 }
 
 function DetailSection({

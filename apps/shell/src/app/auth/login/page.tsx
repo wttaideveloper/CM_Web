@@ -362,7 +362,6 @@ function LoginPageContent() {
               ) : (
                 <p className="space-y-2 text-center text-[13px] text-[#55746b]">
                   <span className="block">Not registered yet?{" "}<Link href="/auth/register" className="font-semibold text-[#0b5b4e] underline-offset-2 hover:underline">Apply for access &rarr;</Link></span>
-                  <Link href="/auth/application-status" className="block font-semibold text-[#0b5b4e] underline-offset-2 hover:underline">Already applied? Check application status</Link>
                 </p>
               )}
             </div> : null}
