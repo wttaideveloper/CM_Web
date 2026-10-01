@@ -44,6 +44,7 @@ const platformOwnedNavigationRoutes = new Set([
   "/integrations",
   "/profile",
   "/account-settings",
+  "/building-pages",
 ]);
 
 export default function PlatformAdminShell({ children }: { children: ReactNode }) {

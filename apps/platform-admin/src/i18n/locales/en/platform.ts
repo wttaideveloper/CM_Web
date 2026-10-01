@@ -2,6 +2,7 @@ const platformEnglish = {
   settingsMenu: {
     accountSettings: "Account Settings",
     platformPreferences: "Platform Preferences",
+    buildingPages: "Building Pages",
     superAdmins: "Super Admins",
     billingSettings: "Billing Settings",
     integrations: "Integrations",

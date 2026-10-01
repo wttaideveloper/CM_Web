@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { AdditionalConfigurationSection, CapacityAndRegistrationSection, MediaSection, PricingAndTicketsSection, ReviewSection } from "./CreateEventConfigurationSections";
 import { BasicInformationSection, LocationAndHostSection, ScheduleSection } from "./CreateEventDetailsSections";
 import { buildCreateEventPayload, buildUpdateEventPayload, createEmptyEventForm, eventToFormValues, localDateTimeOrderValue, mapSessionForPayload, mergeLatestEventSessions, validateEventForm, validateParticipantCapacity, type CreateEventFormValues } from "./create-event-form";
+import { validateServiceSchedule } from "./create-event-form";
 import { useEventCategories, useEventType, useEventTypes } from "./event-categories.queries";
 import { useActiveEventFormConfiguration, useEventHistoricalFormConfiguration } from "./event-form-configuration.queries";
 import { createEvent, EventsApiError, getEventById, updateEvent, type ActiveEventFormConfiguration, type ActiveEventFormField, type Event, type EventCategory, type EventModules } from "./events.service";
@@ -302,6 +303,7 @@ function validateConfiguredEventForm(configuration: ActiveEventFormConfiguration
     const sessionError = validateSessions(values.sessions, values.start_date, values.end_date, sessionField.composite_config?.enabled_fields ?? undefined, sessionField.composite_config?.required_fields ?? [], [], values.delivery_mode);
     if (sessionError) errors.sessions = [sessionError];
   }
+  Object.assign(errors, validateServiceSchedule(values));
   return errors;
 }
 

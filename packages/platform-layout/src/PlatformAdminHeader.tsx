@@ -14,7 +14,7 @@ type SettingsMenuItem = { key: string; href?: string };
 
 const settingsItems: readonly SettingsMenuItem[] = [
   { key: "settingsMenu.accountSettings", href: "/account-settings" },
-  { key: "settingsMenu.superAdmins", href: "/super-admins" },
+  { key: "settingsMenu.buildingPages", href: "/building-pages" },
   { key: "settingsMenu.integrations", href: "/integrations" },
 ];
 

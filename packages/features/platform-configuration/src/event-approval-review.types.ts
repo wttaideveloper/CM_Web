@@ -24,6 +24,7 @@ export type EventSession = {
   location?: string | null;
   meeting_link?: string | null;
 };
+export type EventServiceOption = { id?: string | null; name: string; description?: string | null; date?: string | null; price?: string | null; currency?: string | null; capacity?: string | null; purchase_start_at?: string | null; purchase_end_at?: string | null; service_start_at?: string | null; service_end_at?: string | null; active?: boolean };
 
 export type EventCustomField = {
   id?: string;
@@ -86,8 +87,8 @@ export type EventApprovalReview = {
   status: string;
   event_type?: EventTypeReviewValue | null;
   modules?: EventModuleState | null;
-  meals?: { enabled?: boolean | null; options?: readonly Record<string, unknown>[] | null } | null;
-  accommodation?: { enabled?: boolean | null; options?: readonly Record<string, unknown>[] | null } | null;
+  meals?: { enabled?: boolean | null; options?: readonly EventServiceOption[] | null } | null;
+  accommodation?: { enabled?: boolean | null; options?: readonly EventServiceOption[] | null } | null;
   is_deleted?: boolean | null;
   created_at?: string | null;
   updated_at?: string | null;

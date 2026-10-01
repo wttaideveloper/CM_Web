@@ -18,7 +18,6 @@ import EventOrdersSection from "./EventOrdersSection";
 import EventOverviewSection from "./EventOverviewSection";
 import EventReportsSection from "./EventReportsSection";
 import SessionAttendancePanel from "./SessionAttendancePanel";
-import RegistrationServicesEditor from "./RegistrationServicesEditor";
 import {
   displayValue,
   formatEventDate,
@@ -50,6 +49,7 @@ import {
   getEventById,
   getEventAttendance,
   getEventFeedback,
+  getEventFulfilment,
   getEventRegistrations,
   getEventSessions,
   getEventWaitlist,
@@ -59,6 +59,12 @@ import {
   type ActiveEventFormConfiguration,
   type ActiveEventFormField,
   type Event,
+  type EventAttendeeAnswer,
+  type EventAttendeeAnswers,
+  type EventAttendeeServiceSelection,
+  type AccommodationOption,
+  type MealOption,
+  quoteEventCheckout,
   type EventRegistration,
   type EventSession,
   type UpdateEventSessionPayload,
@@ -70,7 +76,7 @@ type DetailItem = {
   label: string;
   value: string | number | boolean | null | undefined;
 };
-type EventDetailsTab = "overview" | "details" | "sessions" | "registrations" | "attendance" | "feedback" | "reports" | "orders";
+type EventDetailsTab = "overview" | "details" | "sessions" | "registrations" | "attendance" | "feedback" | "reports" | "orders" | "fulfilment";
 type RegistrationsSubview = "registered" | "waitlist";
 
 function AdminNoteBanner({ eventId, status }: { eventId: string; status: string }) {
@@ -121,6 +127,7 @@ const eventDetailsTabs: ReadonlyArray<{ id: EventDetailsTab; label: string }> =
     { id: "feedback", label: "Feedback" },
     { id: "reports", label: "Reports" },
     { id: "orders", label: "Orders" },
+    { id: "fulfilment", label: "Fulfilment" },
   ];
 
 const registrationsSubviews: ReadonlyArray<{
@@ -213,9 +220,11 @@ export default function EventDetailsScreen() {
 
   const event = eventQuery.data;
   const hasOperationalDataAccess = hasOperationalEventDataAccess(event.status);
+  const sessionsOperational = event.modules?.sessions !== false;
+  const sessionsVisible = sessionsOperational || event.sessions.length > 0;
   const hasHistoricalAttendance = attendanceHistoryQuery.data?.participants.length ? attendanceHistoryQuery.data.participants.length > 0 : false;
   const visibleTabs = hasOperationalDataAccess
-    ? eventDetailsTabs.filter((tab) => tab.id !== "attendance" || event.modules?.check_in !== false || hasHistoricalAttendance)
+    ? eventDetailsTabs.filter((tab) => (tab.id !== "attendance" || event.modules?.check_in !== false || hasHistoricalAttendance) && (tab.id !== "sessions" || sessionsVisible))
     : eventDetailsTabs.slice(0, 2);
   const effectiveActiveTab = visibleTabs.some((tab) => tab.id === activeTab) ? activeTab : "overview";
   const coordinates = event.venue?.coordinates;
@@ -467,10 +476,10 @@ export default function EventDetailsScreen() {
           aria-labelledby="event-registrations-tab"
           className="mt-6"
         >
-          <RegistrationsSection eventId={event.id} timeZone={event.time_zone} ticketTypes={event.ticket_types} sessions={event.sessions} modules={event.modules} meals={event.meals} accommodation={event.accommodation} historicalConfiguration={historicalConfiguration.data ?? undefined} />
+          <RegistrationsSection eventId={event.id} timeZone={event.time_zone} ticketTypes={event.ticket_types} pricingType={event.pricing_type} basePrice={event.price} sessions={event.sessions} modules={event.modules} meals={event.meals} accommodation={event.accommodation} historicalConfiguration={historicalConfiguration.data ?? undefined} />
         </section>
       ) : null}
-      {effectiveActiveTab === "sessions" ? <section id="event-sessions-panel" role="tabpanel" aria-labelledby="event-sessions-tab" className="mt-6"><SessionsSection eventId={event.id} deliveryMode={event.delivery_mode} startDate={event.start_date} endDate={event.end_date} enabled={event.modules?.sessions !== false || event.sessions.length > 0} /><SessionAttendancePanel eventId={event.id} sessions={event.sessions} enabled={event.modules?.sessions !== false || event.sessions.length > 0} /></section> : null}
+      {effectiveActiveTab === "sessions" ? <section id="event-sessions-panel" role="tabpanel" aria-labelledby="event-sessions-tab" className="mt-6"><SessionsSection eventId={event.id} deliveryMode={event.delivery_mode} startDate={event.start_date} endDate={event.end_date} enabled={sessionsOperational} /><SessionAttendancePanel eventId={event.id} sessions={event.sessions} enabled={sessionsOperational} /></section> : null}
       {effectiveActiveTab === "attendance" ? (
         <section id="event-attendance-panel" role="tabpanel" aria-labelledby="event-attendance-tab" className="mt-6">
           <EventAttendanceSection eventId={event.id} eventStatus={event.status} timeZone={event.time_zone} checkInEnabled={event.modules?.check_in !== false} />
@@ -491,6 +500,7 @@ export default function EventDetailsScreen() {
           <EventOrdersSection eventId={event.id} timeZone={event.time_zone} />
         </section>
       ) : null}
+      {effectiveActiveTab === "fulfilment" ? <EventFulfilmentSection eventId={event.id} /> : null}
     </div>
   );
 }
@@ -592,7 +602,7 @@ function handleTabKeyDown(
   event.preventDefault();
 }
 
-function RegistrationsSection({ eventId, timeZone, ticketTypes, sessions, modules, meals, accommodation, historicalConfiguration }: { eventId: string; timeZone: string; ticketTypes: Event["ticket_types"]; sessions: Event["sessions"]; modules: Event["modules"]; meals: Event["meals"]; accommodation: Event["accommodation"]; historicalConfiguration?: ActiveEventFormConfiguration }) {
+function RegistrationsSection({ eventId, timeZone, ticketTypes, pricingType, basePrice, sessions, modules, meals, accommodation, historicalConfiguration }: { eventId: string; timeZone: string; ticketTypes: Event["ticket_types"]; pricingType?: Event["pricing_type"]; basePrice: string | null; sessions: Event["sessions"]; modules: Event["modules"]; meals: Event["meals"]; accommodation: Event["accommodation"]; historicalConfiguration?: ActiveEventFormConfiguration }) {
   const [activeSubview, setActiveSubview] =
     useState<RegistrationsSubview>("registered");
   const [isExporting, setIsExporting] = useState(false);
@@ -617,7 +627,7 @@ function RegistrationsSection({ eventId, timeZone, ticketTypes, sessions, module
       const response = await getEventAttendees(eventId, { page: attendeePage, page_size: attendeePageSize, q: debouncedRegistrationSearch || undefined, sort: attendeeSort, status: attendeeStatus || undefined, source: attendeeSource || undefined, checked_in: attendeeCheckedIn === "" ? undefined : attendeeCheckedIn === "true", payment_status: attendeePaymentStatus || undefined, ticket_type_id: attendeeTicketTypeId || undefined, registered_from: registeredFrom || undefined, registered_to: registeredTo || undefined });
       return { items: response.items.map((attendee): EventRegistration => ({
         event_id: attendee.event_id, id: attendee.registration_id, participant_email: attendee.participant_email,
-        ticket_type_id: attendee.ticket_type_id, status: attendee.registration_status,
+        ticket_type_id: attendee.ticket_type_id, ticket_type_name: attendee.ticket_type_name, status: attendee.registration_status,
         checked_in_at: attendee.checked_in_at, checked_out_at: attendee.checked_out_at,
         created_at: attendee.registered_at, participant_name: attendee.participant_name,
         custom_fields: attendee.custom_answers, qr_code: "", checked_in_by: null, session_id: null,
@@ -835,9 +845,11 @@ function RegistrationsSection({ eventId, timeZone, ticketTypes, sessions, module
           onSelect={setSelectedRegistration}
           sessions={sessions}
           ticketTypes={ticketTypes}
+          pricingType={pricingType}
+          basePrice={basePrice}
         />
         <div className="mt-4 flex items-center justify-between gap-3 text-sm"><label>Rows<select value={attendeePageSize} onChange={(event) => { setAttendeePageSize(Number(event.target.value)); setAttendeePage(1); }} className="ml-2 rounded-lg border border-[#d7e5df] px-2 py-1"><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></label><span>Page {registrationsQuery.data.pagination.page} of {registrationsQuery.data.pagination.total_pages} · {registrationsQuery.data.pagination.total} attendees</span><div className="flex gap-2"><button type="button" disabled={attendeePage <= 1 || registrationsQuery.isFetching} onClick={() => setAttendeePage((page) => page - 1)} className="rounded-full border border-[#d7e5df] px-3 py-1 disabled:opacity-50">Previous</button><button type="button" disabled={attendeePage >= registrationsQuery.data.pagination.total_pages || registrationsQuery.isFetching} onClick={() => setAttendeePage((page) => page + 1)} className="rounded-full border border-[#d7e5df] px-3 py-1 disabled:opacity-50">Next</button></div></div>
-         {selectedRegistration ? <><RegistrationDetailsDrawer registration={selectedRegistration} ticketTypes={ticketTypes} sessions={sessions} historicalConfiguration={historicalConfiguration} timeZone={timeZone} onClose={() => setSelectedRegistration(null)} /><RegistrationServicesEditor eventId={eventId} registration={selectedRegistration} meals={meals} accommodation={accommodation} onSaved={(next) => setSelectedRegistration((current) => current ? { ...current, ...next } : current)} /></> : null}
+         {selectedRegistration ? <RegistrationDetailsDrawer registration={selectedRegistration} ticketTypes={ticketTypes} pricingType={pricingType} basePrice={basePrice} sessions={sessions} meals={meals} accommodation={accommodation} historicalConfiguration={historicalConfiguration} timeZone={timeZone} onClose={() => setSelectedRegistration(null)} /> : null}
     </RegistrationsPanel>
   );
 }
@@ -847,12 +859,17 @@ function WalkInRegistration({ eventId, ticketTypes, sessions, sessionsEnabled, m
   const [successResult, setSuccessResult] = useState<unknown>(null);
   const queryClient = useQueryClient();
   const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [ticket, setTicket] = useState(""); const [session, setSession] = useState("");
+  const [mealSelections, setMealSelections] = useState<string[]>([]); const [accommodationSelections, setAccommodationSelections] = useState<string[]>([]);
   const registrationForm = useQuery({ queryKey: ["event-registration-form", eventId], queryFn: () => getEventRegistrationForm(eventId), enabled: open, staleTime: 60_000, retry: 1 });
   const [customFields, setCustomFields] = useState<Record<string, unknown>>({});
-  const mutation = useMutation({ mutationFn: () => createEventWalkIn(eventId, { participant_name: name.trim(), participant_email: email.trim(), ticket_type_id: ticket || null, ...(session ? { session_id: session } : {}), custom_fields: customFields, meal_selections: modules?.meals === true ? meals?.options.filter((item) => item.active).map((item) => item.id) : [], accommodation_selections: modules?.accommodation === true ? accommodation?.options.filter((item) => item.active).map((item) => item.id) : [], check_in: modules?.check_in === true }), onSuccess: async (result) => { setSuccessResult(result); setName(""); setEmail(""); setTicket(""); setSession(""); await Promise.all([queryClient.invalidateQueries({ queryKey: ["event-attendees", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-registrations", eventId] }), queryClient.invalidateQueries({ queryKey: ["events", "dashboard", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-attendance", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-orders", eventId] })]); onSuccess(); } });
+  const quote = useQuery({ queryKey: ["event-checkout-quote", eventId, ticket, mealSelections, accommodationSelections], queryFn: () => quoteEventCheckout(eventId, { ticket_type_id: ticket, quantity: 1, meal_selections: mealSelections, accommodation_selections: accommodationSelections }), enabled: open && Boolean(ticket), staleTime: 0, retry: 0 });
+  const mutation = useMutation({ mutationFn: () => createEventWalkIn(eventId, { participant_name: name.trim(), participant_email: email.trim(), ticket_type_id: ticket || null, ...(session ? { session_id: session } : {}), custom_fields: customFields, meal_selections: mealSelections, accommodation_selections: accommodationSelections, check_in: modules?.check_in === true }), onSuccess: async (result) => { setSuccessResult(result); setName(""); setEmail(""); setTicket(""); setSession(""); await Promise.all([queryClient.invalidateQueries({ queryKey: ["event-attendees", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-registrations", eventId] }), queryClient.invalidateQueries({ queryKey: ["events", "dashboard", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-attendance", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-orders", eventId] })]); onSuccess(); } });
   if (!open) return <button type="button" onClick={() => { setSuccessResult(null); setOpen(true); }} className="mt-3 h-10 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white">Register walk-in</button>;
   if (successResult) return <div className="mt-3 rounded-xl border border-[#b7dfc7] bg-[#f1fbf4] p-4"><p className="font-bold text-[#1f6a58]">Walk-In Registered</p><WalkInSuccessDetails result={successResult} /><button type="button" onClick={() => setSuccessResult(null)} className="mt-3 h-10 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white">Register another walk-in</button></div>;
-  return <form onSubmit={(event) => { event.preventDefault(); mutation.mutate(); }} className="mt-3 grid gap-3 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-4 md:grid-cols-4"><input required value={name} onChange={(event) => setName(event.target.value)} placeholder="Participant name" className="h-10 rounded-lg border border-[#d7e5df] px-3 text-sm" /><input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" className="h-10 rounded-lg border border-[#d7e5df] px-3 text-sm" /><select value={ticket} onChange={(event) => setTicket(event.target.value)} className="h-10 rounded-lg border border-[#d7e5df] px-3 text-sm"><option value="">Select ticket</option>{ticketTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{sessionsEnabled && sessions.length > 0 ? <label className="text-sm font-semibold text-[#31594d]"><span className="mb-1 block">Session (optional)</span><select aria-label="Session (optional)" value={session} onChange={(event) => setSession(event.target.value)} className="h-10 w-full rounded-lg border border-[#d7e5df] px-3 text-sm"><option value="">No session</option>{sessions.map((item) => item.id ? <option key={item.id} value={item.id}>{item.title}</option> : null)}</select></label> : null}<div className="md:col-span-4 flex items-center gap-3"><button type="submit" disabled={mutation.isPending} className="h-10 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white disabled:opacity-60">{mutation.isPending ? "Registering..." : "Register"}</button><button type="button" onClick={() => setOpen(false)} className="h-10 rounded-full border border-[#d7e5df] px-4 text-sm font-semibold">Cancel</button>{mutation.isError ? <p role="alert" className="text-sm font-semibold text-[#b42318]">{mutation.error instanceof EventsApiError ? mutation.error.message : "Unable to register walk-in."}</p> : null}</div></form>;
+  const options = (kind: "meals" | "accommodation") => (kind === "meals" ? meals?.options ?? [] : accommodation?.options ?? []);
+  const toggle = (kind: "meals" | "accommodation", id: string) => { const setter = kind === "meals" ? setMealSelections : setAccommodationSelections; setter((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]); };
+  const serviceOptions = (kind: "meals" | "accommodation") => modules?.[kind] === true && options(kind).length ? <fieldset className="md:col-span-4"><legend className="text-sm font-bold">{kind === "meals" ? "Meals" : "Accommodation"}</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{options(kind).map((option) => { const selected = (kind === "meals" ? mealSelections : accommodationSelections).includes(option.id); const disabled = !option.active || option.sold_out === true; return <label key={option.id} className="rounded-xl border border-[#d7e5df] p-3 text-sm"><input type="checkbox" checked={selected} disabled={disabled} onChange={() => toggle(kind, option.id)} /> <span className="font-semibold">{option.name}</span>{option.description ? <span className="block text-xs text-[#52736a]">{option.description}</span> : null}<span className="block text-xs text-[#52736a]">{option.price ?? "Not provided"} {option.currency ?? ""}{option.remaining_capacity !== undefined && option.remaining_capacity !== null ? ` · ${option.remaining_capacity} remaining` : ""}{option.sold_out ? " · Sold out" : !option.active ? " · Inactive" : ""}</span></label>; })}</div></fieldset> : null;
+  return <form onSubmit={(event) => { event.preventDefault(); mutation.mutate(); }} className="mt-3 grid gap-3 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-4 md:grid-cols-4"><input required value={name} onChange={(event) => setName(event.target.value)} placeholder="Participant name" className="h-10 rounded-lg border border-[#d7e5df] px-3 text-sm" /><input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" className="h-10 rounded-lg border border-[#d7e5df] px-3 text-sm" /><select value={ticket} onChange={(event) => setTicket(event.target.value)} className="h-10 rounded-lg border border-[#d7e5df] px-3 text-sm"><option value="">Select ticket</option>{ticketTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{sessionsEnabled && sessions.length > 0 ? <label className="text-sm font-semibold text-[#31594d]"><span className="mb-1 block">Session (optional)</span><select aria-label="Session (optional)" value={session} onChange={(event) => setSession(event.target.value)} className="h-10 w-full rounded-lg border border-[#d7e5df] px-3 text-sm"><option value="">No session</option>{sessions.map((item) => item.id ? <option key={item.id} value={item.id}>{item.title}</option> : null)}</select></label> : null}{serviceOptions("meals")}{serviceOptions("accommodation")}{quote.data ? <div className="md:col-span-4 rounded-xl border border-[#d7e5df] bg-white p-3 text-sm"><p>Ticket: {quote.data.ticket_subtotal} · Meals: {quote.data.meal_subtotal} · Accommodation: {quote.data.accommodation_subtotal}</p><p>Discount: {quote.data.discount ?? 0} · Tax: {quote.data.tax ?? 0} · <strong>Total: {quote.data.grand_total} {quote.data.currency}</strong></p></div> : null}{quote.isFetching ? <p className="md:col-span-4 text-sm">Quoting…</p> : null}{quote.isError ? <p role="alert" className="md:col-span-4 text-sm font-semibold text-[#b42318]">Unable to quote this selection. Refresh and try again.</p> : null}<div className="md:col-span-4 flex items-center gap-3"><button type="submit" disabled={mutation.isPending || quote.isFetching || Boolean(ticket && !quote.data)} className="h-10 rounded-full bg-[#1f6a58] px-4 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white disabled:opacity-60">{mutation.isPending ? "Registering..." : "Register"}</button><button type="button" onClick={() => setOpen(false)} className="h-10 rounded-full border border-[#d7e5df] px-4 text-sm font-semibold">Cancel</button>{mutation.isError ? <p role="alert" className="text-sm font-semibold text-[#b42318]">{mutation.error instanceof EventsApiError ? mutation.error.message : "Unable to register walk-in."}</p> : null}</div></form>;
 }
 
 function humanizeRegistrationStatus(value: string): string {
@@ -892,6 +909,8 @@ function RegistrationTable({
   onSelect,
   sessions,
   ticketTypes,
+  pricingType,
+  basePrice,
 }: {
   eventId: string;
   registrations: readonly EventRegistration[];
@@ -901,9 +920,11 @@ function RegistrationTable({
   onSelect: (registration: EventRegistration) => void;
   sessions: Event["sessions"];
   ticketTypes: Event["ticket_types"];
+  pricingType?: Event["pricing_type"];
+  basePrice: string | null;
 }) {
   const countLabel = totalRegistrations === 1 ? "registered participant" : "registered participants";
-  return <section className="space-y-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><label className="w-full sm:max-w-sm"><span className="sr-only">Search registrations</span><input type="search" value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search attendees by name or email" className="h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]" /></label><p aria-live="polite" className="text-sm text-[#52736a]">{search.trim() ? registrations.length + " of " + totalRegistrations + " registrations" : totalRegistrations + " " + countLabel}</p></div>{registrations.length === 0 ? <div className="rounded-xl border border-dashed border-[#d7e5df] bg-[#f9fcfa] px-4 py-8 text-center"><p className="text-sm font-bold text-[#06201c]">No registrations found.</p></div> : <div className="overflow-x-auto"><table className="min-w-[900px] w-full table-fixed text-left text-sm"><thead className="border-y border-[#e1ebe6] bg-[#f9fcfa] text-xs font-bold uppercase tracking-[.08em] text-[#52736a]"><tr><th className="w-[28%] px-3 py-2">Attendee</th><th className="w-[17%] px-3 py-2">Ticket</th><th className="w-[16%] px-3 py-2">Registration</th><th className="w-[15%] px-3 py-2">Check-in</th><th className="w-[16%] px-3 py-2">Registered at</th><th className="w-[100px] px-3 py-2"><span className="sr-only">Actions</span></th></tr></thead><tbody>{registrations.map((registration) => { const ticket = ticketTypes.find((item) => item.id === registration.ticket_type_id)?.name ?? "Unknown ticket"; const session = sessions.find((item) => item.id === registration.session_id); const checkIn = registration.checked_out_at ? "Checked out" : registration.checked_in_at ? "Checked in" : "Not checked in"; return <tr key={registration.id} onClick={() => onSelect(registration)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(registration); } }} role="button" tabIndex={0} className="cursor-pointer border-b border-[#edf3f0] text-[#06201c] last:border-b-0 hover:bg-[#f4faf7]"><td className="px-3 py-2.5"><div className="truncate font-semibold">{registration.participant_name}</div><div className="truncate text-xs text-[#52736a]">{registration.participant_email}</div></td><td className="px-3 py-2.5 text-[#52736a]">{ticket}</td><td className="px-3 py-2.5"><span className="inline-flex rounded-full bg-[#edf3f0] px-2.5 py-1 text-xs font-semibold text-[#31594d]">{humanizeRegistrationStatus(registration.status)}</span></td><td className="px-3 py-2.5"><div className="font-semibold">{checkIn}</div>{registration.checked_in_at ? <div className="text-xs text-[#52736a]">{formatEventDateTime(registration.checked_in_at, "UTC")}</div> : null}</td><td className="px-3 py-2.5 text-[#52736a]">{formatEventDateTime(registration.created_at, "UTC")}</td><td className="px-3 py-2.5" onClick={(event) => event.stopPropagation()}><EventRefundAction eventId={eventId} target="registration" targetId={registration.id} refundState={getRegistrationRefundState(registration.status)} /></td></tr>; })}</tbody></table></div>}</section>;
+  return <section className="space-y-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><label className="w-full sm:max-w-sm"><span className="sr-only">Search registrations</span><input type="search" value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search attendees by name or email" className="h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]" /></label><p aria-live="polite" className="text-sm text-[#52736a]">{search.trim() ? registrations.length + " of " + totalRegistrations + " registrations" : totalRegistrations + " " + countLabel}</p></div>{registrations.length === 0 ? <div className="rounded-xl border border-dashed border-[#d7e5df] bg-[#f9fcfa] px-4 py-8 text-center"><p className="text-sm font-bold text-[#06201c]">No registrations found.</p></div> : <div className="overflow-x-auto"><table className="min-w-[900px] w-full table-fixed text-left text-sm"><thead className="border-y border-[#e1ebe6] bg-[#f9fcfa] text-xs font-bold uppercase tracking-[.08em] text-[#52736a]"><tr><th className="w-[28%] px-3 py-2">Attendee</th><th className="w-[17%] px-3 py-2">Ticket</th><th className="w-[16%] px-3 py-2">Registration</th><th className="w-[15%] px-3 py-2">Check-in</th><th className="w-[16%] px-3 py-2">Registered at</th><th className="w-[100px] px-3 py-2"><span className="sr-only">Actions</span></th></tr></thead><tbody>{registrations.map((registration) => { const ticket = getRegistrationTicketLabel(registration, ticketTypes, pricingType, basePrice); const session = sessions.find((item) => item.id === registration.session_id); const checkIn = registration.checked_out_at ? "Checked out" : registration.checked_in_at ? "Checked in" : "Not checked in"; return <tr key={registration.id} onClick={() => onSelect(registration)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(registration); } }} role="button" tabIndex={0} className="cursor-pointer border-b border-[#edf3f0] text-[#06201c] last:border-b-0 hover:bg-[#f4faf7]"><td className="px-3 py-2.5"><div className="truncate font-semibold">{registration.participant_name}</div><div className="truncate text-xs text-[#52736a]">{registration.participant_email}</div></td><td className="px-3 py-2.5 text-[#52736a]">{ticket}</td><td className="px-3 py-2.5"><span className="inline-flex rounded-full bg-[#edf3f0] px-2.5 py-1 text-xs font-semibold text-[#31594d]">{humanizeRegistrationStatus(registration.status)}</span></td><td className="px-3 py-2.5"><div className="font-semibold">{checkIn}</div>{registration.checked_in_at ? <div className="text-xs text-[#52736a]">{formatEventDateTime(registration.checked_in_at, "UTC")}</div> : null}</td><td className="px-3 py-2.5 text-[#52736a]">{formatEventDateTime(registration.created_at, "UTC")}</td><td className="px-3 py-2.5" onClick={(event) => event.stopPropagation()}><EventRefundAction eventId={eventId} target="registration" targetId={registration.id} refundState={getRegistrationRefundState(registration.status)} /></td></tr>; })}</tbody></table></div>}</section>;
 }
 
 function RegistrationsHeader({
@@ -934,6 +955,8 @@ function RegistrationsHeader({
 }
 
 function formatRegistrationValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "None selected";
+  if (Array.isArray(value)) return value.length ? value.map((item) => formatRegistrationValue(item)).join(", ") : "None selected";
   if (value === null || value === undefined || value === "") return "—";
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (Array.isArray(value)) return value.map((item) => formatRegistrationValue(item)).join(", ");
@@ -941,13 +964,49 @@ function formatRegistrationValue(value: unknown): string {
   return String(value);
 }
 
-function RegistrationDetailsDrawer({ registration, ticketTypes, sessions, historicalConfiguration, timeZone, onClose }: { registration: EventRegistration; ticketTypes: Event["ticket_types"]; sessions: Event["sessions"]; historicalConfiguration?: ActiveEventFormConfiguration; timeZone: string; onClose: () => void }) {
+function registrationAnswerEntries(value: EventAttendeeAnswers): Array<[string, unknown]> {
+  if (Array.isArray(value)) {
+    return value.map((answer: EventAttendeeAnswer, index) => [answer.label?.trim() || answer.question?.trim() || answer.question_id?.trim() || answer.key?.trim() || `Answer ${index + 1}`, answer.value !== undefined ? answer.value : answer.answer]);
+  }
+  return Object.entries(value).map(([key, answer]) => {
+    if (answer && typeof answer === "object" && !Array.isArray(answer)) {
+      const record = answer as EventAttendeeAnswer;
+      return [record.label?.trim() || record.question?.trim() || record.question_id?.trim() || record.key?.trim() || key, record.value !== undefined ? record.value : record.answer];
+    }
+    return [key, answer];
+  });
+}
+
+function RegistrationDetailsDrawer({ registration, ticketTypes, pricingType, basePrice, sessions, meals, accommodation, historicalConfiguration, timeZone, onClose }: { registration: EventRegistration; ticketTypes: Event["ticket_types"]; pricingType?: Event["pricing_type"]; basePrice: string | null; sessions: Event["sessions"]; meals: Event["meals"]; accommodation: Event["accommodation"]; historicalConfiguration?: ActiveEventFormConfiguration; timeZone: string; onClose: () => void }) {
   const fields = historicalConfiguration?.sections.flatMap((section) => section.fields) ?? [];
   const ticket = ticketTypes.find((item) => item.id === registration.ticket_type_id);
   const session = sessions.find((item) => item.id === registration.session_id);
   const fieldLabel = (key: string) => fields.find((field) => field.id === key || field.stable_key === key)?.label ?? key;
-  const customEntries = Object.entries(registration.custom_fields ?? {});
-  return <div className="fixed inset-0 z-50"><button type="button" aria-label="Close attendee details" className="absolute inset-0 bg-[#06201c]/30" onClick={onClose} /><aside role="dialog" aria-modal="true" aria-label="Attendee Details" className="absolute right-0 top-0 h-full w-full max-w-lg overflow-y-auto bg-white p-6 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Registration</p><h2 className="mt-1 text-xl font-bold text-[#06201c]">Attendee Details</h2></div><button type="button" onClick={onClose} className="rounded-full px-3 py-1 text-sm font-bold text-[#52736a] hover:bg-[#f4faf7]">Close</button></div><section className="mt-6 space-y-2"><h3 className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Participant</h3><DetailRow label="Name" value={registration.participant_name} /><DetailRow label="Email" value={registration.participant_email} /></section><section className="mt-6 space-y-2"><h3 className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Registration</h3><DetailRow label="Status" value={humanizeRegistrationStatus(registration.status)} /><DetailRow label="Reference" value={registration.registration_reference ?? "—"} /><DetailRow label="Source" value={registration.registration_source ?? "—"} /><DetailRow label="Payment" value={registration.payment_status ?? "—"} /><DetailRow label="Ticket" value={ticket?.name ?? registration.ticket_type_id ?? "—"} /><DetailRow label="Registered" value={formatEventDateTime(registration.created_at, timeZone)} />{registration.session_id ? <DetailRow label="Session" value={session?.title ?? "Unknown session"} /> : null}</section><section className="mt-6 space-y-2"><h3 className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Attendance</h3><DetailRow label="Check-in" value={registration.checked_in_at ? formatEventDateTime(registration.checked_in_at, timeZone) : "Not checked in"} />{registration.checked_out_at ? <DetailRow label="Checked out" value={formatEventDateTime(registration.checked_out_at, timeZone)} /> : null}{registration.session_attendance?.map((item) => <DetailRow key={item.session_id} label={`${item.title} attendance`} value={item.checked_out_at ? "Checked out" : item.checked_in ? "Checked in" : "Not checked in"} />)}</section><section className="mt-6 space-y-2"><h3 className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Custom Answers</h3>{customEntries.length === 0 ? <p className="text-sm text-[#52736a]">No additional registration information</p> : customEntries.map(([key, value]) => <DetailRow key={key} label={fieldLabel(key)} value={formatRegistrationValue(value)} />)}</section></aside></div>;
+  const customEntries = registrationAnswerEntries(registration.custom_fields ?? {});
+  const mealOptions = meals?.options ?? [];
+  const accommodationOptions = accommodation?.options ?? [];
+  return <div className="fixed inset-0 z-50"><button type="button" aria-label="Close attendee details" className="absolute inset-0 bg-[#06201c]/30" onClick={onClose} /><aside role="dialog" aria-modal="true" aria-label="Attendee Details" className="absolute right-0 top-0 h-full w-full max-w-lg overflow-y-auto bg-white p-6 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Registration</p><h2 className="mt-1 text-xl font-bold text-[#06201c]">Attendee Details</h2></div><button type="button" onClick={onClose} className="rounded-full px-3 py-1 text-sm font-bold text-[#52736a] hover:bg-[#f4faf7]">Close</button></div><section className="mt-6 space-y-2"><h3 className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Participant</h3><DetailRow label="Name" value={registration.participant_name} /><DetailRow label="Email" value={registration.participant_email} /></section><section className="mt-6 space-y-2"><h3 className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Registration</h3><DetailRow label="Status" value={humanizeRegistrationStatus(registration.status)} /><DetailRow label="Reference" value={registration.registration_reference ?? "—"} /><DetailRow label="Source" value={registration.registration_source ?? "—"} /><DetailRow label="Payment" value={registration.payment_status ?? "—"} /><DetailRow label="Ticket" value={getRegistrationTicketLabel(registration, ticketTypes, pricingType, basePrice)} /><DetailRow label="Registered" value={formatEventDateTime(registration.created_at, timeZone)} />{registration.session_id ? <DetailRow label="Session" value={session?.title ?? "Unknown session"} /> : null}</section><section className="mt-6 space-y-2"><h3 className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Attendance</h3><DetailRow label="Check-in" value={registration.checked_in_at ? formatEventDateTime(registration.checked_in_at, timeZone) : "Not checked in"} />{registration.checked_out_at ? <DetailRow label="Checked out" value={formatEventDateTime(registration.checked_out_at, timeZone)} /> : null}{registration.session_attendance?.map((item) => <DetailRow key={item.session_id} label={`${item.title} attendance`} value={item.checked_out_at ? "Checked out" : item.checked_in ? "Checked in" : "Not checked in"} />)}</section><PurchasedServices registration={registration} meals={mealOptions} accommodation={accommodationOptions} /><section className="mt-6 space-y-2"><h3 className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Registration Answers</h3>{customEntries.length === 0 ? <p className="text-sm text-[#52736a]">No registration answers</p> : customEntries.map(([key, value]) => <DetailRow key={key} label={fieldLabel(key)} value={formatRegistrationValue(value)} />)}</section></aside></div>;
+}
+
+function PurchasedServices({ registration, meals, accommodation }: { registration: EventRegistration; meals: readonly MealOption[]; accommodation: readonly AccommodationOption[] }) {
+  const resolveOption = (selection: string | EventAttendeeServiceSelection, options: readonly (MealOption | AccommodationOption)[]) => {
+    if (typeof selection === "string") return options.find((option) => option.id === selection) ?? { id: selection, name: selection };
+    return { ...selection, id: selection.id ?? selection.meal_id ?? selection.accommodation_id ?? selection.name ?? "Selected service", name: selection.name ?? selection.id ?? selection.meal_id ?? selection.accommodation_id ?? "Selected service" };
+  };
+  const selectedMeals = (registration.meal_selections ?? []).map((selection) => resolveOption(selection, meals));
+  const selectedAccommodation = (registration.accommodation_selections ?? []).map((selection) => resolveOption(selection, accommodation));
+  const hasSelections = selectedMeals.length > 0 || selectedAccommodation.length > 0;
+  const optionRows = (title: string, options: readonly { id: string; name: string; price?: string | number | null; currency?: string | null }[]) => options.length ? <div className="space-y-1"><h4 className="text-sm font-semibold text-[#06201c]">{title}</h4>{options.map((option) => <DetailRow key={option.id} label={option.name} value={[option.price, option.currency].filter(Boolean).join(" ") || "Price not provided"} />)}</div> : null;
+  return <section className="mt-6 space-y-3"><h3 className="text-xs font-bold uppercase tracking-[.12em] text-[#52736a]">Purchased Services</h3>{hasSelections ? <>{optionRows("Meals", selectedMeals)}{optionRows("Accommodation", selectedAccommodation)}</> : <p className="text-sm text-[#52736a]">No purchased services</p>}</section>;
+}
+
+function getRegistrationTicketLabel(registration: EventRegistration, ticketTypes: Event["ticket_types"], pricingType?: Event["pricing_type"], basePrice?: string | null): string {
+  if (registration.ticket_type_name?.trim()) return registration.ticket_type_name;
+  const ticket = ticketTypes.find((item) => item.id === registration.ticket_type_id);
+  if (ticket) return ticket.name;
+  if (pricingType === "paid" && basePrice !== null && basePrice !== undefined && basePrice.trim() !== "") return "Standard Ticket";
+  if (pricingType === "free" && !registration.ticket_type_id) return "Free Admission";
+  return registration.ticket_type_id ? registration.ticket_type_id : "Unknown ticket";
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
@@ -1059,6 +1118,14 @@ function sanitizeDownloadFilename(value: string | null): string | null {
     : null;
 }
 
+function EventFulfilmentSection({ eventId }: { eventId: string }) {
+  const query = useQuery({ queryKey: ["event-fulfilment", eventId], queryFn: () => getEventFulfilment(eventId), enabled: Boolean(eventId), staleTime: 30_000, retry: 1 });
+  if (query.isLoading) return <section className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white p-5">Loading fulfilment…</section>;
+  if (query.isError || !query.data) return <section className="mt-6 rounded-2xl border border-[#f0d5d1] bg-[#fff8f7] p-5"><p role="alert" className="font-semibold text-[#8f241b]">Unable to load Event fulfilment.</p><button type="button" onClick={() => void query.refetch()} className="mt-2 text-sm font-bold text-[#8f241b] underline">Retry</button></section>;
+  const summaries = [...(query.data.meals ?? []).map((item) => ({ ...item, type: "Meal", id: item.meal_id })), ...(query.data.accommodation ?? []).map((item) => ({ ...item, type: "Accommodation", id: item.accommodation_id }))];
+  return <section className="mt-6 space-y-5"><DetailSection title="Event Services / Fulfilment"><div className="space-y-3">{summaries.map((item) => <article key={`${item.type}-${item.id}`} className="rounded-xl border border-[#edf3f0] bg-[#f9fcfa] p-3"><div className="flex justify-between gap-3"><p className="font-semibold">{item.name}</p><span className="text-xs font-bold">{item.sold_out ? "Sold out" : item.active ? "Available" : "Inactive"}</span></div><p className="mt-1 text-sm text-[#52736a]">{item.type} · {item.price ?? "Not provided"} {item.currency ?? ""} · Capacity: {item.capacity ?? "Unlimited"}</p><p className="text-sm text-[#52736a]">Selected: {item.selected_count}{item.reserved_count !== undefined && item.reserved_count !== null ? ` · Reserved: ${item.reserved_count}` : ""}{item.remaining_capacity !== undefined && item.remaining_capacity !== null ? ` · Remaining: ${item.remaining_capacity}` : ""}</p></article>)}</div></DetailSection><DetailSection title="Purchases"><div className="overflow-x-auto"><table className="min-w-[900px] w-full text-left text-sm"><thead className="border-b border-[#e1ebe6] text-xs uppercase text-[#52736a]"><tr>{["Participant", "Email", "Option", "Quantity", "Price", "Total", "Registration", "Payment", "Order"].map((heading) => <th key={heading} className="px-3 py-2">{heading}</th>)}</tr></thead><tbody>{(query.data.purchases ?? []).map((purchase) => <tr key={`${purchase.registration_id}-${purchase.option_id}`} className="border-b border-[#edf3f0]"><td className="px-3 py-3">{purchase.participant_name}</td><td className="px-3 py-3">{purchase.participant_email}</td><td className="px-3 py-3">{purchase.option_name}</td><td className="px-3 py-3">{purchase.quantity}</td><td className="px-3 py-3">{purchase.unit_price} {purchase.currency}</td><td className="px-3 py-3">{purchase.line_total} {purchase.currency}</td><td className="px-3 py-3">{purchase.registration_status}</td><td className="px-3 py-3">{purchase.payment_status}</td><td className="px-3 py-3">{purchase.order_id ?? "—"}</td></tr>)}</tbody></table></div>{query.data.purchases?.length ? null : <p className="text-sm text-[#52736a]">No service purchases recorded.</p>}</DetailSection></section>;
+}
+
 function EventServicesDetails({ event }: { event: Event }) {
   const meals = event.meals?.options ?? [];
   const accommodation = event.accommodation?.options ?? [];
@@ -1066,9 +1133,11 @@ function EventServicesDetails({ event }: { event: Event }) {
   return <DetailSection title="Event Services"><div className="grid gap-5 lg:grid-cols-2"><ServiceOptions title="Meals" options={meals} timeZone={event.time_zone} /><ServiceOptions title="Accommodation" options={accommodation} timeZone={event.time_zone} /></div></DetailSection>;
 }
 
-function ServiceOptions({ title, options, timeZone }: { title: string; options: readonly { id: string; name: string; description?: string | null; date?: string | null; active: boolean }[]; timeZone: string }) {
-  return <section><h3 className="font-bold text-[#06201c]">{title}</h3>{options.length === 0 ? <p className="mt-2 text-sm text-[#52736a]">No options configured.</p> : <div className="mt-3 space-y-3">{options.map((option) => <article key={option.id} className="rounded-xl border border-[#edf3f0] bg-[#f9fcfa] p-3"><div className="flex items-start justify-between gap-3"><p className="font-semibold text-[#06201c]">{option.name}</p><span className={`rounded-full px-2 py-1 text-xs font-bold ${option.active ? "bg-[#e8f6ee] text-[#1f6a58]" : "bg-[#f1f4f3] text-[#52736a]"}`}>{option.active ? "Active" : "Inactive"}</span></div>{option.description ? <p className="mt-1 whitespace-pre-wrap text-sm text-[#52736a]">{option.description}</p> : null}{option.date ? <p className="mt-1 text-xs font-semibold text-[#52736a]">Date: {formatEventDate(option.date, timeZone)}</p> : null}</article>)}</div>}</section>;
+function ServiceOptions({ title, options, timeZone }: { title: string; options: readonly { id: string; name: string; description?: string | null; date?: string | null; active: boolean; price?: string | null; currency?: string | null; capacity?: string | null; purchase_start_at?: string | null; purchase_end_at?: string | null; service_start_at?: string | null; service_end_at?: string | null; remaining_capacity?: number | null; sold_out?: boolean | null }[]; timeZone: string }) {
+  return <section><h3 className="font-bold text-[#06201c]">{title}</h3>{options.length === 0 ? <p className="mt-2 text-sm text-[#52736a]">No options configured.</p> : <div className="mt-3 space-y-3">{options.map((option) => <article key={option.id} className="rounded-xl border border-[#edf3f0] bg-[#f9fcfa] p-3"><div className="flex items-start justify-between gap-3"><p className="font-semibold text-[#06201c]">{option.name}</p><span className={`rounded-full px-2 py-1 text-xs font-bold ${option.active ? "bg-[#e8f6ee] text-[#1f6a58]" : "bg-[#f1f4f3] text-[#52736a]"}`}>{option.active ? "Active" : "Inactive"}</span></div>{option.description ? <p className="mt-1 whitespace-pre-wrap text-sm text-[#52736a]">{option.description}</p> : null}<div className="mt-2 grid gap-2 text-xs text-[#52736a] sm:grid-cols-2"><p>Price: {option.price || "Not provided"} {option.currency || ""}</p><p>Capacity: {option.capacity || "Not provided"}</p>{option.remaining_capacity !== undefined && option.remaining_capacity !== null ? <p>Remaining capacity: {option.remaining_capacity}</p> : null}{option.sold_out !== undefined && option.sold_out !== null ? <p>Status: {option.sold_out ? "Sold out" : "Available"}</p> : null}</div>{option.date ? <p className="mt-1 text-xs font-semibold text-[#52736a]">Date: {formatEventDate(option.date, timeZone)}</p> : null}<p className="mt-1 text-xs text-[#52736a]">Purchase: {formatServiceWindow(option.purchase_start_at, option.purchase_end_at, timeZone)}</p><p className="text-xs text-[#52736a]">Service: {formatServiceWindow(option.service_start_at, option.service_end_at, timeZone)}</p></article>)}</div>}</section>;
 }
+
+function formatServiceWindow(start: string | null | undefined, end: string | null | undefined, timeZone: string) { if (!start && !end) return "Not provided"; return `${start ? formatEventDateTime(start, timeZone) : "Not provided"} – ${end ? formatEventDateTime(end, timeZone) : "Not provided"}`; }
 
 function DetailSection({
   title,
@@ -1238,7 +1307,7 @@ function SessionsSection({
   const sessionsQuery = useQuery({
     queryKey: ["event-sessions", eventId],
     queryFn: () => getEventSessions(eventId),
-    enabled: enabled && Boolean(eventId),
+    enabled: Boolean(eventId),
     staleTime: 30_000,
     retry: 1,
   });
@@ -1335,7 +1404,7 @@ function SessionsSection({
             <div className="h-10 animate-pulse rounded-xl bg-[#edf3f0]" />
             <div className="h-10 animate-pulse rounded-xl bg-[#edf3f0]" />
           </div>
-        ) : <SessionTableEditor
+        ) : <>{!enabled ? <p role="status" className="mb-4 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-4 py-3 text-sm font-semibold text-[#52736a]">Sessions are disabled for this Event.</p> : null}<SessionTableEditor
           mode="manage"
           eventStart={startDate}
           eventEnd={endDate}
@@ -1349,9 +1418,10 @@ function SessionsSection({
           onAddSession={() => setIsDialogOpen(true)}
           onEditPersisted={(session) => setEditingSession(session as EventSession)}
           onDeletePersisted={(session) => setDeletingSession(session as EventSession)}
-          renderPersistedActions={(session) => <SessionCalendarDownloadAction eventId={eventId} sessionId={session.id} />}
+          disabled={!enabled}
+          renderPersistedActions={enabled ? (session) => <SessionCalendarDownloadAction eventId={eventId} sessionId={session.id} /> : undefined}
           onSaveNewSessions={saveNewSessions}
-        />}
+        /></>}
       </div>
       {isDialogOpen || editingSession ? (
         <AddSessionDialog

@@ -1,0 +1,5 @@
+"use client";
+export default function PriceBreakdown({ ticketSubtotal, mealsSubtotal, accommodationSubtotal, discounts, tax, total, currency }: { ticketSubtotal?: React.ReactNode; mealsSubtotal?: React.ReactNode; accommodationSubtotal?: React.ReactNode; discounts?: React.ReactNode; tax?: React.ReactNode; total?: React.ReactNode; currency?: string }) {
+  const rows: Array<[string, React.ReactNode]> = [["Ticket subtotal", ticketSubtotal], ["Meals subtotal", mealsSubtotal], ["Accommodation subtotal", accommodationSubtotal], ["Discounts", discounts], ["Tax", tax]].filter(([, value]) => value !== undefined) as Array<[string, React.ReactNode]>;
+  return <section aria-label="Price breakdown" className="rounded-xl border border-[#d7e5df] bg-white p-4"><dl className="space-y-2 text-sm">{rows.map(([label, value]) => <div key={label} className="flex justify-between gap-4"><dt className="text-[#52736a]">{label}</dt><dd>{value} {currency}</dd></div>)}{total !== undefined ? <div className="flex justify-between gap-4 border-t border-[#edf3f0] pt-3 font-bold"><dt>Total</dt><dd>{total} {currency}</dd></div> : null}</dl></section>;
+}

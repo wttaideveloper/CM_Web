@@ -17,6 +17,33 @@ export interface EventSessionAttendance {
   checked_out_at: string | null;
 }
 
+export interface EventAttendeeAnswer {
+  question?: string | null;
+  question_id?: string | null;
+  label?: string | null;
+  key?: string | null;
+  value?: unknown;
+  answer?: unknown;
+}
+
+export type EventAttendeeAnswers = readonly EventAttendeeAnswer[] | Record<string, unknown>;
+
+export interface EventAttendeeServiceSelection {
+  id?: string | null;
+  meal_id?: string | null;
+  accommodation_id?: string | null;
+  name?: string | null;
+  price?: string | number | null;
+  currency?: string | null;
+  quantity?: number | null;
+  status?: string | null;
+  service_start_at?: string | null;
+  service_end_at?: string | null;
+  [key: string]: unknown;
+}
+
+export type EventAttendeeServiceSelections = readonly (string | EventAttendeeServiceSelection)[];
+
 export interface EventAttendee {
   registration_id: string;
   event_id: string;
@@ -37,9 +64,9 @@ export interface EventAttendee {
   checked_out_at: string | null;
   registered_at: string;
   registration_source: AttendeeSource;
-  meal_selections: readonly string[];
-  accommodation_selections: readonly string[];
-  custom_answers: Record<string, unknown>;
+  meal_selections: EventAttendeeServiceSelections;
+  accommodation_selections: EventAttendeeServiceSelections;
+  custom_answers: EventAttendeeAnswers;
   session_attendance: readonly EventSessionAttendance[];
 }
 
@@ -59,10 +86,21 @@ export interface EventWalkInPayload {
   quantity?: number;
   session_id?: string | null;
   custom_fields?: Record<string, unknown>;
-  meal_selections?: readonly string[];
-  accommodation_selections?: readonly string[];
+  meal_selections?: EventAttendeeServiceSelections;
+  accommodation_selections?: EventAttendeeServiceSelections;
   check_in?: boolean;
 }
+export type EventCheckoutQuoteRequest = { ticket_type_id: string; quantity?: number; meal_selections?: string[] | null; accommodation_selections?: string[] | null };
+export interface EventCheckoutQuoteLine { option_type: "meal" | "accommodation"; option_id: string; name: string; unit_price: number; quantity: number; line_total: number; currency: string; }
+export interface EventCheckoutQuoteResponse { ticket_subtotal: number; meal_subtotal: number; accommodation_subtotal: number; discount?: number; tax?: number; grand_total: number; currency: string; items?: EventCheckoutQuoteLine[]; }
+export interface DashboardMeal { meal_id: string; name: string; selected_count: number; active: boolean; price?: number; currency?: string; capacity?: number | null; reserved_count?: number | null; remaining_capacity?: number | null; sold_out?: boolean; }
+export type DashboardAccommodation = Omit<DashboardMeal, "meal_id"> & { accommodation_id: string };
+export type EventOptionPurchasePaymentStatus = "free" | "unpaid" | "pending" | "paid" | "refund_requested" | "refunded" | "cancelled" | "failed";
+export interface EventOptionPurchase { registration_id: string; participant_name: string; participant_email: string; registration_status: string; option_type: "meal" | "accommodation"; option_id: string; option_name: string; quantity: number; unit_price: number; currency: string; line_total: number; order_id?: string | null; payment_status: EventOptionPurchasePaymentStatus; }
+export interface EventFulfilmentResponse { meals?: DashboardMeal[]; accommodation?: DashboardAccommodation[]; purchases?: EventOptionPurchase[]; generated_at: string; }
+export interface WalkInPayment { required: boolean; status: EventOptionPurchasePaymentStatus; amount?: number | null; currency?: string | null; order_id?: string | null; note?: string | null; }
+export interface WalkInCheckIn { requested: boolean; performed: boolean; checked_in_at?: string | null; reason?: "payment_pending" | null; }
+export interface EventWalkInResponse { payment?: WalkInPayment; check_in?: WalkInCheckIn; [key: string]: unknown; }
 
 /** Backend-owned Event Type definition with boolean module capability maps. */
 export interface EventTypeDefinition {
@@ -105,6 +143,15 @@ export interface MealOption {
   description: string | null;
   date: string | null;
   active: boolean;
+  price?: string | null;
+  currency?: string | null;
+  capacity?: string | null;
+  purchase_start_at?: string | null;
+  purchase_end_at?: string | null;
+  service_start_at?: string | null;
+  service_end_at?: string | null;
+  remaining_capacity?: number | null;
+  sold_out?: boolean | null;
 }
 
 export interface MealOptionInput {
@@ -113,6 +160,13 @@ export interface MealOptionInput {
   description?: string | null;
   date?: string | null;
   active?: boolean;
+  price?: string | null;
+  currency?: string | null;
+  capacity?: string | null;
+  purchase_start_at?: string | null;
+  purchase_end_at?: string | null;
+  service_start_at?: string | null;
+  service_end_at?: string | null;
 }
 
 export interface EventMeals {
@@ -130,6 +184,15 @@ export interface AccommodationOption {
   name: string;
   description: string | null;
   active: boolean;
+  price?: string | null;
+  currency?: string | null;
+  capacity?: string | null;
+  purchase_start_at?: string | null;
+  purchase_end_at?: string | null;
+  service_start_at?: string | null;
+  service_end_at?: string | null;
+  remaining_capacity?: number | null;
+  sold_out?: boolean | null;
 }
 
 export interface AccommodationOptionInput {
@@ -137,6 +200,13 @@ export interface AccommodationOptionInput {
   name: string;
   description?: string | null;
   active?: boolean;
+  price?: string | null;
+  currency?: string | null;
+  capacity?: string | null;
+  purchase_start_at?: string | null;
+  purchase_end_at?: string | null;
+  service_start_at?: string | null;
+  service_end_at?: string | null;
 }
 
 export interface EventAccommodation {
@@ -277,19 +347,8 @@ export interface EventDashboardSession {
   attendance_percentage?: number | null;
 }
 
-export interface EventDashboardMeal {
-  meal_id: string;
-  name: string;
-  selected_count: number;
-  active: boolean;
-}
-
-export interface EventDashboardAccommodation {
-  accommodation_id: string;
-  name: string;
-  selected_count: number;
-  active: boolean;
-}
+export type EventDashboardMeal = DashboardMeal;
+export type EventDashboardAccommodation = DashboardAccommodation;
 
 export interface EventDashboard {
   event: Record<string, unknown>;
@@ -378,12 +437,13 @@ export interface EventRegistration {
   id: string;
   participant_email: string;
   ticket_type_id: string | null;
+  ticket_type_name?: string | null;
   status: string;
   checked_in_at: string | null;
   checked_out_at: string | null;
   created_at: string;
   participant_name: string;
-  custom_fields: Record<string, unknown>;
+  custom_fields: EventAttendeeAnswers;
   qr_code: string;
   checked_in_by: unknown | null;
   session_id: string | null;
@@ -394,8 +454,8 @@ export interface EventRegistration {
   order_status?: string | null;
   amount?: string | null;
   currency?: string | null;
-  meal_selections?: readonly string[];
-  accommodation_selections?: readonly string[];
+  meal_selections?: EventAttendeeServiceSelections;
+  accommodation_selections?: EventAttendeeServiceSelections;
   session_attendance?: readonly EventSessionAttendance[];
 }
 
@@ -1499,6 +1559,20 @@ export async function getEventDashboard(eventId: string): Promise<EventDashboard
   return (await response.json()) as EventDashboard;
 }
 
+/** Requests the backend-authoritative quote for an Event checkout selection. */
+export async function quoteEventCheckout(eventId: string, payload: EventCheckoutQuoteRequest): Promise<EventCheckoutQuoteResponse> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/checkout/quote`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (!response.ok) throw await createEventsApiError(response, "quote this Event registration");
+  return (await response.json()) as EventCheckoutQuoteResponse;
+}
+
+/** Loads backend-authoritative service fulfilment and purchase snapshots. */
+export async function getEventFulfilment(eventId: string): Promise<EventFulfilmentResponse> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/fulfilment`, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw await createEventsApiError(response, "load Event service fulfilment");
+  return (await response.json()) as EventFulfilmentResponse;
+}
+
 /** Reads the latest Platform review note for an Event through the authenticated Events API. */
 export async function getEventAdminNotes(eventId: string): Promise<unknown> {
   const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/admin-notes`, {
@@ -1552,22 +1626,10 @@ export function checkOutEventSessionAttendee(eventId: string, sessionId: string,
 export function batchCheckInEventSessionAttendees(eventId: string, sessionId: string, payload: { participants: readonly SessionAttendancePayload[] }) { return postSessionAttendance(eventId, sessionId, "batch-check-in", payload); }
 
 /** Registers a walk-in using only fields supported by the confirmed request model. */
-export async function createEventWalkIn(eventId: string, payload: EventWalkInPayload): Promise<unknown> {
+export async function createEventWalkIn(eventId: string, payload: EventWalkInPayload): Promise<EventWalkInResponse> {
   const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/walk-in`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
   if (!response.ok) throw await createEventsApiError(response, "register this walk-in attendee");
-  return (await response.json().catch(() => null)) as unknown;
-}
-
-export async function updateRegistrationMealSelections(eventId: string, registrationId: string, mealSelections: readonly string[]): Promise<unknown> {
-  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/registrations/${encodeURIComponent(registrationId)}/meals`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meal_selections: mealSelections }) });
-  if (!response.ok) throw await createEventsApiError(response, "update meal selections");
-  return (await response.json().catch(() => null)) as unknown;
-}
-
-export async function updateRegistrationAccommodationSelections(eventId: string, registrationId: string, accommodationSelections: readonly string[]): Promise<unknown> {
-  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/registrations/${encodeURIComponent(registrationId)}/accommodation`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accommodation_selections: accommodationSelections }) });
-  if (!response.ok) throw await createEventsApiError(response, "update accommodation selections");
-  return (await response.json().catch(() => null)) as unknown;
+  return (await response.json()) as EventWalkInResponse;
 }
 
 /** Lists backend-authoritative purchase records for one Event through the same-origin proxy. */

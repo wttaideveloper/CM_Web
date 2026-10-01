@@ -120,12 +120,13 @@ export function AuthProvider({ children, config }: AuthProviderProps) {
   const logout = useCallback(async () => {
     sessionRequestVersion.current += 1;
     invalidateAuthRefreshes();
+    const logoutUrl = await logoutWebAuth(config);
     setUser(null);
     setAuthenticated(false);
     setHasSessionError(false);
     setHasActiveTenant(false);
     setNeedsOrganizationSetup(false);
-    return logoutWebAuth(config);
+    return logoutUrl;
   }, [config]);
 
   const value = useMemo<AuthContextValue>(

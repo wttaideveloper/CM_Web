@@ -94,6 +94,7 @@ export async function getSession(config?: AuthClientConfig) {
   const response = await fetch(clientConfig.sessionEndpoint, {
     method: "GET",
     credentials: "include",
+    cache: "no-store",
   });
 
   logAuthDebug("session response", { status: response.status });

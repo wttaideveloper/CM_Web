@@ -341,6 +341,24 @@ export function validateParticipantCapacity(values: Pick<CreateEventFormValues, 
 }
 
 /** Validates the safe, user-supplied Create Event values before submission. */
+export function validateServiceSchedule(values: CreateEventFormValues): Record<string, string[]> {
+  const errors: Record<string, string[]> = {};
+  const start = values.start_date;
+  const end = values.end_date;
+  const check = (key: "meals" | "accommodation", options: readonly { date?: string | null; service_start_at?: string | null; service_end_at?: string | null }[]) => {
+    options.forEach((option, index) => {
+      const prefix = `${key}.${index}`;
+      if (option.date && ((start && option.date < start.slice(0, 10)) || (end && option.date > end.slice(0, 10)))) errors[prefix] = ["Service date must be within the Event schedule."];
+      if (option.service_start_at && start && option.service_start_at < start || option.service_start_at && end && option.service_start_at > end) errors[prefix] = ["Service start must be within the Event schedule."];
+      if (option.service_end_at && start && option.service_end_at < start || option.service_end_at && end && option.service_end_at > end) errors[prefix] = ["Service end must be within the Event schedule."];
+      if (option.service_start_at && option.service_end_at && option.service_end_at < option.service_start_at) errors[prefix] = ["Service end must be after service start."];
+    });
+  };
+  check("meals", values.meals?.options ?? []);
+  check("accommodation", values.accommodation?.options ?? []);
+  return errors;
+}
+
 export function validateEventForm(values: CreateEventFormValues, mode: "create" | "edit" = "create"): Record<string, string[]> {
   const errors: Record<string, string[]> = {};
   const require = (field: keyof CreateEventFormValues, label: string) => {
@@ -365,6 +383,7 @@ export function validateEventForm(values: CreateEventFormValues, mode: "create" 
   validateNumbers(values, errors);
   validateUrls(values, errors);
   validateRepeatingValues(values, errors);
+  Object.assign(errors, validateServiceSchedule(values));
   return errors;
 }
 
