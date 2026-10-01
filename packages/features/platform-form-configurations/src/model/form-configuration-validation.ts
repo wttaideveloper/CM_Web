@@ -80,23 +80,10 @@ function validateFieldSettings(field: ConfiguredField, runtimeSourced: boolean, 
     });
   }
   if (!runtimeSourced && (field.renderer === "select" || field.renderer === "multi_select")) {
-    const courseTypeOptionsDeferred = configurationType === "training"
-      && field.source === "core"
-      && field.coreKey === "course_type"
-      && field.enabled
-      && field.options.length === 0;
     const invalidOptions = field.enabled
       && (field.options.some((option) => !option.label.trim() || !option.value.trim())
         || new Set(field.options.map((option) => option.value)).size !== field.options.length);
-    if (courseTypeOptionsDeferred) {
-      issues.push({
-        severity: "warning",
-        code: "invalid-field-options",
-        message: `${fieldName(field)} has no options yet. Add options before publishing this Training configuration.`,
-        sectionLocalId: field.sectionLocalId,
-        fieldLocalId: field.localId,
-      });
-    } else if (invalidOptions || (field.enabled && field.options.length === 0)) {
+    if (invalidOptions || (field.enabled && field.options.length === 0)) {
       issues.push({
         code: "invalid-field-options",
         message: `${fieldName(field)} needs at least one option with a label and unique value.`,

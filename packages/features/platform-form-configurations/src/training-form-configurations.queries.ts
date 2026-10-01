@@ -52,37 +52,23 @@ export function useTrainingFormConfigurationTenantOptions() {
   return useQuery({
     queryKey: trainingFormConfigurationKeys.assignableTenants(),
     queryFn: async (): Promise<AssignmentTenantOption[]> => {
-      const response = await getPlatformEnterpriseTenants();
-      return response.items.map((tenant) => ({ id: tenant.id, name: tenant.name, slug: tenant.slug }));
+      const [response, enterprises] = await Promise.all([
+        getPlatformEnterpriseTenants(),
+        getPlatformEnterprises(),
+      ]);
+      const linkedTenantIds = new Set(
+        enterprises
+          .map((enterprise) => enterprise.tenant_id)
+          .filter((tenantId): tenantId is string => Boolean(tenantId)),
+      );
+      return response.items
+        .filter((tenant) => linkedTenantIds.has(tenant.id))
+        .map((tenant) => ({ id: tenant.id, name: tenant.name, slug: tenant.slug }));
     },
     retry: 1,
     staleTime: 60_000,
   });
 }
-/** Reads enterprises for enterprise_ids assignment — display name prefers the trading name. */
-export function useTrainingFormConfigurationEnterpriseOptions() {
-  return useQuery({
-    queryKey: [...trainingFormConfigurationKeys.all, "assignable-enterprises"] as const,
-    queryFn: async (): Promise<AssignmentTenantOption[]> => {
-      const enterprises = await getPlatformEnterprises();
-      return enterprises
-        .map((enterprise) => {
-          const record = enterprise as unknown as Record<string, unknown>;
-          const id = typeof record.id === "string" ? record.id : "";
-          const name = typeof record.business_short_name === "string" && record.business_short_name
-            ? record.business_short_name
-            : typeof record.business_legal_name === "string" && record.business_legal_name
-              ? record.business_legal_name
-              : typeof record.name === "string" ? record.name : "";
-          return { id, name, slug: null };
-        })
-        .filter((option) => option.id && option.name);
-    },
-    retry: 1,
-    staleTime: 60_000,
-  });
-}
-
 /** Creates a configuration and refreshes the configuration collection. */
 export function useCreateTrainingFormConfiguration() { const queryClient = useQueryClient(); return useMutation({ mutationFn: createTrainingFormConfiguration, onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: trainingFormConfigurationKeys.list() }); } }); }
 /** Updates a configuration and refreshes its list and detail projections. */

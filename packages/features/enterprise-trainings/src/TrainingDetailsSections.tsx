@@ -1,7 +1,8 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import {
   addAssessmentQuestions,
   approveTrainingEnrolment,
@@ -75,7 +76,6 @@ const QUIZ_QUESTION_TYPE_OPTIONS = [
   { value: "true_false", label: "True / False" },
   { value: "short_answer", label: "Blank answer" },
   { value: "essay", label: "Essay" },
-  { value: "task", label: "Task" },
 ] as const;
 
 const MEETING_TYPE_OPTIONS = [
@@ -88,7 +88,6 @@ const MEETING_TYPE_OPTIONS = [
 
 function toApiLessonType(type: string): string {
   if (type === "notes" || type === "assignment") return "text";
-  if (type === "quiz") return "exam";
   return type;
 }
 
@@ -187,23 +186,274 @@ function LessonUrlList({ label, values, update, placeholder }: { label: string; 
   );
 }
 
-function LessonFileSize({ value }: { value: string }) {
+function formatLessonFileSize(value: string): string {
   const sizeInBytes = Number(value);
-  let displayValue = "Upload a file to calculate its size";
-  if (value.trim() && Number.isFinite(sizeInBytes) && sizeInBytes >= 0) {
-    const units = ["bytes", "KB", "MB", "GB", "TB"];
-    let scaledSize = sizeInBytes;
-    let unitIndex = 0;
-    while (scaledSize >= 1024 && unitIndex < units.length - 1) {
-      scaledSize /= 1024;
-      unitIndex += 1;
-    }
-    displayValue = `${new Intl.NumberFormat(undefined, { maximumFractionDigits: unitIndex === 0 ? 0 : 1 }).format(scaledSize)} ${units[unitIndex]}`;
-  }
+  if (!value.trim() || !Number.isFinite(sizeInBytes) || sizeInBytes < 0) return "";
 
+  const units = ["bytes", "KB", "MB", "GB", "TB"];
+  let scaledSize = sizeInBytes;
+  let unitIndex = 0;
+  while (scaledSize >= 1024 && unitIndex < units.length - 1) {
+    scaledSize /= 1024;
+    unitIndex += 1;
+  }
+  return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: unitIndex === 0 ? 0 : 1 }).format(scaledSize)} ${units[unitIndex]}`;
+}
+
+function LessonFileSize({ value }: { value: string }) {
+  const displayValue = formatLessonFileSize(value) || "Upload a file to calculate its size";
   return (
     <div className="rounded-lg border border-[#d7e5df] bg-[#f9fcfa] px-3 py-2 text-xs">
       <p className="font-semibold text-[#06201c]">File size</p>
+      <p className="mt-0.5 text-[#52736a]">{displayValue}</p>
+    </div>
+  );
+}
+
+interface TrainingLessonDefaults {
+  meetingProvider: string;
+  meetingLink: string;
+  deliveryInstructions: string;
+  venue: string;
+  address: string;
+  startDate: string;
+  startTime: string;
+}
+
+type LessonDetailsSource = "existing" | "new";
+
+function hasExistingLessonDetails(type: "live" | "venue", defaults: TrainingLessonDefaults): boolean {
+  return type === "live"
+    ? Boolean(defaults.meetingLink.trim())
+    : Boolean(defaults.venue.trim() || defaults.address.trim());
+}
+
+function getInitialLessonDetailsSource(type: string, defaults: TrainingLessonDefaults): LessonDetailsSource {
+  return (type === "live" || type === "venue") && hasExistingLessonDetails(type, defaults) ? "existing" : "new";
+}
+
+function getTrainingScheduledAt(defaults: TrainingLessonDefaults): string {
+  const date = defaults.startDate.trim();
+  const time = defaults.startTime.trim();
+  const datePart = date.slice(0, 10);
+  const timePart = time ? time.slice(0, 5) : date.includes("T") ? date.slice(11, 16) : "";
+  return datePart && timePart ? `${datePart}T${timePart}` : "";
+}
+
+function getMeetingTypeFromProvider(provider: string): string {
+  const normalizedProvider = provider.trim().toLowerCase();
+  if (normalizedProvider === "meet" || normalizedProvider === "google meet") return "google_meet";
+  if (["zoom", "teams", "webex", "other"].includes(normalizedProvider)) return normalizedProvider;
+  return "google_meet";
+}
+
+function formatLessonScheduledAt(value: string): string {
+  if (!value.trim()) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+function LessonScheduleFields({
+  type,
+  defaults,
+  source,
+  setSource,
+  scheduledAt,
+  setScheduledAt,
+  meetingType,
+  setMeetingType,
+  meetingLink,
+  setMeetingLink,
+  joinUrl,
+  setJoinUrl,
+  venueName,
+  setVenueName,
+  venueAddress,
+  setVenueAddress,
+}: {
+  type: "live" | "venue";
+  defaults: TrainingLessonDefaults;
+  source: LessonDetailsSource;
+  setSource: (source: LessonDetailsSource) => void;
+  scheduledAt: string;
+  setScheduledAt: (value: string) => void;
+  meetingType: string;
+  setMeetingType: (value: string) => void;
+  meetingLink: string;
+  setMeetingLink: (value: string) => void;
+  joinUrl: string;
+  setJoinUrl: (value: string) => void;
+  venueName: string;
+  setVenueName: (value: string) => void;
+  venueAddress: string;
+  setVenueAddress: (value: string) => void;
+}) {
+  const { t } = useTranslation("enterpriseTrainings");
+  const copy = (key: string, defaultValue: string) => t(`lessonScheduling.${key}`, { defaultValue });
+  const hasExisting = hasExistingLessonDetails(type, defaults);
+  const scheduledAtDefault = getTrainingScheduledAt(defaults);
+  const scheduleDisplay = scheduledAtDefault
+    ? formatLessonScheduledAt(scheduledAtDefault)
+    : [defaults.startDate, defaults.startTime].filter(Boolean).join(" · ");
+  const isLive = type === "live";
+  const title = isLive ? copy("meetingSetup", "Meeting setup") : copy("venueSetup", "Venue setup");
+
+  return (
+    <div className="space-y-2 rounded-lg border border-[#d7e5df] bg-[#f9fcfa] p-3">
+      <label className="block text-[10px] font-semibold text-[#52736a]">
+        {title}
+        <select
+          value={source}
+          onChange={(event) => setSource(event.target.value as LessonDetailsSource)}
+          aria-label={copy("detailsSource", `${title} source`)}
+          className="mt-1 h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]"
+        >
+          <option value="existing" disabled={!hasExisting}>{isLive ? copy("useTrainingMeeting", "Use training's existing meeting") : copy("useTrainingVenue", "Use training's existing venue")}</option>
+          <option value="new">{isLive ? copy("newMeeting", "Set up a new meeting") : copy("newVenue", "Set up a new venue")}</option>
+        </select>
+      </label>
+      <label className="block text-[10px] font-semibold text-[#52736a]">
+        {copy("lessonDateTime", "Lesson date and time (required)")}
+        <input
+          type="datetime-local"
+          required
+          value={scheduledAt}
+          onChange={(event) => setScheduledAt(event.target.value)}
+          aria-label={copy("lessonDateTime", "Lesson date and time (required)")}
+          className="mt-1 h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]"
+        />
+      </label>
+      {source === "existing" ? (
+        <div className="grid gap-1 text-xs text-[#52736a]">
+          <p><span className="font-semibold">{copy("trainingSchedule", "Training schedule (reference)")}:</span> {scheduleDisplay
+            ? scheduleDisplay
+            : copy("notSetOnTraining", "Not set on the training")}</p>
+          {isLive ? (
+            <>
+              <p><span className="font-semibold">{copy("provider", "Meeting provider")}:</span> {humanizeLabel(defaults.meetingProvider) || copy("notSet", "Not set")}</p>
+              <p><span className="font-semibold">{copy("meetingLink", "Meeting link")}:</span> {defaults.meetingLink || copy("notSet", "Not set")}</p>
+              {defaults.deliveryInstructions ? <p><span className="font-semibold">{copy("joinInstructions", "Join instructions")}:</span> {defaults.deliveryInstructions}</p> : null}
+            </>
+          ) : (
+            <>
+              <p><span className="font-semibold">{copy("venue", "Venue")}:</span> {defaults.venue || copy("notSet", "Not set")}</p>
+              <p><span className="font-semibold">{copy("address", "Address")}:</span> {defaults.address || copy("notSet", "Not set")}</p>
+            </>
+          )}
+        </div>
+      ) : (
+        <>
+          {isLive ? (
+            <>
+              <label className="block text-[10px] font-semibold text-[#52736a]">
+                {copy("provider", "Meeting provider")}
+                <select value={meetingType} onChange={(event) => setMeetingType(event.target.value)} aria-label={copy("provider", "Meeting provider")} className="mt-1 h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]">
+                  {MEETING_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+              <input type="url" required value={meetingLink} onChange={(event) => setMeetingLink(event.target.value)} placeholder={copy("meetingLink", "Meeting link")} aria-label={copy("newMeetingLink", "New meeting link")} className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
+              <input value={joinUrl} onChange={(event) => setJoinUrl(event.target.value)} placeholder={copy("joinInstructionsOptional", "Join instructions (optional)")} aria-label={copy("joinInstructions", "Join instructions")} className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
+            </>
+          ) : (
+            <>
+              <input required value={venueName} onChange={(event) => setVenueName(event.target.value)} placeholder={copy("venueName", "Venue name")} aria-label={copy("newVenueName", "New venue name")} className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
+              <input required value={venueAddress} onChange={(event) => setVenueAddress(event.target.value)} placeholder={copy("address", "Address")} aria-label={copy("newVenueAddress", "New venue address")} className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function readVideoDurationInSeconds(source: File | string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement("video");
+    const isObjectUrl = typeof source !== "string";
+    const videoSource = isObjectUrl ? URL.createObjectURL(source) : source;
+    let isSettled = false;
+    const timeoutId = window.setTimeout(() => {
+      settle({ error: new Error("Could not read this video's duration. Try another video file.") });
+    }, 15_000);
+
+    const cleanup = () => {
+      window.clearTimeout(timeoutId);
+      video.onloadedmetadata = null;
+      video.onerror = null;
+      video.removeAttribute("src");
+      video.load();
+      if (isObjectUrl) URL.revokeObjectURL(videoSource);
+    };
+
+    const settle = (result: { durationSeconds: number } | { error: Error }) => {
+      if (isSettled) return;
+      isSettled = true;
+      cleanup();
+      if ("error" in result) {
+        reject(result.error);
+      } else {
+        resolve(result.durationSeconds);
+      }
+    };
+
+    video.preload = "metadata";
+    video.onloadedmetadata = () => {
+      if (!Number.isFinite(video.duration) || video.duration <= 0) {
+        settle({ error: new Error("Could not read this video's duration. Try another video file.") });
+        return;
+      }
+      settle({ durationSeconds: Math.max(1, Math.round(video.duration)) });
+    };
+    video.onerror = () => settle({ error: new Error("Could not read this video's duration. Try another video file.") });
+    video.src = videoSource;
+  });
+}
+
+const lessonVideoDurationCache = new Map<string, string>();
+
+function toDurationMinutesFromSeconds(value: string): number | undefined {
+  if (!value.trim()) return undefined;
+  const durationSeconds = Number(value);
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return undefined;
+  return Math.max(1, Math.round(durationSeconds / 60));
+}
+
+function formatVideoDurationSeconds(value: string): string {
+  const totalSeconds = Number(value);
+  if (!value.trim() || !Number.isFinite(totalSeconds) || totalSeconds < 0) return "";
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return [
+    hours > 0 ? `${hours} hr` : "",
+    `${minutes} min`,
+    `${seconds} sec`,
+  ].filter(Boolean).join(" ");
+}
+
+function formatLessonDuration(value: string): string {
+  const durationMinutes = Number(value);
+  if (!value.trim() || !Number.isFinite(durationMinutes) || durationMinutes < 0) return "";
+
+  const totalSeconds = Math.round(durationMinutes * 60);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return [
+    hours > 0 ? `${hours} hr` : "",
+    `${minutes} min`,
+    `${seconds} sec`,
+  ].filter(Boolean).join(" ");
+}
+
+function LessonDuration({ value }: { value: string }) {
+  const displayValue = formatVideoDurationSeconds(value) || "Upload a video to calculate its duration";
+
+  return (
+    <div className="rounded-lg border border-[#d7e5df] bg-[#f9fcfa] px-3 py-2 text-xs">
+      <p className="font-semibold text-[#06201c]">Video duration</p>
       <p className="mt-0.5 text-[#52736a]">{displayValue}</p>
     </div>
   );
@@ -245,17 +495,19 @@ function LessonFileDrop({
   label,
   accept,
   fileName,
+  disabled = false,
   onFile,
 }: {
   label: string;
   accept: string;
   fileName: string;
+  disabled?: boolean;
   onFile: (file: File) => void;
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const handleFile = (file: File | undefined) => {
-    if (!file) return;
+    if (!file || disabled) return;
     setError(null);
     if (file.size > MAX_LESSON_FILE_BYTES) {
       setError(`${file.name} is larger than ${MAX_LESSON_FILE_SIZE_MB} MB.`);
@@ -265,22 +517,23 @@ function LessonFileDrop({
   };
   return (
     <div
-      onDragOver={(event) => { event.preventDefault(); setIsDragging(true); }}
+      onDragOver={(event) => { event.preventDefault(); if (!disabled) setIsDragging(true); }}
       onDragLeave={() => setIsDragging(false)}
-      onDrop={(event) => { event.preventDefault(); setIsDragging(false); try { handleFile(event.dataTransfer.files[0]); } catch (dropError) { setError(dropError instanceof Error ? dropError.message : "Unable to add file."); } }}
-      className={`rounded-lg border border-dashed px-3 py-4 text-center text-xs transition-all duration-150 ${isDragging ? "border-[#1f6a58] bg-[#effaf4] ring-2 ring-[#1f6a58]/20 shadow-sm" : "border-[#b9d3c8] bg-[#f9fcfa] hover:-translate-y-0.5 hover:border-[#1f6a58] hover:bg-[#effaf4] hover:shadow-md focus-within:border-[#1f6a58] focus-within:ring-2 focus-within:ring-[#1f6a58]/30"}`}
+      onDrop={(event) => { event.preventDefault(); setIsDragging(false); if (disabled) return; try { handleFile(event.dataTransfer.files[0]); } catch (dropError) { setError(dropError instanceof Error ? dropError.message : "Unable to add file."); } }}
+      className={`rounded-lg border border-dashed px-3 py-4 text-center text-xs transition-all duration-150 ${disabled ? "cursor-not-allowed opacity-60" : ""} ${isDragging ? "border-[#1f6a58] bg-[#effaf4] ring-2 ring-[#1f6a58]/20 shadow-sm" : "border-[#b9d3c8] bg-[#f9fcfa] hover:-translate-y-0.5 hover:border-[#1f6a58] hover:bg-[#effaf4] hover:shadow-md focus-within:border-[#1f6a58] focus-within:ring-2 focus-within:ring-[#1f6a58]/30"}`}
     >
       <input
         type="file"
         accept={accept}
         className="sr-only"
+        disabled={disabled}
         id={`lesson-file-${label.toLowerCase().replace(/\s+/g, "-")}`}
         onChange={(event) => {
           handleFile(event.target.files?.[0]);
           event.currentTarget.value = "";
         }}
       />
-      <label htmlFor={`lesson-file-${label.toLowerCase().replace(/\s+/g, "-")}`} className="inline-flex cursor-pointer rounded-full px-3 py-1 font-semibold text-[#1f6a58] transition-colors hover:bg-[#1f6a58] hover:text-white hover:underline">
+      <label htmlFor={`lesson-file-${label.toLowerCase().replace(/\s+/g, "-")}`} className={`inline-flex rounded-full px-3 py-1 font-semibold transition-colors ${disabled ? "cursor-not-allowed text-[#7f9d94]" : "cursor-pointer text-[#1f6a58] hover:bg-[#1f6a58] hover:text-white hover:underline"}`}>
         {fileName || `Drop ${label.toLowerCase()} here or click to browse`}
       </label>
       <p className="mt-1 text-[10px] text-[#7f9d94]">Maximum file size: {MAX_LESSON_FILE_SIZE_MB} MB</p>
@@ -289,13 +542,15 @@ function LessonFileDrop({
   );
 }
 
-function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, onClose }: { trainingId: string; sectionId: string; lessonId: string; trainingDeliveryMode: string; onClose: () => void }) {
+function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, trainingLessonDefaults, onClose }: { trainingId: string; sectionId: string; lessonId: string; trainingDeliveryMode: string; trainingLessonDefaults: TrainingLessonDefaults; onClose: () => void }) {
+  const { t } = useTranslation("enterpriseTrainings");
   const [editMode, setEditMode] = useState(false);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
   const [lessonTypeValue, setLessonTypeValue] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
+  const [detailsSource, setDetailsSource] = useState<LessonDetailsSource>("new");
   const [meetingType, setMeetingType] = useState("google_meet");
   const [meetingLink, setMeetingLink] = useState("");
   const [joinUrl, setJoinUrl] = useState("");
@@ -303,19 +558,52 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, o
   const [venueAddress, setVenueAddress] = useState("");
   const [isDownloadable, setIsDownloadable] = useState(false);
   const [fileSize, setFileSize] = useState("");
-  const [durationMinutes, setDurationMinutes] = useState("");
+  const [durationSeconds, setDurationSeconds] = useState("");
+  const [isVideoUploadPending, setIsVideoUploadPending] = useState(false);
   const [isPreview, setIsPreview] = useState(false);
   const [lessonVideos, setLessonVideos] = useState<string[]>([]);
   const [lessonDocs, setLessonDocs] = useState<Array<{ url: string; name: string; visibility: string; downloadable: boolean }>>([]);
   const [lessonNotes, setLessonNotes] = useState<string[]>([]);
   const [feedback, setFeedback] = useState<string | null>(null);
   const queryClient = useQueryClient();
+  const durationCacheKey = JSON.stringify([trainingId, sectionId, lessonId]);
 
   const lessonQuery = useQuery({
     queryKey: ["trainings", trainingId, "lesson", sectionId, lessonId],
     queryFn: () => getTrainingLesson(trainingId, sectionId, lessonId),
     enabled: Boolean(trainingId && sectionId && lessonId),
   });
+
+  useEffect(() => {
+    const cachedDuration = lessonVideoDurationCache.get(durationCacheKey);
+    if (cachedDuration) {
+      setDurationSeconds(cachedDuration);
+      return;
+    }
+
+    const lessonData = lessonQuery.data;
+    if (!lessonData || typeof lessonData !== "object" || Array.isArray(lessonData)) return;
+    const lessonRecord = lessonData as Record<string, unknown>;
+    const videoUrl = typeof lessonRecord.content_url === "string" && lessonRecord.content_url.trim()
+      ? lessonRecord.content_url
+      : typeof lessonRecord.video_url === "string" ? lessonRecord.video_url : "";
+    if (!videoUrl) return;
+
+    let isCurrentLesson = true;
+    void readVideoDurationInSeconds(videoUrl)
+      .then((duration) => {
+        if (isCurrentLesson) {
+          const exactDuration = String(duration);
+          lessonVideoDurationCache.set(durationCacheKey, exactDuration);
+          setDurationSeconds(exactDuration);
+        }
+      })
+      .catch(() => {
+        if (isCurrentLesson) setFeedback("Could not read the exact video duration. Showing the saved duration.");
+      });
+
+    return () => { isCurrentLesson = false; };
+  }, [durationCacheKey, lessonQuery.data]);
 
   const updateMutation = useMutation({
     mutationFn: () => {
@@ -326,21 +614,21 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, o
         title: title.trim(),
         content: content.trim(),
         type: lessonTypeValue.trim() ? toApiLessonType(lessonTypeValue.trim()) : undefined,
-        duration: durationMinutes.trim() ? Number(durationMinutes) : undefined,
+        duration: lessonTypeValue === "video" ? toDurationMinutesFromSeconds(durationSeconds) : undefined,
         duration_minutes: null,
         content_url: videoUrl.trim() || undefined,
         video_url: null,
         ...(lessonTypeValue === "live" ? {
           scheduled_at: scheduledAt || undefined,
-          meeting_type: meetingType,
-          meeting_link: meetingLink.trim() || undefined,
-          join_meta: joinUrl.trim() || undefined,
+          meeting_type: detailsSource === "existing" ? getMeetingTypeFromProvider(trainingLessonDefaults.meetingProvider) : meetingType,
+          meeting_link: (detailsSource === "existing" ? trainingLessonDefaults.meetingLink : meetingLink).trim() || undefined,
+          join_meta: (detailsSource === "existing" ? trainingLessonDefaults.deliveryInstructions : joinUrl).trim() || undefined,
           join_url: null,
         } : {}),
         ...(lessonTypeValue === "venue" ? {
           scheduled_at: scheduledAt || undefined,
-          venue_name: venueName.trim() || undefined,
-          venue_address: venueAddress.trim() || undefined,
+          venue_name: (detailsSource === "existing" ? trainingLessonDefaults.venue : venueName).trim() || undefined,
+          venue_address: (detailsSource === "existing" ? trainingLessonDefaults.address : venueAddress).trim() || undefined,
         } : {}),
         is_downloadable: isDownloadable,
         file_size: fileSize.trim() || undefined,
@@ -350,7 +638,15 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, o
         documents: docs.length ? docs.map((d) => ({ url: d.url.trim(), name: d.name.trim() || d.url.trim().split("/").pop() || "document", visibility: d.visibility, downloadable: d.downloadable })) : undefined,
       } as unknown as Record<string, unknown>);
     },
-    onSuccess: () => { setFeedback("Lesson updated."); setEditMode(false); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "sections"] }); },
+    onSuccess: () => {
+      const exactDuration = Number(durationSeconds);
+      if (lessonTypeValue === "video" && Number.isFinite(exactDuration) && exactDuration > 0) {
+        lessonVideoDurationCache.set(durationCacheKey, durationSeconds);
+      }
+      setFeedback("Lesson updated.");
+      setEditMode(false);
+      void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "sections"] });
+    },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to update lesson."),
   });
 
@@ -370,13 +666,14 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, o
   const lessonVenueAddress = typeof lesson.venue_address === "string" ? lesson.venue_address : "";
   const lessonIsDownloadable = lesson.is_downloadable === true;
   const lessonFileSize = typeof lesson.file_size === "number" ? String(lesson.file_size) : typeof lesson.file_size === "string" ? lesson.file_size : "";
+  const formattedLessonFileSize = formatLessonFileSize(lessonFileSize);
   const lessonDuration = typeof lesson.duration === "number" ? String(lesson.duration) : typeof lesson.duration === "string" ? lesson.duration : typeof lesson.duration_minutes === "number" ? String(lesson.duration_minutes) : "";
   const lessonIsPreview = lesson.is_preview === true;
   const lessonVideosInit = Array.isArray(lesson.videos) ? (lesson.videos as unknown[]).filter((v): v is string => typeof v === "string") : [];
   const lessonDocsInit = Array.isArray(lesson.documents) ? (lesson.documents as unknown[]).map((d) => { if (typeof d === "string" && d.trim()) return { url: d, name: "", visibility: "public", downloadable: true }; if (d && typeof d === "object") { const r = d as Record<string, unknown>; if (typeof r.url === "string") return { url: r.url, name: typeof r.name === "string" ? r.name : typeof r.title === "string" ? r.title : "", visibility: typeof r.visibility === "string" ? r.visibility : "public", downloadable: typeof r.downloadable === "boolean" ? r.downloadable : true }; } return null; }).filter((v): v is { url: string; name: string; visibility: string; downloadable: boolean } => v !== null) : [];
   const lessonNotesInit = Array.isArray(lesson.notes) ? (lesson.notes as unknown[]).filter((n): n is string => typeof n === "string") : [];
 
-  if (!editMode && title === "" && content === "" && videoUrl === "" && lessonTypeValue === "" && meetingLink === "" && joinUrl === "" && fileSize === "" && durationMinutes === "" && lessonVideos.length === 0 && lessonDocs.length === 0 && lessonNotes.length === 0) {
+  if (!editMode && title === "" && content === "" && videoUrl === "" && lessonTypeValue === "" && meetingLink === "" && joinUrl === "" && fileSize === "" && durationSeconds === "" && lessonVideos.length === 0 && lessonDocs.length === 0 && lessonNotes.length === 0) {
     setTitle(lessonTitle);
     setContent(lessonContent);
     setVideoUrl(lessonVideoUrl);
@@ -387,9 +684,17 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, o
     setJoinUrl(lessonJoinUrl);
     setVenueName(lessonVenueName);
     setVenueAddress(lessonVenueAddress);
+    const lessonMatchesExistingDefaults = lessonType === "live"
+      ? Boolean((!trainingLessonDefaults.meetingLink || lessonMeetingLink === trainingLessonDefaults.meetingLink)
+        && (!trainingLessonDefaults.meetingProvider || lessonMeetingType === getMeetingTypeFromProvider(trainingLessonDefaults.meetingProvider)))
+      : lessonType === "venue"
+        ? Boolean((!trainingLessonDefaults.venue || lessonVenueName === trainingLessonDefaults.venue)
+          && (!trainingLessonDefaults.address || lessonVenueAddress === trainingLessonDefaults.address))
+        : false;
+    setDetailsSource(lessonMatchesExistingDefaults && hasExistingLessonDetails(lessonType as "live" | "venue", trainingLessonDefaults) ? "existing" : "new");
     setIsDownloadable(lessonIsDownloadable);
     setFileSize(lessonFileSize);
-    setDurationMinutes(lessonDuration);
+    setDurationSeconds(lessonVideoDurationCache.get(durationCacheKey) ?? (lessonDuration ? String(Number(lessonDuration) * 60) : ""));
     setIsPreview(lessonIsPreview);
     if (lessonVideosInit.length) setLessonVideos(lessonVideosInit);
     if (lessonDocsInit.length) setLessonDocs(lessonDocsInit);
@@ -414,38 +719,50 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, o
             {getLessonTypeOptions(trainingDeliveryMode, lessonTypeValue).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
           {isLessonType(lessonTypeValue, "text", "notes") ? <textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="Topic content..." rows={4} className="w-full rounded-lg border border-[#d7e5df] px-3 py-2 text-xs outline-none focus:border-[#1f6a58]" /> : null}
-          {lessonTypeValue === "video" ? <LessonFileDrop
-            label="Video"
-            accept="video/*"
-            fileName={videoUrl ? "Replace video file or keep the current URL" : ""}
-            onFile={(file) => {
-              setFeedback(null);
-              void uploadTrainingMedia(file, "lesson_video")
-                .then((uploaded) => {
-                  setVideoUrl(uploaded.url);
-                  setFileSize(String(uploaded.size));
-                  setFeedback("Video uploaded. Save the lesson to apply it.");
-                })
-                .catch((error: Error) => setFeedback(error.message));
-            }}
-          /> : null}
-          {isLessonType(lessonTypeValue, "video", "youtube") ? <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder={lessonTypeValue === "youtube" ? "Paste YouTube link" : "Video URL https://…"} className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
-          {lessonTypeValue === "live" ? (
+          {lessonTypeValue === "video" ? (
             <>
-              <input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} aria-label="Lesson date and time" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
-              <select value={meetingType} onChange={(e) => setMeetingType(e.target.value)} aria-label="Lesson meeting type" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]">
-                {MEETING_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
-              <input type="url" value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} placeholder="Meeting link" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
-              <input value={joinUrl} onChange={(e) => setJoinUrl(e.target.value)} placeholder="Join info" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
+              <LessonFileDrop
+                label="Video"
+                accept="video/*"
+                fileName={videoUrl ? "Replace video file or keep the current URL" : ""}
+                disabled={isVideoUploadPending}
+                onFile={(file) => {
+                  setFeedback(null);
+                  setIsVideoUploadPending(true);
+                  void readVideoDurationInSeconds(file)
+                    .then((videoDuration) => uploadTrainingMedia(file, "lesson_video").then((uploaded) => {
+                      setVideoUrl(uploaded.url);
+                      setFileSize(String(uploaded.size));
+                      setDurationSeconds(String(videoDuration));
+                      setFeedback("Video uploaded and its duration detected. Save the lesson to apply it.");
+                    }))
+                    .catch((error: Error) => setFeedback(error.message))
+                    .finally(() => setIsVideoUploadPending(false));
+                }}
+              />
+              <LessonDuration value={durationSeconds} />
             </>
           ) : null}
-          {lessonTypeValue === "venue" ? (
-            <>
-              <input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} aria-label="Lesson date and time" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
-              <input value={venueName} onChange={(e) => setVenueName(e.target.value)} placeholder="Venue name" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
-              <input value={venueAddress} onChange={(e) => setVenueAddress(e.target.value)} placeholder="Venue address" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
-            </>
+          {isLessonType(lessonTypeValue, "video", "youtube") ? <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder={lessonTypeValue === "youtube" ? "Paste YouTube link" : "Video URL https://…"} className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
+          {lessonTypeValue === "live" || lessonTypeValue === "venue" ? (
+            <LessonScheduleFields
+              type={lessonTypeValue}
+              defaults={trainingLessonDefaults}
+              source={detailsSource}
+              setSource={setDetailsSource}
+              scheduledAt={scheduledAt}
+              setScheduledAt={setScheduledAt}
+              meetingType={meetingType}
+              setMeetingType={setMeetingType}
+              meetingLink={meetingLink}
+              setMeetingLink={setMeetingLink}
+              joinUrl={joinUrl}
+              setJoinUrl={setJoinUrl}
+              venueName={venueName}
+              setVenueName={setVenueName}
+              venueAddress={venueAddress}
+              setVenueAddress={setVenueAddress}
+            />
           ) : null}
           {lessonTypeValue === "video" ? <LessonUrlList label="Videos" values={lessonVideos} update={setLessonVideos} placeholder="Additional video URL https://…" /> : null}
           {lessonTypeValue === "pdf" ? (
@@ -488,7 +805,6 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, o
               />
             </>
           ) : null}
-          {lessonTypeValue === "video" ? <input value={durationMinutes} onChange={(e) => setDurationMinutes(e.target.value)} placeholder="Duration (minutes)" type="number" min="0" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
           {isLessonType(lessonTypeValue, "video", "pdf", "notes") ? (
             <div className="flex gap-4">
               <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={isPreview} onChange={(e) => setIsPreview(e.target.checked)} className="h-3 w-3" />Is preview</label>
@@ -498,19 +814,23 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, o
           {isLessonType(lessonTypeValue, "video", "pdf", "notes") ? <LessonFileSize value={fileSize} /> : null}
           {isLessonType(lessonTypeValue, "quiz") ? <p className="rounded-lg bg-[#f9fcfa] px-3 py-2 text-xs text-[#52736a]">After saving, use the quiz panel to attach or create questions.</p> : null}
           <p className="text-[10px] text-[#7f9d94]">Only fields for the selected lesson type are shown.</p>
-          <button type="button" onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending || !title.trim()} className="h-8 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:opacity-60">{updateMutation.isPending ? "Saving..." : "Save"}</button>
+          <button type="button" onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending || isVideoUploadPending || !title.trim() || ((lessonTypeValue === "live" || lessonTypeValue === "venue") && (!scheduledAt || (detailsSource === "new" && (lessonTypeValue === "live" ? !meetingLink.trim() : !venueName.trim() || !venueAddress.trim()))))} className="h-8 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:opacity-60">{updateMutation.isPending ? "Saving..." : "Save"}</button>
         </div>
       ) : (
         <div className="space-y-2">
           <p className="text-sm font-bold text-[#06201c]">{lessonTitle || "Untitled"}</p>
           {lessonVideoUrl ? <a href={lessonVideoUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-[#1f6a58] underline">Watch video →</a> : null}
-          {lessonMeetingLink ? <p className="text-xs text-[#52736a]">Meeting: <a href={lessonMeetingLink} className="text-[#1f6a58] underline">{lessonMeetingLink}</a></p> : null}
-          {lessonJoinUrl ? <p className="text-xs text-[#52736a]">Join: <a href={lessonJoinUrl} className="text-[#1f6a58] underline">{lessonJoinUrl}</a></p> : null}
+          {lessonType === "live" ? <p className="text-xs text-[#52736a]">{t("lessonScheduling.provider", { defaultValue: "Meeting provider" })}: {humanizeLabel(lessonMeetingType)}</p> : null}
+          {lessonMeetingLink ? <p className="text-xs text-[#52736a]">{t("lessonScheduling.meetingLink", { defaultValue: "Meeting link" })}: <a href={lessonMeetingLink} className="text-[#1f6a58] underline">{lessonMeetingLink}</a></p> : null}
+          {lessonJoinUrl ? <p className="text-xs text-[#52736a]">{t("lessonScheduling.joinInstructions", { defaultValue: "Join instructions" })}: <a href={lessonJoinUrl} className="text-[#1f6a58] underline">{lessonJoinUrl}</a></p> : null}
+          {lessonType === "venue" && lessonVenueName ? <p className="text-xs text-[#52736a]">{t("lessonScheduling.venue", { defaultValue: "Venue" })}: {lessonVenueName}</p> : null}
+          {lessonType === "venue" && lessonVenueAddress ? <p className="text-xs text-[#52736a]">{t("lessonScheduling.address", { defaultValue: "Address" })}: {lessonVenueAddress}</p> : null}
+          {lessonScheduledAt ? <p className="text-xs text-[#52736a]">{t("lessonScheduling.scheduled", { defaultValue: "Scheduled" })}: {formatLessonScheduledAt(lessonScheduledAt)}</p> : null}
           {lessonType ? <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">{lessonType}</p> : null}
           {lessonVideosInit.length > 0 ? <div><p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Videos</p><ul className="mt-0.5 space-y-0.5">{lessonVideosInit.map((v, i) => <li key={i}><a href={v} target="_blank" rel="noreferrer" className="text-xs text-[#1f6a58] underline">{v}</a></li>)}</ul></div> : null}
           {lessonDocsInit.length > 0 ? <div><p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">PDF</p><ul className="mt-0.5 space-y-0.5">{lessonDocsInit.map((d, i) => <li key={i} className="text-xs text-[#52736a]"><a href={d.url} target="_blank" rel="noreferrer" className="text-[#1f6a58] underline">{d.name || d.url}</a>{d.visibility === "private" ? " • private" : ""}{d.downloadable ? " • downloadable" : ""}</li>)}</ul></div> : null}
           {lessonNotesInit.length > 0 ? <div><p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Notes</p><ul className="mt-0.5 space-y-0.5">{lessonNotesInit.map((n, i) => <li key={i}><a href={n} target="_blank" rel="noreferrer" className="text-xs text-[#1f6a58] underline">{n}</a></li>)}</ul></div> : null}
-          <p className="text-xs text-[#7f9d94]">{lessonIsPreview ? "Preview • " : ""}{lessonIsDownloadable ? "Downloadable" : "Not downloadable"}{lessonDuration ? ` • ${lessonDuration} min` : ""}{lessonFileSize ? ` • ${lessonFileSize} bytes` : ""}</p>
+          <p className="text-xs text-[#7f9d94]">{lessonIsPreview ? "Preview • " : ""}{lessonIsDownloadable ? "Downloadable" : "Not downloadable"}{lessonDuration ? ` • ${lessonType === "video" ? formatVideoDurationSeconds(durationSeconds) || formatLessonDuration(lessonDuration) : formatLessonDuration(lessonDuration)}` : ""}{formattedLessonFileSize ? ` • ${formattedLessonFileSize}` : ""}</p>
           {lessonContent ? <p className="whitespace-pre-wrap text-xs leading-5 text-[#52736a]">{lessonContent}</p> : <p className="text-xs text-[#7f9d94]">No content.</p>}
         </div>
       )}
@@ -519,12 +839,13 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, o
 }
 
 /** Renders the Training structure: sections, lessons, and reordering. */
-function AddLessonForm({ pending, trainingDeliveryMode, onSubmit }: { pending: boolean; trainingDeliveryMode: string; onSubmit: (payload: CreateTrainingLessonPayload) => void }) {
+function AddLessonForm({ pending, trainingDeliveryMode, trainingLessonDefaults, onSubmit }: { pending: boolean; trainingDeliveryMode: string; trainingLessonDefaults: TrainingLessonDefaults; onSubmit: (payload: CreateTrainingLessonPayload) => void }) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [contentUrl, setContentUrl] = useState("");
   const [type, setType] = useState("text");
   const [scheduledAt, setScheduledAt] = useState("");
+  const [detailsSource, setDetailsSource] = useState<LessonDetailsSource>("new");
   const [meetingType, setMeetingType] = useState("google_meet");
   const [meetingLink, setMeetingLink] = useState("");
   const [joinMeta, setJoinMeta] = useState("");
@@ -534,6 +855,7 @@ function AddLessonForm({ pending, trainingDeliveryMode, onSubmit }: { pending: b
   const [isDownloadable, setIsDownloadable] = useState(false);
   const [fileSize, setFileSize] = useState("");
   const [duration, setDuration] = useState("");
+  const [isVideoUploadPending, setIsVideoUploadPending] = useState(false);
   const [videos, setVideos] = useState<string[]>([]);
   const [documents, setDocuments] = useState<Array<{ url: string; name: string; visibility: string; downloadable: boolean }>>([]);
   const [notes, setNotes] = useState<string[]>([]);
@@ -543,7 +865,7 @@ function AddLessonForm({ pending, trainingDeliveryMode, onSubmit }: { pending: b
   const [fileUploadError, setFileUploadError] = useState<string | null>(null);
 
   const reset = () => {
-    setTitle(""); setContent(""); setContentUrl(""); setType("text"); setScheduledAt(""); setMeetingType("google_meet"); setMeetingLink(""); setJoinMeta("");
+    setTitle(""); setContent(""); setContentUrl(""); setType("text"); setScheduledAt(""); setDetailsSource("new"); setMeetingType("google_meet"); setMeetingLink(""); setJoinMeta("");
     setVenueName(""); setVenueAddress("");
     setIsPreview(false); setIsDownloadable(false); setFileSize(""); setDuration(""); setVideos([]); setDocuments([]); setNotes([]);
     setVideoFileName(""); setPdfFileName(""); setNoteFileName("");
@@ -561,12 +883,21 @@ function AddLessonForm({ pending, trainingDeliveryMode, onSubmit }: { pending: b
           content: content.trim() || undefined,
           content_url: contentUrl.trim() || undefined,
           type: toApiLessonType(type),
-          ...(type === "live" ? { scheduled_at: scheduledAt || undefined, meeting_type: meetingType, meeting_link: meetingLink.trim() || undefined, join_meta: joinMeta.trim() || undefined } : {}),
-          ...(type === "venue" ? { scheduled_at: scheduledAt || undefined, venue_name: venueName.trim() || undefined, venue_address: venueAddress.trim() || undefined } : {}),
+          ...(type === "live" ? {
+            scheduled_at: scheduledAt || undefined,
+            meeting_type: detailsSource === "existing" ? getMeetingTypeFromProvider(trainingLessonDefaults.meetingProvider) : meetingType,
+            meeting_link: (detailsSource === "existing" ? trainingLessonDefaults.meetingLink : meetingLink).trim() || undefined,
+            join_meta: (detailsSource === "existing" ? trainingLessonDefaults.deliveryInstructions : joinMeta).trim() || undefined,
+          } : {}),
+          ...(type === "venue" ? {
+            scheduled_at: scheduledAt || undefined,
+            venue_name: (detailsSource === "existing" ? trainingLessonDefaults.venue : venueName).trim() || undefined,
+            venue_address: (detailsSource === "existing" ? trainingLessonDefaults.address : venueAddress).trim() || undefined,
+          } : {}),
           is_preview: isPreview,
           is_downloadable: isDownloadable,
           file_size: fileSize.trim() || undefined,
-          duration: duration.trim() ? Number(duration) : undefined,
+          duration: type === "video" ? toDurationMinutesFromSeconds(duration) : undefined,
           videos: videos.filter((value) => value.trim()),
           notes: notes.filter((value) => value.trim()),
           documents: documents.filter((document) => document.url.trim()).map((document) => ({
@@ -582,34 +913,56 @@ function AddLessonForm({ pending, trainingDeliveryMode, onSubmit }: { pending: b
       <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">New lesson details</p>
       {fileUploadError ? <p role="alert" className="rounded-lg border border-[#f0c7c2] bg-[#fff6f5] px-3 py-2 text-xs font-semibold text-[#b42318]">{fileUploadError}</p> : null}
       <input required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Lesson title" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
-      <select value={type} onChange={(event) => setType(event.target.value)} aria-label="New lesson type" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]">
+      <select value={type} onChange={(event) => {
+        const selectedType = event.target.value;
+        setType(selectedType);
+        setDetailsSource(getInitialLessonDetailsSource(selectedType, trainingLessonDefaults));
+      }} aria-label="New lesson type" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]">
         {getLessonTypeOptions(trainingDeliveryMode, type).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
       {isLessonType(type, "text", "notes") ? <textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder={type === "notes" ? "Notes content..." : "Topic content..."} rows={3} className="w-full rounded-lg border border-[#d7e5df] px-3 py-2 text-xs outline-none focus:border-[#1f6a58]" /> : null}
-      {type === "video" ? <LessonFileDrop label="Video" accept="video/*" fileName={videoFileName} onFile={(file) => {
-        setFileUploadError(null);
-        setVideoFileName(`Uploading ${file.name}...`);
-        void uploadTrainingMedia(file, "lesson_video")
-          .then((uploaded) => { setContentUrl(uploaded.url); setVideoFileName(uploaded.name); setFileSize(String(uploaded.size)); })
-          .catch((error: Error) => { setVideoFileName(""); setFileUploadError(error.message); });
-      }} /> : null}
-      {type === "youtube" ? <input value={contentUrl} onChange={(event) => setContentUrl(event.target.value)} placeholder="Paste YouTube link" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
-      {type === "live" ? (
+      {type === "video" ? (
         <>
-          <input type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} aria-label="Lesson date and time" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
-          <select value={meetingType} onChange={(event) => setMeetingType(event.target.value)} aria-label="Lesson meeting type" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]">
-            {MEETING_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
-          <input type="url" value={meetingLink} onChange={(event) => setMeetingLink(event.target.value)} placeholder="Meeting link" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
-          <input value={joinMeta} onChange={(event) => setJoinMeta(event.target.value)} placeholder="Join info" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58] sm:col-span-2" />
+          <LessonFileDrop label="Video" accept="video/*" fileName={videoFileName} disabled={isVideoUploadPending} onFile={(file) => {
+            setFileUploadError(null);
+            setIsVideoUploadPending(true);
+            setVideoFileName(`Reading duration from ${file.name}...`);
+            void readVideoDurationInSeconds(file)
+              .then((videoDuration) => {
+                setVideoFileName(`Uploading ${file.name}...`);
+                return uploadTrainingMedia(file, "lesson_video").then((uploaded) => {
+                  setContentUrl(uploaded.url);
+                  setVideoFileName(uploaded.name);
+                  setFileSize(String(uploaded.size));
+                  setDuration(String(videoDuration));
+                });
+              })
+              .catch((error: Error) => { setVideoFileName(""); setFileUploadError(error.message); })
+              .finally(() => setIsVideoUploadPending(false));
+          }} />
+          <LessonDuration value={duration} />
         </>
       ) : null}
-      {type === "venue" ? (
-        <>
-          <input type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} aria-label="Lesson date and time" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
-          <input value={venueName} onChange={(event) => setVenueName(event.target.value)} placeholder="Venue name" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
-          <input value={venueAddress} onChange={(event) => setVenueAddress(event.target.value)} placeholder="Venue address" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
-        </>
+      {type === "youtube" ? <input value={contentUrl} onChange={(event) => setContentUrl(event.target.value)} placeholder="Paste YouTube link" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
+      {type === "live" || type === "venue" ? (
+        <LessonScheduleFields
+          type={type}
+          defaults={trainingLessonDefaults}
+          source={detailsSource}
+          setSource={setDetailsSource}
+          scheduledAt={scheduledAt}
+          setScheduledAt={setScheduledAt}
+          meetingType={meetingType}
+          setMeetingType={setMeetingType}
+          meetingLink={meetingLink}
+          setMeetingLink={setMeetingLink}
+          joinUrl={joinMeta}
+          setJoinUrl={setJoinMeta}
+          venueName={venueName}
+          setVenueName={setVenueName}
+          venueAddress={venueAddress}
+          setVenueAddress={setVenueAddress}
+        />
       ) : null}
       {type === "pdf" ? <LessonFileDrop label="PDF" accept="application/pdf,.pdf" fileName={pdfFileName} onFile={(file) => {
         setFileUploadError(null);
@@ -625,7 +978,6 @@ function AddLessonForm({ pending, trainingDeliveryMode, onSubmit }: { pending: b
           .then((uploaded) => { setNotes((current) => [...current, uploaded.url]); setFileSize(String(uploaded.size)); setNoteFileName(uploaded.name); })
           .catch((error: Error) => { setNoteFileName(""); setFileUploadError(error.message); });
       }} /> : null}
-      {type === "video" ? <input value={duration} onChange={(event) => setDuration(event.target.value)} placeholder="Duration (minutes)" type="number" min="0" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
       {isLessonType(type, "video", "pdf", "notes") ? (
         <div className="flex flex-wrap gap-4">
           <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={isPreview} onChange={(event) => setIsPreview(event.target.checked)} className="h-3 w-3" />Is preview</label>
@@ -636,14 +988,14 @@ function AddLessonForm({ pending, trainingDeliveryMode, onSubmit }: { pending: b
       {isLessonType(type, "quiz", "assignment") ? <p className="rounded-lg bg-[#f9fcfa] px-3 py-2 text-xs text-[#52736a]">{type === "quiz" ? "After creating this lesson, attach or create the quiz questions below." : "After creating this lesson, use the Assignments tab to create the submission task."}</p> : null}
       <p className="text-[10px] text-[#7f9d94]">Only fields for the selected lesson type are shown.</p>
       <div className="flex flex-wrap items-center gap-2">
-        <button type="submit" disabled={pending || !title.trim()} className="h-9 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white hover:bg-[#195646] disabled:opacity-60">{pending ? "Adding..." : "Add lesson"}</button>
-        <button type="button" onClick={reset} disabled={pending} className="h-9 rounded-full border border-[#d7e5df] px-4 text-xs font-bold text-[#52736a] hover:bg-[#f4faf7] disabled:opacity-60">Clear</button>
+        <button type="submit" disabled={pending || isVideoUploadPending || !title.trim()} className="h-9 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white hover:bg-[#195646] disabled:opacity-60">{pending ? "Adding..." : "Add lesson"}</button>
+        <button type="button" onClick={reset} disabled={pending || isVideoUploadPending} className="h-9 rounded-full border border-[#d7e5df] px-4 text-xs font-bold text-[#52736a] hover:bg-[#f4faf7] disabled:opacity-60">Clear</button>
       </div>
     </form>
   );
 }
 
-export function TrainingSectionsTab({ trainingId, trainingDeliveryMode }: { trainingId: string; trainingDeliveryMode: string }) {
+export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, trainingLessonDefaults }: { trainingId: string; trainingDeliveryMode: string; trainingLessonDefaults: TrainingLessonDefaults }) {
   const queryClient = useQueryClient();
   const [newSectionTitle, setNewSectionTitle] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -720,7 +1072,7 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode }: { trai
   });
 
   const createLessonAssessmentMutation = useMutation({
-    mutationFn: async ({ sectionId, lessonId, title, instructions, timeLimitMinutes, passPercent, attempts, randomise }: { sectionId: string; lessonId: string; title: string; instructions: string; timeLimitMinutes: string; passPercent: string; attempts: string; randomise: boolean }) => {
+    mutationFn: async ({ sectionId, lessonId, lessonTitle, title, instructions, timeLimitMinutes, passPercent, attempts, randomise }: { sectionId: string; lessonId: string; lessonTitle: string; title: string; instructions: string; timeLimitMinutes: string; passPercent: string; attempts: string; randomise: boolean }) => {
       const created = await createTrainingAssessment(trainingId, {
         title: title.trim(),
         type: "quiz",
@@ -736,12 +1088,20 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode }: { trai
       const assessment = created && typeof created === "object" ? created as Record<string, unknown> : {};
       const createdId = typeof assessment.id === "string" ? assessment.id : "";
       if (!createdId) {
-        throw new Error("The quiz was created and linked to the lesson, but the API did not return its ID, so it could not be published.");
+        throw new Error("The quiz was created, but the API did not return its ID, so it could not be linked to this lesson or published.");
+      }
+      try {
+        await updateTrainingLesson(trainingId, sectionId, lessonId, {
+          title: lessonTitle,
+          assessment_id: createdId,
+        });
+      } catch (error) {
+        throw new Error(`The quiz was created but could not be linked to this lesson. ${error instanceof Error ? error.message : ""}`.trim());
       }
       try {
         await updateTrainingAssessment(trainingId, createdId, { is_published: true });
       } catch (error) {
-        throw new Error(`The quiz was created and linked to the lesson, but could not be published for learners. ${error instanceof Error ? error.message : ""}`.trim());
+        throw new Error(`The quiz was linked to the lesson but could not be published for learners. ${error instanceof Error ? error.message : ""}`.trim());
       }
       return { created, sectionId, lessonId };
     },
@@ -800,7 +1160,7 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode }: { trai
     onSuccess: (data, vars) => {
       const created = (data ?? {}) as Record<string, unknown>;
       const createdId = typeof created.id === "string" ? created.id : "";
-      if (createdId && vars.payload.type === "exam") {
+      if (createdId && (vars.payload.type === "quiz" || vars.payload.type === "exam")) {
         setQuizLesson({ sectionId: vars.sectionId, lessonId: createdId });
         setFeedback("Quiz lesson added — attach an existing quiz or create one below.");
       } else {
@@ -944,7 +1304,7 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode }: { trai
                                   : { sectionId: id, lessonId });
                                 return;
                               }
-                              setViewingLesson(viewingLesson?.lessonId === lessonId ? null : { sectionId: id, lessonId });
+                              setViewingLesson(viewingLesson?.sectionId === id && viewingLesson.lessonId === lessonId ? null : { sectionId: id, lessonId });
                             }} className="rounded-full px-2 py-0.5 text-[10px] font-bold text-[#1f6a58] hover:bg-[#e8f6ee]">View</button>
                             <button type="button" onClick={() => { if (window.confirm("Delete this lesson?")) void deleteLessonMutation.mutate({ sectionId: id, lessonId }); }} className="text-[10px] font-semibold text-[#b42318]">Delete</button>
                           </div>
@@ -1128,6 +1488,7 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode }: { trai
                                   createLessonAssessmentMutation.mutate({
                                     sectionId: id,
                                     lessonId,
+                                    lessonTitle,
                                     title,
                                     instructions: lessonAssessmentInstructions[lessonKey] ?? "",
                                     timeLimitMinutes: timeLimit,
@@ -1164,16 +1525,19 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode }: { trai
               ) : null}
               {viewingLesson?.sectionId === id ? (
                 <LessonDetail
+                  key={`${viewingLesson.sectionId}:${viewingLesson.lessonId}`}
                   trainingId={trainingId}
                   sectionId={id}
                   lessonId={viewingLesson.lessonId}
                   trainingDeliveryMode={trainingDeliveryMode}
+                  trainingLessonDefaults={trainingLessonDefaults}
                   onClose={() => setViewingLesson(null)}
                 />
               ) : null}
               <AddLessonForm
                 pending={createLessonMutation.isPending}
                 trainingDeliveryMode={trainingDeliveryMode}
+                trainingLessonDefaults={trainingLessonDefaults}
                 onSubmit={(payload) => createLessonMutation.mutate({ sectionId: id, payload })}
               />
             </li>
@@ -1905,12 +2269,6 @@ function AssessmentReview({ trainingId, assessmentId, submissionId, onClose }: {
 /** Renders assessments list with create/delete, question management, edit, submit, grade, review, and question bank. */
 export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
   const queryClient = useQueryClient();
-  const [newTitle, setNewTitle] = useState("");
-  const [newInstructions, setNewInstructions] = useState("");
-  const [newTimeLimit, setNewTimeLimit] = useState("");
-  const [newPassPercent, setNewPassPercent] = useState("");
-  const [newAttemptsAllowed, setNewAttemptsAllowed] = useState("");
-  const [newRandomise, setNewRandomise] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [expandedAssessment, setExpandedAssessment] = useState<string | null>(null);
   const [newQuestion, setNewQuestion] = useState("");
@@ -1930,31 +2288,6 @@ export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
     queryKey: ["trainings", trainingId, "assessments"],
     queryFn: () => listTrainingAssessments(trainingId),
     enabled: Boolean(trainingId),
-  });
-
-  const createMutation = useMutation({
-    mutationFn: () => createTrainingAssessment(trainingId, {
-      title: newTitle.trim(),
-      type: "quiz",
-      level: "module",
-      instructions: newInstructions.trim() || null,
-      time_limit_minutes: newTimeLimit ? Number(newTimeLimit) : null,
-      passing_score: newPassPercent ? Number(newPassPercent) : null,
-      max_attempts: newAttemptsAllowed ? Number(newAttemptsAllowed) : null,
-      randomise: newRandomise,
-      is_published: false,
-    }),
-    onSuccess: () => {
-      setNewTitle("");
-      setNewInstructions("");
-      setNewTimeLimit("");
-      setNewPassPercent("");
-      setNewAttemptsAllowed("");
-      setNewRandomise(false);
-      setFeedback("Assessment created as a draft.");
-      void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessments"] });
-    },
-    onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to create assessment."),
   });
 
   const updateAssessmentMutation = useMutation({
@@ -2015,17 +2348,6 @@ export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
   return (
     <SectionCard
       title="Assessments"
-      action={
-        <form className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" onSubmit={(e) => { e.preventDefault(); if (newTitle.trim()) createMutation.mutate(); }}>
-          <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Assessment title" className="h-9 rounded-lg border border-[#d7e5df] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]" />
-          <input value={newInstructions} onChange={(e) => setNewInstructions(e.target.value)} placeholder="Instructions (optional)" className="h-9 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-          <input type="number" min="1" value={newTimeLimit} onChange={(e) => setNewTimeLimit(e.target.value)} placeholder="Time limit (min)" className="h-9 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-          <input type="number" min="0" max="100" value={newPassPercent} onChange={(e) => setNewPassPercent(e.target.value)} placeholder="Pass % (optional)" className="h-9 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-          <input type="number" min="1" value={newAttemptsAllowed} onChange={(e) => setNewAttemptsAllowed(e.target.value)} placeholder="Attempts (optional)" className="h-9 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-          <label className="flex h-9 items-center gap-2 rounded-lg border border-[#d7e5df] px-3 text-xs font-semibold text-[#52736a]"><input type="checkbox" checked={newRandomise} onChange={(e) => setNewRandomise(e.target.checked)} />Randomise questions</label>
-          <button type="submit" disabled={createMutation.isPending || !newTitle.trim()} className="h-9 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:opacity-60">{createMutation.isPending ? "Adding..." : "Add draft"}</button>
-        </form>
-      }
     >
       {feedback ? <p role="status" className="mb-4 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">{feedback}</p> : null}
       {assessmentsQuery.isLoading ? <p className="text-sm text-[#52736a]">Loading...</p> : null}

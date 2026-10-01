@@ -45,16 +45,31 @@ export default function TrainingTaxonomyField({
   onRetry?: () => void;
 }) {
   const [customOtherValue, setCustomOtherValue] = useState("");
+  const [otherMode, setOtherMode] = useState(false);
   const { t } = useTranslation("enterpriseTrainings");
   const category = categories.find((item) => item.parent_id === null && item.name === categoryValue);
   const options = field === "category"
     ? categories.filter((item) => item.parent_id === null)
     : category ? categories.filter((item) => item.parent_id === category.id) : [];
   const hasLegacyValue = preserveLegacyValue && Boolean(value) && value !== TRAINING_OTHER_OPTION_VALUE && !options.some((item) => item.name === value);
-  const otherSelected = includeOther && value === TRAINING_OTHER_OPTION_VALUE;
+  const otherSelected = includeOther && (otherMode || value === TRAINING_OTHER_OPTION_VALUE);
   const disabled = categoriesLoading || (field === "subcategory" && !categoryValue);
 
-  const onChange = (nextValue: string) => {
+  const writeFieldText = (text: string) => {
+    if (field === "category") update("category", text);
+    else update("subcategory", text);
+  };
+
+  const onSelectChange = (nextValue: string) => {
+    if (includeOther && nextValue === TRAINING_OTHER_OPTION_VALUE) {
+      // Parent genuinely changed: drop the stale subcategory once, then keep it
+      // untouched while the custom text is typed.
+      setOtherMode(true);
+      if (field === "category") update("subcategory", "");
+      writeFieldText(customOtherValue);
+      return;
+    }
+    setOtherMode(false);
     if (field === "category") update("category", nextValue);
     else update("subcategory", nextValue);
     if (field === "category" && value !== nextValue) {
@@ -70,8 +85,8 @@ export default function TrainingTaxonomyField({
       {helpText ? <span className="ml-1 font-normal text-[#52736a]">{helpText}</span> : null}
       <select
         id={`training-field-${field}`}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
+        value={otherSelected ? TRAINING_OTHER_OPTION_VALUE : value}
+        onChange={(event) => onSelectChange(event.target.value)}
         disabled={disabled}
         required={required}
         className={inputClass}
@@ -94,12 +109,15 @@ export default function TrainingTaxonomyField({
           <input
             type="text"
             value={customOtherValue}
-            onChange={(event) => setCustomOtherValue(event.target.value)}
+            onChange={(event) => {
+              const text = event.target.value;
+              setCustomOtherValue(text);
+              writeFieldText(text);
+            }}
             placeholder={`Enter custom ${label.toLowerCase()}`}
             aria-label={`Custom ${label}`}
             className={inputClass}
           />
-          <span className="mt-1 block text-xs font-normal text-[#735c1e]">Custom entry is a UI preview only and cannot be saved until the Training API contract is available.</span>
         </span>
       ) : null}
       {categoriesError ? (

@@ -30,6 +30,7 @@ interface Props {
   requiredFields?: readonly string[];
   deliveryMode?: string;
   label?: string;
+  isRequired?: boolean;
   error?: string;
   disabled?: boolean;
   onSessionsChange: (sessions: SessionDraft[]) => void;
@@ -66,6 +67,7 @@ export default function SessionTableEditor({
   requiredFields = [],
   deliveryMode,
   label = "Sessions / Agenda",
+  isRequired = false,
   error,
   disabled = false,
   onSessionsChange,
@@ -144,7 +146,7 @@ export default function SessionTableEditor({
 
   return <section className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <h2 className="text-lg font-bold text-[#06201c]">{label}</h2>
+      <h2 className="text-lg font-bold text-[#06201c]">{label}{isRequired ? " *" : ""}</h2>
       <button type="button" onClick={mode === "create" ? addLocalSession : onAddSession} disabled={disabled} className="inline-flex h-10 items-center justify-center rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white shadow-sm disabled:opacity-50">+ Add Session</button>
     </div>
     <div className="mt-4 grid gap-3 rounded-xl bg-[#f4faf7] p-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
@@ -251,11 +253,11 @@ export function validateSessions(sessions: readonly SessionDraft[], eventStart: 
   const event = buildEventWindow(eventStart, eventEnd); if (!event) return "Enter valid Event start and end times before saving sessions.";
   const enabled = (field: SessionField) => enabledFields === undefined || enabledFields.length === 0 || enabledFields.includes(field);
   const applicable = (field: SessionField) => isDeliveryFieldApplicable(field, deliveryMode);
-  const required = (field: SessionField) => requiredFields.includes(field) && applicable(field);
+  const isRequiredSessionField = (field: SessionField) => requiredFields.includes(field) && applicable(field);
   const dates = new Set(event.dates);
   for (const session of sessions) {
     if (enabled("session_date") && (!dates.has(session.session_date) || !session.session_date)) return "Each session must use a date within the Event schedule.";
-    for (const field of fields.map((item) => item.key)) if (enabled(field) && applicable(field) && required(field) && !String(session[field] ?? "").trim()) return `${fieldLabel(field)} is required for every session.`;
+    for (const field of fields.map((item) => item.key)) if (enabled(field) && applicable(field) && isRequiredSessionField(field) && !String(session[field] ?? "").trim()) return `${fieldLabel(field)} is required for every session.`;
     const range = sessionRange(session); if (enabled("start_time") && enabled("end_time") && (!range || range.start < event.start || range.end > event.end)) return "Each session must have valid times within the Event schedule.";
     if (enabled("meeting_link") && session.meeting_link && !isUrl(session.meeting_link)) return "Meeting links must be valid URLs.";
   }

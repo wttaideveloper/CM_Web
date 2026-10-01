@@ -15,6 +15,7 @@ import { createEvent, EventsApiError, getEventById, updateEvent, type ActiveEven
 import { canEditEvent } from "./event-status";
 import ConfiguredCreateEventSection from "./ConfiguredCreateEventSection";
 import ConfiguredCreateEventReview from "./ConfiguredCreateEventReview";
+import { validateRequiredConfiguredEventFields } from "./configured-event-required-fields";
 import EventModulesControls from "./EventModulesControls";
 import { reconcileEventModules, reconcileSelectedEventModules } from "./event-modules";
 import { validateSessions } from "./SessionTableEditor";
@@ -237,7 +238,7 @@ function ActiveEventFormVerification({ query }: { query: ReturnType<typeof useAc
 }
 
 function validateConfiguredEventForm(configuration: ActiveEventFormConfiguration, values: CreateEventFormValues, customValues: Record<string, string | string[] | boolean | number | null>, categories: readonly EventCategory[], mode: "create" | "edit"): Record<string, string[]> {
-  const errors: Record<string, string[]> = {};
+  const errors = validateRequiredConfiguredEventFields(configuration, values, customValues);
   if (mode === "create" && !values.event_type.trim()) errors.event_type = ["Event Type is required."];
   for (const section of configuration.sections.filter((item) => item.is_enabled)) for (const field of section.fields) {
     if (field.is_enabled === false) continue;
@@ -245,15 +246,13 @@ function validateConfiguredEventForm(configuration: ActiveEventFormConfiguration
     if (values.pricing_type === "free" && ["price", "currency", "ticket_types"].includes(key)) continue;
     if (!isDeliveryFieldApplicable(key, values.delivery_mode)) continue;
     if (field.source === "core" && ["location", "location_id"].includes(key.replace(/^(core_|custom_)/, "").trim().toLowerCase())) continue;
-    const coreKey = ({ title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", start_date: "start_date", start_datetime: "start_date", end_date: "end_date", end_datetime: "end_date", duration_type: "duration_type", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", time_zone: "time_zone", timezone: "time_zone", event_type: "event_type", delivery_mode: "delivery_mode", pricing_type: "pricing_type", price: "price", currency: "currency", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents" } as Record<string, keyof CreateEventFormValues>)[key]
-      ?? (field.source === "core" && key in values ? key as keyof CreateEventFormValues : undefined);
+    const coreKey = field.source === "core"
+      ? ({ title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", start_date: "start_date", start_datetime: "start_date", end_date: "end_date", end_datetime: "end_date", duration_type: "duration_type", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", time_zone: "time_zone", timezone: "time_zone", event_type: "event_type", delivery_mode: "delivery_mode", pricing_type: "pricing_type", price: "price", currency: "currency", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents" } as Record<string, keyof CreateEventFormValues>)[key]
+        ?? (key in values ? key as keyof CreateEventFormValues : undefined)
+      : undefined;
     const value = coreKey ? values[coreKey] : customValues[key];
     const isEmpty = value === null || value === undefined || (typeof value === "string" && value.trim() === "") || (Array.isArray(value) && value.length === 0);
-    const isBoolean = field.value_type === "boolean" || field.renderer === "checkbox";
-    if (field.required && (isEmpty || (isBoolean && value !== true && value !== "true"))) {
-      errors[key] = [`${field.label} is required.`];
-      continue;
-    }
+    if (isEmpty) continue;
     const textValues = typeof value === "string"
       ? [value]
       : Array.isArray(value)

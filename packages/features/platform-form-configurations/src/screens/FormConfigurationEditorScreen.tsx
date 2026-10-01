@@ -11,7 +11,7 @@ import { toBuilderFormConfiguration, toEventFormConfigurationCreateCandidate, to
 import { createMockConfiguration } from "../model/form-configuration.mock";
 import type { FormConfiguration } from "../model/form-configuration.types";
 import { getConfigurationActions } from "../model/configuration-actions";
-import { findActiveEventFormConfigurationConflicts, FormConfigurationsApiError } from "../services/form-configurations.service";
+import { findActiveEventFormConfigurationConflicts, FormConfigurationsApiError, getEventFormConfiguration } from "../services/form-configurations.service";
 
 /** Hosts persisted configuration editing while keeping the route adapter thin. */
 export function FormConfigurationEditorScreen({ id, mode }: { id?: string; mode: "create" | "view" | "edit" }) {
@@ -68,6 +68,19 @@ export function FormConfigurationEditorScreen({ id, mode }: { id?: string; mode:
   };
   const persistAssignments = async (tenantIds: string[]): Promise<string[]> => {
     if (!id) throw new Error("Save this configuration before assigning tenants.");
+    const persistedConfiguration = await getEventFormConfiguration(id);
+    if (persistedConfiguration.scope !== "selective") {
+      const selectiveConfiguration = await update.mutateAsync({
+        configurationId: id,
+        payload: toEventFormConfigurationPatchCandidate({
+          ...toBuilderFormConfiguration(persistedConfiguration),
+          scope: "selective",
+        }),
+      });
+      if (selectiveConfiguration.scope !== "selective") {
+        throw new Error("Could not save Selective scope for this Event configuration. Save it as Selective, then retry the tenant assignments.");
+      }
+    }
     const saved = await saveAssignments.mutateAsync({ configurationId: id, payload: { tenant_ids: tenantIds } });
     return saved.assignments.map((assignment) => assignment.tenant_id);
   };

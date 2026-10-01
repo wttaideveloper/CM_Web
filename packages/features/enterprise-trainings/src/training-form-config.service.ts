@@ -156,7 +156,8 @@ function parseFrontendSettings(field: Record<string, unknown>): TrainingFormFron
 }
 
 const TRAINING_FORM_SEEDED_NAMES = ["Basic Information", "Schedule", "Location & Host", "Pricing & Tickets", "Capacity & Registration", "Images & Media", "Additional Configuration"];
-const HIDDEN_TRAINING_FIELD_KEYS = new Set(["group_enrolment", "group_enrollment", "max_group_size", "release_rule", "scheduled_publication", "randomise", "randomize", "is_mandatory", "access_information"]);
+const HIDDEN_TRAINING_FIELD_KEYS = new Set(["group_enrolment", "group_enrollment", "max_group_size", "release_rule", "scheduled_publication", "randomise", "randomize", "is_mandatory", "access_information", "course_type", "course_types", "badge", "badges", "milestone_badges", "prerequisite", "prerequisites"]);
+const HIDDEN_TRAINING_FIELD_LABELS = new Set(["course type", "course types", "badge", "badges", "milestone badge", "milestone badges", "prerequisite", "prerequisites"]);
 
 /** Resolves a section title, replacing generic/empty labels with seeded names — shared by active and historical mapping. */
 function resolveTrainingSectionTitle(sec: Record<string, unknown>, sIdx: number): string {
@@ -186,6 +187,7 @@ function mapTrainingFormFields(fields: unknown): TrainingFormField[] {
     frontendSettings: parseFrontendSettings(fld),
     order: typeof fld.position === "number" ? fld.position : typeof fld.order === "number" ? fld.order as number : fIdx,
   })).filter((field) => !HIDDEN_TRAINING_FIELD_KEYS.has(field.key)
+    && !HIDDEN_TRAINING_FIELD_LABELS.has(field.label.trim().toLowerCase().replace(/[\s-]+/g, " "))
     && field.label.trim().toLowerCase().replace(/[\s-]+/g, "_") !== "access_information") : [];
 }
 

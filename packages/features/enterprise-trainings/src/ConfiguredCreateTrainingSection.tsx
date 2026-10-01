@@ -56,7 +56,6 @@ const CORE_FIELDS: Record<string, keyof CreateTrainingFormValues> = {
   coupon_code: "coupon_code",
   requires_approval: "requires_approval",
   access_duration_days: "access_duration_days",
-  prerequisites: "prerequisites",
   access_expiry_type: "access_expiry_type",
   access_expiry_days: "access_expiry_days",
   location_id: "location_id",
@@ -200,7 +199,7 @@ function getTrainingSectionTip(title: string): string | null {
   if (normalized.includes("pricing")) return "Choose Free or Paid first. Paid trainings can include a promo price and coupon code.";
   if (normalized.includes("capacity") || normalized.includes("registration")) return "Require approval for selective cohorts and set access expiry when learners should lose access automatically.";
   if (normalized.includes("media") || normalized.includes("image")) return "Use a clear 16:9 primary image; adding a few gallery images helps learners understand the experience.";
-  if (normalized.includes("additional") || normalized.includes("configuration")) return "Use prerequisites and release rules to control the learning journey and drip content.";
+  if (normalized.includes("additional") || normalized.includes("configuration")) return "Add course notes and collaboration settings for learners and instructors.";
   return null;
 }
 

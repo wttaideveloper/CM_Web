@@ -333,7 +333,7 @@ export interface CreateTrainingSectionPayload {
 export type UpdateTrainingSectionPayload = Partial<CreateTrainingSectionPayload>;
 
 /** Payload for `POST /api/v1/trainings/{id}/sections/{section_id}/lessons`. */
-export type TrainingLessonType = "text" | "video" | "youtube" | "audio" | "webpage" | "pdf" | "live" | "presentation" | "worksheet" | "document" | "venue" | "exam";
+export type TrainingLessonType = "text" | "video" | "youtube" | "audio" | "webpage" | "pdf" | "live" | "presentation" | "worksheet" | "document" | "venue" | "quiz" | "exam";
 
 export interface CreateTrainingLessonPayload {
   title: string;

@@ -336,6 +336,16 @@ export default function TrainingDetailsScreen({
   if (!trainingQuery.data) return null;
 
   const training = trainingQuery.data;
+  const trainingRecord = training as unknown as Record<string, unknown>;
+  const trainingLessonDefaults = {
+    meetingProvider: training.meeting_provider ?? "",
+    meetingLink: training.meeting_link ?? "",
+    deliveryInstructions: training.delivery_instructions ?? "",
+    venue: training.venue ?? "",
+    address: training.address ?? "",
+    startDate: training.start_date ?? "",
+    startTime: typeof trainingRecord.start_time === "string" ? trainingRecord.start_time : "",
+  };
   const sections = Array.isArray(sectionsQuery.data) ? (sectionsQuery.data as Array<Record<string, unknown>>) : [];
   const enrolments = Array.isArray(enrolmentsQuery.data) ? enrolmentsQuery.data : [];
   const lessonCount = sections.reduce((total, section) => total + (Array.isArray(section.lessons) ? section.lessons.length : 0), 0);
@@ -409,7 +419,6 @@ export default function TrainingDetailsScreen({
               <DetailItem label="Category" value={displayValue(training.category)} />
               <DetailItem label="Subcategory" value={displayValue(training.subcategory)} />
               <DetailItem label="Delivery mode" value={training.delivery_mode ? humanizeLabel(training.delivery_mode) : "Not provided"} />
-              <DetailItem label="Course type" value={training.course_type ? humanizeLabel(training.course_type) : "Not provided"} />
               <DetailGroupHeading>Pricing & Capacity</DetailGroupHeading>
               <DetailItem label="Price" value={formatTrainingPrice(training.price, training.currency)} />
               <DetailItem label="Capacity" value={displayValue(training.capacity)} />
@@ -431,7 +440,6 @@ export default function TrainingDetailsScreen({
               <DetailGroupHeading>Additional Configuration</DetailGroupHeading>
               <DetailItem label="Learning objectives" value={formatLearningObjectives((training as unknown as Record<string, unknown>).learning_objectives)} />
               <DetailItem label="PDFs" value={Array.isArray((training as unknown as Record<string, unknown>).documents) ? ((training as unknown as Record<string, unknown>).documents as unknown[]).length + " files" : Array.isArray(training.documents) ? (training.documents as unknown[]).length + " files" : "—"} />
-              <DetailItem label="Prerequisites" value={displayValue((training as unknown as Record<string, unknown>).prerequisites as string)} />
               <DetailItem label="Access expiry" value={displayValue((training as unknown as Record<string, unknown>).access_expiry_type as string) + " " + displayValue((training as unknown as Record<string, unknown>).access_expiry_days as string)} />
               <DetailItem label="Recurring" value={displayValue((training as unknown as Record<string, unknown>).recurring as string)} />
               <DetailItem label="Schedule exceptions" value={Array.isArray((training as unknown as Record<string, unknown>).schedule_exceptions) ? ((training as unknown as Record<string, unknown>).schedule_exceptions as unknown[]).length + " exceptions" : displayValue((training as unknown as Record<string, unknown>).schedule_exceptions as string)} />
@@ -443,7 +451,6 @@ export default function TrainingDetailsScreen({
               <DetailItem label="Instructor photo" value={displayValue((training as unknown as Record<string, unknown>).instructor_photo as string)} />
               <DetailItem label="Instructor credentials" value={displayValue((training as unknown as Record<string, unknown>).instructor_credentials as string)} />
               <DetailItem label="FAQs" value={Array.isArray((training as unknown as Record<string, unknown>).faqs) ? `${((training as unknown as Record<string, unknown>).faqs as unknown[]).length} questions` : displayValue((training as unknown as Record<string, unknown>).faqs as string)} />
-              <DetailItem label="Badges" value={Array.isArray((training as unknown as Record<string, unknown>).badges) ? ((training as unknown as Record<string, unknown>).badges as unknown[]).map(String).join(", ") || "—" : "—"} />
               <DetailItem label="Notes PDF" value={displayValue((training as unknown as Record<string, unknown>).notes_pdf_url as string)} />
               <DetailItem label="Target audience" value={displayValue((training as unknown as Record<string, unknown>).target_audience as string)} />
               <DetailItem label="Difficulty" value={displayValue((training as unknown as Record<string, unknown>).difficulty_level as string) || displayValue((training as unknown as Record<string, unknown>).level as string)} />
@@ -478,16 +485,6 @@ export default function TrainingDetailsScreen({
                     .map((tag, index) => (
                       <span key={`${index}-${tag}`} className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{tag}</span>
                     ))}
-                </div>
-              </div>
-            ) : null}
-            {Array.isArray((training as unknown as Record<string, unknown>).badges) && ((training as unknown as Record<string, unknown>).badges as unknown[]).length > 0 ? (
-              <div className="mt-6">
-                <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Milestone badges</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {((training as unknown as Record<string, unknown>).badges as unknown[]).map((badge, i) => (
-                    <span key={`${String(badge)}-${i}`} className="rounded-full bg-[#eef4ff] px-3 py-1 text-xs font-bold text-[#2563eb]">★ {String(typeof badge === "object" && badge !== null ? ((badge as Record<string, unknown>).title ?? (badge as Record<string, unknown>).name ?? "") : badge)}</span>
-                  ))}
                 </div>
               </div>
             ) : null}
@@ -551,7 +548,7 @@ export default function TrainingDetailsScreen({
       ) : null}
 
       {activeTab === "content" ? <TrainingContentTab trainingId={trainingId} /> : null}
-      {activeTab === "sections" ? <div className="mt-6"><TrainingSectionsTab trainingId={trainingId} trainingDeliveryMode={training.delivery_mode ?? ""} /></div> : null}
+      {activeTab === "sections" ? <div className="mt-6"><TrainingSectionsTab trainingId={trainingId} trainingDeliveryMode={training.delivery_mode ?? ""} trainingLessonDefaults={trainingLessonDefaults} /></div> : null}
       {activeTab === "enrolments" ? <div className="mt-6"><TrainingEnrolmentsTab trainingId={trainingId} /></div> : null}
       {activeTab === "attendance" ? <div className="mt-6"><TrainingAttendanceTab trainingId={trainingId} /></div> : null}
       {activeTab === "assessments" ? <div className="mt-6"><TrainingAssessmentsTab trainingId={trainingId} /></div> : null}

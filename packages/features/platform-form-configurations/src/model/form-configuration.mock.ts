@@ -26,7 +26,7 @@ export function createSeededFields(registry: readonly CoreFieldRegistryItem[], s
     { key: "subcategory", section: "section-basic", label: "Subcategory" },
     { key: "tags", section: "section-basic", placeholder: "Type a tag and press Enter", label: "Tags" },
     { key: "learning_objectives", section: "section-basic", placeholder: "Type objective and press Enter", label: "Learning objectives" },
-    { key: "requirements", section: "section-basic", placeholder: "Prerequisites or requirements", renderer: "textarea", label: "Requirements" },
+    { key: "requirements", section: "section-basic", placeholder: "Learner requirements", renderer: "textarea", label: "Requirements" },
     // 2. Schedule — mirrors TrainingScheduleSection:92
     { key: "start_date", section: "section-schedule", renderer: "datetime", label: "Start Date" },
     { key: "end_date", section: "section-schedule", renderer: "datetime", label: "End Date" },
@@ -39,7 +39,6 @@ export function createSeededFields(registry: readonly CoreFieldRegistryItem[], s
     { key: "access_duration_days", section: "section-schedule", placeholder: "e.g. 90", label: "Access duration (days)" },
     // 3. Location & Host — mirrors TrainingDeliverySection:54 (hybrid/physical/online)
     { key: "delivery_mode", section: "section-location", renderer: "select", options: TRAINING_DELIVERY_MODE_OPTIONS.map((option) => option.value), label: "Delivery Mode" },
-    { key: "course_type", section: "section-location", placeholder: "e.g. Workshop", label: "Course Type" },
     { key: "venue", section: "section-location", placeholder: "e.g. Main Hall", label: "Venue" },
     { key: "meeting_link", section: "section-location", placeholder: "https://...", renderer: "url", label: "Meeting link" },
     { key: "instructor_id", section: "section-location", label: "Instructor" },
@@ -62,9 +61,7 @@ export function createSeededFields(registry: readonly CoreFieldRegistryItem[], s
     // 6. Images & Media — mirrors TrainingMediaSection:178
     { key: "primary_image", section: "section-media", renderer: "url", placeholder: "https://…", label: "Primary Image" },
     // 7. Additional Configuration — mirrors TrainingCourseBuilderSection:192
-    { key: "prerequisites", section: "section-additional", placeholder: "e.g. Complete Module 1", renderer: "textarea", label: "Prerequisites" },
     { key: "faqs", section: "section-additional", placeholder: '[{"question":"...","answer":"..."}]', renderer: "textarea", label: "FAQs" },
-    { key: "badges", section: "section-additional", placeholder: "Type badge and press Enter", label: "Badges" },
   ];
   const eventFields: Array<[string, string]> = [["title", "section-basic"], ["description", "section-basic"], ["category", "section-basic"], ["start_date", "section-schedule"], ["end_date", "section-schedule"], ["time_zone", "section-schedule"], ...EVENT_DELIVERY_BUNDLE.map((key) => [key, "section-location"] as [string, string]), ["pricing_type", "section-pricing"], ["price", "section-pricing"], ["currency", "section-pricing"], ["ticket_types", "section-pricing"], ["capacity", "section-capacity"], ["primary_image", "section-media"], ["sessions", "section-additional"], ["custom_fields", "section-additional"]];
   eventFields.splice(3, 0, ["event_type", "section-basic"]);

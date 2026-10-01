@@ -6,7 +6,7 @@ import { useState } from "react";
 import { ConfigurationBuilder } from "../components/ConfigurationBuilder";
 import { TrainingConfigurationHistoryPanels } from "../components/TrainingConfigurationHistoryPanels";
 import { trainingFormConfigurationCopy as copy } from "../constants/training-form-configuration-copy";
-import { useActivateTrainingFormConfiguration, useCreateTrainingFormConfiguration, useDeactivateTrainingFormConfiguration, useDeleteTrainingFormConfiguration, useTrainingFormConfiguration, useTrainingFormConfigurationAssignments, useTrainingFormConfigurationEnterpriseOptions, useTrainingFormConfigurationTenantOptions, useTrainingFormFieldRegistry, usePublishTrainingFormConfiguration, useRetireTrainingFormConfiguration, useUpdateTrainingFormConfiguration, useUpdateTrainingFormConfigurationAssignments } from "../training-form-configurations.queries";
+import { useActivateTrainingFormConfiguration, useCreateTrainingFormConfiguration, useDeactivateTrainingFormConfiguration, useDeleteTrainingFormConfiguration, useTrainingFormConfiguration, useTrainingFormConfigurationAssignments, useTrainingFormConfigurationTenantOptions, useTrainingFormFieldRegistry, usePublishTrainingFormConfiguration, useRetireTrainingFormConfiguration, useUpdateTrainingFormConfiguration, useUpdateTrainingFormConfigurationAssignments } from "../training-form-configurations.queries";
 import { toBuilderTrainingFormConfiguration, toTrainingFormConfigurationCreateCandidate, toTrainingFormConfigurationPatchCandidate } from "../model/training-form-configuration.mappers";
 import { getConfigurationActions } from "../model/configuration-actions";
 import { createMockConfiguration } from "../model/form-configuration.mock";
@@ -23,7 +23,6 @@ export function TrainingFormConfigurationEditorScreen({ id, mode }: { id?: strin
   const configuration = useTrainingFormConfiguration(isCreate ? undefined : id);
   const assignments = useTrainingFormConfigurationAssignments(isCreate ? undefined : id);
   const tenantOptions = useTrainingFormConfigurationTenantOptions();
-  const enterpriseOptions = useTrainingFormConfigurationEnterpriseOptions();
   const create = useCreateTrainingFormConfiguration();
   const update = useUpdateTrainingFormConfiguration();
   const publish = usePublishTrainingFormConfiguration();
@@ -68,10 +67,9 @@ export function TrainingFormConfigurationEditorScreen({ id, mode }: { id?: strin
       return updated;
     }
     const saved = await create.mutateAsync(toTrainingFormConfigurationCreateCandidate(builder));
-    if (builder.scope === "selective" && ((builder.enterpriseIds ?? []).length > 0 || builder.tenantIds.length > 0)) {
+    if (builder.scope === "selective" && builder.tenantIds.length > 0) {
       try {
-        const enterpriseIds = builder.enterpriseIds ?? [];
-        await saveAssignments.mutateAsync({ configurationId: saved.id, payload: enterpriseIds.length > 0 ? { tenant_ids: [], enterprise_ids: enterpriseIds } : { tenant_ids: builder.tenantIds } });
+        await saveAssignments.mutateAsync({ configurationId: saved.id, payload: { tenant_ids: builder.tenantIds } });
       } catch (reason) {
         const message = reason instanceof Error ? reason.message : "Unable to save tenant assignments.";
         setAssignmentRecovery({ id: saved.id, message });
@@ -91,11 +89,6 @@ export function TrainingFormConfigurationEditorScreen({ id, mode }: { id?: strin
     if (!id) throw new Error("Save this configuration before assigning tenants.");
     const saved = await saveAssignments.mutateAsync({ configurationId: id, payload: { tenant_ids: tenantIds } });
     return saved.map((assignment) => assignment.tenant_id);
-  };
-  const persistEnterpriseAssignments = async (args: { enterpriseIds: string[]; isGlobal: boolean }): Promise<readonly string[]> => {
-    if (!id) throw new Error("Save this configuration before assigning enterprises.");
-    const saved = await saveAssignments.mutateAsync({ configurationId: id, payload: args.isGlobal ? { tenant_ids: [], is_global: true } : { tenant_ids: [], enterprise_ids: args.enterpriseIds } });
-    return saved.map((assignment) => assignment.enterprise_id).filter((eid): eid is string => !!eid);
   };
   const runLifecycle = async (action: "activate" | "deactivate" | "retire" | "delete") => {
     if (!id) return;
@@ -124,7 +117,7 @@ export function TrainingFormConfigurationEditorScreen({ id, mode }: { id?: strin
         {lifecycleActions.has("delete") ? <button className="rounded-full border border-[#efc7c2] px-4 py-2 text-sm font-semibold text-[#b42318] transition hover:bg-[#fff1ef] focus:outline-none focus:ring-2 focus:ring-[#b42318]" type="button" disabled={remove.isPending} onClick={() => void runLifecycle("delete")}>{copy.delete}</button> : null}
       </div>
       {lifecycleError ? <p role="alert">{lifecycleError}</p> : null}
-      <ConfigurationBuilder key={builderConfiguration.id} initialConfiguration={builderConfiguration} coreFieldRegistry={registry.data ?? []} readOnly={mode === "view"} tenantOptions={tenantOptions.data ?? []} enterpriseOptions={enterpriseOptions.data ?? []} assignmentTenantIds={assignments.data?.map((assignment) => assignment.tenant_id)} assignmentEnterpriseIds={(assignments.data ?? []).map((assignment) => assignment.enterprise_id).filter((eid): eid is string => !!eid)} assignmentsLoaded={assignments.isSuccess} isPersisted={!isCreate && Boolean(id)} isLoadingTenants={tenantOptions.isLoading} tenantError={tenantOptions.isError} isSavingEnterpriseAssignments={saveAssignments.isPending} isLoadingAssignments={assignments.isLoading} assignmentError={assignments.isError} isSaving={create.isPending || update.isPending} isPublishing={publish.isPending} isSavingAssignments={saveAssignments.isPending} onSave={mode === "view" ? undefined : save} onPublish={mode === "edit" ? publishConfiguration : undefined} onSaveAssignments={mode === "view" || !id ? undefined : persistAssignments} onSaveEnterpriseAssignments={mode === "view" || !id ? undefined : persistEnterpriseAssignments} />
+      <ConfigurationBuilder key={builderConfiguration.id} initialConfiguration={builderConfiguration} coreFieldRegistry={registry.data ?? []} readOnly={mode === "view"} tenantOptions={tenantOptions.data ?? []} assignmentTenantIds={assignments.data?.map((assignment) => assignment.tenant_id)} assignmentEnterpriseIds={(assignments.data ?? []).map((assignment) => assignment.enterprise_id).filter((eid): eid is string => !!eid)} assignmentsLoaded={assignments.isSuccess} isPersisted={!isCreate && Boolean(id)} isLoadingTenants={tenantOptions.isLoading} tenantError={tenantOptions.isError} isLoadingAssignments={assignments.isLoading} assignmentError={assignments.isError} isSaving={create.isPending || update.isPending} isPublishing={publish.isPending} isSavingAssignments={saveAssignments.isPending} onSave={mode === "view" ? undefined : save} onPublish={mode === "edit" ? publishConfiguration : undefined} onSaveAssignments={mode === "view" || !id ? undefined : persistAssignments} />
       {apiConfiguration ? <TrainingConfigurationHistoryPanels configuration={apiConfiguration} /> : null}
     </Page>
   );

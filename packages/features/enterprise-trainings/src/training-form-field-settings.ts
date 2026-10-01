@@ -1,7 +1,7 @@
 import type { CreateTrainingFormValues } from "./create-training-form";
 import type { TrainingFormField } from "./training-form-config.service";
 
-/** Local-only sentinel for the temporary, unsaveable Training taxonomy choice. */
+/** Local-only sentinel marking the "Other (custom value)" choice before its text is resolved. */
 export const TRAINING_OTHER_OPTION_VALUE = "__ihp_training_other_option__";
 
 function hasValue(value: unknown): boolean {
@@ -22,12 +22,21 @@ function configuredValue(
   return undefined;
 }
 
+function isUnsupportedTrainingField(field: TrainingFormField): boolean {
+  const normalize = (value: string) => value.trim().toLowerCase().replace(/^(core_|custom_)/, "").replace(/[\s-]+/g, "_");
+  const unsupportedKeys = new Set(["course_type", "course_types", "badge", "badges", "milestone_badges", "prerequisite", "prerequisites"]);
+  const keys = [field.key, field.apiKey, field.stable_key].filter((key): key is string => Boolean(key));
+  return keys.some((key) => unsupportedKeys.has(normalize(key)))
+    || unsupportedKeys.has(normalize(field.label));
+}
+
 export function isTrainingFormFieldVisible(
   field: TrainingFormField,
   allFields: readonly TrainingFormField[],
   values: CreateTrainingFormValues,
   customValues: Record<string, unknown>,
 ): boolean {
+  if (isUnsupportedTrainingField(field)) return false;
   return evaluateFieldVisibility(field, allFields, values, customValues, new Set());
 }
 

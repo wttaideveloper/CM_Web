@@ -21,11 +21,11 @@ const steps = ["Basic Information", "Schedule", "Location & Host", "Pricing & Ti
 const stepFields: ReadonlyArray<readonly string[]> = [
   ["title", "description", "category", "subcategory", "tags", "instructor_id", "requirements"],
   ["start_date", "end_date", "start_time", "end_time", "enrolment_start", "enrolment_end", "time_zone", "duration", "schedule_exceptions"],
-  ["location_id", "delivery_mode", "course_type"],
+  ["location_id", "delivery_mode"],
   ["price", "currency", "promo_price", "coupon_code"],
   ["capacity", "requires_approval", "access_duration_days", "access_expiry_type", "access_expiry_days"],
   ["primary_image", "gallery_images", "promotional_video"],
-  ["prerequisites", "faqs", "discussions", "announcements", "moderation_history"],
+  ["faqs", "discussions", "announcements", "moderation_history"],
 ];
 // One static section component per entry in `steps`, in the same order — retained
 // only for editing older Trainings whose historical form configuration is unavailable.

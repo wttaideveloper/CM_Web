@@ -3,6 +3,14 @@ import type {
   Training,
   UpdateTrainingPayload,
 } from "./trainings.service";
+import { TRAINING_OTHER_OPTION_VALUE } from "./training-form-field-settings";
+
+/** Resolves a taxonomy value, never letting the unresolved "Other" sentinel reach the API. */
+function resolveTaxonomyValue(value: string, optional: boolean): string | null {
+  if (value === TRAINING_OTHER_OPTION_VALUE) return optional ? null : "";
+  const trimmed = value.trim();
+  return !trimmed && optional ? null : trimmed;
+}
 
 /** All local values maintained by the Training editor workspace. */
 export interface CreateTrainingFormValues {
@@ -42,7 +50,6 @@ export interface CreateTrainingFormValues {
   coupon_code: string;
   requires_approval: boolean;
   access_duration_days: string;
-  prerequisites: string;
   access_expiry_type: string;
   access_expiry_days: string;
   location_id: string;
@@ -119,7 +126,6 @@ export function createEmptyTrainingForm(): CreateTrainingFormValues {
     coupon_code: "",
     requires_approval: false,
     access_duration_days: "",
-    prerequisites: "",
     access_expiry_type: "never",
     access_expiry_days: "",
     location_id: "",
@@ -180,7 +186,6 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
     coupon_code: stringValue("coupon_code"),
     requires_approval: record.requires_approval === true,
     access_duration_days: stringValue("access_duration_days"),
-    prerequisites: stringValue("prerequisites"),
     access_expiry_type: stringValue("access_expiry_type", "never"),
     access_expiry_days: stringValue("access_expiry_days"),
     location_id: stringValue("location_id"),
@@ -241,8 +246,8 @@ export function buildCreateTrainingPayload(values: CreateTrainingFormValues, ten
     enterprise_id: enterpriseId,
     title: values.title.trim(),
     description: values.description.trim() || null,
-    category: values.category.trim(),
-    subcategory: values.subcategory.trim() || null,
+    category: resolveTaxonomyValue(values.category, false),
+    subcategory: resolveTaxonomyValue(values.subcategory, true),
     tags: values.tags,
     instructor_id: values.instructor_id.trim() || null,
     instructor_name: values.instructor_name.trim() || null,
@@ -279,7 +284,6 @@ export function buildCreateTrainingPayload(values: CreateTrainingFormValues, ten
 location_id: isVenue ? values.location_id.trim() || null : null,
     level: values.level || values.difficulty_level || null,
     language: values.language || null,
-    prerequisites: values.prerequisites.trim() || null,
     recurring: values.recurring.trim() || null,
     schedule_exceptions: (() => { try { return values.schedule_exceptions.trim() ? JSON.parse(values.schedule_exceptions) : null; } catch { return values.schedule_exceptions.trim() || null; } })(),
     meeting_provider: isLive ? values.meeting_provider.trim() || null : null,
@@ -322,8 +326,8 @@ export function buildUpdateTrainingPayload(values: CreateTrainingFormValues): Up
   return {
     title: values.title.trim(),
     description: values.description.trim() || null,
-    category: values.category.trim(),
-    subcategory: values.subcategory.trim() || null,
+    category: resolveTaxonomyValue(values.category, false),
+    subcategory: resolveTaxonomyValue(values.subcategory, true),
     tags: values.tags,
     instructor_id: values.instructor_id.trim() || null,
     instructor_name: values.instructor_name.trim() || null,
@@ -360,7 +364,6 @@ export function buildUpdateTrainingPayload(values: CreateTrainingFormValues): Up
     location_id: isVenue ? values.location_id.trim() || null : null,
     level: values.level || values.difficulty_level || null,
     language: values.language || null,
-    prerequisites: values.prerequisites.trim() || null,
 recurring: values.recurring.trim() || null,
     schedule_exceptions: (() => { try { return values.schedule_exceptions.trim() ? JSON.parse(values.schedule_exceptions) : null; } catch { return values.schedule_exceptions.trim() || null; } })(),
     meeting_provider: isLive ? values.meeting_provider.trim() || null : null,

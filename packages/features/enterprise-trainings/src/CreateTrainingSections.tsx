@@ -98,7 +98,7 @@ export function TrainingBasicsSection({
       <div className="flex flex-wrap gap-2">{values.tags.map((tag) => <button key={tag} type="button" onClick={() => update("tags", values.tags.filter((item) => item !== tag))} className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{tag} ×</button>)}</div>
       <label className={labelClass}>Learning objectives<input onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addObjective(event.currentTarget.value); event.currentTarget.value = ""; } }} placeholder="Type objective and press Enter" className={inputClass} /></label>
       <div className="flex flex-wrap gap-2">{values.learning_objectives.map((obj) => <button key={obj} type="button" onClick={() => update("learning_objectives", values.learning_objectives.filter((item) => item !== obj))} className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{obj} ×</button>)}</div>
-      <label className={labelClass}>Requirements<textarea value={values.requirements} onChange={(event) => update("requirements", event.target.value)} rows={3} className={`${inputClass} h-auto py-3`} placeholder="Prerequisites or requirements" /></label>
+      <label className={labelClass}>Requirements<textarea value={values.requirements} onChange={(event) => update("requirements", event.target.value)} rows={3} className={`${inputClass} h-auto py-3`} placeholder="Learner requirements" /></label>
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Target audience<input value={values.target_audience} onChange={(e) => update("target_audience", e.target.value)} placeholder="e.g. Beginners, patients" className={inputClass} /></label>
         <label className={labelClass}>Difficulty level<select value={values.difficulty_level} onChange={(e) => update("difficulty_level", e.target.value)} className={inputClass}><option value="">Select</option><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option><option value="expert">Expert</option></select></label>
@@ -112,9 +112,8 @@ export function TrainingDeliverySection({ values, update, errors }: SectionProps
   return (
     <section className="space-y-5">
       <SectionHeading title="Delivery & Instructor" description="Hybrid builds community — online scales it. Pick the format your learners prefer." tip="Physical needs a venue, Online needs a meeting link, Hybrid needs both. Learners filter by this." />
-      <div className="grid gap-4 md:grid-cols-2">
+      <div>
         <label className={labelClass}>Delivery mode<select value={values.delivery_mode} onChange={(event) => update("delivery_mode", event.target.value)} className={inputClass}><option value="online">Live</option><option value="physical">Venue</option><option value="hybrid">Hybrid</option><option value="self_paced">Self-paced</option></select></label>
-        <label className={labelClass}>Course type<input value={values.course_type} onChange={(event) => update("course_type", event.target.value)} placeholder="e.g. Workshop" className={inputClass} /></label>
       </div>
       {values.delivery_mode === "hybrid" ? (
         <div className="rounded-xl border border-[#d6e9fd] bg-[#f2f9ff] px-4 py-3 text-sm text-[#1a5c91]">
@@ -205,10 +204,6 @@ export function TrainingAdvancedSection({ values, update, errors }: SectionProps
       <label className={labelClass}>Instructor notes<input value={values.instructor_notes.join(", ")} onChange={(e) => update("instructor_notes", e.target.value.split(",").map((note) => note.trim()).filter(Boolean))} placeholder="Internal notes for the instructor, not shown to learners" className={inputClass} /></label>
       <label className={labelClass}>Notes PDF URL<input type="url" value={values.notes_pdf_url} onChange={(e) => update("notes_pdf_url", e.target.value)} placeholder="https://…" className={inputClass} /></label>
       <TrainingFaqEditor label="FAQs" value={values.faqs} onChange={(value) => update("faqs", value)} error={errors.faqs?.[0]} />
-      <div>
-        <label className={labelClass}>Milestone badges<input onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); const v = event.currentTarget.value.trim(); if (v && !values.badges.includes(v)) update("badges", [...values.badges, v]); event.currentTarget.value = ""; } }} placeholder="Type badge and press Enter" className={inputClass} /></label>
-        <div className="mt-2 flex flex-wrap gap-2">{values.badges.map((badge) => <button key={badge} type="button" onClick={() => update("badges", values.badges.filter((item) => item !== badge))} className="rounded-full bg-[#eef4ff] px-3 py-1 text-xs font-bold text-[#2563eb]">{badge} ×</button>)}</div>
-      </div>
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Discussions (JSON)<textarea value={values.discussions} onChange={(e) => update("discussions", e.target.value)} placeholder='[]' rows={3} className={`${inputClass} h-auto py-2`} /></label>
         <label className={labelClass}>Announcements (JSON)<textarea value={values.announcements} onChange={(e) => update("announcements", e.target.value)} placeholder='[]' rows={3} className={`${inputClass} h-auto py-2`} /></label>
@@ -382,12 +377,11 @@ export function TrainingMediaSection({ values, update }: SectionProps) {
   );
 }
 
-/** Additional Configuration — informational prerequisites and course resources. */
+/** Additional Configuration — course resources and collaboration settings. */
 export function TrainingCourseBuilderSection({ values, update, errors }: SectionProps) {
   return (
     <section className="space-y-5">
-      <SectionHeading title="Additional Configuration" description="Share prerequisite information and course-related notes with learners." />
-      <label className={labelClass}>Prerequisites<textarea id="training-field-prerequisites" value={values.prerequisites} onChange={(e) => update("prerequisites", e.target.value)} placeholder="e.g. Complete Module 1" rows={2} className={`${inputClass} h-auto py-3`} /><FieldError error={errors.prerequisites} /></label>
+      <SectionHeading title="Additional Configuration" description="Add course-related notes and collaboration settings." />
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Notes PDF URL<input type="url" value={values.notes_pdf_url} onChange={(e) => update("notes_pdf_url", e.target.value)} placeholder="https://…" className={inputClass} /></label>
         <label className={labelClass}>Session mode<input value={values.session_mode} onChange={(e) => update("session_mode", e.target.value)} placeholder="e.g. live, cohort" className={inputClass} /></label>

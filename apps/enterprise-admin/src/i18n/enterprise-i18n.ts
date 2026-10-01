@@ -20,4 +20,6 @@ if (!i18n.isInitialized) {
   });
 }
 
+i18n.addResourceBundle("en", "enterpriseTrainings", enterpriseTrainingsEnglish, true, true);
+
 export default i18n;

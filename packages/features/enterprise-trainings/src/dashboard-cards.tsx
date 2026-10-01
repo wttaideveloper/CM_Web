@@ -20,6 +20,16 @@ function statusChipClass(status: string, expired: boolean): string {
   return "rounded-full bg-[#f0f3f2] px-2 py-0.5 text-[10px] font-bold text-[#52736a]";
 }
 
+function getActiveEnrolmentCount(dashboard: TrainingProviderDashboard): number {
+  const inactiveStatuses = new Set(["cancelled", "canceled", "rejected", "no_show", "pending", "pending_approval", "needs_revision", "waitlisted", "waitlist"]);
+  const inactiveEnrolments = Object.entries(dashboard.by_status).reduce((count, [status, enrolmentCount]) => {
+    const normalizedStatus = status.trim().toLowerCase().replace(/[\s-]+/g, "_");
+    return inactiveStatuses.has(normalizedStatus) ? count + enrolmentCount : count;
+  }, 0);
+
+  return Math.max(0, dashboard.total_enrolments - inactiveEnrolments);
+}
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-3">
@@ -284,19 +294,20 @@ export function ParticipantDashboardCard({ dashboard, trainingId }: { dashboard:
 export function ProviderDashboardCard({ dashboard }: { dashboard: TrainingProviderDashboard }) {
   const entries = Object.entries(dashboard.by_status ?? {}).sort((a, b) => b[1] - a[1]);
   const enrolments = Array.isArray(dashboard.recent_enrolments) ? dashboard.recent_enrolments : [];
+  const activeEnrolmentCount = getActiveEnrolmentCount(dashboard);
   return (
     <section className="space-y-5 rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Provider Dashboard</p>
         <span className="rounded-full bg-[#f0f3f2] px-2 py-0.5 text-[10px] font-bold text-[#52736a]">{dashboard.total_enrolments} enrolments</span>
       </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <Stat label="Total enrolments" value={String(dashboard.total_enrolments)} />
+        <Stat label="Active enrolments" value={String(activeEnrolmentCount)} />
         <Stat label="Capacity used" value={`${dashboard.capacity_utilization}%`} />
         <Stat label="Statuses" value={String(entries.length)} />
         <Stat label="Recent entries" value={String(enrolments.length)} />
       </div>
-      <ProgressBar percent={dashboard.capacity_utilization} />
       <div>
         <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Enrolments by status</p>
         {entries.length === 0 ? (

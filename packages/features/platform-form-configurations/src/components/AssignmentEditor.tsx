@@ -10,9 +10,11 @@ export interface AssignmentTenantOption {
   id: string;
   name: string;
   slug: string | null;
+  tenantId?: string;
 }
 
 type Props = {
+  assignmentMode?: "tenant" | "enterprise";
   readOnly?: boolean;
   scope: FormConfigurationScope;
   tenantIds: string[];
@@ -28,9 +30,7 @@ type Props = {
   isPersisted: boolean;
   canSaveAssignments: boolean;
   isSaving: boolean;
-  /** Which Save button's mutation was actually clicked — both Save buttons share one mutation's
-   * `isPending`, so this alone decides which button's label reads "Saving..." (the other stays
-   * disabled, as before, but keeps its normal label instead of falsely claiming to be saving). */
+  /** Distinguishes which assignment mutation is pending when both save actions exist. */
   savingTarget?: "tenant" | "enterprise" | null;
   canSaveEnterpriseAssignments?: boolean;
   isSavingEnterpriseAssignments?: boolean;
@@ -41,13 +41,18 @@ type Props = {
   onSaveEnterprises?: () => void;
 };
 
-/** Edits backend-owned tenant assignments without inventing tenant identities. */
+/** Edits configuration assignments using the selected tenant or enterprise identity. */
 export function AssignmentEditor({
+  assignmentMode = "tenant",
   scope,
   tenantIds,
   tenants,
+  enterpriseIds = [],
+  enterprises = [],
   isLoadingTenants,
   tenantError,
+  isLoadingEnterprises = false,
+  enterpriseError = false,
   isLoadingAssignments = false,
   assignmentError = false,
   isPersisted,
@@ -55,48 +60,65 @@ export function AssignmentEditor({
   readOnly = isPersisted && !canSaveAssignments,
   isSaving,
   savingTarget = null,
+  canSaveEnterpriseAssignments = false,
+  isSavingEnterpriseAssignments = false,
   onScopeChange,
   onTenantIdsChange,
+  onEnterpriseIdsChange,
   onSave,
+  onSaveEnterprises,
 }: Props) {
   const [search, setSearch] = useState("");
+  const usesEnterpriseAssignments = assignmentMode === "enterprise";
+  const selectedIds = usesEnterpriseAssignments ? enterpriseIds : tenantIds;
+  const options = usesEnterpriseAssignments
+    ? enterprises
+    : enterprises.length
+      ? tenants.filter((tenant) => enterprises.some((enterprise) => enterprise.tenantId === tenant.id))
+      : tenants;
+  const isLoadingOptions = isLoadingTenants || isLoadingEnterprises;
+  const optionsError = tenantError || enterpriseError;
+  const searchPlaceholder = usesEnterpriseAssignments ? "Search enterprises" : copy.searchTenants;
+  const noOptionsMessage = usesEnterpriseAssignments ? "No enterprises match this search." : copy.noTenants;
+  const updateSelectedIds = usesEnterpriseAssignments ? onEnterpriseIdsChange : onTenantIdsChange;
   const filtered = useMemo(
-    () => tenants.filter((tenant) => tenant.name.toLowerCase().includes(search.toLowerCase())),
-    [search, tenants],
+    () => options.filter((option) => option.name.toLowerCase().includes(search.toLowerCase())),
+    [options, search],
   );
-  const toggle = (tenantId: string) => onTenantIdsChange(
-    tenantIds.includes(tenantId)
-      ? tenantIds.filter((id) => id !== tenantId)
-      : [...tenantIds, tenantId],
+  const toggle = (id: string) => updateSelectedIds?.(
+    selectedIds.includes(id)
+      ? selectedIds.filter((selectedId) => selectedId !== id)
+      : [...selectedIds, id],
   );
-  const tenantControls = <>
-    {isLoadingTenants ? <p className="py-3 text-sm text-[#52736a]">{copy.loading}</p> : null}
-    {tenantError ? <p role="alert" className="py-3 text-sm font-medium text-[#b42318]">{copy.unableToLoadAvailableTenants}</p> : null}
-    {!isLoadingTenants && !tenantError ? <>
+  const assignmentControls = <>
+    {isLoadingOptions ? <p className="py-3 text-sm text-[#52736a]">{copy.loading}</p> : null}
+    {optionsError ? <p role="alert" className="py-3 text-sm font-medium text-[#b42318]">{copy.unableToLoadAvailableTenants}</p> : null}
+    {!isLoadingOptions && !optionsError ? <>
       <div className="mt-3 flex flex-col gap-2 sm:flex-row">
         <input
           disabled={readOnly}
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder={copy.searchTenants}
-          aria-label={copy.searchTenants}
+          placeholder={searchPlaceholder}
+          aria-label={searchPlaceholder}
           className="min-w-0 flex-1 rounded-lg border border-[#cfe0d8] bg-white px-3 py-2 text-sm text-[#06201c] outline-none placeholder:text-[#79958d] focus:border-[#1f6a58] focus:ring-2 focus:ring-[#cfe8de] disabled:bg-[#f4f8f6]"
         />
         <div className="flex shrink-0 gap-2">
-          <button type="button" disabled={readOnly} onClick={() => onTenantIdsChange(tenants.map((tenant) => tenant.id))} className="rounded-lg border border-[#cfe0d8] bg-white px-3 py-2 text-sm font-semibold text-[#1f6a58] hover:bg-[#f4faf7] disabled:cursor-not-allowed disabled:opacity-50">{copy.selectAll}</button>
-          <button type="button" disabled={readOnly} onClick={() => onTenantIdsChange([])} className="rounded-lg border border-transparent px-3 py-2 text-sm font-semibold text-[#52736a] hover:bg-[#f4faf7] disabled:cursor-not-allowed disabled:opacity-50">{copy.clearAll}</button>
+          <button type="button" disabled={readOnly || !updateSelectedIds} onClick={() => updateSelectedIds?.(options.map((option) => option.id))} className="rounded-lg border border-[#cfe0d8] bg-white px-3 py-2 text-sm font-semibold text-[#1f6a58] hover:bg-[#f4faf7] disabled:cursor-not-allowed disabled:opacity-50">{copy.selectAll}</button>
+          <button type="button" disabled={readOnly || !updateSelectedIds} onClick={() => updateSelectedIds?.([])} className="rounded-lg border border-transparent px-3 py-2 text-sm font-semibold text-[#52736a] hover:bg-[#f4faf7] disabled:cursor-not-allowed disabled:opacity-50">{copy.clearAll}</button>
         </div>
       </div>
       <div className="mt-3 grid max-h-52 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 xl:grid-cols-3">
-        {filtered.map((tenant) => {
-          const isSelected = tenantIds.includes(tenant.id);
-          return <label key={tenant.id} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${isSelected ? "border-[#1f6a58] bg-[#eef8f3] text-[#06201c]" : "border-[#e1ebe6] bg-white text-[#355a51] hover:border-[#a9cbbd]"} ${readOnly ? "cursor-default opacity-75" : ""}`}>
-            <input type="checkbox" checked={isSelected} disabled={readOnly} onChange={() => toggle(tenant.id)} className="h-4 w-4 accent-[#1f6a58]" />
-            <span className="min-w-0 truncate font-medium" title={tenant.name}>{tenant.name}</span>
+        {filtered.map((option) => {
+          const isSelected = selectedIds.includes(option.id);
+          return <label key={option.id} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${isSelected ? "border-[#1f6a58] bg-[#eef8f3] text-[#06201c]" : "border-[#e1ebe6] bg-white text-[#355a51] hover:border-[#a9cbbd]"} ${readOnly ? "cursor-default opacity-75" : ""}`}>
+            <input type="checkbox" checked={isSelected} disabled={readOnly || !updateSelectedIds} onChange={() => toggle(option.id)} className="h-4 w-4 accent-[#1f6a58]" />
+            <span className="min-w-0 truncate font-medium" title={option.name}>{option.name}</span>
           </label>;
         })}
       </div>
-      {!filtered.length ? <p className="py-3 text-sm text-[#52736a]">{copy.noTenants}</p> : null}
+      {!filtered.length ? <p className="py-3 text-sm text-[#52736a]">{noOptionsMessage}</p> : null}
+      {!usesEnterpriseAssignments && !options.length ? <p className="text-sm text-[#9b3f16]">No enterprises are linked to the available tenants. Link an enterprise to a tenant before assigning this Event form.</p> : null}
     </> : null}
   </>;
 
@@ -109,30 +131,32 @@ export function AssignmentEditor({
       <div className="inline-flex w-fit rounded-lg bg-[#eef6f2] p-1" role="radiogroup" aria-label={copy.assignment}>
         <label className={`cursor-pointer rounded-md px-3 py-2 text-sm font-semibold transition ${scope === "global" ? "bg-white text-[#1f6a58] shadow-sm" : "text-[#52736a]"} ${readOnly ? "cursor-default opacity-75" : ""}`}>
           <input type="radio" className="sr-only" disabled={readOnly} checked={scope === "global"} onChange={() => onScopeChange("global")} />
-          {copy.allTenants}
+          {usesEnterpriseAssignments ? "All enterprises" : copy.allTenants}
         </label>
         <label className={`cursor-pointer rounded-md px-3 py-2 text-sm font-semibold transition ${scope === "selective" ? "bg-white text-[#1f6a58] shadow-sm" : "text-[#52736a]"} ${readOnly ? "cursor-default opacity-75" : ""}`}>
           <input type="radio" className="sr-only" disabled={readOnly} checked={scope === "selective"} onChange={() => onScopeChange("selective")} />
-          {copy.selectedTenants}
+          {usesEnterpriseAssignments ? "Selected enterprises" : copy.selectedTenants}
         </label>
       </div>
     </div>
 
-    <p className="mt-3 text-sm leading-5 text-[#52736a]">{scope === "global" ? copy.globalScopeHelp : copy.selectiveScopeHelp}</p>
+    <p className="mt-3 text-sm leading-5 text-[#52736a]">{scope === "global" ? copy.globalScopeHelp : usesEnterpriseAssignments ? copy.enterpriseAssignmentHelp : copy.selectiveScopeHelp}</p>
 
     {scope === "selective" ? <div className="pt-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="rounded-full bg-[#e8f5ee] px-2.5 py-1 text-xs font-bold text-[#1f6a58]">{copy.selectedCount.replace("{count}", String(tenantIds.length))}</span>
-        {!tenantIds.length && !isLoadingAssignments && !assignmentError ? <span className="text-sm text-[#52736a]">{copy.noTenantsAssigned}</span> : null}
-        {!isPersisted ? <span className="text-sm text-[#52736a]">{copy.selectedTenantsSavedOnCreate}</span> : null}
+        <span className="rounded-full bg-[#e8f5ee] px-2.5 py-1 text-xs font-bold text-[#1f6a58]">{usesEnterpriseAssignments ? `Selected enterprises: ${selectedIds.length}` : copy.selectedCount.replace("{count}", String(selectedIds.length))}</span>
+        {!selectedIds.length && !isLoadingAssignments && !assignmentError ? <span className="text-sm text-[#52736a]">{usesEnterpriseAssignments ? "No enterprises assigned." : copy.noTenantsAssigned}</span> : null}
+        {!isPersisted ? <span className="text-sm text-[#52736a]">{usesEnterpriseAssignments ? "Selected enterprises will be saved when this configuration is created." : copy.selectedTenantsSavedOnCreate}</span> : null}
       </div>
-      {isLoadingAssignments ? <p className="mt-3 text-sm text-[#52736a]">{copy.loadingAssignedTenants}</p> : null}
-      {assignmentError ? <p role="alert" className="mt-3 text-sm font-medium text-[#b42318]">{copy.unableToLoadAssignedTenants}</p> : null}
-      {tenantControls}
+      {isLoadingAssignments ? <p className="mt-3 text-sm text-[#52736a]">{usesEnterpriseAssignments ? "Loading assigned enterprises…" : copy.loadingAssignedTenants}</p> : null}
+      {assignmentError ? <p role="alert" className="mt-3 text-sm font-medium text-[#b42318]">{usesEnterpriseAssignments ? "Unable to load assigned enterprises." : copy.unableToLoadAssignedTenants}</p> : null}
+      {assignmentControls}
     </div> : <p className="pt-4 text-sm text-[#52736a]">{copy.globalAssignmentsDescription}</p>}
 
     {!readOnly && isPersisted && scope === "selective" ? <div className="mt-4 flex flex-wrap gap-2 border-t border-[#edf3f0] pt-4">
-      {canSaveAssignments ? <button type="button" onClick={onSave} disabled={isSaving || isLoadingTenants || tenantError || isLoadingAssignments || assignmentError} className="rounded-lg bg-[#1f6a58] px-4 py-2 text-sm font-bold text-white hover:bg-[#185746] disabled:cursor-not-allowed disabled:opacity-60">{isSaving && savingTarget === "tenant" ? copy.savingAssignments : copy.saveAssignments}</button> : null}
+      {usesEnterpriseAssignments
+        ? canSaveEnterpriseAssignments ? <button type="button" onClick={onSaveEnterprises} disabled={isSavingEnterpriseAssignments || isLoadingOptions || optionsError || isLoadingAssignments || assignmentError || !selectedIds.length} className="rounded-lg bg-[#1f6a58] px-4 py-2 text-sm font-bold text-white hover:bg-[#185746] disabled:cursor-not-allowed disabled:opacity-60">{isSavingEnterpriseAssignments ? copy.savingAssignments : copy.saveAssignments}</button> : null
+        : canSaveAssignments ? <button type="button" onClick={onSave} disabled={isSaving || isLoadingOptions || optionsError || isLoadingAssignments || assignmentError} className="rounded-lg bg-[#1f6a58] px-4 py-2 text-sm font-bold text-white hover:bg-[#185746] disabled:cursor-not-allowed disabled:opacity-60">{isSaving && savingTarget === "tenant" ? copy.savingAssignments : copy.saveAssignments}</button> : null}
     </div> : null}
   </section>;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getPlatformEnterpriseTenants } from "@ihp/platform-enterprises";
+import { getPlatformEnterpriseTenants, getPlatformEnterprises } from "@ihp/platform-enterprises";
 import type { AssignmentTenantOption } from "./components/AssignmentEditor";
 import type { CreateEventFormConfigurationRequest, UpdateEventFormConfigurationAssignmentsRequest, UpdateEventFormConfigurationRequest } from "./model/event-form-configuration-api.types";
 import type { CoreFieldRegistryItem, FormConfigurationListItem } from "./model/form-configuration.types";
@@ -59,14 +59,25 @@ export function useEventFormConfigurationTenantOptions(enabled = true) {
   return useQuery({
     queryKey: eventFormConfigurationKeys.assignableTenants(),
     queryFn: async (): Promise<AssignmentTenantOption[]> => {
-      const response = await getPlatformEnterpriseTenants();
-      return response.items.map((tenant) => ({ id: tenant.id, name: tenant.name, slug: tenant.slug }));
+      const [response, enterprises] = await Promise.all([
+        getPlatformEnterpriseTenants(),
+        getPlatformEnterprises(),
+      ]);
+      const linkedTenantIds = new Set(
+        enterprises
+          .map((enterprise) => enterprise.tenant_id)
+          .filter((tenantId): tenantId is string => Boolean(tenantId)),
+      );
+      return response.items
+        .filter((tenant) => linkedTenantIds.has(tenant.id))
+        .map((tenant) => ({ id: tenant.id, name: tenant.name, slug: tenant.slug }));
     },
     retry: 1,
     staleTime: 60_000,
     enabled,
   });
 }
+
 
 /** Creates a configuration and refreshes the configuration collection. */
 export function useCreateEventFormConfiguration() { const queryClient = useQueryClient(); return useMutation({ mutationFn: createEventFormConfiguration, onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: eventFormConfigurationKeys.list() }); } }); }
