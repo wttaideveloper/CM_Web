@@ -1,7 +1,5 @@
 "use client";
 
-import type { EnterpriseLocationDto } from "@ihp/enterprises";
-
 import type { CreateEventFormValues } from "./create-event-form";
 import type { EventTypeDefinition } from "./events.service";
 import EventModulesControls from "./EventModulesControls";
@@ -46,13 +44,10 @@ export function ScheduleSection({ values, update, errors }: SectionProps) {
   </section>;
 }
 
-type LocationSectionProps = SectionProps & { locations: EnterpriseLocationDto[]; selectedLocationId: string; setSelectedLocationId: (value: string) => void; isLoadingLocations: boolean; locationError: string | null };
-
-/** Renders the real enterprise-location selector and in-person venue details. */
-export function LocationAndHostSection({ values, update, errors, locations, selectedLocationId, setSelectedLocationId, isLoadingLocations, locationError }: LocationSectionProps) {
-  return <section className="space-y-5"><SectionHeading title="Location & Host" description="Choose an existing enterprise location and describe the venue." />
+/** Renders the Event venue and host details. */
+export function LocationAndHostSection({ values, update, errors }: SectionProps) {
+  return <section className="space-y-5"><SectionHeading title="Venue & Host" description="Describe the venue and the event host." />
     <label className={labelClass}>Delivery mode<select value={values.delivery_mode} className={inputClass} disabled><option value={values.delivery_mode}>{values.delivery_mode === "in_person" ? "In person" : values.delivery_mode}</option></select></label>
-    <label className={labelClass}>Enterprise location<select id="event-field-location_id" value={selectedLocationId} onChange={(event) => setSelectedLocationId(event.target.value)} className={inputClass} disabled={isLoadingLocations || Boolean(locationError)}><option value="">{isLoadingLocations ? "Loading locations..." : "Select a location"}</option>{locations.map((location) => <option key={location.id} value={location.id}>{location.location_name} — {location.city}</option>)}</select><FieldError error={errors.location_id} />{locationError ? <p className="mt-1 text-xs font-medium text-[#b42318]">{locationError}</p> : null}</label>
     <div className="grid gap-4 md:grid-cols-2"><TextField label="Venue name" field="venue_name" values={values} update={update} errors={errors} placeholder="e.g. Main Hall" /><TextField label="City" field="venue_city" values={values} update={update} errors={errors} placeholder="e.g. Chennai" /></div>
     <TextField label="Venue address" field="venue_address" values={values} update={update} errors={errors} placeholder="e.g. 123 Park Street" />
     <div className="grid gap-4 md:grid-cols-2"><TextField label="Latitude (optional)" field="venue_latitude" values={values} update={update} errors={errors} type="number" /><TextField label="Longitude (optional)" field="venue_longitude" values={values} update={update} errors={errors} type="number" /></div>

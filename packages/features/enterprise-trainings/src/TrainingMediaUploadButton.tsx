@@ -162,7 +162,7 @@ export default function TrainingMediaUploadButton({
         type="button"
         onClick={() => inputRef.current?.click()}
         disabled={uploadMutation.isPending}
-        className="inline-flex h-9 w-32 shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-[#1f6a58] px-2 text-xs font-bold text-[#1f6a58] hover:bg-[#e8f6ee] disabled:cursor-not-allowed disabled:opacity-60"
+        className="inline-flex h-9 w-32 shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-[#1f6a58] px-2 text-xs font-bold text-[#1f6a58] transition-all duration-150 hover:-translate-y-0.5 hover:bg-[#1f6a58] hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:bg-transparent disabled:hover:text-[#1f6a58] disabled:hover:shadow-none"
       >
         {uploadMutation.isPending ? "Uploading..." : label}
       </button>

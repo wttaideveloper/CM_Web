@@ -472,9 +472,12 @@ export default function TrainingDetailsScreen({
               <div className="mt-6">
                 <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Tags</p>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {training.tags.map((tag) => (
-                    <span key={String(tag)} className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{String(tag)}</span>
-                  ))}
+                  {training.tags
+                    .filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0)
+                    .map((tag) => tag.trim())
+                    .map((tag, index) => (
+                      <span key={`${index}-${tag}`} className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{tag}</span>
+                    ))}
                 </div>
               </div>
             ) : null}

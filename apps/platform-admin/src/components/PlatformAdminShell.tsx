@@ -6,7 +6,7 @@ import {
   platformNavigationGroups,
   type PlatformNavigationItem,
 } from "@ihp/platform-layout";
-import { PlatformApprovalDataProvider, PlatformEnterpriseReadProvider, usePendingEventApprovalCount, usePendingProgramApprovalCount, usePendingTrainingApprovalCount } from "@ihp/platform-configuration";
+import { PlatformApprovalDataProvider, PlatformEnterpriseReadProvider, usePendingEventApprovalCount, usePendingTrainingApprovalCount } from "@ihp/platform-configuration";
 import { getPlatformEnterpriseById } from "@ihp/platform-enterprises";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { usePathname } from "next/navigation";
@@ -74,7 +74,6 @@ function PlatformAdminShellContent({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const pendingEventApprovals = usePendingEventApprovalCount();
   const pendingTrainingApprovals = usePendingTrainingApprovalCount();
-  const pendingProgramApprovals = usePendingProgramApprovalCount();
   const homeHref = useMemo(() => "/dashboard", []);
   const notificationsHref = useMemo(() => getShellRoute("/admin/notifications"), []);
   const handleLogout = useCallback(async () => {
@@ -100,8 +99,7 @@ function PlatformAdminShellContent({ children }: { children: ReactNode }) {
   const navigationGroups = useMemo(() => {
     const approvalBadge = pendingEventApprovals.data?.pagination.total !== undefined
       && pendingTrainingApprovals.data?.pagination.total !== undefined
-      && pendingProgramApprovals.data?.pagination.total !== undefined
-      ? pendingEventApprovals.data.pagination.total + pendingTrainingApprovals.data.pagination.total + pendingProgramApprovals.data.pagination.total
+      ? pendingEventApprovals.data.pagination.total + pendingTrainingApprovals.data.pagination.total
       : 0;
     return platformNavigationGroups.map((group) => ({
       ...group,
@@ -112,7 +110,6 @@ function PlatformAdminShellContent({ children }: { children: ReactNode }) {
   }, [
     pendingEventApprovals.data,
     pendingTrainingApprovals.data,
-    pendingProgramApprovals.data,
   ]);
 
   return (
@@ -120,6 +117,11 @@ function PlatformAdminShellContent({ children }: { children: ReactNode }) {
       currentPath={pathname}
       homeHref={homeHref}
       notificationsHref={notificationsHref}
+      approvalNotifications={{
+        eventCount: pendingEventApprovals.data?.pagination.total ?? null,
+        trainingCount: pendingTrainingApprovals.data?.pagination.total ?? null,
+        approvalQueueHref: "/approval-queue",
+      }}
       profileHref="/profile"
       onLogout={handleLogout}
       resolveNavigationHref={resolveNavigationHref}

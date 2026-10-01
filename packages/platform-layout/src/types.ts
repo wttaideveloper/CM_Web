@@ -36,6 +36,12 @@ export type PlatformAdminLayoutProps = {
   currentPath: string;
   homeHref: string;
   notificationsHref: string;
+  /** Pending approval counts for Platform Admins; omitted by shells using message notifications. */
+  approvalNotifications?: {
+    eventCount: number | null;
+    trainingCount: number | null;
+    approvalQueueHref: string;
+  };
   messagesHref?: string | null;
   profileHref?: string;
   profileInitials?: string;
@@ -48,7 +54,7 @@ export type PlatformAdminLayoutProps = {
 
 export type PlatformAdminHeaderProps = Pick<
   PlatformAdminLayoutProps,
-  "homeHref" | "notificationsHref" | "messagesHref" | "profileHref" | "profileInitials" | "profileName" | "profileEmail" | "onLogout"
+  "homeHref" | "notificationsHref" | "approvalNotifications" | "messagesHref" | "profileHref" | "profileInitials" | "profileName" | "profileEmail" | "onLogout"
 > & {
   onMenuClick: () => void;
 };

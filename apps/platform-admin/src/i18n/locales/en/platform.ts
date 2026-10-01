@@ -6,6 +6,14 @@ const platformEnglish = {
     billingSettings: "Billing Settings",
     integrations: "Integrations",
   },
+  approvalNotifications: {
+    title: "Pending approvals",
+    events: "Events",
+    trainings: "Trainings",
+    pendingCount: "{{count}} pending",
+    countUnavailable: "Unavailable",
+    noPending: "No pending Event or Training approvals.",
+  },
   superAdmins: {
     title: "Super Admins",
     description: "Manage platform Super Admin accounts and access.",

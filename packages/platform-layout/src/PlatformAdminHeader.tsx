@@ -51,6 +51,7 @@ function Brand({ homeHref }: { homeHref: string }) {
 export function PlatformAdminHeader({
   homeHref,
   notificationsHref,
+  approvalNotifications,
   messagesHref,
   profileHref,
   profileInitials = "IH",
@@ -87,6 +88,10 @@ export function PlatformAdminHeader({
 
   const closeMenu = () => setOpenMenu(null);
   const toggleMenu = (menu: OpenMenu) => setOpenMenu((current) => (current === menu ? null : menu));
+  const pendingApprovalCount = approvalNotifications?.eventCount !== null && approvalNotifications?.eventCount !== undefined
+    && approvalNotifications.trainingCount !== null
+    ? approvalNotifications.eventCount + approvalNotifications.trainingCount
+    : null;
 
   return (
     <HeaderFrame
@@ -102,17 +107,49 @@ export function PlatformAdminHeader({
       right={(
         <>
           <div className="relative">
-            <button type="button" onClick={() => toggleMenu("notifications")} className="relative flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4]" aria-label="Notifications" aria-expanded={openMenu === "notifications"}>
+            <button type="button" onClick={() => toggleMenu("notifications")} className="relative flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4]" aria-label={approvalNotifications && pendingApprovalCount !== null && pendingApprovalCount > 0 ? t("approvalNotifications.title", { defaultValue: "Pending approvals" }) + `, ${pendingApprovalCount} pending` : t("header.notifications", { defaultValue: "Notifications" })} aria-expanded={openMenu === "notifications"}>
               <BellIcon />
+              {approvalNotifications && pendingApprovalCount !== null && pendingApprovalCount > 0 ? (
+                <span className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-[#b42318] px-1 text-[10px] font-bold text-white">
+                  {pendingApprovalCount > 99 ? "99+" : pendingApprovalCount}
+                </span>
+              ) : null}
             </button>
             <div className={`fixed left-3 right-3 top-[76px] z-50 max-h-[70vh] w-auto max-w-none origin-top overflow-y-auto rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 sm:absolute sm:left-auto sm:right-0 sm:top-12 sm:w-[360px] sm:max-w-sm sm:origin-top-right sm:p-3 ${openMenu === "notifications" ? "pointer-events-auto scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"}`}>
-              <div className="border-b border-[#edf3f0] px-2 pb-3">
-                <p className="text-sm font-bold text-[#06201c]">Notifications</p>
-              </div>
-              <Link href={notificationsHref} onClick={closeMenu} className="mt-1 flex items-center justify-between rounded-xl bg-[#f7fbf9] px-3 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#eef7f2]">
-                <span>View all notifications</span>
-                <ChevronRightIcon />
-              </Link>
+              {approvalNotifications ? (
+                <>
+                  <div className="border-b border-[#edf3f0] px-2 pb-3">
+                    <p className="text-sm font-bold text-[#06201c]">{t("approvalNotifications.title", { defaultValue: "Pending approvals" })}</p>
+                  </div>
+                  <div className="mt-1 space-y-1">
+                    <Link href={`${approvalNotifications.approvalQueueHref}?type=events`} onClick={closeMenu} className="flex items-center justify-between rounded-xl px-3 py-2 text-sm text-[#1f6a58] transition hover:bg-[#eef7f2]">
+                      <span>{t("approvalNotifications.events", { defaultValue: "Events" })}</span>
+                      <span className="font-semibold">{approvalNotifications.eventCount === null
+                        ? t("approvalNotifications.countUnavailable", { defaultValue: "Unavailable" })
+                        : t("approvalNotifications.pendingCount", { count: approvalNotifications.eventCount, defaultValue: "{{count}} pending" })}</span>
+                    </Link>
+                    <Link href={`${approvalNotifications.approvalQueueHref}?type=trainings`} onClick={closeMenu} className="flex items-center justify-between rounded-xl px-3 py-2 text-sm text-[#1f6a58] transition hover:bg-[#eef7f2]">
+                      <span>{t("approvalNotifications.trainings", { defaultValue: "Trainings" })}</span>
+                      <span className="font-semibold">{approvalNotifications.trainingCount === null
+                        ? t("approvalNotifications.countUnavailable", { defaultValue: "Unavailable" })
+                        : t("approvalNotifications.pendingCount", { count: approvalNotifications.trainingCount, defaultValue: "{{count}} pending" })}</span>
+                    </Link>
+                  </div>
+                  {pendingApprovalCount === 0 ? (
+                    <p className="px-3 py-2 text-xs text-[#52736a]">{t("approvalNotifications.noPending", { defaultValue: "No pending Event or Training approvals." })}</p>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <div className="border-b border-[#edf3f0] px-2 pb-3">
+                    <p className="text-sm font-bold text-[#06201c]">{t("header.notifications", { defaultValue: "Notifications" })}</p>
+                  </div>
+                  <Link href={notificationsHref} onClick={closeMenu} className="mt-1 flex items-center justify-between rounded-xl bg-[#f7fbf9] px-3 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#eef7f2]">
+                    <span>{t("header.viewAllNotifications", { defaultValue: "View all notifications" })}</span>
+                    <ChevronRightIcon />
+                  </Link>
+                </>
+              )}
             </div>
           </div>
 

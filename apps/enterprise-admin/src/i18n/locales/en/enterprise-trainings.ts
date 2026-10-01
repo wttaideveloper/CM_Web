@@ -16,6 +16,17 @@ const enterpriseTrainingsEnglish = {
     adjustedToMinimum: "Adjusted to the minimum allowed value ({{value}}).",
     adjustedToMaximum: "Adjusted to the maximum allowed value ({{value}}).",
   },
+  faqs: {
+    help: "Add questions and answers learners may find helpful. You can add as many as you need.",
+    empty: "No FAQs yet. Add one to help learners prepare.",
+    addQuestion: "Add a question",
+    itemLabel: "Question {{number}}",
+    questionLabel: "Question",
+    answerLabel: "Answer",
+    questionPlaceholder: "Enter a question learners may ask",
+    answerPlaceholder: "Write a clear, helpful answer",
+    removeQuestion: "Remove question {{number}}",
+  },
   media: {
     addImage: "Add image",
     addVideo: "Add video",

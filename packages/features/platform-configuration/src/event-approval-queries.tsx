@@ -68,5 +68,7 @@ export function usePendingEventApprovalCount() {
   return useQuery({
     queryKey: eventApprovalListQueryKey("pending_approval", 1, ""),
     queryFn: () => getEventApprovalList("pending_approval", 1, ""),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 }

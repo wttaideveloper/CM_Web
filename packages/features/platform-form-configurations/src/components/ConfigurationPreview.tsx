@@ -36,7 +36,17 @@ function PreviewField({ field, registry, isTraining }: { field: ConfiguredField;
     return <select aria-label={field.label} multiple={multiSelect} className={selectClass}>{!multiSelect && field.placeholder ? <option value="" disabled hidden>{field.placeholder}</option> : null}{options.map((option, index) => <option key={previewOptionKey(option, index)}>{option.label}</option>)}</select>;
   }
   if (field.renderer === "checkbox") return <input aria-label={field.label} type="checkbox" className="ml-2 mt-1.5 inline-block h-4 w-4 align-middle accent-[#1f6a58]" />;
-  return <input aria-label={field.label} type={field.renderer === "datetime" ? "datetime-local" : field.renderer} placeholder={field.placeholder} className={base} />;
+  if (field.renderer === "datetime") return <span className="mt-1.5 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+    <span className="min-w-0">
+      <span className="block text-xs font-normal text-[#52736a]">{copy.previewDate}</span>
+      <input aria-label={`${field.label} ${copy.previewDate}`} type="date" className={`${base} mt-1 min-w-0`} />
+    </span>
+    <span className="min-w-0">
+      <span className="block text-xs font-normal text-[#52736a]">{copy.previewTime}</span>
+      <input aria-label={`${field.label} ${copy.previewTime}`} type="time" className={`${base} mt-1 min-w-0`} />
+    </span>
+  </span>;
+  return <input aria-label={field.label} type={field.renderer} placeholder={field.placeholder} className={base} />;
 }
 
 function fieldIdentifiers(field: ConfiguredField): string[] {

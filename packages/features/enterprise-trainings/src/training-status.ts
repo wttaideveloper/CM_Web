@@ -91,7 +91,7 @@ const publishTrainingAction: TrainingStatusAction = {
   confirmationTitle: "Publish training?",
   confirmationDescription: "This changes the training lifecycle status to Published.",
   confirmLabel: "Publish training",
-  cancelLabel: "Keep draft",
+  cancelLabel: "Cancel",
   pendingLabel: "Publishing...",
 };
 

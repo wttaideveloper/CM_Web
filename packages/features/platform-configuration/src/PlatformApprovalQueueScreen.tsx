@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import EventApprovalReviewPanel from "./EventApprovalReview";
 import { EnterpriseDisplayName } from "./EventOwnershipNames";
@@ -15,9 +16,8 @@ import {
   type EventApprovalStatus,
 } from "./event-approval-queries";
 import TrainingApprovalQueue from "./TrainingApprovalQueue";
-import ProgramApprovalQueue from "./ProgramApprovalQueue";
 
-type ApprovalType = "events" | "trainings" | "programs";
+type ApprovalType = "events" | "trainings";
 type Status = EventApprovalStatus;
 type ApprovalMutationVariables = { eventId: string; action: EventApprovalDecision; reason?: string };
 
@@ -57,7 +57,24 @@ function auditDescription(record: EventAuditRecord): string {
 
 /** Displays the generic Platform approval workspace with the currently available approval types. */
 export default function PlatformApprovalQueueScreen() {
-  const [approvalType, setApprovalType] = useState<ApprovalType>("events");
+  const searchParams = useSearchParams();
+  const requestedType = searchParams.get("type");
+  const initialApprovalType: ApprovalType =
+    requestedType === "events" || requestedType === "trainings"
+      ? requestedType
+      : "events";
+  const [approvalType, setApprovalType] = useState<ApprovalType>(initialApprovalType);
+  const selectApprovalType = (type: ApprovalType) => {
+    setApprovalType(type);
+    const url = new URL(window.location.href);
+    url.searchParams.set("type", type);
+    window.history.replaceState(window.history.state, "", url);
+  };
+  useEffect(() => {
+    if (requestedType === "events" || requestedType === "trainings") {
+      setApprovalType(requestedType);
+    }
+  }, [requestedType]);
   return (
     <section className="mx-auto w-full max-w-6xl">
       <p className="text-xs font-bold uppercase tracking-[.18em] text-[#7f9d94]">SUPER ADMIN · APPROVALS</p>
@@ -67,12 +84,11 @@ export default function PlatformApprovalQueueScreen() {
       </div>
 
       <div role="tablist" aria-label="Approval types" className="mt-7 flex gap-2 border-b border-[#d7e5df]">
-        <button id="approval-type-events-tab" type="button" role="tab" aria-selected={approvalType === "events"} aria-controls="approval-type-events-panel" onClick={() => setApprovalType("events")} className={approvalType === "events" ? "border-b-2 border-[#1f6a58] -mb-px px-4 py-3 font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2" : "px-4 py-3 font-bold text-[#52736a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2"}>Events</button>
-        <button id="approval-type-trainings-tab" type="button" role="tab" aria-selected={approvalType === "trainings"} aria-controls="approval-type-trainings-panel" onClick={() => setApprovalType("trainings")} className={approvalType === "trainings" ? "border-b-2 border-[#1f6a58] -mb-px px-4 py-3 font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2" : "px-4 py-3 font-bold text-[#52736a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2"}>Trainings</button>
-        <button id="approval-type-programs-tab" type="button" role="tab" aria-selected={approvalType === "programs"} aria-controls="approval-type-programs-panel" onClick={() => setApprovalType("programs")} className={approvalType === "programs" ? "border-b-2 border-[#1f6a58] -mb-px px-4 py-3 font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2" : "px-4 py-3 font-bold text-[#52736a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2"}>Programs</button>
+        <button id="approval-type-events-tab" type="button" role="tab" aria-selected={approvalType === "events"} aria-controls="approval-type-events-panel" onClick={() => selectApprovalType("events")} className={approvalType === "events" ? "border-b-2 border-[#1f6a58] -mb-px px-4 py-3 font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2" : "px-4 py-3 font-bold text-[#52736a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2"}>Events</button>
+        <button id="approval-type-trainings-tab" type="button" role="tab" aria-selected={approvalType === "trainings"} aria-controls="approval-type-trainings-panel" onClick={() => selectApprovalType("trainings")} className={approvalType === "trainings" ? "border-b-2 border-[#1f6a58] -mb-px px-4 py-3 font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2" : "px-4 py-3 font-bold text-[#52736a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2"}>Trainings</button>
       </div>
 
-      {approvalType === "events" ? <EventsQueue /> : approvalType === "trainings" ? <TrainingApprovalQueue /> : <ProgramApprovalQueue />}
+      {approvalType === "events" ? <EventsQueue /> : <TrainingApprovalQueue />}
     </section>
   );
 }

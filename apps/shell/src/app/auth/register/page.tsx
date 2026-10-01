@@ -236,6 +236,14 @@ function AuthRegisterPageContent() {
         <section className="flex min-h-screen items-start justify-center px-6 py-8 sm:px-10 lg:h-full lg:min-h-0 lg:items-stretch lg:justify-start lg:overflow-hidden lg:px-8 lg:py-6">
           <div className="flex w-full max-w-[560px] lg:h-full lg:max-w-none">
             <div className="flex h-full w-full flex-col overflow-y-auto overscroll-contain rounded-[26px] border border-[#dfece5] bg-white p-5 shadow-[0_16px_38px_rgba(7,53,45,0.08)] sm:p-6">
+              <div className="sticky top-0 z-10 -mx-5 -mt-5 mb-4 flex justify-end border-b border-[#edf3f0] bg-white px-5 py-3 sm:-mx-6 sm:-mt-6 sm:px-6">
+                <Link
+                  href="/auth/login"
+                  className="rounded-lg px-3 py-2 text-sm font-semibold text-[#1f6a58] hover:bg-[#f4faf7] hover:underline focus:outline-none focus:ring-2 focus:ring-[#1f6a58]"
+                >
+                  Already have an account? Sign in
+                </Link>
+              </div>
               <Stepper
                 currentStep={currentStep}
                 maxStepReached={maxStepReached}

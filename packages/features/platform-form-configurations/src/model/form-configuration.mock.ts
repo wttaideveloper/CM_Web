@@ -40,7 +40,6 @@ export function createSeededFields(registry: readonly CoreFieldRegistryItem[], s
     // 3. Location & Host — mirrors TrainingDeliverySection:54 (hybrid/physical/online)
     { key: "delivery_mode", section: "section-location", renderer: "select", options: TRAINING_DELIVERY_MODE_OPTIONS.map((option) => option.value), label: "Delivery Mode" },
     { key: "course_type", section: "section-location", placeholder: "e.g. Workshop", label: "Course Type" },
-    { key: "location_id", section: "section-location", placeholder: "Select or paste location ID", label: "Location" },
     { key: "venue", section: "section-location", placeholder: "e.g. Main Hall", label: "Venue" },
     { key: "meeting_link", section: "section-location", placeholder: "https://...", renderer: "url", label: "Meeting link" },
     { key: "instructor_id", section: "section-location", label: "Instructor" },
@@ -67,7 +66,7 @@ export function createSeededFields(registry: readonly CoreFieldRegistryItem[], s
     { key: "faqs", section: "section-additional", placeholder: '[{"question":"...","answer":"..."}]', renderer: "textarea", label: "FAQs" },
     { key: "badges", section: "section-additional", placeholder: "Type badge and press Enter", label: "Badges" },
   ];
-  const eventFields: Array<[string, string]> = [["title", "section-basic"], ["description", "section-basic"], ["category", "section-basic"], ["start_date", "section-schedule"], ["end_date", "section-schedule"], ["time_zone", "section-schedule"], ["location_id", "section-location"], ...EVENT_DELIVERY_BUNDLE.map((key) => [key, "section-location"] as [string, string]), ["pricing_type", "section-pricing"], ["price", "section-pricing"], ["currency", "section-pricing"], ["ticket_types", "section-pricing"], ["capacity", "section-capacity"], ["primary_image", "section-media"], ["sessions", "section-additional"], ["custom_fields", "section-additional"]];
+  const eventFields: Array<[string, string]> = [["title", "section-basic"], ["description", "section-basic"], ["category", "section-basic"], ["start_date", "section-schedule"], ["end_date", "section-schedule"], ["time_zone", "section-schedule"], ...EVENT_DELIVERY_BUNDLE.map((key) => [key, "section-location"] as [string, string]), ["pricing_type", "section-pricing"], ["price", "section-pricing"], ["currency", "section-pricing"], ["ticket_types", "section-pricing"], ["capacity", "section-capacity"], ["primary_image", "section-media"], ["sessions", "section-additional"], ["custom_fields", "section-additional"]];
   eventFields.splice(3, 0, ["event_type", "section-basic"]);
   const isTrainingRegistry = registry.length === 0 || registry.some(f => f.key === "instructor_name" || f.key === "learning_objectives" || f.key === "promotional_video" || f.key === "start_time");
   if (!isTrainingRegistry) {

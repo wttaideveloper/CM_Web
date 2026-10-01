@@ -7,6 +7,7 @@ import type { CreateTrainingFormValues } from "./create-training-form";
 import type { TrainingFormField, TrainingFormSection } from "./training-form-config.service";
 import { isTrainingFormFieldVisible } from "./training-form-field-settings";
 import TrainingMediaField from "./TrainingMediaField";
+import TrainingFaqEditor from "./TrainingFaqEditor";
 import TrainingTaxonomyField from "./TrainingTaxonomyField";
 import type { TrainingCategoryOption } from "./training-categories.service";
 import { getEnabledTrainingDeliverySubfields, getTrainingDeliveryCompositeKey, isTrainingAccessInformationField, isTrainingDeliveryCompositeChild } from "./training-delivery-fields";
@@ -390,7 +391,7 @@ function ConfiguredField({
     const rangeError = isNumber ? numberRangeError(value, field.label, field.validation?.min, field.validation?.max) : undefined;
     const displayedError = error ?? rangeError;
     const setValue = (next: string) => {
-      if (coreField === "tags") update("tags", next.split(",").map((s) => s.trim()).filter(Boolean));
+      if (coreField === "tags") update("tags", next.split(",").map((s) => s.trim()).filter(Boolean).filter((s, index, all) => all.findIndex((other) => other.toLocaleLowerCase() === s.toLocaleLowerCase()) === index));
       else if (coreField === "gallery_images") update("gallery_images", next.split(",").map((s) => s.trim()).filter(Boolean) as never);
       else update(coreField as keyof CreateTrainingFormValues, (isBoolean ? next === "true" : isNumber ? next : next) as never);
     };
@@ -399,6 +400,9 @@ function ConfiguredField({
       setRangeAdjustment(adjusted.bound);
       setValue(adjusted.value);
     };
+    if (coreField === "faqs") {
+      return <TrainingFaqEditor label={field.label} value={values.faqs} onChange={(next) => update("faqs", next)} required={field.required} helpText={field.helpText} error={error} />;
+    }
     if (coreField === "category" || coreField === "subcategory") {
       return (
         <TrainingTaxonomyField
@@ -465,7 +469,7 @@ function ConfiguredField({
                   }
                 }
               }
-              if (!(arr as string[]).includes(tag)) {
+              if (!(arr as string[]).some((item) => item.toLocaleLowerCase() === tag.toLocaleLowerCase())) {
                 update(coreField as keyof CreateTrainingFormValues, [...(arr as string[]), tag] as never);
               }
               input.value = "";
@@ -655,7 +659,7 @@ function ConfiguredField({
       return <label className="block text-sm font-semibold text-[#06201c] md:col-span-2">{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}<textarea value={value} placeholder={field.placeholder} onChange={(e) => setValue(e.target.value)} className={`${inputClass} h-24 resize-y py-2`} />{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
     }
     const inputId = `training-field-${field.id}`;
-    const input = <input id={inputId} type={inputType} value={value} required={field.required} placeholder={field.placeholder} min={coreField === "enrolment_end" ? values.enrolment_start || undefined : field.validation?.min ?? undefined} max={(coreField === "enrolment_end" ? boundedDateTimeMax(values.enrolment_start || undefined, (values.start_date || field.validation?.max) ?? undefined) : field.validation?.max) ?? undefined} step={isNumber ? "any" : undefined} minLength={field.validation?.minLength ?? undefined} aria-invalid={displayedError ? true : undefined} aria-describedby={displayedError ? `${field.id}-error` : undefined} onChange={(e) => isNumber ? setNumberValue(e.target.value) : setValue(e.target.value)} pattern={field.validation?.pattern ?? undefined} className={inputClass} />;
+    const input = <input id={inputId} type={inputType} value={value} required={field.required} placeholder={field.placeholder} min={coreField === "end_time" ? values.start_time || undefined : coreField === "enrolment_end" ? values.enrolment_start || undefined : field.validation?.min ?? undefined} max={(coreField === "start_time" ? values.end_time || undefined : coreField === "enrolment_end" ? boundedDateTimeMax(values.enrolment_start || undefined, (values.start_date || field.validation?.max) ?? undefined) : field.validation?.max) ?? undefined} step={isNumber ? "any" : undefined} minLength={field.validation?.minLength ?? undefined} aria-invalid={displayedError ? true : undefined} aria-describedby={displayedError ? `${field.id}-error` : undefined} onChange={(e) => isNumber ? setNumberValue(e.target.value) : setValue(e.target.value)} pattern={field.validation?.pattern ?? undefined} className={inputClass} />;
     return <div className="block text-sm font-semibold text-[#06201c]"><label htmlFor={inputId}>{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</label>{input}{field.validation?.maxLength != null ? <p className="mt-1 text-xs text-[#7f9d94]">{value.length}/{field.validation?.maxLength} characters</p> : null}{displayedError ? <p id={`${field.id}-error`} role="alert" className="mt-1 text-xs text-[#b42318]">{displayedError}</p> : null}{rangeAdjustment ? <p role="status" className="mt-1 text-xs text-[#52736a]">{t(`numberRange.adjustedTo${rangeAdjustment === "minimum" ? "Minimum" : "Maximum"}`, { value: rangeAdjustment === "minimum" ? field.validation?.min : field.validation?.max })}</p> : null}</div>;
   }
   // Custom field

@@ -7,6 +7,7 @@ import type { CreateTrainingFormValues } from "./create-training-form";
 import TrainingTaxonomyField from "./TrainingTaxonomyField";
 import type { TrainingCategoryOption } from "./training-categories.service";
 import TrainingMediaField from "./TrainingMediaField";
+import TrainingFaqEditor from "./TrainingFaqEditor";
 import { getTrainingCurrencyOptions, getTrainingTimeZoneOptions } from "./training-reference-options";
 
 type UpdateForm = <Key extends keyof CreateTrainingFormValues>(key: Key, value: CreateTrainingFormValues[Key]) => void;
@@ -51,7 +52,7 @@ export function TrainingBasicsSection({
 }: SectionProps) {
   const addTag = (value: string) => {
     const tag = value.trim();
-    if (tag && !values.tags.includes(tag)) update("tags", [...values.tags, tag]);
+    if (tag && !values.tags.some((item) => item.toLocaleLowerCase() === tag.toLocaleLowerCase())) update("tags", [...values.tags, tag]);
   };
   const addObjective = (value: string) => {
     const obj = value.trim();
@@ -178,8 +179,8 @@ export function TrainingScheduleSection({ values, update, errors }: SectionProps
         <label className={labelClass}>End date<input id="training-field-end_date" type="datetime-local" value={values.end_date} onChange={(event) => update("end_date", event.target.value)} className={inputClass} /><FieldError error={errors.end_date} /></label>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
-        <label className={labelClass}>Start time<input id="training-field-start_time" type="time" value={values.start_time} onChange={(event) => update("start_time", event.target.value)} className={inputClass} /><FieldError error={errors.start_time} /></label>
-        <label className={labelClass}>End time<input id="training-field-end_time" type="time" value={values.end_time} onChange={(event) => update("end_time", event.target.value)} className={inputClass} /><FieldError error={errors.end_time} /></label>
+        <label className={labelClass}>Start time<input id="training-field-start_time" type="time" value={values.start_time} max={values.end_time || undefined} onChange={(event) => update("start_time", event.target.value)} className={inputClass} /><FieldError error={errors.start_time} /></label>
+        <label className={labelClass}>End time<input id="training-field-end_time" type="time" value={values.end_time} min={values.start_time || undefined} onChange={(event) => update("end_time", event.target.value)} className={inputClass} /><FieldError error={errors.end_time} /></label>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Enrolment opens<input id="training-field-enrolment_start" type="datetime-local" value={values.enrolment_start} onChange={(event) => update("enrolment_start", event.target.value)} className={inputClass} /><FieldError error={errors.enrolment_start} /></label>
@@ -203,7 +204,7 @@ export function TrainingAdvancedSection({ values, update, errors }: SectionProps
       <UrlList label="Notes / Handouts (URLs)" values={values.instructor_notes} update={(next) => update("instructor_notes", next)} addLabel="noteHandout" />
       <label className={labelClass}>Instructor notes<input value={values.instructor_notes.join(", ")} onChange={(e) => update("instructor_notes", e.target.value.split(",").map((note) => note.trim()).filter(Boolean))} placeholder="Internal notes for the instructor, not shown to learners" className={inputClass} /></label>
       <label className={labelClass}>Notes PDF URL<input type="url" value={values.notes_pdf_url} onChange={(e) => update("notes_pdf_url", e.target.value)} placeholder="https://…" className={inputClass} /></label>
-      <label className={labelClass}>FAQs (JSON)<textarea id="training-field-faqs" value={values.faqs} onChange={(e) => update("faqs", e.target.value)} placeholder='[{"question":"...","answer":"..."}]' rows={3} className={`${inputClass} h-auto py-2`} /><FieldError error={errors.faqs} /></label>
+      <TrainingFaqEditor label="FAQs" value={values.faqs} onChange={(value) => update("faqs", value)} error={errors.faqs?.[0]} />
       <div>
         <label className={labelClass}>Milestone badges<input onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); const v = event.currentTarget.value.trim(); if (v && !values.badges.includes(v)) update("badges", [...values.badges, v]); event.currentTarget.value = ""; } }} placeholder="Type badge and press Enter" className={inputClass} /></label>
         <div className="mt-2 flex flex-wrap gap-2">{values.badges.map((badge) => <button key={badge} type="button" onClick={() => update("badges", values.badges.filter((item) => item !== badge))} className="rounded-full bg-[#eef4ff] px-3 py-1 text-xs font-bold text-[#2563eb]">{badge} ×</button>)}</div>

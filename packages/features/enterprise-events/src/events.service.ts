@@ -759,9 +759,9 @@ export interface CreateEventPayload {
   pricing_type: "free" | "paid";
   currency: string;
   ticket_types: EventTicketType[];
-  capacity: string;
-  min_participants: string;
-  max_participants: string;
+  capacity: string | null;
+  min_participants: string | null;
+  max_participants: string | null;
   registration_open_at: string;
   registration_close_at: string;
   custom_fields: CreateEventCustomField[];

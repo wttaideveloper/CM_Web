@@ -14,6 +14,7 @@ export function PlatformAdminLayout({
   currentPath,
   homeHref,
   notificationsHref,
+  approvalNotifications,
   messagesHref = null,
   profileHref,
   profileInitials = "IH",
@@ -40,6 +41,7 @@ export function PlatformAdminLayout({
         <PlatformAdminHeader
           homeHref={homeHref}
           notificationsHref={notificationsHref}
+          approvalNotifications={approvalNotifications}
           messagesHref={messagesHref}
           profileHref={profileHref}
           profileInitials={profileInitials}

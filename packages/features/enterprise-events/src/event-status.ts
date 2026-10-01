@@ -89,7 +89,7 @@ const publishEventAction: EventStatusAction = {
   confirmationTitle: "Publish event?",
   confirmationDescription: "This changes the event lifecycle status to Published.",
   confirmLabel: "Publish event",
-  cancelLabel: "Keep approved",
+  cancelLabel: "Cancel",
   pendingLabel: "Publishing...",
 };
 

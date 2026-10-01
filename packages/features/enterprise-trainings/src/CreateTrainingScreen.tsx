@@ -27,9 +27,8 @@ const stepFields: ReadonlyArray<readonly string[]> = [
   ["primary_image", "gallery_images", "promotional_video"],
   ["prerequisites", "faqs", "discussions", "announcements", "moderation_history"],
 ];
-// One static section component per entry in `steps`, in the same order — this is the
-// static/default Training form used whenever no dynamic Super Admin form configuration
-// is available (no active config, or the config request failed).
+// One static section component per entry in `steps`, in the same order — retained
+// only for editing older Trainings whose historical form configuration is unavailable.
 const staticSectionComponents = [
   TrainingBasicsSection,
   TrainingScheduleSection,
@@ -537,7 +536,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
     return <div role="status" className="rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-5 py-12 text-center text-sm font-semibold text-[#52736a]">{mode === "edit" ? "Loading this Training's form configuration…" : "Loading the Training form configuration…"}</div>;
   }
   const refetchFormConfig = () => void (mode === "edit" ? historicalFormQ.refetch() : activeFormQ.refetch());
-  if (mode === "create" && formConfigError && !activeForm) {
+  if (mode === "create" && !activeForm) {
     return (
       <div className="w-full">
         <header className="flex flex-col gap-4 border-b border-[#edf3f0] pb-6 sm:flex-row sm:items-start sm:justify-between">
@@ -553,7 +552,9 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
             {formConfigError ? "Unable to load the active Training form configuration." : "No active Super Admin Training form configuration is available."}
           </h2>
           <p className="mt-2 text-sm text-[#735c1e]">
-            Retry loading the active form configuration before creating a Training.
+            {formConfigError
+              ? "Retry loading the active form configuration before creating a Training."
+              : "Ask your Super Admin to publish an active Training form configuration before creating a Training."}
           </p>
           <button type="button" onClick={refetchFormConfig} className="mt-4 h-10 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white">
             Retry
@@ -569,8 +570,6 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
         <div role="alert" className="mb-3 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-2 text-xs font-semibold text-[#735c1e]">Could not refresh the active Training form configuration. The previously loaded form remains available. <button type="button" onClick={refetchFormConfig} className="underline">Retry</button></div>
       ) : activeForm ? (
         <div className="mb-3 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-2 text-xs font-semibold text-[#167550]">{mode === "edit" ? `Historical form: ${activeForm.title}` : `Using Super Admin form: ${activeForm.title}`} {activeForm.is_global ? "(Global)" : `(${activeForm.enterprise_ids.length} enterprises)`} — {configuredSections.length} sections, {configuredSections.reduce((sum, s) => sum + s.fields.length, 0)} fields.</div>
-      ) : mode === "create" ? (
-        <div role="status" className="mb-3 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-4 py-2 text-xs font-semibold text-[#52736a]">No active Super Admin Training form configuration is available. Using the standard Training form.</div>
       ) : formConfigError ? (
         <div role="alert" className="mb-3 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-2 text-xs font-semibold text-[#735c1e]">Could not load the historical Training form configuration — using the standard edit form instead. <button type="button" onClick={refetchFormConfig} className="underline">Retry</button></div>
       ) : null}

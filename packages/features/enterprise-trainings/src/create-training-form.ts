@@ -402,10 +402,8 @@ export function validateTrainingForm(values: CreateTrainingFormValues, configure
   if (values.start_date && values.end_date && values.end_date < values.start_date) {
     errors.end_date = ["End date cannot be before the start date."];
   }
-  const startCalendarDate = values.start_date.slice(0, 10);
-  const endCalendarDate = values.end_date.slice(0, 10);
-  if (startCalendarDate && startCalendarDate === endCalendarDate && values.start_time && values.end_time && timeRe.test(values.start_time) && timeRe.test(values.end_time) && values.end_time <= values.start_time) {
-    errors.end_time = ["End time must be after start time on the same day."];
+  if (values.start_time && values.end_time && timeRe.test(values.start_time) && timeRe.test(values.end_time) && values.end_time <= values.start_time) {
+    errors.end_time = ["End time must be later than start time."];
   }
   if (values.enrolment_start && values.enrolment_end && values.enrolment_end <= values.enrolment_start) {
     errors.enrolment_end = ["Enrolment end must be after enrolment start."];

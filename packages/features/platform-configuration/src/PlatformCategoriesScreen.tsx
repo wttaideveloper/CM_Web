@@ -8,10 +8,10 @@ import { EventTaxonomyApiError, type EventTaxonomyCategory, type EventTaxonomyCa
 import { useCreateTrainingTaxonomyCategory, useDeleteTrainingTaxonomyCategory, useTrainingTaxonomyCategories, useUpdateTrainingTaxonomyCategory } from "./training-category-taxonomy.queries";
 import { TrainingTaxonomyApiError, type TrainingTaxonomyCategory } from "./training-category-taxonomy.service";
 
-type Module = "products-services" | "events" | "programs" | "trainings";
+  type Module = "products-services" | "events" | "trainings";
 type TaxonomyCategory = Pick<EventTaxonomyCategory, "id" | "name" | "parent_id" | "description"> & { created_at: string | null };
 type Editor = { mode: "create" | "edit"; parent: TaxonomyCategory | null; category?: TaxonomyCategory } | null;
-const modules: Module[] = ["products-services", "events", "programs", "trainings"];
+  const modules: Module[] = ["products-services", "events", "trainings"];
 
 function moduleLabel(module: Module, t: (key: string) => string): string { return module === "products-services" ? t("categories.productsServices") : t(`categories.${module}`); }
 function kindLabel(category: TaxonomyCategory, t: (key: string) => string): string { return category.parent_id === null ? t("categories.category") : t("categories.subcategory"); }

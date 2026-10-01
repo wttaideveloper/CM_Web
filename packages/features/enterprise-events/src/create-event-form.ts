@@ -135,9 +135,9 @@ export function buildCreateEventPayload(
     pricing_type: values.pricing_type,
     currency: values.currency.trim(),
     ticket_types: values.ticket_types,
-    capacity: values.capacity.trim(),
-    min_participants: values.min_participants.trim(),
-    max_participants: values.max_participants.trim(),
+    capacity: toOptionalNumericString(values.capacity),
+    min_participants: toOptionalNumericString(values.min_participants),
+    max_participants: toOptionalNumericString(values.max_participants),
     registration_open_at: toBackendLocalDateTime(values.registration_open_at),
     registration_close_at: toBackendLocalDateTime(values.registration_close_at),
     custom_fields: values.custom_fields as CreateEventCustomField[],
@@ -263,7 +263,14 @@ export function buildUpdateEventPayload(values: CreateEventFormValues, initialVa
   const changed = <Key extends keyof CreateEventFormValues>(key: Key): boolean => JSON.stringify(values[key]) !== JSON.stringify(initialValues[key]);
   const payload: UpdateEventPayload = {};
   const scalarKeys: Array<keyof Pick<CreateEventFormValues, "title" | "description" | "category" | "subcategory" | "tags" | "organiser_name" | "organiser_contact" | "duration_type" | "time_zone" | "event_type" | "delivery_mode" | "primary_image" | "gallery_images" | "videos" | "documents" | "price" | "pricing_type" | "currency" | "ticket_types" | "capacity" | "min_participants" | "max_participants" | "custom_fields" | "sessions">> = ["title", "description", "category", "subcategory", "tags", "organiser_name", "organiser_contact", "duration_type", "time_zone", "event_type", "delivery_mode", "primary_image", "gallery_images", "videos", "documents", "price", "pricing_type", "currency", "ticket_types", "capacity", "min_participants", "max_participants", "custom_fields", "sessions"];
-  for (const key of scalarKeys) if (changed(key)) Object.assign(payload, { [key]: values[key] });
+  for (const key of scalarKeys) {
+    if (!changed(key)) continue;
+    if (key === "capacity" || key === "min_participants" || key === "max_participants") {
+      Object.assign(payload, { [key]: toOptionalNumericString(values[key]) });
+    } else {
+      Object.assign(payload, { [key]: values[key] });
+    }
+  }
   if (changed("sessions")) payload.sessions = values.sessions.map((session) => mapSessionForPayload(session, sessionsEnabledFields, values.delivery_mode));
   if (changed("modules")) payload.modules = values.modules;
   if (changed("meals")) payload.meals = values.meals;
@@ -302,17 +309,39 @@ export function mapSessionForPayload(session: EventSessionFormValue, enabledFiel
   return { ...base, description: base.description?.trim() || null, speaker_bio: base.speaker_bio?.trim() || null, ...(locationApplicable && location?.trim() ? { location: location.trim() } : {}), ...(meetingLinkApplicable && meetingLinkEnabled && meeting_link?.trim() ? { meeting_link: meeting_link.trim() } : {}) };
 }
 
+function toOptionalNumericString(value: string | number | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  const normalized = String(value).trim();
+  return normalized || null;
+}
+
 /** Validates the shared Event capacity and participant constraints. */
 export function validateParticipantCapacity(values: Pick<CreateEventFormValues, "capacity" | "min_participants" | "max_participants">, errors: Record<string, string[]>): void {
   const fields = ["capacity", "min_participants", "max_participants"] as const;
-  const parsed = Object.fromEntries(fields.map((field) => [field, Number(values[field])])) as Record<typeof fields[number], number>;
-  for (const field of fields) if (String(values[field]).trim() && (!Number.isFinite(parsed[field]) || parsed[field] < 0)) errors[field] = ["Enter a non-negative number."];
-  if (Number.isFinite(parsed.min_participants) && Number.isFinite(parsed.max_participants) && parsed.min_participants > parsed.max_participants) errors.min_participants = ["Minimum participants must not exceed maximum participants."];
-  if (Number.isFinite(parsed.max_participants) && Number.isFinite(parsed.capacity) && parsed.max_participants > parsed.capacity) errors.max_participants = ["Maximum participants must not exceed overall capacity."];
+  const valuesByField = Object.fromEntries(fields.map((field) => {
+    const rawValue = values[field];
+    const textValue = rawValue === null ? "" : String(rawValue).trim();
+    return [field, { text: textValue, number: textValue ? Number(textValue) : null }];
+  })) as Record<typeof fields[number], { text: string; number: number | null }>;
+  for (const field of fields) {
+    const value = valuesByField[field];
+    if (value.text && (value.number === null || !Number.isFinite(value.number) || value.number < 0)) {
+      errors[field] = ["Enter a non-negative number."];
+    }
+  }
+  const minimum = valuesByField.min_participants.number;
+  const maximum = valuesByField.max_participants.number;
+  const capacity = valuesByField.capacity.number;
+  if (minimum !== null && maximum !== null && Number.isFinite(minimum) && Number.isFinite(maximum) && minimum > maximum) {
+    errors.min_participants = ["Minimum participants must not exceed maximum participants."];
+  }
+  if (maximum !== null && capacity !== null && Number.isFinite(maximum) && Number.isFinite(capacity) && maximum > capacity) {
+    errors.max_participants = ["Maximum participants must not exceed overall capacity."];
+  }
 }
 
 /** Validates the safe, user-supplied Create Event values before submission. */
-export function validateEventForm(values: CreateEventFormValues, hasLocation: boolean, mode: "create" | "edit" = "create"): Record<string, string[]> {
+export function validateEventForm(values: CreateEventFormValues, mode: "create" | "edit" = "create"): Record<string, string[]> {
   const errors: Record<string, string[]> = {};
   const require = (field: keyof CreateEventFormValues, label: string) => {
     if (!String(values[field]).trim()) errors[field] = [`${label} is required.`];
@@ -331,7 +360,6 @@ export function validateEventForm(values: CreateEventFormValues, hasLocation: bo
     if (values.pricing_type === "paid") { if (!values.price.trim() && values.ticket_types.length === 0) errors.price = ["Paid Events need a price or at least one ticket type."]; require("currency", "Currency"); }
     require("capacity", "Overall capacity");
     require("min_participants", "Minimum participants"); require("max_participants", "Maximum participants");
-    if (values.delivery_mode !== "online" && !hasLocation) errors.location_id = ["Select an existing enterprise location before creating this event."];
   }
   validateDateOrder(values, errors);
   validateNumbers(values, errors);
