@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRegistration } from "@/contexts/RegistrationContext";
-import { completeTenantApplicationUpload, getDocumentRequirements, initTenantApplicationUpload, uploadTenantApplicationFile, RegistrationApiError, type TenantApplicationDocument } from "@/services/registration-ui.service";
+import { completeTenantApplicationUpload, getDocumentRequirements, getMyTenantApplication, initTenantApplicationUpload, uploadTenantApplicationFile, RegistrationApiError, type TenantApplicationDocument } from "@/services/registration-ui.service";
 
 export default function DocumentsStep({ onBack, onContinue }: { onBack: () => void; onContinue: () => void }) {
   const { userId, tenantApplication, documentRequirements, updateRegistration } = useRegistration();
@@ -27,9 +27,14 @@ export default function DocumentsStep({ onBack, onContinue }: { onBack: () => vo
       const contentType = file.type || "application/octet-stream";
       const init = await initTenantApplicationUpload(tenantApplication.id, userId, { documentType, fileName: file.name, contentType, fileSizeBytes: file.size });
       await uploadTenantApplicationFile(init.uploadUrl, file);
-      const application = await completeTenantApplicationUpload(tenantApplication.id, userId, { documentType, storageKey: init.storageKey, fileName: file.name, contentType, fileSizeBytes: file.size });
-      const completed = application.documents.find((document) => document.documentType === documentType);
-      if (completed) setCompletedDocuments((current) => ({ ...current, [documentType]: completed }));
+      let application = await completeTenantApplicationUpload(tenantApplication.id, userId, { documentType, storageKey: init.storageKey, fileName: file.name, contentType, fileSizeBytes: file.size });
+      let completed = application.documents.find((document) => document.documentType === documentType);
+      if (!completed) {
+        application = await getMyTenantApplication(userId);
+        completed = application.documents.find((document) => document.documentType === documentType);
+      }
+      if (!completed) throw new RegistrationApiError("The uploaded document was not returned by the registration service.", "invalid_response");
+      setCompletedDocuments((current) => ({ ...current, [documentType]: completed }));
       updateRegistration({ tenantApplication: application });
     } catch (reason) {
       setError(reason instanceof RegistrationApiError || reason instanceof Error ? reason.message : "Unable to upload document.");

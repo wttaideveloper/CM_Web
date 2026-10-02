@@ -892,6 +892,7 @@ export class EventsApiError extends Error {
     message: string,
     public readonly status: number,
     public readonly fieldErrors: Record<string, string[]> = {},
+    public readonly structuredErrors: Array<{ fieldKey: string; nestedPath: Array<string | number>; message: string; source: "backend" }> = [],
   ) {
     super(message);
   }
@@ -1354,6 +1355,7 @@ function readErrorMessages(value: unknown): string[] {
 async function createEventsApiError(response: Response, operation: string): Promise<EventsApiError> {
   const body = await response.json().catch(() => null) as unknown;
   const fieldErrors: Record<string, string[]> = {};
+  const structuredErrors: Array<{ fieldKey: string; nestedPath: Array<string | number>; message: string; source: "backend" }> = [];
 
   if (isRecord(body) && Array.isArray(body.detail)) {
     for (const detail of body.detail) {
@@ -1365,12 +1367,19 @@ async function createEventsApiError(response: Response, operation: string): Prom
       const messages = readErrorMessages(detail.msg);
       if (field && messages.length > 0) {
         fieldErrors[field] = [...(fieldErrors[field] ?? []), ...messages];
+        const path = detail.loc.slice(1).filter((item): item is string | number => typeof item === "string" || typeof item === "number");
+        const fieldKey = path[0] === "modules" && path[1] === "online_meeting" ? "delivery_mode" : (typeof path[0] === "string" ? path[0] : field);
+        structuredErrors.push({ fieldKey, nestedPath: fieldKey === "delivery_mode" && path[0] === "modules" ? [] : path.slice(1), message: messages[0], source: "backend" });
       }
     }
   }
 
   const message = readErrorMessages(body)[0] ?? `Unable to ${operation} (HTTP ${response.status}).`;
-  return new EventsApiError(message, response.status, fieldErrors);
+  if (message === "modules.online_meeting can only be enabled when delivery_mode is 'online' or 'hybrid'.") {
+    fieldErrors.delivery_mode = [...(fieldErrors.delivery_mode ?? []), message];
+    structuredErrors.push({ fieldKey: "delivery_mode", nestedPath: [], message, source: "backend" });
+  }
+  return new EventsApiError(message, response.status, fieldErrors, structuredErrors);
 }
 
 function toSearchParams(params: EventListParams): URLSearchParams {

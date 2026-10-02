@@ -13,6 +13,7 @@ import { usePathname } from "next/navigation";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import PlatformBuilderAuthGate from "@/components/PlatformBuilderAuthGate";
 import { getProfileDisplayName, getProfileInitials, getSuperAdminProfile, superAdminProfileQueryKey } from "@/lib/super-admin-profile";
+import { usePlatformWorkflowNotifications } from "@/components/PlatformWorkflowNotifications";
 
 function getShellRoute(pathname: string) {
   const shellOrigin = getShellAppOrigin();
@@ -75,8 +76,9 @@ function PlatformAdminShellContent({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const pendingEventApprovals = usePendingEventApprovalCount();
   const pendingTrainingApprovals = usePendingTrainingApprovalCount();
+  const workflowNotifications = usePlatformWorkflowNotifications();
   const homeHref = useMemo(() => "/dashboard", []);
-  const notificationsHref = useMemo(() => getShellRoute("/admin/notifications"), []);
+  const notificationsHref = useMemo(() => "/notifications", []);
   const handleLogout = useCallback(async () => {
     const shellOrigin = getShellAppOrigin();
 
@@ -122,6 +124,12 @@ function PlatformAdminShellContent({ children }: { children: ReactNode }) {
         eventCount: pendingEventApprovals.data?.pagination.total ?? null,
         trainingCount: pendingTrainingApprovals.data?.pagination.total ?? null,
         approvalQueueHref: "/approval-queue",
+      }}
+      workflowNotifications={{
+        unreadCount: workflowNotifications.unreadCount,
+        items: workflowNotifications.items,
+        onRead: (id) => { void workflowNotifications.markRead(id); },
+        onMarkAllRead: () => { void workflowNotifications.markAllRead(); },
       }}
       profileHref="/profile"
       onLogout={handleLogout}

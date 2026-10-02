@@ -23,6 +23,7 @@ export const platformNavigationGroups: readonly PlatformNavigationGroup[] = [
     items: [
       { label: "Enterprises / Tenants", href: "/enterprises", icon: "building" },
       { label: "Users", href: "/users", icon: "settings" },
+      { label: "Super Admins", href: "/super-admins", icon: "settings" },
       { label: "Products", href: "/products", icon: "package" },
       { label: "Services", href: "/services", icon: "service" },
       { label: "Events", href: "/events", icon: "calendar" },

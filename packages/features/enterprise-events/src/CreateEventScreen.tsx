@@ -135,7 +135,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
       return createEvent(buildCreateEventPayload(values, tenantId, enterpriseId, locationId, activeConfiguration?.version_id, configuredCustomValues, configuredCoreFieldKeys, sessionsField?.composite_config?.enabled_fields));
     },
     onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ["events", "list"] }); if (initialEvent) { await queryClient.invalidateQueries({ queryKey: ["events", "detail", initialEvent.id] }); router.push(`/admin/events/${initialEvent.id}`); } else router.push("/admin/events"); },
-    onError: (error) => { if (error instanceof EventsApiError) { setErrors((current) => ({ ...current, ...error.fieldErrors })); setSubmitError(error.status === 401 || error.status === 403 ? "Your session cannot save this event. Please sign in again." : error.message); } else setSubmitError(error instanceof Error ? error.message : "Unable to save event."); },
+    onError: (error) => { if (error instanceof EventsApiError) { setErrors((current) => ({ ...current, ...error.fieldErrors })); const onlineMeetingRule = error.message === "modules.online_meeting can only be enabled when delivery_mode is 'online' or 'hybrid'." || error.structuredErrors.some((item) => item.fieldKey === "delivery_mode"); if (onlineMeetingRule) { const sectionIndex = editorSteps.findIndex((_, index) => (formConfiguration ? configuredSections[index]?.fields.some((field) => (field.core_key ?? field.stable_key ?? field.id) === "delivery_mode") : (stepFields[index] ?? []).includes("delivery_mode"))); if (sectionIndex >= 0) { setActiveStep(sectionIndex); setPendingFocusField("delivery_mode"); } } setSubmitError(error.status === 401 || error.status === 403 ? "Your session cannot save this event. Please sign in again." : error.message); } else setSubmitError(error instanceof Error ? error.message : "Unable to save event."); },
   });
   const update = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => {
     setValues((current) => {
@@ -163,8 +163,10 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
       ?? document.querySelector<HTMLElement>("main [aria-invalid='true']")
       ?? document.querySelector<HTMLElement>("main input, main select, main textarea, main button");
     if (!element) return;
+    element.classList.add("event-validation-focus");
     element.scrollIntoView({ behavior: "smooth", block: "center" });
     if (element instanceof HTMLElement) element.focus({ preventScroll: true });
+    window.setTimeout(() => element.classList.remove("event-validation-focus"), 1600);
     setPendingFocusField(null);
   }, [activeStep, pendingFocusField]);
   const allErrors = useMemo(() => formConfiguration ? validateConfiguredEventForm(formConfiguration, values, customValues, eventCategoriesQuery.data ?? [], mode) : validateEventForm(values, mode), [customValues, eventCategoriesQuery.data, formConfiguration, mode, values]);
@@ -291,6 +293,11 @@ function validateConfiguredEventForm(configuration: ActiveEventFormConfiguration
     }
   }
   const configuredKeys = configuredCoreKeys(configuration);
+  if (values.delivery_mode !== "online" && configuredKeys.has("venue")) {
+    if (!values.venue_name.trim()) errors.venue = ["Venue name is required."];
+    else if (!values.venue_address.trim()) errors.venue = ["Venue address is required."];
+    else if (!values.venue_city.trim()) errors.venue = ["Venue city is required."];
+  }
   if (values.pricing_type === "paid" && configuredKeys.has("pricing_type") && !values.price.trim() && values.ticket_types.length === 0) {
     const pricingRequirementKey = configuredKeys.has("price") ? "price" : configuredKeys.has("ticket_types") ? "ticket_types" : "pricing_type";
     errors[pricingRequirementKey] = [configuredKeys.has("price") ? "Paid Events need a price or at least one ticket type." : "Add at least one ticket type for this paid Event."];

@@ -332,6 +332,12 @@ export function validateParticipantCapacity(values: Pick<CreateEventFormValues, 
   const minimum = valuesByField.min_participants.number;
   const maximum = valuesByField.max_participants.number;
   const capacity = valuesByField.capacity.number;
+  if (!valuesByField.capacity.text) {
+    errors.capacity = ["Capacity is required."];
+  }
+  if (capacity !== null && Number.isFinite(capacity) && capacity <= 0) {
+    errors.capacity = ["Capacity must be greater than 0."];
+  }
   if (minimum !== null && maximum !== null && Number.isFinite(minimum) && Number.isFinite(maximum) && minimum > maximum) {
     errors.min_participants = ["Minimum participants must not exceed maximum participants."];
   }
@@ -371,13 +377,15 @@ export function validateEventForm(values: CreateEventFormValues, mode: "create" 
     require("start_date", "Start date and time"); require("end_date", "End date and time");
     require("registration_cutoff", "Registration cutoff"); require("registration_open_at", "Registration opening");
     require("registration_close_at", "Registration closing");
-    if (values.delivery_mode !== "online") {
-      require("venue_name", "Venue name"); require("venue_address", "Venue address"); require("venue_city", "Venue city");
-    }
     require("pricing_type", "Pricing type");
     if (values.pricing_type === "paid") { if (!values.price.trim() && values.ticket_types.length === 0) errors.price = ["Paid Events need a price or at least one ticket type."]; require("currency", "Currency"); }
     require("capacity", "Overall capacity");
     require("min_participants", "Minimum participants"); require("max_participants", "Maximum participants");
+  }
+  if (values.delivery_mode !== "online") {
+    if (!values.venue_name.trim()) errors.venue = ["Venue name is required."];
+    else if (!values.venue_address.trim()) errors.venue = ["Venue address is required."];
+    else if (!values.venue_city.trim()) errors.venue = ["Venue city is required."];
   }
   validateDateOrder(values, errors);
   validateNumbers(values, errors);

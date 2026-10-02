@@ -6,6 +6,12 @@ export type CountryDialOption = {
   dialCode: string;
 };
 
+/** National-number length bounds used when the phone library is unavailable. */
+export const countryNationalPhoneLengths: Record<string, readonly [number, number]> = {
+  BD: [10, 10], US: [10, 10], IN: [10, 10], GB: [10, 10], CA: [10, 10], AU: [9, 9],
+  PK: [10, 10], LK: [9, 9], NP: [10, 10], SG: [8, 8], AE: [9, 9], SA: [9, 9],
+};
+
 export const countryDialOptions: CountryDialOption[] = [
   { name: "Bangladesh", isoCode: "BD", dialCode: "+880" },
   { name: "United States", isoCode: "US", dialCode: "+1" },

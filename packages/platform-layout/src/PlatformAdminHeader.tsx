@@ -52,6 +52,7 @@ export function PlatformAdminHeader({
   homeHref,
   notificationsHref,
   approvalNotifications,
+  workflowNotifications,
   messagesHref,
   profileHref,
   profileInitials = "IH",
@@ -116,7 +117,13 @@ export function PlatformAdminHeader({
               ) : null}
             </button>
             <div className={`fixed left-3 right-3 top-[76px] z-50 max-h-[70vh] w-auto max-w-none origin-top overflow-y-auto rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 sm:absolute sm:left-auto sm:right-0 sm:top-12 sm:w-[360px] sm:max-w-sm sm:origin-top-right sm:p-3 ${openMenu === "notifications" ? "pointer-events-auto scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"}`}>
-              {approvalNotifications ? (
+              {workflowNotifications ? (
+                <>
+                  <div className="flex items-center justify-between border-b border-[#edf3f0] px-2 pb-3"><p className="text-sm font-bold text-[#06201c]">Notifications</p><span className="text-xs font-semibold text-[#1f6a58]">{workflowNotifications.unreadCount} unread</span></div>
+                  <div className="mt-1 space-y-1">{workflowNotifications.items.slice(0, 5).map((item) => <Link key={item.id} href={item.notification_type === "event_submitted" ? "/approval-queue" : notificationsHref} onClick={() => { workflowNotifications.onRead(item.id); closeMenu(); }} className={`block rounded-xl px-3 py-2 text-sm hover:bg-[#eef7f2] ${item.is_read ? "" : "bg-[#f7fbf9]"}`}><span className="block font-semibold">{item.title}</span><span className="block truncate text-xs text-[#52736a]">{item.message}</span></Link>)}</div>
+                  <div className="mt-2 flex items-center justify-between border-t border-[#edf3f0] pt-2"><button type="button" onClick={workflowNotifications.onMarkAllRead} className="px-2 text-xs font-semibold text-[#1f6a58]">Mark all read</button><Link href={notificationsHref} onClick={closeMenu} className="px-2 text-xs font-semibold text-[#1f6a58]">View all</Link></div>
+                </>
+              ) : approvalNotifications ? (
                 <>
                   <div className="border-b border-[#edf3f0] px-2 pb-3">
                     <p className="text-sm font-bold text-[#06201c]">{t("approvalNotifications.title", { defaultValue: "Pending approvals" })}</p>

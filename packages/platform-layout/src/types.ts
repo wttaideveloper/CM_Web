@@ -50,11 +50,17 @@ export type PlatformAdminLayoutProps = {
   navigationGroups?: readonly PlatformNavigationGroup[];
   resolveNavigationHref?: (item: PlatformNavigationItem) => string;
   onLogout?: () => Promise<void> | void;
+  workflowNotifications?: {
+    unreadCount: number;
+    items: readonly { id: string; title: string; message: string; notification_type: string; is_read: boolean }[];
+    onRead: (id: string) => void;
+    onMarkAllRead: () => void;
+  };
 };
 
 export type PlatformAdminHeaderProps = Pick<
   PlatformAdminLayoutProps,
-  "homeHref" | "notificationsHref" | "approvalNotifications" | "messagesHref" | "profileHref" | "profileInitials" | "profileName" | "profileEmail" | "onLogout"
+  "homeHref" | "notificationsHref" | "approvalNotifications" | "workflowNotifications" | "messagesHref" | "profileHref" | "profileInitials" | "profileName" | "profileEmail" | "onLogout"
 > & {
   onMenuClick: () => void;
 };

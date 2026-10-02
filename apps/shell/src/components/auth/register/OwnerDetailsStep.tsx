@@ -11,7 +11,7 @@ import {
   RegistrationApiError,
 } from "@/services/registration-ui.service";
 import { startGoogleOwnerSignup } from "@ihp/auth";
-import { countryDialOptions, type CountryDialOption } from "./register.constants";
+import { countryDialOptions, countryNationalPhoneLengths, type CountryDialOption } from "./register.constants";
 
 type PasswordRuleKey = "minLength" | "uppercase" | "lowercase" | "number" | "special";
 
@@ -141,6 +141,10 @@ function buildCombinedPhone(country: CountryDialOption | null, localPhone: strin
   }
 
   return `${country.dialCode}${sanitizedLocalPhone}`;
+}
+
+function getNationalPhoneBounds(country: CountryDialOption | null): readonly [number, number] {
+  return country ? countryNationalPhoneLengths[country.isoCode] ?? [4, 15] : [0, 0];
 }
 
 function extractPasswordMinimumLength(response: PasswordRequirementsResponse | null) {
@@ -346,7 +350,9 @@ export default function OwnerDetailsStep() {
   const isFullNameValid = fullName.trim().length > 0;
   const isEmailValid = EMAIL_REGEX.test(email.trim());
   const isCountrySelected = Boolean(selectedCountry);
-  const isPhoneValid = sanitizeLocalPhone(localPhone).length > 0;
+  const [minimumPhoneLength, maximumPhoneLength] = getNationalPhoneBounds(selectedCountry);
+  const localPhoneDigits = sanitizeLocalPhone(localPhone);
+  const isPhoneValid = localPhoneDigits.length >= minimumPhoneLength && localPhoneDigits.length <= maximumPhoneLength;
   const arePasswordRulesMet = Object.values(passwordRules).every(Boolean);
   const passwordExceedsMaximum =
     password.length > MAX_PASSWORD_LENGTH || confirmPassword.length > MAX_PASSWORD_LENGTH;
@@ -473,6 +479,8 @@ export default function OwnerDetailsStep() {
 
     if (!trimmedLocalPhone) {
       nextFieldErrors.phone = "Phone number is required.";
+    } else if (!isPhoneValid) {
+      nextFieldErrors.phone = `Enter a valid ${minimumPhoneLength}-digit national phone number for ${selectedCountry?.name ?? "the selected country"}.`;
     }
 
     if (!agreeToTerms) {
@@ -795,6 +803,7 @@ export default function OwnerDetailsStep() {
               disabled={!selectedCountry}
               inputMode="numeric"
               pattern="[0-9]*"
+              maxLength={maximumPhoneLength}
               placeholder={selectedCountry ? "Enter phone number" : "Select country first"}
               className="min-w-0 flex-1 bg-transparent px-4 text-sm text-[#06201c] outline-none placeholder:text-[#8aa19a] disabled:cursor-not-allowed disabled:text-[#8aa19a]"
             />

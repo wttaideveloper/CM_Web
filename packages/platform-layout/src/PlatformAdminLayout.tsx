@@ -15,6 +15,7 @@ export function PlatformAdminLayout({
   homeHref,
   notificationsHref,
   approvalNotifications,
+  workflowNotifications,
   messagesHref = null,
   profileHref,
   profileInitials = "IH",
@@ -42,6 +43,7 @@ export function PlatformAdminLayout({
           homeHref={homeHref}
           notificationsHref={notificationsHref}
           approvalNotifications={approvalNotifications}
+          workflowNotifications={workflowNotifications}
           messagesHref={messagesHref}
           profileHref={profileHref}
           profileInitials={profileInitials}

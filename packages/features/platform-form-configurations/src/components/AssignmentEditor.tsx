@@ -28,6 +28,8 @@ type Props = {
   isLoadingAssignments?: boolean;
   assignmentError?: boolean;
   isPersisted: boolean;
+  scopeLocked?: boolean;
+  scopeHint?: string;
   canSaveAssignments: boolean;
   isSaving: boolean;
   /** Distinguishes which assignment mutation is pending when both save actions exist. */
@@ -56,6 +58,8 @@ export function AssignmentEditor({
   isLoadingAssignments = false,
   assignmentError = false,
   isPersisted,
+  scopeLocked = false,
+  scopeHint,
   canSaveAssignments,
   readOnly = isPersisted && !canSaveAssignments,
   isSaving,
@@ -130,14 +134,15 @@ export function AssignmentEditor({
       </div>
       <div className="inline-flex w-fit rounded-lg bg-[#eef6f2] p-1" role="radiogroup" aria-label={copy.assignment}>
         <label className={`cursor-pointer rounded-md px-3 py-2 text-sm font-semibold transition ${scope === "global" ? "bg-white text-[#1f6a58] shadow-sm" : "text-[#52736a]"} ${readOnly ? "cursor-default opacity-75" : ""}`}>
-          <input type="radio" className="sr-only" disabled={readOnly} checked={scope === "global"} onChange={() => onScopeChange("global")} />
+          <input type="radio" className="sr-only" disabled={readOnly || scopeLocked} checked={scope === "global"} onChange={() => onScopeChange("global")} />
           {usesEnterpriseAssignments ? "All enterprises" : copy.allTenants}
         </label>
         <label className={`cursor-pointer rounded-md px-3 py-2 text-sm font-semibold transition ${scope === "selective" ? "bg-white text-[#1f6a58] shadow-sm" : "text-[#52736a]"} ${readOnly ? "cursor-default opacity-75" : ""}`}>
-          <input type="radio" className="sr-only" disabled={readOnly} checked={scope === "selective"} onChange={() => onScopeChange("selective")} />
+          <input type="radio" className="sr-only" disabled={readOnly || scopeLocked} checked={scope === "selective"} onChange={() => onScopeChange("selective")} />
           {usesEnterpriseAssignments ? "Selected enterprises" : copy.selectedTenants}
         </label>
       </div>
+      {scopeHint ? <p className="mt-3 rounded-lg bg-[#f4f8f6] px-3 py-2 text-sm leading-5 text-[#52736a]">{scopeHint}</p> : null}
     </div>
 
     <p className="mt-3 text-sm leading-5 text-[#52736a]">{scope === "global" ? copy.globalScopeHelp : usesEnterpriseAssignments ? copy.enterpriseAssignmentHelp : copy.selectiveScopeHelp}</p>

@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { getEnterprises } from "@ihp/enterprises";
 import { getProducts } from "@ihp/products";
 
-import type { PendingApplication, PlatformDashboardScreenProps } from "./types";
+import type { DashboardApprovalActivity, PendingApplication, PlatformDashboardScreenProps } from "./types";
 
 type KpiState = {
   enterprises: number | null;
@@ -16,20 +16,6 @@ type KpiState = {
   loading: boolean;
 };
 
-const activities = [
-  "Pinnacle Wellness added 3 new products",
-  "NutriCore Studio scheduled a webinar",
-  "New enterprise registered: MindFlow Center",
-  "Revenue milestone: $280K reached",
-  "FlexFit Academy published training course",
-];
-
-const platformHealth = [
-  { label: "Enterprise Approval Rate", value: 94 },
-  { label: "Form Completion Rate", value: 78 },
-  { label: "Customer Satisfaction", value: 88 },
-  { label: "Service Uptime", value: 99 },
-];
 
 function RevenueIcon() {
   return <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none"><path d="M12 2v20M16.5 6.5c0-1.9-2-3.5-4.5-3.5S7.5 4.6 7.5 6.5 9.3 9 12 9s4.5 1.1 4.5 3-2 3.5-4.5 3.5-4.5 1.6-4.5 3.5S9.5 22 12 22s4.5-1.4 4.5-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
@@ -55,21 +41,13 @@ function GraduationIcon() {
   return <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none"><path d="M2 9.5 12 4l10 5.5-10 5.5L2 9.5ZM6 11.5V16c0 1.5 2.7 3 6 3s6-1.5 6-3v-4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 
-function ChartIcon() {
-  return <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none"><path d="M4 19.5h16M7 16v-4M12 16V8M17 16v-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>;
-}
-
 function MiniArrow() {
   return <svg aria-hidden="true" className="h-3 w-3" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 
-function HealthBar({ value }: { value: number }) {
-  return <div className="h-2 w-full rounded-full bg-[#e8f2ed]"><div className="h-full rounded-full bg-[#1f6a58]" style={{ width: `${Math.max(0, Math.min(100, value))}%` }} /></div>;
-}
-
-function ActivityIcon({ kind }: { kind: "package" | "video" | "building" | "trend" | "grad" }) {
-  const classes = { package: "bg-[#e8f6ee] text-[#1f6a58]", video: "bg-[#eef4ff] text-[#2563eb]", building: "bg-[#f1f4f3] text-[#52736a]", trend: "bg-[#e8f6ee] text-[#16825b]", grad: "bg-[#f4f0ff] text-[#7c3aed]" }[kind];
-  return <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${classes}`}>{kind === "package" ? <PackageIcon /> : kind === "video" ? <CalendarIcon /> : kind === "building" ? <BuildingIcon /> : kind === "trend" ? <ChartIcon /> : <GraduationIcon />}</span>;
+function ActivityIcon({ kind }: { kind: "event" | "training" | "tenant" }) {
+  const classes = { event: "bg-[#e8f6ee] text-[#1f6a58]", training: "bg-[#f4f0ff] text-[#7c3aed]", tenant: "bg-[#f1f4f3] text-[#52736a]" }[kind];
+  return <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${classes}`}>{kind === "event" ? <CalendarIcon /> : kind === "training" ? <GraduationIcon /> : <BuildingIcon />}</span>;
 }
 
 export default function PlatformDashboardScreen({
@@ -78,16 +56,17 @@ export default function PlatformDashboardScreen({
   enterprisesLoader = getEnterprises,
   profileLoader,
   pendingApplicationsLoader,
+  approvalActivityLoader,
 }: PlatformDashboardScreenProps) {
-  const [kpis, setKpis] = useState<KpiState>({ enterprises: null, products: null, pendingApplications: null, profile: null, loading: true });
+  const [kpis, setKpis] = useState<KpiState & { approvalActivity: DashboardApprovalActivity[] | null }>({ enterprises: null, products: null, pendingApplications: null, profile: null, approvalActivity: null, loading: true });
 
   async function loadDashboardCounts() {
     setKpis((current) => ({ ...current, loading: true }));
     try {
-      const [enterpriseData, productData, applications, profile] = await Promise.all([enterprisesLoader(), getProducts(), pendingApplicationsLoader?.() ?? Promise.resolve([]), profileLoader?.() ?? Promise.resolve(null)]);
-      setKpis({ enterprises: enterpriseData.length, products: productData.length, pendingApplications: applications, profile, loading: false });
+      const [enterpriseData, productData, applications, profile, approvalActivity] = await Promise.all([enterprisesLoader(), getProducts(), pendingApplicationsLoader?.() ?? Promise.resolve([]), profileLoader?.() ?? Promise.resolve(null), approvalActivityLoader?.() ?? Promise.resolve([])]);
+      setKpis({ enterprises: enterpriseData.length, products: productData.length, pendingApplications: applications, profile, approvalActivity, loading: false });
     } catch {
-      setKpis((current) => ({ ...current, loading: false }));
+      setKpis((current) => ({ ...current, loading: false, approvalActivity: current.approvalActivity ?? [] }));
     }
   }
 
@@ -115,8 +94,11 @@ export default function PlatformDashboardScreen({
         <section className="w-full min-w-0 rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm sm:p-5"><div className="mb-4 flex items-center justify-between"><h3 className="text-lg font-bold text-[#06201c]">Approval Queue</h3><Link href={approvalQueueHref} className="text-sm font-semibold text-[#1f6a58] transition-colors duration-200 hover:text-[#185746] hover:underline">Review All &rarr;</Link></div><div className="space-y-2.5">{kpis.pendingApplications?.length ? kpis.pendingApplications.slice(0, 4).map((item) => <div key={item.id} className="flex min-w-0 items-center justify-between gap-3 rounded-2xl px-3 py-2.5"><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#06201c]">{item.tenantName || item.name || "Unnamed application"}</p><p className="truncate text-xs text-[#52736a]">{item.industryType || "Tenant application"}{item.submittedAt ? ` · ${new Date(item.submittedAt).toLocaleDateString()}` : ""}</p></div><span className="shrink-0 rounded-full bg-[#fff7e5] px-2.5 py-1 text-[11px] font-bold text-[#b7791f]">Pending</span></div>) : <p className="px-3 py-6 text-center text-sm text-[#52736a]">{kpis.loading ? "Loading" : kpis.pendingApplications === null ? "Unavailable" : "No pending applications"}</p>}</div></section>
       </div>
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
-        <section className="w-full min-w-0 rounded-2xl border border-[#e1ebe6] bg-white shadow-sm"><div className="flex items-center justify-between border-b border-[#edf3f0] p-5"><h3 className="text-lg font-bold text-[#06201c]">Recent Activity</h3><button type="button" className="text-sm font-semibold text-[#1f6a58] transition-colors duration-200 hover:text-[#185746] hover:underline">View all</button></div><div>{activities.map((item, index) => <div key={item} className="flex cursor-pointer gap-3 border-b border-[#edf3f0] p-4 transition-colors duration-200 hover:bg-[#f4faf7] last:border-0"><ActivityIcon kind={index === 0 ? "package" : index === 1 ? "video" : index === 2 ? "building" : index === 3 ? "trend" : "grad"} /><div><p className="text-sm font-medium text-[#06201c]">{item}</p><p className="text-xs text-[#52736a]">{index + 2} min ago</p></div></div>)}</div></section>
-        <section className="w-full min-w-0 rounded-2xl border border-[#e1ebe6] bg-white shadow-sm"><div className="flex items-center justify-between border-b border-[#edf3f0] p-5"><h3 className="text-lg font-bold text-[#06201c]">Platform Health</h3><span className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#16825b]">Live</span></div><div className="space-y-4 p-5">{platformHealth.map((item) => <div key={item.label} className="space-y-2"><div className="flex items-center justify-between gap-4"><p className="text-sm font-medium text-[#06201c]">{item.label}</p><p className="text-sm font-bold text-[#06201c]">{item.value}%</p></div><HealthBar value={item.value} /></div>)}</div></section>
+        <section className="w-full min-w-0 rounded-2xl border border-[#e1ebe6] bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-[#edf3f0] p-5"><div><h3 className="text-lg font-bold text-[#06201c]">Approval Activity</h3><p className="mt-1 text-sm text-[#52736a]">Live items awaiting platform review</p></div><Link href={approvalQueueHref} className="text-sm font-semibold text-[#1f6a58] hover:underline">View all →</Link></div>
+          <div>{kpis.approvalActivity?.length ? kpis.approvalActivity.slice(0, 5).map((item) => <div key={`${item.kind}-${item.id}`} className="flex gap-3 border-b border-[#edf3f0] p-4 last:border-0"><ActivityIcon kind={item.kind} /><div><p className="text-sm font-medium text-[#06201c]">{item.title}</p><p className="text-xs text-[#52736a]">{item.detail}{item.createdAt ? ` · ${new Date(item.createdAt).toLocaleDateString()}` : ""}</p></div></div>) : <p className="px-5 py-8 text-center text-sm text-[#52736a]">{kpis.loading ? "Loading" : "No pending approval activity"}</p>}</div>
+        </section>
+        <section className="w-full min-w-0 rounded-2xl border border-[#e1ebe6] bg-white shadow-sm"><div className="flex items-center justify-between border-b border-[#edf3f0] p-5"><div><h3 className="text-lg font-bold text-[#06201c]">Platform Snapshot</h3><p className="mt-1 text-sm text-[#52736a]">Current values from platform data sources</p></div><span className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#16825b]">Live</span></div><div className="grid gap-3 p-5 sm:grid-cols-2"><div className="rounded-xl bg-[#f4faf7] p-4"><p className="text-xs text-[#52736a]">Enterprises</p><p className="mt-1 text-2xl font-bold text-[#06201c]">{kpis.enterprises === null ? "Unavailable" : kpis.enterprises}</p></div><div className="rounded-xl bg-[#f4faf7] p-4"><p className="text-xs text-[#52736a]">Products</p><p className="mt-1 text-2xl font-bold text-[#06201c]">{kpis.products === null ? "Unavailable" : kpis.products}</p></div><div className="rounded-xl bg-[#f4faf7] p-4"><p className="text-xs text-[#52736a]">Tenant applications</p><p className="mt-1 text-2xl font-bold text-[#06201c]">{kpis.pendingApplications === null ? "Unavailable" : kpis.pendingApplications.length}</p></div><div className="rounded-xl bg-[#f4faf7] p-4"><p className="text-xs text-[#52736a]">Pending approvals</p><p className="mt-1 text-2xl font-bold text-[#06201c]">{kpis.approvalActivity === null ? "Unavailable" : kpis.approvalActivity.length}</p></div></div></section>
       </div>
     </div>
   );

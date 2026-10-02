@@ -6,6 +6,8 @@
 @source "../../../../packages/features/enterprise-dashboard/src";
 @source "../../../../packages/features/enterprise-events/src";
 @source "../../../../packages/features/enterprise-notifications/src";
+
+.event-validation-focus { outline: 3px solid #f2b84b; outline-offset: 3px; }
 @source "../../../../packages/features/enterprise-profile/src";
 @source "../../../../packages/features/enterprise-settings/src";
 @source "../../../../packages/features/enterprise-trainings/src";

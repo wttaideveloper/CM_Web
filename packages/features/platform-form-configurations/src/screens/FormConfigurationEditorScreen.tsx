@@ -69,20 +69,11 @@ export function FormConfigurationEditorScreen({ id, mode }: { id?: string; mode:
   const persistAssignments = async (tenantIds: string[]): Promise<string[]> => {
     if (!id) throw new Error("Save this configuration before assigning tenants.");
     const persistedConfiguration = await getEventFormConfiguration(id);
-    if (persistedConfiguration.scope !== "selective") {
-      const selectiveConfiguration = await update.mutateAsync({
-        configurationId: id,
-        payload: toEventFormConfigurationPatchCandidate({
-          ...toBuilderFormConfiguration(persistedConfiguration),
-          scope: "selective",
-        }),
-      });
-      if (selectiveConfiguration.scope !== "selective") {
-        throw new Error("Could not save Selective scope for this Event configuration. Save it as Selective, then retry the tenant assignments.");
-      }
-    }
+    if (persistedConfiguration.scope !== "selective") throw new Error("Global configurations cannot be changed to Selective after creation.");
     const saved = await saveAssignments.mutateAsync({ configurationId: id, payload: { tenant_ids: tenantIds } });
-    return saved.assignments.map((assignment) => assignment.tenant_id);
+    await Promise.all([configuration.refetch(), assignments.refetch()]);
+    const refreshedAssignments = await assignments.refetch();
+    return refreshedAssignments.data?.assignments.map((assignment) => assignment.tenant_id) ?? saved.assignments.map((assignment) => assignment.tenant_id);
   };
   const runLifecycle = async (action: "activate" | "deactivate" | "retire" | "delete") => {
     if (!id) return;

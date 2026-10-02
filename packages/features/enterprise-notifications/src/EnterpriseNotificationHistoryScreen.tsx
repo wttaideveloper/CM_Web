@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 
-import { parseBackendTimestamp, useRealtime } from "@ihp/realtime";
+import { notificationReason, parseBackendTimestamp, resolveEventNotificationTarget, useRealtime } from "@ihp/realtime";
 
 type NotificationLike = {
   id: string;
@@ -69,11 +69,12 @@ export default function EnterpriseNotificationHistoryScreen({ messagesRoute }: N
     void markNotificationAsRead(notification.id).catch(() => undefined);
 
     const conversationId = getNotificationConversationId(notification);
-    if (!conversationId || !messagesRoute) {
+    if (conversationId && messagesRoute) {
+      router.push(`${messagesRoute}?conversationId=${encodeURIComponent(conversationId)}`);
       return;
     }
-
-    router.push(`${messagesRoute}?conversationId=${encodeURIComponent(conversationId)}`);
+    const target = resolveEventNotificationTarget(notification, "enterprise");
+    if (target) router.push(target);
   };
 
   return (
@@ -145,6 +146,7 @@ export default function EnterpriseNotificationHistoryScreen({ messagesRoute }: N
                     <span className="min-w-0">
                       <span className="block text-sm font-bold text-[#06201c]">{item.title}</span>
                       <span className="mt-1 block text-sm leading-6 text-[#52736a]">{item.body}</span>
+                      {notificationReason(item) ? <span className="mt-1 block text-xs text-[#52736a]">Reason: {notificationReason(item)}</span> : null}
                     </span>
                     <span className="shrink-0 text-xs font-semibold text-[#7f9d94]">
                       {formatNotificationTime(item.created_at)}

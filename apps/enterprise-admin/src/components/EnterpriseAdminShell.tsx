@@ -8,10 +8,12 @@ import { updatePresenceStatus } from "@ihp/messaging";
 import { useRealtime } from "@ihp/realtime";
 
 import EnterpriseRealtimeRouteProviders from "@/providers/EnterpriseRealtimeRouteProviders";
+import { useEnterpriseWorkflowNotifications } from "@/realtime/enterprise-workflow-notifications";
 
 function EnterpriseAdminShellContent({ children }: { children: ReactNode }) {
   const { logout, user } = useAuth();
   const realtime = useRealtime();
+  const workflow = useEnterpriseWorkflowNotifications();
 
   const handleLogout = useCallback(async () => {
     try {
@@ -38,6 +40,7 @@ function EnterpriseAdminShellContent({ children }: { children: ReactNode }) {
       totalUnreadCount={realtime.totalUnreadCount}
       onNotificationRead={realtime.markNotificationAsRead}
       onMarkAllNotificationsRead={realtime.markAllNotificationsAsRead}
+      workflowNotifications={{ items: workflow.items, unreadCount: workflow.unreadCount, onRead: (id) => { void workflow.markRead(id); }, onMarkAllRead: () => { void workflow.markAllRead(); } }}
       user={user}
       onLogout={handleLogout}
     >

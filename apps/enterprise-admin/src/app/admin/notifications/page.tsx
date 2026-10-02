@@ -1,5 +1,5 @@
-import { EnterpriseNotificationHistoryScreen } from "@ihp/enterprise-notifications";
+import WorkflowNotificationsPage from "./WorkflowNotificationsPage";
 
 export default function EnterpriseNotificationsPage() {
-  return <EnterpriseNotificationHistoryScreen messagesRoute="/admin/messages" />;
+  return <WorkflowNotificationsPage />;
 }
