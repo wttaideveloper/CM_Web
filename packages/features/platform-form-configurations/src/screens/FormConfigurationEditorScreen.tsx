@@ -11,7 +11,7 @@ import { toBuilderFormConfiguration, toEventFormConfigurationCreateCandidate, to
 import { createMockConfiguration } from "../model/form-configuration.mock";
 import type { FormConfiguration } from "../model/form-configuration.types";
 import { getConfigurationActions } from "../model/configuration-actions";
-import { findActiveEventFormConfigurationConflicts, FormConfigurationsApiError, getEventFormConfiguration } from "../services/form-configurations.service";
+import { findActiveEventFormConfigurationConflicts, FormConfigurationsApiError, getEventFormConfiguration, getEventFormConfigurationAssignments } from "../services/form-configurations.service";
 
 /** Hosts persisted configuration editing while keeping the route adapter thin. */
 export function FormConfigurationEditorScreen({ id, mode }: { id?: string; mode: "create" | "view" | "edit" }) {
@@ -36,12 +36,35 @@ export function FormConfigurationEditorScreen({ id, mode }: { id?: string; mode:
   const error = registry.error ?? configuration.error;
   const errorCopy = error instanceof FormConfigurationsApiError && (error.status === 401 || error.status === 403) ? copy.forbidden : copy.loadError;
 
+  const updateConfigurationDraft = async (builder: FormConfiguration): Promise<FormConfiguration> => {
+    if (!id) throw new Error("Configuration ID is unavailable.");
+    let updated = await update.mutateAsync({ configurationId: id, payload: toEventFormConfigurationPatchCandidate(builder) });
+    if (builder.scope === "global") {
+      updated = await getEventFormConfiguration(id);
+      if (updated.scope !== "global") {
+        throw new Error("The Event configuration API did not persist Global scope. Tenant assignments are not sent for Global configurations; the API must save scope: global through the configuration update.");
+      }
+    } else {
+      updated = await getEventFormConfiguration(id);
+      if (updated.scope !== "selective") {
+        throw new Error("The Event configuration API did not persist Selected tenants scope. Tenant assignments were not sent; save the configuration scope before retrying assignments.");
+      }
+      const tenantIds = await persistAssignments(builder.tenantIds);
+      updated = await getEventFormConfiguration(id);
+      if (updated.scope !== "selective") throw new Error("The selected tenant scope was not saved. Retry Save Draft.");
+      if (!sameAssignmentIds(tenantIds, builder.tenantIds)) throw new Error("The server did not retain all selected tenant assignments. Retry Save Draft.");
+    }
+    return {
+      ...toBuilderFormConfiguration(updated),
+      scope: builder.scope,
+      tenantIds: builder.scope === "global" ? [] : [...builder.tenantIds],
+      enterpriseIds: builder.scope === "global" ? [] : [...(builder.enterpriseIds ?? [])],
+    };
+  };
+
   const save = async (builder: FormConfiguration): Promise<FormConfiguration> => {
     if (assignmentRecovery) throw new Error("Tenant assignments could not be saved. Open the saved configuration to recover.");
-    if (!isCreate) {
-      if (!id) throw new Error("Configuration ID is unavailable.");
-      return toBuilderFormConfiguration(await update.mutateAsync({ configurationId: id, payload: toEventFormConfigurationPatchCandidate(builder) }));
-    }
+    if (!isCreate) return updateConfigurationDraft(builder);
     const conflicts = await findActiveEventFormConfigurationConflicts(builder.scope === "selective" ? builder.tenantIds : []);
     if (conflicts.length > 0) {
       const conflictText = conflicts.map((conflict) => `${conflict.tenantId} is assigned to active configuration "${conflict.configurationName}"`).join("; ");
@@ -51,6 +74,11 @@ export function FormConfigurationEditorScreen({ id, mode }: { id?: string; mode:
     if (builder.scope === "selective" && builder.tenantIds.length > 0) {
       try {
         await saveAssignments.mutateAsync({ configurationId: saved.id, payload: { tenant_ids: builder.tenantIds } });
+        const persistedAssignments = await getEventFormConfigurationAssignments(saved.id);
+        const persistedTenantIds = persistedAssignments.assignments.map((assignment) => assignment.tenant_id);
+        if (!sameAssignmentIds(persistedTenantIds, builder.tenantIds)) {
+          throw new Error("The server did not retain all selected tenant assignments.");
+        }
       } catch (reason) {
         const message = reason instanceof Error ? reason.message : "Unable to save tenant assignments.";
         setAssignmentRecovery({ id: saved.id, message });
@@ -62,18 +90,22 @@ export function FormConfigurationEditorScreen({ id, mode }: { id?: string; mode:
   };
   const publishConfiguration = async (builder: FormConfiguration): Promise<FormConfiguration> => {
     if (!id) throw new Error("Save this configuration before publishing it.");
-    await update.mutateAsync({ configurationId: id, payload: toEventFormConfigurationPatchCandidate(builder) });
+    const updated = await updateConfigurationDraft(builder);
     const published = await publish.mutateAsync(id);
-    return { ...builder, status: published.status, active: false, version: published.version };
+    return { ...updated, status: published.status, active: false, version: published.version };
   };
   const persistAssignments = async (tenantIds: string[]): Promise<string[]> => {
     if (!id) throw new Error("Save this configuration before assigning tenants.");
     const persistedConfiguration = await getEventFormConfiguration(id);
     if (persistedConfiguration.scope !== "selective") throw new Error("Global configurations cannot be changed to Selective after creation.");
-    const saved = await saveAssignments.mutateAsync({ configurationId: id, payload: { tenant_ids: tenantIds } });
+    await saveAssignments.mutateAsync({ configurationId: id, payload: { tenant_ids: tenantIds } });
+    const saved = await getEventFormConfigurationAssignments(id);
+    const savedTenantIds = saved.assignments.map((assignment) => assignment.tenant_id);
+    if (!sameAssignmentIds(savedTenantIds, tenantIds)) {
+      throw new Error("The Event configuration assignment update completed, but the selected tenants were not returned by the server. Check the tenant selection and retry.");
+    }
     await Promise.all([configuration.refetch(), assignments.refetch()]);
-    const refreshedAssignments = await assignments.refetch();
-    return refreshedAssignments.data?.assignments.map((assignment) => assignment.tenant_id) ?? saved.assignments.map((assignment) => assignment.tenant_id);
+    return savedTenantIds;
   };
   const runLifecycle = async (action: "activate" | "deactivate" | "retire" | "delete") => {
     if (!id) return;
@@ -96,3 +128,7 @@ export function FormConfigurationEditorScreen({ id, mode }: { id?: string; mode:
 }
 
 function Page({ children }: { children: React.ReactNode }) { return <div className="mx-auto w-full max-w-[1180px]"><div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><h1 className="text-3xl font-bold text-[#06201c]">{copy.title}</h1><Link href="/form-configurations" className="inline-flex w-fit items-center rounded-full border border-[#cfe0d8] px-4 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#eef6f2] focus:outline-none focus:ring-2 focus:ring-[#1f6a58] focus:ring-offset-2">← Back to Form Configurations</Link></div>{children}</div>; }
+
+function sameAssignmentIds(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((tenantId) => right.includes(tenantId));
+}

@@ -57,11 +57,22 @@ function getExtension(fileName: string): string {
 }
 
 function isAllowedFileType(file: File, allowedTypes: readonly string[]): boolean {
-  if (allowedTypes.includes(file.type)) return true;
-  if (file.type && file.type !== "application/octet-stream") return false;
+  const fileType = file.type.split(";")[0].trim().toLowerCase();
+  const normalizedAllowedTypes = allowedTypes.map((type) => type.trim().toLowerCase());
+  if (normalizedAllowedTypes.some((type) => (
+    type.endsWith("/*")
+      ? fileType.startsWith(`${type.slice(0, -1)}`)
+      : fileType === type
+  ))) return true;
+  if (fileType && fileType !== "application/octet-stream") return false;
 
   const extension = getExtension(file.name);
-  return allowedTypes.some((mimeType) => mimeExtensions[mimeType]?.includes(extension));
+  return normalizedAllowedTypes.some((mimeType) => {
+    const matchingMimeTypes = mimeType.endsWith("/*")
+      ? Object.keys(mimeExtensions).filter((candidate) => candidate.startsWith(mimeType.slice(0, -1)))
+      : [mimeType];
+    return matchingMimeTypes.some((candidate) => mimeExtensions[candidate]?.includes(extension));
+  });
 }
 
 async function getImageDimensions(file: File): Promise<{ width: number; height: number } | null> {

@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation";
 import { TrainingBasicsSection, TrainingCapacitySection, TrainingCourseBuilderSection, TrainingDeliverySection, TrainingMediaSection, TrainingPricingSection, TrainingScheduleSection } from "./CreateTrainingSections";
 import { buildCreateTrainingPayload, buildUpdateTrainingPayload, createEmptyTrainingForm, trainingToFormValues, validateTrainingForm, type CreateTrainingFormValues } from "./create-training-form";
 import { createTraining, TrainingsApiError, updateTraining, type Training } from "./trainings.service";
-import { useActiveTrainingFormConfiguration, useTrainingHistoricalFormConfiguration } from "./training-form-configuration.queries";
+import { trainingFormConfigurationQueryKeys, useActiveTrainingFormConfiguration, useTrainingHistoricalFormConfiguration } from "./training-form-configuration.queries";
 import type { TrainingFormConfig, TrainingFormField, TrainingFormSection } from "./training-form-config.service";
 import { useTrainingCategories } from "./training-categories.queries";
 import { canEditTraining } from "./training-status";
@@ -213,6 +213,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [pendingFocusField, setPendingFocusField] = useState<string | null>(null);
+  const [isRefreshingActiveForm, setIsRefreshingActiveForm] = useState(false);
 
   // Backend rejects custom_values keys that collide with top-level TrainingCreate fields
   // (e.g. stale `tags` stored as custom → `400 Unknown custom field: tags`). Only send
@@ -312,7 +313,10 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
       "promo_price",
       "coupon_code",
     ]);
-    return Object.fromEntries(Object.entries(payload).filter(([key]) => configuredKeys.has(key) || alwaysIncluded.has(key))) as T;
+    const changedMediaKeys = new Set<string>();
+    if (values.primary_image !== initialValues.primary_image) changedMediaKeys.add("primary_image");
+    if (JSON.stringify(values.gallery_images) !== JSON.stringify(initialValues.gallery_images)) changedMediaKeys.add("gallery_images");
+    return Object.fromEntries(Object.entries(payload).filter(([key]) => configuredKeys.has(key) || alwaysIncluded.has(key) || changedMediaKeys.has(key))) as T;
   };
 
   const saveMutation = useMutation({
@@ -535,7 +539,31 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   if (formConfigLoading) {
     return <div role="status" className="rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-5 py-12 text-center text-sm font-semibold text-[#52736a]">{mode === "edit" ? "Loading this Training's form configuration…" : "Loading the Training form configuration…"}</div>;
   }
-  const refetchFormConfig = () => void (mode === "edit" ? historicalFormQ.refetch() : activeFormQ.refetch());
+  const refetchFormConfig = async () => {
+    if (mode === "edit") {
+      await historicalFormQ.refetch();
+      return;
+    }
+
+    const queryKey = trainingFormConfigurationQueryKeys.active(tenantId, enterpriseId);
+    setIsRefreshingActiveForm(true);
+    setValues(createEmptyTrainingForm());
+    setCustomValues({});
+    setErrors({});
+    setSubmitError(null);
+    setPendingFocusField(null);
+    setActiveStep(0);
+    try {
+      await queryClient.cancelQueries({ queryKey, exact: true });
+      queryClient.setQueryData(queryKey, null);
+      await activeFormQ.refetch();
+    } finally {
+      setIsRefreshingActiveForm(false);
+    }
+  };
+  if (mode === "create" && isRefreshingActiveForm) {
+    return <div role="status" className="rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-5 py-12 text-center text-sm font-semibold text-[#52736a]">Cleared the previous form and entered data. Loading the latest active Training form configuration…</div>;
+  }
   if (mode === "create" && !activeForm) {
     return (
       <div className="w-full">
@@ -556,8 +584,8 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
               ? "Retry loading the active form configuration before creating a Training."
               : "Ask your Super Admin to publish an active Training form configuration before creating a Training."}
           </p>
-          <button type="button" onClick={refetchFormConfig} className="mt-4 h-10 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white">
-            Retry
+          <button type="button" onClick={() => { void refetchFormConfig(); }} disabled={isRefreshingActiveForm} className="mt-4 h-10 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white disabled:opacity-60">
+            {isRefreshingActiveForm ? "Reloading…" : "Retry"}
           </button>
         </section>
       </div>
@@ -567,7 +595,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   return (
     <div className="w-full">
       {mode === "create" && formConfigError ? (
-        <div role="alert" className="mb-3 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-2 text-xs font-semibold text-[#735c1e]">Could not refresh the active Training form configuration. The previously loaded form remains available. <button type="button" onClick={refetchFormConfig} className="underline">Retry</button></div>
+        <div role="alert" className="mb-3 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-2 text-xs font-semibold text-[#735c1e]">Could not refresh the active Training form configuration. Retry clears entered data from the previous form and reloads the latest active form. <button type="button" onClick={() => { void refetchFormConfig(); }} disabled={isRefreshingActiveForm} className="underline disabled:opacity-60">{isRefreshingActiveForm ? "Reloading…" : "Retry"}</button></div>
       ) : activeForm ? (
         <div className="mb-3 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-2 text-xs font-semibold text-[#167550]">{mode === "edit" ? `Historical form: ${activeForm.title}` : `Using Super Admin form: ${activeForm.title}`} {activeForm.is_global ? "(Global)" : `(${activeForm.enterprise_ids.length} enterprises)`} — {configuredSections.length} sections, {configuredSections.reduce((sum, s) => sum + s.fields.length, 0)} fields.</div>
       ) : formConfigError ? (
@@ -604,7 +632,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
         <main className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm sm:p-7">
           {activeForm ? (
             activeStep < configuredSections.length ? (
-              <ConfiguredCreateTrainingSection section={configuredSections[activeStep]} allFields={activeForm.sections.flatMap((section) => section.fields)} values={values} update={update} errors={errors} customValues={customValues} setCustomValues={setCustomValues} trainingCategories={trainingCategories} categoriesLoading={trainingCategoriesQuery.isLoading} categoriesError={trainingCategoriesQuery.isError} retryCategories={() => { void trainingCategoriesQuery.refetch(); }} preserveLegacyCategoryValues={mode === "edit"} />
+              <ConfiguredCreateTrainingSection key={`${activeForm.id}:${activeForm.version_id ?? activeForm.updated_at ?? "current"}:${configuredSections[activeStep].id}`} section={configuredSections[activeStep]} allFields={activeForm.sections.flatMap((section) => section.fields)} values={values} update={update} errors={errors} customValues={customValues} setCustomValues={setCustomValues} trainingCategories={trainingCategories} categoriesLoading={trainingCategoriesQuery.isLoading} categoriesError={trainingCategoriesQuery.isError} retryCategories={() => { void trainingCategoriesQuery.refetch(); }} preserveLegacyCategoryValues={mode === "edit"} />
             ) : (
               <section className="space-y-4">
                 <h2 className="text-xl font-bold text-[#06201c]">Review & Submit</h2>

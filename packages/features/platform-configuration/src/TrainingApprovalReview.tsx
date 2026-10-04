@@ -37,6 +37,7 @@ function wallClockDateTime(value: string | null | undefined): string {
 function priceLabel(price: string | null | undefined, currency: string | null | undefined): string | null {
   if (!hasText(price)) return null;
   const number = Number(price);
+  if (Number.isFinite(number) && number === 0) return "Free";
   if (Number.isFinite(number) && hasText(currency)) {
     try {
       return new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 2 }).format(number);

@@ -178,7 +178,7 @@ export function getEventStatusActions(status: EventStatus): readonly EventStatus
 
 /** Returns whether the current product workflow permits Enterprise Admin editing. */
 export function canEditEvent(status: EventStatus): boolean {
-  return status === "draft" || status === "rejected" || status === "needs_revision";
+  return status === "draft" || status === "needs_revision";
 }
 
 /** Returns whether the current Enterprise Admin policy permits destructive deletion. */

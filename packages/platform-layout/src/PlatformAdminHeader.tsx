@@ -89,9 +89,14 @@ export function PlatformAdminHeader({
 
   const closeMenu = () => setOpenMenu(null);
   const toggleMenu = (menu: OpenMenu) => setOpenMenu((current) => (current === menu ? null : menu));
-  const pendingApprovalCount = approvalNotifications?.eventCount !== null && approvalNotifications?.eventCount !== undefined
+  const pendingNotificationCount = approvalNotifications?.eventCount !== null
+    && approvalNotifications?.eventCount !== undefined
     && approvalNotifications.trainingCount !== null
-    ? approvalNotifications.eventCount + approvalNotifications.trainingCount
+    && approvalNotifications.trainingCount !== undefined
+    && (!approvalNotifications.tenantApplicationsHref || typeof approvalNotifications.enterpriseRequestCount === "number")
+    ? approvalNotifications.eventCount
+      + approvalNotifications.trainingCount
+      + (approvalNotifications.tenantApplicationsHref ? approvalNotifications.enterpriseRequestCount ?? 0 : 0)
     : null;
 
   return (
@@ -108,11 +113,11 @@ export function PlatformAdminHeader({
       right={(
         <>
           <div className="relative">
-            <button type="button" onClick={() => toggleMenu("notifications")} className="relative flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4]" aria-label={approvalNotifications && pendingApprovalCount !== null && pendingApprovalCount > 0 ? t("approvalNotifications.title", { defaultValue: "Pending approvals" }) + `, ${pendingApprovalCount} pending` : t("header.notifications", { defaultValue: "Notifications" })} aria-expanded={openMenu === "notifications"}>
+            <button type="button" onClick={() => toggleMenu("notifications")} className="relative flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4]" aria-label={approvalNotifications && pendingNotificationCount !== null && pendingNotificationCount > 0 ? t("approvalNotifications.title", { defaultValue: "Pending approvals and Enterprise requests" }) + `, ${pendingNotificationCount} pending` : t("header.notifications", { defaultValue: "Notifications" })} aria-expanded={openMenu === "notifications"}>
               <BellIcon />
-              {approvalNotifications && pendingApprovalCount !== null && pendingApprovalCount > 0 ? (
+              {approvalNotifications && pendingNotificationCount !== null && pendingNotificationCount > 0 ? (
                 <span className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-[#b42318] px-1 text-[10px] font-bold text-white">
-                  {pendingApprovalCount > 99 ? "99+" : pendingApprovalCount}
+                  {pendingNotificationCount > 99 ? "99+" : pendingNotificationCount}
                 </span>
               ) : null}
             </button>
@@ -141,9 +146,17 @@ export function PlatformAdminHeader({
                         ? t("approvalNotifications.countUnavailable", { defaultValue: "Unavailable" })
                         : t("approvalNotifications.pendingCount", { count: approvalNotifications.trainingCount, defaultValue: "{{count}} pending" })}</span>
                     </Link>
+                    {approvalNotifications.tenantApplicationsHref ? (
+                      <Link href={approvalNotifications.tenantApplicationsHref} onClick={closeMenu} className="flex items-center justify-between rounded-xl px-3 py-2 text-sm text-[#1f6a58] transition hover:bg-[#eef7f2]">
+                        <span>{t("approvalNotifications.enterpriseRequests", { defaultValue: "Enterprise requests" })}</span>
+                        <span className="font-semibold">{approvalNotifications.enterpriseRequestCount === null || approvalNotifications.enterpriseRequestCount === undefined
+                          ? t("approvalNotifications.countUnavailable", { defaultValue: "Unavailable" })
+                          : t("approvalNotifications.pendingCount", { count: approvalNotifications.enterpriseRequestCount, defaultValue: "{{count}} pending" })}</span>
+                      </Link>
+                    ) : null}
                   </div>
-                  {pendingApprovalCount === 0 ? (
-                    <p className="px-3 py-2 text-xs text-[#52736a]">{t("approvalNotifications.noPending", { defaultValue: "No pending Event or Training approvals." })}</p>
+                  {pendingNotificationCount === 0 ? (
+                    <p className="px-3 py-2 text-xs text-[#52736a]">{t("approvalNotifications.noPending", { defaultValue: "No pending approvals or Enterprise requests." })}</p>
                   ) : null}
                 </>
               ) : (

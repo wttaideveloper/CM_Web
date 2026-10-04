@@ -60,12 +60,14 @@ import {
 import { enrolInTraining, type TrainingCheckoutRequest } from "./trainings.service";
 import { formatDetailDateTime, formatTrainingDate, humanizeLabel } from "./detail-formatters";
 import TrainingLessonAttendance from "./TrainingLessonAttendance";
+import { LessonMediaPreview } from "./LessonMediaPreview";
 
 const LESSON_TYPE_OPTIONS = [
   { value: "text", label: "Topic" },
   { value: "video", label: "Video" },
   { value: "youtube", label: "YouTube" },
   { value: "pdf", label: "PDF" },
+  { value: "document", label: "Document" },
   { value: "notes", label: "Notes" },
   { value: "quiz", label: "Quiz" },
 ] as const;
@@ -140,16 +142,13 @@ interface LessonTypeOption {
   label: string;
 }
 
-function getLessonTypeOptions(deliveryMode: string, currentType?: string): LessonTypeOption[] {
+function getLessonTypeOptions(deliveryMode: string): LessonTypeOption[] {
   const normalizedMode = deliveryMode.trim().toLowerCase().replace(/[\s-]+/g, "_");
   const options: LessonTypeOption[] = [...LESSON_TYPE_OPTIONS];
-  const supportsLive = ["online", "hybrid", "blended", "instructor_led"].includes(normalizedMode);
-  const supportsVenue = ["physical", "in_person", "hybrid", "blended"].includes(normalizedMode);
+  const supportsLive = ["online", "live", "virtual", "hybrid", "blended"].includes(normalizedMode);
+  const supportsVenue = ["physical", "venue", "in_person", "inperson", "offline", "hybrid", "blended"].includes(normalizedMode);
   if (supportsLive) options.push({ value: "live", label: "Live" });
   if (supportsVenue) options.push({ value: "venue", label: "Venue" });
-
-  if (currentType === "live" && !supportsLive) options.push({ value: "live", label: "Live (currently assigned)" });
-  if (currentType === "venue" && !supportsVenue) options.push({ value: "venue", label: "Venue (currently assigned)" });
   return options;
 }
 
@@ -165,8 +164,8 @@ function SectionCard({ title, children, action }: { title: string; children: Rea
   );
 }
 
-/** List of URL inputs with add/remove — used for a lesson's videos and notes. */
-function LessonUrlList({ label, values, update, placeholder }: { label: string; values: string[]; update: (next: string[]) => void; placeholder?: string }) {
+/** List of URL inputs with add/remove and inline media previews where the browser supports them. */
+function LessonUrlList({ label, values, update, placeholder, previewKind }: { label: string; values: string[]; update: (next: string[]) => void; placeholder?: string; previewKind?: "video" | "document" }) {
   return (
     <div>
       <div className="flex items-center justify-between">
@@ -175,9 +174,12 @@ function LessonUrlList({ label, values, update, placeholder }: { label: string; 
       </div>
       <div className="mt-1 space-y-1">
         {values.map((val, idx) => (
-          <div key={idx} className="flex gap-1">
-            <input value={val} onChange={(e) => update(values.map((c, i) => (i === idx ? e.target.value : c)))} placeholder={placeholder ?? "https://…"} className="h-8 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
-            <button type="button" onClick={() => update(values.filter((_, i) => i !== idx))} className="shrink-0 rounded-lg px-2 text-[10px] font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button>
+          <div key={idx}>
+            <div className="flex gap-1">
+              <input value={val} onChange={(e) => update(values.map((c, i) => (i === idx ? e.target.value : c)))} placeholder={placeholder ?? "https://…"} className="h-8 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
+              <button type="button" onClick={() => update(values.filter((_, i) => i !== idx))} className="shrink-0 rounded-lg px-2 text-[10px] font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button>
+            </div>
+            {val.trim() && previewKind ? <LessonMediaPreview url={val} name={val.split("/").pop() || label} kind={previewKind} /> : null}
           </div>
         ))}
         {values.length === 0 ? <p className="text-xs text-[#7f9d94]">No {label.toLowerCase()} yet — click + Add.</p> : null}
@@ -460,17 +462,18 @@ function LessonDuration({ value }: { value: string }) {
 }
 
 /** Lesson document (URL + name + visibility + downloadable) editor. */
-function LessonDocsList({ values, update }: { values: Array<{ url: string; name: string; visibility: string; downloadable: boolean }>; update: (next: Array<{ url: string; name: string; visibility: string; downloadable: boolean }>) => void }) {
+function LessonDocsList({ values, update, showPreview = true }: { values: Array<{ url: string; name: string; visibility: string; downloadable: boolean }>; update: (next: Array<{ url: string; name: string; visibility: string; downloadable: boolean }>) => void; showPreview?: boolean }) {
   return (
     <div>
       <div className="flex items-center justify-between">
-<p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">PDF</p>
+        <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Documents</p>
         <button type="button" onClick={() => update([...values, { url: "", name: "", visibility: "public", downloadable: true }])} className="text-[10px] font-bold text-[#1f6a58]">+ Add</button>
       </div>
       <div className="mt-1 space-y-2">
         {values.map((doc, idx) => (
           <div key={idx} className="space-y-1 rounded-lg border border-[#e1ebe6] bg-[#f9fcfa] p-2">
             <input value={doc.url} onChange={(e) => update(values.map((d, i) => (i === idx ? { ...d, url: e.target.value } : d)))} placeholder="PDF URL https://…" className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
+            {doc.url.trim() ? <LessonMediaPreview url={doc.url} name={doc.name || doc.url.split("/").pop() || "Lesson document"} kind="document" showPreview={showPreview} /> : null}
             <div className="flex flex-wrap items-center gap-2">
               <input value={doc.name} onChange={(e) => update(values.map((d, i) => (i === idx ? { ...d, name: e.target.value } : d)))} placeholder="Name (optional)" className="h-7 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]" />
               <select value={doc.visibility} onChange={(e) => update(values.map((d, i) => (i === idx ? { ...d, visibility: e.target.value } : d)))} className="h-7 rounded-lg border border-[#d7e5df] bg-white px-2 text-xs">
@@ -482,7 +485,7 @@ function LessonDocsList({ values, update }: { values: Array<{ url: string; name:
             </div>
           </div>
         ))}
-        {values.length === 0 ? <p className="text-xs text-[#7f9d94]">No PDFs yet — click + Add.</p> : null}
+        {values.length === 0 ? <p className="text-xs text-[#7f9d94]">No documents yet — click + Add.</p> : null}
       </div>
     </div>
   );
@@ -672,6 +675,8 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
   const lessonVideosInit = Array.isArray(lesson.videos) ? (lesson.videos as unknown[]).filter((v): v is string => typeof v === "string") : [];
   const lessonDocsInit = Array.isArray(lesson.documents) ? (lesson.documents as unknown[]).map((d) => { if (typeof d === "string" && d.trim()) return { url: d, name: "", visibility: "public", downloadable: true }; if (d && typeof d === "object") { const r = d as Record<string, unknown>; if (typeof r.url === "string") return { url: r.url, name: typeof r.name === "string" ? r.name : typeof r.title === "string" ? r.title : "", visibility: typeof r.visibility === "string" ? r.visibility : "public", downloadable: typeof r.downloadable === "boolean" ? r.downloadable : true }; } return null; }).filter((v): v is { url: string; name: string; visibility: string; downloadable: boolean } => v !== null) : [];
   const lessonNotesInit = Array.isArray(lesson.notes) ? (lesson.notes as unknown[]).filter((n): n is string => typeof n === "string") : [];
+  const availableLessonTypes = getLessonTypeOptions(trainingDeliveryMode);
+  const selectedLessonType = availableLessonTypes.some((option) => option.value === lessonTypeValue) ? lessonTypeValue : "";
 
   if (!editMode && title === "" && content === "" && videoUrl === "" && lessonTypeValue === "" && meetingLink === "" && joinUrl === "" && fileSize === "" && durationSeconds === "" && lessonVideos.length === 0 && lessonDocs.length === 0 && lessonNotes.length === 0) {
     setTitle(lessonTitle);
@@ -714,9 +719,9 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
       {editMode ? (
         <div className="space-y-2">
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Lesson title" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
-          <select value={lessonTypeValue} onChange={(e) => setLessonTypeValue(e.target.value)} aria-label="Lesson type" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]">
-            <option value="">Lesson type — select</option>
-            {getLessonTypeOptions(trainingDeliveryMode, lessonTypeValue).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          <select required value={selectedLessonType} onChange={(e) => setLessonTypeValue(e.target.value)} aria-label="Lesson type" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]">
+            <option value="" disabled>{lessonTypeValue ? "Choose an allowed lesson type" : "Lesson type — select"}</option>
+            {availableLessonTypes.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
           {isLessonType(lessonTypeValue, "text", "notes") ? <textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="Topic content..." rows={4} className="w-full rounded-lg border border-[#d7e5df] px-3 py-2 text-xs outline-none focus:border-[#1f6a58]" /> : null}
           {lessonTypeValue === "video" ? (
@@ -740,6 +745,7 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
                     .finally(() => setIsVideoUploadPending(false));
                 }}
               />
+              {videoUrl ? <LessonMediaPreview url={videoUrl} name={videoUrl.split("/").pop() || "Lesson video"} kind="video" /> : null}
               <LessonDuration value={durationSeconds} />
             </>
           ) : null}
@@ -764,17 +770,17 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
               setVenueAddress={setVenueAddress}
             />
           ) : null}
-          {lessonTypeValue === "video" ? <LessonUrlList label="Videos" values={lessonVideos} update={setLessonVideos} placeholder="Additional video URL https://…" /> : null}
-          {lessonTypeValue === "pdf" ? (
+          {lessonTypeValue === "video" ? <LessonUrlList label="Videos" values={lessonVideos} update={setLessonVideos} placeholder="Additional video URL https://…" previewKind="video" /> : null}
+          {lessonTypeValue === "pdf" || lessonTypeValue === "document" ? (
             <>
-              <LessonDocsList values={lessonDocs} update={setLessonDocs} />
+              <LessonDocsList values={lessonDocs} update={setLessonDocs} showPreview={lessonTypeValue !== "pdf"} />
               <LessonFileDrop
-                label="PDF"
-                accept="application/pdf,.pdf"
+                label={lessonTypeValue === "pdf" ? "PDF" : "Document"}
+                accept={lessonTypeValue === "pdf" ? "application/pdf,.pdf" : ".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.rtf,application/pdf,text/plain"}
                 fileName={lessonDocs.length > 0 ? "Add another PDF file" : ""}
                 onFile={(file) => {
                   setFeedback(null);
-                  void uploadTrainingMedia(file, "lesson_pdf")
+                  void uploadTrainingMedia(file, lessonTypeValue === "pdf" ? "lesson_pdf" : "lesson_document")
                     .then((uploaded) => {
                       setLessonDocs((current) => [...current, { url: uploaded.url, name: uploaded.name, visibility: "public", downloadable: true }]);
                       setFileSize(String(uploaded.size));
@@ -787,7 +793,7 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
           ) : null}
           {lessonTypeValue === "notes" ? (
             <>
-              <LessonUrlList label="Notes" values={lessonNotes} update={setLessonNotes} placeholder="Note URL / link https://…" />
+              <LessonUrlList label="Notes" values={lessonNotes} update={setLessonNotes} placeholder="Note URL / link https://…" previewKind="document" />
               <LessonFileDrop
                 label="note"
                 accept=".txt,.md,.rtf,text/plain,text/markdown"
@@ -805,21 +811,21 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
               />
             </>
           ) : null}
-          {isLessonType(lessonTypeValue, "video", "pdf", "notes") ? (
+          {isLessonType(lessonTypeValue, "video", "pdf", "document", "notes") ? (
             <div className="flex gap-4">
               <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={isPreview} onChange={(e) => setIsPreview(e.target.checked)} className="h-3 w-3" />Is preview</label>
               <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={isDownloadable} onChange={(e) => setIsDownloadable(e.target.checked)} className="h-3 w-3" />Is downloadable</label>
             </div>
           ) : null}
-          {isLessonType(lessonTypeValue, "video", "pdf", "notes") ? <LessonFileSize value={fileSize} /> : null}
+          {isLessonType(lessonTypeValue, "video", "pdf", "document", "notes") ? <LessonFileSize value={fileSize} /> : null}
           {isLessonType(lessonTypeValue, "quiz") ? <p className="rounded-lg bg-[#f9fcfa] px-3 py-2 text-xs text-[#52736a]">After saving, use the quiz panel to attach or create questions.</p> : null}
           <p className="text-[10px] text-[#7f9d94]">Only fields for the selected lesson type are shown.</p>
-          <button type="button" onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending || isVideoUploadPending || !title.trim() || ((lessonTypeValue === "live" || lessonTypeValue === "venue") && (!scheduledAt || (detailsSource === "new" && (lessonTypeValue === "live" ? !meetingLink.trim() : !venueName.trim() || !venueAddress.trim()))))} className="h-8 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:opacity-60">{updateMutation.isPending ? "Saving..." : "Save"}</button>
+          <button type="button" onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending || isVideoUploadPending || !title.trim() || !selectedLessonType || ((lessonTypeValue === "live" || lessonTypeValue === "venue") && (!scheduledAt || (detailsSource === "new" && (lessonTypeValue === "live" ? !meetingLink.trim() : !venueName.trim() || !venueAddress.trim()))))} className="h-8 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:opacity-60">{updateMutation.isPending ? "Saving..." : "Save"}</button>
         </div>
       ) : (
         <div className="space-y-2">
           <p className="text-sm font-bold text-[#06201c]">{lessonTitle || "Untitled"}</p>
-          {lessonVideoUrl ? <a href={lessonVideoUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-[#1f6a58] underline">Watch video →</a> : null}
+          {lessonVideoUrl ? <LessonMediaPreview url={lessonVideoUrl} name={lessonVideoUrl.split("/").pop() || "Lesson video"} kind="video" /> : null}
           {lessonType === "live" ? <p className="text-xs text-[#52736a]">{t("lessonScheduling.provider", { defaultValue: "Meeting provider" })}: {humanizeLabel(lessonMeetingType)}</p> : null}
           {lessonMeetingLink ? <p className="text-xs text-[#52736a]">{t("lessonScheduling.meetingLink", { defaultValue: "Meeting link" })}: <a href={lessonMeetingLink} className="text-[#1f6a58] underline">{lessonMeetingLink}</a></p> : null}
           {lessonJoinUrl ? <p className="text-xs text-[#52736a]">{t("lessonScheduling.joinInstructions", { defaultValue: "Join instructions" })}: <a href={lessonJoinUrl} className="text-[#1f6a58] underline">{lessonJoinUrl}</a></p> : null}
@@ -827,9 +833,9 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
           {lessonType === "venue" && lessonVenueAddress ? <p className="text-xs text-[#52736a]">{t("lessonScheduling.address", { defaultValue: "Address" })}: {lessonVenueAddress}</p> : null}
           {lessonScheduledAt ? <p className="text-xs text-[#52736a]">{t("lessonScheduling.scheduled", { defaultValue: "Scheduled" })}: {formatLessonScheduledAt(lessonScheduledAt)}</p> : null}
           {lessonType ? <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">{lessonType}</p> : null}
-          {lessonVideosInit.length > 0 ? <div><p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Videos</p><ul className="mt-0.5 space-y-0.5">{lessonVideosInit.map((v, i) => <li key={i}><a href={v} target="_blank" rel="noreferrer" className="text-xs text-[#1f6a58] underline">{v}</a></li>)}</ul></div> : null}
-          {lessonDocsInit.length > 0 ? <div><p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">PDF</p><ul className="mt-0.5 space-y-0.5">{lessonDocsInit.map((d, i) => <li key={i} className="text-xs text-[#52736a]"><a href={d.url} target="_blank" rel="noreferrer" className="text-[#1f6a58] underline">{d.name || d.url}</a>{d.visibility === "private" ? " • private" : ""}{d.downloadable ? " • downloadable" : ""}</li>)}</ul></div> : null}
-          {lessonNotesInit.length > 0 ? <div><p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Notes</p><ul className="mt-0.5 space-y-0.5">{lessonNotesInit.map((n, i) => <li key={i}><a href={n} target="_blank" rel="noreferrer" className="text-xs text-[#1f6a58] underline">{n}</a></li>)}</ul></div> : null}
+          {lessonVideosInit.length > 0 ? <div><p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Videos</p>{lessonVideosInit.map((videoUrl, index) => <LessonMediaPreview key={`${videoUrl}-${index}`} url={videoUrl} name={videoUrl.split("/").pop() || "Lesson video"} kind="video" />)}</div> : null}
+          {lessonDocsInit.length > 0 ? <div><p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Documents</p>{lessonDocsInit.map((document, index) => <div key={`${document.url}-${index}`}><LessonMediaPreview url={document.url} name={document.name || document.url.split("/").pop() || "Lesson document"} kind="document" showPreview={lessonType !== "pdf"} /><p className="text-[10px] text-[#52736a]">{document.visibility === "private" ? "Private" : "Public"}{document.downloadable ? " • downloadable" : ""}</p></div>)}</div> : null}
+          {lessonNotesInit.length > 0 ? <div><p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Notes</p>{lessonNotesInit.map((noteUrl, index) => <LessonMediaPreview key={`${noteUrl}-${index}`} url={noteUrl} name={noteUrl.split("/").pop() || "Lesson note"} kind="document" />)}</div> : null}
           <p className="text-xs text-[#7f9d94]">{lessonIsPreview ? "Preview • " : ""}{lessonIsDownloadable ? "Downloadable" : "Not downloadable"}{lessonDuration ? ` • ${lessonType === "video" ? formatVideoDurationSeconds(durationSeconds) || formatLessonDuration(lessonDuration) : formatLessonDuration(lessonDuration)}` : ""}{formattedLessonFileSize ? ` • ${formattedLessonFileSize}` : ""}</p>
           {lessonContent ? <p className="whitespace-pre-wrap text-xs leading-5 text-[#52736a]">{lessonContent}</p> : <p className="text-xs text-[#7f9d94]">No content.</p>}
         </div>
@@ -913,12 +919,12 @@ function AddLessonForm({ pending, trainingDeliveryMode, trainingLessonDefaults, 
       <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">New lesson details</p>
       {fileUploadError ? <p role="alert" className="rounded-lg border border-[#f0c7c2] bg-[#fff6f5] px-3 py-2 text-xs font-semibold text-[#b42318]">{fileUploadError}</p> : null}
       <input required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Lesson title" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
-      <select value={type} onChange={(event) => {
+      <select required value={type} onChange={(event) => {
         const selectedType = event.target.value;
         setType(selectedType);
         setDetailsSource(getInitialLessonDetailsSource(selectedType, trainingLessonDefaults));
       }} aria-label="New lesson type" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]">
-        {getLessonTypeOptions(trainingDeliveryMode, type).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        {getLessonTypeOptions(trainingDeliveryMode).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
       {isLessonType(type, "text", "notes") ? <textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder={type === "notes" ? "Notes content..." : "Topic content..."} rows={3} className="w-full rounded-lg border border-[#d7e5df] px-3 py-2 text-xs outline-none focus:border-[#1f6a58]" /> : null}
       {type === "video" ? (
@@ -940,6 +946,7 @@ function AddLessonForm({ pending, trainingDeliveryMode, trainingLessonDefaults, 
               .catch((error: Error) => { setVideoFileName(""); setFileUploadError(error.message); })
               .finally(() => setIsVideoUploadPending(false));
           }} />
+          {contentUrl ? <LessonMediaPreview url={contentUrl} name={videoFileName || contentUrl.split("/").pop() || "Lesson video"} kind="video" /> : null}
           <LessonDuration value={duration} />
         </>
       ) : null}
@@ -964,13 +971,14 @@ function AddLessonForm({ pending, trainingDeliveryMode, trainingLessonDefaults, 
           setVenueAddress={setVenueAddress}
         />
       ) : null}
-      {type === "pdf" ? <LessonFileDrop label="PDF" accept="application/pdf,.pdf" fileName={pdfFileName} onFile={(file) => {
+      {type === "pdf" || type === "document" ? <LessonFileDrop label={type === "pdf" ? "PDF" : "Document"} accept={type === "pdf" ? "application/pdf,.pdf" : ".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.rtf,application/pdf,text/plain"} fileName={pdfFileName} onFile={(file) => {
         setFileUploadError(null);
         setPdfFileName(`Uploading ${file.name}...`);
-        void uploadTrainingMedia(file, "lesson_pdf")
+        void uploadTrainingMedia(file, type === "pdf" ? "lesson_pdf" : "lesson_document")
           .then((uploaded) => { setDocuments((current) => [...current, { url: uploaded.url, name: uploaded.name, visibility: "public", downloadable: true }]); setFileSize(String(uploaded.size)); setPdfFileName(uploaded.name); })
           .catch((error: Error) => { setPdfFileName(""); setFileUploadError(error.message); });
       }} /> : null}
+      {type === "pdf" || type === "document" ? documents.map((document) => <LessonMediaPreview key={document.url} url={document.url} name={document.name} kind="document" showPreview={type !== "pdf"} />) : null}
       {type === "notes" ? <LessonFileDrop label="note" accept=".txt,.md,.rtf,text/plain,text/markdown" fileName={noteFileName} onFile={(file) => {
         setFileUploadError(null);
         setNoteFileName(`Uploading ${file.name}...`);
@@ -978,13 +986,14 @@ function AddLessonForm({ pending, trainingDeliveryMode, trainingLessonDefaults, 
           .then((uploaded) => { setNotes((current) => [...current, uploaded.url]); setFileSize(String(uploaded.size)); setNoteFileName(uploaded.name); })
           .catch((error: Error) => { setNoteFileName(""); setFileUploadError(error.message); });
       }} /> : null}
-      {isLessonType(type, "video", "pdf", "notes") ? (
+      {type === "notes" ? notes.map((note) => <LessonMediaPreview key={note} url={note} name={note.split("/").pop() || "Lesson note"} kind="document" />) : null}
+      {isLessonType(type, "video", "pdf", "document", "notes") ? (
         <div className="flex flex-wrap gap-4">
           <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={isPreview} onChange={(event) => setIsPreview(event.target.checked)} className="h-3 w-3" />Is preview</label>
           <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={isDownloadable} onChange={(event) => setIsDownloadable(event.target.checked)} className="h-3 w-3" />Is downloadable</label>
         </div>
       ) : null}
-      {isLessonType(type, "video", "pdf", "notes") ? <LessonFileSize value={fileSize} /> : null}
+      {isLessonType(type, "video", "pdf", "document", "notes") ? <LessonFileSize value={fileSize} /> : null}
       {isLessonType(type, "quiz", "assignment") ? <p className="rounded-lg bg-[#f9fcfa] px-3 py-2 text-xs text-[#52736a]">{type === "quiz" ? "After creating this lesson, attach or create the quiz questions below." : "After creating this lesson, use the Assignments tab to create the submission task."}</p> : null}
       <p className="text-[10px] text-[#7f9d94]">Only fields for the selected lesson type are shown.</p>
       <div className="flex flex-wrap items-center gap-2">
@@ -1007,10 +1016,7 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
   const [lessonAssessmentDraft, setLessonAssessmentDraft] = useState<Record<string, string>>({});
   const [lessonAssessmentTitle, setLessonAssessmentTitle] = useState<Record<string, string>>({});
   const [lessonAssessmentInstructions, setLessonAssessmentInstructions] = useState<Record<string, string>>({});
-  const [lessonAssessmentTimeLimit, setLessonAssessmentTimeLimit] = useState<Record<string, string>>({});
   const [lessonAssessmentPassPercent, setLessonAssessmentPassPercent] = useState<Record<string, string>>({});
-  const [lessonAssessmentAttempts, setLessonAssessmentAttempts] = useState<Record<string, string>>({});
-  const [lessonAssessmentRandomise, setLessonAssessmentRandomise] = useState<Record<string, boolean>>({});
   const [lessonQuestion, setLessonQuestion] = useState<Record<string, string>>({});
   const [lessonQuestionType, setLessonQuestionType] = useState<Record<string, string>>({});
   const [lessonQuestionOptions, setLessonQuestionOptions] = useState<Record<string, string>>({});
@@ -1072,17 +1078,14 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
   });
 
   const createLessonAssessmentMutation = useMutation({
-    mutationFn: async ({ sectionId, lessonId, lessonTitle, title, instructions, timeLimitMinutes, passPercent, attempts, randomise }: { sectionId: string; lessonId: string; lessonTitle: string; title: string; instructions: string; timeLimitMinutes: string; passPercent: string; attempts: string; randomise: boolean }) => {
+    mutationFn: async ({ sectionId, lessonId, lessonTitle, title, instructions, passPercent }: { sectionId: string; lessonId: string; lessonTitle: string; title: string; instructions: string; passPercent: string }) => {
       const created = await createTrainingAssessment(trainingId, {
         title: title.trim(),
         type: "quiz",
         section_id: sectionId,
         lesson_id: lessonId,
         instructions: instructions.trim() || null,
-        time_limit_minutes: timeLimitMinutes ? Number(timeLimitMinutes) : null,
         passing_score: passPercent ? Number(passPercent) : null,
-        max_attempts: attempts ? Number(attempts) : null,
-        randomise,
         is_published: false,
       });
       const assessment = created && typeof created === "object" ? created as Record<string, unknown> : {};
@@ -1109,10 +1112,7 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
       const lessonKey = `${vars.sectionId}:${vars.lessonId}`;
       setLessonAssessmentTitle((current) => ({ ...current, [lessonKey]: "" }));
       setLessonAssessmentInstructions((current) => ({ ...current, [lessonKey]: "" }));
-      setLessonAssessmentTimeLimit((current) => ({ ...current, [lessonKey]: "" }));
       setLessonAssessmentPassPercent((current) => ({ ...current, [lessonKey]: "" }));
-      setLessonAssessmentAttempts((current) => ({ ...current, [lessonKey]: "" }));
-      setLessonAssessmentRandomise((current) => ({ ...current, [lessonKey]: false }));
       setFeedback("Quiz published and linked to this lesson.");
       void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessments"] });
       void invalidateSections();
@@ -1479,40 +1479,23 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
                                 <form className="mt-2 grid gap-2 sm:grid-cols-2" onSubmit={(e) => {
                                   e.preventDefault();
                                   const title = lessonAssessmentTitle[lessonKey]?.trim() ?? "";
-                                  const timeLimit = lessonAssessmentTimeLimit[lessonKey] ?? "";
                                   const passPercent = lessonAssessmentPassPercent[lessonKey] ?? "";
-                                  const attempts = lessonAssessmentAttempts[lessonKey] ?? "";
-                                  if (!title || !isOptionalIntegerInRange(timeLimit, 1, Number.MAX_SAFE_INTEGER)
-                                    || !isOptionalIntegerInRange(passPercent, 0, 100)
-                                    || !isOptionalIntegerInRange(attempts, 1, Number.MAX_SAFE_INTEGER)) return;
+                                  if (!title || !isOptionalIntegerInRange(passPercent, 0, 100)) return;
                                   createLessonAssessmentMutation.mutate({
                                     sectionId: id,
                                     lessonId,
                                     lessonTitle,
                                     title,
                                     instructions: lessonAssessmentInstructions[lessonKey] ?? "",
-                                    timeLimitMinutes: timeLimit,
                                     passPercent,
-                                    attempts,
-                                    randomise: lessonAssessmentRandomise[lessonKey] ?? false,
                                   });
                                 }}>
                                   <input value={lessonAssessmentTitle[lessonKey] ?? ""} onChange={(e) => setLessonAssessmentTitle((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="Or create a new quiz for this lesson…" aria-label="New quiz title" className="h-8 min-w-0 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58] sm:col-span-2" />
                                   <textarea value={lessonAssessmentInstructions[lessonKey] ?? ""} onChange={(e) => setLessonAssessmentInstructions((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="Instructions (optional)" aria-label="Quiz instructions" rows={2} className="min-w-0 rounded-lg border border-[#d7e5df] bg-white px-3 py-2 text-xs outline-none focus:border-[#1f6a58] sm:col-span-2" />
-                                  <label className="text-[10px] font-semibold text-[#52736a]">Time limit (minutes)
-                                    <input type="number" min="1" step="1" value={lessonAssessmentTimeLimit[lessonKey] ?? ""} onChange={(e) => setLessonAssessmentTimeLimit((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="No limit" className="mt-1 h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]" />
-                                  </label>
                                   <label className="text-[10px] font-semibold text-[#52736a]">Pass percentage (optional)
                                     <input type="number" min="0" max="100" step="1" value={lessonAssessmentPassPercent[lessonKey] ?? ""} onChange={(e) => setLessonAssessmentPassPercent((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="0–100%" className="mt-1 h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]" />
                                   </label>
-                                  <label className="text-[10px] font-semibold text-[#52736a]">Attempts allowed (optional)
-                                    <input type="number" min="1" step="1" value={lessonAssessmentAttempts[lessonKey] ?? ""} onChange={(e) => setLessonAssessmentAttempts((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="Unlimited" className="mt-1 h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]" />
-                                  </label>
-                                  <label className="mt-4 flex h-8 items-center gap-2 text-xs font-semibold text-[#52736a]">
-                                    <input type="checkbox" checked={lessonAssessmentRandomise[lessonKey] ?? false} onChange={(e) => setLessonAssessmentRandomise((current) => ({ ...current, [lessonKey]: e.target.checked }))} />
-                                    Randomise questions
-                                  </label>
-                                  <button type="submit" disabled={createLessonAssessmentMutation.isPending || !lessonAssessmentTitle[lessonKey]?.trim() || !isOptionalIntegerInRange(lessonAssessmentTimeLimit[lessonKey] ?? "", 1, Number.MAX_SAFE_INTEGER) || !isOptionalIntegerInRange(lessonAssessmentPassPercent[lessonKey] ?? "", 0, 100) || !isOptionalIntegerInRange(lessonAssessmentAttempts[lessonKey] ?? "", 1, Number.MAX_SAFE_INTEGER)} className="h-8 rounded-full border border-[#1f6a58] px-3 text-[10px] font-bold text-[#1f6a58] disabled:opacity-60 sm:col-span-2">{createLessonAssessmentMutation.isPending ? "Creating…" : "Create and publish quiz"}</button>
+                                  <button type="submit" disabled={createLessonAssessmentMutation.isPending || !lessonAssessmentTitle[lessonKey]?.trim() || !isOptionalIntegerInRange(lessonAssessmentPassPercent[lessonKey] ?? "", 0, 100)} className="h-8 rounded-full border border-[#1f6a58] px-3 text-[10px] font-bold text-[#1f6a58] disabled:opacity-60 sm:col-span-2">{createLessonAssessmentMutation.isPending ? "Creating…" : "Create and publish quiz"}</button>
                                 </form>
                               </>
                             ) : null}
@@ -2278,7 +2261,6 @@ export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
   const [newQuestionPoints, setNewQuestionPoints] = useState("1");
   const [editingAssessmentId, setEditingAssessmentId] = useState<string | null>(null);
   const [editAssessmentTitle, setEditAssessmentTitle] = useState("");
-  const [editAssessmentRandomise, setEditAssessmentRandomise] = useState(false);
   const [reviewSubmission, setReviewSubmission] = useState<{ assessmentId: string; submissionId: string } | null>(null);
   const [gradeSubmission, setGradeSubmission] = useState<{ assessmentId: string; submissionId: string } | null>(null);
   const [gradeScore, setGradeScore] = useState("");
@@ -2291,7 +2273,7 @@ export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
   });
 
   const updateAssessmentMutation = useMutation({
-    mutationFn: ({ assessmentId, title, randomise }: { assessmentId: string; title: string; randomise: boolean }) => updateTrainingAssessment(trainingId, assessmentId, { title, randomise }),
+    mutationFn: ({ assessmentId, title }: { assessmentId: string; title: string }) => updateTrainingAssessment(trainingId, assessmentId, { title }),
     onSuccess: () => { setEditingAssessmentId(null); setFeedback("Assessment updated."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessments"] }); },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to update assessment."),
   });
@@ -2367,9 +2349,8 @@ export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
             <li key={id} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-4">
               <div className="flex items-center justify-between gap-3">
                 {isEditing ? (
-                  <form className="flex flex-1 flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); if (editAssessmentTitle.trim()) updateAssessmentMutation.mutate({ assessmentId: id, title: editAssessmentTitle.trim(), randomise: editAssessmentRandomise }); }}>
+                  <form className="flex flex-1 flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); if (editAssessmentTitle.trim()) updateAssessmentMutation.mutate({ assessmentId: id, title: editAssessmentTitle.trim() }); }}>
                     <input value={editAssessmentTitle} onChange={(e) => setEditAssessmentTitle(e.target.value)} aria-label="Assessment title" className="h-8 flex-1 rounded-lg border border-[#d7e5df] px-3 text-sm font-bold text-[#06201c] outline-none focus:border-[#1f6a58]" />
-                    <label className="flex h-8 items-center gap-2 rounded-lg border border-[#d7e5df] px-3 text-xs font-semibold text-[#52736a]"><input type="checkbox" checked={editAssessmentRandomise} onChange={(e) => setEditAssessmentRandomise(e.target.checked)} />Randomise questions</label>
                     <button type="submit" className="h-8 rounded-full bg-[#1f6a58] px-3 text-xs font-bold text-white">Save</button>
                     <button type="button" onClick={() => setEditingAssessmentId(null)} className="h-8 rounded-full border border-[#d7e5df] px-3 text-xs font-bold text-[#52736a]">Cancel</button>
                   </form>
@@ -2393,7 +2374,7 @@ export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
                   </div>
                 )}
                 <div className="flex items-center gap-1">
-                  <button type="button" onClick={(e) => { e.stopPropagation(); setEditingAssessmentId(id); setEditAssessmentTitle(title); setEditAssessmentRandomise(record.randomise === true || record.randomize === true); }} className="rounded-full px-2 py-1 text-xs font-semibold text-[#1f6a58] hover:bg-[#e8f6ee]">Edit</button>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); setEditingAssessmentId(id); setEditAssessmentTitle(title); }} className="rounded-full px-2 py-1 text-xs font-semibold text-[#1f6a58] hover:bg-[#e8f6ee]">Edit</button>
                   <button type="button" onClick={() => { if (window.confirm("Delete this assessment?")) deleteMutation.mutate(id); }} className="rounded-full px-2 py-1 text-xs font-semibold text-[#b42318] hover:bg-[#fff6f5]">Delete</button>
                 </div>
               </div>

@@ -15,6 +15,27 @@ import PlatformBuilderAuthGate from "@/components/PlatformBuilderAuthGate";
 import { getProfileDisplayName, getProfileInitials, getSuperAdminProfile, superAdminProfileQueryKey } from "@/lib/super-admin-profile";
 import { usePlatformWorkflowNotifications } from "@/components/PlatformWorkflowNotifications";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function getPendingEnterpriseRequestCount(): Promise<number> {
+  const response = await fetch("/api/platform-super-admin/tenant-applications?status=under_review", {
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error("Unable to load pending Enterprise requests.");
+  const body: unknown = await response.json();
+  if (!isRecord(body) || !Array.isArray(body.data)) {
+    throw new Error("Tenant Applications returned an invalid pending-request response.");
+  }
+  const pagination = isRecord(body.pagination) ? body.pagination : null;
+  const total = pagination?.total;
+  return typeof total === "number" && Number.isFinite(total) && total >= 0
+    ? total
+    : body.data.length;
+}
+
 function getShellRoute(pathname: string) {
   const shellOrigin = getShellAppOrigin();
 
@@ -77,6 +98,15 @@ function PlatformAdminShellContent({ children }: { children: ReactNode }) {
   const pendingEventApprovals = usePendingEventApprovalCount();
   const pendingTrainingApprovals = usePendingTrainingApprovalCount();
   const workflowNotifications = usePlatformWorkflowNotifications();
+  const pendingEnterpriseRequests = useQuery({
+    queryKey: ["platform", "tenant-applications", "under-review-count"],
+    queryFn: getPendingEnterpriseRequestCount,
+    staleTime: 0,
+    retry: 1,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+  });
   const homeHref = useMemo(() => "/dashboard", []);
   const notificationsHref = useMemo(() => "/notifications", []);
   const handleLogout = useCallback(async () => {
@@ -106,13 +136,21 @@ function PlatformAdminShellContent({ children }: { children: ReactNode }) {
       : 0;
     return platformNavigationGroups.map((group) => ({
       ...group,
-      items: group.items.map((item) => item.href === "/approval-queue"
-        ? { ...item, badge: approvalBadge && approvalBadge > 0 ? String(approvalBadge) : undefined }
-        : item),
+      items: group.items.map((item) => {
+        if (item.href === "/approval-queue") {
+          return { ...item, badge: approvalBadge > 0 ? String(approvalBadge) : undefined };
+        }
+        if (item.href === "/tenant-applications") {
+          const count = pendingEnterpriseRequests.data ?? 0;
+          return { ...item, badge: count > 0 ? (count > 99 ? "99+" : String(count)) : undefined };
+        }
+        return item;
+      }),
     }));
   }, [
     pendingEventApprovals.data,
     pendingTrainingApprovals.data,
+    pendingEnterpriseRequests.data,
   ]);
 
   return (
@@ -124,6 +162,8 @@ function PlatformAdminShellContent({ children }: { children: ReactNode }) {
         eventCount: pendingEventApprovals.data?.pagination.total ?? null,
         trainingCount: pendingTrainingApprovals.data?.pagination.total ?? null,
         approvalQueueHref: "/approval-queue",
+        enterpriseRequestCount: pendingEnterpriseRequests.data ?? null,
+        tenantApplicationsHref: "/tenant-applications",
       }}
       workflowNotifications={{
         unreadCount: workflowNotifications.unreadCount,

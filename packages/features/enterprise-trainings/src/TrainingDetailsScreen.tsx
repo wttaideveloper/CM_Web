@@ -13,6 +13,7 @@ import { displayValue, formatTrainingDate, formatTrainingPrice, humanizeLabel } 
 import { getTrainingStatusBadgeClass, getTrainingStatusLabel } from "./training-status";
 import { getTrainingAdminNotes, getTrainingById, getTrainingProgress, getTrainingSections, listTrainingEnrolments, downloadTrainingDownloads, downloadTrainingNotesPdf, getTrainingMeetingLink, getTrainingModerationHistory, publishTrainingEnterprise, getTrainingParticipantDashboard, getTrainingProviderDashboard, TrainingsApiError } from "./trainings.service";
 import TrainingCalendarAction from "./TrainingCalendarAction";
+import { getTrainingMediaPreviewUrl } from "./training-media-url";
 
 type TrainingDetailsTab = "details" | "content" | "sections" | "enrolments" | "attendance" | "assessments" | "live" | "dashboards";
 
@@ -80,15 +81,19 @@ function AdminNoteBanner({ trainingId, status }: { trainingId: string; status: s
           ) : null}
           {note ? <p className="mt-2 text-sm leading-6 text-[#6b5a1e]">{note}</p> : null}
         </div>
-        <Link
-          href={`/admin/trainings/${trainingId}/edit`}
-          className="inline-flex h-10 shrink-0 items-center justify-center rounded-full bg-[#8a5a00] px-4 text-sm font-bold text-white hover:bg-[#704900]"
-        >
-          Edit training
-        </Link>
+        {status === "needs_revision" ? (
+          <Link
+            href={`/admin/trainings/${trainingId}/edit`}
+            className="inline-flex h-10 shrink-0 items-center justify-center rounded-full bg-[#8a5a00] px-4 text-sm font-bold text-white hover:bg-[#704900]"
+          >
+            Edit training
+          </Link>
+        ) : null}
       </div>
       <p className="mt-3 text-xs leading-5 text-[#8a6b37]">
-        Update the requested details, then choose “Submit for approval” from Training actions.
+        {status === "needs_revision"
+          ? "Update the requested details, then choose “Submit for approval” from Training actions."
+          : "This Training was rejected and cannot be resubmitted. Contact a Super Admin if you need this decision reviewed."}
       </p>
     </section>
   );
@@ -349,15 +354,16 @@ export default function TrainingDetailsScreen({
   const sections = Array.isArray(sectionsQuery.data) ? (sectionsQuery.data as Array<Record<string, unknown>>) : [];
   const enrolments = Array.isArray(enrolmentsQuery.data) ? enrolmentsQuery.data : [];
   const lessonCount = sections.reduce((total, section) => total + (Array.isArray(section.lessons) ? section.lessons.length : 0), 0);
+  const primaryImageUrl = getTrainingMediaPreviewUrl(training.primary_image);
 
   return (
     <div className="w-full">
       <a href="/admin/trainings" className="mb-4 inline-flex h-10 items-center justify-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-semibold text-[#1f6a58] hover:bg-[#f4faf7]">
         ← Back to Trainings
       </a>
-      {typeof training.primary_image === "string" && training.primary_image.trim().length > 0 ? (
+      {primaryImageUrl ? (
         <div className="relative overflow-hidden rounded-2xl border border-[#e1ebe6] shadow-sm">
-          <img alt={training.title} className="h-56 w-full object-cover sm:h-64" src={training.primary_image.trim()} onError={(event) => { (event.currentTarget as HTMLImageElement).style.display = "none" }} />
+          <img alt={training.title} className="h-56 w-full object-cover sm:h-64" src={primaryImageUrl} onError={(event) => { (event.currentTarget as HTMLImageElement).style.display = "none" }} />
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
           <div className="absolute bottom-0 left-0 right-0 p-6 sm:p-8">
             <p className="text-xs font-bold uppercase tracking-[0.22em] text-white/80">{training.category || "TRAINING"}</p>

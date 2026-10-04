@@ -52,6 +52,11 @@ const enterpriseTrainingsEnglish = {
     removeQuestion: "Remove question {{number}}",
   },
   media: {
+    preview: "preview",
+    loadingPreview: "Loading preview…",
+    previewUnavailable: "Preview is unavailable. Open the file to view it.",
+    inlinePreviewUnsupported: "Inline preview is not supported for this document type in the browser.",
+    openFile: "Open file",
     addImage: "Add image",
     addVideo: "Add video",
     addDocument: "Add document",

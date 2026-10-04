@@ -280,7 +280,7 @@ export default function EventDetailsScreen() {
               Edit Event
             </Link>
           ) : null}
-          {(event.status === "needs_revision" || event.status === "rejected") ? (
+          {event.status === "needs_revision" ? (
             <button type="button" onClick={() => resubmitMutation.mutate()} disabled={resubmitMutation.isPending} className="inline-flex h-11 items-center justify-center rounded-full border border-[#1f6a58] px-5 text-sm font-bold text-[#1f6a58] disabled:cursor-not-allowed disabled:opacity-60">
               {resubmitMutation.isPending ? "Resubmitting..." : "Resubmit for approval"}
             </button>

@@ -145,10 +145,13 @@ function ApprovalTrainingCard({ training, label, onReview }: { training: Trainin
   const [imageFailed, setImageFailed] = useState(false);
   const primaryImage = training.primary_image?.trim() ?? "";
   const hasPrimaryImage = primaryImage.length > 0 && !imageFailed;
-  const price = [training.price, training.currency].filter(Boolean).join(" ") || "Free";
+  const numericPrice = Number(training.price);
+  const price = !training.price?.trim() || (Number.isFinite(numericPrice) && numericPrice === 0)
+    ? "Free"
+    : [training.price, training.currency].filter(Boolean).join(" ");
 
-  return <article className="rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm sm:p-5">
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+  return <article className="min-h-[136px] rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm sm:p-5">
+    <div className="flex h-full flex-col gap-4 sm:min-h-[96px] sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 gap-4">
         <div className="relative h-20 w-24 shrink-0 overflow-hidden rounded-xl bg-gradient-to-br from-[#1f6a58] to-[#8ac7a7]">
           {hasPrimaryImage ? <><img src={primaryImage} alt="" aria-hidden="true" onError={() => setImageFailed(true)} className="h-full w-full object-cover object-center" /><div aria-hidden="true" className="absolute inset-0 bg-[#06201c]/25" /></> : <div aria-hidden="true" className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(255,255,255,0.3)_0_1px,transparent_1px)] bg-[length:20px_20px]" />}

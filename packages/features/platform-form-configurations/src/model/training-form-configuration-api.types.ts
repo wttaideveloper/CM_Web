@@ -85,10 +85,8 @@ export interface CreateTrainingFormConfigurationRequest { name: string; descript
 /** Request body for updating a Training form configuration. */
 export interface UpdateTrainingFormConfigurationRequest { name: string; description: string | null; scope: TrainingFormConfigurationScope; sections: TrainingFormSectionInput[]; }
 
-/** Request body for replacing a configuration's assignments. Backend contract: `{is_global: true}`
- * or `{enterprise_ids: []}` makes the config global; non-empty `enterprise_ids` (or `tenant_ids` /
- * `tenant_slugs`) makes it selective. `tenant_ids` is the legacy fallback. */
-export interface UpdateTrainingFormConfigurationAssignmentsRequest { tenant_ids: string[]; enterprise_ids?: string[]; is_global?: boolean; }
+/** Request body for replacing assignments on a Selected tenants Training configuration. */
+export interface UpdateTrainingFormConfigurationAssignmentsRequest { tenant_ids?: string[]; tenant_slugs?: string[]; enterprise_ids?: string[]; assignments?: TrainingFormAssignment[]; }
 
 /** Response returned after publishing a configuration. */
 export interface TrainingFormPublishResponse { configuration: TrainingFormConfiguration; version: TrainingFormConfigurationVersion; }

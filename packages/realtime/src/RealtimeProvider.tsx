@@ -761,6 +761,11 @@ export function RealtimeProvider({
       return;
     }
 
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void refreshUnreadCounts().catch(() => undefined);
+      }
+    }, 30_000);
     const refresh = () => {
       if (document.visibilityState === "visible") {
         void Promise.all([refreshUnreadCounts(), refreshNotifications()]).catch(() => undefined);
@@ -770,6 +775,7 @@ export function RealtimeProvider({
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {
+      window.clearInterval(intervalId);
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };

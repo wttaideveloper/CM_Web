@@ -20,11 +20,28 @@ import { SectionEditor } from "./SectionEditor";
 
 const control = "mt-1.5 w-full rounded-lg border border-[#cfe0d8] bg-white px-3 py-2";
 const CONFIGURATION_DESCRIPTION_MAX_LENGTH = 1000;
-const HIDDEN_TRAINING_FIELD_KEYS = new Set(["group_enrolment", "group_enrollment", "max_group_size", "release_rule", "scheduled_publication", "randomise", "randomize", "is_mandatory", "access_information", "course_type", "course_types", "badge", "badges", "milestone_badges", "prerequisite", "prerequisites"]);
-const HIDDEN_TRAINING_FIELD_LABELS = new Set(["group enrolment", "group enrollment", "max group size", "release rule", "scheduled publication", "randomise", "randomize", "is mandatory", "mandatory lessons", "access information", "course type", "course types", "badge", "badges", "milestone badge", "milestone badges", "prerequisite", "prerequisites"]);
+const HIDDEN_TRAINING_FIELD_KEYS = new Set([
+  "group_enrolment", "group_enrollment", "max_group_size", "release_rule", "scheduled_publication",
+  "randomise", "randomize", "is_mandatory", "access_information", "access_days", "access_duration",
+  "access_duration_days", "access_expiry", "access_expiry_type", "access_expiry_days", "expiry_days",
+  "course_type", "course_types", "badge", "badges", "milestone_badges",
+  "instructor", "instructor_id", "instructor_photo", "prerequisite", "prerequisites", "course_prerequisites",
+  "gallery_image", "gallery_images", "document", "documents",
+  "promotional_video",
+]);
+const HIDDEN_TRAINING_FIELD_LABELS = new Set([
+  "group enrolment", "group enrollment", "max group size", "release rule", "scheduled publication",
+  "randomise", "randomize", "is mandatory", "mandatory lessons", "access information", "access days",
+  "access duration", "access duration days", "access duration (days)", "access expiry", "access expiry type",
+  "access expiry days", "expiry days", "course type", "course types",
+  "badge", "badges", "milestone badge", "milestone badges", "instructor", "instructor photo",
+  "prerequisite", "prerequisites", "course prerequisites",
+  "gallery image", "gallery images", "document", "documents",
+  "promotional video",
+]);
 function isHiddenTrainingField(key: string | null | undefined, label?: string | null): boolean {
   const normalizedKey = (key ?? "").replace(/^(core_|custom_)/, "").trim().toLowerCase().replace(/[\s-]+/g, "_");
-  const normalizedLabel = (label ?? "").trim().toLowerCase().replace(/[\s-]+/g, " ");
+  const normalizedLabel = (label ?? "").trim().toLowerCase().replace(/[\s-]+/g, " ").replace(/\s*\(\s*/g, " (").replace(/\s*\)\s*/g, ")");
   return HIDDEN_TRAINING_FIELD_KEYS.has(normalizedKey) || HIDDEN_TRAINING_FIELD_LABELS.has(normalizedLabel);
 }
 type InspectorMode = "none" | "edit-section" | "edit-field" | "add-field";
@@ -40,7 +57,8 @@ function withoutUnavailableTrainingFields(configuration: FormConfiguration): For
     ...configuration,
     fields: configuration.fields.filter((field) =>
       (field.source !== "core" || !isLocationCoreKey(field.coreKey))
-      && (configuration.type !== "training" || !isHiddenTrainingField(field.coreKey ?? field.stableKey, field.label)),
+      && (configuration.type !== "training"
+        || (!isHiddenTrainingField(field.coreKey, field.label) && !isHiddenTrainingField(field.stableKey, field.label))),
     ),
   };
 }
@@ -122,7 +140,7 @@ export function ConfigurationBuilder({ initialConfiguration, coreFieldRegistry, 
     };
   }), [configuration.fields, configuration.sections, configuration.type, coreFieldRegistry, search]);
   const assignmentChangesDirty = isPersisted && assignmentsLoaded && (!sameTenantIds(configuration.tenantIds, persistedTenantIds) || !sameTenantIds(configuration.enterpriseIds ?? [], persistedEnterpriseIds));
-  const allValidationIssues = useMemo(() => validateFormConfiguration(configuration, coreFieldRegistry, { isPersisted, isLoaded: assignmentsLoaded, tenantIds: persistedTenantIds, enterpriseIds: persistedEnterpriseIds, isDirty: assignmentChangesDirty }), [assignmentChangesDirty, assignmentsLoaded, configuration, coreFieldRegistry, isPersisted, persistedTenantIds, persistedEnterpriseIds]);
+  const allValidationIssues = useMemo(() => validateFormConfiguration(configuration, coreFieldRegistry, { isPersisted, isLoaded: assignmentsLoaded, tenantIds: persistedTenantIds, enterpriseIds: persistedEnterpriseIds, isDirty: assignmentChangesDirty, willPersistAssignments: Boolean(onSave || onPublish) }), [assignmentChangesDirty, assignmentsLoaded, configuration, coreFieldRegistry, isPersisted, onPublish, onSave, persistedTenantIds, persistedEnterpriseIds]);
   const validationIssues = hasAttemptedSaveOrPublish ? allValidationIssues : [];
   const [isPersistingTenantAssignments, setIsPersistingTenantAssignments] = useState(false);
   const [isPersistingEnterpriseAssignments, setIsPersistingEnterpriseAssignments] = useState(false);
@@ -141,7 +159,10 @@ export function ConfigurationBuilder({ initialConfiguration, coreFieldRegistry, 
     setError("");
     setFeedback("");
     try {
-      setConfiguration(await operation(configuration));
+      const savedConfiguration = await operation(configuration);
+      setConfiguration(savedConfiguration);
+      setPersistedTenantIds([...savedConfiguration.tenantIds]);
+      setPersistedEnterpriseIds([...(savedConfiguration.enterpriseIds ?? [])]);
       const warningCount = allValidationIssues.length;
       setFeedback(action === "save" && warningCount ? `Draft saved with ${warningCount} configuration warning${warningCount === 1 ? "" : "s"}.` : action === "save" ? "Configuration saved." : "Configuration published.");
       window.scrollTo({ top: 0, behavior: "smooth" });
