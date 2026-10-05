@@ -51,7 +51,7 @@ export function useEventFormConfigurationVersions(configurationId: string | unde
 /** Reads one immutable configuration version. */
 export function useEventFormConfigurationVersion(configurationId: string | undefined, versionId: string | undefined) { return useQuery({ queryKey: eventFormConfigurationKeys.version(configurationId ?? "", versionId ?? ""), queryFn: () => getEventFormConfigurationVersion(configurationId ?? "", versionId ?? ""), enabled: Boolean(configurationId && versionId), retry: 1 }); }
 /** Reads tenant assignments for one configuration. */
-export function useEventFormConfigurationAssignments(configurationId: string | undefined) { return useQuery({ queryKey: eventFormConfigurationKeys.assignments(configurationId ?? ""), queryFn: () => getEventFormConfigurationAssignments(configurationId ?? ""), enabled: Boolean(configurationId), retry: 1 }); }
+export function useEventFormConfigurationAssignments(configurationId: string | undefined, enabled = true) { return useQuery({ queryKey: eventFormConfigurationKeys.assignments(configurationId ?? ""), queryFn: () => getEventFormConfigurationAssignments(configurationId ?? ""), enabled: Boolean(configurationId) && enabled, retry: 1 }); }
 /** Reads audit history for one configuration. */
 export function useEventFormConfigurationAudit(configurationId: string | undefined, isEnabled = true) { return useQuery({ queryKey: eventFormConfigurationKeys.audit(configurationId ?? ""), queryFn: () => getEventFormConfigurationAudit(configurationId ?? ""), enabled: Boolean(configurationId) && isEnabled, retry: 1 }); }
 /** Reads canonical Enterprise-module tenant UUIDs through the authenticated Platform BFF. */

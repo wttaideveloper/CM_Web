@@ -62,15 +62,9 @@ export function AssignmentEditor({
   scopeHint,
   canSaveAssignments,
   readOnly = isPersisted && !canSaveAssignments,
-  isSaving,
-  savingTarget = null,
-  canSaveEnterpriseAssignments = false,
-  isSavingEnterpriseAssignments = false,
   onScopeChange,
   onTenantIdsChange,
   onEnterpriseIdsChange,
-  onSave,
-  onSaveEnterprises,
 }: Props) {
   const [search, setSearch] = useState("");
   const usesEnterpriseAssignments = assignmentMode === "enterprise";
@@ -150,7 +144,7 @@ export function AssignmentEditor({
     {scope === "selective" ? <div className="pt-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span className="rounded-full bg-[#e8f5ee] px-2.5 py-1 text-xs font-bold text-[#1f6a58]">{usesEnterpriseAssignments ? `Selected enterprises: ${selectedIds.length}` : copy.selectedCount.replace("{count}", String(selectedIds.length))}</span>
-        {!selectedIds.length && !isLoadingAssignments && !assignmentError ? <span className="text-sm text-[#52736a]">{usesEnterpriseAssignments ? "No enterprises assigned." : copy.noTenantsAssigned}</span> : null}
+        {!selectedIds.length && isPersisted && !isLoadingAssignments && !assignmentError ? <span className="text-sm text-[#52736a]">{usesEnterpriseAssignments ? "No enterprises assigned." : copy.noTenantsAssigned}</span> : null}
         {!isPersisted ? <span className="text-sm text-[#52736a]">{usesEnterpriseAssignments ? "Selected enterprises will be saved when this configuration is created." : copy.selectedTenantsSavedOnCreate}</span> : null}
       </div>
       {isLoadingAssignments ? <p className="mt-3 text-sm text-[#52736a]">{usesEnterpriseAssignments ? "Loading assigned enterprises…" : copy.loadingAssignedTenants}</p> : null}
@@ -158,10 +152,5 @@ export function AssignmentEditor({
       {assignmentControls}
     </div> : <p className="pt-4 text-sm text-[#52736a]">{copy.globalAssignmentsDescription}</p>}
 
-    {!readOnly && isPersisted && scope === "selective" ? <div className="mt-4 flex flex-wrap gap-2 border-t border-[#edf3f0] pt-4">
-      {usesEnterpriseAssignments
-        ? canSaveEnterpriseAssignments ? <button type="button" onClick={onSaveEnterprises} disabled={isSavingEnterpriseAssignments || isLoadingOptions || optionsError || isLoadingAssignments || assignmentError || !selectedIds.length} className="rounded-lg bg-[#1f6a58] px-4 py-2 text-sm font-bold text-white hover:bg-[#185746] disabled:cursor-not-allowed disabled:opacity-60">{isSavingEnterpriseAssignments ? copy.savingAssignments : copy.saveAssignments}</button> : null
-        : canSaveAssignments ? <button type="button" onClick={onSave} disabled={isSaving || isLoadingOptions || optionsError || isLoadingAssignments || assignmentError} className="rounded-lg bg-[#1f6a58] px-4 py-2 text-sm font-bold text-white hover:bg-[#185746] disabled:cursor-not-allowed disabled:opacity-60">{isSaving && savingTarget === "tenant" ? copy.savingAssignments : copy.saveAssignments}</button> : null}
-    </div> : null}
   </section>;
 }

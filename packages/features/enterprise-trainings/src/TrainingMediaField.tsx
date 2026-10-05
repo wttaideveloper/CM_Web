@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import TrainingMediaUploadButton from "./TrainingMediaUploadButton";
+import { getTrainingMediaPreviewUrl } from "./training-media-url";
 import type { TrainingUploadResponse } from "./trainings.service";
 
 type TrainingMediaKind = "image" | "video" | "document";
@@ -21,25 +22,8 @@ interface TrainingMediaFieldProps {
   onChange: (value: string) => void;
 }
 
-function safePreviewUrl(value: string): string | null {
-  const trimmed = value.trim();
-  if (trimmed.startsWith("/") && !trimmed.startsWith("//") && !trimmed.includes("\\")) return trimmed;
-  try {
-    const parsed = new URL(trimmed);
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
-
-    // Route protected API media through this app so its authenticated session cookie is included.
-    if (parsed.pathname.startsWith("/api/v1/trainings/") || parsed.pathname.startsWith("/api/v1/media/")) {
-      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
-    }
-    return parsed.href;
-  } catch {
-    return null;
-  }
-}
-
 function fileNameFromUrl(value: string): string {
-  const safeUrl = safePreviewUrl(value);
+  const safeUrl = getTrainingMediaPreviewUrl(value);
   if (!safeUrl) return "Uploaded file";
   try {
     const name = decodeURIComponent(new URL(safeUrl, "https://training-media.invalid").pathname.split("/").pop() ?? "");
@@ -66,7 +50,7 @@ export default function TrainingMediaField({
   const [failedPreviewUrl, setFailedPreviewUrl] = useState<string | null>(null);
   const [imageQualityWarning, setImageQualityWarning] = useState<{ url: string; message: string } | null>(null);
   const editingUrl = editingOverride ?? !value;
-  const previewUrl = safePreviewUrl(value);
+  const previewUrl = getTrainingMediaPreviewUrl(value);
   const uploaded = (file: TrainingUploadResponse, qualityWarning?: string) => {
     onChange(file.url);
     setImageQualityWarning(qualityWarning ? { url: file.url, message: qualityWarning } : null);

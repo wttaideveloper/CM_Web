@@ -8,6 +8,7 @@ export type PersistedAssignmentState = {
   tenantIds: readonly string[];
   enterpriseIds: readonly string[];
   isDirty: boolean;
+  willPersistAssignments?: boolean;
 };
 
 /** A client-detectable publish issue tied to the configuration, a section, or a field. */
@@ -166,6 +167,11 @@ function validateEventDeliveryBundle(configuration: FormConfiguration): FormConf
 function validateSelectiveAssignments(configuration: FormConfiguration, persisted?: PersistedAssignmentState): FormConfigurationValidationIssue[] {
   if (configuration.scope !== "selective") return [];
   const noAssignmentsMessage = "Select at least one tenant or enterprise in Assignment before saving or publishing this selective configuration.";
+  if (persisted?.willPersistAssignments) {
+    return configuration.tenantIds.length === 0 && (configuration.enterpriseIds ?? []).length === 0
+      ? [{ code: "selective-tenant-required", message: noAssignmentsMessage }]
+      : [];
+  }
   if (!persisted?.isPersisted) {
     return configuration.tenantIds.length === 0 && (configuration.enterpriseIds ?? []).length === 0
       ? [{ code: "selective-tenant-required", message: noAssignmentsMessage }]

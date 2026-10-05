@@ -1,5 +1,9 @@
 /** Super Admin Training Form Configuration — global or enterprise-assigned, reorderable sections/fields, mapped to TrainingCreate. */
 
+import { authenticatedFetch } from "@ihp/auth";
+
+const fetch = authenticatedFetch;
+
 export type TrainingFormFieldType = "text" | "textarea" | "select" | "multiselect" | "number" | "date" | "datetime" | "time" | "url" | "checkbox";
 export interface TrainingFormOption { value: string; label: string; position: number; }
 
@@ -173,6 +177,7 @@ function mapTrainingFormFields(fields: unknown): TrainingFormField[] {
     id: typeof fld.id === "string" ? fld.id : `fld-${fIdx}`,
     key: getTrainingFieldKey(fld as Record<string, unknown>, fIdx),
     apiKey: typeof fld.key === "string" ? fld.key : typeof fld.stable_key === "string" ? fld.stable_key : undefined,
+    stable_key: typeof fld.stable_key === "string" ? fld.stable_key : typeof fld.stableKey === "string" ? fld.stableKey as string : null,
     source: fld.source === "custom" ? "custom" : fld.source === "core" ? "core" : undefined,
     label: typeof fld.label === "string" && fld.label ? fld.label : typeof fld.title === "string" && fld.title ? fld.title : `Field ${fIdx + 1}`,
     type: (typeof fld.renderer === "string" ? fld.renderer : typeof fld.type === "string" ? fld.type : "text") as TrainingFormFieldType,
@@ -359,6 +364,9 @@ export async function getTrainingHistoricalFormConfiguration(trainingId: string)
               fields: Array.isArray(sec.fields) ? (sec.fields as Array<Record<string, unknown>>).map((fld, fIdx) => ({
                 id: typeof fld.id === "string" ? fld.id : `fld-${fIdx}`,
                 key: getTrainingFieldKey(fld as Record<string, unknown>, fIdx),
+                apiKey: typeof fld.key === "string" ? fld.key : typeof fld.stable_key === "string" ? fld.stable_key : undefined,
+                stable_key: typeof fld.stable_key === "string" ? fld.stable_key : typeof fld.stableKey === "string" ? fld.stableKey as string : null,
+                source: fld.source === "custom" ? "custom" : fld.source === "core" ? "core" : undefined,
             label: typeof fld.label === "string" ? fld.label : `Field ${fIdx + 1}`,
             type: (typeof fld.renderer === "string" ? fld.renderer : typeof fld.type === "string" ? fld.type : "text") as TrainingFormFieldType,
             valueType: typeof fld.value_type === "string" ? fld.value_type : undefined,
@@ -428,6 +436,9 @@ export async function getTrainingFormConfigActive(): Promise<TrainingFormConfig 
               fields: Array.isArray(sec.fields) ? (sec.fields as Array<Record<string, unknown>>).map((fld, fIdx) => ({
                 id: typeof fld.id === "string" ? fld.id : `fld-${fIdx}`,
                 key: getTrainingFieldKey(fld as Record<string, unknown>, fIdx),
+                apiKey: typeof fld.key === "string" ? fld.key : typeof fld.stable_key === "string" ? fld.stable_key : undefined,
+                stable_key: typeof fld.stable_key === "string" ? fld.stable_key : typeof fld.stableKey === "string" ? fld.stableKey as string : null,
+                source: fld.source === "custom" ? "custom" : fld.source === "core" ? "core" : undefined,
                 label: typeof fld.label === "string" ? fld.label : `Field ${fIdx + 1}`,
                 type: (typeof fld.renderer === "string" ? fld.renderer : typeof fld.type === "string" ? fld.type : "text") as TrainingFormFieldType,
                 valueType: typeof fld.value_type === "string" ? fld.value_type : undefined,
@@ -474,6 +485,9 @@ export async function getTrainingFormConfigActive(): Promise<TrainingFormConfig 
             fields: Array.isArray(sec.fields) ? (sec.fields as Array<Record<string, unknown>>).map((fld, fIdx) => ({
               id: typeof fld.id === "string" ? fld.id : `fld-${fIdx}`,
               key: getTrainingFieldKey(fld as Record<string, unknown>, fIdx),
+              apiKey: typeof fld.key === "string" ? fld.key : typeof fld.stable_key === "string" ? fld.stable_key : undefined,
+              stable_key: typeof fld.stable_key === "string" ? fld.stable_key : typeof fld.stableKey === "string" ? fld.stableKey as string : null,
+              source: fld.source === "custom" ? "custom" : fld.source === "core" ? "core" : undefined,
               label: typeof fld.label === "string" && fld.label ? fld.label : typeof (fld as Record<string, unknown>).title === "string" && (fld as Record<string, unknown>).title ? (fld as Record<string, unknown>).title as string : `Field ${fIdx + 1}`,
               type: (typeof (fld as Record<string, unknown>).renderer === "string" ? (fld as Record<string, unknown>).renderer : typeof fld.type === "string" ? fld.type : "text") as TrainingFormFieldType,
               valueType: typeof (fld as Record<string, unknown>).value_type === "string" ? (fld as Record<string, unknown>).value_type as string : undefined,
@@ -483,7 +497,8 @@ export async function getTrainingFormConfigActive(): Promise<TrainingFormConfig 
               helpText: typeof (fld as Record<string, unknown>).help_text === "string" ? (fld as Record<string, unknown>).help_text as string : typeof (fld as Record<string, unknown>).helpText === "string" ? (fld as Record<string, unknown>).helpText as string : null,
               options: Array.isArray(fld.options) ? (fld.options as Array<Record<string, unknown>>).map(o => typeof o.label === "string" ? o.label : typeof o.value === "string" ? o.value : String(o.value ?? "")) : undefined,
               configuredOptions: mapConfiguredTrainingOptions(fld.options),
-              validation: (fld as Record<string, unknown>).validation as TrainingFormField["validation"],
+              validation: mapTrainingFieldValidation(fld.validation),
+              frontendSettings: parseFrontendSettings(fld as Record<string, unknown>),
               order: typeof (fld as Record<string, unknown>).position === "number" ? (fld as Record<string, unknown>).position as number : typeof (fld as Record<string, unknown>).order === "number" ? (fld as Record<string, unknown>).order as number : fIdx,
             })) : [],
           };
@@ -535,6 +550,9 @@ export async function getTrainingFormConfigActive(): Promise<TrainingFormConfig 
               fields: Array.isArray(sec.fields) ? (sec.fields as Array<Record<string, unknown>>).map((fld, fIdx) => ({
                 id: typeof fld.id === "string" ? fld.id : `fld-${fIdx}`,
                 key: getTrainingFieldKey(fld as Record<string, unknown>, fIdx),
+                apiKey: typeof fld.key === "string" ? fld.key : typeof fld.stable_key === "string" ? fld.stable_key : undefined,
+                stable_key: typeof fld.stable_key === "string" ? fld.stable_key : typeof fld.stableKey === "string" ? fld.stableKey as string : null,
+                source: fld.source === "custom" ? "custom" : fld.source === "core" ? "core" : undefined,
                 label: typeof fld.label === "string" ? fld.label : `Field ${fIdx + 1}`,
                 type: (typeof fld.renderer === "string" ? fld.renderer : typeof fld.type === "string" ? fld.type : "text") as TrainingFormFieldType,
                 valueType: typeof fld.value_type === "string" ? fld.value_type : undefined,

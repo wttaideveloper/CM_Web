@@ -10,6 +10,7 @@ import TrainingActionsMenu from "./TrainingActionsMenu";
 import { humanizeLabel } from "./detail-formatters";
 import { PRODUCT_TRAINING_STATUSES, getTrainingStatusBadgeClass, getTrainingStatusLabel } from "./training-status";
 import { getTrainingProviderDashboard, listTrainings, searchTrainings, getTrainingsReportSummary, type TrainingListItem } from "./trainings.service";
+import { getTrainingMediaPreviewUrl } from "./training-media-url";
 
 type SortOption = "newest" | "oldest" | "az" | "status";
 const statusFilters = ["all", ...PRODUCT_TRAINING_STATUSES] as const;
@@ -149,7 +150,7 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
   }, [isNearViewport, needsEnrolmentCount]);
 
   const providerDashboardQuery = useQuery({
-    queryKey: ["training", training.id, "provider-dashboard"],
+    queryKey: ["trainings", training.id, "dashboard", "provider"],
     queryFn: () => getTrainingProviderDashboard(training.id),
     enabled: needsEnrolmentCount && isNearViewport,
     staleTime: 30_000,
@@ -158,13 +159,13 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
   const registrationCount = typeof training.enrolled_count === "number" && Number.isFinite(training.enrolled_count)
     ? training.enrolled_count
     : providerDashboardQuery.data?.total_enrolments;
-  const primaryImage = typeof training.primary_image === "string" ? training.primary_image.trim() : "";
+  const primaryImage = getTrainingMediaPreviewUrl(training.primary_image);
   const tags = [...new Set((training.tags ?? [])
     .filter((tag): tag is string => typeof tag === "string")
     .map((tag) => tag.trim())
     .filter(Boolean))];
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
-  const hasPrimaryImage = primaryImage.length > 0 && failedImageUrl !== primaryImage;
+  const hasPrimaryImage = Boolean(primaryImage) && failedImageUrl !== primaryImage;
   useEffect(() => {
     if (!primaryImage) {
       setFailedImageUrl(null);
@@ -196,17 +197,8 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
             <p className={`text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>{training.category || "—"}</p>
             <h3 className={`mt-2 text-lg font-bold ${primaryTextClass}`}>{training.title}</h3>
           </div>
-          <div className={hasPrimaryImage ? "flex shrink-0 items-center gap-2" : "flex shrink-0 flex-col items-end gap-2"}>
+          <div className="flex shrink-0 items-center gap-2">
             <span className={`rounded-full px-3 py-1 text-[11px] font-bold shadow-sm ${getTrainingStatusBadgeClass(training.status)}`}>{getTrainingStatusLabel(training.status)}</span>
-            {training.status === "needs_revision" || training.status === "rejected" ? (
-              <Link
-                href={`/admin/trainings/${training.id}`}
-                className={`rounded-full px-3 py-1 text-[11px] font-bold underline underline-offset-2 ${hasPrimaryImage ? "bg-white text-[#8a5a00]" : "bg-[#fff6e8] text-[#8a5a00]"}`}
-                aria-label={`Review Super Admin feedback for ${training.title}`}
-              >
-                Review feedback
-              </Link>
-            ) : null}
             <div className={hasPrimaryImage ? "rounded-full bg-white/90 shadow-sm" : undefined}>
               <TrainingActionsMenu training={training} onStatusSuccess={onStatusSuccess} onDuplicateSuccess={onDuplicateSuccess} onDeleteSuccess={onDeleteSuccess} />
             </div>
@@ -226,9 +218,9 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
           </div>
         ) : null}
         {training.status === "needs_revision" || training.status === "rejected" ? (
-          <p className={`mt-2 text-xs font-semibold ${hasPrimaryImage ? "text-white" : "text-[#8a5a00]"}`}>
-            Super Admin feedback is available on the Training details page.
-          </p>
+          <Link href={`/admin/trainings/${training.id}`} className={`mt-2 inline-block text-xs font-semibold underline underline-offset-2 ${hasPrimaryImage ? "text-white" : "text-[#8a5a00]"}`}>
+            Review Super Admin feedback
+          </Link>
         ) : null}
 
         <div className={`mt-auto grid grid-cols-1 gap-x-6 gap-y-4 border-t pt-3 text-sm sm:grid-cols-2 xl:grid-cols-4 ${dividerClass}`}>
@@ -292,9 +284,18 @@ export default function EnterpriseTrainingsScreen() {
   const trainingsQuery = useQuery({
     queryKey: ["trainings", "list", tenantId, enterpriseId, debouncedQuery, statusFilter, levelFilter, languageFilter, page, TRAININGS_PAGE_SIZE],
     queryFn: () =>
-      debouncedQuery
-        ? searchTrainings({ query: debouncedQuery, level: levelFilter === "all" ? undefined : levelFilter, language: languageFilter === "all" ? undefined : languageFilter, page, page_size: TRAININGS_PAGE_SIZE })
+      debouncedQuery && statusFilter === "all"
+        ? searchTrainings({
+            query: debouncedQuery,
+            tenant_id: tenantId ?? undefined,
+            enterprise_id: enterpriseId ?? undefined,
+            level: levelFilter === "all" ? undefined : levelFilter,
+            language: languageFilter === "all" ? undefined : languageFilter,
+            page,
+            page_size: TRAININGS_PAGE_SIZE,
+          })
         : listTrainings({
+            search: debouncedQuery || undefined,
             tenant_id: tenantId ?? undefined,
             enterprise_id: enterpriseId ?? undefined,
             status: statusFilter === "all" ? undefined : statusFilter,

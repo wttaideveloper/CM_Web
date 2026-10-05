@@ -36,15 +36,12 @@ export function createSeededFields(registry: readonly CoreFieldRegistryItem[], s
     { key: "enrolment_end", section: "section-schedule", renderer: "datetime", label: "Enrolment End" },
     { key: "time_zone", section: "section-schedule", placeholder: "Asia/Kolkata", label: "Time Zone" },
     { key: "duration", section: "section-schedule", placeholder: "e.g. 4 weeks", label: "Duration" },
-    { key: "access_duration_days", section: "section-schedule", placeholder: "e.g. 90", label: "Access duration (days)" },
     // 3. Location & Host — mirrors TrainingDeliverySection:54 (hybrid/physical/online)
     { key: "delivery_mode", section: "section-location", renderer: "select", options: TRAINING_DELIVERY_MODE_OPTIONS.map((option) => option.value), label: "Delivery Mode" },
     { key: "venue", section: "section-location", placeholder: "e.g. Main Hall", label: "Venue" },
     { key: "meeting_link", section: "section-location", placeholder: "https://...", renderer: "url", label: "Meeting link" },
-    { key: "instructor_id", section: "section-location", label: "Instructor" },
     { key: "instructor_name", section: "section-location", placeholder: "Display name", label: "Instructor name" },
     { key: "instructor_bio", section: "section-location", renderer: "textarea", placeholder: "Short bio", label: "Instructor bio" },
-    { key: "instructor_photo", section: "section-location", placeholder: "https://…", renderer: "url", label: "Instructor photo" },
     { key: "instructor_credentials", section: "section-location", placeholder: "e.g. MBBS, RYT-500 · 10y experience", renderer: "textarea", label: "Instructor credentials" },
     { key: "level", section: "section-location", renderer: "select", options: ["beginner", "intermediate", "advanced", "all"], label: "Level" },
     { key: "language", section: "section-location", renderer: "select", options: ["en", "hi", "es", "fr"], label: "Language" },
@@ -56,8 +53,6 @@ export function createSeededFields(registry: readonly CoreFieldRegistryItem[], s
     // 5. Capacity & Registration — mirrors TrainingCapacitySection:158
     { key: "capacity", section: "section-capacity", label: "Capacity" },
     { key: "requires_approval", section: "section-capacity", renderer: "checkbox", label: "Requires approval" },
-    { key: "access_expiry_type", section: "section-capacity", renderer: "select", options: ["never", "date", "days", "enrolment_day"], label: "Access expiry" },
-    { key: "access_expiry_days", section: "section-capacity", placeholder: "e.g. 90", label: "Expiry days" },
     // 6. Images & Media — mirrors TrainingMediaSection:178
     { key: "primary_image", section: "section-media", renderer: "url", placeholder: "https://…", label: "Primary Image" },
     // 7. Additional Configuration — mirrors TrainingCourseBuilderSection:192

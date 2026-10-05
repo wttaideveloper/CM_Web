@@ -49,6 +49,10 @@ export function usePendingTrainingApprovalCount() {
   return useQuery({
     queryKey: trainingApprovalListQueryKey("pending_approval", 1, ""),
     queryFn: () => getTrainingApprovalList("pending_approval", 1, ""),
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
   });

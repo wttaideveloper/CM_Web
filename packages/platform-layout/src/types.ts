@@ -41,6 +41,8 @@ export type PlatformAdminLayoutProps = {
     eventCount: number | null;
     trainingCount: number | null;
     approvalQueueHref: string;
+    enterpriseRequestCount?: number | null;
+    tenantApplicationsHref?: string;
   };
   messagesHref?: string | null;
   profileHref?: string;

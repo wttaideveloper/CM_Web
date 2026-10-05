@@ -11,7 +11,7 @@ import { toBuilderTrainingFormConfiguration, toTrainingFormConfigurationCreateCa
 import { getConfigurationActions } from "../model/configuration-actions";
 import { createMockConfiguration } from "../model/form-configuration.mock";
 import type { FormConfiguration } from "../model/form-configuration.types";
-import { TrainingFormConfigurationsApiError } from "../services/training-form-configurations.service";
+import { getTrainingFormConfiguration, getTrainingFormConfigurationAssignments, TrainingFormConfigurationsApiError } from "../services/training-form-configurations.service";
 
 /** Hosts persisted Training configuration editing while keeping the route adapter thin. */
 export function TrainingFormConfigurationEditorScreen({ id, mode }: { id?: string; mode: "create" | "view" | "edit" }) {
@@ -52,24 +52,46 @@ export function TrainingFormConfigurationEditorScreen({ id, mode }: { id?: strin
   const error = registry.error ?? configuration.error;
   const errorCopy = error instanceof TrainingFormConfigurationsApiError && (error.status === 401 || error.status === 403) ? copy.forbidden : copy.loadError;
 
+  const updateConfigurationDraft = async (builder: FormConfiguration): Promise<FormConfiguration> => {
+    if (!id) throw new Error("Configuration ID is unavailable.");
+    let updated = toBuilderTrainingFormConfiguration(await update.mutateAsync({ configurationId: id, payload: toTrainingFormConfigurationPatchCandidate(builder) }));
+    if (builder.scope === "global") {
+      const persistedConfiguration = await getTrainingFormConfiguration(id);
+      if (persistedConfiguration.scope !== "global") {
+        throw new Error("The Training configuration API did not persist Global scope. Tenant assignments are not sent for Global configurations; the API must save scope: global through the configuration update.");
+      }
+      updated = toBuilderTrainingFormConfiguration(persistedConfiguration);
+    } else {
+      const persistedConfiguration = await getTrainingFormConfiguration(id);
+      if (persistedConfiguration.scope !== "selective") {
+        throw new Error("The Training configuration API did not persist Selected tenants scope. Tenant assignments were not sent; save the configuration scope before retrying assignments.");
+      }
+      const savedTenantIds = await persistAssignments(builder.tenantIds);
+      if (!sameAssignmentIds(savedTenantIds, builder.tenantIds)) throw new Error("The server did not retain all selected tenant assignments. Retry Save Draft.");
+      const verifiedConfiguration = await getTrainingFormConfiguration(id);
+      if (verifiedConfiguration.scope !== "selective") throw new Error("The selected tenant scope was not saved. Retry Save Draft.");
+      updated = toBuilderTrainingFormConfiguration(verifiedConfiguration);
+    }
+    return {
+      ...updated,
+      scope: builder.scope,
+      tenantIds: builder.scope === "global" ? [] : [...builder.tenantIds],
+      enterpriseIds: builder.scope === "global" ? [] : [...(builder.enterpriseIds ?? [])],
+    };
+  };
+
   const save = async (builder: FormConfiguration): Promise<FormConfiguration> => {
     if (assignmentRecovery) throw new Error("Tenant assignments could not be saved. Open the saved configuration to recover.");
-    if (!isCreate) {
-      if (!id) throw new Error("Configuration ID is unavailable.");
-      const updated = toBuilderTrainingFormConfiguration(await update.mutateAsync({ configurationId: id, payload: toTrainingFormConfigurationPatchCandidate(builder) }));
-      if (builder.scope === "global") {
-        try {
-          await saveAssignments.mutateAsync({ configurationId: id, payload: { tenant_ids: [], is_global: true } });
-        } catch (reason) {
-          throw new Error(`Configuration saved, but stale assignments could not be cleared: ${reason instanceof Error ? reason.message : "Unable to clear assignments."}`);
-        }
-      }
-      return updated;
-    }
+    if (!isCreate) return updateConfigurationDraft(builder);
     const saved = await create.mutateAsync(toTrainingFormConfigurationCreateCandidate(builder));
     if (builder.scope === "selective" && builder.tenantIds.length > 0) {
       try {
         await saveAssignments.mutateAsync({ configurationId: saved.id, payload: { tenant_ids: builder.tenantIds } });
+        const persistedAssignments = await getTrainingFormConfigurationAssignments(saved.id);
+        const persistedTenantIds = persistedAssignments.map((assignment) => assignment.tenant_id);
+        if (!sameAssignmentIds(persistedTenantIds, builder.tenantIds)) {
+          throw new Error("The server did not retain all selected tenant assignments.");
+        }
       } catch (reason) {
         const message = reason instanceof Error ? reason.message : "Unable to save tenant assignments.";
         setAssignmentRecovery({ id: saved.id, message });
@@ -81,14 +103,19 @@ export function TrainingFormConfigurationEditorScreen({ id, mode }: { id?: strin
   };
   const publishConfiguration = async (builder: FormConfiguration): Promise<FormConfiguration> => {
     if (!id) throw new Error("Save this configuration before publishing it.");
-    await update.mutateAsync({ configurationId: id, payload: toTrainingFormConfigurationPatchCandidate(builder) });
+    const updated = await updateConfigurationDraft(builder);
     const published = await publish.mutateAsync(id);
-    return toBuilderTrainingFormConfiguration(published.configuration, published.version ?? undefined);
+    return { ...updated, status: published.configuration.status, active: published.configuration.is_active, version: published.version.version };
   };
   const persistAssignments = async (tenantIds: string[]): Promise<readonly string[]> => {
     if (!id) throw new Error("Save this configuration before assigning tenants.");
-    const saved = await saveAssignments.mutateAsync({ configurationId: id, payload: { tenant_ids: tenantIds } });
-    return saved.map((assignment) => assignment.tenant_id);
+    await saveAssignments.mutateAsync({ configurationId: id, payload: { tenant_ids: tenantIds } });
+    const saved = await getTrainingFormConfigurationAssignments(id);
+    const savedTenantIds = saved.map((assignment) => assignment.tenant_id);
+    if (!sameAssignmentIds(savedTenantIds, tenantIds)) {
+      throw new Error("The Training configuration assignment update completed, but the selected tenants were not returned by the server. Check the tenant selection and retry.");
+    }
+    return savedTenantIds;
   };
   const runLifecycle = async (action: "activate" | "deactivate" | "retire" | "delete") => {
     if (!id) return;
@@ -121,6 +148,10 @@ export function TrainingFormConfigurationEditorScreen({ id, mode }: { id?: strin
       {apiConfiguration ? <TrainingConfigurationHistoryPanels configuration={apiConfiguration} /> : null}
     </Page>
   );
+}
+
+function sameAssignmentIds(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((tenantId) => right.includes(tenantId));
 }
 
 function Page({ children }: { children: React.ReactNode }) { return <div className="mx-auto w-full max-w-[1180px]"><div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><h1 className="text-3xl font-bold text-[#06201c]">{copy.title}</h1><Link href="/training-form-configurations" className="inline-flex w-fit items-center rounded-full border border-[#cfe0d8] px-4 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#eef6f2] focus:outline-none focus:ring-2 focus:ring-[#1f6a58] focus:ring-offset-2">← Back to Training Form Configurations</Link></div>{children}</div>; }

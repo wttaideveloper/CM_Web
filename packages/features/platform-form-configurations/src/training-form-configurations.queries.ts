@@ -44,11 +44,11 @@ export function useTrainingFormConfigurationVersions(configurationId: string | u
 /** Reads one immutable configuration version. */
 export function useTrainingFormConfigurationVersion(configurationId: string | undefined, versionId: string | undefined) { return useQuery({ queryKey: trainingFormConfigurationKeys.version(configurationId ?? "", versionId ?? ""), queryFn: () => getTrainingFormConfigurationVersion(configurationId ?? "", versionId ?? ""), enabled: Boolean(configurationId && versionId), retry: 1 }); }
 /** Reads tenant assignments for one configuration. */
-export function useTrainingFormConfigurationAssignments(configurationId: string | undefined) { return useQuery({ queryKey: trainingFormConfigurationKeys.assignments(configurationId ?? ""), queryFn: () => getTrainingFormConfigurationAssignments(configurationId ?? ""), enabled: Boolean(configurationId), retry: 1 }); }
+export function useTrainingFormConfigurationAssignments(configurationId: string | undefined, enabled = true) { return useQuery({ queryKey: trainingFormConfigurationKeys.assignments(configurationId ?? ""), queryFn: () => getTrainingFormConfigurationAssignments(configurationId ?? ""), enabled: Boolean(configurationId) && enabled, retry: 1 }); }
 /** Reads audit history for one configuration. */
 export function useTrainingFormConfigurationAudit(configurationId: string | undefined, isEnabled = true) { return useQuery({ queryKey: trainingFormConfigurationKeys.audit(configurationId ?? ""), queryFn: () => getTrainingFormConfigurationAudit(configurationId ?? ""), enabled: Boolean(configurationId) && isEnabled, retry: 1 }); }
 /** Reads canonical Enterprise-module tenant UUIDs through the authenticated Platform BFF — same source as Event Form Configuration. */
-export function useTrainingFormConfigurationTenantOptions() {
+export function useTrainingFormConfigurationTenantOptions(enabled = true) {
   return useQuery({
     queryKey: trainingFormConfigurationKeys.assignableTenants(),
     queryFn: async (): Promise<AssignmentTenantOption[]> => {
@@ -65,6 +65,7 @@ export function useTrainingFormConfigurationTenantOptions() {
         .filter((tenant) => linkedTenantIds.has(tenant.id))
         .map((tenant) => ({ id: tenant.id, name: tenant.name, slug: tenant.slug }));
     },
+    enabled,
     retry: 1,
     staleTime: 60_000,
   });

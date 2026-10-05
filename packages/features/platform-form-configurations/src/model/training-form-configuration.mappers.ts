@@ -21,13 +21,29 @@ const HIDDEN_TRAINING_FIELD_KEYS = new Set([
   "randomize",
   "is_mandatory",
   "access_information",
+  "access_days",
+  "access_duration",
+  "access_duration_days",
+  "access_expiry",
+  "access_expiry_type",
+  "access_expiry_days",
+  "expiry_days",
   "course_type",
   "course_types",
   "badge",
   "badges",
   "milestone_badges",
+  "instructor",
+  "instructor_id",
+  "instructor_photo",
   "prerequisite",
   "prerequisites",
+  "course_prerequisites",
+  "gallery_image",
+  "gallery_images",
+  "document",
+  "documents",
+  "promotional_video",
 ]);
 const HIDDEN_TRAINING_FIELD_LABELS = new Set([
   "group enrolment",
@@ -40,18 +56,34 @@ const HIDDEN_TRAINING_FIELD_LABELS = new Set([
   "is mandatory",
   "mandatory lessons",
   "access information",
+  "access days",
+  "access duration",
+  "access duration days",
+  "access duration (days)",
+  "access expiry",
+  "access expiry type",
+  "access expiry days",
+  "expiry days",
   "course type",
   "course types",
   "badge",
   "badges",
   "milestone badge",
   "milestone badges",
+  "instructor",
+  "instructor photo",
   "prerequisite",
   "prerequisites",
+  "course prerequisites",
+  "gallery image",
+  "gallery images",
+  "document",
+  "documents",
+  "promotional video",
 ]);
 const isHiddenTrainingField = (field: { stable_key?: string | null; core_key?: string | null; label?: string | null }) => {
-  const keys = [field.stable_key, field.core_key].map((key) => key?.replace(/^(core_|custom_)/, "") ?? "");
-  const label = field.label?.trim().toLowerCase() ?? "";
+  const keys = [field.stable_key, field.core_key].map((key) => key?.replace(/^(core_|custom_)/, "").trim().toLowerCase().replace(/[\s-]+/g, "_") ?? "");
+  const label = field.label?.trim().toLowerCase().replace(/[\s-]+/g, " ").replace(/\s*\(\s*/g, " (").replace(/\s*\)\s*/g, ")") ?? "";
   return keys.some((key) => HIDDEN_TRAINING_FIELD_KEYS.has(key)) || HIDDEN_TRAINING_FIELD_LABELS.has(label);
 };
 const mapTrainingSections = (configuration: FormConfiguration, includeServerIds: boolean): TrainingFormSectionCandidate[] => {

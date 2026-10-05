@@ -8,12 +8,13 @@ const platformEnglish = {
     integrations: "Integrations",
   },
   approvalNotifications: {
-    title: "Pending approvals",
+    title: "Pending approvals and Enterprise requests",
     events: "Events",
     trainings: "Trainings",
+    enterpriseRequests: "Enterprise requests",
     pendingCount: "{{count}} pending",
     countUnavailable: "Unavailable",
-    noPending: "No pending Event or Training approvals.",
+    noPending: "No pending approvals or Enterprise requests.",
   },
   superAdmins: {
     title: "Super Admins",

@@ -37,6 +37,10 @@ function isOptionalString(value: unknown): value is string | null | undefined {
   return value === undefined || value === null || typeof value === "string";
 }
 
+function isOptionalStringOrNumber(value: unknown): value is string | number | null | undefined {
+  return value === undefined || value === null || typeof value === "string" || typeof value === "number";
+}
+
 function isOptionalArray(value: unknown): value is unknown[] | null | undefined {
   return value === undefined || value === null || Array.isArray(value);
 }
@@ -63,8 +67,8 @@ export function isTrainingApprovalReview(value: unknown): value is TrainingAppro
     isOptionalString(value.instructor_id) &&
     isOptionalString(value.delivery_mode) &&
     isOptionalString(value.course_type) &&
-    isOptionalString(value.capacity) &&
-    isOptionalString(value.price) &&
+    isOptionalStringOrNumber(value.capacity) &&
+    isOptionalStringOrNumber(value.price) &&
     isOptionalString(value.currency) &&
     isOptionalBoolean(value.is_deleted) &&
     isOptionalString(value.created_at) &&

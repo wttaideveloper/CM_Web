@@ -51,20 +51,30 @@ function isPublishedVersion(value: unknown): value is TrainingFormConfigurationV
 function isLifecycleResponse(value: unknown): value is TrainingFormConfigurationLifecycleResponse { return isRecord(value) && isString(value.id) && isStatus(value.status) && typeof value.is_active === "boolean"; }
 function isCreatedConfiguration(value: unknown): value is TrainingFormConfigurationCreateResponse { return isConfiguration(value) && isVersion(value.draft_version); }
 function isRegistryEntry(value: unknown): value is TrainingCoreFieldRegistryEntry { if (!isRecord(value) || !isString(value.key) || !isString(value.display_name) || !isString(value.value_type) || !Array.isArray(value.allowed_renderers) || !value.allowed_renderers.every(isString) || !isString(value.default_renderer) || typeof value.required_by_domain !== "boolean" || typeof value.removable !== "boolean" || typeof value.hideable !== "boolean" || !(value.options === undefined || value.options === null || Array.isArray(value.options) && value.options.every(isOption)) || !isNullableString(value.value_source) || !isNullableString(value.source_endpoint) || !isNullableString(value.depends_on) || !isRecord(value.configurable)) return false; const configurable = value.configurable; return ["label", "section", "position", "required", "renderer", "placeholder", "help_text", "validation"].every((key) => typeof configurable[key] === "boolean"); }
-function isAssignment(value: unknown): value is TrainingFormAssignment {
-  if (!isRecord(value)) return false;
-  const idOk = isString(value.id) || typeof value.id === "number" || isString((value as Record<string, unknown>).assignment_id);
-  const tenantOk = isString(value.tenant_id) || isString((value as Record<string, unknown>).tenantId) || isString((value as Record<string, unknown>).tenant);
-  // configuration_id may be omitted for global assignments — accept missing
-  return idOk && tenantOk;
+function assignmentTenantId(value: unknown): string | null {
+  if (!isRecord(value)) return null;
+  for (const candidate of [value.tenant_id, value.tenantId, value.tenant]) {
+    if (isString(candidate) && candidate.trim()) return candidate.trim();
+    if (isRecord(candidate)) {
+      for (const nested of [candidate.id, candidate.tenant_id, candidate.tenantId, candidate.slug]) {
+        if (isString(nested) && nested.trim()) return nested.trim();
+      }
+    }
+  }
+  return null;
+}
+function isAssignment(value: unknown): value is Record<string, unknown> {
+  return isRecord(value) && assignmentTenantId(value) !== null;
 }
 function normalizeAssignment(raw: Record<string, unknown>, fallbackConfigurationId: string): TrainingFormAssignment {
-  const id = isString(raw.id) ? raw.id : typeof raw.id === "number" ? String(raw.id) : isString(raw.assignment_id) ? String(raw.assignment_id) : `${fallbackConfigurationId}:${isString(raw.tenant_id) ? raw.tenant_id : isString(raw.tenantId) ? String(raw.tenantId) : String(raw.tenant ?? "unknown")}`;
-  const configuration_id = isString(raw.configuration_id) ? raw.configuration_id : isString((raw as Record<string, unknown>).configurationId) ? String((raw as Record<string, unknown>).configurationId) : fallbackConfigurationId;
-  const tenant_id = isString(raw.tenant_id) ? raw.tenant_id : isString((raw as Record<string, unknown>).tenantId) ? String((raw as Record<string, unknown>).tenantId) : isString((raw as Record<string, unknown>).tenant) ? String((raw as Record<string, unknown>).tenant) : "";
-  const enterprise_id = isString(raw.enterprise_id) ? raw.enterprise_id : isString((raw as Record<string, unknown>).enterpriseId) ? String((raw as Record<string, unknown>).enterpriseId) : null;
-  const created_at = isString(raw.created_at) ? raw.created_at : isString((raw as Record<string, unknown>).createdAt) ? String((raw as Record<string, unknown>).createdAt) : null;
-  const updated_at = isString(raw.updated_at) ? raw.updated_at : isString((raw as Record<string, unknown>).updatedAt) ? String((raw as Record<string, unknown>).updatedAt) : null;
+  const tenant_id = assignmentTenantId(raw);
+  if (!tenant_id) throw new TrainingFormConfigurationsApiError(null, "Training Form Configurations returned an assignment without a tenant identifier.");
+  const id = isString(raw.id) ? raw.id : typeof raw.id === "number" ? String(raw.id) : isString(raw.assignment_id) ? raw.assignment_id : `${fallbackConfigurationId}:${tenant_id}`;
+  const configuration_id = isString(raw.configuration_id) ? raw.configuration_id : isString(raw.configurationId) ? raw.configurationId : fallbackConfigurationId;
+  const enterpriseCandidate = raw.enterprise_id ?? raw.enterpriseId ?? (isRecord(raw.enterprise) ? raw.enterprise.id : undefined);
+  const enterprise_id = isString(enterpriseCandidate) ? enterpriseCandidate : null;
+  const created_at = isString(raw.created_at) ? raw.created_at : isString(raw.createdAt) ? raw.createdAt : null;
+  const updated_at = isString(raw.updated_at) ? raw.updated_at : isString(raw.updatedAt) ? raw.updatedAt : null;
   return { id, configuration_id, tenant_id, enterprise_id, created_at, updated_at };
 }
 function collectionEntries(value: unknown, keys: readonly string[]): unknown[] | null { if (Array.isArray(value)) return value; if (!isRecord(value)) return null; for (const key of keys) if (Array.isArray(value[key])) return value[key] as unknown[]; return null; }
@@ -236,28 +246,20 @@ export async function getTrainingFormConfigurationAssignments(configurationId: s
   }
   if (value === undefined) return [];
   const entries = assignmentEntries(value);
-  // Lenient: backend may return {assignments: []} or {data: []} or [] or {configuration_id, assignments}; invalid shape → empty (global)
+  // Backend may return {assignments: []}, {data: []}, [] or {configuration_id, assignments}.
   if (!entries) {
     if (isAssignment(value)) return [normalizeAssignment(value as unknown as Record<string, unknown>, configurationId)];
-    return [];
+    throw new TrainingFormConfigurationsApiError(null, "Training Form Configurations returned an invalid assignments response.");
   }
-  const filtered = entries.filter(isAssignment);
-  const toNormalize = filtered.length ? filtered : entries;
-  return (toNormalize as unknown as Record<string, unknown>[]).map((raw) => normalizeAssignment(raw, configurationId));
+  if (!entries.every(isAssignment)) {
+    throw new TrainingFormConfigurationsApiError(null, "Training Form Configurations returned invalid assignment entries.");
+  }
+  return entries.map((raw) => normalizeAssignment(raw, configurationId));
 }
 function isUuid(value: string): boolean { return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value); }
 
-/** Replaces assignments for one Training form configuration. Backend contract first:
- * `{is_global: true}` (or `{enterprise_ids: []}`) makes the config global; non-empty
- * `enterprise_ids` makes it selective. Falls back to the legacy tenant_ids/tenant_slugs flow. */
+/** Replaces assignments for one Selected tenants Training form configuration. */
 export async function updateTrainingFormConfigurationAssignments(configurationId: string, payload: UpdateTrainingFormConfigurationAssignmentsRequest): Promise<TrainingFormAssignment[]> {
-  if (payload.is_global === true) {
-    const value = await requestJson(configurationPath(configurationId, "/assignments"), jsonRequest("PUT", { is_global: true }));
-    if (value === undefined) return [];
-    const entries = assignmentEntries(value);
-    if (!entries) return [];
-    return entries.map((raw) => normalizeAssignment(raw as unknown as Record<string, unknown>, configurationId));
-  }
   if (payload.enterprise_ids !== undefined) {
     const value = await requestJson(configurationPath(configurationId, "/assignments"), jsonRequest("PUT", { enterprise_ids: payload.enterprise_ids }));
     if (value === undefined) return [];
@@ -265,7 +267,7 @@ export async function updateTrainingFormConfigurationAssignments(configurationId
     if (!entries) return [];
     return entries.map((raw) => normalizeAssignment(raw as unknown as Record<string, unknown>, configurationId));
   }
-  const tenantIds = (payload as unknown as Record<string, unknown>).tenant_ids as string[] ?? [];
+  const tenantIds = payload.tenant_ids ?? [];
   const uuids = tenantIds.filter(isUuid);
   const slugs = tenantIds.filter((id) => !isUuid(id));
   const tryRequest = async (body: Record<string, unknown>): Promise<TrainingFormAssignment[]> => {

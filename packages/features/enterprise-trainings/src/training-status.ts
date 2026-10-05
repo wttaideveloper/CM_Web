@@ -175,13 +175,13 @@ export function getTrainingStatusActions(status: TrainingStatus): readonly Train
   if (status === "archived") return [restoreTrainingAction];
   if (status === "suspended") return [publishTrainingAction, cancelTrainingAction];
   if (status === "cancelled") return [];
-  if (status === "rejected" || status === "needs_revision") return [submitForApprovalAction, cancelTrainingAction];
+  if (status === "needs_revision") return [submitForApprovalAction, cancelTrainingAction];
   return [];
 }
 
 /** Returns whether the current product workflow permits Enterprise Admin editing. */
 export function canEditTraining(status: TrainingStatus): boolean {
-  return status === "draft" || status === "rejected" || status === "needs_revision" || status === "unpublished";
+  return status === "draft" || status === "needs_revision" || status === "unpublished";
 }
 
 /** Returns whether the current Enterprise Admin policy permits destructive deletion. */

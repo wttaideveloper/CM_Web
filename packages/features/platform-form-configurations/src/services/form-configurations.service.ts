@@ -27,7 +27,7 @@ function isConfiguration(value: unknown): value is EventFormConfiguration { retu
 function isLifecycleResponse(value: unknown): value is EventFormConfigurationLifecycleResponse { return isRecord(value) && isString(value.id) && isStatus(value.status) && typeof value.is_active === "boolean"; }
 function isCreatedConfiguration(value: unknown): value is EventFormConfigurationCreateResponse { return isConfiguration(value) && isVersion(value.draft_version); }
 function isRegistryEntry(value: unknown): value is EventCoreFieldRegistryEntry { if (!isRecord(value) || !isString(value.key) || !isString(value.display_name) || !isString(value.value_type) || !Array.isArray(value.allowed_renderers) || !value.allowed_renderers.every(isString) || !isString(value.default_renderer) || typeof value.required_by_domain !== "boolean" || typeof value.removable !== "boolean" || typeof value.hideable !== "boolean" || !(value.options === null || Array.isArray(value.options) && value.options.every(isOption)) || !isNullableString(value.value_source) || !isNullableString(value.source_endpoint) || !isNullableString(value.depends_on) || !isRecord(value.configurable)) return false; const configurable = value.configurable; return ["label", "section", "position", "required", "renderer", "placeholder", "help_text", "validation"].every((key) => typeof configurable[key] === "boolean"); }
-function isAssignment(value: unknown): value is EventFormAssignment { return isRecord(value) && isString(value.tenant_id) && isString(value.enterprise_id); }
+function isAssignment(value: unknown): value is EventFormAssignment { return isRecord(value) && isString(value.tenant_id) && isNullableString(value.enterprise_id); }
 function isAssignmentsResponse(value: unknown): value is EventFormAssignmentsResponse { return isRecord(value) && isString(value.configuration_id) && Array.isArray(value.assignments) && value.assignments.every(isAssignment); }
 function isPublishResponse(value: unknown): value is EventFormPublishResponse { return isRecord(value) && isString(value.configuration_id) && isString(value.version_id) && Number.isInteger(value.version) && value.status === "published" && isString(value.published_at); }
 function collectionEntries(value: unknown, keys: readonly string[]): unknown[] | null { if (Array.isArray(value)) return value; if (!isRecord(value)) return null; for (const key of keys) if (Array.isArray(value[key])) return value[key] as unknown[]; return null; }
@@ -98,15 +98,28 @@ export async function deactivateEventFormConfiguration(configurationId: string):
 /** Retires one published Event form configuration through the Events lifecycle endpoint. */
 export async function retireEventFormConfiguration(configurationId: string): Promise<EventFormConfiguration | EventFormConfigurationLifecycleResponse> { return expect(await requestJson(configurationPath(configurationId, "/retire"), jsonRequest("POST")), (value) => isConfiguration(value) || isLifecycleResponse(value), "retired configuration"); }
 /** Retrieves persisted tenant assignments for one Event form configuration. */
-export async function getEventFormConfigurationAssignments(configurationId: string): Promise<EventFormAssignmentsResponse> { return expect(await requestJson(configurationPath(configurationId, "/assignments")), isAssignmentsResponse, "assignments"); }
+export async function getEventFormConfigurationAssignments(configurationId: string): Promise<EventFormAssignmentsResponse> {
+  try {
+    const value = await requestJson(configurationPath(configurationId, "/assignments"));
+    return value === undefined ? { configuration_id: configurationId, assignments: [] } : expect(value, isAssignmentsResponse, "assignments");
+  } catch (error) {
+    if (error instanceof FormConfigurationsApiError && (error.status === 404 || error.status === 204)) {
+      return { configuration_id: configurationId, assignments: [] };
+    }
+    throw error;
+  }
+}
 function isUuidEvent(value: string): boolean { return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value); }
 
-/** Replaces tenant assignments for one Event form configuration — tenant_ids + tenant_slugs fallback. */
-export async function updateEventFormConfigurationAssignments(configurationId: string, payload: UpdateEventFormConfigurationAssignmentsRequest): Promise<EventFormAssignmentsResponse> {
-  const tenantIds = (payload as unknown as Record<string, unknown>).tenant_ids as string[] ?? [];
+/** Replaces assignments for a Selected tenants Event configuration. */
+export async function updateEventFormConfigurationAssignments(configurationId: string, payload: UpdateEventFormConfigurationAssignmentsRequest): Promise<EventFormAssignmentsResponse | undefined> {
+  const tryRequest = async (body: Record<string, unknown>): Promise<EventFormAssignmentsResponse | undefined> => {
+    const value = await requestJson(configurationPath(configurationId, "/assignments"), jsonRequest("PUT", body as unknown as UpdateEventFormConfigurationAssignmentsRequest));
+    return value === undefined ? undefined : expect(value, isAssignmentsResponse, "updated assignments");
+  };
+  const tenantIds = payload.tenant_ids ?? [];
   const uuids = tenantIds.filter(isUuidEvent);
   const slugs = tenantIds.filter((id) => !isUuidEvent(id));
-  const tryRequest = async (body: Record<string, unknown>): Promise<EventFormAssignmentsResponse> => expect(await requestJson(configurationPath(configurationId, "/assignments"), jsonRequest("PUT", body as unknown as UpdateEventFormConfigurationAssignmentsRequest)), isAssignmentsResponse, "updated assignments");
   if (uuids.length > 0 || slugs.length === 0) {
     try { return await tryRequest({ tenant_ids: tenantIds } as unknown as Record<string, unknown>); } catch (error) {
       if (slugs.length > 0 && error instanceof FormConfigurationsApiError && error.status === 500) return tryRequest({ tenant_slugs: slugs, tenant_ids: uuids } as unknown as Record<string, unknown>);
