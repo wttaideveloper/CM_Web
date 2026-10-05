@@ -22,7 +22,7 @@ const TRAINING_DELIVERY_COMPOSITES: Readonly<Record<TrainingDeliveryCompositeKey
     { key: "address", valueKey: "address", label: "Address", type: "textarea", requiredByDomain: true },
   ],
   meeting_link: [
-    { key: "meeting_link", valueKey: "meeting_link", label: "Meeting URL", type: "url", requiredByDomain: true },
+    { key: "meeting_link", valueKey: "meeting_link", label: "Meeting URL", type: "url" },
     { key: "meeting_provider", valueKey: "meeting_provider", label: "Meeting provider", type: "select" },
     { key: "delivery_instructions", valueKey: "delivery_instructions", label: "Delivery instructions", type: "textarea" },
   ],

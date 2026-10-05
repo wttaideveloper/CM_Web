@@ -81,6 +81,12 @@ const CORE_FIELDS: Record<string, keyof CreateTrainingFormValues> = {
   badges: "badges",
 };
 
+function isLearningObjectivesField(field: TrainingFormField): boolean {
+  return [field.key, field.apiKey ?? "", field.stable_key ?? "", field.label]
+    .some((value) => ["learning_objectives", "learning_objective", "objectives", "objective"]
+      .includes(value.trim().replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")));
+}
+
 const DELIVERY_FIELDS_REMOVED_FROM_TRAINING = ["check_in", "pass_code", "qr_payload"];
 
 function OptionalTrainingMediaField({
@@ -195,7 +201,7 @@ function getTrainingSectionTip(title: string): string | null {
   const normalized = title.trim().toLowerCase();
   if (normalized.includes("basic")) return "Use a specific, benefit-driven title and explain who the training is for and what learners will achieve.";
   if (normalized.includes("schedule")) return "Set the enrolment window carefully: closing enrolment hides the enrolment action from learners.";
-  if (normalized.includes("location") || normalized.includes("delivery")) return "Physical needs a venue, Live needs a meeting link, and Hybrid needs both.";
+  if (normalized.includes("location") || normalized.includes("delivery")) return "Add meeting details for Live delivery. Hybrid can include both meeting and venue details.";
   if (normalized.includes("pricing")) return "Choose Free or Paid first. Paid trainings can include a promo price and coupon code.";
   if (normalized.includes("capacity") || normalized.includes("registration")) return "Require approval for selective cohorts and set access expiry when learners should lose access automatically.";
   if (normalized.includes("media") || normalized.includes("image")) return "Use a clear 16:9 primary image; adding a few gallery images helps learners understand the experience.";
@@ -262,11 +268,6 @@ export default function ConfiguredCreateTrainingSection({
           </select>
         </label>
       ) : null}
-      {values.delivery_mode === "online" ? (
-        <div className="rounded-xl border border-[#d6e9fd] bg-[#f2f9ff] px-4 py-3 text-sm text-[#1a5c91]">
-          <p className="font-bold text-[#0b3d66]">Online mode only needs the meeting link — Google Meet or Zoom.</p>
-        </div>
-      ) : null}
       <div className="grid min-w-0 gap-4 md:grid-cols-[repeat(2,minmax(0,1fr))]">
         {fields.map((field) => (
           <div key={field.id} className="min-w-0 break-words" data-training-field={field.key}>
@@ -321,7 +322,11 @@ function ConfiguredField({
   const key = field.key;
   const required = field.required ? " *" : "";
   const error = errors[key]?.[0] ?? (field.apiKey ? errors[field.apiKey]?.[0] : undefined) ?? (field.stable_key ? errors[field.stable_key]?.[0] : undefined);
-  const coreField = field.source === "custom" ? undefined : CORE_FIELDS[key] ?? (field.apiKey ? CORE_FIELDS[field.apiKey] : undefined) ?? (field.stable_key ? CORE_FIELDS[field.stable_key] : undefined);
+  const coreField = isLearningObjectivesField(field)
+    ? "learning_objectives"
+    : field.source === "custom"
+      ? undefined
+      : CORE_FIELDS[key] ?? (field.apiKey ? CORE_FIELDS[field.apiKey] : undefined) ?? (field.stable_key ? CORE_FIELDS[field.stable_key] : undefined);
   const inputType = trainingInputType(field, key);
   const deliveryMode = values.delivery_mode;
   if (!isPricingFieldApplicable(field, values.pricing_type)) return null;

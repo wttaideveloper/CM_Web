@@ -2039,7 +2039,7 @@ export interface LessonQrCheckInResponse {
   marked_by?: LessonAttendanceMarkedBy | null;
   marked_at?: string | null;
   result: "marked" | "already_attended";
-  message: string;
+  message?: string;
 }
 
 function isValidateTrainingQrResponse(value: unknown): value is ValidateTrainingQrResponse {
@@ -2146,7 +2146,7 @@ function isLessonQrCheckInResponse(value: unknown): value is LessonQrCheckInResp
     (value.marked_by === undefined || value.marked_by === null || isLessonAttendanceMarkedBy(value.marked_by)) &&
     (value.marked_at === undefined || value.marked_at === null || typeof value.marked_at === "string") &&
     (value.result === "marked" || value.result === "already_attended") &&
-    typeof value.message === "string";
+    (value.message === undefined || typeof value.message === "string");
 }
 
 /** Validates a backend-issued enrolment QR code without changing attendance state. */

@@ -111,7 +111,7 @@ export function TrainingBasicsSection({
 export function TrainingDeliverySection({ values, update, errors }: SectionProps) {
   return (
     <section className="space-y-5">
-      <SectionHeading title="Delivery & Instructor" description="Hybrid builds community — online scales it. Pick the format your learners prefer." tip="Physical needs a venue, Online needs a meeting link, Hybrid needs both. Learners filter by this." />
+      <SectionHeading title="Delivery & Instructor" description="Hybrid builds community — online scales it. Pick the format your learners prefer." tip="Add meeting details for Online delivery. Hybrid can include both meeting and venue details." />
       <div>
         <label className={labelClass}>Delivery mode<select value={values.delivery_mode} onChange={(event) => update("delivery_mode", event.target.value)} className={inputClass}><option value="online">Live</option><option value="physical">Venue</option><option value="hybrid">Hybrid</option><option value="self_paced">Self-paced</option></select></label>
       </div>
@@ -176,10 +176,6 @@ export function TrainingScheduleSection({ values, update, errors }: SectionProps
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Start date<input id="training-field-start_date" type="datetime-local" value={values.start_date} onChange={(event) => update("start_date", event.target.value)} className={inputClass} /><FieldError error={errors.start_date} /></label>
         <label className={labelClass}>End date<input id="training-field-end_date" type="datetime-local" value={values.end_date} onChange={(event) => update("end_date", event.target.value)} className={inputClass} /><FieldError error={errors.end_date} /></label>
-      </div>
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className={labelClass}>Start time<input id="training-field-start_time" type="time" value={values.start_time} max={values.end_time || undefined} onChange={(event) => update("start_time", event.target.value)} className={inputClass} /><FieldError error={errors.start_time} /></label>
-        <label className={labelClass}>End time<input id="training-field-end_time" type="time" value={values.end_time} min={values.start_time || undefined} onChange={(event) => update("end_time", event.target.value)} className={inputClass} /><FieldError error={errors.end_time} /></label>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <label className={labelClass}>Enrolment opens<input id="training-field-enrolment_start" type="datetime-local" value={values.enrolment_start} onChange={(event) => update("enrolment_start", event.target.value)} className={inputClass} /><FieldError error={errors.enrolment_start} /></label>

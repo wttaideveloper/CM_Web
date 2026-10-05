@@ -14,7 +14,12 @@ export interface TrainingLessonAttendanceSession {
   lessons: TrainingLessonAttendanceItem[];
 }
 
-/** Extracts sessions and lessons of every type from Training Sessions & Lessons. */
+/** Returns whether a lesson type supports venue attendance check-in. */
+export function isTrainingVenueLessonType(type: string): boolean {
+  return type.trim().toLowerCase() === "venue";
+}
+
+/** Extracts only venue lessons for the attendance workspace, preserving source order. */
 export function getTrainingLessonAttendanceSessions(sections: unknown[]): TrainingLessonAttendanceSession[] {
   const items: TrainingLessonAttendanceSession[] = [];
   sections.forEach((value, sessionIndex) => {
@@ -27,10 +32,12 @@ export function getTrainingLessonAttendanceSessions(sections: unknown[]): Traini
       if (!lesson) return [];
       const id = getString(lesson, "id");
       if (!id) return [];
+      const type = getString(lesson, "type") ?? "";
+      if (!isTrainingVenueLessonType(type)) return [];
       return [{
         id,
         title: getString(lesson, "title") ?? "Untitled lesson",
-        type: getString(lesson, "type") ?? "Lesson",
+        type,
         number: lessonIndex + 1,
       }];
     });

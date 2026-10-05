@@ -33,7 +33,7 @@ type EnterpriseAdminLayoutProps = {
   totalUnreadCount?: number;
   onNotificationRead?: (id: string) => Promise<void>;
   onMarkAllNotificationsRead?: () => Promise<void>;
-  workflowNotifications?: { items: readonly { id: string; title: string; message: string; notification_type: string; is_read: boolean; metadata: Record<string, unknown>; created_at?: string | null }[]; unreadCount: number; onRead: (id: string) => void; onMarkAllRead: () => void };
+  workflowNotifications?: { items: readonly { id: string; title: string; message: string; notification_type: string; category?: string; is_read: boolean; metadata: Record<string, unknown>; created_at?: string | null }[]; unreadCount: number; onRead: (id: string) => Promise<unknown> | void; onMarkAllRead: () => Promise<unknown> | void };
 };
 
 type OpenMenu = "notifications" | "settings" | "profile" | null;
@@ -144,6 +144,7 @@ export function EnterpriseAdminLayout({
   const headerRef = useRef<HTMLElement | null>(null);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
+  const [notificationActionFailed, setNotificationActionFailed] = useState(false);
 
   useEffect(() => {
     document.body.style.overflow = mobileSidebarOpen ? "hidden" : "";
@@ -172,6 +173,8 @@ export function EnterpriseAdminLayout({
     const mappedWorkflow = workflowNotifications.items.map((item) => ({
       id: item.id,
       notification_type: item.notification_type,
+      category: item.category,
+      metadata: item.metadata,
       title: item.title,
       body: item.message,
       is_read: item.is_read,
@@ -185,6 +188,47 @@ export function EnterpriseAdminLayout({
   const displayUnreadCount = workflowNotifications
     ? displayNotifications.filter((item) => !item.is_read).length
     : totalUnreadCount;
+
+  const handleNotificationClick = async (item: (typeof displayNotifications)[number]) => {
+    setNotificationActionFailed(false);
+    try {
+      if (workflowNotifications?.items.some((notification) => notification.id === item.id)) {
+        await workflowNotifications.onRead(item.id);
+      } else {
+        await onNotificationRead?.(item.id);
+      }
+    } catch {
+      setNotificationActionFailed(true);
+      return;
+    }
+
+    const target = resolveNotificationTarget(item, "enterprise");
+    if (target) window.location.assign(target);
+  };
+
+  const handleMarkAllNotificationsRead = async () => {
+    setNotificationActionFailed(false);
+    try {
+      if (workflowNotifications) {
+        const workflowNotificationIds = new Set(
+          workflowNotifications.items.map((notification) => notification.id),
+        );
+        const hasRealtimeOnlyNotifications = notifications.some(
+          (notification) => !workflowNotificationIds.has(notification.id),
+        );
+        await Promise.all([
+          workflowNotifications.onMarkAllRead(),
+          ...(hasRealtimeOnlyNotifications && onMarkAllNotificationsRead
+            ? [onMarkAllNotificationsRead()]
+            : []),
+        ]);
+      } else {
+        await onMarkAllNotificationsRead?.();
+      }
+    } catch {
+      setNotificationActionFailed(true);
+    }
+  };
 
   const sidebarContent = (onNavigate?: () => void) => (
     <nav className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 pb-6">
@@ -211,12 +255,20 @@ export function EnterpriseAdminLayout({
     <AppFrame
       sidebar={<SidebarFrame desktopContent={sidebarContent()} mobileHeader={<><p className="text-sm font-bold text-[#06201c]">Menu</p><button type="button" onClick={() => setMobileSidebarOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f4faf7]" aria-label="Close sidebar"><svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg></button></>} mobileContent={sidebarContent(() => setMobileSidebarOpen(false))} mobileOpen={mobileSidebarOpen} onMobileSidebarClose={() => setMobileSidebarOpen(false)} />}
       header={<HeaderFrame headerRef={headerRef} left={<><button type="button" onClick={() => setMobileSidebarOpen((current) => !current)} className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4] lg:hidden" aria-label="Open menu"><svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg></button><Brand /></>} right={<>
-        {notificationsHref ? <div className="relative"><button type="button" onClick={() => setOpenMenu((current) => current === "notifications" ? null : "notifications")} className="relative flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4]" aria-label="Notifications" title="Notifications" aria-expanded={openMenu === "notifications"}><BellIcon />{displayUnreadCount > 0 ? <span className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-[#b42318] px-1 text-[10px] font-bold text-white">{displayUnreadCount > 99 ? "99+" : displayUnreadCount}</span> : null}</button><div className={`absolute right-0 top-[calc(100%+10px)] w-80 origin-top-right rounded-2xl border border-[#e1ebe6] bg-white shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 ${openMenu === "notifications" ? "pointer-events-auto scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"}`}><div className="flex items-center justify-between border-b border-[#edf3f0] px-4 py-3"><span className="text-sm font-bold text-[#06201c]">Notifications</span>{displayUnreadCount > 0 ? <button type="button" onClick={() => { if (workflowNotifications) workflowNotifications.onMarkAllRead(); void onMarkAllNotificationsRead?.(); }} className="text-xs font-bold text-[#1f6a58]">Mark all read</button> : null}</div><div className="max-h-96 overflow-y-auto">{displayNotifications.length === 0 ? <p className="px-4 py-6 text-sm text-[#52736a]">No new notifications</p> : displayNotifications.slice(0, 8).map((item) => { const { trainingTitle, learnerSummary } = formatTrainingNotificationDetails(item); const reason = notificationReason(item); return <button key={item.id} type="button" onClick={() => { if (workflowNotifications) workflowNotifications.onRead(item.id); void onNotificationRead?.(item.id); const target = resolveNotificationTarget(item, "enterprise"); if (target) window.location.assign(target); }} className={`flex w-full gap-3 border-b border-[#edf3f0] px-4 py-3 text-left hover:bg-[#f4faf7] ${item.is_read ? "bg-[#fbfdfc]" : "bg-white"}`}><span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${item.is_read ? "bg-[#d0dbd7]" : "bg-[#1f6a58]"}`} /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold text-[#06201c]">{item.title || "Notification"}</span><span className="mt-1 block text-xs text-[#52736a]">{item.body}</span>{trainingTitle ? <span className="mt-1 block truncate text-[11px] font-semibold text-[#1f6a58]">Training: {trainingTitle}</span> : null}{learnerSummary ? <span className="mt-0.5 block truncate text-[11px] text-[#52736a]">Enrolled learner: {learnerSummary}</span> : null}{reason ? <span className="mt-0.5 block text-[11px] text-[#8a5a00]">Reason: {reason}</span> : null}<span className="mt-1 block text-[11px] font-semibold text-[#7f9d94]">{item.created_at ? formatRelativeBackendTimestamp(item.created_at) : ""}</span></span></button>; })}</div><Link href={notificationsHref} onClick={closeMenu} className="block border-t border-[#edf3f0] px-4 py-3 text-center text-xs font-bold text-[#1f6a58]">View all notifications</Link></div></div> : null}
+        {notificationsHref ? <div className="relative"><button type="button" onClick={() => setOpenMenu((current) => current === "notifications" ? null : "notifications")} className="relative flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4]" aria-label="Notifications" title="Notifications" aria-expanded={openMenu === "notifications"}><BellIcon />{displayUnreadCount > 0 ? <span className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-[#b42318] px-1 text-[10px] font-bold text-white">{displayUnreadCount > 99 ? "99+" : displayUnreadCount}</span> : null}</button><div className={`absolute right-0 top-[calc(100%+10px)] w-80 origin-top-right rounded-2xl border border-[#e1ebe6] bg-white shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 ${openMenu === "notifications" ? "pointer-events-auto scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"}`}><div className="flex items-center justify-between border-b border-[#edf3f0] px-4 py-3"><span className="text-sm font-bold text-[#06201c]">Notifications</span>{displayUnreadCount > 0 ? <button type="button" onClick={() => { void handleMarkAllNotificationsRead(); }} className="text-xs font-bold text-[#1f6a58]">Mark all read</button> : null}</div><div className="max-h-96 overflow-y-auto">{displayNotifications.length === 0 ? <p className="px-4 py-6 text-sm text-[#52736a]">No new notifications</p> : displayNotifications.slice(0, 8).map((item) => { const { trainingTitle } = formatTrainingNotificationDetails(item); const reason = notificationReason(item); return <button key={item.id} type="button" onClick={() => { void handleNotificationClick(item); }} className={`flex w-full gap-3 border-b border-[#edf3f0] px-4 py-3 text-left hover:bg-[#f4faf7] ${item.is_read ? "bg-[#fbfdfc]" : "bg-white"}`}><span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${item.is_read ? "bg-[#d0dbd7]" : "bg-[#1f6a58]"}`} /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold text-[#06201c]">{item.title || "Notification"}</span><span className="mt-1 block text-xs text-[#52736a]">{item.body}</span>{trainingTitle ? <span className="mt-1 block truncate text-[11px] font-semibold text-[#1f6a58]">Training: {trainingTitle}</span> : null}{reason ? <span className="mt-0.5 block text-[11px] text-[#8a5a00]">Reason: {reason}</span> : null}<span className="mt-1 block text-[11px] font-semibold text-[#7f9d94]">{item.created_at ? formatRelativeBackendTimestamp(item.created_at) : ""}</span></span></button>; })}</div><Link href={notificationsHref} onClick={closeMenu} className="block border-t border-[#edf3f0] px-4 py-3 text-center text-xs font-bold text-[#1f6a58]">View all notifications</Link></div></div> : null}
         {messagesHref ? <Link href={messagesHref} className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4]" aria-label="Messages" title="Messages"><MessageIcon /></Link> : null}
         <div className="relative"><button type="button" onClick={() => setOpenMenu((current) => current === "settings" ? null : "settings")} className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4]" aria-label="Settings" aria-expanded={openMenu === "settings"}><HeaderSettingsIcon /></button><div className={`absolute right-0 top-[calc(100%+10px)] w-64 origin-top-right rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 ${openMenu === "settings" ? "pointer-events-auto scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"}`}>{["Account Settings", "Platform Preferences", "Billing Settings", "Integrations"].map((label) => <button key={label} type="button" onClick={closeMenu} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]"><span>{label}</span><ChevronRightIcon /></button>)}</div></div>
         <div className="relative"><button type="button" onClick={() => setOpenMenu((current) => current === "profile" ? null : "profile")} className="flex h-9 w-9 items-center justify-center rounded-full bg-[#e8f6ee] font-bold text-[#1f6a58] hover:bg-[#def0e7]" aria-label="Profile" aria-expanded={openMenu === "profile"}>{getInitials(user?.fullName, user?.email)}</button><div className={`absolute right-0 top-[calc(100%+10px)] w-60 origin-top-right rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 ${openMenu === "profile" ? "pointer-events-auto scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"}`}><Link href={profileHref} onClick={closeMenu} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]"><span>View Profile</span><ChevronRightIcon /></Link><Link href="/admin/enterprise" onClick={closeMenu} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]"><span>My Enterprise</span><ChevronRightIcon /></Link><button type="button" onClick={closeMenu} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]"><span>Help Center</span><ChevronRightIcon /></button><button type="button" onClick={() => { closeMenu(); void onLogout(); }} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]"><span>Logout</span><ChevronRightIcon /></button></div></div>
       </>} />}
     >
+      {notificationActionFailed ? (
+        <p
+          role="alert"
+          className="border-b border-[#f3d5d1] bg-[#fff7f6] px-6 py-3 text-sm font-medium text-[#8f3b2f]"
+        >
+          Unable to update notification status. Please try again.
+        </p>
+      ) : null}
       {children}
     </AppFrame>
   );

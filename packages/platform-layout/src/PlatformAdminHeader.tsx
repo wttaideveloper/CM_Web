@@ -170,7 +170,7 @@ export function PlatformAdminHeader({
                         </div>
                       ) : null}
                       {workflowNotifications.items.length > 0 ? (
-                        <div className="mt-1 space-y-1">{workflowNotifications.items.slice(0, 5).map((item) => <Link key={item.id} href={item.notification_type === "event_submitted" ? "/approval-queue" : item.notification_type === "training_submitted" ? "/approval-queue?type=trainings" : notificationsHref} onClick={() => { workflowNotifications.onRead(item.id); closeMenu(); }} className={`block rounded-xl px-3 py-2 text-sm hover:bg-[#eef7f2] ${item.is_read ? "" : "bg-[#f7fbf9]"}`}><span className="block font-semibold">{item.title}</span><span className="block truncate text-xs text-[#52736a]">{item.message}</span></Link>)}</div>
+                        <div className="mt-1 space-y-1">{workflowNotifications.items.slice(0, 5).map((item) => <Link key={item.id} href={item.target ?? notificationsHref} onClick={() => { workflowNotifications.onRead(item.id); closeMenu(); }} className={`block rounded-xl px-3 py-2 text-sm hover:bg-[#eef7f2] ${item.is_read ? "" : "bg-[#f7fbf9]"}`}><span className="block font-semibold">{item.title}</span><span className="block truncate text-xs text-[#52736a]">{item.message}</span></Link>)}</div>
                       ) : null}
                       <div className="mt-1 flex items-center justify-between pt-1"><button type="button" onClick={workflowNotifications.onMarkAllRead} className="px-2 text-xs font-semibold text-[#1f6a58]">Mark all read</button><Link href={notificationsHref} onClick={closeMenu} className="px-2 text-xs font-semibold text-[#1f6a58]">View all</Link></div>
                     </div>

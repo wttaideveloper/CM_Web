@@ -20,7 +20,7 @@ import { getRequiredTrainingDeliverySubfields, getRequiredTrainingDeliveryValueK
 const steps = ["Basic Information", "Schedule", "Location & Host", "Pricing & Tickets", "Capacity & Registration", "Images & Media", "Additional Configuration"] as const;
 const stepFields: ReadonlyArray<readonly string[]> = [
   ["title", "description", "category", "subcategory", "tags", "instructor_id", "requirements"],
-  ["start_date", "end_date", "start_time", "end_time", "enrolment_start", "enrolment_end", "time_zone", "duration", "schedule_exceptions"],
+  ["start_date", "end_date", "enrolment_start", "enrolment_end", "time_zone", "duration", "schedule_exceptions"],
   ["location_id", "delivery_mode"],
   ["price", "currency", "promo_price", "coupon_code"],
   ["capacity", "requires_approval", "access_duration_days", "access_expiry_type", "access_expiry_days"],
@@ -46,7 +46,15 @@ function trainingFieldId(key: string): string {
 }
 
 function getTrainingFieldAliases(field: TrainingFormField): string[] {
-  return [...new Set([field.key, field.apiKey ?? "", field.stable_key ?? "", ...getTrainingDeliveryCompositeValueKeys(field)])];
+  const aliases = [field.key, field.apiKey ?? "", field.stable_key ?? "", ...getTrainingDeliveryCompositeValueKeys(field)];
+  const isLearningObjectives = [...aliases, field.label].some((value) => ["learning_objectives", "learning_objective", "objectives", "objective"].includes(normalizeTrainingFieldKey(value)));
+  return [...new Set(isLearningObjectives ? [...aliases, "learning_objectives"] : aliases)];
+}
+
+function isTrainingScheduleTimeField(field: TrainingFormField): boolean {
+  return getTrainingFieldIdentityAliases(field)
+    .map(normalizeTrainingFieldKey)
+    .some((key) => key === "start_time" || key === "end_time");
 }
 
 function getTrainingFieldIdentityAliases(field: TrainingFormField): string[] {
@@ -99,7 +107,10 @@ function validateConfiguredSection(
       || !isConfiguredTrainingFieldApplicable(field, values.delivery_mode, values.pricing_type)
       || !isTrainingFormFieldVisible(field, allFields, values, customValues)) continue;
     const aliases = getTrainingFieldAliases(field);
-    const valueKey = field.source === "custom" ? undefined : aliases.find((candidate) => candidate in values);
+    const isLearningObjectives = aliases.some((value) => normalizeTrainingFieldKey(value) === "learning_objectives");
+    const valueKey = field.source === "custom" && !isLearningObjectives
+      ? undefined
+      : aliases.find((candidate) => candidate in values);
     const key = (valueKey ?? field.key) as keyof CreateTrainingFormValues;
     const value = valueKey
       ? values[key]
@@ -202,6 +213,10 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   const activeFormQ = useActiveTrainingFormConfiguration(mode === "create");
   const historicalFormQ = useTrainingHistoricalFormConfiguration(initialTraining?.id, mode === "edit" && Boolean(initialTraining));
   const activeForm = (mode === "create" ? activeFormQ.data : historicalFormQ.data) ?? null;
+  const trainingFormSections = useMemo(() => activeForm?.sections.map((section) => ({
+    ...section,
+    fields: section.fields.filter((field) => !isTrainingScheduleTimeField(field)),
+  })).filter((section) => section.fields.length > 0) ?? [], [activeForm]);
   const formConfigLoading = mode === "create" ? activeFormQ.isLoading : historicalFormQ.isLoading;
   const formConfigError = mode === "create" ? activeFormQ.error : historicalFormQ.error;
   const trainingCategoriesQuery = useTrainingCategories(!formConfigLoading);
@@ -439,12 +454,12 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
       }
     }
     if (!activeForm) return validationErrors;
-    const configuredKeys = new Set(activeForm.sections.flatMap((section) => section.fields.filter((field) => !isTrainingAccessInformationField(field)).flatMap(getTrainingFieldAliases)));
+    const configuredKeys = new Set(trainingFormSections.flatMap((section) => section.fields.filter((field) => !isTrainingAccessInformationField(field)).flatMap(getTrainingFieldAliases)));
     const businessRuleKeys = new Set(["delivery_mode", "meeting_link", "venue", "address", "price", "currency"]);
     for (const key of Object.keys(validationErrors)) {
       if (!configuredKeys.has(key) && !businessRuleKeys.has(key)) delete validationErrors[key];
     }
-    for (const section of activeForm.sections) {
+    for (const section of trainingFormSections) {
       for (const field of section.fields) {
         if (isTrainingAccessInformationField(field)) continue;
         if (!isConfiguredTrainingFieldApplicable(field, values.delivery_mode, values.pricing_type)
@@ -453,12 +468,12 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
         }
       }
     }
-    const configuredErrors = activeForm.sections
+    const configuredErrors = trainingFormSections
       .flatMap((section) => Object.entries(validateConfiguredSection(section, values, customValues, allFields)))
       .reduce<Record<string, string[]>>((result, [key, messages]) => ({ ...result, [key]: messages }), {});
     Object.assign(validationErrors, configuredErrors);
     return validationErrors;
-  }, [activeForm, customValues, mode, trainingCategories, trainingCategoriesQuery.data, values]);
+  }, [activeForm, customValues, mode, trainingCategories, trainingCategoriesQuery.data, trainingFormSections, values]);
   const isDirty = JSON.stringify(values) !== JSON.stringify(initialValues);
   const getSectionFieldKeys = (index: number): string[] => activeForm
     ? configuredSections[index]?.fields.flatMap(getTrainingFieldAliases) ?? []
@@ -514,7 +529,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
     saveMutation.mutate();
   };
 
-  const configuredSections = activeForm ? activeForm.sections
+  const configuredSections = activeForm ? trainingFormSections
     .map((section) => ({ ...section, fields: section.fields.filter((field) => field.enabled !== false) }))
     .filter((section) => section.fields.length > 0)
     .sort((left, right) => left.order - right.order) : [];

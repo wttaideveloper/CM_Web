@@ -26,6 +26,28 @@ export function formatDetailDateTime(value: string | null | undefined): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(parsed);
 }
 
+/** Finds the timestamp from supported moderation-history response field names. */
+export function getTrainingModerationTimestamp(record: Record<string, unknown>): string | null {
+  const timestampFields = [
+    "created_at",
+    "performed_at",
+    "timestamp",
+    "createdAt",
+    "performedAt",
+    "reviewed_at",
+    "changed_at",
+  ];
+
+  for (const field of timestampFields) {
+    const value = record[field];
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
 /** Returns the date-only portion of a datetime. */
 export function formatDetailDate(value: string | null | undefined): string {
   const formatted = formatDetailDateTime(value);

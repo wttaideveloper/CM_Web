@@ -48,6 +48,8 @@ export function toNotificationRecord(candidate: NotificationItem | RealtimeNotif
   return {
     id: candidate.id,
     notification_type: candidate.notification_type,
+    category: candidate.category,
+    metadata: candidate.metadata,
     title: candidate.title,
     body: candidate.body,
     data: candidate.data,
@@ -91,7 +93,11 @@ export function readNotificationId(payload: unknown): string | null {
       ? payload.notification
       : null;
 
-  return readString(payload.id) ?? (notificationRecord ? readString(notificationRecord.id) : null);
+  return (
+    readString(payload.id) ??
+    readString(payload.notification_id) ??
+    (notificationRecord ? readString(notificationRecord.id) ?? readString(notificationRecord.notification_id) : null)
+  );
 }
 
 export function readNotificationData(payload: unknown): Record<string, unknown> {

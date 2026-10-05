@@ -22,5 +22,10 @@ export function usePlatformWorkflowNotifications() {
 
 /** Resolves a workflow notification to the Platform screen that handles it. */
 export function workflowNotificationTarget(item: WorkflowNotification): string | null {
-  return resolveNotificationTarget({ notification_type: item.notification_type, data: item.metadata }, "platform");
+  return resolveNotificationTarget({
+    notification_type: item.notification_type,
+    category: item.category,
+    metadata: item.metadata,
+    data: item.metadata,
+  }, "platform");
 }

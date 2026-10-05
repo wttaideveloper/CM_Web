@@ -13,7 +13,7 @@ import { usePathname } from "next/navigation";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import PlatformBuilderAuthGate from "@/components/PlatformBuilderAuthGate";
 import { getProfileDisplayName, getProfileInitials, getSuperAdminProfile, superAdminProfileQueryKey } from "@/lib/super-admin-profile";
-import { usePlatformWorkflowNotifications } from "@/components/PlatformWorkflowNotifications";
+import { usePlatformWorkflowNotifications, workflowNotificationTarget } from "@/components/PlatformWorkflowNotifications";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -167,7 +167,10 @@ function PlatformAdminShellContent({ children }: { children: ReactNode }) {
       }}
       workflowNotifications={{
         unreadCount: workflowNotifications.unreadCount,
-        items: workflowNotifications.items,
+        items: workflowNotifications.items.map((item) => ({
+          ...item,
+          target: workflowNotificationTarget(item),
+        })),
         onRead: (id) => { void workflowNotifications.markRead(id); },
         onMarkAllRead: () => { void workflowNotifications.markAllRead(); },
       }}

@@ -80,12 +80,25 @@ function formatTrainingAvailability(training: TrainingListItem, registrationCoun
   return "—";
 }
 
+function summarizeTrainingLocation(value: string | null | undefined): string {
+  const location = value?.trim().replace(/\s+/g, " ");
+  if (!location) return "";
+  if (location.length <= 38) return location;
+  const addressParts = location.split(",").map((part) => part.trim()).filter(Boolean);
+  if (addressParts.length > 1) {
+    const summary = addressParts.slice(-2).join(", ");
+    if (summary.length <= 38) return summary;
+  }
+  return `${location.slice(0, 35).trimEnd()}…`;
+}
+
 function formatTrainingLocation(training: TrainingListItem): string {
   const mode = training.delivery_mode?.trim().toLowerCase();
-  const venue = [training.venue, training.address].filter((value): value is string => Boolean(value?.trim())).join(", ");
+  const venue = summarizeTrainingLocation(training.venue) || summarizeTrainingLocation(training.address);
   if (mode === "online" || mode === "self_paced") return mode === "self_paced" ? "Self-paced" : "Online";
   if (mode === "hybrid") return venue ? `Hybrid · ${venue}` : "Hybrid";
-  return venue || (training.delivery_mode ? humanizeLabel(training.delivery_mode) : "—");
+  const deliveryLabel = training.delivery_mode ? humanizeLabel(training.delivery_mode) : "In person";
+  return venue ? `${deliveryLabel} · ${venue}` : deliveryLabel;
 }
 
 function TrainingsSummaryCard({ summary, isLoading, isError }: { summary: unknown; isLoading: boolean; isError: boolean }) {
@@ -182,20 +195,19 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
   const primaryTextClass = hasPrimaryImage ? "text-white" : "text-[#06201c]";
   const secondaryTextClass = hasPrimaryImage ? "text-white/85" : "text-[#52736a]";
   const dividerClass = hasPrimaryImage ? "border-white/25" : "border-[#edf3f0]";
-  const bodyBackgroundClass = hasPrimaryImage ? "bg-[#06201c]/95" : "bg-white";
 
   return (
     <article ref={cardRef} className={`group relative flex h-full flex-col rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-200 ${hasPrimaryImage ? "hover:-translate-y-0.5 hover:border-[#4f9f76] hover:shadow-lg" : "hover:-translate-y-0.5 hover:border-[#c6ddd3] hover:shadow-md"}`}>
       {hasPrimaryImage ? (
         <div aria-hidden="true" className="absolute inset-0 overflow-hidden rounded-[inherit] bg-cover bg-center" style={{ backgroundImage: `url(${JSON.stringify(primaryImage)})` }}>
-          <div className="absolute inset-0 bg-gradient-to-br from-[#06201c]/60 via-[#0c382e]/45 to-[#1f6a58]/35" />
+          <div className="absolute inset-0 bg-gradient-to-br from-[#06201c]/80 via-[#0c382e]/70 to-[#1f6a58]/60" />
         </div>
       ) : null}
       <div className="relative z-10 flex flex-1 flex-col">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className={`text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>{training.category || "—"}</p>
-            <h3 className={`mt-2 text-lg font-bold ${primaryTextClass}`}>{training.title}</h3>
+            <h3 className={`mt-2 line-clamp-2 min-h-14 text-lg font-bold leading-7 ${primaryTextClass}`} title={training.title}>{training.title}</h3>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <span className={`rounded-full px-3 py-1 text-[11px] font-bold shadow-sm ${getTrainingStatusBadgeClass(training.status)}`}>{getTrainingStatusLabel(training.status)}</span>
@@ -211,7 +223,7 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
             <p className={`text-[10px] font-bold uppercase tracking-[0.12em] ${labelClass}`}>{t("list.tags")}</p>
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {tags.slice(0, 4).map((tag) => (
-                <span key={tag} className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${hasPrimaryImage ? "bg-white/90 text-[#1f6a58]" : "bg-[#e8f6ee] text-[#1f6a58]"}`}>{tag}</span>
+                <span key={tag} className={`max-w-full truncate rounded-full px-2.5 py-1 text-[11px] font-bold ${hasPrimaryImage ? "bg-white/90 text-[#1f6a58]" : "bg-[#e8f6ee] text-[#1f6a58]"}`} title={tag}>{tag}</span>
               ))}
               {tags.length > 4 ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${hasPrimaryImage ? "bg-white/90 text-[#52736a]" : "bg-[#f0f3f2] text-[#52736a]"}`}>{t("list.moreTags", { count: tags.length - 4 })}</span> : null}
             </div>
@@ -223,28 +235,28 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
           </Link>
         ) : null}
 
-        <div className={`mt-auto grid grid-cols-1 gap-x-6 gap-y-4 border-t pt-3 text-sm sm:grid-cols-2 xl:grid-cols-4 ${dividerClass}`}>
+        <div className={`mt-auto grid grid-cols-2 gap-x-4 gap-y-4 border-t pt-3 text-sm xl:grid-cols-4 ${dividerClass}`}>
           <div className="min-w-0">
-            <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Date</p>
-            <p className={`mt-1 min-h-10 break-words font-bold leading-5 ${primaryTextClass}`}>{formatTrainingDate(training.start_date ?? "", training.start_time)}</p>
+            <p className={`truncate text-[10px] font-bold uppercase leading-4 tracking-[0.1em] ${labelClass}`}>Date</p>
+            <p className={`mt-1 line-clamp-2 h-10 text-sm font-bold leading-5 ${primaryTextClass}`} title={formatTrainingDate(training.start_date ?? "", training.start_time)}>{formatTrainingDate(training.start_date ?? "", training.start_time)}</p>
           </div>
           <div className="min-w-0">
-            <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Location / Delivery</p>
-            <p className={`mt-1 min-h-10 break-words font-bold leading-5 ${primaryTextClass}`}>{formatTrainingLocation(training)}</p>
+            <p className={`truncate text-[10px] font-bold uppercase leading-4 tracking-[0.1em] ${labelClass}`}>Format / location</p>
+            <p className={`mt-1 line-clamp-2 h-10 text-sm font-bold leading-5 ${primaryTextClass}`} title={formatTrainingLocation(training)}>{formatTrainingLocation(training)}</p>
           </div>
           <div className="min-w-0">
-            <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Registrations</p>
-            <p className={`mt-1 min-h-10 break-words font-bold leading-5 ${primaryTextClass}`}>{typeof registrationCount === "number" ? registrationCount : "—"}</p>
+            <p className={`truncate text-[10px] font-bold uppercase leading-4 tracking-[0.1em] ${labelClass}`}>Registrations</p>
+            <p className={`mt-1 line-clamp-2 h-10 text-sm font-bold leading-5 ${primaryTextClass}`}>{typeof registrationCount === "number" ? registrationCount : "—"}</p>
           </div>
           <div className="min-w-0">
-            <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Availability</p>
-            <p className={`mt-1 min-h-10 break-words font-bold leading-5 ${primaryTextClass}`}>{formatTrainingAvailability(training, registrationCount)}</p>
+            <p className={`truncate text-[10px] font-bold uppercase leading-4 tracking-[0.1em] ${labelClass}`}>Availability</p>
+            <p className={`mt-1 line-clamp-2 h-10 text-sm font-bold leading-5 ${primaryTextClass}`} title={formatTrainingAvailability(training, registrationCount)}>{formatTrainingAvailability(training, registrationCount)}</p>
           </div>
         </div>
 
         <Link
           href={`/admin/trainings/${training.id}`}
-          className={`mt-auto flex min-h-11 items-center border-t pt-3 text-sm font-semibold outline-none transition-colors hover:underline focus-visible:rounded focus-visible:ring-2 focus-visible:ring-offset-2 ${hasPrimaryImage ? "border-white/25 text-white hover:text-white focus-visible:ring-white focus-visible:ring-offset-[#1f6a58]" : "border-[#edf3f0] text-[#1f6a58] hover:text-[#195646] focus-visible:ring-[#1f6a58]"}`}
+          className={`mt-3 flex min-h-11 items-center border-t pt-3 text-sm font-semibold outline-none transition-colors hover:underline focus-visible:rounded focus-visible:ring-2 focus-visible:ring-offset-2 ${hasPrimaryImage ? "border-white/25 text-white hover:text-white focus-visible:ring-white focus-visible:ring-offset-[#1f6a58]" : "border-[#edf3f0] text-[#1f6a58] hover:text-[#195646] focus-visible:ring-[#1f6a58]"}`}
         >
           View training details
         </Link>

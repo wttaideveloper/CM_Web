@@ -30,6 +30,8 @@ function toNotificationRecord(candidate: NotificationItem | RealtimeNotification
   return {
     id: candidate.id,
     notification_type: candidate.notification_type,
+    category: candidate.category,
+    metadata: candidate.metadata,
     title: candidate.title,
     body: candidate.body,
     data: candidate.data,
@@ -280,7 +282,7 @@ export function RealtimeProvider({
     activeConversationIdRef.current = conversationId;
   }, []);
   useEffect(() => {
-    if (!shouldConnect || !runtimeToken) {
+    if (adapter.notificationsOnly || !shouldConnect || !runtimeToken) {
       presenceOnlinePublishedRef.current = false;
       return;
     }
@@ -475,7 +477,7 @@ export function RealtimeProvider({
   const handleNotification = useCallback(
     (payload: unknown) => {
       if (process.env.NODE_ENV === "development") {
-        console.log("[Admin socket] receive notification", payload);
+        console.log("[Admin socket] receive notification");
       }
 
       const notificationId = readNotificationId(payload);
@@ -489,12 +491,12 @@ export function RealtimeProvider({
           ? payload.notification
           : null;
       const notificationType =
-        isRecord(payload) && typeof payload.type === "string"
-          ? payload.type
-          : isRecord(payload) && typeof payload.notification_type === "string"
-            ? payload.notification_type
-            : notificationRecord && typeof notificationRecord.notification_type === "string"
-              ? notificationRecord.notification_type
+        isRecord(payload) && typeof payload.notification_type === "string"
+          ? payload.notification_type
+          : notificationRecord && typeof notificationRecord.notification_type === "string"
+            ? notificationRecord.notification_type
+            : isRecord(payload) && typeof payload.type === "string" && payload.type !== "notification"
+              ? payload.type
               : "unknown";
       const title =
         isRecord(payload) && typeof payload.title === "string"
@@ -502,11 +504,27 @@ export function RealtimeProvider({
           : notificationRecord && typeof notificationRecord.title === "string"
             ? notificationRecord.title
             : "";
+      const category =
+        isRecord(payload) && typeof payload.category === "string"
+          ? payload.category
+          : notificationRecord && typeof notificationRecord.category === "string"
+            ? notificationRecord.category
+            : undefined;
+      const metadata =
+        isRecord(payload) && isRecord(payload.metadata)
+          ? payload.metadata
+          : notificationRecord && isRecord(notificationRecord.metadata)
+            ? notificationRecord.metadata
+            : undefined;
       const body =
         isRecord(payload) && typeof payload.body === "string"
           ? payload.body
+          : isRecord(payload) && typeof payload.message === "string"
+            ? payload.message
           : notificationRecord && typeof notificationRecord.body === "string"
             ? notificationRecord.body
+            : notificationRecord && typeof notificationRecord.message === "string"
+              ? notificationRecord.message
             : "";
       const createdAt =
         isRecord(payload) && typeof payload.created_at === "string"
@@ -522,6 +540,8 @@ export function RealtimeProvider({
       const incoming: RealtimeNotification = {
         id: notificationId,
         notification_type: notificationType,
+        category,
+        metadata,
         title,
         body,
         data,
@@ -763,7 +783,7 @@ export function RealtimeProvider({
 
     const intervalId = window.setInterval(() => {
       if (document.visibilityState === "visible") {
-        void refreshUnreadCounts().catch(() => undefined);
+        void Promise.all([refreshUnreadCounts(), refreshNotifications()]).catch(() => undefined);
       }
     }, 30_000);
     const refresh = () => {
@@ -936,7 +956,9 @@ export function RealtimeProvider({
     nextSocket.io.on("reconnect", handleReconnect);
     nextSocket.io.on("reconnect_error", handleReconnectError);
     nextSocket.on("notification", handleNotification);
-    nextSocket.on("conversation_updated", handleConversationUpdated);
+    if (!adapter.notificationsOnly) {
+      nextSocket.on("conversation_updated", handleConversationUpdated);
+    }
     nextSocket.connect();
     return () => {
       active = false;
@@ -962,7 +984,9 @@ export function RealtimeProvider({
       nextSocket.io.off("reconnect", handleReconnect);
       nextSocket.io.off("reconnect_error", handleReconnectError);
       nextSocket.off("notification", handleNotification);
-      nextSocket.off("conversation_updated", handleConversationUpdated);
+      if (!adapter.notificationsOnly) {
+        nextSocket.off("conversation_updated", handleConversationUpdated);
+      }
       socketRef.current = null;
       socketTokenRef.current = null;
     };

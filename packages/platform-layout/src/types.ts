@@ -54,7 +54,7 @@ export type PlatformAdminLayoutProps = {
   onLogout?: () => Promise<void> | void;
   workflowNotifications?: {
     unreadCount: number;
-    items: readonly { id: string; title: string; message: string; notification_type: string; is_read: boolean }[];
+    items: readonly { id: string; title: string; message: string; notification_type: string; is_read: boolean; target?: string | null }[];
     onRead: (id: string) => void;
     onMarkAllRead: () => void;
   };

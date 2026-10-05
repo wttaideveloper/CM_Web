@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
@@ -9,9 +9,9 @@ import ProgressSummaryCard from "./ProgressSummaryCard";
 import TrainingActionsMenu from "./TrainingActionsMenu";
 import { ParticipantDashboardCard, ProviderDashboardCard } from "./dashboard-cards";
 import { TrainingAssessmentsTab, TrainingAttendanceTab, TrainingContentTab, TrainingEnrolmentsTab, TrainingLiveTab, TrainingSectionsTab } from "./TrainingDetailsSections";
-import { displayValue, formatTrainingDate, formatTrainingPrice, humanizeLabel } from "./detail-formatters";
+import { displayValue, formatTrainingDate, formatTrainingDateTime, formatTrainingPrice, getTrainingModerationTimestamp, humanizeLabel } from "./detail-formatters";
 import { getTrainingStatusBadgeClass, getTrainingStatusLabel } from "./training-status";
-import { getTrainingAdminNotes, getTrainingById, getTrainingProgress, getTrainingSections, listTrainingEnrolments, downloadTrainingDownloads, downloadTrainingNotesPdf, getTrainingMeetingLink, getTrainingModerationHistory, publishTrainingEnterprise, getTrainingParticipantDashboard, getTrainingProviderDashboard, TrainingsApiError } from "./trainings.service";
+import { getTrainingAdminNotes, getTrainingById, getTrainingProgress, getTrainingSections, listTrainingEnrolments, downloadTrainingNotesPdf, getTrainingMeetingLink, getTrainingModerationHistory, publishTrainingEnterprise, getTrainingParticipantDashboard, getTrainingProviderDashboard, TrainingsApiError } from "./trainings.service";
 import TrainingCalendarAction from "./TrainingCalendarAction";
 import { getTrainingMediaPreviewUrl } from "./training-media-url";
 
@@ -103,7 +103,6 @@ function ParticipantToolbar({ trainingId, status, trainingMeetingLink }: { train
   const [feedback, setFeedback] = useState<string | null>(null);
   const [meetingLink, setMeetingLink] = useState<string | null>(null);
   const [moderationExpanded, setModerationExpanded] = useState(status === "needs_revision" || status === "rejected");
-  // Transient action feedback (e.g. "Training notes downloaded.") auto-dismisses so it never sticks on the page.
   useEffect(() => {
     if (!feedback) return;
     const timeoutId = window.setTimeout(() => setFeedback(null), 6000);
@@ -118,12 +117,6 @@ function ParticipantToolbar({ trainingId, status, trainingMeetingLink }: { train
     URL.revokeObjectURL(url);
     setFeedback(success);
   };
-
-  const downloadsMutation = useMutation({
-    mutationFn: () => downloadTrainingDownloads(trainingId),
-    onSuccess: (data) => fileDownload(data, `training-${trainingId}-downloads`, "Training downloads started."),
-    onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to download training content."),
-  });
 
   const notesMutation = useMutation({
     mutationFn: () => downloadTrainingNotesPdf(trainingId),
@@ -180,9 +173,6 @@ function ParticipantToolbar({ trainingId, status, trainingMeetingLink }: { train
     <div className="mt-4 rounded-2xl border border-[#e1ebe6] bg-[#f9fcfa] p-4">
       <div className="flex flex-wrap items-center gap-2">
         <TrainingCalendarAction trainingId={trainingId} />
-        <button type="button" onClick={() => downloadsMutation.mutate()} disabled={downloadsMutation.isPending} className="h-9 rounded-full border border-[#1f6a58] px-4 text-xs font-bold text-[#1f6a58] hover:bg-[#e8f6ee] disabled:opacity-60">
-          {downloadsMutation.isPending ? "..." : "Downloads"}
-        </button>
         <button type="button" onClick={() => notesMutation.mutate()} disabled={notesMutation.isPending} className="h-9 rounded-full border border-[#8a5a00] px-4 text-xs font-bold text-[#8a5a00] hover:bg-[#fffaf0] disabled:opacity-60">
           {notesMutation.isPending ? "..." : "Notes PDF"}
         </button>
@@ -226,13 +216,13 @@ function ParticipantToolbar({ trainingId, status, trainingMeetingLink }: { train
             const action = typeof record.action === "string" ? record.action : typeof record.status === "string" ? record.status : "";
             const note = [record.note, record.message, record.reason, record.comment].find((v): v is string => typeof v === "string" && v.trim().length > 0);
             const performedBy = typeof record.performed_by === "string" ? record.performed_by : null;
-            const performedAt = typeof record.created_at === "string" ? record.created_at : null;
+            const performedAt = getTrainingModerationTimestamp(record);
             return (
               <div key={index} className="rounded-xl border border-[#e1ebe6] bg-white p-3">
                 <div className="flex items-center gap-2">
                   <span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-[10px] font-bold text-[#2563eb]">{humanizeLabel(action)}</span>
                   {performedBy ? <span className="text-[10px] text-[#7f9d94]">by {performedBy}</span> : null}
-                  {performedAt ? <span className="text-[10px] text-[#7f9d94]">{formatTrainingDate(performedAt)}</span> : null}
+                  {performedAt ? <span className="text-[10px] text-[#7f9d94]">{formatTrainingDateTime(performedAt)}</span> : null}
                 </div>
                 {note ? <p className="mt-1 text-xs text-[#52736a]">{note}</p> : null}
               </div>

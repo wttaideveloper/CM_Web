@@ -49,7 +49,7 @@ function EnterpriseAdminShellContent({ children }: { children: ReactNode }) {
       totalUnreadCount={realtime.totalUnreadCount}
       onNotificationRead={realtime.markNotificationAsRead}
       onMarkAllNotificationsRead={realtime.markAllNotificationsAsRead}
-      workflowNotifications={{ items: workflow.items, unreadCount: workflow.unreadCount, onRead: (id) => { void workflow.markRead(id); }, onMarkAllRead: () => { void workflow.markAllRead(); } }}
+      workflowNotifications={{ items: workflow.items, unreadCount: workflow.unreadCount, onRead: workflow.markRead, onMarkAllRead: workflow.markAllRead }}
       user={user}
       onLogout={handleLogout}
     >

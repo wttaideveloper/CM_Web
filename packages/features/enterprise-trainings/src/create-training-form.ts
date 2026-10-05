@@ -388,7 +388,6 @@ recurring: values.recurring.trim() || null,
 /** Validates the current form values, returning per-field messages. */
 export function validateTrainingForm(values: CreateTrainingFormValues, configuredRequiredKeys?: ReadonlySet<string>): Record<string, string[]> {
   const errors: Record<string, string[]> = {};
-  const timeRe = /^([01]\d|2[0-3]):([0-5]\d)$/;
   const required = (key: string, value: string, message: string) => {
     if ((configuredRequiredKeys === undefined || configuredRequiredKeys.has(key)) && !value.trim()) errors[key] = [message];
   };
@@ -397,16 +396,10 @@ export function validateTrainingForm(values: CreateTrainingFormValues, configure
   required("category", values.category, "Category is required.");
   const isLive = values.delivery_mode === "online" || values.delivery_mode === "hybrid";
   const isVenue = values.delivery_mode === "physical" || values.delivery_mode === "hybrid";
-  if (isLive && (configuredRequiredKeys === undefined || configuredRequiredKeys.has("meeting_link")) && !values.meeting_link.trim()) errors.meeting_link = ["Meeting link is required for Live mode."];
   if (isVenue && (configuredRequiredKeys === undefined || configuredRequiredKeys.has("venue")) && !values.venue.trim()) errors.venue = ["Venue is required for Venue or Hybrid mode."];
   if (isVenue && (configuredRequiredKeys === undefined || configuredRequiredKeys.has("address")) && !values.address.trim()) errors.address = ["Address is required for Venue or Hybrid mode."];
-  if (values.start_time && !timeRe.test(values.start_time)) errors.start_time = ["Start time must be HH:MM (00:00–23:59)."];
-  if (values.end_time && !timeRe.test(values.end_time)) errors.end_time = ["End time must be HH:MM (00:00–23:59)."];
   if (values.start_date && values.end_date && values.end_date < values.start_date) {
     errors.end_date = ["End date cannot be before the start date."];
-  }
-  if (values.start_time && values.end_time && timeRe.test(values.start_time) && timeRe.test(values.end_time) && values.end_time <= values.start_time) {
-    errors.end_time = ["End time must be later than start time."];
   }
   if (values.enrolment_start && values.enrolment_end && values.enrolment_end <= values.enrolment_start) {
     errors.enrolment_end = ["Enrolment end must be after enrolment start."];

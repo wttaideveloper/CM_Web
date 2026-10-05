@@ -133,7 +133,7 @@ export default function EnterpriseNotificationHistoryScreen({ messagesRoute }: N
         ) : (
           <div className="divide-y divide-[#edf3f0]">
             {notifications.map((item) => {
-              const { trainingTitle, learnerSummary } = formatTrainingNotificationDetails(item);
+              const { trainingTitle } = formatTrainingNotificationDetails(item);
               const reason = notificationReason(item);
               return (
                 <button
@@ -158,11 +158,6 @@ export default function EnterpriseNotificationHistoryScreen({ messagesRoute }: N
                         {trainingTitle ? (
                           <span className="mt-1 block text-xs font-semibold text-[#1f6a58]">
                             Training: {trainingTitle}
-                          </span>
-                        ) : null}
-                        {learnerSummary ? (
-                          <span className="mt-0.5 block text-xs text-[#52736a]">
-                            Enrolled learner: {learnerSummary}
                           </span>
                         ) : null}
                         {reason ? <span className="mt-1 block text-xs text-[#52736a]">Reason: {reason}</span> : null}

@@ -158,7 +158,7 @@ export default function TrainingLessonAttendance({ trainingId }: TrainingLessonA
       <div>
         <h3 className="text-lg font-bold text-[#06201c]">Lesson attendance</h3>
         <p className="mt-1 text-sm text-[#52736a]">
-          Review and save attendance for each lesson, or scan an enrolment QR to mark attendance for the selected lesson.
+          Record attendance for venue lessons by scanning an enrolment QR or marking the roster manually.
         </p>
       </div>
 
@@ -171,8 +171,8 @@ export default function TrainingLessonAttendance({ trainingId }: TrainingLessonA
       ) : null}
       {!sectionsQuery.isLoading && !sectionsQuery.isError && sessions.length === 0 ? (
         <div className="mt-5 rounded-xl border border-dashed border-[#d7e5df] bg-[#f9fcfa] px-5 py-8 text-center">
-          <p className="font-bold text-[#06201c]">No sessions with lessons available</p>
-          <p className="mt-1 text-sm text-[#52736a]">Add sessions and lessons in Sessions &amp; Lessons before recording attendance.</p>
+          <p className="font-bold text-[#06201c]">No venue lessons available</p>
+          <p className="mt-1 text-sm text-[#52736a]">Attendance check-in is available for venue lessons only.</p>
         </div>
       ) : null}
 

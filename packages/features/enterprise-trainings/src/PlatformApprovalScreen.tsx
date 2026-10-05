@@ -11,7 +11,7 @@ import {
   requestChangesTraining,
   TrainingsApiError,
 } from "./trainings.service";
-import { formatTrainingDateTime, humanizeLabel } from "./detail-formatters";
+import { formatTrainingDateTime, getTrainingModerationTimestamp, humanizeLabel } from "./detail-formatters";
 import { getTrainingStatusBadgeClass, getTrainingStatusLabel, type TrainingStatus } from "./training-status";
 
 /** Platform Admin approval calls go through the bearer-token BFF (Super Admin session),
@@ -247,7 +247,7 @@ function AdminDetail({ trainingId, onBack }: { trainingId: string; onBack: () =>
                 const action = typeof record.action === "string" ? record.action : typeof record.status === "string" ? record.status : "";
                 const note = [record.note, record.message, record.reason, record.comment].find((v): v is string => typeof v === "string" && v.trim().length > 0);
                 const performedBy = typeof record.performed_by === "string" ? record.performed_by : typeof record.admin_name === "string" ? record.admin_name : null;
-                const performedAt = typeof record.created_at === "string" ? record.created_at : typeof record.performed_at === "string" ? record.performed_at : null;
+                const performedAt = getTrainingModerationTimestamp(record);
                 return (
                   <li key={index} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-3">
                     <div className="flex items-center gap-2">
