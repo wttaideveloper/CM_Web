@@ -27,6 +27,34 @@ const stepFields: ReadonlyArray<readonly string[]> = [["title", "description", "
 function fieldDomId(key: string): string { return `event-field-${key.replace(/[^a-zA-Z0-9_-]/g, "-")}`; }
 function firstErrorKey(order: readonly string[], errors: Record<string, string[]>): string | null { return order.find((key) => Boolean(errors[key]?.length)) ?? null; }
 function errorCount(errors: Record<string, string[]>): number { return Object.values(errors).filter((messages) => messages.length > 0).length; }
+function validationKeyCandidates(key: string): string[] {
+  const normalized = key.replace(/\[(\d+)\]/g, ".$1");
+  const root = normalized.split(".")[0];
+  const aliases: Record<string, string> = {
+    accommodation: "accommodation",
+    custom_fields: "custom_fields",
+    gallery_images: "gallery_images",
+    meals: "meals",
+    media: "media",
+    modules: "delivery_mode",
+    primary_image: "primary_image",
+    registration_fields: "registration_fields",
+    sessions: "sessions",
+    ticket_types: "ticket_types",
+    videos: "videos",
+  };
+  return [...new Set([normalized, key, aliases[root], root].filter((candidate): candidate is string => Boolean(candidate)))];
+}
+function resolveValidationKey(key: string, availableKeys: readonly string[]): string | null {
+  return validationKeyCandidates(key).find((candidate) => availableKeys.includes(candidate)) ?? null;
+}
+function normalizeValidationErrors(rawErrors: Record<string, string[]>, availableKeys: readonly string[]): Record<string, string[]> {
+  return Object.entries(rawErrors).reduce<Record<string, string[]>>((result, [key, messages]) => {
+    const displayKey = resolveValidationKey(key, availableKeys) ?? key;
+    result[displayKey] = [...(result[displayKey] ?? []), ...messages];
+    return result;
+  }, {});
+}
 type EventEditorProps = { mode?: "create" | "edit"; initialEvent?: Event };
 type CustomFieldValue = string | string[] | boolean | number | null;
 
@@ -135,7 +163,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
       return createEvent(buildCreateEventPayload(values, tenantId, enterpriseId, locationId, activeConfiguration?.version_id, configuredCustomValues, configuredCoreFieldKeys, sessionsField?.composite_config?.enabled_fields));
     },
     onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ["events", "list"] }); if (initialEvent) { await queryClient.invalidateQueries({ queryKey: ["events", "detail", initialEvent.id] }); router.push(`/admin/events/${initialEvent.id}`); } else router.push("/admin/events"); },
-    onError: (error) => { if (error instanceof EventsApiError) { setErrors((current) => ({ ...current, ...error.fieldErrors })); const onlineMeetingRule = error.message === "modules.online_meeting can only be enabled when delivery_mode is 'online' or 'hybrid'." || error.structuredErrors.some((item) => item.fieldKey === "delivery_mode"); if (onlineMeetingRule) { const sectionIndex = editorSteps.findIndex((_, index) => (formConfiguration ? configuredSections[index]?.fields.some((field) => (field.core_key ?? field.stable_key ?? field.id) === "delivery_mode") : (stepFields[index] ?? []).includes("delivery_mode"))); if (sectionIndex >= 0) { setActiveStep(sectionIndex); setPendingFocusField("delivery_mode"); } } setSubmitError(error.status === 401 || error.status === 403 ? "Your session cannot save this event. Please sign in again." : error.message); } else setSubmitError(error instanceof Error ? error.message : "Unable to save event."); },
+    onError: (error) => { if (error instanceof EventsApiError) { const displayErrors = normalizeValidationErrors(error.fieldErrors, allFieldOrder); setErrors((current) => ({ ...current, ...displayErrors })); const structuredKeys = error.structuredErrors.map((item) => item.fieldKey); const firstStructured = allFieldOrder.find((field) => structuredKeys.some((key) => resolveValidationKey(key, [field]) === field)); const first = firstStructured ?? firstErrorKey(allFieldOrder, displayErrors) ?? Object.keys(displayErrors).find((key) => displayErrors[key]?.length); if (first) { const sectionIndex = editorSteps.findIndex((_, index) => sectionFields(index).includes(first)); if (sectionIndex >= 0) setActiveStep(sectionIndex); setPendingFocusField(first); } setSubmitError(error.status === 401 || error.status === 403 ? "Your session cannot save this event. Please sign in again." : error.message); } else setSubmitError(error instanceof Error ? error.message : "Unable to save event."); },
   });
   const update = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => {
     setValues((current) => {
@@ -171,19 +199,25 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   }, [activeStep, pendingFocusField]);
   const allErrors = useMemo(() => formConfiguration ? validateConfiguredEventForm(formConfiguration, values, customValues, eventCategoriesQuery.data ?? [], mode) : validateEventForm(values, mode), [customValues, eventCategoriesQuery.data, formConfiguration, mode, values]);
   const isDirty = JSON.stringify(values) !== JSON.stringify(initialValues) || JSON.stringify(customValues) !== JSON.stringify(initialCustomValues);
-  const sectionFields = (index: number): string[] => formConfiguration ? configuredSections[index]?.fields.map((field) => field.source === "core" ? field.core_key ?? field.stable_key ?? field.id : field.stable_key ?? field.id) ?? [] : [...(stepFields[index] ?? [])];
+  const sectionFields = (index: number): string[] => {
+    if (!formConfiguration) return [...(stepFields[index] ?? [])];
+    const fields = configuredSections[index]?.fields.map((field) => field.source === "core" ? field.core_key ?? field.stable_key ?? field.id : field.stable_key ?? field.id) ?? [];
+    return fields.includes("event_type") ? [...fields, "meals", "accommodation"] : fields;
+  };
   const allFieldOrder = editorSteps.flatMap((_, index) => sectionFields(index));
+  const normalizedAllErrors = useMemo(() => normalizeValidationErrors(allErrors, allFieldOrder), [allErrors, allFieldOrder]);
+  const displayErrors = useMemo(() => normalizeValidationErrors(errors, allFieldOrder), [allFieldOrder, errors]);
   const focusError = (key: string, errorsToShow: Record<string, string[]>) => { setErrors(errorsToShow); setPendingFocusField(key); };
   const selectSection = (index: number) => {
-    const first = firstErrorKey(sectionFields(index), errors);
+    const first = firstErrorKey(sectionFields(index), displayErrors);
     setActiveStep(index);
-    if (first) focusError(first, errors);
+    if (first) focusError(first, displayErrors);
     else setPendingFocusField(null);
   };
-  const sectionHasErrors = (index: number) => firstErrorKey(sectionFields(index), errors) !== null;
-  const continueToNext = () => { const currentErrors = Object.fromEntries(Object.entries(allErrors).filter(([field]) => sectionFields(activeStep).includes(field))); const first = firstErrorKey(sectionFields(activeStep), currentErrors); if (first) { focusError(first, currentErrors); return; } setErrors({}); setActiveStep((current) => Math.min(current + 1, editorSteps.length - 1)); };
-  const submit = () => { if (mode === "edit" && !isDirty) return; const first = firstErrorKey(allFieldOrder, allErrors) ?? Object.keys(allErrors).find((field) => allErrors[field]?.length); if (first) { const sectionIndex = editorSteps.findIndex((_, index) => sectionFields(index).includes(first)); focusError(first, allErrors); if (sectionIndex >= 0) setActiveStep(sectionIndex); const count = errorCount(allErrors); setSubmitError(`${count} validation error${count === 1 ? "" : "s"} need attention.`); return; } setSubmitError(null); saveMutation.mutate(); };
-  const sharedProps = { values, update, errors, currencyOptions, eventTypes: availableEventTypes, eventTypesLoading: eventTypesQuery.isLoading, eventTypesError: eventTypesQuery.isError };
+  const sectionHasErrors = (index: number) => firstErrorKey(sectionFields(index), displayErrors) !== null;
+  const continueToNext = () => { const currentErrors = Object.fromEntries(Object.entries(normalizedAllErrors).filter(([field]) => sectionFields(activeStep).includes(field))); const first = firstErrorKey(sectionFields(activeStep), currentErrors); if (first) { focusError(first, currentErrors); return; } setErrors({}); setActiveStep((current) => Math.min(current + 1, editorSteps.length - 1)); };
+  const submit = () => { if (mode === "edit" && !isDirty) return; const first = firstErrorKey(allFieldOrder, normalizedAllErrors) ?? Object.keys(normalizedAllErrors).find((field) => normalizedAllErrors[field]?.length); if (first) { const sectionIndex = editorSteps.findIndex((_, index) => sectionFields(index).includes(first)); focusError(first, normalizedAllErrors); if (sectionIndex >= 0) setActiveStep(sectionIndex); const count = errorCount(normalizedAllErrors); setSubmitError(`${count} validation error${count === 1 ? "" : "s"} need attention.`); return; } setSubmitError(null); saveMutation.mutate(); };
+  const sharedProps = { values, update, errors: displayErrors, currencyOptions, eventTypes: availableEventTypes, eventTypesLoading: eventTypesQuery.isLoading, eventTypesError: eventTypesQuery.isError };
   const backHref = initialEvent ? `/admin/events/${initialEvent.id}` : "/admin/events";
   const title = mode === "edit" ? "Edit Event" : "Create Event";
 
