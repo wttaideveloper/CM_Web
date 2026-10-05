@@ -1,14 +1,30 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { chatRequestJson } from "@ihp/chat-runtime";
+import { authenticatedFetch } from "@ihp/auth";
 import {
   createWorkflowNotificationClient,
   type WorkflowNotificationHistoryResponse,
 } from "@ihp/realtime";
 
-const client = createWorkflowNotificationClient((path, init) => chatRequestJson(`/users/me${path}`, init));
 const MAX_PAGE_SIZE = 100;
+
+async function workflowRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await authenticatedFetch(`/api/v1/users/me${path}`, {
+    ...init,
+    cache: "no-store",
+    headers: { "Content-Type": "application/json", ...init?.headers },
+  });
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = body && typeof body === "object" && "detail" in body && typeof body.detail === "string"
+      ? body.detail
+      : `Workflow notification request failed (HTTP ${response.status}).`;
+    throw new Error(detail);
+  }
+  return body as T;
+}
+const client = createWorkflowNotificationClient(workflowRequest);
 
 /** Query key shared with realtime-triggered workflow notification refreshes. */
 export const enterpriseWorkflowNotificationsKey = ["enterprise-workflow-notifications"] as const;

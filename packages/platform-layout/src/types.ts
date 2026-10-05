@@ -53,7 +53,8 @@ export type PlatformAdminLayoutProps = {
   resolveNavigationHref?: (item: PlatformNavigationItem) => string;
   onLogout?: () => Promise<void> | void;
   workflowNotifications?: {
-    unreadCount: number;
+    unreadCount?: number;
+    unreadCountError?: unknown;
     items: readonly { id: string; title: string; message: string; notification_type: string; is_read: boolean; target?: string | null }[];
     onRead: (id: string) => void;
     onMarkAllRead: () => void;

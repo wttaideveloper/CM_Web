@@ -166,7 +166,8 @@ function PlatformAdminShellContent({ children }: { children: ReactNode }) {
         tenantApplicationsHref: "/tenant-applications",
       }}
       workflowNotifications={{
-        unreadCount: workflowNotifications.unreadCount,
+        unreadCount: workflowNotifications.unreadCount ?? 0,
+        unreadCountError: workflowNotifications.unreadCountError,
         items: workflowNotifications.items.map((item) => ({
           ...item,
           target: workflowNotificationTarget(item),

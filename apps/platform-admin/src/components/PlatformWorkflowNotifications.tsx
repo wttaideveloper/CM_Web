@@ -13,10 +13,11 @@ export function usePlatformWorkflowNotifications() {
   const markRead = useMutation({ mutationFn: (id: string) => client.markRead(id), onSuccess: () => queryClient.invalidateQueries({ queryKey: platformWorkflowNotificationsKey }) });
   const markAllRead = useMutation({ mutationFn: () => client.markAllRead(), onSuccess: () => queryClient.invalidateQueries({ queryKey: platformWorkflowNotificationsKey }) });
   return {
-    items: list.data?.items ?? [], unreadCount: count.data?.unread_count ?? 0,
+    items: list.data?.items ?? [], unreadCount: count.data?.unread_count,
     isLoading: list.isLoading || count.isLoading, error: list.error ?? count.error,
+    unreadCountError: count.error,
     markRead: markRead.mutateAsync, markAllRead: markAllRead.mutateAsync,
-    refresh: () => Promise.all([list.refetch(), count.refetch()]).then(() => undefined),
+    refresh: async () => { await Promise.allSettled([list.refetch(), count.refetch()]); },
   };
 }
 

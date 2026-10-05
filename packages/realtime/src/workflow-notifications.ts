@@ -112,6 +112,11 @@ export function createWorkflowNotificationClient(request: WorkflowRequest): Work
 export async function browserWorkflowRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api/platform-super-admin${path}`, { ...init, credentials: "include", cache: "no-store" });
   const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) throw new Error("Unable to load workflow notifications.");
+  if (!response.ok) {
+    const detail = body && typeof body === "object" && "detail" in body && typeof body.detail === "string"
+      ? body.detail
+      : "Unable to load workflow notifications.";
+    throw new Error(detail);
+  }
   return body as T;
 }

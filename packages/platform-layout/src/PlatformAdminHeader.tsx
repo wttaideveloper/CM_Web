@@ -161,12 +161,12 @@ export function PlatformAdminHeader({
                       ) : null}
                     </>
                   ) : null}
-                  {workflowNotifications ? (
+                      {workflowNotifications ? (
                     <div className={approvalNotifications ? "mt-2 border-t border-[#edf3f0] pt-2" : ""}>
                       {!approvalNotifications || workflowNotifications.items.length > 0 ? (
                         <div className="flex items-center justify-between px-2 pb-2">
                           <p className="text-xs font-bold uppercase tracking-[0.08em] text-[#52736a]">Notifications</p>
-                          <span className="text-xs font-semibold text-[#1f6a58]">{workflowNotifications.unreadCount} unread</span>
+                          <span className="text-xs font-semibold text-[#1f6a58]">{workflowNotifications.unreadCountError ? "Unread count unavailable" : `${workflowNotifications.unreadCount} unread`}</span>
                         </div>
                       ) : null}
                       {workflowNotifications.items.length > 0 ? (

@@ -1,6 +1,9 @@
-import { getSuperAdminJson, superAdminErrorResponse, superAdminJsonResponse } from "@/lib/super-admin-server-client";
+import { getSuperAdminWorkflowJson, superAdminJsonResponse, superAdminWorkflowErrorResponse } from "@/lib/super-admin-server-client";
 
 export async function GET() {
-  try { return superAdminJsonResponse(await getSuperAdminJson("/users/me/notifications/unread-count")); }
-  catch (error) { return superAdminErrorResponse(error); }
+  try {
+    const result = await getSuperAdminWorkflowJson("/users/me/notifications/unread-count");
+    return result.status >= 200 && result.status < 300 ? superAdminJsonResponse(result) : superAdminWorkflowErrorResponse(result);
+  }
+  catch (error) { return superAdminWorkflowErrorResponse(error); }
 }

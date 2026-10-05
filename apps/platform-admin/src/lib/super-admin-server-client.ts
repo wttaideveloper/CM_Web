@@ -8,6 +8,7 @@ const SESSION_COOKIE_NAME = "ihp_super_admin_refresh";
 const REMEMBER_ME_COOKIE_NAME = "ihp_super_admin_remember_me";
 const REMEMBER_ME_MAX_AGE = 60 * 60 * 24 * 30;
 const SUPER_ADMIN_AUTH_API_BASE_URL = process.env.SUPER_ADMIN_AUTH_API_BASE_URL?.replace(/\/+$/, "");
+const CHAT_API_BASE_URL = process.env.CHAT_API_BASE_URL?.replace(/\/+$/, "");
 
 type RefreshResponse = { tokens: { accessToken: string; refreshToken?: string } };
 type SuperAdminAccessToken = { accessToken: string; rotatedRefreshToken?: string; rememberMe: boolean };
@@ -62,6 +63,13 @@ function redactSensitiveValues(value: unknown): unknown {
   return Object.fromEntries(Object.entries(value)
     .filter(([key]) => !["accessToken", "access_token", "refreshToken", "refresh_token", "authorization"].includes(key))
     .map(([key, nestedValue]) => [key, redactSensitiveValues(nestedValue)]));
+}
+
+function safeUpstreamDetail(body: unknown): string {
+  if (!isRecord(body)) return "Upstream request failed.";
+  const detail = body.detail ?? body.message;
+  if (typeof detail !== "string" || !detail.trim()) return "Upstream request failed.";
+  return detail.replace(/bearer\s+[a-z0-9._-]+/gi, "[redacted]").slice(0, 500);
 }
 
 function gatewayError(status: number): SuperAdminServerError {
@@ -158,6 +166,44 @@ export async function getSuperAdminJson(path: string): Promise<SuperAdminServerR
   const result = await requestSuperAdminJson(path);
   if (result.status < 200 || result.status >= 300) throw gatewayError(result.status);
   return result;
+}
+
+/** Calls the workflow notification upstream while preserving only its safe error detail for the notification BFF. */
+export async function getSuperAdminWorkflowJson(path: string): Promise<SuperAdminServerResult & { status: number }> {
+  if (!CHAT_API_BASE_URL) throw new SuperAdminServerError(503, "Chat API is not configured.");
+  const chatApiV1Base = /\/api\/v1\/?$/.test(CHAT_API_BASE_URL) ? CHAT_API_BASE_URL : `${CHAT_API_BASE_URL}/api/v1`;
+  const result = await requestSuperAdminUpstreamJson(`${chatApiV1Base}${path}`);
+  if (result.status < 200 || result.status >= 300) {
+    const upstreamDetail = safeUpstreamDetail(result.body);
+    console.error("Platform workflow notification upstream failure", {
+      url: `${chatApiV1Base}${path}`,
+      status: result.status,
+      detail: upstreamDetail,
+    });
+  }
+  return result;
+}
+
+/** Builds the notification-only error contract without exposing credentials or response headers. */
+export function superAdminWorkflowErrorResponse(result: SuperAdminServerResult & { status: number }): NextResponse;
+export function superAdminWorkflowErrorResponse(error: unknown): NextResponse;
+export function superAdminWorkflowErrorResponse(resultOrError: (SuperAdminServerResult & { status: number }) | unknown): NextResponse {
+  if (!(resultOrError instanceof Object) || !("status" in resultOrError) || typeof resultOrError.status !== "number" || !("body" in resultOrError)) {
+    const status = resultOrError instanceof SuperAdminServerError ? resultOrError.status : 502;
+    const detail = resultOrError instanceof SuperAdminServerError && resultOrError.status === 503 ? resultOrError.message : "Unable to load workflow notifications.";
+    return NextResponse.json({ detail }, { status, headers: { "Cache-Control": "no-store" } });
+  }
+  const result = resultOrError as SuperAdminServerResult & { status: number };
+  return superAdminJsonResponse({
+    body: {
+      detail: "Unable to load workflow notifications.",
+      upstream_status: result.status,
+      upstream_detail: safeUpstreamDetail(result.body),
+    },
+    status: result.status,
+    ...(result.rotatedRefreshToken ? { rotatedRefreshToken: result.rotatedRefreshToken } : {}),
+    ...(result.rememberMe !== undefined ? { rememberMe: result.rememberMe } : {}),
+  });
 }
 
 /**
