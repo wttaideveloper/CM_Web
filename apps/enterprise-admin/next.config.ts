@@ -49,7 +49,16 @@ const nextConfig: NextConfig = {
 
     if (chatApiBaseUrl) {
       const chatBaseHttps = chatApiBaseUrl.replace(/^http:/, "https:");
+      const chatApiV1Base = /\/api\/v1\/?$/.test(chatBaseHttps) ? chatBaseHttps.replace(/\/$/, "") : `${chatBaseHttps.replace(/\/$/, "")}/api/v1`;
       fallback.push(
+        {
+          source: "/api/v1/users/me/notifications",
+          destination: `${chatApiV1Base}/users/me/notifications`,
+        },
+        {
+          source: "/api/v1/users/me/notifications/:path*",
+          destination: `${chatApiV1Base}/users/me/notifications/:path*`,
+        },
         {
           source: "/api/v1/trainings/form-configuration/:path*",
           destination: `${chatBaseHttps}/trainings/form-configuration/:path*`,

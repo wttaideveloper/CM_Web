@@ -127,6 +127,7 @@ function PlatformAdminShellContent({ children }: { children: ReactNode }) {
       }}
       workflowNotifications={{
         unreadCount: workflowNotifications.unreadCount,
+        unreadCountError: workflowNotifications.unreadCountError,
         items: workflowNotifications.items,
         onRead: (id) => { void workflowNotifications.markRead(id); },
         onMarkAllRead: () => { void workflowNotifications.markAllRead(); },
