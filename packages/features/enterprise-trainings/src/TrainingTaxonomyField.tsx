@@ -44,15 +44,16 @@ export default function TrainingTaxonomyField({
   includeOther?: boolean;
   onRetry?: () => void;
 }) {
-  const [customOtherValue, setCustomOtherValue] = useState("");
-  const [otherMode, setOtherMode] = useState(false);
   const { t } = useTranslation("enterpriseTrainings");
   const category = categories.find((item) => item.parent_id === null && item.name === categoryValue);
   const options = field === "category"
     ? categories.filter((item) => item.parent_id === null)
     : category ? categories.filter((item) => item.parent_id === category.id) : [];
   const hasLegacyValue = preserveLegacyValue && Boolean(value) && value !== TRAINING_OTHER_OPTION_VALUE && !options.some((item) => item.name === value);
-  const otherSelected = includeOther && (otherMode || value === TRAINING_OTHER_OPTION_VALUE);
+  const isCustomOtherValue = includeOther && !preserveLegacyValue && Boolean(value.trim()) && value !== TRAINING_OTHER_OPTION_VALUE && !categoriesLoading && !options.some((item) => item.name === value);
+  const [customOtherValue, setCustomOtherValue] = useState(() => (isCustomOtherValue ? value : ""));
+  const [otherMode, setOtherMode] = useState(() => isCustomOtherValue);
+  const otherSelected = includeOther && (otherMode || value === TRAINING_OTHER_OPTION_VALUE || isCustomOtherValue);
   const disabled = categoriesLoading || (field === "subcategory" && !categoryValue);
 
   const writeFieldText = (text: string) => {

@@ -150,7 +150,7 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
   }, [isNearViewport, needsEnrolmentCount]);
 
   const providerDashboardQuery = useQuery({
-    queryKey: ["training", training.id, "provider-dashboard"],
+    queryKey: ["trainings", training.id, "dashboard", "provider"],
     queryFn: () => getTrainingProviderDashboard(training.id),
     enabled: needsEnrolmentCount && isNearViewport,
     staleTime: 30_000,
@@ -284,9 +284,18 @@ export default function EnterpriseTrainingsScreen() {
   const trainingsQuery = useQuery({
     queryKey: ["trainings", "list", tenantId, enterpriseId, debouncedQuery, statusFilter, levelFilter, languageFilter, page, TRAININGS_PAGE_SIZE],
     queryFn: () =>
-      debouncedQuery
-        ? searchTrainings({ query: debouncedQuery, level: levelFilter === "all" ? undefined : levelFilter, language: languageFilter === "all" ? undefined : languageFilter, page, page_size: TRAININGS_PAGE_SIZE })
+      debouncedQuery && statusFilter === "all"
+        ? searchTrainings({
+            query: debouncedQuery,
+            tenant_id: tenantId ?? undefined,
+            enterprise_id: enterpriseId ?? undefined,
+            level: levelFilter === "all" ? undefined : levelFilter,
+            language: languageFilter === "all" ? undefined : languageFilter,
+            page,
+            page_size: TRAININGS_PAGE_SIZE,
+          })
         : listTrainings({
+            search: debouncedQuery || undefined,
             tenant_id: tenantId ?? undefined,
             enterprise_id: enterpriseId ?? undefined,
             status: statusFilter === "all" ? undefined : statusFilter,

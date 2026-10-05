@@ -2,7 +2,13 @@
 
 import { useRouter } from "next/navigation";
 
-import { notificationReason, parseBackendTimestamp, resolveEventNotificationTarget, useRealtime } from "@ihp/realtime";
+import {
+  formatTrainingNotificationDetails,
+  notificationReason,
+  parseBackendTimestamp,
+  resolveNotificationTarget,
+  useRealtime,
+} from "@ihp/realtime";
 
 type NotificationLike = {
   id: string;
@@ -73,7 +79,7 @@ export default function EnterpriseNotificationHistoryScreen({ messagesRoute }: N
       router.push(`${messagesRoute}?conversationId=${encodeURIComponent(conversationId)}`);
       return;
     }
-    const target = resolveEventNotificationTarget(notification, "enterprise");
+    const target = resolveNotificationTarget(notification, "enterprise");
     if (target) router.push(target);
   };
 
@@ -126,39 +132,53 @@ export default function EnterpriseNotificationHistoryScreen({ messagesRoute }: N
           <div className="px-5 py-10 text-sm text-[#52736a]">No notifications yet.</div>
         ) : (
           <div className="divide-y divide-[#edf3f0]">
-            {notifications.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => handleNotificationClick(item)}
-                className={`flex w-full gap-4 px-5 py-4 text-left transition-colors duration-150 hover:bg-[#f4faf7] ${cardClass(
-                  item,
-                )}`}
-              >
-                <span
-                  className={`mt-2 h-2.5 w-2.5 shrink-0 rounded-full ${
-                    item.is_read ? "bg-[#d0dbd7]" : "bg-[#1f6a58]"
-                  }`}
-                />
+            {notifications.map((item) => {
+              const { trainingTitle, learnerSummary } = formatTrainingNotificationDetails(item);
+              const reason = notificationReason(item);
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => handleNotificationClick(item)}
+                  className={`flex w-full gap-4 px-5 py-4 text-left transition-colors duration-150 hover:bg-[#f4faf7] ${cardClass(
+                    item,
+                  )}`}
+                >
+                  <span
+                    className={`mt-2 h-2.5 w-2.5 shrink-0 rounded-full ${
+                      item.is_read ? "bg-[#d0dbd7]" : "bg-[#1f6a58]"
+                    }`}
+                  />
 
-                <span className="min-w-0 flex-1">
-                  <span className="flex flex-wrap items-start justify-between gap-3">
-                    <span className="min-w-0">
-                      <span className="block text-sm font-bold text-[#06201c]">{item.title}</span>
-                      <span className="mt-1 block text-sm leading-6 text-[#52736a]">{item.body}</span>
-                      {notificationReason(item) ? <span className="mt-1 block text-xs text-[#52736a]">Reason: {notificationReason(item)}</span> : null}
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-start justify-between gap-3">
+                      <span className="min-w-0">
+                        <span className="block text-sm font-bold text-[#06201c]">{item.title}</span>
+                        <span className="mt-1 block text-sm leading-6 text-[#52736a]">{item.body}</span>
+                        {trainingTitle ? (
+                          <span className="mt-1 block text-xs font-semibold text-[#1f6a58]">
+                            Training: {trainingTitle}
+                          </span>
+                        ) : null}
+                        {learnerSummary ? (
+                          <span className="mt-0.5 block text-xs text-[#52736a]">
+                            Enrolled learner: {learnerSummary}
+                          </span>
+                        ) : null}
+                        {reason ? <span className="mt-1 block text-xs text-[#52736a]">Reason: {reason}</span> : null}
+                      </span>
+                      <span className="shrink-0 text-xs font-semibold text-[#7f9d94]">
+                        {formatNotificationTime(item.created_at)}
+                      </span>
                     </span>
-                    <span className="shrink-0 text-xs font-semibold text-[#7f9d94]">
-                      {formatNotificationTime(item.created_at)}
+
+                    <span className="mt-2 block text-xs font-semibold uppercase tracking-[0.12em] text-[#7f9d94]">
+                      {item.notification_type}
                     </span>
                   </span>
-
-                  <span className="mt-2 block text-xs font-semibold uppercase tracking-[0.12em] text-[#7f9d94]">
-                    {item.notification_type}
-                  </span>
-                </span>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         )}
 

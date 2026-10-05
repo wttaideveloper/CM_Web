@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { authenticatedFetch } from "@ihp/auth";
 import {
   addAssessmentQuestions,
   approveTrainingEnrolment,
@@ -653,9 +654,6 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to update lesson."),
   });
 
-  if (lessonQuery.isLoading) return <p className="text-xs text-[#52736a]">Loading lesson...</p>;
-  if (lessonQuery.isError) return <p className="text-xs font-semibold text-[#b42318]">{(lessonQuery.error as Error).message}</p>;
-
   const lesson = (lessonQuery.data ?? {}) as Record<string, unknown>;
   const lessonTitle = typeof lesson.title === "string" ? lesson.title : "";
   const lessonContent = typeof lesson.content === "string" ? lesson.content : "";
@@ -678,33 +676,72 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
   const availableLessonTypes = getLessonTypeOptions(trainingDeliveryMode);
   const selectedLessonType = availableLessonTypes.some((option) => option.value === lessonTypeValue) ? lessonTypeValue : "";
 
-  if (!editMode && title === "" && content === "" && videoUrl === "" && lessonTypeValue === "" && meetingLink === "" && joinUrl === "" && fileSize === "" && durationSeconds === "" && lessonVideos.length === 0 && lessonDocs.length === 0 && lessonNotes.length === 0) {
-    setTitle(lessonTitle);
-    setContent(lessonContent);
-    setVideoUrl(lessonVideoUrl);
-    setLessonTypeValue(toUiLessonType(lessonType));
-    setScheduledAt(lessonScheduledAt ? lessonScheduledAt.slice(0, 16) : "");
-    setMeetingType(lessonMeetingType);
-    setMeetingLink(lessonMeetingLink);
-    setJoinUrl(lessonJoinUrl);
-    setVenueName(lessonVenueName);
-    setVenueAddress(lessonVenueAddress);
-    const lessonMatchesExistingDefaults = lessonType === "live"
-      ? Boolean((!trainingLessonDefaults.meetingLink || lessonMeetingLink === trainingLessonDefaults.meetingLink)
-        && (!trainingLessonDefaults.meetingProvider || lessonMeetingType === getMeetingTypeFromProvider(trainingLessonDefaults.meetingProvider)))
-      : lessonType === "venue"
-        ? Boolean((!trainingLessonDefaults.venue || lessonVenueName === trainingLessonDefaults.venue)
-          && (!trainingLessonDefaults.address || lessonVenueAddress === trainingLessonDefaults.address))
-        : false;
-    setDetailsSource(lessonMatchesExistingDefaults && hasExistingLessonDetails(lessonType as "live" | "venue", trainingLessonDefaults) ? "existing" : "new");
-    setIsDownloadable(lessonIsDownloadable);
-    setFileSize(lessonFileSize);
-    setDurationSeconds(lessonVideoDurationCache.get(durationCacheKey) ?? (lessonDuration ? String(Number(lessonDuration) * 60) : ""));
-    setIsPreview(lessonIsPreview);
-    if (lessonVideosInit.length) setLessonVideos(lessonVideosInit);
-    if (lessonDocsInit.length) setLessonDocs(lessonDocsInit);
-    if (lessonNotesInit.length) setLessonNotes(lessonNotesInit);
-  }
+  useEffect(() => {
+    if (!lessonQuery.data) return;
+    if (!editMode && title === "" && content === "" && videoUrl === "" && lessonTypeValue === "" && meetingLink === "" && joinUrl === "" && fileSize === "" && durationSeconds === "" && lessonVideos.length === 0 && lessonDocs.length === 0 && lessonNotes.length === 0) {
+      setTitle(lessonTitle);
+      setContent(lessonContent);
+      setVideoUrl(lessonVideoUrl);
+      setLessonTypeValue(toUiLessonType(lessonType));
+      setScheduledAt(lessonScheduledAt ? lessonScheduledAt.slice(0, 16) : "");
+      setMeetingType(lessonMeetingType);
+      setMeetingLink(lessonMeetingLink);
+      setJoinUrl(lessonJoinUrl);
+      setVenueName(lessonVenueName);
+      setVenueAddress(lessonVenueAddress);
+      const lessonMatchesExistingDefaults = lessonType === "live"
+        ? Boolean((!trainingLessonDefaults.meetingLink || lessonMeetingLink === trainingLessonDefaults.meetingLink)
+          && (!trainingLessonDefaults.meetingProvider || lessonMeetingType === getMeetingTypeFromProvider(trainingLessonDefaults.meetingProvider)))
+        : lessonType === "venue"
+          ? Boolean((!trainingLessonDefaults.venue || lessonVenueName === trainingLessonDefaults.venue)
+            && (!trainingLessonDefaults.address || lessonVenueAddress === trainingLessonDefaults.address))
+          : false;
+      setDetailsSource(lessonMatchesExistingDefaults && hasExistingLessonDetails(lessonType as "live" | "venue", trainingLessonDefaults) ? "existing" : "new");
+      setIsDownloadable(lessonIsDownloadable);
+      setFileSize(lessonFileSize);
+      setDurationSeconds(lessonVideoDurationCache.get(durationCacheKey) ?? (lessonDuration ? String(Number(lessonDuration) * 60) : ""));
+      setIsPreview(lessonIsPreview);
+      if (lessonVideosInit.length) setLessonVideos(lessonVideosInit);
+      if (lessonDocsInit.length) setLessonDocs(lessonDocsInit);
+      if (lessonNotesInit.length) setLessonNotes(lessonNotesInit);
+    }
+  }, [
+    lessonQuery.data,
+    editMode,
+    title,
+    content,
+    videoUrl,
+    lessonTypeValue,
+    meetingLink,
+    joinUrl,
+    fileSize,
+    durationSeconds,
+    lessonVideos.length,
+    lessonDocs.length,
+    lessonNotes.length,
+    lessonTitle,
+    lessonContent,
+    lessonVideoUrl,
+    lessonType,
+    lessonScheduledAt,
+    lessonMeetingType,
+    lessonMeetingLink,
+    lessonJoinUrl,
+    lessonVenueName,
+    lessonVenueAddress,
+    trainingLessonDefaults,
+    lessonIsDownloadable,
+    lessonFileSize,
+    durationCacheKey,
+    lessonDuration,
+    lessonIsPreview,
+    lessonVideosInit,
+    lessonDocsInit,
+    lessonNotesInit,
+  ]);
+
+  if (lessonQuery.isLoading) return <p className="text-xs text-[#52736a]">Loading lesson...</p>;
+  if (lessonQuery.isError) return <p className="text-xs font-semibold text-[#b42318]">{(lessonQuery.error as Error).message}</p>;
 
   return (
     <div className="mt-3 rounded-xl border border-[#e1ebe6] bg-white p-4 space-y-3">
@@ -1191,7 +1228,7 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
       const reordered = [...sections];
       [reordered[currentIndex], reordered[targetIndex]] = [reordered[targetIndex], reordered[currentIndex]];
       const sectionOrders = reordered.map((s, i) => ({ id: typeof s.id === "string" ? s.id : String(s.order ?? ""), order: i }));
-      return fetch(`/api/v1/trainings/${encodeURIComponent(trainingId)}/sections/reorder`, {
+      return authenticatedFetch(`/api/v1/trainings/${encodeURIComponent(trainingId)}/sections/reorder`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },

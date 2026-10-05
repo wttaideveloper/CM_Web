@@ -122,41 +122,58 @@ export function PlatformAdminHeader({
               ) : null}
             </button>
             <div className={`fixed left-3 right-3 top-[76px] z-50 max-h-[70vh] w-auto max-w-none origin-top overflow-y-auto rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 sm:absolute sm:left-auto sm:right-0 sm:top-12 sm:w-[360px] sm:max-w-sm sm:origin-top-right sm:p-3 ${openMenu === "notifications" ? "pointer-events-auto scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"}`}>
-              {workflowNotifications ? (
+              {approvalNotifications || workflowNotifications ? (
                 <>
-                  <div className="flex items-center justify-between border-b border-[#edf3f0] px-2 pb-3"><p className="text-sm font-bold text-[#06201c]">Notifications</p><span className="text-xs font-semibold text-[#1f6a58]">{workflowNotifications.unreadCount} unread</span></div>
-                  <div className="mt-1 space-y-1">{workflowNotifications.items.slice(0, 5).map((item) => <Link key={item.id} href={item.notification_type === "event_submitted" ? "/approval-queue" : notificationsHref} onClick={() => { workflowNotifications.onRead(item.id); closeMenu(); }} className={`block rounded-xl px-3 py-2 text-sm hover:bg-[#eef7f2] ${item.is_read ? "" : "bg-[#f7fbf9]"}`}><span className="block font-semibold">{item.title}</span><span className="block truncate text-xs text-[#52736a]">{item.message}</span></Link>)}</div>
-                  <div className="mt-2 flex items-center justify-between border-t border-[#edf3f0] pt-2"><button type="button" onClick={workflowNotifications.onMarkAllRead} className="px-2 text-xs font-semibold text-[#1f6a58]">Mark all read</button><Link href={notificationsHref} onClick={closeMenu} className="px-2 text-xs font-semibold text-[#1f6a58]">View all</Link></div>
-                </>
-              ) : approvalNotifications ? (
-                <>
-                  <div className="border-b border-[#edf3f0] px-2 pb-3">
-                    <p className="text-sm font-bold text-[#06201c]">{t("approvalNotifications.title", { defaultValue: "Pending approvals" })}</p>
-                  </div>
-                  <div className="mt-1 space-y-1">
-                    <Link href={`${approvalNotifications.approvalQueueHref}?type=events`} onClick={closeMenu} className="flex items-center justify-between rounded-xl px-3 py-2 text-sm text-[#1f6a58] transition hover:bg-[#eef7f2]">
-                      <span>{t("approvalNotifications.events", { defaultValue: "Events" })}</span>
-                      <span className="font-semibold">{approvalNotifications.eventCount === null
-                        ? t("approvalNotifications.countUnavailable", { defaultValue: "Unavailable" })
-                        : t("approvalNotifications.pendingCount", { count: approvalNotifications.eventCount, defaultValue: "{{count}} pending" })}</span>
-                    </Link>
-                    <Link href={`${approvalNotifications.approvalQueueHref}?type=trainings`} onClick={closeMenu} className="flex items-center justify-between rounded-xl px-3 py-2 text-sm text-[#1f6a58] transition hover:bg-[#eef7f2]">
-                      <span>{t("approvalNotifications.trainings", { defaultValue: "Trainings" })}</span>
-                      <span className="font-semibold">{approvalNotifications.trainingCount === null
-                        ? t("approvalNotifications.countUnavailable", { defaultValue: "Unavailable" })
-                        : t("approvalNotifications.pendingCount", { count: approvalNotifications.trainingCount, defaultValue: "{{count}} pending" })}</span>
-                    </Link>
-                    {approvalNotifications.tenantApplicationsHref ? (
-                      <Link href={approvalNotifications.tenantApplicationsHref} onClick={closeMenu} className="flex items-center justify-between rounded-xl px-3 py-2 text-sm text-[#1f6a58] transition hover:bg-[#eef7f2]">
-                        <span>{t("approvalNotifications.enterpriseRequests", { defaultValue: "Enterprise requests" })}</span>
-                        <span className="font-semibold">{approvalNotifications.enterpriseRequestCount === null || approvalNotifications.enterpriseRequestCount === undefined
-                          ? t("approvalNotifications.countUnavailable", { defaultValue: "Unavailable" })
-                          : t("approvalNotifications.pendingCount", { count: approvalNotifications.enterpriseRequestCount, defaultValue: "{{count}} pending" })}</span>
-                      </Link>
-                    ) : null}
-                  </div>
-                  {pendingNotificationCount === 0 ? (
-                    <p className="px-3 py-2 text-xs text-[#52736a]">{t("approvalNotifications.noPending", { defaultValue: "No pending approvals or Enterprise requests." })}</p>
+                  {approvalNotifications ? (
+                    <>
+                      <div className="flex items-center justify-between border-b border-[#edf3f0] px-2 pb-3">
+                        <p className="text-sm font-bold text-[#06201c]">{t("approvalNotifications.title", { defaultValue: "Pending approvals" })}</p>
+                        {pendingNotificationCount !== null ? (
+                          <span className="text-xs font-semibold text-[#1f6a58]">
+                            {t("approvalNotifications.pendingCount", { count: pendingNotificationCount, defaultValue: "{{count}} pending" })}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-1 space-y-1">
+                        <Link href={`${approvalNotifications.approvalQueueHref}?type=events`} onClick={closeMenu} className="flex items-center justify-between rounded-xl px-3 py-2 text-sm text-[#1f6a58] transition hover:bg-[#eef7f2]">
+                          <span>{t("approvalNotifications.events", { defaultValue: "Events" })}</span>
+                          <span className="font-semibold">{approvalNotifications.eventCount === null
+                            ? t("approvalNotifications.countUnavailable", { defaultValue: "Unavailable" })
+                            : t("approvalNotifications.pendingCount", { count: approvalNotifications.eventCount, defaultValue: "{{count}} pending" })}</span>
+                        </Link>
+                        <Link href={`${approvalNotifications.approvalQueueHref}?type=trainings`} onClick={closeMenu} className="flex items-center justify-between rounded-xl px-3 py-2 text-sm text-[#1f6a58] transition hover:bg-[#eef7f2]">
+                          <span>{t("approvalNotifications.trainings", { defaultValue: "Trainings" })}</span>
+                          <span className="font-semibold">{approvalNotifications.trainingCount === null
+                            ? t("approvalNotifications.countUnavailable", { defaultValue: "Unavailable" })
+                            : t("approvalNotifications.pendingCount", { count: approvalNotifications.trainingCount, defaultValue: "{{count}} pending" })}</span>
+                        </Link>
+                        {approvalNotifications.tenantApplicationsHref ? (
+                          <Link href={approvalNotifications.tenantApplicationsHref} onClick={closeMenu} className="flex items-center justify-between rounded-xl px-3 py-2 text-sm text-[#1f6a58] transition hover:bg-[#eef7f2]">
+                            <span>{t("approvalNotifications.enterpriseRequests", { defaultValue: "Enterprise requests" })}</span>
+                            <span className="font-semibold">{approvalNotifications.enterpriseRequestCount === null || approvalNotifications.enterpriseRequestCount === undefined
+                              ? t("approvalNotifications.countUnavailable", { defaultValue: "Unavailable" })
+                              : t("approvalNotifications.pendingCount", { count: approvalNotifications.enterpriseRequestCount, defaultValue: "{{count}} pending" })}</span>
+                          </Link>
+                        ) : null}
+                      </div>
+                      {pendingNotificationCount === 0 && (!workflowNotifications || workflowNotifications.items.length === 0) ? (
+                        <p className="px-3 py-2 text-xs text-[#52736a]">{t("approvalNotifications.noPending", { defaultValue: "No pending approvals or Enterprise requests." })}</p>
+                      ) : null}
+                    </>
+                  ) : null}
+                  {workflowNotifications ? (
+                    <div className={approvalNotifications ? "mt-2 border-t border-[#edf3f0] pt-2" : ""}>
+                      {!approvalNotifications || workflowNotifications.items.length > 0 ? (
+                        <div className="flex items-center justify-between px-2 pb-2">
+                          <p className="text-xs font-bold uppercase tracking-[0.08em] text-[#52736a]">Notifications</p>
+                          <span className="text-xs font-semibold text-[#1f6a58]">{workflowNotifications.unreadCount} unread</span>
+                        </div>
+                      ) : null}
+                      {workflowNotifications.items.length > 0 ? (
+                        <div className="mt-1 space-y-1">{workflowNotifications.items.slice(0, 5).map((item) => <Link key={item.id} href={item.notification_type === "event_submitted" ? "/approval-queue" : item.notification_type === "training_submitted" ? "/approval-queue?type=trainings" : notificationsHref} onClick={() => { workflowNotifications.onRead(item.id); closeMenu(); }} className={`block rounded-xl px-3 py-2 text-sm hover:bg-[#eef7f2] ${item.is_read ? "" : "bg-[#f7fbf9]"}`}><span className="block font-semibold">{item.title}</span><span className="block truncate text-xs text-[#52736a]">{item.message}</span></Link>)}</div>
+                      ) : null}
+                      <div className="mt-1 flex items-center justify-between pt-1"><button type="button" onClick={workflowNotifications.onMarkAllRead} className="px-2 text-xs font-semibold text-[#1f6a58]">Mark all read</button><Link href={notificationsHref} onClick={closeMenu} className="px-2 text-xs font-semibold text-[#1f6a58]">View all</Link></div>
+                    </div>
                   ) : null}
                 </>
               ) : (

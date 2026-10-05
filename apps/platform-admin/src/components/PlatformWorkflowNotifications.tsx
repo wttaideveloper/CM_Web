@@ -1,15 +1,15 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { browserWorkflowRequest, createWorkflowNotificationClient, type WorkflowNotification } from "@ihp/realtime";
+import { browserWorkflowRequest, createWorkflowNotificationClient, resolveNotificationTarget, type WorkflowNotification } from "@ihp/realtime";
 
 const client = createWorkflowNotificationClient(browserWorkflowRequest);
 export const platformWorkflowNotificationsKey = ["platform-workflow-notifications"] as const;
 
 export function usePlatformWorkflowNotifications() {
   const queryClient = useQueryClient();
-  const list = useQuery({ queryKey: platformWorkflowNotificationsKey, queryFn: () => client.list(), staleTime: 30_000 });
-  const count = useQuery({ queryKey: [...platformWorkflowNotificationsKey, "unread"], queryFn: () => client.unreadCount(), staleTime: 30_000 });
+  const list = useQuery({ queryKey: platformWorkflowNotificationsKey, queryFn: () => client.list(), staleTime: 30_000, refetchInterval: 30_000, refetchIntervalInBackground: false });
+  const count = useQuery({ queryKey: [...platformWorkflowNotificationsKey, "unread"], queryFn: () => client.unreadCount(), staleTime: 30_000, refetchInterval: 30_000, refetchIntervalInBackground: false });
   const markRead = useMutation({ mutationFn: (id: string) => client.markRead(id), onSuccess: () => queryClient.invalidateQueries({ queryKey: platformWorkflowNotificationsKey }) });
   const markAllRead = useMutation({ mutationFn: () => client.markAllRead(), onSuccess: () => queryClient.invalidateQueries({ queryKey: platformWorkflowNotificationsKey }) });
   return {
@@ -20,6 +20,7 @@ export function usePlatformWorkflowNotifications() {
   };
 }
 
+/** Resolves a workflow notification to the Platform screen that handles it. */
 export function workflowNotificationTarget(item: WorkflowNotification): string | null {
-  return item.notification_type === "event_submitted" ? "/approval-queue" : null;
+  return resolveNotificationTarget({ notification_type: item.notification_type, data: item.metadata }, "platform");
 }
