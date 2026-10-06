@@ -1,4 +1,5 @@
 export { default as AppFrame } from "./layout/AppFrame";
+export { default as DateTimeLocalInput } from "./DateTimeLocalInput";
 export { default as HeaderFrame } from "./layout/HeaderFrame";
 export { default as SidebarFrame } from "./layout/SidebarFrame";
 export type {

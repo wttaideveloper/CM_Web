@@ -8,6 +8,7 @@ import SessionTableEditor from "./SessionTableEditor";
 import EventModulesControls from "./EventModulesControls";
 import { useEventTypes } from "./event-categories.queries";
 import EventServicesEditor from "./EventServicesEditor";
+import { DateTimeLocalInput } from "@ihp/ui";
 
 type UpdateForm = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => void;
 type Props = { section: ActiveEventFormSection; values: CreateEventFormValues; update: UpdateForm; errors: Record<string, string[]>; customValues: Record<string, string | string[] | boolean | number | null>; setCustomValues: (next: Record<string, string | string[] | boolean | number | null>) => void; categories: readonly EventCategory[]; categoriesLoading: boolean; categoriesError: boolean; eventTypes?: readonly EventTypeDefinition[]; eventTypesLoading?: boolean; eventTypesError?: boolean; currencyOptions?: readonly ActiveEventFormFieldOption[]; allowPastTemporalValues?: boolean; modules?: CreateEventFormValues["modules"]; selectedEventType?: EventTypeDefinition; };
@@ -140,6 +141,8 @@ function ConfiguredField(props: Omit<Props, "section"> & { field: ActiveEventFor
           </select>
       ) : type === "textarea" ? (
           <textarea id={id} disabled={moduleDisabled} value={value} required={field.required} placeholder={field.placeholder ?? undefined} minLength={constraints.min_length ?? undefined} onChange={(event) => setValue(event.target.value)} className={`${inputClass} h-24 resize-y py-2`} />
+      ) : type === "datetime-local" ? (
+          <DateTimeLocalInput id={id} disabled={moduleDisabled} value={value} required={field.required} min={bounds.min ?? (constraints.min == null ? undefined : String(constraints.min))} max={bounds.max ?? (constraints.max == null ? undefined : String(constraints.max))} aria-invalid={displayedError ? true : undefined} aria-describedby={displayedError ? `${id}-error` : undefined} onChange={setValue} className={inputClass} />
       ) : isTemporal ? (
           <input id={id} disabled={moduleDisabled} type={type} value={value} required={field.required} placeholder={field.placeholder ?? undefined} min={bounds.min ?? constraints.min ?? undefined} max={bounds.max ?? constraints.max ?? undefined} onChange={(event) => setValue(event.target.value)} className={inputClass} />
       ) : (

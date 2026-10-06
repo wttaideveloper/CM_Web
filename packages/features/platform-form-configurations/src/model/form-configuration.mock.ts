@@ -30,8 +30,6 @@ export function createSeededFields(registry: readonly CoreFieldRegistryItem[], s
     // 2. Schedule — mirrors TrainingScheduleSection:92
     { key: "start_date", section: "section-schedule", renderer: "datetime", label: "Start Date" },
     { key: "end_date", section: "section-schedule", renderer: "datetime", label: "End Date" },
-    { key: "start_time", section: "section-schedule", renderer: "text", placeholder: "HH:MM", label: "Start time", validation: { pattern: "^([01]\\d|2[0-3]):([0-5]\\d)$" } },
-    { key: "end_time", section: "section-schedule", renderer: "text", placeholder: "HH:MM", label: "End time", validation: { pattern: "^([01]\\d|2[0-3]):([0-5]\\d)$" } },
     { key: "enrolment_start", section: "section-schedule", renderer: "datetime", label: "Enrolment Start" },
     { key: "enrolment_end", section: "section-schedule", renderer: "datetime", label: "Enrolment End" },
     { key: "time_zone", section: "section-schedule", placeholder: "Asia/Kolkata", label: "Time Zone" },
@@ -60,7 +58,7 @@ export function createSeededFields(registry: readonly CoreFieldRegistryItem[], s
   ];
   const eventFields: Array<[string, string]> = [["title", "section-basic"], ["description", "section-basic"], ["category", "section-basic"], ["start_date", "section-schedule"], ["end_date", "section-schedule"], ["time_zone", "section-schedule"], ["location_id", "section-location"], ...EVENT_DELIVERY_BUNDLE.map((key) => [key, "section-location"] as [string, string]), ["pricing_type", "section-pricing"], ["price", "section-pricing"], ["currency", "section-pricing"], ["ticket_types", "section-pricing"], ["capacity", "section-capacity"], ["primary_image", "section-media"], ["sessions", "section-additional"], ["custom_fields", "section-additional"]];
   eventFields.splice(3, 0, ["event_type", "section-schedule"]);
-  const isTrainingRegistry = registry.length === 0 || registry.some(f => f.key === "instructor_name" || f.key === "learning_objectives" || f.key === "promotional_video" || f.key === "start_time");
+  const isTrainingRegistry = registry.length === 0 || registry.some(f => ["instructor_name", "learning_objectives", "promotional_video", "start_time", "end_time", "enrolment_start", "enrolment_end", "duration"].includes(f.key));
   if (!isTrainingRegistry) {
     return eventFields.flatMap(([coreKey, sectionLocalId], index) => { const definition = registry.find((field) => field.key === coreKey); if (!definition) return []; const composite = getEventCompositeFieldDefinition(coreKey); return [{ localId: `field-core-${coreKey}`, serverId: null, stableKey: `core_${coreKey}`, source: "core" as const, coreKey, label: definition.displayName, sectionLocalId: sections.some((section) => section.localId === sectionLocalId) ? sectionLocalId : sections[0]?.localId ?? "", position: index + 1, valueType: definition.valueType, required: definition.requiredByDomain, renderer: definition.defaultRenderer, placeholder: "", helpText: "", options: [...(definition.options ?? [])], validation: {}, ...(composite ? { compositeConfig: { enabled_fields: composite.subfields.map((subfield) => subfield.key), required_fields: [] } } : {}), enabled: true }]; });
   }

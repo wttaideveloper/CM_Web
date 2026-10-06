@@ -49,11 +49,17 @@ export default function TrainingTaxonomyField({
   const options = field === "category"
     ? categories.filter((item) => item.parent_id === null)
     : category ? categories.filter((item) => item.parent_id === category.id) : [];
+  const categoryIsCustom = field === "subcategory"
+    && categoryValue !== TRAINING_OTHER_OPTION_VALUE
+    && Boolean(categoryValue.trim())
+    && !category
+    && !preserveLegacyValue;
+  const canChooseOther = includeOther && (field === "category" || categoryIsCustom);
   const hasLegacyValue = preserveLegacyValue && Boolean(value) && value !== TRAINING_OTHER_OPTION_VALUE && !options.some((item) => item.name === value);
-  const isCustomOtherValue = includeOther && !preserveLegacyValue && Boolean(value.trim()) && value !== TRAINING_OTHER_OPTION_VALUE && !categoriesLoading && !options.some((item) => item.name === value);
+  const isCustomOtherValue = canChooseOther && !preserveLegacyValue && Boolean(value.trim()) && value !== TRAINING_OTHER_OPTION_VALUE && !categoriesLoading && !options.some((item) => item.name === value);
   const [customOtherValue, setCustomOtherValue] = useState(() => (isCustomOtherValue ? value : ""));
   const [otherMode, setOtherMode] = useState(() => isCustomOtherValue);
-  const otherSelected = includeOther && (otherMode || value === TRAINING_OTHER_OPTION_VALUE || isCustomOtherValue);
+  const otherSelected = canChooseOther && (otherMode || value === TRAINING_OTHER_OPTION_VALUE || isCustomOtherValue);
   const disabled = categoriesLoading || (field === "subcategory" && !categoryValue);
 
   const writeFieldText = (text: string) => {
@@ -62,7 +68,7 @@ export default function TrainingTaxonomyField({
   };
 
   const onSelectChange = (nextValue: string) => {
-    if (includeOther && nextValue === TRAINING_OTHER_OPTION_VALUE) {
+    if (canChooseOther && nextValue === TRAINING_OTHER_OPTION_VALUE) {
       // Parent genuinely changed: drop the stale subcategory once, then keep it
       // untouched while the custom text is typed.
       setOtherMode(true);
@@ -103,7 +109,7 @@ export default function TrainingTaxonomyField({
         </option>
         {hasLegacyValue ? <option value={value}>{value} (existing value)</option> : null}
         {options.map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}
-        {includeOther ? <option value={TRAINING_OTHER_OPTION_VALUE}>Other (custom value)</option> : null}
+        {canChooseOther ? <option value={TRAINING_OTHER_OPTION_VALUE}>Other (custom value)</option> : null}
       </select>
       {otherSelected ? (
         <span className="mt-2 block">

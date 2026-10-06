@@ -45,7 +45,7 @@ export function useEnterpriseWorkflowNotifications() {
     queryKey: enterpriseWorkflowUnreadCountKey,
     queryFn: () => client.unreadCount(),
     staleTime: 15_000,
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
     refetchIntervalInBackground: false,
   });
 

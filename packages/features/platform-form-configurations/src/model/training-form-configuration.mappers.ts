@@ -44,6 +44,8 @@ const HIDDEN_TRAINING_FIELD_KEYS = new Set([
   "document",
   "documents",
   "promotional_video",
+  "start_time",
+  "end_time",
 ]);
 const HIDDEN_TRAINING_FIELD_LABELS = new Set([
   "group enrolment",
@@ -80,6 +82,8 @@ const HIDDEN_TRAINING_FIELD_LABELS = new Set([
   "document",
   "documents",
   "promotional video",
+  "start time",
+  "end time",
 ]);
 const isHiddenTrainingField = (field: { stable_key?: string | null; core_key?: string | null; label?: string | null }) => {
   const keys = [field.stable_key, field.core_key].map((key) => key?.replace(/^(core_|custom_)/, "").trim().toLowerCase().replace(/[\s-]+/g, "_") ?? "");

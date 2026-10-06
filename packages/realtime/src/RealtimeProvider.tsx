@@ -67,7 +67,11 @@ function readNotificationId(payload: unknown): string | null {
       ? payload.notification
       : null;
 
-  return readString(payload.id) ?? (notificationRecord ? readString(notificationRecord.id) : null);
+  return (
+    readString(payload.id) ??
+    readString(payload.notification_id) ??
+    (notificationRecord ? readString(notificationRecord.id) ?? readString(notificationRecord.notification_id) : null)
+  );
 }
 
 function readConversationId(payload: unknown): string | null {
@@ -83,15 +87,13 @@ function readNotificationData(payload: unknown): Record<string, unknown> {
     return {};
   }
 
-  if (isRecord(payload.data)) {
-    return readRecord(payload.data);
-  }
-
-  if (isRecord(payload.notification) && isRecord(payload.notification.data)) {
-    return readRecord(payload.notification.data);
-  }
-
-  return {};
+  const notificationRecord = isRecord(payload.notification) ? payload.notification : {};
+  return {
+    ...(isRecord(notificationRecord.metadata) ? notificationRecord.metadata : {}),
+    ...(isRecord(payload.metadata) ? payload.metadata : {}),
+    ...(isRecord(notificationRecord.data) ? notificationRecord.data : {}),
+    ...(isRecord(payload.data) ? payload.data : {}),
+  };
 }
 
 function readNotificationConversationId(payload: unknown): string | null {
@@ -490,14 +492,6 @@ export function RealtimeProvider({
         isRecord(payload) && isRecord(payload.notification) && !Array.isArray(payload.notification)
           ? payload.notification
           : null;
-      const notificationType =
-        isRecord(payload) && typeof payload.notification_type === "string"
-          ? payload.notification_type
-          : notificationRecord && typeof notificationRecord.notification_type === "string"
-            ? notificationRecord.notification_type
-            : isRecord(payload) && typeof payload.type === "string" && payload.type !== "notification"
-              ? payload.type
-              : "unknown";
       const title =
         isRecord(payload) && typeof payload.title === "string"
           ? payload.title
@@ -516,16 +510,20 @@ export function RealtimeProvider({
           : notificationRecord && isRecord(notificationRecord.metadata)
             ? notificationRecord.metadata
             : undefined;
+      const eventName =
+        (typeof category === "string" && category.trim()) ||
+        (metadata && typeof metadata.category === "string" && metadata.category.trim()) ||
+        "training";
       const body =
-        isRecord(payload) && typeof payload.body === "string"
-          ? payload.body
-          : isRecord(payload) && typeof payload.message === "string"
-            ? payload.message
-          : notificationRecord && typeof notificationRecord.body === "string"
-            ? notificationRecord.body
+        isRecord(payload) && typeof payload.message === "string"
+          ? payload.message
+          : isRecord(payload) && typeof payload.body === "string"
+            ? payload.body
             : notificationRecord && typeof notificationRecord.message === "string"
               ? notificationRecord.message
-            : "";
+              : notificationRecord && typeof notificationRecord.body === "string"
+                ? notificationRecord.body
+                : "";
       const createdAt =
         isRecord(payload) && typeof payload.created_at === "string"
           ? payload.created_at
@@ -539,8 +537,8 @@ export function RealtimeProvider({
       const isActiveConversation = activeConversationId !== null && conversationId === activeConversationId;
       const incoming: RealtimeNotification = {
         id: notificationId,
-        notification_type: notificationType,
-        category,
+        notification_type: eventName,
+        category: category ?? (metadata && typeof metadata.category === "string" ? metadata.category : undefined),
         metadata,
         title,
         body,

@@ -29,6 +29,12 @@ function toBuilderRegistryItem(field: Awaited<ReturnType<typeof getTrainingFormF
   return { key: field.key, displayName: field.display_name, valueType: field.value_type, allowedRenderers: field.allowed_renderers, defaultRenderer: field.default_renderer, requiredByDomain: field.required_by_domain, removable: field.removable, hideable: field.hideable, options: field.options ?? [], valueSource: field.value_source, sourceEndpoint: field.source_endpoint, dependsOn: field.depends_on, configurable: { label: field.configurable.label, section: field.configurable.section, position: field.configurable.position, required: field.configurable.required, renderer: field.configurable.renderer, placeholder: field.configurable.placeholder, helpText: field.configurable.help_text, validation: field.configurable.validation } };
 }
 
+function isRemovedTrainingScheduleTimeField(field: Awaited<ReturnType<typeof getTrainingFormFieldRegistry>>[number]): boolean {
+  const key = field.key.replace(/^(core_|custom_)/, "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  const label = field.display_name.trim().toLowerCase().replace(/[\s-]+/g, " ");
+  return key === "start_time" || key === "end_time" || label === "start time" || label === "end time";
+}
+
 function toListItem(configuration: Awaited<ReturnType<typeof listTrainingFormConfigurations>>[number]): FormConfigurationListItem {
   return { id: configuration.id, name: configuration.name, description: configuration.description, scope: configuration.scope, status: configuration.status, active: configuration.is_active, currentVersion: configuration.current_version, updatedAt: configuration.updated_at, publishedAt: configuration.published_at };
 }
@@ -36,7 +42,7 @@ function toListItem(configuration: Awaited<ReturnType<typeof listTrainingFormCon
 /** Reads configuration summaries for the existing Platform Admin list screen. */
 export function useTrainingFormConfigurations(enabled = true) { return useQuery({ queryKey: trainingFormConfigurationKeys.list(), queryFn: async () => (await listTrainingFormConfigurations()).map(toListItem), enabled, retry: 1 }); }
 /** Reads and maps the backend registry for the existing builder model. */
-export function useTrainingFormFieldRegistry() { return useQuery({ queryKey: trainingFormConfigurationKeys.fieldRegistry(), queryFn: async () => (await getTrainingFormFieldRegistry()).map(toBuilderRegistryItem), retry: 1, staleTime: 60_000 }); }
+export function useTrainingFormFieldRegistry() { return useQuery({ queryKey: trainingFormConfigurationKeys.fieldRegistry(), queryFn: async () => (await getTrainingFormFieldRegistry()).filter((field) => !isRemovedTrainingScheduleTimeField(field)).map(toBuilderRegistryItem), retry: 1, staleTime: 60_000 }); }
 /** Reads one persisted configuration. */
 export function useTrainingFormConfiguration(configurationId: string | undefined) { return useQuery({ queryKey: trainingFormConfigurationKeys.detail(configurationId ?? ""), queryFn: () => getTrainingFormConfiguration(configurationId ?? ""), enabled: Boolean(configurationId), retry: 1 }); }
 /** Reads immutable versions for one configuration. */

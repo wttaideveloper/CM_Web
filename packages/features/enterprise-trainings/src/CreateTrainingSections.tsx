@@ -9,6 +9,7 @@ import type { TrainingCategoryOption } from "./training-categories.service";
 import TrainingMediaField from "./TrainingMediaField";
 import TrainingFaqEditor from "./TrainingFaqEditor";
 import { getTrainingCurrencyOptions, getTrainingTimeZoneOptions } from "./training-reference-options";
+import { DateTimeLocalInput } from "@ihp/ui";
 
 type UpdateForm = <Key extends keyof CreateTrainingFormValues>(key: Key, value: CreateTrainingFormValues[Key]) => void;
 
@@ -174,12 +175,12 @@ export function TrainingScheduleSection({ values, update, errors }: SectionProps
     <section className="space-y-5">
       <SectionHeading title="Schedule" description="When does it run and when can people join? Dates drive calendar invites and reminders." tip="Start date powers the calendar file and ‘Upcoming’ filter. Enrolment closes auto-hides the Enrol button." />
       <div className="grid gap-4 md:grid-cols-2">
-        <label className={labelClass}>Start date<input id="training-field-start_date" type="datetime-local" value={values.start_date} onChange={(event) => update("start_date", event.target.value)} className={inputClass} /><FieldError error={errors.start_date} /></label>
-        <label className={labelClass}>End date<input id="training-field-end_date" type="datetime-local" value={values.end_date} onChange={(event) => update("end_date", event.target.value)} className={inputClass} /><FieldError error={errors.end_date} /></label>
+        <label className={labelClass}>Start date<DateTimeLocalInput id="training-field-start_date" value={values.start_date} onChange={(value) => update("start_date", value)} className={inputClass} /><FieldError error={errors.start_date} /></label>
+        <label className={labelClass}>End date<DateTimeLocalInput id="training-field-end_date" value={values.end_date} onChange={(value) => update("end_date", value)} className={inputClass} /><FieldError error={errors.end_date} /></label>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
-        <label className={labelClass}>Enrolment opens<input id="training-field-enrolment_start" type="datetime-local" value={values.enrolment_start} onChange={(event) => update("enrolment_start", event.target.value)} className={inputClass} /><FieldError error={errors.enrolment_start} /></label>
-        <label className={labelClass}>Enrolment closes<input id="training-field-enrolment_end" type="datetime-local" value={values.enrolment_end} min={values.enrolment_start || undefined} max={values.enrolment_start && values.start_date && values.enrolment_start > values.start_date ? undefined : values.start_date || undefined} onChange={(event) => update("enrolment_end", event.target.value)} className={inputClass} /><FieldError error={errors.enrolment_end} /></label>
+        <label className={labelClass}>Enrolment opens<DateTimeLocalInput id="training-field-enrolment_start" value={values.enrolment_start} onChange={(value) => update("enrolment_start", value)} className={inputClass} /><FieldError error={errors.enrolment_start} /></label>
+        <label className={labelClass}>Enrolment closes<DateTimeLocalInput id="training-field-enrolment_end" value={values.enrolment_end} min={values.enrolment_start || undefined} max={values.enrolment_start && values.start_date && values.enrolment_start > values.start_date ? undefined : values.start_date || undefined} onChange={(value) => update("enrolment_end", value)} className={inputClass} /><FieldError error={errors.enrolment_end} /></label>
       </div>
       <label className={labelClass}>Time zone<select id="training-field-time_zone" value={values.time_zone} onChange={(event) => update("time_zone", event.target.value)} className={inputClass}><option value="">{t("referenceOptions.selectTimeZone")}</option>{timeZoneOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
       <div className="grid gap-4 md:grid-cols-2">

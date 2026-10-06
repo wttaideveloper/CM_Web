@@ -436,16 +436,26 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
         ? visibleTaxonomyFields.find((field) => field.source === "core" && getTrainingFieldAliases(field).includes("subcategory"))
         : undefined;
       const category = trainingCategories.find((item) => item.parent_id === null && item.name === values.category);
-      if (categoryEnabled && values.category && !category) {
+      const categoryIsCustom = Boolean(values.category.trim())
+        && values.category !== TRAINING_OTHER_OPTION_VALUE
+        && !category;
+      if (categoryEnabled && values.category && !category && !categoryIsCustom) {
         validationErrors.category = ["Choose a valid Training category."];
       }
       if (subcategoryField) {
         const subcategories = category
           ? trainingCategories.filter((item) => item.parent_id === category.id)
           : [];
-        if (!category && subcategoryField.required) {
-          validationErrors.subcategory = ["Choose a Training category before selecting a subcategory."];
-        } else if (values.subcategory && !subcategories.some((item) => item.name === values.subcategory)) {
+        if (values.subcategory === TRAINING_OTHER_OPTION_VALUE) {
+          validationErrors.subcategory = ["Enter a custom subcategory or choose one from the list."];
+        } else if (!values.subcategory.trim() && subcategoryField.required) {
+          validationErrors.subcategory = [
+            !category && !categoryIsCustom
+              ? "Choose a Training category before selecting a subcategory."
+              : "Subcategory is required.",
+          ];
+        } else if (values.subcategory && !categoryIsCustom
+          && !subcategories.some((item) => item.name === values.subcategory)) {
           validationErrors.subcategory = ["Choose a valid subcategory for the selected Training category."];
         }
       } else if (!activeForm && values.subcategory && category

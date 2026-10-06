@@ -63,7 +63,7 @@ export function resolveNotificationTarget(
     return eventName === "training_submitted" ? "/approval-queue?type=trainings" : null;
   }
   const trainingId = trainingIdFor(notification);
-  if (trainingId && (enterpriseTrainingTypes.has(eventName) || eventName.startsWith("training_"))) {
+  if (trainingId && enterpriseTrainingTypes.has(eventName)) {
     if (eventName === "training_enrollment_accepted" || eventName === "training_enrollment_rejected") {
       return `/trainings/${encodeURIComponent(trainingId)}`;
     }

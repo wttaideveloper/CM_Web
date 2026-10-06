@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { authenticatedFetch } from "@ihp/auth";
+import { DateTimeLocalInput } from "@ihp/ui";
 import {
   addAssessmentQuestions,
   approveTrainingEnrolment,
@@ -68,7 +69,6 @@ const LESSON_TYPE_OPTIONS = [
   { value: "video", label: "Video" },
   { value: "youtube", label: "YouTube" },
   { value: "pdf", label: "PDF" },
-  { value: "document", label: "Document" },
   { value: "notes", label: "Notes" },
   { value: "quiz", label: "Quiz" },
 ] as const;
@@ -96,7 +96,7 @@ function toApiLessonType(type: string): string {
 
 function toUiLessonType(type: string): string {
   if (type === "exam") return "quiz";
-  return LESSON_TYPE_OPTIONS.some((option) => option.value === type) || type === "live" || type === "venue" ? type : "text";
+  return LESSON_TYPE_OPTIONS.some((option) => option.value === type) || type === "live" || type === "venue" || type === "document" ? type : "text";
 }
 
 function isLessonType(type: string, ...types: string[]): boolean {
@@ -319,11 +319,10 @@ function LessonScheduleFields({
       </label>
       <label className="block text-[10px] font-semibold text-[#52736a]">
         {copy("lessonDateTime", "Lesson date and time (required)")}
-        <input
-          type="datetime-local"
+        <DateTimeLocalInput
           required
           value={scheduledAt}
-          onChange={(event) => setScheduledAt(event.target.value)}
+          onChange={setScheduledAt}
           aria-label={copy("lessonDateTime", "Lesson date and time (required)")}
           className="mt-1 h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]"
         />
@@ -674,6 +673,9 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
   const lessonDocsInit = Array.isArray(lesson.documents) ? (lesson.documents as unknown[]).map((d) => { if (typeof d === "string" && d.trim()) return { url: d, name: "", visibility: "public", downloadable: true }; if (d && typeof d === "object") { const r = d as Record<string, unknown>; if (typeof r.url === "string") return { url: r.url, name: typeof r.name === "string" ? r.name : typeof r.title === "string" ? r.title : "", visibility: typeof r.visibility === "string" ? r.visibility : "public", downloadable: typeof r.downloadable === "boolean" ? r.downloadable : true }; } return null; }).filter((v): v is { url: string; name: string; visibility: string; downloadable: boolean } => v !== null) : [];
   const lessonNotesInit = Array.isArray(lesson.notes) ? (lesson.notes as unknown[]).filter((n): n is string => typeof n === "string") : [];
   const availableLessonTypes = getLessonTypeOptions(trainingDeliveryMode);
+  if (lessonType === "document" && !availableLessonTypes.some((option) => option.value === "document")) {
+    availableLessonTypes.push({ value: "document", label: "Document (existing)" });
+  }
   const selectedLessonType = availableLessonTypes.some((option) => option.value === lessonTypeValue) ? lessonTypeValue : "";
 
   useEffect(() => {

@@ -186,7 +186,7 @@ export function EnterpriseAdminLayout({
     return [...mappedWorkflow, ...extras];
   }, [workflowNotifications, notifications]);
   const displayUnreadCount = workflowNotifications
-    ? displayNotifications.filter((item) => !item.is_read).length
+    ? workflowNotifications.unreadCount
     : totalUnreadCount;
 
   const handleNotificationClick = async (item: (typeof displayNotifications)[number]) => {
