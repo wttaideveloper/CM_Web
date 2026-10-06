@@ -36,12 +36,37 @@ export function getTrainingModerationTimestamp(record: Record<string, unknown>):
     "performedAt",
     "reviewed_at",
     "changed_at",
+    "created_on",
+    "updated_at",
+    "updated_on",
+    "updatedAt",
+    "action_at",
+    "actionAt",
+    "date_time",
+    "datetime",
+    "reviewed_on",
+    "activity_at",
+    "occurred_at",
+    "event_at",
+    "decision_at",
   ];
 
   for (const field of timestampFields) {
     const value = record[field];
     if (typeof value === "string" && value.trim()) {
       return value;
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      const date = new Date(value);
+      if (Number.isFinite(date.getTime())) return date.toISOString();
+    }
+  }
+
+  for (const field of ["metadata", "details", "audit", "event"]) {
+    const nested = record[field];
+    if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+      const timestamp = getTrainingModerationTimestamp(nested as Record<string, unknown>);
+      if (timestamp) return timestamp;
     }
   }
 

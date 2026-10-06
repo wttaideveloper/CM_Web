@@ -63,8 +63,8 @@ export default function DateTimeLocalInput({ value, onChange, min, max, classNam
     const nextMonth = part === "month" ? next : month;
     const nextYear = part === "year" ? next : year;
     updateDate(nextYear, nextMonth, nextDay);
-    if (part === "day" && next.length === 2) monthInput.current?.focus();
-    if (part === "month" && next.length === 2) yearInput.current?.focus();
+    if (part === "month" && next.length === 2) dayInput.current?.focus();
+    if (part === "day" && next.length === 2) yearInput.current?.focus();
   };
   const inputClassName = className ?? "mt-1 h-10 w-full min-w-0 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm font-normal text-[#06201c] outline-none focus:border-[#1f6a58]";
   const segmentClassName = "h-full min-w-0 bg-transparent px-0.5 text-center text-sm font-normal text-[#06201c] outline-none placeholder:text-[#7f9d94]";
@@ -72,9 +72,9 @@ export default function DateTimeLocalInput({ value, onChange, min, max, classNam
   return (
     <div className={`${inputClassName} relative flex min-w-0 items-center gap-1 !px-3`} role="group" aria-label={`${fieldLabel} date and time`}>
       <div className="flex min-w-0 shrink-0 items-center gap-0.5" role="group" aria-label={`${fieldLabel} date`}>
-        <input {...props} ref={dayInput} id={id ? `${id}-day` : undefined} type="text" inputMode="numeric" autoComplete="off" maxLength={2} value={day} placeholder="DD" required={required} disabled={disabled} aria-label={`${fieldLabel} day`} className={`${segmentClassName} w-9`} onChange={(event) => updateDatePart("day", event.target.value)} />
-        <span aria-hidden="true">-</span>
         <input {...props} ref={monthInput} id={id ? `${id}-month` : undefined} type="text" inputMode="numeric" autoComplete="off" maxLength={2} value={month} placeholder="MM" required={required} disabled={disabled} aria-label={`${fieldLabel} month`} className={`${segmentClassName} w-9`} onChange={(event) => updateDatePart("month", event.target.value)} />
+        <span aria-hidden="true">-</span>
+        <input {...props} ref={dayInput} id={id ? `${id}-day` : undefined} type="text" inputMode="numeric" autoComplete="off" maxLength={2} value={day} placeholder="DD" required={required} disabled={disabled} aria-label={`${fieldLabel} day`} className={`${segmentClassName} w-9`} onChange={(event) => updateDatePart("day", event.target.value)} />
         <span aria-hidden="true">-</span>
         <input {...props} ref={yearInput} id={id ? `${id}-year` : undefined} type="text" inputMode="numeric" autoComplete="off" maxLength={4} value={year} placeholder="YYYY" required={required} disabled={disabled} aria-label={`${fieldLabel} year (4 digits)`} className={`${segmentClassName} w-16`} onKeyDown={(event) => { const input = event.currentTarget; if (year.length === 4 && input.selectionStart === 4 && input.selectionEnd === 4 && /^\d$/.test(event.key)) { event.preventDefault(); const nextTime = `${event.key.padStart(2, "0")}:00`; setTimeValue(nextTime); emit(dateValue, nextTime); timeInput.current?.focus(); } }} onChange={(event) => updateDatePart("year", event.target.value)} />
         <input ref={calendarInput} type="date" value={dateValue} min={minDate} max={maxDate && maxDate < "9999-12-31" ? maxDate : "9999-12-31"} tabIndex={-1} aria-hidden="true" className="pointer-events-none absolute h-px w-px opacity-0" onChange={(event) => { const match = event.target.value.match(/^(\d{4})-(\d{2})-(\d{2})$/); if (match) updateDate(match[1], match[2], match[3]); }} />

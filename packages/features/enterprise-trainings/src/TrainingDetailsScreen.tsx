@@ -5,13 +5,12 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
-import ProgressSummaryCard from "./ProgressSummaryCard";
 import TrainingActionsMenu from "./TrainingActionsMenu";
 import { ParticipantDashboardCard, ProviderDashboardCard } from "./dashboard-cards";
 import { TrainingAssessmentsTab, TrainingAttendanceTab, TrainingContentTab, TrainingEnrolmentsTab, TrainingLiveTab, TrainingSectionsTab } from "./TrainingDetailsSections";
 import { displayValue, formatTrainingDate, formatTrainingDateTime, formatTrainingPrice, getTrainingModerationTimestamp, humanizeLabel } from "./detail-formatters";
 import { getTrainingStatusBadgeClass, getTrainingStatusLabel } from "./training-status";
-import { getTrainingAdminNotes, getTrainingById, getTrainingProgress, getTrainingSections, listTrainingEnrolments, downloadTrainingNotesPdf, getTrainingMeetingLink, getTrainingModerationHistory, publishTrainingEnterprise, getTrainingParticipantDashboard, getTrainingProviderDashboard, TrainingsApiError } from "./trainings.service";
+import { getTrainingAdminNotes, getTrainingById, downloadTrainingNotesPdf, getTrainingMeetingLink, getTrainingModerationHistory, publishTrainingEnterprise, getTrainingParticipantDashboard, getTrainingProviderDashboard, TrainingsApiError } from "./trainings.service";
 import TrainingCalendarAction from "./TrainingCalendarAction";
 import { getTrainingMediaPreviewUrl } from "./training-media-url";
 
@@ -222,8 +221,8 @@ function ParticipantToolbar({ trainingId, status, trainingMeetingLink }: { train
                 <div className="flex items-center gap-2">
                   <span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-[10px] font-bold text-[#2563eb]">{humanizeLabel(action)}</span>
                   {performedBy ? <span className="text-[10px] text-[#7f9d94]">by {performedBy}</span> : null}
-                  {performedAt ? <span className="text-[10px] text-[#7f9d94]">{formatTrainingDateTime(performedAt)}</span> : null}
                 </div>
+                <p className="mt-1 text-[10px] text-[#7f9d94]">{performedAt ? formatTrainingDateTime(performedAt) : "Date and time unavailable from the history record"}</p>
                 {note ? <p className="mt-1 text-xs text-[#52736a]">{note}</p> : null}
               </div>
             );
@@ -280,27 +279,6 @@ export default function TrainingDetailsScreen({
     retry: 1,
   });
 
-  const sectionsQuery = useQuery({
-    queryKey: ["trainings", trainingId, "sections"],
-    queryFn: () => getTrainingSections(trainingId),
-    enabled: activeTab === "details" && Boolean(trainingId),
-    retry: false,
-  });
-
-  const enrolmentsQuery = useQuery({
-    queryKey: ["trainings", trainingId, "enrolments"],
-    queryFn: () => listTrainingEnrolments(trainingId),
-    enabled: activeTab === "details" && Boolean(trainingId),
-    retry: false,
-  });
-
-  const progressQuery = useQuery({
-    queryKey: ["trainings", trainingId, "progress"],
-    queryFn: () => getTrainingProgress(trainingId),
-    enabled: Boolean(trainingId),
-    retry: false,
-  });
-
   if (trainingQuery.isLoading) {
     return (
       <div className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm" aria-live="polite" aria-busy="true">
@@ -332,6 +310,14 @@ export default function TrainingDetailsScreen({
 
   const training = trainingQuery.data;
   const trainingRecord = training as unknown as Record<string, unknown>;
+  const trainingCustomValues = trainingRecord.custom_values && typeof trainingRecord.custom_values === "object" && !Array.isArray(trainingRecord.custom_values)
+    ? trainingRecord.custom_values as Record<string, unknown>
+    : {};
+  const promoPrice = trainingRecord.promo_price ?? trainingRecord.promoPrice ?? trainingCustomValues.promo_price ?? trainingCustomValues.promoPrice;
+  const couponCode = trainingRecord.coupon_code ?? trainingRecord.couponCode ?? trainingCustomValues.coupon_code ?? trainingCustomValues.couponCode;
+  const pricingType = [trainingRecord.pricing_type, trainingRecord.pricingType]
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0)?.trim().toLowerCase();
+  const isFreeTraining = pricingType === "free" || (!pricingType && (training.price === null || training.price === undefined || training.price.trim() === ""));
   const trainingLessonDefaults = {
     meetingProvider: training.meeting_provider ?? "",
     meetingLink: training.meeting_link ?? "",
@@ -341,9 +327,7 @@ export default function TrainingDetailsScreen({
     startDate: training.start_date ?? "",
     startTime: typeof trainingRecord.start_time === "string" ? trainingRecord.start_time : "",
   };
-  const sections = Array.isArray(sectionsQuery.data) ? (sectionsQuery.data as Array<Record<string, unknown>>) : [];
-  const enrolments = Array.isArray(enrolmentsQuery.data) ? enrolmentsQuery.data : [];
-  const lessonCount = sections.reduce((total, section) => total + (Array.isArray(section.lessons) ? section.lessons.length : 0), 0);
+  const legacySessions = Array.isArray(trainingRecord.sessions) ? trainingRecord.sessions as Array<Record<string, unknown>> : [];
   const primaryImageUrl = getTrainingMediaPreviewUrl(training.primary_image);
 
   return (
@@ -407,7 +391,7 @@ export default function TrainingDetailsScreen({
       </div>
 
       {activeTab === "details" ? (
-        <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
+        <div className={`mt-6 grid gap-6 ${legacySessions.length > 0 ? "lg:grid-cols-[1fr_320px]" : "grid-cols-1"}`}>
           <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
             <h3 className="text-lg font-bold text-[#06201c]">Details</h3>
             <div className="mt-4 grid gap-5 sm:grid-cols-2">
@@ -416,7 +400,9 @@ export default function TrainingDetailsScreen({
               <DetailItem label="Subcategory" value={displayValue(training.subcategory)} />
               <DetailItem label="Delivery mode" value={training.delivery_mode ? humanizeLabel(training.delivery_mode) : "Not provided"} />
               <DetailGroupHeading>Pricing & Capacity</DetailGroupHeading>
-              <DetailItem label="Price" value={formatTrainingPrice(training.price, training.currency)} />
+              <DetailItem label="Price" value={isFreeTraining ? "Free" : formatTrainingPrice(training.price, training.currency)} />
+              <DetailItem label="Promo price" value={promoPrice === null || promoPrice === undefined || promoPrice === "" ? "Not provided" : formatTrainingPrice(String(promoPrice), training.currency)} />
+              <DetailItem label="Coupon code" value={typeof couponCode === "string" || typeof couponCode === "number" ? displayValue(couponCode) : "Not provided"} />
               <DetailItem label="Capacity" value={displayValue(training.capacity)} />
               <DetailItem label="Enrolled" value={displayValue(String((training as unknown as Record<string, unknown>).enrolled_count ?? "—"))} />
               <DetailItem label="Available slots" value={displayValue(String((training as unknown as Record<string, unknown>).available_slots ?? "—"))} />
@@ -506,21 +492,13 @@ export default function TrainingDetailsScreen({
               }
             `}</style>
           </section>
-          <aside className="space-y-5">
-            <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
-              <h3 className="text-lg font-bold text-[#06201c]">Structure</h3>
-              <div className="mt-4 grid gap-3">
-                <DetailItem label="Sessions" value={String(sections.length)} />
-                <DetailItem label="Lessons" value={String(lessonCount)} />
-                <DetailItem label="Enrolments" value={String(enrolments.length)} />
-              </div>
-            </section>
-            {Array.isArray((training as unknown as Record<string, unknown>).sessions) && ((training as unknown as Record<string, unknown>).sessions as unknown[]).length > 0 ? (
+          {legacySessions.length > 0 ? <aside className="space-y-5">
+            {legacySessions.length > 0 ? (
               <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
                 <h3 className="text-lg font-bold text-[#06201c]">Sessions</h3>
                 <p className="mt-1 text-xs text-[#7f9d94]">Legacy sessions carried through edits — never modified here.</p>
                 <ul className="mt-3 space-y-2">
-                  {((training as unknown as Record<string, unknown>).sessions as Array<Record<string, unknown>>).map((session, i) => {
+                  {legacySessions.map((session, i) => {
                     const title = typeof session.title === "string" ? session.title : typeof session.name === "string" ? session.name : `Session ${i + 1}`;
                     const when = typeof session.scheduled_at === "string" ? session.scheduled_at : typeof session.start_date === "string" ? session.start_date : typeof session.date === "string" ? session.date : null;
                     return (
@@ -533,12 +511,7 @@ export default function TrainingDetailsScreen({
                 </ul>
               </section>
             ) : null}
-            <section className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm">
-              <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Progress</p>
-              {progressQuery.isLoading ? <p className="mt-2 text-sm text-[#52736a]">Loading...</p> : <ProgressSummaryCard data={progressQuery.data} />}
-            </section>
-
-          </aside>
+          </aside> : null}
         </div>
       ) : null}
 
