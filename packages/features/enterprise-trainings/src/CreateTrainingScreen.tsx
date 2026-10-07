@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCurrentEnterprise, useTenant } from "@ihp/enterprise-runtime";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { clearPersistedDateTimeDrafts, useUnsavedChangesWarning } from "@ihp/ui";
 
 import { TrainingBasicsSection, TrainingCapacitySection, TrainingCourseBuilderSection, TrainingDeliverySection, TrainingMediaSection, TrainingPricingSection, TrainingScheduleSection } from "./CreateTrainingSections";
 import { buildCreateTrainingPayload, buildUpdateTrainingPayload, createEmptyTrainingForm, trainingToFormValues, validateTrainingForm, type CreateTrainingFormValues } from "./create-training-form";
@@ -209,7 +210,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   const router = useRouter();
   const queryClient = useQueryClient();
   const { tenantId } = useTenant();
-  const { enterpriseId } = useCurrentEnterprise();
+  const { enterpriseId, isLoadingEnterprise } = useCurrentEnterprise();
   const activeFormQ = useActiveTrainingFormConfiguration(mode === "create");
   const historicalFormQ = useTrainingHistoricalFormConfiguration(initialTraining?.id, mode === "edit" && Boolean(initialTraining));
   const activeForm = (mode === "create" ? activeFormQ.data : historicalFormQ.data) ?? null;
@@ -224,6 +225,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   const [activeStep, setActiveStep] = useState(0);
   const [initialValues] = useState(() => (initialTraining ? trainingToFormValues(initialTraining) : createEmptyTrainingForm()));
   const [values, setValues] = useState<CreateTrainingFormValues>(() => (initialTraining ? trainingToFormValues(initialTraining) : createEmptyTrainingForm()));
+  const [initialCustomValues] = useState<Record<string, unknown>>(() => hydrateConfiguredCustomValues(initialTraining, activeForm));
   const [customValues, setCustomValues] = useState<Record<string, unknown>>(() => hydrateConfiguredCustomValues(initialTraining, activeForm));
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -254,20 +256,25 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
         const preferred = normalizeTrainingFieldKey(field.apiKey ?? field.key);
         if (!preferred) continue;
         const coreField = aliases.find((alias) => knownCoreKeys.has(alias));
-        for (const alias of aliases) canonicalFieldKeys.set(alias, coreField ?? preferred);
+        const canonicalKey = coreField
+          ?? (field.source === "custom" ? field.stable_key : null)
+          ?? field.apiKey
+          ?? field.key;
+        for (const alias of aliases) canonicalFieldKeys.set(alias, canonicalKey);
       }
     }
-    const formKeys = new Set((activeForm?.sections ?? []).flatMap((sec) => sec.fields.flatMap((fld) => [fld.key, fld.apiKey].filter((key): key is string => Boolean(key)))));
+    const formKeys = new Set((activeForm?.sections ?? []).flatMap((sec) => sec.fields.flatMap((fld) => [fld.key, fld.apiKey, fld.stable_key].filter((key): key is string => Boolean(key)))));
     const selected = new Map<string, unknown>();
     for (const [key, value] of Object.entries(raw)) {
       const rawNormalizedKey = normalizeTrainingFieldKey(key);
-      const normalizedKey = canonicalFieldKeys.get(rawNormalizedKey) ?? rawNormalizedKey;
+      const canonicalKey = canonicalFieldKeys.get(rawNormalizedKey) ?? key;
+      const normalizedKey = normalizeTrainingFieldKey(canonicalKey);
       if (!key || value === undefined || value === null || value === "") continue;
       if (topLevelKeys.has(key)) continue;
       if (knownCoreKeys.has(normalizedKey)) continue;
-      if ([...knownCoreKeys].some((coreKey) => normalizedKey.startsWith(`${coreKey}_`)) && !formKeys.has(key)) continue;
-      if (formKeys.size > 0 && !formKeys.has(key) && !formKeys.has(normalizedKey)) continue;
-      selected.set(key, value);
+      if ([...knownCoreKeys].some((coreKey) => normalizedKey.startsWith(`${coreKey}_`)) && !formKeys.has(key) && !formKeys.has(canonicalKey)) continue;
+      if (formKeys.size > 0 && !formKeys.has(key) && !formKeys.has(canonicalKey) && !formKeys.has(normalizedKey)) continue;
+      selected.set(canonicalKey, value);
     }
     return selected.size ? Object.fromEntries(selected) : undefined;
   };
@@ -279,7 +286,9 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
         .flatMap((section) => section.fields)
         .filter((field) => field.source === "custom" && isTrainingFormFieldVisible(field, allFields, values, customValues))
         .map((field) => {
-          const configuredKey = field.apiKey ?? field.key;
+          const configuredKey = field.source === "custom"
+            ? field.stable_key ?? field.apiKey ?? field.key
+            : field.apiKey ?? field.key;
           const value =
             (field.apiKey && customValues[field.apiKey] !== undefined ? customValues[field.apiKey] : undefined)
             ?? (field.key in values ? values[field.key as keyof CreateTrainingFormValues] : undefined)
@@ -290,7 +299,19 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
           const customValue = isLearningObjectives && Array.isArray(value)
             ? value.filter((objective): objective is string => typeof objective === "string").join("\n")
             : value;
-          return [configuredKey, customValue] as const;
+          const configuredOptionValue = field.source === "custom" && field.type === "select"
+            ? (Array.isArray(customValue) ? customValue : [customValue])
+              .map((selectedValue) => typeof selectedValue === "string"
+                ? field.configuredOptions?.find((option) => option.value === selectedValue || option.label === selectedValue)?.value ?? selectedValue
+                : selectedValue)
+              .filter((selectedValue) => selectedValue !== undefined && selectedValue !== null && selectedValue !== "")
+            : customValue;
+          const expectsArrayValue = field.valueType?.toLowerCase() === "array"
+            || field.valueType?.trim().endsWith("[]") === true;
+          const serializedCustomValue = field.source === "custom" && field.type === "select" && !expectsArrayValue
+            ? (Array.isArray(configuredOptionValue) ? configuredOptionValue[0] : configuredOptionValue)
+            : configuredOptionValue;
+          return [configuredKey, serializedCustomValue] as const;
         })
         .filter(([, value]) => value !== undefined && value !== null && value !== ""),
     );
@@ -357,6 +378,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
       return createTraining(payload);
     },
     onSuccess: async (data) => {
+      clearPersistedDateTimeDrafts();
       await queryClient.invalidateQueries({ queryKey: ["trainings", "list"] });
       window.scrollTo({ top: 0, behavior: "auto" });
       if (initialTraining) {
@@ -381,6 +403,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
     setErrors((current) => ({ ...current, [key]: [] }));
     setSubmitError(null);
   };
+  const updateCustomValues = (next: Record<string, unknown>) => setCustomValues(next);
   useEffect(() => {
     if (!pendingFocusField) return;
     const configuredField = activeForm?.sections
@@ -484,7 +507,9 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
     Object.assign(validationErrors, configuredErrors);
     return validationErrors;
   }, [activeForm, customValues, mode, trainingCategories, trainingCategoriesQuery.data, trainingFormSections, values]);
-  const isDirty = JSON.stringify(values) !== JSON.stringify(initialValues);
+  const isDirty = JSON.stringify(values) !== JSON.stringify(initialValues)
+    || JSON.stringify(customValues) !== JSON.stringify(initialCustomValues);
+  useUnsavedChangesWarning(isDirty);
   const getSectionFieldKeys = (index: number): string[] => activeForm
     ? configuredSections[index]?.fields.flatMap(getTrainingFieldAliases) ?? []
     : [...(stepFields[index] ?? [])];
@@ -557,7 +582,8 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   const StaticSection = staticSectionComponents[activeStep] ?? staticSectionComponents[0];
   const backHref = initialTraining ? `/admin/trainings/${initialTraining.id}` : "/admin/trainings";
   const title = mode === "edit" ? "Edit Training" : "Create Training";
-  const isCreateBlockedByEnterprise = mode === "create" && !enterpriseId;
+  const isCreateBlockedByEnterprise = mode === "create" && !isLoadingEnterprise && !enterpriseId;
+  const isResolvingEnterprise = mode === "create" && isLoadingEnterprise;
 
   // Bounded, one-time loading gate (react-query already retries once) so the editor never
   // flashes the static form and then swaps to the dynamic one a moment later.
@@ -657,7 +683,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
         <main className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm sm:p-7">
           {activeForm ? (
             activeStep < configuredSections.length ? (
-              <ConfiguredCreateTrainingSection key={`${activeForm.id}:${activeForm.version_id ?? activeForm.updated_at ?? "current"}:${configuredSections[activeStep].id}`} section={configuredSections[activeStep]} allFields={activeForm.sections.flatMap((section) => section.fields)} values={values} update={update} errors={errors} customValues={customValues} setCustomValues={setCustomValues} trainingCategories={trainingCategories} categoriesLoading={trainingCategoriesQuery.isLoading} categoriesError={trainingCategoriesQuery.isError} retryCategories={() => { void trainingCategoriesQuery.refetch(); }} preserveLegacyCategoryValues={mode === "edit"} />
+              <ConfiguredCreateTrainingSection key={`${activeForm.id}:${activeForm.version_id ?? activeForm.updated_at ?? "current"}:${configuredSections[activeStep].id}`} section={configuredSections[activeStep]} allFields={activeForm.sections.flatMap((section) => section.fields)} values={values} update={update} errors={errors} customValues={customValues} setCustomValues={updateCustomValues} trainingCategories={trainingCategories} categoriesLoading={trainingCategoriesQuery.isLoading} categoriesError={trainingCategoriesQuery.isError} retryCategories={() => { void trainingCategoriesQuery.refetch(); }} preserveLegacyCategoryValues={mode === "edit"} />
             ) : (
               <section className="space-y-4">
                 <h2 className="text-xl font-bold text-[#06201c]">Review & Submit</h2>
@@ -681,12 +707,13 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
           ) : (
             <StaticSection {...sharedProps} />
           )}
+          {isResolvingEnterprise ? <div role="status" className="mt-6 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-4 py-3 text-sm font-semibold text-[#52736a]">Checking the linked Enterprise…</div> : null}
           {isCreateBlockedByEnterprise ? <div role="status" className="mt-6 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-3 text-sm font-semibold text-[#735c1e]">Creating a Training is unavailable until an Enterprise is linked. The current backend TrainingCreate contract requires an enterprise_id.</div> : null}
           {submitError ? <div role="alert" className="mt-6 rounded-xl border border-[#f3d0cb] bg-[#fff6f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{submitError}</div> : null}
           <div className="mt-8 flex flex-col-reverse gap-3 border-t border-[#edf3f0] pt-5 sm:flex-row sm:justify-between">
             {activeStep > 0 ? <button type="button" onClick={() => setActiveStep((current) => current - 1)} disabled={saveMutation.isPending} className="h-11 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a] disabled:opacity-50">Back</button> : null}
             {(activeForm ? activeStep === editorSteps.length - 1 : activeStep === steps.length - 1) ? (
-              <button type="button" onClick={submit} disabled={saveMutation.isPending || isCreateBlockedByEnterprise || (mode === "edit" && !isDirty)} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm disabled:opacity-60">
+              <button type="button" onClick={submit} disabled={saveMutation.isPending || isResolvingEnterprise || isCreateBlockedByEnterprise || (mode === "edit" && !isDirty)} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm disabled:opacity-60">
                 {saveMutation.isPending ? (mode === "edit" ? "Saving..." : "Creating...") : mode === "edit" ? "Save Changes" : "Create Training"}
               </button>
             ) : (

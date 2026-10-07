@@ -15,8 +15,8 @@ import {
   createTrainingAssessment,
   createTrainingDiscussion,
   createTrainingLesson,
-  createTrainingReview,
   createTrainingSection,
+  deleteTrainingReview,
   deleteAssessmentQuestion,
   deleteTrainingAssessment,
   deleteTrainingAssignment,
@@ -258,6 +258,12 @@ function formatLessonScheduledAt(value: string): string {
     : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
+function getLocalDateTimeMinimum(): string {
+  const now = new Date();
+  const localDateTime = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return localDateTime.toISOString().slice(0, 16);
+}
+
 function LessonScheduleFields({
   type,
   defaults,
@@ -301,6 +307,12 @@ function LessonScheduleFields({
     ? formatLessonScheduledAt(scheduledAtDefault)
     : [defaults.startDate, defaults.startTime].filter(Boolean).join(" · ");
   const isLive = type === "live";
+  const existingLiveDate = new Date(scheduledAt);
+  const lessonDateMinimum = isLive || type === "venue"
+    ? scheduledAt && !Number.isNaN(existingLiveDate.getTime()) && existingLiveDate < new Date()
+      ? scheduledAt
+      : getLocalDateTimeMinimum()
+    : undefined;
   const title = isLive ? copy("meetingSetup", "Meeting setup") : copy("venueSetup", "Venue setup");
 
   return (
@@ -322,6 +334,7 @@ function LessonScheduleFields({
         <DateTimeLocalInput
           required
           value={scheduledAt}
+          min={lessonDateMinimum}
           onChange={setScheduledAt}
           aria-label={copy("lessonDateTime", "Lesson date and time (required)")}
           className="mt-1 h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]"
@@ -1269,7 +1282,6 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
 
   return (
     <SectionCard title="Sessions & Lessons">
-      {feedback ? <p role="status" className="mb-4 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">{feedback}</p> : null}
       {sections.length === 0 ? <p className="text-sm text-[#52736a]">No sessions yet. Add your first session to start building the training.</p> : null}
       <ul className="grid gap-3">
         {sections.map((section, sIndex) => {
@@ -1279,7 +1291,7 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
           const isEditing = editingSectionId === id;
           return (
             <li key={id} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-4">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex items-start justify-between gap-3">
                 {isEditing ? (
                   <form className="grid flex-1 gap-2" onSubmit={(e) => { e.preventDefault(); if (editSectionTitle.trim()) updateSectionMutation.mutate({ sectionId: id, title: editSectionTitle.trim() }); }}>
                     <div className="flex gap-2">
@@ -1290,7 +1302,7 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
                   </form>
                 ) : (
                   <>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="min-w-0 break-words text-sm font-bold text-[#06201c]">{title}</p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
@@ -1652,7 +1664,6 @@ function EnrolmentsSection({ trainingId }: { trainingId: string }) {
             const rawStatus = typeof record.status === "string" ? record.status : typeof record.enrolment_status === "string" ? record.enrolment_status : typeof record.approval_status === "string" ? record.approval_status : "—";
             const status = rawStatus.toLowerCase();
             const enrolledAt = typeof record.enrolled_at === "string" ? record.enrolled_at : typeof record.created_at === "string" ? record.created_at : null;
-            const checkedInAt = typeof record.checked_in_at === "string" ? record.checked_in_at : null;
             const settledStatuses = ["approved", "enrolled", "active", "attended", "completed", "cancelled", "rejected", "checked_in"];
             const isPending = !settledStatuses.includes(status);
             return (
@@ -1661,9 +1672,6 @@ function EnrolmentsSection({ trainingId }: { trainingId: string }) {
                   <p className="text-sm font-bold text-[#06201c]">{name}</p>
                   {email ? <p className="text-xs text-[#7f9d94]">{email}</p> : null}
                   {enrolledAt ? <p className="text-xs text-[#7f9d94]">{formatTrainingDate(enrolledAt)}</p> : null}
-                  <div className="mt-1 flex flex-wrap gap-1.5">
-                    <span className={checkedInAt ? "rounded-full bg-[#e8f6ee] px-2.5 py-1 text-[11px] font-bold text-[#1f6a58]" : "rounded-full bg-[#f5f7f6] px-2.5 py-1 text-[11px] font-bold text-[#52736a]"}>{checkedInAt ? "Checked in " + formatDetailDateTime(checkedInAt) : "Not checked in"}</span>
-                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="rounded-full bg-[#eef4ff] px-3 py-1 text-[11px] font-bold text-[#2563eb]">{humanizeLabel(rawStatus)}</span>
@@ -2642,10 +2650,8 @@ export function TrainingAssignmentsTab({ trainingId }: { trainingId: string }) {
 /** Renders training reviews backed by `GET/POST /trainings/{id}/reviews`. */
 export function TrainingReviewsTab({ trainingId }: { trainingId: string }) {
   const queryClient = useQueryClient();
-  const [rating, setRating] = useState("5");
-  const [comment, setComment] = useState("");
-  const [email, setEmail] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const reviewsQuery = useQuery({
     queryKey: ["trainings", trainingId, "reviews"],
@@ -2654,34 +2660,52 @@ export function TrainingReviewsTab({ trainingId }: { trainingId: string }) {
     retry: 1,
   });
 
-  const createMutation = useMutation({
-    mutationFn: () => createTrainingReview(trainingId, { rating: Number(rating), comment: comment.trim() || null, participant_email: email.trim() || undefined }),
-    onSuccess: () => { setComment(""); setEmail(""); setRating("5"); setFeedback("Review added."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "reviews"] }); },
-    onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to add review."),
+  const deleteMutation = useMutation({
+    mutationFn: (reviewId: string) => deleteTrainingReview(trainingId, reviewId),
+    onSuccess: () => {
+      setDeleteError(null);
+      setFeedback("Review deleted.");
+      void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "reviews"] });
+      void queryClient.invalidateQueries({ queryKey: ["trainings", "detail", trainingId] });
+      void queryClient.invalidateQueries({ queryKey: ["trainings", "list"] });
+    },
+    onError: (error) => setDeleteError(error instanceof TrainingsApiError ? error.message : "Unable to delete review."),
   });
+
+  const handleDeleteReview = (reviewId: string) => {
+    if (deleteMutation.isPending || !window.confirm("Permanently delete this review? This cannot be undone.")) return;
+    setFeedback(null);
+    setDeleteError(null);
+    deleteMutation.mutate(reviewId);
+  };
 
   const reviews = reviewsQuery.data ?? [];
 
   return (
     <SectionCard title="Reviews">
       {feedback ? <p role="status" className="mb-4 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">{feedback}</p> : null}
-      <form className="flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); if (rating) createMutation.mutate(); }}>
-        <select value={rating} onChange={(e) => setRating(e.target.value)} aria-label="Rating" className="h-10 rounded-xl border border-[#d7e5df] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]">
-          {[5, 4, 3, 2, 1].map((r) => <option key={r} value={String(r)}>{r} ★</option>)}
-        </select>
-        <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Participant email (optional)" type="email" className="h-10 min-w-[180px] flex-1 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm outline-none focus:border-[#1f6a58]" />
-        <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Write a review..." className="h-10 min-w-[200px] flex-[2] rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm outline-none focus:border-[#1f6a58]" />
-        <button type="submit" disabled={createMutation.isPending} className="h-10 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white disabled:opacity-60">{createMutation.isPending ? "Adding..." : "Add review"}</button>
-      </form>
+      {deleteError ? <p role="alert" className="mb-4 rounded-xl border border-[#f3c7c3] bg-[#fff5f4] px-4 py-3 text-sm font-semibold text-[#b42318]">{deleteError}</p> : null}
       {reviewsQuery.isLoading ? <p className="mt-4 text-sm text-[#52736a]">Loading reviews...</p> : null}
-      {reviewsQuery.isError ? <p className="mt-4 text-sm font-semibold text-[#b42318]">{(reviewsQuery.error as Error).message}</p> : null}
-      {!reviewsQuery.isLoading && !reviewsQuery.isError && reviews.length === 0 ? <p className="mt-4 text-sm text-[#52736a]">No reviews yet.</p> : null}
+      {reviewsQuery.isError ? (
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <p role="alert" className="text-sm font-semibold text-[#b42318]">{(reviewsQuery.error as Error).message}</p>
+          <button type="button" onClick={() => void reviewsQuery.refetch()} className="text-sm font-bold text-[#1f6a58] underline">Retry</button>
+        </div>
+      ) : null}
+      {!reviewsQuery.isLoading && !reviewsQuery.isError && reviews.length === 0 ? <p className="mt-4 text-sm text-[#52736a]">No reviews have been submitted for this Training yet.</p> : null}
       {reviews.length > 0 ? (
         <ul className="mt-4 grid gap-2">
           {reviews.map((review, index) => {
             const record = review as Record<string, unknown>;
-            const id = typeof record.id === "string" ? record.id : String(index);
-            const author = typeof record.author === "string" ? record.author : typeof record.participant_email === "string" ? record.participant_email : "Participant";
+            const reviewId = typeof record.id === "string" && record.id.trim() ? record.id : null;
+            const id = reviewId ?? String(index);
+            const author = typeof record.participant_name === "string" && record.participant_name.trim()
+              ? record.participant_name
+              : typeof record.author === "string" && record.author.trim()
+                ? record.author
+                : typeof record.participant_email === "string"
+                  ? record.participant_email
+                  : "Participant";
             const ratingValue = typeof record.rating === "number" ? record.rating : null;
             const commentText = typeof record.comment === "string" ? record.comment : null;
             const createdAt = typeof record.created_at === "string" ? record.created_at : null;
@@ -2690,7 +2714,20 @@ export function TrainingReviewsTab({ trainingId }: { trainingId: string }) {
               <li key={id} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] px-4 py-3">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-bold text-[#06201c]">{author}{verified ? " · Verified" : ""}</p>
-                  {ratingValue !== null ? <span className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{ratingValue} ★</span> : null}
+                  <div className="flex shrink-0 items-center gap-2">
+                    {ratingValue !== null ? <span className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{ratingValue} ★</span> : null}
+                    {reviewId ? (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteReview(reviewId)}
+                        disabled={deleteMutation.isPending}
+                        aria-label={`Delete review by ${author}`}
+                        className="rounded-full border border-[#e1c9c6] px-3 py-1 text-xs font-bold text-[#a52a20] hover:bg-[#fff1ef] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {deleteMutation.isPending && deleteMutation.variables === reviewId ? "Deleting…" : "Delete review"}
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
                 {commentText ? <p className="mt-1 text-sm text-[#52736a]">{commentText}</p> : null}
                 {createdAt ? <p className="mt-1 text-xs text-[#7f9d94]">{formatTrainingDate(createdAt)}</p> : null}

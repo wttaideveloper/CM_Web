@@ -16,6 +16,7 @@ import {
   updateLocation,
 } from "../services/enterprise-location.service";
 import { formatCurrency } from "@ihp/shared";
+import { useUnsavedChangesWarning } from "@ihp/ui";
 import {
   normalizeEnterpriseStatus,
   type EnterpriseDto,
@@ -454,8 +455,12 @@ export default function EnterpriseDetailsScreen({
   const [showLocationForm, setShowLocationForm] = useState(false);
   const [editingLocationId, setEditingLocationId] = useState<string | null>(null);
   const [locationDraft, setLocationDraft] = useState<LocationDraft>(() => createLocationDraft());
+  const [locationDraftBaseline, setLocationDraftBaseline] = useState<LocationDraft>(() => createLocationDraft());
   const [isSavingLocation, setIsSavingLocation] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const hasUnsavedLocationChanges = showLocationForm
+    && JSON.stringify(locationDraft) !== JSON.stringify(locationDraftBaseline);
+  useUnsavedChangesWarning(hasUnsavedLocationChanges);
 
   async function fetchEnterpriseOptions() {
     try {
@@ -574,7 +579,9 @@ export default function EnterpriseDetailsScreen({
 
   function openNewLocationForm() {
     setEditingLocationId(null);
-    setLocationDraft(createLocationDraft());
+    const draft = createLocationDraft();
+    setLocationDraft(draft);
+    setLocationDraftBaseline(draft);
     setLocationError(null);
     setLocationsError(null);
     setShowLocationForm(true);
@@ -582,7 +589,9 @@ export default function EnterpriseDetailsScreen({
 
   function openEditLocationForm(location: EnterpriseLocationDto) {
     setEditingLocationId(location.id);
-    setLocationDraft(createLocationDraft(location));
+    const draft = createLocationDraft(location);
+    setLocationDraft(draft);
+    setLocationDraftBaseline(draft);
     setLocationError(null);
     setLocationsError(null);
     setShowLocationForm(true);
@@ -637,7 +646,9 @@ export default function EnterpriseDetailsScreen({
       });
       setShowLocationForm(false);
       setEditingLocationId(null);
-      setLocationDraft(createLocationDraft());
+      const draft = createLocationDraft();
+      setLocationDraft(draft);
+      setLocationDraftBaseline(draft);
     } catch (saveError) {
       setLocationError(saveError instanceof Error ? saveError.message : "Unable to save location.");
     } finally {

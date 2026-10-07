@@ -317,7 +317,7 @@ function FieldPicker({ sectionId, sectionName, source, onSourceChange, search, o
       ) : (
         <div className="mt-4 space-y-3">
           <label className="block text-sm font-semibold text-[#355a51]">{copy.label}<input value={customLabel} onChange={(event) => onCustomLabelChange(event.target.value)} className={control} /></label>
-          <label className="block text-sm font-semibold text-[#355a51]">{copy.type}<select value={customRenderer} onChange={(event) => onCustomRendererChange(event.target.value)} className={control}>{Object.entries(copy.fieldTypes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label className="block text-sm font-semibold text-[#355a51]">{copy.type}<select value={customRenderer} onChange={(event) => onCustomRendererChange(event.target.value)} className={control}>{Object.entries(isEventConfiguration ? copy.fieldTypes : trainingFormConfigurationCopy.fieldTypes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
           <label className="flex gap-2 text-sm text-[#355a51]"><input type="checkbox" checked={customRequired} onChange={(event) => onCustomRequiredChange(event.target.checked)} />{copy.required}</label>
           <button type="button" disabled={!customLabel.trim()} onClick={onAddCustom} className="rounded-full bg-[#1f6a58] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{copy.add}</button>
         </div>

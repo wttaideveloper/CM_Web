@@ -6,7 +6,9 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@ihp/realtime": "0.1.0"
+    "@ihp/auth": "0.1.0",
+    "@ihp/realtime": "0.1.0",
+    "@tanstack/react-query": "^5.90.21"
   },
   "peerDependencies": {
     "next": "^16.2.9",

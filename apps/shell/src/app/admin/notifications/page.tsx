@@ -4,7 +4,7 @@ import { EnterpriseNotificationHistoryScreen } from "@ihp/enterprise-notificatio
 export default function AdminNotificationsPage() {
   return (
     <AppShell>
-      <EnterpriseNotificationHistoryScreen messagesRoute="/admin/messages" />
+      <EnterpriseNotificationHistoryScreen audience="enterprise" messagesRoute="/admin/messages" />
     </AppShell>
   );
 }

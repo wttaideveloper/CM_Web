@@ -7,6 +7,15 @@ const fetch = authenticatedFetch;
 export type TrainingFormFieldType = "text" | "textarea" | "select" | "multiselect" | "number" | "date" | "datetime" | "time" | "url" | "checkbox";
 export interface TrainingFormOption { value: string; label: string; position: number; }
 
+function trainingFormFieldType(field: Record<string, unknown>): TrainingFormFieldType {
+  const configuredType = typeof field.renderer === "string"
+    ? field.renderer
+    : typeof field.type === "string"
+      ? field.type
+      : "text";
+  return (configuredType === "multi_select" || configuredType === "multi-select" ? "multiselect" : configuredType) as TrainingFormFieldType;
+}
+
 function mapConfiguredTrainingOptions(options: unknown): TrainingFormOption[] | undefined {
   if (!Array.isArray(options)) return undefined;
   return options.flatMap((item, index) => {
@@ -180,7 +189,7 @@ function mapTrainingFormFields(fields: unknown): TrainingFormField[] {
     stable_key: typeof fld.stable_key === "string" ? fld.stable_key : typeof fld.stableKey === "string" ? fld.stableKey as string : null,
     source: fld.source === "custom" ? "custom" : fld.source === "core" ? "core" : undefined,
     label: typeof fld.label === "string" && fld.label ? fld.label : typeof fld.title === "string" && fld.title ? fld.title : `Field ${fIdx + 1}`,
-    type: (typeof fld.renderer === "string" ? fld.renderer : typeof fld.type === "string" ? fld.type : "text") as TrainingFormFieldType,
+    type: trainingFormFieldType(fld),
     valueType: typeof fld.value_type === "string" ? fld.value_type : undefined,
     required: Boolean(fld.required),
     enabled: fld.is_enabled !== false && fld.enabled !== false,
@@ -368,7 +377,7 @@ export async function getTrainingHistoricalFormConfiguration(trainingId: string)
                 stable_key: typeof fld.stable_key === "string" ? fld.stable_key : typeof fld.stableKey === "string" ? fld.stableKey as string : null,
                 source: fld.source === "custom" ? "custom" : fld.source === "core" ? "core" : undefined,
             label: typeof fld.label === "string" ? fld.label : `Field ${fIdx + 1}`,
-            type: (typeof fld.renderer === "string" ? fld.renderer : typeof fld.type === "string" ? fld.type : "text") as TrainingFormFieldType,
+            type: trainingFormFieldType(fld),
             valueType: typeof fld.value_type === "string" ? fld.value_type : undefined,
             required: Boolean(fld.required),
             enabled: fld.is_enabled !== false && fld.enabled !== false,
@@ -440,7 +449,7 @@ export async function getTrainingFormConfigActive(): Promise<TrainingFormConfig 
                 stable_key: typeof fld.stable_key === "string" ? fld.stable_key : typeof fld.stableKey === "string" ? fld.stableKey as string : null,
                 source: fld.source === "custom" ? "custom" : fld.source === "core" ? "core" : undefined,
                 label: typeof fld.label === "string" ? fld.label : `Field ${fIdx + 1}`,
-                type: (typeof fld.renderer === "string" ? fld.renderer : typeof fld.type === "string" ? fld.type : "text") as TrainingFormFieldType,
+            type: trainingFormFieldType(fld),
                 valueType: typeof fld.value_type === "string" ? fld.value_type : undefined,
                 required: Boolean(fld.required),
                 enabled: fld.is_enabled !== false && fld.enabled !== false,
@@ -489,7 +498,7 @@ export async function getTrainingFormConfigActive(): Promise<TrainingFormConfig 
               stable_key: typeof fld.stable_key === "string" ? fld.stable_key : typeof fld.stableKey === "string" ? fld.stableKey as string : null,
               source: fld.source === "custom" ? "custom" : fld.source === "core" ? "core" : undefined,
               label: typeof fld.label === "string" && fld.label ? fld.label : typeof (fld as Record<string, unknown>).title === "string" && (fld as Record<string, unknown>).title ? (fld as Record<string, unknown>).title as string : `Field ${fIdx + 1}`,
-              type: (typeof (fld as Record<string, unknown>).renderer === "string" ? (fld as Record<string, unknown>).renderer : typeof fld.type === "string" ? fld.type : "text") as TrainingFormFieldType,
+              type: trainingFormFieldType(fld as Record<string, unknown>),
               valueType: typeof (fld as Record<string, unknown>).value_type === "string" ? (fld as Record<string, unknown>).value_type as string : undefined,
               required: Boolean(fld.required),
               enabled: fld.is_enabled !== false && fld.enabled !== false,
@@ -554,7 +563,7 @@ export async function getTrainingFormConfigActive(): Promise<TrainingFormConfig 
                 stable_key: typeof fld.stable_key === "string" ? fld.stable_key : typeof fld.stableKey === "string" ? fld.stableKey as string : null,
                 source: fld.source === "custom" ? "custom" : fld.source === "core" ? "core" : undefined,
                 label: typeof fld.label === "string" ? fld.label : `Field ${fIdx + 1}`,
-                type: (typeof fld.renderer === "string" ? fld.renderer : typeof fld.type === "string" ? fld.type : "text") as TrainingFormFieldType,
+                type: trainingFormFieldType(fld),
                 valueType: typeof fld.value_type === "string" ? fld.value_type : undefined,
                 required: Boolean(fld.required),
                 enabled: fld.is_enabled !== false && fld.enabled !== false,

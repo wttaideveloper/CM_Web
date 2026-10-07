@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -98,6 +98,7 @@ export function PlatformAdminHeader({
       + approvalNotifications.trainingCount
       + (approvalNotifications.tenantApplicationsHref ? approvalNotifications.enterpriseRequestCount ?? 0 : 0)
     : null;
+  const unreadNotificationCount = workflowNotifications?.unreadCount ?? 0;
 
   return (
     <HeaderFrame
@@ -113,11 +114,11 @@ export function PlatformAdminHeader({
       right={(
         <>
           <div className="relative">
-            <button type="button" onClick={() => toggleMenu("notifications")} className="relative flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4]" aria-label={approvalNotifications && pendingNotificationCount !== null && pendingNotificationCount > 0 ? t("approvalNotifications.title", { defaultValue: "Pending approvals and Enterprise requests" }) + `, ${pendingNotificationCount} pending` : t("header.notifications", { defaultValue: "Notifications" })} aria-expanded={openMenu === "notifications"}>
+            <button type="button" onClick={() => toggleMenu("notifications")} className="relative flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4]" aria-label={unreadNotificationCount > 0 ? `Notifications, ${unreadNotificationCount} unread` : t("header.notifications", { defaultValue: "Notifications" })} aria-expanded={openMenu === "notifications"}>
               <BellIcon />
-              {approvalNotifications && pendingNotificationCount !== null && pendingNotificationCount > 0 ? (
+              {unreadNotificationCount > 0 ? (
                 <span className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-[#b42318] px-1 text-[10px] font-bold text-white">
-                  {pendingNotificationCount > 99 ? "99+" : pendingNotificationCount}
+                  {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
                 </span>
               ) : null}
             </button>

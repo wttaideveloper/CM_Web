@@ -48,12 +48,10 @@ export default function TrainingMediaField({
 }: TrainingMediaFieldProps) {
   const [editingOverride, setEditingOverride] = useState<boolean | null>(null);
   const [failedPreviewUrl, setFailedPreviewUrl] = useState<string | null>(null);
-  const [imageQualityWarning, setImageQualityWarning] = useState<{ url: string; message: string } | null>(null);
   const editingUrl = editingOverride ?? !value;
   const previewUrl = getTrainingMediaPreviewUrl(value);
-  const uploaded = (file: TrainingUploadResponse, qualityWarning?: string) => {
+  const uploaded = (file: TrainingUploadResponse) => {
     onChange(file.url);
-    setImageQualityWarning(qualityWarning ? { url: file.url, message: qualityWarning } : null);
     setEditingOverride(false);
   };
 
@@ -121,9 +119,6 @@ export default function TrainingMediaField({
           {value && previewUrl ? <button type="button" onClick={() => setEditingOverride(false)} className="shrink-0 text-xs font-semibold text-[#1f6a58] underline">Preview</button> : null}
         </div>
       )}
-      {imageQualityWarning?.url === value && kind === "image" ? (
-        <p role="note" className="mt-2 text-xs text-[#8a5a00]">{imageQualityWarning.message}</p>
-      ) : null}
       <div className="mt-2">
         <TrainingMediaUploadButton
           fieldKey={fieldKey}

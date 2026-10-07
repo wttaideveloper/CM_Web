@@ -7,14 +7,14 @@ import { useParams } from "next/navigation";
 
 import TrainingActionsMenu from "./TrainingActionsMenu";
 import { ParticipantDashboardCard, ProviderDashboardCard } from "./dashboard-cards";
-import { TrainingAssessmentsTab, TrainingAttendanceTab, TrainingContentTab, TrainingEnrolmentsTab, TrainingLiveTab, TrainingSectionsTab } from "./TrainingDetailsSections";
+import { TrainingAssessmentsTab, TrainingAttendanceTab, TrainingContentTab, TrainingEnrolmentsTab, TrainingLiveTab, TrainingReviewsTab, TrainingSectionsTab } from "./TrainingDetailsSections";
 import { displayValue, formatTrainingDate, formatTrainingDateTime, formatTrainingPrice, getTrainingModerationTimestamp, humanizeLabel } from "./detail-formatters";
 import { getTrainingStatusBadgeClass, getTrainingStatusLabel } from "./training-status";
 import { getTrainingAdminNotes, getTrainingById, downloadTrainingNotesPdf, getTrainingMeetingLink, getTrainingModerationHistory, publishTrainingEnterprise, getTrainingParticipantDashboard, getTrainingProviderDashboard, TrainingsApiError } from "./trainings.service";
 import TrainingCalendarAction from "./TrainingCalendarAction";
 import { getTrainingMediaPreviewUrl } from "./training-media-url";
 
-type TrainingDetailsTab = "details" | "content" | "sections" | "enrolments" | "attendance" | "assessments" | "live" | "dashboards";
+type TrainingDetailsTab = "details" | "content" | "sections" | "enrolments" | "attendance" | "assessments" | "reviews" | "live" | "dashboards";
 
 const trainingDetailsTabs: ReadonlyArray<{ id: TrainingDetailsTab; label: string }> = [
   { id: "details", label: "Details" },
@@ -23,6 +23,7 @@ const trainingDetailsTabs: ReadonlyArray<{ id: TrainingDetailsTab; label: string
   { id: "enrolments", label: "Enrolments" },
   { id: "attendance", label: "Attendance" },
   { id: "assessments", label: "Assessments" },
+  { id: "reviews", label: "Reviews" },
   { id: "live", label: "Live & Discussions" },
   { id: "dashboards", label: "Dashboards" },
 ];
@@ -419,7 +420,7 @@ export default function TrainingDetailsScreen({
               <DetailItem label="Start time" value={displayValue((training as unknown as Record<string, unknown>).start_time as string)} />
               <DetailItem label="End date" value={displayValue(training.end_date as string)} />
               <DetailItem label="End time" value={displayValue((training as unknown as Record<string, unknown>).end_time as string)} />
-              <DetailGroupHeading>Additional Configuration</DetailGroupHeading>
+              <DetailGroupHeading>Record Information</DetailGroupHeading>
               <DetailItem label="Learning objectives" value={formatLearningObjectives((training as unknown as Record<string, unknown>).learning_objectives)} />
               <DetailItem label="PDFs" value={Array.isArray((training as unknown as Record<string, unknown>).documents) ? ((training as unknown as Record<string, unknown>).documents as unknown[]).length + " files" : Array.isArray(training.documents) ? (training.documents as unknown[]).length + " files" : "—"} />
               <DetailItem label="Access expiry" value={displayValue((training as unknown as Record<string, unknown>).access_expiry_type as string) + " " + displayValue((training as unknown as Record<string, unknown>).access_expiry_days as string)} />
@@ -446,7 +447,7 @@ export default function TrainingDetailsScreen({
               <DetailItem label="Time zone" value={displayValue((training as unknown as Record<string, unknown>).time_zone as string)} />
               <DetailItem label="Enrolment start" value={displayValue((training as unknown as Record<string, unknown>).enrolment_start as string)} />
               <DetailItem label="Enrolment end" value={displayValue((training as unknown as Record<string, unknown>).enrolment_end as string)} />
-              <DetailGroupHeading>Record Information</DetailGroupHeading>
+              <DetailGroupHeading>Additional Configuration</DetailGroupHeading>
               <DetailItem label="Created" value={formatTrainingDate(training.created_at)} />
               <DetailItem label="Updated" value={formatTrainingDate(training.updated_at)} />
             </div>
@@ -520,6 +521,7 @@ export default function TrainingDetailsScreen({
       {activeTab === "enrolments" ? <div className="mt-6"><TrainingEnrolmentsTab trainingId={trainingId} /></div> : null}
       {activeTab === "attendance" ? <div className="mt-6"><TrainingAttendanceTab trainingId={trainingId} /></div> : null}
       {activeTab === "assessments" ? <div className="mt-6"><TrainingAssessmentsTab trainingId={trainingId} /></div> : null}
+      {activeTab === "reviews" ? <div className="mt-6"><TrainingReviewsTab trainingId={trainingId} /></div> : null}
       {activeTab === "live" ? <div className="mt-6"><TrainingLiveTab trainingId={trainingId} /></div> : null}
       {activeTab === "dashboards" ? <div className="mt-6"><TrainingDashboardsTab trainingId={trainingId} /></div> : null}
     </div>

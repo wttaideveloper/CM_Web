@@ -67,10 +67,7 @@ export default function WorkflowNotificationsPage() {
           <button
             type="button"
             onClick={() => {
-              const actions: Promise<unknown>[] = [];
-              if (state.items.some((item) => !item.is_read)) actions.push(state.markAllRead());
-              if (realtime.notifications.some((item) => !item.is_read)) actions.push(realtime.markAllNotificationsAsRead());
-              void Promise.all(actions).catch(() => undefined);
+              void state.markAllRead().catch(() => undefined);
             }}
             className="rounded-xl border border-[#d7e5df] px-4 py-2 text-sm font-semibold text-[#1f6a58] hover:bg-[#f4faf7]"
           >
@@ -83,18 +80,13 @@ export default function WorkflowNotificationsPage() {
           Unable to update notification status. Please try again.
         </p>
       ) : null}
-      {realtime.notificationError ? (
-        <p role="alert" className="rounded-xl border border-[#f3d5d1] bg-[#fff7f6] px-4 py-3 text-sm text-[#8f3b2f]">
-          Unable to load the shared notification feed. Please refresh and try again.
-        </p>
-      ) : null}
       {state.error ? (
         <p role="alert" className="rounded-xl border border-[#f3d5d1] bg-[#fff7f6] px-4 py-3 text-sm text-[#8f3b2f]">
           Unable to load Enterprise workflow notifications. Please refresh and try again.
         </p>
       ) : null}
       {items.length === 0 ? (
-        state.isLoading || realtime.isLoadingNotifications ? (
+        state.isLoading ? (
           <p role="status" className="text-sm text-[#52736a]">Loading notifications...</p>
         ) : (
           <p className="text-sm text-[#52736a]">No notifications.</p>

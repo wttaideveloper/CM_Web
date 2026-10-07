@@ -3,8 +3,28 @@ export interface TrainingReferenceOption {
   label: string;
 }
 
-const TIME_ZONE_VALUES = Intl.supportedValuesOf("timeZone");
+const TIME_ZONE_VALUES = [...new Set([...Intl.supportedValuesOf("timeZone"), "Asia/Kolkata"])].sort();
 const CURRENCY_VALUES = Intl.supportedValuesOf("currency");
+
+/** Returns a local datetime minimum for Training scheduling while preserving an existing past value during edits. */
+export function getTrainingDateTimeMinimum(existingValue = ""): string {
+  const now = new Date();
+  const localNow = new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+  const normalizedExisting = existingValue.slice(0, 16);
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(normalizedExisting) && normalizedExisting < localNow
+    ? normalizedExisting
+    : localNow;
+}
+
+/** Returns a local date minimum for Training date fields while preserving an existing past value during edits. */
+export function getTrainingDateMinimum(existingValue = ""): string {
+  const now = new Date();
+  const localToday = new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+  const normalizedExisting = existingValue.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalizedExisting) && normalizedExisting < localToday
+    ? normalizedExisting
+    : localToday;
+}
 
 /** Returns the browser-supported IANA time zones and preserves a legacy current value. */
 export function getTrainingTimeZoneOptions(currentValue = ""): TrainingReferenceOption[] {

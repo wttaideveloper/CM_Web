@@ -37,7 +37,7 @@ export default function TrainingLessonAttendanceRoster({
               <select
                 value={status}
                 onChange={(event) => onStatusChange(participant.enrolment_id, event.target.value as LessonAttendanceStatus)}
-                disabled={disabled}
+                disabled={disabled || participant.status === "attended"}
                 className="h-9 rounded-lg border border-[#d7e5df] bg-white px-2 text-xs text-[#06201c] outline-none focus:border-[#1f6a58] disabled:opacity-60"
                 aria-label={`Attendance for ${participant.participant_name}`}
               >

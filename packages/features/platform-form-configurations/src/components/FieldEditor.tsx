@@ -50,7 +50,7 @@ export function FieldEditor({ field, registry, trainingFields, isTrainingConfigu
   const compositeDefinition = isTrainingConfiguration
     ? getTrainingCompositeFieldDefinition(field.coreKey ?? field.stableKey, field.label)
     : field.source === "core" ? getEventCompositeFieldDefinition(field.coreKey) : undefined;
-  const allowedRenderers = core?.allowedRenderers ?? renderers;
+  const allowedRenderers = (core?.allowedRenderers ?? renderers).filter((renderer) => !isTrainingConfiguration || (renderer !== "multi_select" && renderer !== "select"));
   const rendererCanChange = !runtimeSourced && !trainingDeliveryMode && (!core || (core.configurable.renderer && core.allowedRenderers.length > 1));
   const isDeliveryDependent = !isTrainingConfiguration && isEventDeliveryDependentKey(field.coreKey);
   const canRemoveFromForm = field.source === "custom" || !core || (core.removable && !isDeliveryDependent);

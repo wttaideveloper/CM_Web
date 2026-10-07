@@ -77,7 +77,7 @@ export function useTrainingFormConfigurationTenantOptions(enabled = true) {
   });
 }
 /** Creates a configuration and refreshes the configuration collection. */
-export function useCreateTrainingFormConfiguration() { const queryClient = useQueryClient(); return useMutation({ mutationFn: createTrainingFormConfiguration, onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: trainingFormConfigurationKeys.list() }); } }); }
+export function useCreateTrainingFormConfiguration() { const queryClient = useQueryClient(); return useMutation({ mutationFn: createTrainingFormConfiguration, onSuccess: async (created) => { const createdItem = toListItem(created); queryClient.setQueryData<FormConfigurationListItem[]>(trainingFormConfigurationKeys.list(), (current) => [createdItem, ...(current ?? []).filter((item) => item.id !== createdItem.id)]); await queryClient.invalidateQueries({ queryKey: trainingFormConfigurationKeys.list() }); } }); }
 /** Updates a configuration and refreshes its list and detail projections. */
 export function useUpdateTrainingFormConfiguration() { const queryClient = useQueryClient(); return useMutation({ mutationFn: ({ configurationId, payload }: { configurationId: string; payload: UpdateTrainingFormConfigurationRequest }) => updateTrainingFormConfiguration(configurationId, payload), onSuccess: async (_data, variables) => { await Promise.all([queryClient.invalidateQueries({ queryKey: trainingFormConfigurationKeys.list() }), queryClient.invalidateQueries({ queryKey: trainingFormConfigurationKeys.detail(variables.configurationId) })]); } }); }
 /** Deletes a configuration and removes stale detail data. */

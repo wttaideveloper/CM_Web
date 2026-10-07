@@ -31,6 +31,6 @@ export const trainingFormConfigurationCopy = {
   emptySection: "No fields yet. Add a field below or drag one here from another section.",
   addFieldHelp: "Add a core Training field or create a custom field.",
   addSectionHelp: "Need another group of Training fields? Add a section here.",
-  fieldTypes: { text: "Text", textarea: "Textarea", number: "Number", url: "URL", date: "Date", datetime: "Datetime", time: "Time", select: "Select", multi_select: "Multi Select", checkbox: "Checkbox" },
+  fieldTypes: { text: "Text", textarea: "Textarea", number: "Number", url: "URL", date: "Date", datetime: "Datetime", time: "Time", select: "Select", checkbox: "Checkbox" },
   seededSections: { basic: "Basic Information", schedule: "Schedule", location: "Location & Host", pricing: "Pricing & Tickets", capacity: "Capacity & Registration", media: "Images & Media", additional: "Additional Configuration" },
 } as const;

@@ -359,7 +359,7 @@ export default function EnterpriseDashboardScreen({ routes }: EnterpriseDashboar
         </section>
       </div>
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-2">
+      <div className="mt-5 grid gap-5">
         <section className="w-full min-w-0 rounded-2xl border border-[#e1ebe6] bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-[#edf3f0] p-5">
             <h3 className="text-lg font-bold text-[#06201c]">Recent Activity</h3>
@@ -375,17 +375,6 @@ export default function EnterpriseDashboardScreen({ routes }: EnterpriseDashboar
           </div>
         </section>
 
-        <section className="w-full min-w-0 rounded-2xl border border-[#e1ebe6] bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-[#edf3f0] p-5">
-            <h3 className="text-lg font-bold text-[#06201c]">Notifications</h3>
-            <span className="rounded-full bg-[#eef4ff] px-3 py-1 text-xs font-bold text-[#2563eb]">
-              0 unread
-            </span>
-          </div>
-          <div>
-            <div className="p-4 text-sm text-[#52736a]">No notifications.</div>
-          </div>
-        </section>
       </div>
     </div>
   );

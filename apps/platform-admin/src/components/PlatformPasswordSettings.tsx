@@ -33,6 +33,8 @@ export function PlatformPasswordSettings({ email }: { email: string }) {
   const [otp, setOtp] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -143,14 +145,24 @@ export function PlatformPasswordSettings({ email }: { email: string }) {
       ) : null}
       {step === "new-password" ? (
         <form onSubmit={resetPassword} className="mt-5 max-w-md space-y-4">
-          <label className="block text-sm font-semibold text-[#16332b]">
-            New password
-            <input required minLength={8} type="password" autoComplete="new-password" value={password} onChange={(event) => { setPassword(event.target.value); setError(null); }} className="mt-1.5 h-10 w-full rounded-xl border border-[#d7e5df] px-3 text-sm" />
-          </label>
-          <label className="block text-sm font-semibold text-[#16332b]">
-            Confirm new password
-            <input required minLength={8} type="password" autoComplete="new-password" value={confirmation} onChange={(event) => { setConfirmation(event.target.value); setError(null); }} className="mt-1.5 h-10 w-full rounded-xl border border-[#d7e5df] px-3 text-sm" />
-          </label>
+          <div>
+            <label htmlFor="platform-new-password" className="block text-sm font-semibold text-[#16332b]">New password</label>
+            <span className="relative mt-1.5 block">
+              <input id="platform-new-password" required minLength={8} type={showPassword ? "text" : "password"} autoComplete="new-password" value={password} onChange={(event) => { setPassword(event.target.value); setError(null); }} className="h-10 w-full rounded-xl border border-[#d7e5df] px-3 pr-11 text-sm" />
+              <button type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Hide new password" : "Show new password"} aria-pressed={showPassword} className="absolute inset-y-0 right-2 flex items-center rounded px-2 text-[#52736a] transition hover:bg-[#e8f6ee] hover:text-[#1f6a58] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#1f6a58]">
+                <PasswordVisibilityIcon visible={showPassword} />
+              </button>
+            </span>
+          </div>
+          <div>
+            <label htmlFor="platform-confirm-new-password" className="block text-sm font-semibold text-[#16332b]">Confirm new password</label>
+            <span className="relative mt-1.5 block">
+              <input id="platform-confirm-new-password" required minLength={8} type={showConfirmation ? "text" : "password"} autoComplete="new-password" value={confirmation} onChange={(event) => { setConfirmation(event.target.value); setError(null); }} className="h-10 w-full rounded-xl border border-[#d7e5df] px-3 pr-11 text-sm" />
+              <button type="button" onClick={() => setShowConfirmation((visible) => !visible)} aria-label={showConfirmation ? "Hide confirmation password" : "Show confirmation password"} aria-pressed={showConfirmation} className="absolute inset-y-0 right-2 flex items-center rounded px-2 text-[#52736a] transition hover:bg-[#e8f6ee] hover:text-[#1f6a58] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#1f6a58]">
+                <PasswordVisibilityIcon visible={showConfirmation} />
+              </button>
+            </span>
+          </div>
           <button type="submit" disabled={isSubmitting} className="h-10 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white disabled:opacity-50">
             {isSubmitting ? "Updating password…" : "Update password"}
           </button>
@@ -164,5 +176,18 @@ export function PlatformPasswordSettings({ email }: { email: string }) {
       ) : null}
       {error ? <p role="alert" className="mt-4 text-sm font-semibold text-[#b42318]">{error}</p> : null}
     </section>
+  );
+}
+
+function PasswordVisibilityIcon({ visible }: { visible: boolean }) {
+  return visible ? (
+    <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+      <path d="M3 3l18 18M10.6 10.6A3 3 0 0012 15a3 3 0 001.4-.35M6.2 6.2C3.9 7.8 2 10.3 2 12c0 0 3.5 7 10 7 1.9 0 3.6-.5 5.1-1.2M17.8 17.8C20.1 16.2 22 13.7 22 12c0 0-3.5-7-10-7-1.1 0-2.1.1-3 .4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ) : (
+    <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
+    </svg>
   );
 }

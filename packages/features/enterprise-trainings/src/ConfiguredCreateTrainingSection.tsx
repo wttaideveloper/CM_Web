@@ -11,7 +11,7 @@ import TrainingFaqEditor from "./TrainingFaqEditor";
 import TrainingTaxonomyField from "./TrainingTaxonomyField";
 import type { TrainingCategoryOption } from "./training-categories.service";
 import { getEnabledTrainingDeliverySubfields, getTrainingDeliveryCompositeKey, isTrainingAccessInformationField, isTrainingDeliveryCompositeChild } from "./training-delivery-fields";
-import { getTrainingCurrencyOptions, getTrainingTimeZoneOptions, preserveTrainingReferenceValue } from "./training-reference-options";
+import { getTrainingCurrencyOptions, getTrainingDateMinimum, getTrainingDateTimeMinimum, getTrainingTimeZoneOptions, preserveTrainingReferenceValue } from "./training-reference-options";
 import { DateTimeLocalInput } from "@ihp/ui";
 
 type UpdateForm = <Key extends keyof CreateTrainingFormValues>(key: Key, value: CreateTrainingFormValues[Key]) => void;
@@ -664,32 +664,47 @@ function ConfiguredField({
       return <label className="block text-sm font-semibold text-[#06201c] md:col-span-2">{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}<textarea value={value} placeholder={field.placeholder} onChange={(e) => setValue(e.target.value)} className={`${inputClass} h-24 resize-y py-2`} />{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
     }
     const inputId = `training-field-${field.id}`;
-    const minimum = coreField === "end_time" ? values.start_time || undefined : coreField === "enrolment_end" ? values.enrolment_start || undefined : field.validation?.min ?? undefined;
+    const configuredMinimum = coreField === "end_time" ? values.start_time || undefined : coreField === "enrolment_end" ? values.enrolment_start || undefined : field.validation?.min ?? undefined;
+    const dateFieldMinimum = inputType === "datetime-local" ? getTrainingDateTimeMinimum(value) : inputType === "date" ? getTrainingDateMinimum(value) : undefined;
+    const minimum = dateFieldMinimum && (configuredMinimum == null || String(configuredMinimum) < dateFieldMinimum)
+      ? dateFieldMinimum
+      : configuredMinimum;
     const maximum = (coreField === "start_time" ? values.end_time || undefined : coreField === "enrolment_end" ? boundedDateTimeMax(values.enrolment_start || undefined, (values.start_date || field.validation?.max) ?? undefined) : field.validation?.max) ?? undefined;
     const input = inputType === "datetime-local"
-      ? <DateTimeLocalInput id={inputId} value={value} required={field.required} min={minimum == null ? undefined : String(minimum)} max={maximum == null ? undefined : String(maximum)} aria-invalid={displayedError ? true : undefined} aria-describedby={displayedError ? `${field.id}-error` : undefined} onChange={setValue} className={inputClass} />
+      ? <DateTimeLocalInput id={inputId} value={value} required={field.required} min={minimum == null ? undefined : String(minimum)} max={maximum == null ? undefined : String(maximum)} persistDraft aria-invalid={displayedError ? true : undefined} aria-describedby={displayedError ? `${field.id}-error` : undefined} onChange={setValue} className={inputClass} />
       : <input id={inputId} type={inputType} value={value} required={field.required} placeholder={field.placeholder} min={minimum} max={maximum} step={isNumber ? "any" : undefined} minLength={field.validation?.minLength ?? undefined} aria-invalid={displayedError ? true : undefined} aria-describedby={displayedError ? `${field.id}-error` : undefined} onChange={(e) => isNumber ? setNumberValue(e.target.value) : setValue(e.target.value)} pattern={field.validation?.pattern ?? undefined} className={inputClass} />;
     return <div className="block text-sm font-semibold text-[#06201c]"><label htmlFor={inputId}>{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</label>{input}{field.validation?.maxLength != null ? <p className="mt-1 text-xs text-[#7f9d94]">{value.length}/{field.validation?.maxLength} characters</p> : null}{displayedError ? <p id={`${field.id}-error`} role="alert" className="mt-1 text-xs text-[#b42318]">{displayedError}</p> : null}{rangeAdjustment ? <p role="status" className="mt-1 text-xs text-[#52736a]">{t(`numberRange.adjustedTo${rangeAdjustment === "minimum" ? "Minimum" : "Maximum"}`, { value: rangeAdjustment === "minimum" ? field.validation?.min : field.validation?.max })}</p> : null}</div>;
   }
   // Custom field
   const raw = customValues[key];
-  const value = scalar(raw);
+  const customSelectExpectsArray = field.valueType?.toLowerCase() === "array"
+    || field.valueType?.trim().endsWith("[]") === true;
+  const value = scalar(field.type === "select" && customSelectExpectsArray && Array.isArray(raw) ? raw[0] : raw);
   const isBoolean = field.type === "checkbox";
   const isNumber = field.type === "number";
   const rangeError = isNumber ? numberRangeError(raw, field.label, field.validation?.min, field.validation?.max) : undefined;
   const displayedError = error ?? rangeError;
   const options = field.options ?? [];
+  const configuredOptions = field.configuredOptions?.length
+    ? field.configuredOptions
+    : options.map((option, index) => ({ value: option, label: option, position: index + 1 }));
   const setValue = (next: string | boolean | number | string[] | null) => setCustomValues({ ...customValues, [key]: next });
   if (isBoolean) return <div><label className="flex items-center gap-2 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={raw === true || raw === "true"} aria-invalid={Boolean(error) || undefined} onChange={(e) => setValue(e.target.checked)} />{field.label}{required}</label>{error ? <p role="alert" className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</div>;
   if (field.type === "multiselect") {
     const selected = Array.isArray(raw) ? raw.map(String) : [];
-    return <fieldset className="block text-sm font-semibold text-[#06201c]"><legend>{field.label}{required}</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{options.map((option) => <label key={option} className="flex items-center gap-2 text-sm font-normal"><input type="checkbox" checked={selected.includes(option)} onChange={(event) => setValue(event.target.checked ? [...selected, option] : selected.filter((item) => item !== option))} />{option}</label>)}</div>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</fieldset>;
+    return <fieldset className="block text-sm font-semibold text-[#06201c]"><legend>{field.label}{required}</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{configuredOptions.map((option) => <label key={option.value} className="flex items-center gap-2 text-sm font-normal"><input type="checkbox" checked={selected.includes(option.value) || selected.includes(option.label)} onChange={(event) => setValue(event.target.checked ? [...selected.filter((item) => item !== option.label), option.value] : selected.filter((item) => item !== option.value && item !== option.label))} />{option.label}</label>)}</div>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</fieldset>;
   }
-  if (options.length && inputType !== "date" && inputType !== "datetime-local" && inputType !== "time") return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}<select value={value} onChange={(e) => setValue(e.target.value)} className={inputClass}><option value="">Select</option>{options.map((o) => <option key={o} value={o}>{o}</option>)}</select>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
+  if (configuredOptions.length && inputType !== "date" && inputType !== "datetime-local" && inputType !== "time") {
+    const selectedOption = configuredOptions.find((option) => option.value === value || option.label === value);
+    return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}<select value={selectedOption?.value ?? value} onChange={(e) => setValue(customSelectExpectsArray ? [e.target.value] : e.target.value)} className={inputClass}><option value="">Select</option>{configuredOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
+  }
   if (field.type === "textarea") return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}<textarea value={value} placeholder={field.placeholder} minLength={field.validation?.minLength ?? undefined} onChange={(e) => setValue(e.target.value)} className={`${inputClass} h-24 resize-y py-2`} />{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
   const inputId = `training-field-${field.id}`;
+  const dateFieldMinimum = inputType === "date" ? getTrainingDateMinimum(value) : inputType === "datetime-local" ? getTrainingDateTimeMinimum(value) : undefined;
+  const configuredMinimum = field.validation?.min == null ? undefined : String(field.validation.min);
+  const minimum = dateFieldMinimum && (!configuredMinimum || configuredMinimum < dateFieldMinimum) ? dateFieldMinimum : configuredMinimum;
   const input = inputType === "datetime-local"
-    ? <DateTimeLocalInput id={inputId} value={value} placeholder={field.placeholder} min={field.validation?.min == null ? undefined : String(field.validation.min)} max={field.validation?.max == null ? undefined : String(field.validation.max)} aria-invalid={displayedError ? true : undefined} aria-describedby={displayedError ? `${field.id}-error` : undefined} onChange={setValue} className={inputClass} />
-    : <input id={inputId} type={inputType} value={value} placeholder={field.placeholder} min={field.validation?.min ?? undefined} max={field.validation?.max ?? undefined} step={isNumber ? "any" : undefined} minLength={field.validation?.minLength ?? undefined} pattern={field.validation?.pattern ?? undefined} aria-invalid={displayedError ? true : undefined} aria-describedby={displayedError ? `${field.id}-error` : undefined} onChange={(e) => { if (!isNumber) { setValue(e.target.value); return; } const adjusted = clampNumberToRange(e.target.value, field.validation?.min, field.validation?.max); setRangeAdjustment(adjusted.bound); setValue(adjusted.value === "" ? null : Number(adjusted.value)); }} className={inputClass} />;
+    ? <DateTimeLocalInput id={inputId} value={value} placeholder={field.placeholder} min={minimum} max={field.validation?.max == null ? undefined : String(field.validation.max)} persistDraft aria-invalid={displayedError ? true : undefined} aria-describedby={displayedError ? `${field.id}-error` : undefined} onChange={setValue} className={inputClass} />
+    : <input id={inputId} type={inputType} value={value} placeholder={field.placeholder} min={minimum} max={field.validation?.max ?? undefined} step={isNumber ? "any" : undefined} minLength={field.validation?.minLength ?? undefined} pattern={field.validation?.pattern ?? undefined} aria-invalid={displayedError ? true : undefined} aria-describedby={displayedError ? `${field.id}-error` : undefined} onChange={(e) => { if (!isNumber) { setValue(e.target.value); return; } const adjusted = clampNumberToRange(e.target.value, field.validation?.min, field.validation?.max); setRangeAdjustment(adjusted.bound); setValue(adjusted.value === "" ? null : Number(adjusted.value)); }} className={inputClass} />;
   return <div className="block text-sm font-semibold text-[#06201c]"><label htmlFor={inputId}>{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</label>{input}{field.validation?.maxLength != null ? <p className="mt-1 text-xs text-[#7f9d94]">{value.length}/{field.validation?.maxLength} characters</p> : null}{displayedError ? <p id={`${field.id}-error`} role="alert" className="mt-1 text-xs text-[#b42318]">{displayedError}</p> : null}{rangeAdjustment ? <p role="status" className="mt-1 text-xs text-[#52736a]">{t(`numberRange.adjustedTo${rangeAdjustment === "minimum" ? "Minimum" : "Maximum"}`, { value: rangeAdjustment === "minimum" ? field.validation?.min : field.validation?.max })}</p> : null}</div>;
 }

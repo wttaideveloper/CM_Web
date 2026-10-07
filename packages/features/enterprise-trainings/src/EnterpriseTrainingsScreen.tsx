@@ -368,7 +368,12 @@ export default function EnterpriseTrainingsScreen() {
         </div>
       </div>
 
-      {statusFeedback ? <p role="status" className="mt-4 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">{statusFeedback}</p> : null}
+      {statusFeedback ? (
+        <div role="status" className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">
+          <span>{statusFeedback}</span>
+          <button type="button" onClick={() => setStatusFeedback(null)} className="shrink-0 rounded px-2 py-1 text-[#167550] underline underline-offset-2 hover:bg-[#dff4e8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#167550]" aria-label="Dismiss notification">Dismiss</button>
+        </div>
+      ) : null}
 
       <TrainingsSummaryCard summary={summaryQuery.data} isLoading={summaryQuery.isLoading} isError={summaryQuery.isError} />
 

@@ -24,13 +24,32 @@ async function requestReset(path: string, body: Record<string, string>): Promise
     throw new Error("password-reset-service-unavailable");
   }
   const responseBody: unknown = await response.json().catch(() => null);
-  if (isRecord(responseBody) && responseBody.code === "id_not_registered") {
+  const responseCode = isRecord(responseBody) && typeof responseBody.code === "string"
+    ? responseBody.code.toLowerCase()
+    : "";
+  const responseDetail = isRecord(responseBody)
+    ? [responseBody.detail, responseBody.message].filter((value): value is string => typeof value === "string").join(" ").toLowerCase()
+    : "";
+  const responseReason = `${responseCode} ${responseDetail}`;
+  if (responseCode === "id_not_registered") {
     throw new Error("password-reset-id-not-registered");
   }
   if (response.ok) return true;
-  if (response.status === 403) return false;
   if (response.status === 429) throw new Error("password-reset-rate-limited");
   if (response.status >= 500) throw new Error("password-reset-service-unavailable");
+  if (path === "reset-password" && /(reuse|reused|previous|old password|recently used|password history|same as (the )?(current|last|old)|already used)/.test(responseReason)) {
+    throw new Error("password-reset-password-reused");
+  }
+  if (path === "reset-password" && /(at least eight|at least 8|minimum.{0,12}8|8 characters)/.test(responseReason)) {
+    throw new Error("password-reset-password-too-short");
+  }
+  if (path === "reset-password" && /(otp|verification code|expired code|invalid code)/.test(responseReason)) {
+    throw new Error("password-reset-invalid-code");
+  }
+  if (path === "reset-password" && /(password|character|uppercase|lowercase|number|symbol|special)/.test(responseReason)) {
+    throw new Error("password-reset-password-policy");
+  }
+  if (response.status === 403) return false;
   throw new Error("password-reset-request-failed");
 }
 
@@ -39,6 +58,10 @@ function getResetErrorMessage(error: unknown, fallback: string, t: (key: string)
   if (error.message === "password-reset-id-not-registered") return t("superAdminReset.idNotRegistered");
   if (error.message === "password-reset-service-unavailable") return t("superAdminReset.serviceUnavailable");
   if (error.message === "password-reset-rate-limited") return t("superAdminReset.rateLimited");
+  if (error.message === "password-reset-password-reused") return t("superAdminReset.passwordPreviouslyUsed");
+  if (error.message === "password-reset-password-too-short") return t("superAdminReset.passwordTooShort");
+  if (error.message === "password-reset-password-policy") return t("superAdminReset.passwordPolicy");
+  if (error.message === "password-reset-invalid-code") return t("superAdminReset.invalidOrExpiredCode");
   return fallback;
 }
 
@@ -152,8 +175,12 @@ export default function SuperAdminPasswordResetFlow({ onBackToLogin }: PasswordR
       return;
     }
     if (!password || isSubmitting) return;
+    if (password.length < 8) {
+      setError(t("superAdminReset.passwordTooShort"));
+      return;
+    }
     if (password.length > 500 || confirmPassword.length > 500) {
-      setError("Password must be 500 characters or fewer.");
+      setError(t("superAdminReset.passwordTooLong"));
       return;
     }
     setIsSubmitting(true);

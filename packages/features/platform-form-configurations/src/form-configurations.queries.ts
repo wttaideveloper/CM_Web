@@ -80,7 +80,7 @@ export function useEventFormConfigurationTenantOptions(enabled = true) {
 
 
 /** Creates a configuration and refreshes the configuration collection. */
-export function useCreateEventFormConfiguration() { const queryClient = useQueryClient(); return useMutation({ mutationFn: createEventFormConfiguration, onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: eventFormConfigurationKeys.list() }); } }); }
+export function useCreateEventFormConfiguration() { const queryClient = useQueryClient(); return useMutation({ mutationFn: createEventFormConfiguration, onSuccess: async (created) => { const createdItem = toListItem(created); queryClient.setQueryData<FormConfigurationListItem[]>(eventFormConfigurationKeys.list(), (current) => [createdItem, ...(current ?? []).filter((item) => item.id !== createdItem.id)]); await queryClient.invalidateQueries({ queryKey: eventFormConfigurationKeys.list() }); } }); }
 /** Updates a configuration and refreshes its list and detail projections. */
 export function useUpdateEventFormConfiguration() { const queryClient = useQueryClient(); return useMutation({ mutationFn: ({ configurationId, payload }: { configurationId: string; payload: UpdateEventFormConfigurationRequest }) => updateEventFormConfiguration(configurationId, payload), onSuccess: async (_data, variables) => { await Promise.all([queryClient.invalidateQueries({ queryKey: eventFormConfigurationKeys.list() }), queryClient.invalidateQueries({ queryKey: eventFormConfigurationKeys.detail(variables.configurationId) })]); } }); }
 /** Deletes a configuration and removes stale detail data. */

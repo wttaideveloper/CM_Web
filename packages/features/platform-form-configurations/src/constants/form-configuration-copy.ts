@@ -53,6 +53,7 @@ export const formConfigurationCopy = {
 } as const;
 
 export const formConfigurationManagementCopy = {
+  clearFilters: "Clear filters",
   appliesToAllTenants: "Applies to all tenants",
   assignedTenants: "Assigned tenants",
   assignedTenantsCount: (count: number) => `${count} tenants`,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -48,7 +48,7 @@ interface TrainingMediaUploadButtonProps {
   purpose: TrainingMediaUploadPurpose;
   allowedMimeTypes?: readonly string[];
   maxFileSizeMb?: number | null;
-  onUploaded: (file: TrainingUploadResponse, imageQualityWarning?: string) => void;
+  onUploaded: (file: TrainingUploadResponse) => void;
 }
 
 function getExtension(fileName: string): string {
@@ -75,20 +75,6 @@ function isAllowedFileType(file: File, allowedTypes: readonly string[]): boolean
   });
 }
 
-async function getImageDimensions(file: File): Promise<{ width: number; height: number } | null> {
-  if (typeof createImageBitmap !== "function") return null;
-  let bitmap: ImageBitmap;
-  try {
-    bitmap = await createImageBitmap(file);
-  } catch {
-    return null;
-  }
-
-  const { width, height } = bitmap;
-  bitmap.close();
-  return { width, height };
-}
-
 /** Uploads Training media through the authenticated Training media endpoint. */
 export default function TrainingMediaUploadButton({
   accept,
@@ -103,32 +89,9 @@ export default function TrainingMediaUploadButton({
   const [feedback, setFeedback] = useState<{ message: string; isError: boolean } | null>(null);
   const { t } = useTranslation("enterpriseTrainings");
   const uploadMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const imageDimensions = purpose === "image" && fieldKey === "primary_image"
-        ? await getImageDimensions(file)
-        : undefined;
-      const uploaded = await uploadTrainingMedia(file, purpose, fieldKey);
-      return { uploaded, imageDimensions };
-    },
-    onSuccess: ({ uploaded, imageDimensions }) => {
-      let imageQualityWarning: string | undefined;
-      if (imageDimensions === null) {
-        imageQualityWarning = t("media.dimensionsUnavailable");
-      } else if (imageDimensions) {
-        const recommendations: string[] = [];
-        if (imageDimensions.width < 1280) recommendations.push(t("media.minimumImageWidth"));
-        if (Math.abs(imageDimensions.width / imageDimensions.height - 16 / 9) > 0.02) {
-          recommendations.push(t("media.imageAspectRatio"));
-        }
-        if (recommendations.length) {
-          imageQualityWarning = t("media.imageQualityWarning", {
-            recommendations: recommendations.join(" and "),
-            width: imageDimensions.width,
-            height: imageDimensions.height,
-          });
-        }
-      }
-      onUploaded(uploaded, imageQualityWarning);
+    mutationFn: (file: File) => uploadTrainingMedia(file, purpose, fieldKey),
+    onSuccess: (uploaded) => {
+      onUploaded(uploaded);
       setFeedback({ message: t("media.uploadComplete"), isError: false });
     },
     onError: (error) => setFeedback({
@@ -136,6 +99,12 @@ export default function TrainingMediaUploadButton({
       isError: true,
     }),
   });
+
+  useEffect(() => {
+    if (!feedback || feedback.isError) return undefined;
+    const timeoutId = window.setTimeout(() => setFeedback(null), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [feedback]);
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];

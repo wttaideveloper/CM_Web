@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useRegistration } from "@/contexts/RegistrationContext";
 import { resendVerification, RegistrationApiError, verifyEmail } from "@/services/registration-ui.service";
+import { focusRegistrationField } from "./registration-field-focus";
 
 type VerifyEmailStepProps = {
   onBack: () => void;
@@ -92,6 +93,7 @@ export default function VerifyEmailStep({ onBack, onVerified }: VerifyEmailStepP
 
     if (!allDigitsEntered || isSubmitting) {
       setErrorMessage("Enter the 6-digit verification code.");
+      window.requestAnimationFrame(() => focusRegistrationField(inputRefs.current[0]));
       return;
     }
 
@@ -111,6 +113,7 @@ export default function VerifyEmailStep({ onBack, onVerified }: VerifyEmailStepP
       } else {
         setErrorMessage(error instanceof Error ? error.message : "Unable to verify your email.");
       }
+      window.requestAnimationFrame(() => focusRegistrationField(inputRefs.current[0]));
     } finally {
       setIsSubmitting(false);
     }
@@ -131,6 +134,8 @@ export default function VerifyEmailStep({ onBack, onVerified }: VerifyEmailStepP
       });
 
       setStatusMessage(response.message || "Verification code resent.");
+      setOtpDigits(Array.from({ length: OTP_LENGTH }, () => ""));
+      inputRefs.current[0]?.focus();
       setCooldownSeconds(45);
     } catch (error) {
       if (error instanceof RegistrationApiError) {
@@ -196,7 +201,7 @@ export default function VerifyEmailStep({ onBack, onVerified }: VerifyEmailStepP
               type="button"
               onClick={() => void handleResend()}
               disabled={isResending || cooldownSeconds > 0}
-              className="font-semibold text-[#1f6a58] disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded px-1 font-semibold text-[#1f6a58] transition-colors enabled:hover:bg-[#e8f6ee] enabled:hover:text-[#0b5b4e] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1f6a58] disabled:cursor-not-allowed disabled:opacity-60"
             >
               Resend code
             </button>

@@ -12,6 +12,7 @@ import {
 } from "@/services/registration-ui.service";
 import { startGoogleOwnerSignup } from "@ihp/auth";
 import { countryDialOptions, countryNationalPhoneLengths, type CountryDialOption } from "./register.constants";
+import { focusFirstRegistrationFieldError } from "./registration-field-focus";
 
 type PasswordRuleKey = "minLength" | "uppercase" | "lowercase" | "number" | "special";
 
@@ -94,7 +95,7 @@ function getFieldError(message?: string | null) {
     return null;
   }
 
-  return <p className="mt-1 text-xs font-medium text-[#b42318]">{message}</p>;
+  return <p data-registration-field-error className="mt-1 text-xs font-medium text-[#b42318]">{message}</p>;
 }
 
 function readPositiveNumber(value: unknown): number | null {
@@ -271,6 +272,13 @@ export default function OwnerDetailsStep() {
   const [passwordRequirements, setPasswordRequirements] = useState<PasswordRequirementsResponse | null>(null);
   const [localPhone, setLocalPhone] = useState(() => splitLocalPhoneValue(getCountryByName(country), phone));
   const passwordRequirementsRef = useRef<HTMLDivElement | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
+
+  useEffect(() => {
+    if (Object.keys(fieldErrors).length === 0) return;
+    const animationFrame = window.requestAnimationFrame(() => focusFirstRegistrationFieldError(formRef.current));
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [fieldErrors]);
 
   useEffect(() => {
     let isActive = true;
@@ -623,7 +631,7 @@ export default function OwnerDetailsStep() {
   }, [localPhone, phone, selectedCountry, updateRegistration]);
 
   return (
-    <form className="flex h-full flex-col" onSubmit={handleSubmit}>
+    <form ref={formRef} className="flex h-full flex-col" onSubmit={handleSubmit}>
       <div className="space-y-4">
         {formError ? (
           <div className="rounded-2xl border border-[#fecdca] bg-[#fff6f6] px-4 py-3 text-sm text-[#b42318]">
@@ -723,7 +731,7 @@ export default function OwnerDetailsStep() {
             </div>
           ) : null}
           {passwordExceedsMaximum
-            ? <p role="alert" className="mt-1 text-xs font-medium text-[#b42318]">Password must be 500 characters or fewer.</p>
+            ? <p data-registration-field-error role="alert" className="mt-1 text-xs font-medium text-[#b42318]">Password must be 500 characters or fewer.</p>
             : getFieldError(fieldErrors.password)}
         </label>
 

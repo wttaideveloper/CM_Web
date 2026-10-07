@@ -7,7 +7,64 @@ type DateTimeLocalInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "type
   onChange: (value: string) => void;
   min?: string;
   max?: string;
+  persistDraft?: boolean;
 };
+
+interface DateTimeDraft {
+  year: string;
+  month: string;
+  day: string;
+  timeValue: string;
+  savedAt: number;
+}
+
+function getDateTimeDraft(key: string | undefined): DateTimeDraft | null {
+  if (!key || typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw) return null;
+    const value = JSON.parse(raw) as Partial<DateTimeDraft>;
+    if (typeof value.savedAt !== "number" || Date.now() - value.savedAt > 2 * 60 * 60 * 1000
+      || typeof value.year !== "string" || typeof value.month !== "string"
+      || typeof value.day !== "string" || typeof value.timeValue !== "string") {
+      window.sessionStorage.removeItem(key);
+      return null;
+    }
+    return value as DateTimeDraft;
+  } catch {
+    return null;
+  }
+}
+
+function saveDateTimeDraft(key: string | undefined, value: Omit<DateTimeDraft, "savedAt">): void {
+  if (!key || typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify({ ...value, savedAt: Date.now() }));
+  } catch {
+    // The in-memory controlled value still works if browser storage is unavailable.
+  }
+}
+
+function clearDateTimeDraft(key: string | undefined): void {
+  if (!key || typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(key);
+  } catch {
+    // Ignore storage cleanup failures; the saved form value remains authoritative.
+  }
+}
+
+export function clearPersistedDateTimeDrafts(): void {
+  if (typeof window === "undefined") return;
+  try {
+    for (let index = window.sessionStorage.length - 1; index >= 0; index -= 1) {
+      const key = window.sessionStorage.key(index);
+      if (key?.startsWith("ihp:datetime-draft:")) window.sessionStorage.removeItem(key);
+    }
+  } catch {
+    // Ignore storage cleanup failures; saved server data remains authoritative.
+  }
+}
 
 function isValidDateParts(year: string, month: string, day: string): boolean {
   const numericYear = Number(year);
@@ -21,7 +78,8 @@ function isValidDateParts(year: string, month: string, day: string): boolean {
 }
 
 /** Keeps date and time editing independent while preserving the datetime-local value used by existing forms. */
-export default function DateTimeLocalInput({ value, onChange, min, max, className, id, required, disabled, ...props }: DateTimeLocalInputProps) {
+export default function DateTimeLocalInput({ value, onChange, min, max, className, id, required, disabled, persistDraft = false, ...props }: DateTimeLocalInputProps) {
+  const draftKey = persistDraft && id ? `ihp:datetime-draft:${id}` : undefined;
   const initialDate = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
   const [year, setYear] = useState(initialDate?.[1] ?? "");
   const [month, setMonth] = useState(initialDate?.[2] ?? "");
@@ -32,7 +90,9 @@ export default function DateTimeLocalInput({ value, onChange, min, max, classNam
   const dayInput = useRef<HTMLInputElement>(null);
   const timeInput = useRef<HTMLInputElement>(null);
   const calendarInput = useRef<HTMLInputElement>(null);
+  const onChangeRef = useRef(onChange);
   const lastEmittedValue = useRef(value);
+  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
   useEffect(() => {
     if (value === lastEmittedValue.current) return;
     const dateMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -41,7 +101,22 @@ export default function DateTimeLocalInput({ value, onChange, min, max, classNam
     setDay(dateMatch?.[3] ?? "");
     setTimeValue(value.match(/T(\d{2}:\d{2})/)?.[1] ?? "");
     lastEmittedValue.current = value;
-  }, [value]);
+    clearDateTimeDraft(draftKey);
+  }, [draftKey, value]);
+  useEffect(() => {
+    if (!draftKey || value) return;
+    const draft = getDateTimeDraft(draftKey);
+    if (!draft) return;
+    setYear(draft.year);
+    setMonth(draft.month);
+    setDay(draft.day);
+    setTimeValue(draft.timeValue);
+    if (draft.timeValue && isValidDateParts(draft.year, draft.month, draft.day)) {
+      const restoredValue = `${draft.year}-${draft.month}-${draft.day}T${draft.timeValue}`;
+      lastEmittedValue.current = restoredValue;
+      onChangeRef.current(restoredValue);
+    }
+  }, [draftKey]);
   const dateValue = isValidDateParts(year, month, day) ? `${year}-${month}-${day}` : "";
   const minDate = min?.slice(0, 10);
   const maxDate = max?.slice(0, 10);
@@ -55,6 +130,7 @@ export default function DateTimeLocalInput({ value, onChange, min, max, classNam
     setYear(nextYear);
     setMonth(nextMonth);
     setDay(nextDay);
+    saveDateTimeDraft(draftKey, { year: nextYear, month: nextMonth, day: nextDay, timeValue: nextTime });
     emit(isValidDateParts(nextYear, nextMonth, nextDay) ? `${nextYear}-${nextMonth}-${nextDay}` : "", nextTime);
   };
   const updateDatePart = (part: "day" | "month" | "year", rawValue: string) => {
@@ -79,7 +155,7 @@ export default function DateTimeLocalInput({ value, onChange, min, max, classNam
         <input {...props} ref={yearInput} id={id ? `${id}-year` : undefined} type="text" inputMode="numeric" autoComplete="off" maxLength={4} value={year} placeholder="YYYY" required={required} disabled={disabled} aria-label={`${fieldLabel} year (4 digits)`} className={`${segmentClassName} w-16`} onKeyDown={(event) => { const input = event.currentTarget; if (year.length === 4 && input.selectionStart === 4 && input.selectionEnd === 4 && /^\d$/.test(event.key)) { event.preventDefault(); const nextTime = `${event.key.padStart(2, "0")}:00`; setTimeValue(nextTime); emit(dateValue, nextTime); timeInput.current?.focus(); } }} onChange={(event) => updateDatePart("year", event.target.value)} />
         <input ref={calendarInput} type="date" value={dateValue} min={minDate} max={maxDate && maxDate < "9999-12-31" ? maxDate : "9999-12-31"} tabIndex={-1} aria-hidden="true" className="pointer-events-none absolute h-px w-px opacity-0" onChange={(event) => { const match = event.target.value.match(/^(\d{4})-(\d{2})-(\d{2})$/); if (match) updateDate(match[1], match[2], match[3]); }} />
       </div>
-      <input {...props} ref={timeInput} id={id ? `${id}-time` : undefined} type="time" value={timeValue} min={dateValue === minDate ? min?.slice(11, 16) : undefined} max={dateValue === maxDate ? max?.slice(11, 16) : undefined} required={required} disabled={disabled} aria-label={`${fieldLabel} time`} className="h-full min-w-0 flex-1 appearance-none border-0 bg-transparent px-1 text-sm font-normal text-[#06201c] outline-none focus:border-0 focus:ring-0 [&::-webkit-calendar-picker-indicator]:hidden" onChange={(event) => { setTimeValue(event.target.value); emit(dateValue, event.target.value); }} />
+      <input {...props} ref={timeInput} id={id ? `${id}-time` : undefined} type="time" value={timeValue} min={dateValue === minDate ? min?.slice(11, 16) : undefined} max={dateValue === maxDate ? max?.slice(11, 16) : undefined} required={required} disabled={disabled} aria-label={`${fieldLabel} time`} className="h-full min-w-0 flex-1 appearance-none border-0 bg-transparent px-1 text-sm font-normal text-[#06201c] outline-none focus:border-0 focus:ring-0 [&::-webkit-calendar-picker-indicator]:hidden" onChange={(event) => { setTimeValue(event.target.value); saveDateTimeDraft(draftKey, { year, month, day, timeValue: event.target.value }); emit(dateValue, event.target.value); }} />
       <button type="button" disabled={disabled} aria-label={`Choose ${fieldLabel} date`} className="shrink-0 px-1 text-[#52736a] disabled:opacity-50" onClick={() => { const picker = calendarInput.current as (HTMLInputElement & { showPicker?: () => void }) | null; if (picker?.showPicker) picker.showPicker(); else picker?.click(); }}><svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="4.5" width="14" height="12" rx="2" /><path d="M6.5 3v3M13.5 3v3M3 8h14" /></svg></button>
     </div>
   );

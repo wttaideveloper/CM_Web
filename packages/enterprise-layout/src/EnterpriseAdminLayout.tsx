@@ -171,8 +171,7 @@ export function EnterpriseAdminLayout({
     [resolveNavigationHref],
   );
   const displayNotifications = useMemo(() => {
-    if (!workflowNotifications) return notifications;
-    const mappedWorkflow = workflowNotifications.items.map((item) => ({
+    return (workflowNotifications?.items ?? []).map((item) => ({
       id: item.id,
       notification_type: item.notification_type,
       category: item.category,
@@ -183,13 +182,8 @@ export function EnterpriseAdminLayout({
       created_at: item.created_at ?? null,
       data: item.metadata,
     }));
-    const seenIds = new Set(mappedWorkflow.map((item) => item.id));
-    const extras = notifications.filter((item) => !seenIds.has(item.id));
-    return [...mappedWorkflow, ...extras];
-  }, [workflowNotifications, notifications]);
-  const displayUnreadCount = workflowNotifications
-    ? workflowNotifications.unreadCount
-    : totalUnreadCount;
+  }, [workflowNotifications]);
+  const displayUnreadCount = workflowNotifications?.unreadCount ?? 0;
 
   const handleNotificationClick = (item: (typeof displayNotifications)[number]) => {
     setNotificationActionFailed(false);
@@ -209,22 +203,7 @@ export function EnterpriseAdminLayout({
   const handleMarkAllNotificationsRead = async () => {
     setNotificationActionFailed(false);
     try {
-      if (workflowNotifications) {
-        const workflowNotificationIds = new Set(
-          workflowNotifications.items.map((notification) => notification.id),
-        );
-        const hasRealtimeOnlyNotifications = notifications.some(
-          (notification) => !workflowNotificationIds.has(notification.id),
-        );
-        await Promise.all([
-          workflowNotifications.onMarkAllRead(),
-          ...(hasRealtimeOnlyNotifications && onMarkAllNotificationsRead
-            ? [onMarkAllNotificationsRead()]
-            : []),
-        ]);
-      } else {
-        await onMarkAllNotificationsRead?.();
-      }
+      await workflowNotifications?.onMarkAllRead();
     } catch {
       setNotificationActionFailed(true);
     }

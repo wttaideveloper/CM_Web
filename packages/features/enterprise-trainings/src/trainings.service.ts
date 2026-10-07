@@ -97,7 +97,10 @@ export interface TrainingFaq {
 /** Review `reviews[]`. */
 export interface TrainingReview {
   id?: string | null;
+  training_id?: string | null;
   author?: string | null;
+  participant_name?: string | null;
+  participant_email?: string | null;
   rating?: number | null;
   comment?: string | null;
   created_at?: string | null;
@@ -1881,16 +1884,13 @@ export async function listTrainingReviews(trainingId: string): Promise<unknown[]
   }
 }
 
-/** Creates a review — `POST /trainings/{id}/reviews`. */
-export async function createTrainingReview(trainingId: string, payload: { rating: number; comment?: string | null; participant_email?: string }): Promise<unknown> {
-  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/reviews`, {
-    method: "POST",
+/** Permanently deletes a review — `DELETE /trainings/{id}/reviews/{review_id}`. */
+export async function deleteTrainingReview(trainingId: string, reviewId: string): Promise<void> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/reviews/${encodeURIComponent(reviewId)}`, {
+    method: "DELETE",
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
   });
-  if (!res.ok) throw await createTrainingsApiError(res, "create this review");
-  return (await res.json()) as unknown;
+  if (!res.ok) throw await createTrainingsApiError(res, "delete this review");
 }
 
 // Re-export helper for filename parsing (used for cert/calendar exports).

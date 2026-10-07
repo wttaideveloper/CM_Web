@@ -47,11 +47,6 @@ function EnterpriseAdminShellContent({ children }: { children: ReactNode }) {
       profileHref="/admin/profile"
       notificationsHref="/admin/notifications"
       messagesHref="/admin/messages"
-      notifications={realtime.notifications}
-      totalUnreadCount={realtime.totalUnreadCount}
-      onNotificationRead={realtime.markNotificationAsRead}
-      onMarkAllNotificationsRead={realtime.markAllNotificationsAsRead}
-      onNotificationNavigate={(target) => router.push(target)}
       workflowNotifications={{ items: workflow.items, unreadCount: workflow.unreadCount, error: workflow.error ?? workflow.readError ?? workflow.readAllError, onRead: workflow.markRead, onMarkAllRead: workflow.markAllRead }}
       user={user}
       onLogout={handleLogout}
