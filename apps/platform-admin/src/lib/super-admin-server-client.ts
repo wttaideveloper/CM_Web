@@ -169,10 +169,13 @@ export async function getSuperAdminJson(path: string): Promise<SuperAdminServerR
 }
 
 /** Calls the workflow notification upstream while preserving only its safe error detail for the notification BFF. */
-export async function getSuperAdminWorkflowJson(path: string): Promise<SuperAdminServerResult & { status: number }> {
+export async function getSuperAdminWorkflowJson(
+  path: string,
+  init: Pick<RequestInit, "body" | "headers" | "method"> = {},
+): Promise<SuperAdminServerResult & { status: number }> {
   if (!CHAT_API_BASE_URL) throw new SuperAdminServerError(503, "Chat API is not configured.");
   const chatApiV1Base = /\/api\/v1\/?$/.test(CHAT_API_BASE_URL) ? CHAT_API_BASE_URL : `${CHAT_API_BASE_URL}/api/v1`;
-  const result = await requestSuperAdminUpstreamJson(`${chatApiV1Base}${path}`);
+  const result = await requestSuperAdminUpstreamJson(`${chatApiV1Base}${path}`, init);
   if (result.status < 200 || result.status >= 300) {
     const upstreamDetail = safeUpstreamDetail(result.body);
     console.error("Platform workflow notification upstream failure", {
@@ -235,6 +238,25 @@ export async function requestSuperAdminUpstreamJson(
 /** Calls an explicitly approved upstream GET using the dedicated bearer token. */
 export function getSuperAdminUpstreamJson(upstreamUrl: string): Promise<SuperAdminServerResult & { status: number }> {
   return requestSuperAdminUpstreamJson(upstreamUrl);
+}
+
+/** Fetches a protected non-JSON resource with the same server-only Super Admin credential. */
+export async function requestSuperAdminUpstreamResponse(
+  upstreamUrl: string,
+  init: Pick<RequestInit, "headers" | "method"> = {},
+): Promise<{ response: Response; rotatedRefreshToken?: string; rememberMe: boolean }> {
+  const { accessToken, rotatedRefreshToken, rememberMe } = await getSuperAdminAccessToken();
+  try {
+    const response = await fetch(upstreamUrl, {
+      method: init.method,
+      headers: { ...init.headers, Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+      redirect: "manual",
+    });
+    return { response, rememberMe, ...(rotatedRefreshToken ? { rotatedRefreshToken } : {}) };
+  } catch {
+    throw new SuperAdminServerError(502, "Unable to load event media.");
+  }
 }
 
 

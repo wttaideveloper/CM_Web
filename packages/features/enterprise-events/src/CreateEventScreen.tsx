@@ -19,7 +19,11 @@ import ConfiguredCreateEventReview from "./ConfiguredCreateEventReview";
 import { validateRequiredConfiguredEventFields } from "./configured-event-required-fields";
 import EventModulesControls from "./EventModulesControls";
 import { reconcileEventModules, reconcileSelectedEventModules } from "./event-modules";
-import { validateSessions } from "./SessionTableEditor";
+import { type SessionGenerationRule, validateSessions } from "./SessionTableEditor";
+import { createDefaultSessionGenerationRules } from "./session-generation-rules";
+import { deleteEventMediaAsset, EventMediaApiError, getEventMediaPolicy, uploadEventMedia } from "./event-media.service";
+import { documentUrl, type EventMediaField, type EventMediaUploadState } from "./event-media";
+import { confirmEventCreateLeave, EVENT_CREATE_LEAVE_MESSAGE, shouldConfirmEventCreateLeave } from "./event-create-navigation-guard";
 
 const steps = ["Basic Information", "Schedule", "Venue & Host", "Pricing & Tickets", "Capacity & Registration", "Images & Media", "Additional Configuration", "Review & Submit"] as const;
 const stepFields: ReadonlyArray<readonly string[]> = [["title", "description", "category", "organiser_name", "organiser_contact"], ["start_date", "end_date", "registration_cutoff", "registration_open_at", "registration_close_at"], ["venue_name", "venue_address", "venue_city"], ["price", "currency", "ticket_types"], ["capacity", "min_participants", "max_participants"], ["media"], ["sessions", "custom_fields"], []];
@@ -57,6 +61,9 @@ function normalizeValidationErrors(rawErrors: Record<string, string[]>, availabl
 }
 type EventEditorProps = { mode?: "create" | "edit"; initialEvent?: Event };
 type CustomFieldValue = string | string[] | boolean | number | null;
+type NavigationEventLike = { destination?: { url?: string; sameDocument?: boolean }; preventDefault: () => void };
+type NavigationApiLike = { addEventListener: (type: "navigate", listener: (event: NavigationEventLike) => void) => void; removeEventListener: (type: "navigate", listener: (event: NavigationEventLike) => void) => void };
+const eventCreateHistoryIndexKey = "__ihpEventCreateHistoryIndex";
 
 /** Applies the active field's backend-supported type before custom-value serialization. */
 function serializeCustomFieldValue(field: ActiveEventFormField, value: CustomFieldValue): CustomFieldValue {
@@ -81,14 +88,20 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const [activeStep, setActiveStep] = useState(0);
   const [initialValues] = useState(() => initialEvent ? eventToFormValues(initialEvent) : createEmptyEventForm());
   const [values, setValues] = useState(() => initialEvent ? eventToFormValues(initialEvent) : createEmptyEventForm());
+  const [sessionGenerationRules, setSessionGenerationRules] = useState<SessionGenerationRule[]>(createDefaultSessionGenerationRules);
   const previousEventType = useRef(values.event_type);
   const initialLocationId = initialEvent?.location_id ?? "";
   const locationId = initialLocationId;
   const [errors, setErrors] = useState<Record<string, string[]>>({});
+  const [mediaUploads, setMediaUploads] = useState<EventMediaUploadState[]>([]);
+  const cancelledMediaUploads = useRef(new Set<string>());
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [pendingFocusField, setPendingFocusField] = useState<string | null>(null);
   const [customValues, setCustomValues] = useState<Record<string, string | string[] | boolean | number | null>>({});
   const [initialCustomValues, setInitialCustomValues] = useState<Record<string, string | string[] | boolean | number | null>>({});
+  const eventCreateAllowNavigation = useRef(false);
+  const eventCreateSubmitted = useRef(false);
+  const eventCreateDirty = useRef(false);
   const historicalCustomValuesHydrated = useRef(false);
   const enterpriseName = currentEnterprise?.business_legal_name || currentEnterprise?.business_short_name || currentEnterprise?.name || "";
   const organiserContact = [currentEnterprise?.business_email, currentEnterprise?.business_phone].filter(Boolean).join(" | ");
@@ -112,11 +125,12 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     const eventTypeChanged = previousEventType.current !== values.event_type;
     previousEventType.current = values.event_type;
     setValues((current) => {
-      const modules = reconcileEventModules(selected, current.modules, !eventTypeChanged);
+      const reconciledModules = reconcileEventModules(selected, current.modules, !eventTypeChanged);
+      const modules = current.delivery_mode === "in_person" ? { ...reconciledModules, online_meeting: false } : reconciledModules;
       const pricing_type = modules.tickets ? current.pricing_type : "free";
       return JSON.stringify(current.modules) === JSON.stringify(modules) && current.pricing_type === pricing_type ? current : { ...current, modules, pricing_type };
     });
-  }, [eventTypesQuery.data, mode, values.event_type]);
+    }, [eventTypesQuery.data, mode, values.delivery_mode, values.event_type]);
   const selectedEventType = availableEventTypes.find((item) => item.key === values.event_type || item.id === values.event_type);
   const hasHistoricalConfiguration = Boolean(initialEvent?.form_configuration_id && initialEvent?.form_configuration_version_id);
   const historicalFormConfiguration = useEventHistoricalFormConfiguration(initialEvent?.id, mode === "edit" && hasHistoricalConfiguration);
@@ -132,9 +146,13 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
       }),
     }))
     .filter((section) => section.fields.length > 0), [formConfiguration]);
-  const currencyOptions = useMemo(() => formConfiguration?.sections.flatMap((section) => section.fields).find((field) => field.source === "core" && (field.core_key === "currency" || field.stable_key === "currency"))?.options ?? [], [formConfiguration]);
+  const currencyOptions = useMemo(() => {
+    const configuredOptions = formConfiguration?.sections.flatMap((section) => section.fields).find((field) => field.source === "core" && (field.core_key === "currency" || field.stable_key === "currency"))?.options ?? [];
+    return configuredOptions.some((option) => option.value === "USD") ? configuredOptions : [{ value: "USD", label: "USD — US Dollar", position: 0 }, ...configuredOptions];
+  }, [formConfiguration]);
   const requiresEventCategories = configuredSections.some((section) => section.fields.some((field) => field.source === "core" && (field.core_key === "category" || field.core_key === "subcategory")));
   const eventCategoriesQuery = useEventCategories(Boolean(formConfiguration) && requiresEventCategories);
+  const mediaPolicyQuery = useQuery({ queryKey: ["events", "media-policy"], queryFn: getEventMediaPolicy, staleTime: 5 * 60_000 });
   const editorSteps = formConfiguration ? [...configuredSections.map((section) => section.label), "Review & Submit"] : steps;
   useEffect(() => {
     if (mode !== "edit" || !initialEvent || !formConfiguration || historicalCustomValuesHydrated.current) return;
@@ -162,22 +180,82 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
       const sessionsField = activeConfiguration?.sections.flatMap((section) => section.fields).find((field) => field.source === "core" && (field.core_key === "sessions" || field.stable_key === "sessions"));
       return createEvent(buildCreateEventPayload(values, tenantId, enterpriseId, locationId, activeConfiguration?.version_id, configuredCustomValues, configuredCoreFieldKeys, sessionsField?.composite_config?.enabled_fields));
     },
-    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ["events", "list"] }); if (initialEvent) { await queryClient.invalidateQueries({ queryKey: ["events", "detail", initialEvent.id] }); router.push(`/admin/events/${initialEvent.id}`); } else router.push("/admin/events"); },
+    onSuccess: async () => { eventCreateSubmitted.current = true; eventCreateAllowNavigation.current = true; setMediaUploads([]); await queryClient.invalidateQueries({ queryKey: ["events", "list"] }); if (initialEvent) { await queryClient.invalidateQueries({ queryKey: ["events", "detail", initialEvent.id] }); router.push(`/admin/events/${initialEvent.id}`); } else router.push("/admin/events"); },
     onError: (error) => { if (error instanceof EventsApiError) { const displayErrors = normalizeValidationErrors(error.fieldErrors, allFieldOrder); setErrors((current) => ({ ...current, ...displayErrors })); const structuredKeys = error.structuredErrors.map((item) => item.fieldKey); const firstStructured = allFieldOrder.find((field) => structuredKeys.some((key) => resolveValidationKey(key, [field]) === field)); const first = firstStructured ?? firstErrorKey(allFieldOrder, displayErrors) ?? Object.keys(displayErrors).find((key) => displayErrors[key]?.length); if (first) { const sectionIndex = editorSteps.findIndex((_, index) => sectionFields(index).includes(first)); if (sectionIndex >= 0) setActiveStep(sectionIndex); setPendingFocusField(first); } setSubmitError(error.status === 401 || error.status === 403 ? "Your session cannot save this event. Please sign in again." : error.message); } else setSubmitError(error instanceof Error ? error.message : "Unable to save event."); },
   });
   const update = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => {
     setValues((current) => {
       if (key === "event_type") {
         const selected = availableEventTypes.find((item) => item.key === value);
-        const modules = reconcileSelectedEventModules(selected, current.modules);
+        const reconciledModules = reconcileSelectedEventModules(selected, current.modules);
+        const modules = reconciledModules && current.delivery_mode === "in_person" ? { ...reconciledModules, online_meeting: false } : reconciledModules;
         if (!modules) return { ...current, event_type: value as CreateEventFormValues["event_type"], modules: null, pricing_type: "free" };
         return { ...current, event_type: value as CreateEventFormValues["event_type"], modules, pricing_type: modules.tickets ? current.pricing_type : "free" };
       }
+      if (key === "delivery_mode" && value === "in_person" && current.modules?.online_meeting) return { ...current, delivery_mode: value, modules: { ...current.modules, online_meeting: false } };
       return key === "modules" && value && !(value as CreateEventFormValues["modules"])?.tickets ? { ...current, modules: value as CreateEventFormValues["modules"], pricing_type: "free" } : { ...current, [key]: value };
     });
     setErrors((current) => ({ ...current, [key]: [] })); setSubmitError(null);
   };
   const updateCustomValues = (next: Record<string, string | string[] | boolean | number | null>) => { const changedKey = Object.keys(next).find((key) => JSON.stringify(next[key]) !== JSON.stringify(customValues[key])); setCustomValues(next); if (changedKey) setErrors((current) => ({ ...current, [changedKey]: [] })); setSubmitError(null); };
+  const updateMediaUpload = (id: string, patch: Partial<EventMediaUploadState>) => setMediaUploads((current) => current.map((upload) => upload.id === id ? { ...upload, ...patch } : upload));
+  const runMediaUpload = (upload: EventMediaUploadState) => {
+    cancelledMediaUploads.current.delete(upload.id);
+    updateMediaUpload(upload.id, { status: "uploading", progress: 0, error: undefined });
+    void uploadEventMedia(upload.file, upload.field, upload.clientRef, undefined, (progress) => updateMediaUpload(upload.id, { progress }))
+      .then((asset) => {
+        if (cancelledMediaUploads.current.has(upload.id)) {
+          cancelledMediaUploads.current.delete(upload.id);
+          if (!asset.attached) void deleteEventMediaAsset(asset.id).catch(() => undefined);
+          return;
+        }
+        setValues((current) => {
+          if (upload.field === "primary_image") return { ...current, primary_image: asset.url };
+          const list = current[upload.field] as Array<string | { url: string }>;
+          const valueIndex = upload.valueIndex;
+          const nextValue = upload.field === "documents" ? asset : asset.url;
+          if (valueIndex !== undefined) return { ...current, [upload.field]: list.map((item, index) => index === valueIndex ? nextValue : item) };
+          return { ...current, [upload.field]: upload.replaceIndex === undefined ? [...list, nextValue] : list.map((item, index) => index === upload.replaceIndex ? nextValue : item) };
+        });
+        updateMediaUpload(upload.id, { status: "ready", progress: 100, asset });
+      })
+      .catch((error: unknown) => updateMediaUpload(upload.id, { status: "error", error: error instanceof EventMediaApiError ? error.message : error instanceof Error ? error.message : "The upload failed." }));
+  };
+  const onMediaUpload = (field: EventMediaField, file: File, replaceIndex?: number) => {
+    const clientRef = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const valueIndex = field === "primary_image" ? undefined : replaceIndex ?? (values[field] as readonly unknown[]).length;
+    const upload: EventMediaUploadState = { id: `${field}-${clientRef}`, field, file, clientRef, progress: 0, status: "uploading", ...(replaceIndex === undefined ? {} : { replaceIndex }), ...(valueIndex === undefined ? {} : { valueIndex }) };
+    if (field !== "primary_image" && replaceIndex === undefined) {
+      setValues((current) => field === "documents" ? { ...current, documents: [...current.documents, { url: "" }] } : { ...current, [field]: [...(current[field] as string[]), ""] });
+    }
+    setMediaUploads((current) => [...current, upload]);
+    runMediaUpload(upload);
+  };
+  const onMediaRetry = (id: string) => { const upload = mediaUploads.find((item) => item.id === id); if (upload) runMediaUpload(upload); };
+  const onMediaLinkChange = (field: EventMediaField, index: number, value: string) => {
+    setValues((current) => {
+      if (field === "primary_image") return { ...current, primary_image: value };
+      if (field === "documents") return { ...current, documents: current.documents.map((item, itemIndex) => itemIndex === index ? { ...item, url: value } : item) };
+      return { ...current, [field]: (current[field] as string[]).map((item, itemIndex) => itemIndex === index ? value : item) };
+    });
+    setErrors((current) => ({ ...current, [field]: [] }));
+    setSubmitError(null);
+  };
+  const onMediaAddLink = (field: EventMediaField) => {
+    setValues((current) => field === "primary_image" ? { ...current, primary_image: "" } : field === "documents" ? { ...current, documents: [...current.documents, { url: "" }] } : { ...current, [field]: [...(current[field] as string[]), ""] });
+  };
+  const onMediaRemove = (field: EventMediaField, index: number) => {
+    const value = field === "primary_image" ? values.primary_image : (values[field] as Array<string | { url: string }>)[index];
+    const url = documentUrl(value ?? "");
+    setValues((current) => field === "primary_image" ? { ...current, primary_image: "" } : field === "documents" ? { ...current, documents: current.documents.filter((_, itemIndex) => itemIndex !== index) } : { ...current, [field]: (current[field] as string[]).filter((_, itemIndex) => itemIndex !== index) });
+    const tracked = mediaUploads.find((upload) => upload.asset?.url === url || upload.field === field && upload.valueIndex === index);
+    if (tracked?.asset && !tracked.asset.attached) {
+      void deleteEventMediaAsset(tracked.asset.id).then(() => setMediaUploads((current) => current.filter((upload) => upload.id !== tracked.id))).catch((error: unknown) => updateMediaUpload(tracked.id, { status: "error", error: error instanceof EventMediaApiError && error.status === 409 ? "This upload is already attached to an Event." : "The upload could not be removed." }));
+    } else if (tracked) {
+      if (tracked.status === "uploading") cancelledMediaUploads.current.add(tracked.id);
+      setMediaUploads((current) => current.filter((upload) => upload.id !== tracked.id));
+    }
+  };
   useEffect(() => {
     if (!pendingFocusField) return;
     const candidates = pendingFocusField === "media"
@@ -198,7 +276,115 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     setPendingFocusField(null);
   }, [activeStep, pendingFocusField]);
   const allErrors = useMemo(() => formConfiguration ? validateConfiguredEventForm(formConfiguration, values, customValues, eventCategoriesQuery.data ?? [], mode) : validateEventForm(values, mode), [customValues, eventCategoriesQuery.data, formConfiguration, mode, values]);
-  const isDirty = JSON.stringify(values) !== JSON.stringify(initialValues) || JSON.stringify(customValues) !== JSON.stringify(initialCustomValues);
+  const isDirty = JSON.stringify(values) !== JSON.stringify(initialValues)
+    || JSON.stringify(customValues) !== JSON.stringify(initialCustomValues)
+    || mediaUploads.length > 0
+    || (mode === "create" && JSON.stringify(sessionGenerationRules) !== JSON.stringify(createDefaultSessionGenerationRules));
+  useEffect(() => {
+    eventCreateDirty.current = isDirty;
+  }, [isDirty]);
+  useEffect(() => {
+    if (mode !== "create" || typeof window === "undefined") return;
+
+    const shouldPrompt = () => shouldConfirmEventCreateLeave({ mode, isDirty: eventCreateDirty.current, hasSubmitted: eventCreateSubmitted.current });
+    const confirmLeave = () => confirmEventCreateLeave({ mode, isDirty: eventCreateDirty.current, hasSubmitted: eventCreateSubmitted.current }, (message) => window.confirm(message));
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (eventCreateAllowNavigation.current || !shouldPrompt()) return;
+      event.preventDefault();
+      event.returnValue = EVENT_CREATE_LEAVE_MESSAGE;
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+
+    const navigationApi = (window as unknown as { navigation?: NavigationApiLike }).navigation;
+    const onNavigate = (event: NavigationEventLike) => {
+      const destinationUrl = event.destination?.url;
+      if (eventCreateAllowNavigation.current || !destinationUrl || destinationUrl === window.location.href || !shouldPrompt()) return;
+      if (!confirmLeave()) event.preventDefault();
+      else eventCreateAllowNavigation.current = true;
+    };
+    if (navigationApi) {
+      navigationApi.addEventListener("navigate", onNavigate);
+    }
+
+    const history = window.history;
+    const originalPushState = history.pushState.bind(history);
+    const originalReplaceState = history.replaceState.bind(history);
+    const initialUrl = window.location.href;
+    const readHistoryIndex = (state: unknown): number | undefined => {
+      if (!state || typeof state !== "object") return undefined;
+      const value = (state as Record<string, unknown>)[eventCreateHistoryIndexKey];
+      return typeof value === "number" ? value : undefined;
+    };
+    const tagHistoryState = (state: unknown, index: number): Record<string, unknown> => ({
+      ...(state && typeof state === "object" ? state as Record<string, unknown> : {}),
+      [eventCreateHistoryIndexKey]: index,
+    });
+    let currentHistoryIndex = readHistoryIndex(history.state) ?? 0;
+    originalReplaceState(tagHistoryState(history.state, currentHistoryIndex), "", initialUrl);
+    let restoringDirection: -1 | 1 | null = null;
+
+    const guardedPushState: History["pushState"] = (state, title, url) => {
+      const nextUrl = url == null ? window.location.href : new URL(String(url), window.location.href).href;
+      if (nextUrl !== window.location.href && !eventCreateAllowNavigation.current && shouldPrompt() && !confirmLeave()) return;
+      currentHistoryIndex += 1;
+      originalPushState(tagHistoryState(state, currentHistoryIndex), title, url);
+    };
+    const guardedReplaceState: History["replaceState"] = (state, title, url) => {
+      const nextUrl = url == null ? window.location.href : new URL(String(url), window.location.href).href;
+      if (nextUrl !== window.location.href && !eventCreateAllowNavigation.current && shouldPrompt() && !confirmLeave()) return;
+      originalReplaceState(tagHistoryState(state, currentHistoryIndex), title, url);
+    };
+    history.pushState = guardedPushState;
+    history.replaceState = guardedReplaceState;
+
+    const handlePopState = (event: PopStateEvent) => {
+      const destinationIndex = readHistoryIndex(event.state);
+      const direction: -1 | 1 = destinationIndex !== undefined && destinationIndex > currentHistoryIndex ? 1 : -1;
+      if (restoringDirection !== null) {
+        const requestedDirection = restoringDirection;
+        restoringDirection = null;
+        currentHistoryIndex = readHistoryIndex(history.state) ?? currentHistoryIndex;
+        window.setTimeout(() => {
+          if (!shouldPrompt()) {
+            eventCreateAllowNavigation.current = true;
+            history.go(requestedDirection);
+          } else if (confirmLeave()) {
+            eventCreateAllowNavigation.current = true;
+            history.go(requestedDirection);
+          }
+        }, 0);
+        return;
+      }
+      if (eventCreateAllowNavigation.current || !shouldPrompt()) {
+        if (destinationIndex !== undefined) currentHistoryIndex = destinationIndex;
+        return;
+      }
+      restoringDirection = direction;
+      history.go(-direction);
+    };
+    if (!navigationApi) window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("beforeunload", beforeUnload);
+      if (navigationApi) navigationApi.removeEventListener("navigate", onNavigate);
+      else window.removeEventListener("popstate", handlePopState);
+      history.pushState = originalPushState;
+      history.replaceState = originalReplaceState;
+      if (window.location.href === initialUrl && readHistoryIndex(history.state) !== undefined) {
+        const state = history.state as Record<string, unknown>;
+        const rest = { ...state };
+        delete rest[eventCreateHistoryIndexKey];
+        originalReplaceState(rest, "", initialUrl);
+      }
+    };
+  }, [mode]);
+  const handleCreateLeave = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (mode !== "create") return;
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const confirmed = confirmEventCreateLeave({ mode, isDirty, hasSubmitted: eventCreateSubmitted.current }, (message) => window.confirm(message));
+    if (!confirmed) event.preventDefault();
+    else eventCreateAllowNavigation.current = true;
+  };
   const sectionFields = (index: number): string[] => {
     if (!formConfiguration) return [...(stepFields[index] ?? [])];
     const fields = configuredSections[index]?.fields.map((field) => field.source === "core" ? field.core_key ?? field.stable_key ?? field.id : field.stable_key ?? field.id) ?? [];
@@ -216,8 +402,9 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   };
   const sectionHasErrors = (index: number) => firstErrorKey(sectionFields(index), displayErrors) !== null;
   const continueToNext = () => { const currentErrors = Object.fromEntries(Object.entries(normalizedAllErrors).filter(([field]) => sectionFields(activeStep).includes(field))); const first = firstErrorKey(sectionFields(activeStep), currentErrors); if (first) { focusError(first, currentErrors); return; } setErrors({}); setActiveStep((current) => Math.min(current + 1, editorSteps.length - 1)); };
-  const submit = () => { if (mode === "edit" && !isDirty) return; const first = firstErrorKey(allFieldOrder, normalizedAllErrors) ?? Object.keys(normalizedAllErrors).find((field) => normalizedAllErrors[field]?.length); if (first) { const sectionIndex = editorSteps.findIndex((_, index) => sectionFields(index).includes(first)); focusError(first, normalizedAllErrors); if (sectionIndex >= 0) setActiveStep(sectionIndex); const count = errorCount(normalizedAllErrors); setSubmitError(`${count} validation error${count === 1 ? "" : "s"} need attention.`); return; } setSubmitError(null); saveMutation.mutate(); };
-  const sharedProps = { values, update, errors: displayErrors, currencyOptions, eventTypes: availableEventTypes, eventTypesLoading: eventTypesQuery.isLoading, eventTypesError: eventTypesQuery.isError };
+  const submit = () => { if (mode === "edit" && !isDirty) return; if (mediaUploads.some((upload) => upload.status === "uploading" || upload.status === "error")) { setSubmitError("Finish or remove the Event media uploads before saving."); return; } const first = firstErrorKey(allFieldOrder, normalizedAllErrors) ?? Object.keys(normalizedAllErrors).find((field) => normalizedAllErrors[field]?.length); if (first) { const sectionIndex = editorSteps.findIndex((_, index) => sectionFields(index).includes(first)); focusError(first, normalizedAllErrors); if (sectionIndex >= 0) setActiveStep(sectionIndex); const count = errorCount(normalizedAllErrors); setSubmitError(`${count} validation error${count === 1 ? "" : "s"} need attention.`); return; } setSubmitError(null); saveMutation.mutate(); };
+  const mediaProps = { mediaPolicy: mediaPolicyQuery.data, policyError: mediaPolicyQuery.error instanceof Error ? mediaPolicyQuery.error.message : undefined, uploads: mediaUploads, onMediaLinkChange, onMediaAddLink, onMediaRemove, onMediaUpload, onMediaRetry };
+  const sharedProps = { values, update, errors: displayErrors, currencyOptions, eventTypes: availableEventTypes, eventTypesLoading: eventTypesQuery.isLoading, eventTypesError: eventTypesQuery.isError, ...mediaProps, ...(mode === "create" ? { sessionGenerationRules, onSessionGenerationRulesChange: setSessionGenerationRules } : {}) };
   const backHref = initialEvent ? `/admin/events/${initialEvent.id}` : "/admin/events";
   const title = mode === "edit" ? "Edit Event" : "Create Event";
 
@@ -255,7 +442,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     return <HistoricalFormStatus error onRetry={() => void activeFormConfiguration.refetch()}><strong>No Event Form Available</strong><br />There is currently no active Event Form Configuration available. Please contact your Super Admin to publish and activate one before creating an Event.</HistoricalFormStatus>;
   }
 
-  return <div className="w-full"><header className="flex flex-col gap-4 border-b border-[#edf3f0] pb-6 sm:flex-row sm:items-start sm:justify-between"><div>{mode === "edit" ? <Link href={backHref} className="text-sm font-semibold text-[#1f6a58]">Back to Event</Link> : null}<p className="mt-4 text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">{mode === "edit" ? initialEvent?.status ?? "EVENT" : "DRAFT EVENT"}</p><h1 className="mt-2 text-2xl font-bold text-[#06201c] sm:text-3xl">{title}</h1><p className="mt-2 text-sm text-[#52736a] sm:text-base">{mode === "edit" ? initialEvent?.title : "Build and review a new event for your enterprise."}</p></div><Link href={backHref} className="inline-flex h-11 items-center justify-center rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a]">Cancel</Link></header>
+  return <div className="w-full"><header className="flex flex-col gap-4 border-b border-[#edf3f0] pb-6 sm:flex-row sm:items-start sm:justify-between"><div>{mode === "edit" ? <Link href={backHref} className="text-sm font-semibold text-[#1f6a58]">Back to Event</Link> : null}<p className="mt-4 text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">{mode === "edit" ? initialEvent?.status ?? "EVENT" : "DRAFT EVENT"}</p><h1 className="mt-2 text-2xl font-bold text-[#06201c] sm:text-3xl">{title}</h1><p className="mt-2 text-sm text-[#52736a] sm:text-base">{mode === "edit" ? initialEvent?.title : "Build and review a new event for your enterprise."}</p></div><Link href={backHref} onClick={handleCreateLeave} className="inline-flex h-11 items-center justify-center rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a]">Cancel</Link></header>
     {mode === "create" && !activeFormConfiguration.data && (activeFormConfiguration.isLoading || activeFormConfiguration.isError) ? <ActiveEventFormVerification query={activeFormConfiguration} /> : <div className="mt-6 grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]"><nav aria-label="Event editor sections" className="rounded-2xl border border-[#e1ebe6] bg-white p-3 shadow-sm">{editorSteps.map((step, index) => { const hasErrors = sectionHasErrors(index); return <button key={`${step}-${index}`} type="button" aria-current={activeStep === index ? "step" : undefined} aria-label={hasErrors ? `${step}, contains validation errors` : step} onClick={() => selectSection(index)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${hasErrors ? "text-[#b42318]" : activeStep === index ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f9fcfa]"}`}><span className={`flex h-6 w-6 items-center justify-center rounded-full border border-current text-xs ${hasErrors ? "bg-[#fff1f0] font-bold" : ""}`}>{hasErrors ? <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full bg-[#b42318]" /> : index + 1}</span>{step}</button>; })}</nav>
       <main className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm sm:p-6">{mode === "create" && (activeFormConfiguration.isError || !activeFormConfiguration.data) ? <ActiveEventFormVerification query={activeFormConfiguration} /> : null}{mode === "create" && activeFormConfiguration.data && activeStep < configuredSections.length ? <ConfiguredCreateEventSection section={configuredSections[activeStep]} {...sharedProps} customValues={customValues} setCustomValues={setCustomValues} categories={eventCategoriesQuery.data ?? []} categoriesLoading={eventCategoriesQuery.isLoading} categoriesError={eventCategoriesQuery.isError} /> : null}{mode === "create" && activeFormConfiguration.data && activeStep === configuredSections.length ? <ConfiguredCreateEventReview configuration={activeFormConfiguration.data} values={values} customValues={customValues} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 0 ? <BasicInformationSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 1 ? <ScheduleSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 2 ? <LocationAndHostSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 3 ? <PricingAndTicketsSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 4 ? <CapacityAndRegistrationSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 5 ? <MediaSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 6 ? <AdditionalConfigurationSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 7 ? <ReviewSection values={values} /> : null}{mode === "edit" && activeStep === 0 ? <BasicInformationSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 1 ? <ScheduleSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 2 ? <LocationAndHostSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 3 ? <PricingAndTicketsSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 4 ? <CapacityAndRegistrationSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 5 ? <MediaSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 6 ? <AdditionalConfigurationSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 7 ? <ReviewSection values={values} /> : null}{isCreateBlockedByEnterprise ? <div role="status" className="mt-6 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-3 text-sm font-semibold text-[#735c1e]">Creating an Event is unavailable until an Enterprise is linked. The current backend EventCreate contract requires an enterprise_id.</div> : null}{submitError ? <div role="alert" className="mt-6 rounded-xl border border-[#f3d0cb] bg-[#fff6f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{submitError}</div> : null}
         <div className="mt-8 flex flex-col-reverse gap-3 border-t border-[#edf3f0] pt-5 sm:flex-row sm:justify-between">{activeStep > 0 ? <button type="button" onClick={() => setActiveStep((current) => current - 1)} disabled={saveMutation.isPending} className="h-11 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a] disabled:opacity-50">Back</button> : null}{activeStep === editorSteps.length - 1 ? <button type="button" onClick={submit} disabled={saveMutation.isPending || isCreateBlockedByEnterprise || (mode === "edit" && !isDirty)} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm disabled:opacity-60">{saveMutation.isPending ? mode === "edit" ? "Saving..." : "Creating..." : mode === "edit" ? "Save Changes" : "Create Event"}</button> : <button type="button" onClick={continueToNext} className="h-11 rounded-full bg-[#1f6a58] px-5 py-2.5 text-sm font-bold text-white shadow-sm">Continue</button>}</div>

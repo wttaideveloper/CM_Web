@@ -55,6 +55,7 @@ export type PlatformAdminLayoutProps = {
   workflowNotifications?: {
     unreadCount?: number;
     unreadCountError?: unknown;
+    error?: string | null;
     items: readonly { id: string; title: string; message: string; notification_type: string; is_read: boolean }[];
     onRead: (id: string) => void;
     onMarkAllRead: () => void;

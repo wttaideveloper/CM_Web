@@ -27,16 +27,25 @@ function readNonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
+function recordValue(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
 function eventIdFor(notification: Pick<RealtimeNotification, "data">): string | null {
-  const direct = readNonEmptyString(notification.data.event_id) ?? readNonEmptyString(notification.data.eventId);
+  const data = recordValue(notification.data);
+  const direct = readNonEmptyString(data.event_id) ?? readNonEmptyString(data.eventId);
   if (direct) return direct;
-  return notification.data.entity_type === "event" ? readNonEmptyString(notification.data.entity_id) : null;
+  const nestedEvent = recordValue(data.event);
+  const nested = readNonEmptyString(nestedEvent.id) ?? readNonEmptyString(nestedEvent.event_id) ?? readNonEmptyString(nestedEvent.eventId);
+  if (nested) return nested;
+  return readNonEmptyString(data.entity_type)?.toLocaleLowerCase() === "event" ? readNonEmptyString(data.entity_id) : null;
 }
 
 function trainingIdFor(notification: Pick<RealtimeNotification, "data">): string | null {
-  const direct = readNonEmptyString(notification.data.training_id) ?? readNonEmptyString(notification.data.trainingId);
+  const data = recordValue(notification.data);
+  const direct = readNonEmptyString(data.training_id) ?? readNonEmptyString(data.trainingId);
   if (direct) return direct;
-  return notification.data.entity_type === "training" ? readNonEmptyString(notification.data.entity_id) : null;
+  return readNonEmptyString(data.entity_type)?.toLocaleLowerCase() === "training" ? readNonEmptyString(data.entity_id) : null;
 }
 
 /** Resolves an Event or Training workflow notification to its relevant Web screen. */
@@ -56,6 +65,23 @@ export function resolveNotificationTarget(
   const eventId = eventIdFor(notification);
   if (!eventId) return null;
   return notification.notification_type === "event_changes_requested" ? `/admin/events/${encodeURIComponent(eventId)}/edit` : `/admin/events/${encodeURIComponent(eventId)}`;
+}
+
+/** Marks a notification read without allowing a read failure to block app-router navigation. */
+export function handleNotificationClick(
+  notification: Pick<RealtimeNotification, "id" | "notification_type" | "data">,
+  scope: "enterprise" | "platform",
+  markRead: (id: string) => Promise<void> | void,
+  navigate: (target: string) => void,
+): string | null {
+  try {
+    void Promise.resolve(markRead(notification.id)).catch(() => undefined);
+  } catch {
+    // Navigation remains available when a synchronous read adapter fails.
+  }
+  const target = resolveNotificationTarget(notification, scope);
+  if (target) navigate(target);
+  return target;
 }
 
 /** Resolves an Event notification target for existing Event-only consumers. */

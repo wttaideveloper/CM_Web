@@ -12,13 +12,11 @@ import {
 } from "./events.service";
 
 type DialogKind = "announcement" | "reminder" | null;
-type AnnouncementChannel = NonNullable<SendEventAnnouncementPayload["channels"]>[number];
+type AnnouncementChannel = Extract<NonNullable<SendEventAnnouncementPayload["channels"]>[number], "in_app" | "email">;
 
 const announcementChannels: ReadonlyArray<{ value: AnnouncementChannel; label: string }> = [
   { value: "in_app", label: "In-app" },
-  { value: "push", label: "Push" },
   { value: "email", label: "Email" },
-  { value: "sms", label: "SMS" },
 ];
 
 /** Event detail actions for backend-authoritative announcements and immediate reminders. */

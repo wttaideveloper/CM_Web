@@ -80,7 +80,7 @@ function hasValue(value: unknown, requiredBoolean = false): boolean {
   if (value === null || value === undefined) return false;
   if (typeof value === "string") return value.trim() !== "";
   if (Array.isArray(value)) {
-    return value.some((item) => typeof item !== "string" || item.trim() !== "");
+    return value.some((item) => typeof item === "string" ? item.trim() !== "" : typeof item === "object" && item !== null && "url" in item && typeof item.url === "string" && item.url.trim() !== "");
   }
   if (requiredBoolean && typeof value === "boolean") return value;
   return true;

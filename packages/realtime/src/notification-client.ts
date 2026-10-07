@@ -96,9 +96,9 @@ export function createNotificationClient(requestClient: NotificationRequestClien
     return result;
   }
 
-  async function readNotificationResponse(path: string) {
+  async function readNotificationResponse(path: string, method: "PATCH" | "PUT" = "PATCH") {
     const response = await requestResponse(path, {
-      method: "PATCH",
+      method,
     });
 
     const body = await response.text().catch(() => "");
@@ -155,7 +155,7 @@ export function createNotificationClient(requestClient: NotificationRequestClien
       console.log("[Notifications] read-all request");
     }
 
-    const response = await readNotificationResponse("/notifications/read-all");
+    const response = await readNotificationResponse("/notifications/read-all", "PUT");
 
     if (!response.ok) {
       if (process.env.NODE_ENV !== "production") {

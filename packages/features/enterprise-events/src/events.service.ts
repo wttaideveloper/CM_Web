@@ -1,4 +1,5 @@
 import { authenticatedFetch } from "@ihp/auth";
+import { normalizeDocumentEntries, type EventDocumentEntry } from "./event-media";
 
 const fetch = authenticatedFetch;
 
@@ -240,7 +241,7 @@ export interface Event {
   primary_image: string | null;
   gallery_images: string[];
   videos: string[];
-  documents: string[];
+  documents: EventDocumentEntry[];
   delivery_mode: string;
   venue: EventVenue | null;
   meeting_link?: string | null;
@@ -810,7 +811,7 @@ export interface CreateEventPayload {
   primary_image: string;
   gallery_images: string[];
   videos: string[];
-  documents: string[];
+  documents: EventDocumentEntry[];
   delivery_mode: "in_person";
   venue: CreateEventVenue | null;
   meeting_link: string | null;
@@ -858,7 +859,7 @@ export interface UpdateEventPayload {
   primary_image?: string | null;
   gallery_images?: string[] | null;
   videos?: string[] | null;
-  documents?: string[] | null;
+  documents?: EventDocumentEntry[] | null;
   delivery_mode?: string | null;
   venue?: EventVenue | null;
   meeting_link?: string | null;
@@ -1052,7 +1053,7 @@ function normalizeEventResponse(value: unknown): Event | null {
     primary_image: text("primary_image"),
     gallery_images: arrayOfStrings("gallery_images"),
     videos: arrayOfStrings("videos"),
-    documents: arrayOfStrings("documents"),
+    documents: normalizeDocumentEntries(value.documents),
     delivery_mode: text("delivery_mode"),
     venue,
     location_id: nullableText("location_id"),

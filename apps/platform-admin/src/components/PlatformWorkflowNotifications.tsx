@@ -10,13 +10,15 @@ export function usePlatformWorkflowNotifications() {
   const queryClient = useQueryClient();
   const list = useQuery({ queryKey: platformWorkflowNotificationsKey, queryFn: () => client.list(), staleTime: 30_000, refetchInterval: 30_000, refetchIntervalInBackground: false });
   const count = useQuery({ queryKey: [...platformWorkflowNotificationsKey, "unread"], queryFn: () => client.unreadCount(), staleTime: 30_000, refetchInterval: 30_000, refetchIntervalInBackground: false });
-  const markRead = useMutation({ mutationFn: (id: string) => client.markRead(id), onSuccess: () => queryClient.invalidateQueries({ queryKey: platformWorkflowNotificationsKey }) });
-  const markAllRead = useMutation({ mutationFn: () => client.markAllRead(), onSuccess: () => queryClient.invalidateQueries({ queryKey: platformWorkflowNotificationsKey }) });
+  const markReadMutation = useMutation({ mutationFn: (id: string) => client.markRead(id), onSuccess: () => queryClient.invalidateQueries({ queryKey: platformWorkflowNotificationsKey }) });
+  const markAllReadMutation = useMutation({ mutationFn: () => client.markAllRead(), onSuccess: () => queryClient.invalidateQueries({ queryKey: platformWorkflowNotificationsKey }) });
   return {
     items: list.data?.items ?? [], unreadCount: count.data?.unread_count,
     isLoading: list.isLoading || count.isLoading, error: list.error ?? count.error,
+    actionError: markReadMutation.error ?? markAllReadMutation.error,
     unreadCountError: count.error,
-    markRead: markRead.mutateAsync, markAllRead: markAllRead.mutateAsync,
+    markRead: async (id: string) => { try { await markReadMutation.mutateAsync(id); } catch { /* The header/page exposes actionError without creating an unhandled rejection. */ } },
+    markAllRead: async () => { try { await markAllReadMutation.mutateAsync(); } catch { /* The header/page exposes actionError without creating an unhandled rejection. */ } },
     refresh: async () => { await Promise.allSettled([list.refetch(), count.refetch()]); },
   };
 }

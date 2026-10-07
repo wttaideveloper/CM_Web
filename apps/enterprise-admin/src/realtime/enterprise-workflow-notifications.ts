@@ -279,7 +279,7 @@ export function useEnterpriseWorkflowNotifications() {
         readTrainingNotificationIds.add(id);
         return;
       }
-      await client.markRead(id).catch(() => undefined);
+      await client.markRead(id);
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: enterpriseWorkflowNotificationsKey }),
   });
@@ -291,7 +291,7 @@ export function useEnterpriseWorkflowNotifications() {
           readTrainingNotificationIds.add(item.id);
         }
       }
-      await client.markAllRead().catch(() => ({ marked_read: 0 }));
+      await client.markAllRead();
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: enterpriseWorkflowNotificationsKey }),
   });
@@ -301,7 +301,9 @@ export function useEnterpriseWorkflowNotifications() {
     unreadCount,
     isLoading: list.isLoading || trainingNotifications.isLoading,
     error: list.error ?? trainingNotifications.error,
-    markRead: read.mutateAsync,
-    markAllRead: readAll.mutateAsync,
+    actionError: read.error ?? readAll.error,
+    markRead: async (id: string) => { try { await read.mutateAsync(id); } catch { /* The notification view exposes actionError without an unhandled rejection. */ } },
+    markAllRead: async () => { try { await readAll.mutateAsync(); } catch { /* The notification view exposes actionError without an unhandled rejection. */ } },
+    refresh: async () => { await Promise.allSettled([list.refetch(), trainingNotifications.refetch()]); },
   };
 }

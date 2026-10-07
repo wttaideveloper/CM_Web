@@ -169,6 +169,7 @@ export function PlatformAdminHeader({
                           <span className="text-xs font-semibold text-[#1f6a58]">{workflowNotifications.unreadCountError ? "Unread count unavailable" : `${workflowNotifications.unreadCount} unread`}</span>
                         </div>
                       ) : null}
+                      {workflowNotifications.error ? <p role="alert" className="rounded-lg bg-[#fff8f7] px-2 py-2 text-xs text-[#8f3b2f]">{workflowNotifications.error}</p> : null}
                       {workflowNotifications.items.length > 0 ? (
                         <div className="mt-1 space-y-1">{workflowNotifications.items.slice(0, 5).map((item) => <Link key={item.id} href={item.notification_type === "event_submitted" ? "/approval-queue" : item.notification_type === "training_submitted" ? "/approval-queue?type=trainings" : notificationsHref} onClick={() => { workflowNotifications.onRead(item.id); closeMenu(); }} className={`block rounded-xl px-3 py-2 text-sm hover:bg-[#eef7f2] ${item.is_read ? "" : "bg-[#f7fbf9]"}`}><span className="block font-semibold">{item.title}</span><span className="block truncate text-xs text-[#52736a]">{item.message}</span></Link>)}</div>
                       ) : null}

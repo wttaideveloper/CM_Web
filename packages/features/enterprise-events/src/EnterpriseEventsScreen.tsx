@@ -10,11 +10,21 @@ import EventTemplatesDialog from "./EventTemplatesDialog";
 import { PRODUCT_EVENT_STATUSES, getEventStatusBadgeClass, getEventStatusLabel } from "./event-status";
 import { listEvents, type Event } from "./events.service";
 import { formatEventDeliveryMode } from "./event-detail-formatters";
+import { matchesEventTimeFilter, type EventTimeFilter } from "./event-time-filters";
 
 type SortOption = "newest" | "oldest" | "az" | "status";
 const statusFilters = ["all", ...PRODUCT_EVENT_STATUSES] as const;
-type StatusFilter = (typeof statusFilters)[number];
+const eventFilters = [...statusFilters, "ongoing", "finished"] as const;
+type EventFilter = (typeof eventFilters)[number];
 const EVENTS_PAGE_SIZE = 20;
+
+function isLifecycleFilter(filter: EventFilter): filter is (typeof PRODUCT_EVENT_STATUSES)[number] {
+  return filter !== "all" && filter !== "ongoing" && filter !== "finished";
+}
+
+function isEventTimeFilter(filter: EventFilter): filter is EventTimeFilter {
+  return filter === "all" || filter === "ongoing" || filter === "finished";
+}
 
 function isValidDate(value: string) {
   return Number.isFinite(Date.parse(value));
@@ -119,7 +129,7 @@ function EventCard({ event, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess
 
   return (
     <article className={`group relative flex h-full flex-col rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-200 ${interactionClass}`}>
-      {hasPrimaryImage ? <div aria-hidden="true" className="absolute inset-0 overflow-hidden rounded-[inherit] bg-cover bg-center" style={{ backgroundImage: `url(${JSON.stringify(primaryImage)})` }}><div className="absolute inset-0 bg-gradient-to-br from-[#06201c]/60 via-[#0c382e]/48 to-[#1f6a58]/38" /></div> : null}
+      {hasPrimaryImage ? <div aria-hidden="true" className="absolute inset-0 overflow-hidden rounded-[inherit]"><img src={primaryImage} alt="" className="h-full w-full object-cover object-center" /><div className="absolute inset-0 bg-gradient-to-br from-[#06201c]/60 via-[#0c382e]/48 to-[#1f6a58]/38" /></div> : null}
       <div className="relative z-10 flex flex-1 flex-col">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -176,7 +186,7 @@ export default function EnterpriseEventsScreen() {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [sort, setSort] = useState<SortOption>("newest");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [eventFilter, setEventFilter] = useState<EventFilter>("all");
   const [page, setPage] = useState(1);
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
@@ -193,13 +203,13 @@ export default function EnterpriseEventsScreen() {
   }, [query]);
 
   const eventsQuery = useQuery({
-    queryKey: ["events", "list", tenantId, enterpriseId, debouncedQuery, statusFilter, page, EVENTS_PAGE_SIZE],
+    queryKey: ["events", "list", tenantId, enterpriseId, debouncedQuery, eventFilter, page, EVENTS_PAGE_SIZE],
     queryFn: () =>
       listEvents({
         tenant_id: tenantId ?? undefined,
         enterprise_id: enterpriseId ?? undefined,
         search: debouncedQuery || undefined,
-        status: statusFilter === "all" ? undefined : statusFilter,
+        status: isLifecycleFilter(eventFilter) ? eventFilter : undefined,
         page,
         page_size: EVENTS_PAGE_SIZE,
       }),
@@ -210,8 +220,12 @@ export default function EnterpriseEventsScreen() {
   });
 
   const visibleEvents = useMemo(() => {
-    return sortEvents(eventsQuery.data?.items ?? [], sort);
-  }, [eventsQuery.data?.items, sort]);
+    const events = eventsQuery.data?.items ?? [];
+    const timeFilteredEvents = isEventTimeFilter(eventFilter) && eventFilter !== "all"
+      ? events.filter((event) => matchesEventTimeFilter(event, eventFilter))
+      : events;
+    return sortEvents(timeFilteredEvents, sort);
+  }, [eventFilter, eventsQuery.data?.items, sort]);
   const pagination = eventsQuery.data?.pagination;
 
   const showStatusFeedback = () => setStatusFeedback("Event status updated.");
@@ -303,15 +317,15 @@ export default function EnterpriseEventsScreen() {
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
-          {statusFilters.map((chip) => {
-            const active = statusFilter === chip;
+          {eventFilters.map((chip) => {
+            const active = eventFilter === chip;
 
             return (
               <button
                 key={chip}
                 type="button"
                 onClick={() => {
-                  setStatusFilter(chip);
+                  setEventFilter(chip);
                   setPage(1);
                 }}
                 className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
@@ -320,7 +334,7 @@ export default function EnterpriseEventsScreen() {
                     : "border border-[#d7e5df] bg-white text-[#52736a] hover:bg-[#f4faf7]"
                 }`}
               >
-                {chip === "all" ? "All" : getEventStatusLabel(chip)}
+                {chip === "all" ? "All" : chip === "ongoing" ? "Ongoing" : chip === "finished" ? "Finished" : getEventStatusLabel(chip)}
               </button>
             );
           })}

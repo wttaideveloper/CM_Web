@@ -1,15 +1,17 @@
 "use client";
 
 import { useEnterpriseWorkflowNotifications } from "@/realtime/enterprise-workflow-notifications";
+import { useRouter } from "next/navigation";
 import {
   formatRelativeBackendTimestamp,
   formatTrainingNotificationDetails,
+  handleNotificationClick,
   notificationReason,
-  resolveNotificationTarget,
 } from "@ihp/realtime";
 
 export default function WorkflowNotificationsPage() {
   const state = useEnterpriseWorkflowNotifications();
+  const router = useRouter();
   return (
     <main className="mx-auto max-w-4xl space-y-6 p-6">
       <div className="flex items-center justify-between">
@@ -24,19 +26,17 @@ export default function WorkflowNotificationsPage() {
           </button>
         ) : null}
       </div>
-      {state.isLoading ? (
+      {state.error ? (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#f0c8c4] bg-[#fff8f7] px-4 py-3 text-sm text-[#8f3b2f]"><span>Unable to refresh notifications. Showing the last successful data.</span><button type="button" onClick={() => void state.refresh()} className="rounded-lg border border-current px-3 py-1 font-semibold">Retry</button></div>
+      ) : null}
+      {state.actionError ? <p role="alert" className="rounded-xl border border-[#f0c8c4] bg-[#fff8f7] px-4 py-3 text-sm text-[#8f3b2f]">Unable to update notification read state. Please try again.</p> : null}
+      {state.isLoading && state.items.length === 0 ? (
         <p className="text-sm text-[#52736a]">Loading notifications...</p>
-      ) : state.error ? (
-        <p role="alert" className="text-sm text-[#b42318]">Unable to load notifications.</p>
       ) : state.items.length === 0 ? (
         <p className="text-sm text-[#52736a]">No notifications.</p>
       ) : (
         <div className="divide-y divide-[#edf3f0] overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white">
           {state.items.map((item) => {
-            const target = resolveNotificationTarget(
-              { notification_type: item.notification_type, data: item.metadata },
-              "enterprise",
-            );
             const reason = notificationReason({ data: item.metadata, body: item.message });
             const { trainingTitle, learnerSummary } = formatTrainingNotificationDetails({
               notification_type: item.notification_type,
@@ -49,8 +49,12 @@ export default function WorkflowNotificationsPage() {
                 key={item.id}
                 type="button"
                 onClick={() => {
-                  void state.markRead(item.id);
-                  if (target) window.location.assign(target);
+                  handleNotificationClick(
+                    { id: item.id, notification_type: item.notification_type, data: item.metadata },
+                    "enterprise",
+                    state.markRead,
+                    (target) => router.push(target),
+                  );
                 }}
                 className={`block w-full p-4 text-left transition hover:bg-[#f4faf7] ${
                   item.is_read ? "bg-white" : "bg-[#f1f8f4]"
