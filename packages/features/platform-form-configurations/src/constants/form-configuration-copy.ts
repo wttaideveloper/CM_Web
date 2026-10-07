@@ -1,12 +1,12 @@
 /** Temporary centralized UI copy under ADR-002; migrate to shared i18n when available. */
 export const formConfigurationCopy = {
   eyebrow: "SUPER ADMIN · CONFIGURATION",
-  title: "Form Configurations",
-  description: "Configure reusable form experiences for platform modules.",
-  create: "+ Create Configuration",
-  createTitle: "Create Form Configuration",
-  editTitle: "Edit Form Configuration",
-  viewTitle: "Form Configuration",
+  title: "Event Forms",
+  description: "Configure reusable Event forms for Enterprise Admins.",
+  create: "+ Create Event Form",
+  createTitle: "Create Event Form",
+  editTitle: "Edit Event Form",
+  viewTitle: "Event Form",
   confirmDeleteSection: "Delete this section? All fields in it will also be removed from this configuration.",
   configurationNamePlaceholder: "e.g., Event Registration Form",
   configurationDescriptionPlaceholder: "Optional notes to help administrators identify this form.",

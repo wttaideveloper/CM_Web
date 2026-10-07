@@ -26,6 +26,7 @@ import type {
   EnterpriseProductSummary,
   EnterpriseServiceSummary,
 } from "../types/enterprise-screen-config.types";
+import EnterpriseCatalogPanel from "../EnterpriseCatalogPanel";
 
 const tabs = ["Overview", "Products", "Services", "Events", "Trainings"];
 
@@ -416,6 +417,7 @@ function formatDisplayValue(value: unknown, emptyValue: string): string {
 
 export default function EnterpriseDetailsScreen({
   enterpriseId,
+  enterpriseCatalogOnly = false,
   editHref,
   productCreateHref = "/products/create",
   serviceCreateHref = "/services/create",
@@ -1331,15 +1333,11 @@ export default function EnterpriseDetailsScreen({
       ) : null}
 
       {activeTab === "Events" ? (
-        <div className="mt-5 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] px-5 py-16 text-center">
-          <p className="text-base font-bold text-[#06201c]">No events available yet.</p>
-        </div>
+        enterpriseCatalogOnly ? <EnterpriseCatalogPanel enterpriseId={currentId} kind="events" /> : <div className="mt-5 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] px-5 py-16 text-center"><p className="text-base font-bold text-[#06201c]">No events available yet.</p></div>
       ) : null}
 
       {activeTab === "Trainings" ? (
-        <div className="mt-5 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] px-5 py-16 text-center">
-          <p className="text-base font-bold text-[#06201c]">No trainings available yet.</p>
-        </div>
+        enterpriseCatalogOnly ? <EnterpriseCatalogPanel enterpriseId={currentId} kind="trainings" /> : <div className="mt-5 rounded-2xl border border-[#edf3f0] bg-[#f9fcfa] px-5 py-16 text-center"><p className="text-base font-bold text-[#06201c]">No trainings available yet.</p></div>
       ) : null}
     </>
   );

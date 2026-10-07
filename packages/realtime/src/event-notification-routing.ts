@@ -1,6 +1,7 @@
 import type { RealtimeNotification } from "./types";
 
 const enterpriseEventTypes = new Set(["event_approved", "event_rejected", "event_changes_requested"]);
+const platformEventTypes = new Set(["event_submitted"]);
 const enterpriseTrainingTypes = new Set([
   "training_approved",
   "training_published",
@@ -31,21 +32,11 @@ function recordValue(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
-function eventIdFor(notification: Pick<RealtimeNotification, "data">): string | null {
-  const data = recordValue(notification.data);
-  const direct = readNonEmptyString(data.event_id) ?? readNonEmptyString(data.eventId);
-  if (direct) return direct;
-  const nestedEvent = recordValue(data.event);
-  const nested = readNonEmptyString(nestedEvent.id) ?? readNonEmptyString(nestedEvent.event_id) ?? readNonEmptyString(nestedEvent.eventId);
-  if (nested) return nested;
-  return readNonEmptyString(data.entity_type)?.toLocaleLowerCase() === "event" ? readNonEmptyString(data.entity_id) : null;
-}
-
-function trainingIdFor(notification: Pick<RealtimeNotification, "data">): string | null {
-  const data = recordValue(notification.data);
-  const direct = readNonEmptyString(data.training_id) ?? readNonEmptyString(data.trainingId);
-  if (direct) return direct;
-  return readNonEmptyString(data.entity_type)?.toLocaleLowerCase() === "training" ? readNonEmptyString(data.entity_id) : null;
+function notificationData(notification: NotificationRouteInput): Record<string, unknown> {
+  return {
+    ...recordValue(notification.metadata),
+    ...recordValue(notification.data),
+  };
 }
 
 type NotificationRouteInput = Pick<RealtimeNotification, "notification_type" | "data"> & {
@@ -53,12 +44,47 @@ type NotificationRouteInput = Pick<RealtimeNotification, "notification_type" | "
   metadata?: Record<string, unknown>;
 };
 
+function eventIdForRoute(notification: NotificationRouteInput): string | null {
+  const data = notificationData(notification);
+  const direct = readNonEmptyString(data.event_id) ?? readNonEmptyString(data.eventId);
+  if (direct) return direct;
+
+  const nestedEvent = recordValue(data.event);
+  const nested = readNonEmptyString(nestedEvent.id)
+    ?? readNonEmptyString(nestedEvent.event_id)
+    ?? readNonEmptyString(nestedEvent.eventId);
+  if (nested) return nested;
+
+  return readNonEmptyString(data.entity_type)?.toLocaleLowerCase() === "event"
+    ? readNonEmptyString(data.entity_id)
+    : null;
+}
+
+function trainingIdForRoute(notification: NotificationRouteInput): string | null {
+  const data = notificationData(notification);
+  const direct = readNonEmptyString(data.training_id) ?? readNonEmptyString(data.trainingId);
+  if (direct) return direct;
+  return readNonEmptyString(data.entity_type)?.toLocaleLowerCase() === "training"
+    ? readNonEmptyString(data.entity_id)
+    : null;
+}
+
 function resolveNotificationEventName(notification: NotificationRouteInput): string {
-  return readNonEmptyString(notification.category)
-    ?? readNonEmptyString(notification.metadata?.category)
-    ?? readNonEmptyString(notification.data.category)
-    ?? readNonEmptyString(notification.notification_type)
-    ?? "unknown";
+  const data = notificationData(notification);
+  const candidates = [
+    readNonEmptyString(notification.notification_type),
+    readNonEmptyString(data.notification_type),
+    readNonEmptyString(data.type),
+    readNonEmptyString(notification.category),
+    readNonEmptyString(data.category),
+  ].filter((candidate): candidate is string => candidate !== null);
+  const knownType = candidates.find((candidate) => {
+    const normalizedCandidate = candidate.toLocaleLowerCase();
+    return platformEventTypes.has(normalizedCandidate)
+      || enterpriseEventTypes.has(normalizedCandidate)
+      || enterpriseTrainingTypes.has(normalizedCandidate);
+  });
+  return (knownType ?? candidates[0] ?? "unknown").toLocaleLowerCase();
 }
 
 /** Resolves an Event or Training workflow notification to its relevant Web screen. */
@@ -68,10 +94,10 @@ export function resolveNotificationTarget(
 ): string | null {
   const eventName = resolveNotificationEventName(notification);
   if (scope === "platform") {
-    if (eventName === "event_submitted") return "/approval-queue";
+    if (eventName.toLocaleLowerCase() === "event_submitted") return "/approval-queue";
     return eventName === "training_submitted" ? "/approval-queue?type=trainings" : null;
   }
-  const trainingId = trainingIdFor(notification);
+  const trainingId = trainingIdForRoute(notification);
   if (trainingId && enterpriseTrainingTypes.has(eventName)) {
     if (eventName === "training_enrollment_accepted" || eventName === "training_enrollment_rejected") {
       return `/trainings/${encodeURIComponent(trainingId)}`;
@@ -79,14 +105,17 @@ export function resolveNotificationTarget(
     return `/admin/trainings/${encodeURIComponent(trainingId)}`;
   }
   if (!enterpriseEventTypes.has(eventName)) return null;
-  const eventId = eventIdFor(notification);
+  const eventId = eventIdForRoute(notification);
   if (!eventId) return null;
   return eventName === "event_changes_requested" ? `/admin/events/${encodeURIComponent(eventId)}/edit` : `/admin/events/${encodeURIComponent(eventId)}`;
 }
 
 /** Marks a notification read without allowing a read failure to block app-router navigation. */
 export function handleNotificationClick(
-  notification: Pick<RealtimeNotification, "id" | "notification_type" | "data">,
+  notification: Pick<RealtimeNotification, "id" | "notification_type" | "data"> & {
+    category?: string;
+    metadata?: Record<string, unknown>;
+  },
   scope: "enterprise" | "platform",
   markRead: (id: string) => Promise<void> | void,
   navigate: (target: string) => void,

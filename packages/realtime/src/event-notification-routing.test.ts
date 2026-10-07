@@ -47,3 +47,42 @@ test("Event routing also accepts a nested Event metadata object", () => {
     null,
   );
 });
+
+test("Event routing prefers the workflow notification type over a generic category", () => {
+  assert.equal(
+    resolveNotificationTarget({
+      notification_type: "event_changes_requested",
+      category: "workflow",
+      metadata: { event_id: resubmittedEventId },
+      data: {},
+    }, "enterprise"),
+    `/admin/events/${resubmittedEventId}/edit`,
+  );
+  assert.equal(
+    resolveNotificationTarget({
+      notification_type: "event_submitted",
+      category: "workflow",
+      metadata: { event_id: resubmittedEventId },
+      data: {},
+    }, "platform"),
+    "/approval-queue",
+  );
+});
+
+test("Event click routing reads metadata and navigates when the read request fails", async () => {
+  const calls: string[] = [];
+  handleNotificationClick(
+    {
+      id: "notification-2",
+      notification_type: "event_changes_requested",
+      category: "workflow",
+      metadata: { event_id: resubmittedEventId },
+      data: {},
+    },
+    "enterprise",
+    () => Promise.reject(new Error("read unavailable")),
+    (path) => calls.push(path),
+  );
+  await Promise.resolve();
+  assert.deepEqual(calls, [`/admin/events/${resubmittedEventId}/edit`]);
+});

@@ -124,7 +124,7 @@ export default function WorkflowNotificationsPage() {
                     (target) => router.push(target),
                   );
                 }}
-                className={`block w-full p-4 text-left transition hover:bg-[#f4faf7] ${
+                className={`block w-full p-4 text-left transition hover:bg-[#f4faf7] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#1f6a58] ${
                   item.is_read ? "bg-white" : "bg-[#f1f8f4]"
                 }`}
               >

@@ -14,6 +14,7 @@ export default function EnterprisePage() {
       {({ enterpriseId }) => (
         <EnterpriseDetailsScreen
           enterpriseId={enterpriseId}
+          enterpriseCatalogOnly
           allowEnterpriseSelector={false}
           editHref="/admin/enterprise/edit"
           productCreateHref="/admin/products/create"

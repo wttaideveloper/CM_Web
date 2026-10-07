@@ -15,11 +15,14 @@ const TAXONOMY_SELECT_SEMANTICS: Readonly<Record<string, EventCoreFieldSemantic>
   location_id: { displayRenderer: "taxonomy_select", optionsSource: "enterprise_locations", description: "Choices are loaded from your enterprise's locations." },
   currency: { displayRenderer: "taxonomy_select", optionsSource: "standard_reference", description: "Choices come from the supported currencies list." },
   time_zone: { displayRenderer: "taxonomy_select", optionsSource: "standard_reference", description: "Choices come from the supported time zones list." },
-  duration_type: { displayRenderer: "taxonomy_select", optionsSource: "domain_owned", description: "Choices are set by the system for Event duration." },
   delivery_mode: { displayRenderer: "taxonomy_select", optionsSource: "domain_owned", description: "Choices are set by the system for Event delivery." },
   pricing_type: { displayRenderer: "taxonomy_select", optionsSource: "domain_owned", description: "Choices are set by the system for free or paid Events." },
   event_type: { displayRenderer: "taxonomy_select", optionsSource: "domain_owned", description: "Options come from the backend Event Type definitions." },
 };
+
+// The backend still accepts this legacy pass-through property, but it has no
+// Event configuration behavior and must not be offered to new administrators.
+const REMOVED_EVENT_CORE_FIELD_KEYS = new Set(["duration_type"]);
 
 /**
  * Returns fixed runtime semantics for known Event core fields.
@@ -29,6 +32,11 @@ const TAXONOMY_SELECT_SEMANTICS: Readonly<Record<string, EventCoreFieldSemantic>
  */
 export function getEventCoreFieldSemantic(coreKey: string | null): EventCoreFieldSemantic | undefined {
   return coreKey ? TAXONOMY_SELECT_SEMANTICS[coreKey] : undefined;
+}
+
+/** Returns whether a field may be added from the Event core-field picker. */
+export function isEventCoreFieldAvailable(coreKey: string | null): boolean {
+  return coreKey === null || !REMOVED_EVENT_CORE_FIELD_KEYS.has(coreKey.replace(/^(core_|custom_)/, "").trim().toLowerCase());
 }
 
 /** Returns whether a core field obtains values dynamically from an authenticated runtime source. */

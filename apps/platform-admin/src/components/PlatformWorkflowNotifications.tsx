@@ -5,11 +5,28 @@ import { browserWorkflowRequest, createWorkflowNotificationClient, resolveNotifi
 
 const client = createWorkflowNotificationClient(browserWorkflowRequest);
 export const platformWorkflowNotificationsKey = ["platform-workflow-notifications"] as const;
+const PLATFORM_NOTIFICATION_PAGE_SIZE = 100;
 
 export function usePlatformWorkflowNotifications() {
   const queryClient = useQueryClient();
-  const list = useQuery({ queryKey: platformWorkflowNotificationsKey, queryFn: () => client.list(), staleTime: 30_000, refetchInterval: 30_000, refetchIntervalInBackground: false });
-  const count = useQuery({ queryKey: [...platformWorkflowNotificationsKey, "unread"], queryFn: () => client.unreadCount(), staleTime: 30_000, refetchInterval: 30_000, refetchIntervalInBackground: false });
+  const list = useQuery({
+    queryKey: platformWorkflowNotificationsKey,
+    queryFn: () => client.list(1, PLATFORM_NOTIFICATION_PAGE_SIZE),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
+  });
+  const count = useQuery({
+    queryKey: [...platformWorkflowNotificationsKey, "unread"],
+    queryFn: () => client.unreadCount(),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
+  });
   const markReadMutation = useMutation({ mutationFn: (id: string) => client.markRead(id), onSuccess: () => queryClient.invalidateQueries({ queryKey: platformWorkflowNotificationsKey }) });
   const markAllReadMutation = useMutation({ mutationFn: () => client.markAllRead(), onSuccess: () => queryClient.invalidateQueries({ queryKey: platformWorkflowNotificationsKey }) });
   return {

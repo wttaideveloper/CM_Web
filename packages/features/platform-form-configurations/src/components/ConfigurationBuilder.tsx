@@ -9,6 +9,7 @@ import { trainingFormConfigurationCopy } from "../constants/training-form-config
 import { moveConfiguredField, normalizeConfigurationOrder } from "../model/form-configuration-ordering";
 import { EVENT_DELIVERY_BUNDLE, isEventDeliveryBundleKey, isEventDeliveryDependentKey } from "../model/event-delivery-bundle";
 import { getEventCompositeFieldDefinition } from "../model/event-composite-field-definitions";
+import { isEventCoreFieldAvailable } from "../model/event-core-field-semantics";
 import { getTrainingCompositeFieldDefinition } from "../model/training-composite-field-definitions";
 import { validateFormConfiguration } from "../model/form-configuration-validation";
 import type { ConfiguredField, CoreFieldRegistryItem, FormConfiguration, FormRenderer, FormSection } from "../model/form-configuration.types";
@@ -128,6 +129,7 @@ export function ConfigurationBuilder({ initialConfiguration, coreFieldRegistry, 
   const availableCoreFields = useMemo(() => coreFieldRegistry.filter((field) => {
     if (isLocationCoreKey(field.key)) return false;
     if (isPrimaryImageField(field)) return false;
+    if (configuration.type === "event" && !isEventCoreFieldAvailable(field.key)) return false;
     if (configuration.type === "training" && isHiddenTrainingField(field.key, field.displayName)) return false;
     if (configuration.type === "event" && isEventDeliveryDependentKey(field.key)) return false;
     return field.displayName.toLowerCase().includes(search.toLowerCase());

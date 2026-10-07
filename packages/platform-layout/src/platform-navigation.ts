@@ -12,10 +12,10 @@ export const platformNavigationGroups: readonly PlatformNavigationGroup[] = [
     items: [
       { label: "Approval Queue", href: "/approval-queue", icon: "queue" },
       { label: "Tenant Applications", href: "/tenant-applications", icon: "building" },
-      { label: "Form Configurations", href: "/form-configurations", icon: "forms" },
+      { label: "Event Forms", href: "/form-configurations", icon: "forms" },
       { label: "Training Forms", href: "/training-form-configurations", icon: "forms" },
       { label: "Categories", href: "/categories", icon: "tag" },
-      { label: "Attributes", href: "/attributes", icon: "tag" },
+      { label: "Attributes", href: "/attributes", icon: "tag", disabled: true },
     ],
   },
   {
@@ -28,7 +28,7 @@ export const platformNavigationGroups: readonly PlatformNavigationGroup[] = [
       { label: "Services", href: "/services", icon: "service" },
       { label: "Events", href: "/events", icon: "calendar" },
       { label: "Trainings", href: "/trainings", icon: "training" },
-      { label: "Integrations", href: "/integrations", icon: "integration" },
+      { label: "Integrations", href: "/integrations", icon: "integration", disabled: true },
     ],
   },
 ];
