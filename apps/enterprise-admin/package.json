@@ -25,6 +25,7 @@
     "@ihp/products": "0.1.0",
     "@ihp/realtime": "0.1.0",
     "@ihp/services": "0.1.0",
+    "@ihp/shared": "0.1.0",
     "@ihp/ui": "0.1.0",
     "@ihp/workflow-admin": "0.1.0",
     "@ihp/workflow-runtime": "0.1.0",

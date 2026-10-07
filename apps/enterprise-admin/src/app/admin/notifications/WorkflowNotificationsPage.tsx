@@ -1,12 +1,13 @@
 "use client";
 
 import { useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { useEnterpriseWorkflowNotifications } from "@/realtime/enterprise-workflow-notifications";
 import {
   formatRelativeBackendTimestamp,
   formatTrainingNotificationDetails,
+  handleNotificationClick,
   notificationReason,
-  resolveNotificationTarget,
   useRealtime,
 } from "@ihp/realtime";
 
@@ -24,6 +25,7 @@ type EnterpriseNotificationViewItem = {
 export default function WorkflowNotificationsPage() {
   const state = useEnterpriseWorkflowNotifications();
   const realtime = useRealtime();
+  const router = useRouter();
   const items = useMemo(() => {
     const workflowItems: EnterpriseNotificationViewItem[] = state.items.map((item) => ({
       id: item.id,
@@ -100,15 +102,6 @@ export default function WorkflowNotificationsPage() {
       ) : (
         <div className="divide-y divide-[#edf3f0] overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white">
           {items.map((item) => {
-            const target = resolveNotificationTarget(
-              {
-                notification_type: item.notification_type,
-                category: item.category,
-                metadata: item.metadata,
-                data: item.metadata,
-              },
-              "enterprise",
-            );
             const reason = notificationReason({ data: item.metadata, body: item.message });
             const { trainingTitle } = formatTrainingNotificationDetails({
               notification_type: item.notification_type,
@@ -121,17 +114,15 @@ export default function WorkflowNotificationsPage() {
                 key={item.id}
                 type="button"
                 onClick={() => {
-                  const navigate = () => {
-                    if (target) window.location.assign(target);
-                  };
-                  if (item.is_read) {
-                    navigate();
-                    return;
-                  }
                   const markRead = state.items.some((workflowItem) => workflowItem.id === item.id)
-                    ? state.markRead(item.id)
-                    : realtime.markNotificationAsRead(item.id);
-                  void markRead.then(navigate).catch(() => undefined);
+                    ? state.markRead
+                    : realtime.markNotificationAsRead;
+                  handleNotificationClick(
+                    { id: item.id, notification_type: item.notification_type, data: item.metadata },
+                    "enterprise",
+                    (id) => Promise.resolve(markRead(id)).then(() => undefined),
+                    (target) => router.push(target),
+                  );
                 }}
                 className={`block w-full p-4 text-left transition hover:bg-[#f4faf7] ${
                   item.is_read ? "bg-white" : "bg-[#f1f8f4]"

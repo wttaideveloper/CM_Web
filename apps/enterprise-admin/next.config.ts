@@ -7,6 +7,7 @@ const eventsApiBaseUrl = process.env.EVENTS_API_BASE_URL;
 const workflowApiBaseUrl = process.env.WORKFLOW_API_BASE_URL;
 
 const nextConfig: NextConfig = {
+  skipTrailingSlashRedirect: true,
   experimental: {
     proxyClientMaxBodySize: "310mb",
   },
@@ -201,6 +202,15 @@ const nextConfig: NextConfig = {
 
     if (eventsApiBaseUrl) {
       fallback.push(
+        // Preserve the documented collection slash before proxying multipart requests.
+        {
+          source: "/api/v1/events/media",
+          destination: `${eventsApiBaseUrl}/api/v1/events/media/`,
+        },
+        {
+          source: "/api/v1/events/media/",
+          destination: `${eventsApiBaseUrl}/api/v1/events/media/`,
+        },
         {
           source: "/api/v1/events",
           destination: `${eventsApiBaseUrl}/api/v1/events/`,

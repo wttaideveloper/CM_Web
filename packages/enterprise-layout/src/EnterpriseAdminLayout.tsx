@@ -33,7 +33,8 @@ type EnterpriseAdminLayoutProps = {
   totalUnreadCount?: number;
   onNotificationRead?: (id: string) => Promise<void>;
   onMarkAllNotificationsRead?: () => Promise<void>;
-  workflowNotifications?: { items: readonly { id: string; title: string; message: string; notification_type: string; category?: string; is_read: boolean; metadata: Record<string, unknown>; created_at?: string | null }[]; unreadCount: number; onRead: (id: string) => Promise<unknown> | void; onMarkAllRead: () => Promise<unknown> | void };
+  onNotificationNavigate?: (target: string) => void;
+  workflowNotifications?: { items: readonly { id: string; title: string; message: string; notification_type: string; category?: string; is_read: boolean; metadata: Record<string, unknown>; created_at?: string | null }[]; unreadCount: number; error?: string | null; onRead: (id: string) => Promise<unknown> | void; onMarkAllRead: () => Promise<unknown> | void };
 };
 
 type OpenMenu = "notifications" | "settings" | "profile" | null;
@@ -138,6 +139,7 @@ export function EnterpriseAdminLayout({
   totalUnreadCount = 0,
   onNotificationRead,
   onMarkAllNotificationsRead,
+  onNotificationNavigate,
   workflowNotifications,
 }: EnterpriseAdminLayoutProps) {
   const pathname = usePathname();
@@ -189,21 +191,19 @@ export function EnterpriseAdminLayout({
     ? workflowNotifications.unreadCount
     : totalUnreadCount;
 
-  const handleNotificationClick = async (item: (typeof displayNotifications)[number]) => {
+  const handleNotificationClick = (item: (typeof displayNotifications)[number]) => {
     setNotificationActionFailed(false);
-    try {
-      if (workflowNotifications?.items.some((notification) => notification.id === item.id)) {
-        await workflowNotifications.onRead(item.id);
-      } else {
-        await onNotificationRead?.(item.id);
-      }
-    } catch {
-      setNotificationActionFailed(true);
-      return;
-    }
-
     const target = resolveNotificationTarget(item, "enterprise");
-    if (target) window.location.assign(target);
+    if (target) {
+      closeMenu();
+      if (onNotificationNavigate) onNotificationNavigate(target);
+      else window.location.assign(target);
+    }
+    if (item.is_read) return;
+    const readResult = workflowNotifications?.items.some((notification) => notification.id === item.id)
+      ? workflowNotifications.onRead(item.id)
+      : onNotificationRead?.(item.id);
+    void Promise.resolve(readResult).catch(() => setNotificationActionFailed(true));
   };
 
   const handleMarkAllNotificationsRead = async () => {

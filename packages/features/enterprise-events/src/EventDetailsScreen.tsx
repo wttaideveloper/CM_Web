@@ -14,6 +14,8 @@ import {
 } from "./EventCalendarDownloadActions";
 import EventCommunicationsActions from "./EventCommunicationsActions";
 import EventRefundAction from "./EventRefundAction";
+import EventMediaPreview from "./EventMediaPreview";
+import { mediaItemUrl, type EventMediaItem } from "./event-media";
 import EventOrdersSection from "./EventOrdersSection";
 import EventOverviewSection from "./EventOverviewSection";
 import EventReportsSection from "./EventReportsSection";
@@ -428,17 +430,19 @@ export default function EventDetailsScreen() {
           />
         </DetailSection>
         <DetailSection title="Media">
-          <ExternalValue label="Primary Image" value={event.primary_image} />
+          <MediaImage label="Primary Image" value={event.primary_image ?? ""} />
           <MediaList
             label="Gallery Images"
             empty="No gallery images"
             values={event.gallery_images}
+            kind="image"
           />
-          <MediaList label="Videos" empty="No videos" values={event.videos} />
+          <MediaList label="Videos" empty="No videos" values={event.videos} kind="video" />
           <MediaList
             label="Documents"
             empty="No documents"
             values={event.documents}
+            kind="document"
           />
         </DetailSection>
         <DetailSection title="Custom Registration Fields">
@@ -1219,7 +1223,7 @@ function ExternalValue({
           href={href}
           target="_blank"
           rel="noreferrer"
-          className="mt-1 block break-all text-sm font-semibold text-[#1f6a58] underline"
+          className="mt-1 block min-w-0 max-w-full whitespace-normal break-all text-sm font-semibold text-[#1f6a58] underline"
         >
           {href}
         </a>
@@ -1235,10 +1239,12 @@ function MediaList({
   label,
   values,
   empty,
+  kind,
 }: {
   label: string;
-  values: string[];
+  values: EventMediaItem[];
   empty: string;
+  kind: "image" | "video" | "document";
 }) {
   return (
     <div className="mt-5">
@@ -1249,15 +1255,24 @@ function MediaList({
         <p className="mt-1 text-sm font-semibold text-[#06201c]">{empty}</p>
       ) : (
         <ul className="mt-2 space-y-1">
-          {values.map((value) => (
-            <li key={value}>
-              <ExternalValue label="Media URL" value={value} />
+          {values.map((value, index) => (
+            <li key={`${mediaItemUrl(value)}-${index}`}>
+              {kind === "image" ? <MediaImage label={`Image ${index + 1}`} value={value} /> : kind === "video" ? <MediaVideo value={value} /> : <MediaDocument value={value} />}
             </li>
           ))}
         </ul>
       )}
     </div>
   );
+}
+function MediaImage({ label, value }: { label: string; value: EventMediaItem }) {
+  return <div className="mt-4"><p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">{label}</p><div className="mt-2">{mediaItemUrl(value) ? <EventMediaPreview item={value} kind="image" label={label} /> : <p className="text-sm font-semibold text-[#52736a]">No image available</p>}</div></div>;
+}
+function MediaVideo({ value }: { value: EventMediaItem }) {
+  return <EventMediaPreview item={value} kind="video" label="Event video" />;
+}
+function MediaDocument({ value }: { value: EventMediaItem }) {
+  return <EventMediaPreview item={value} kind="document" label="Event document" />;
 }
 function TicketTypes({ event }: { event: Event }) {
   return event.ticket_types.length === 0 ? (

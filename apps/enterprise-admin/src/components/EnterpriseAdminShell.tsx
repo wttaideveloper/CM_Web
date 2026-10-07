@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 
 import { useAuth } from "@ihp/auth";
 import { EnterpriseAdminLayout } from "@ihp/enterprise-layout";
@@ -14,6 +15,7 @@ import { enterpriseWorkflowNotificationsKey, useEnterpriseWorkflowNotifications 
 function EnterpriseAdminShellContent({ children }: { children: ReactNode }) {
   const { logout, user } = useAuth();
   const realtime = useRealtime();
+  const router = useRouter();
   const workflow = useEnterpriseWorkflowNotifications();
   const queryClient = useQueryClient();
   const latestRealtimeNotificationId = realtime.notifications[0]?.id;
@@ -49,7 +51,8 @@ function EnterpriseAdminShellContent({ children }: { children: ReactNode }) {
       totalUnreadCount={realtime.totalUnreadCount}
       onNotificationRead={realtime.markNotificationAsRead}
       onMarkAllNotificationsRead={realtime.markAllNotificationsAsRead}
-      workflowNotifications={{ items: workflow.items, unreadCount: workflow.unreadCount, onRead: workflow.markRead, onMarkAllRead: workflow.markAllRead }}
+      onNotificationNavigate={(target) => router.push(target)}
+      workflowNotifications={{ items: workflow.items, unreadCount: workflow.unreadCount, error: workflow.error ?? workflow.readError ?? workflow.readAllError, onRead: workflow.markRead, onMarkAllRead: workflow.markAllRead }}
       user={user}
       onLogout={handleLogout}
     >

@@ -4,6 +4,9 @@ import { useMemo, useState, type ReactNode } from "react";
 
 import type { EventSessionRecord } from "./events.service";
 import { getEventSessionDates, getSessionTimeBounds, parseEventLocalDateTime } from "./event-session-date";
+import { createDefaultSessionGenerationRules, nextSessionGenerationRuleId, updateSessionGenerationRule, updateSessionGenerationRuleCount, updateSessionGenerationRuleDuration, type SessionGenerationRule } from "./session-generation-rules";
+
+export type { SessionGenerationRule } from "./session-generation-rules";
 
 export interface SessionDraft {
   id?: string;
@@ -39,9 +42,10 @@ interface Props {
   onDeletePersisted?: (session: EventSessionRecord & { id: string }) => void;
   renderPersistedActions?: (session: EventSessionRecord & { id: string }) => ReactNode;
   onSaveNewSessions?: (sessions: SessionDraft[]) => Promise<void>;
+  generationRules?: readonly SessionGenerationRule[];
+  onGenerationRulesChange?: (rules: SessionGenerationRule[]) => void;
 }
 
-type GeneratorRule = { id: number; duration: number; count: number; custom: boolean };
 type Range = { start: number; end: number };
 
 const fields: Array<{ key: SessionField; label: string }> = [
@@ -76,9 +80,12 @@ export default function SessionTableEditor({
   onDeletePersisted,
   renderPersistedActions,
   onSaveNewSessions,
+  generationRules,
+  onGenerationRulesChange,
 }: Props) {
-  const [rules, setRules] = useState<GeneratorRule[]>([{ id: 1, duration: 60, count: 1, custom: false }]);
-  const [nextRuleId, setNextRuleId] = useState(2);
+  const [localRules, setLocalRules] = useState<SessionGenerationRule[]>(createDefaultSessionGenerationRules);
+  const rules = generationRules ?? localRules;
+  const commitRules = (next: SessionGenerationRule[]) => { if (onGenerationRulesChange) onGenerationRulesChange(next); else setLocalRules(next); };
   const [generatorError, setGeneratorError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -171,10 +178,10 @@ export default function SessionTableEditor({
           </select>
           {rule.custom ? <label className="flex items-center gap-2">Custom <input type="number" min="1" disabled={disabled} value={rule.duration} onChange={(event) => updateRuleDuration(rule.id, event.target.value)} className="h-9 w-24 rounded-lg border border-[#d7e5df] px-2" /></label> : null}
           <span>×</span><button type="button" aria-label={`Decrease duration group ${index + 1} count`} onClick={() => updateRuleCount(rule.id, rule.count - 1)} className="h-8 w-8 rounded-full border border-[#d7e5df] font-bold">−</button><span className="min-w-5 text-center font-bold">{rule.count}</span><button type="button" aria-label={`Increase duration group ${index + 1} count`} onClick={() => updateRuleCount(rule.id, rule.count + 1)} className="h-8 w-8 rounded-full border border-[#d7e5df] font-bold">+</button>
-          {rules.length > 1 ? <button type="button" onClick={() => setRules(rules.filter((item) => item.id !== rule.id))} className="ml-2 text-xs font-semibold text-[#b42318]">Remove</button> : null}
+          {rules.length > 1 ? <button type="button" onClick={() => commitRules(rules.filter((item) => item.id !== rule.id))} className="ml-2 text-xs font-semibold text-[#b42318]">Remove</button> : null}
         </div>)}
       </div>
-      <button type="button" disabled={disabled} onClick={() => { setRules([...rules, { id: nextRuleId, duration: 60, count: 1, custom: false }]); setNextRuleId(nextRuleId + 1); }} className="mt-3 text-sm font-semibold text-[#1f6a58] disabled:opacity-50">+ Add duration group</button>
+      <button type="button" disabled={disabled} onClick={() => commitRules([...rules, { id: nextSessionGenerationRuleId(rules), duration: 60, count: 1, custom: false }])} className="mt-3 text-sm font-semibold text-[#1f6a58] disabled:opacity-50">+ Add duration group</button>
       {generatorError ? <p role="alert" className="mt-3 text-sm font-semibold text-[#b42318]">{generatorError}</p> : null}
     </div>
     <div className="mt-5 overflow-x-auto rounded-xl border border-[#d7e5df]">
@@ -192,16 +199,13 @@ export default function SessionTableEditor({
   </section>;
 
   function updateRule(id: number, value: string) {
-    const custom = value === "custom";
-    const duration = custom ? rules.find((rule) => rule.id === id)?.duration ?? 60 : Number(value);
-    setRules(rules.map((rule) => rule.id === id ? { ...rule, custom, duration: Number.isFinite(duration) && duration > 0 ? duration : 1 } : rule));
+    commitRules(updateSessionGenerationRule(rules, id, value));
   }
   function updateRuleDuration(id: number, value: string) {
-    const duration = Number(value);
-    setRules(rules.map((rule) => rule.id === id ? { ...rule, duration: Number.isFinite(duration) && duration > 0 ? Math.floor(duration) : 1 } : rule));
+    commitRules(updateSessionGenerationRuleDuration(rules, id, value));
   }
   function updateRuleCount(id: number, count: number) {
-    setRules(rules.map((rule) => rule.id === id ? { ...rule, count: Math.max(1, Math.min(99, count)) } : rule));
+    commitRules(updateSessionGenerationRuleCount(rules, id, count));
   }
 }
 
@@ -245,7 +249,7 @@ function wallMinute(date: string, time: string): number { const [year, month, da
 function sessionRange(session: SessionDraft): Range | null { if (!session.session_date || !session.start_time || !session.end_time) return null; const start = wallMinute(session.session_date, session.start_time); const end = wallMinute(session.session_date, session.end_time); return end > start ? { start, end } : null; }
 function normalizeOccupied(items: readonly (SessionDraft | EventSessionRecord)[], event: { start: number; end: number }): Range[] { return items.map((item) => sessionRange("title" in item ? toDraft(item as EventSessionRecord) : item)).filter((range): range is Range => Boolean(range && range.end > event.start && range.start < event.end)).map((range) => ({ start: Math.max(range.start, event.start), end: Math.min(range.end, event.end) })).sort((left, right) => left.start - right.start).reduce<Range[]>((merged, range) => { const previous = merged.at(-1); if (previous && range.start <= previous.end) previous.end = Math.max(previous.end, range.end); else merged.push({ ...range }); return merged; }, []); }
 function findFreeGaps(windows: readonly Range[], occupied: readonly Range[]): Range[] { const gaps: Range[] = []; for (const window of windows) { let cursor = window.start; for (const range of occupied.filter((item) => item.end > window.start && item.start < window.end)) { if (range.start > cursor) gaps.push({ start: cursor, end: Math.min(range.start, window.end) }); cursor = Math.max(cursor, range.end); } if (cursor < window.end) gaps.push({ start: cursor, end: window.end }); } return gaps.filter((gap) => gap.end > gap.start); }
-function generateSlots(rules: readonly GeneratorRule[], initialGaps: readonly Range[]): SessionDraft[] | null { const gaps = initialGaps.map((gap) => ({ ...gap })); const result: SessionDraft[] = []; for (const rule of rules) for (let count = 0; count < rule.count; count++) { const index = gaps.findIndex((gap) => gap.end - gap.start >= rule.duration); if (index < 0) return null; const gap = gaps[index]; const start = gap.start; const end = start + rule.duration; result.push({ ...blankSession(dateFromMinute(start)), start_time: timeFromMinute(start), end_time: timeFromMinute(end) }); if (end === gap.end) gaps.splice(index, 1); else gaps[index] = { start: end, end: gap.end }; } return result; }
+function generateSlots(rules: readonly SessionGenerationRule[], initialGaps: readonly Range[]): SessionDraft[] | null { const gaps = initialGaps.map((gap) => ({ ...gap })); const result: SessionDraft[] = []; for (const rule of rules) for (let count = 0; count < rule.count; count++) { const index = gaps.findIndex((gap) => gap.end - gap.start >= rule.duration); if (index < 0) return null; const gap = gaps[index]; const start = gap.start; const end = start + rule.duration; result.push({ ...blankSession(dateFromMinute(start)), start_time: timeFromMinute(start), end_time: timeFromMinute(end) }); if (end === gap.end) gaps.splice(index, 1); else gaps[index] = { start: end, end: gap.end }; } return result; }
 function dateFromMinute(value: number): string { return new Date(value * 60_000).toISOString().slice(0, 10); }
 function timeFromMinute(value: number): string { const date = new Date(value * 60_000); return `${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}`; }
 
