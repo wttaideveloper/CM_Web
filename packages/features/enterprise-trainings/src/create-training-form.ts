@@ -159,6 +159,16 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
     const value = record[key];
     return typeof value === "string" ? value : fallback;
   };
+  const dateInputValue = (key: string) => {
+    const value = stringValue(key);
+    // Date controls need the calendar portion only; API responses may include a time.
+    return value.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? value;
+  };
+  const timeInputValue = (key: string, dateKey: string) => {
+    const time = stringValue(key);
+    if (time) return time;
+    return stringValue(dateKey).match(/T(\d{2}:\d{2})/)?.[1] ?? "";
+  };
   return {
     title: training.title ?? "",
     description: training.description ?? "",
@@ -173,8 +183,8 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
     delivery_mode: training.delivery_mode ?? "hybrid",
     course_type: training.course_type ?? "",
     duration: stringValue("duration"),
-    start_date: stringValue("start_date"),
-    end_date: stringValue("end_date"),
+    start_date: dateInputValue("start_date"),
+    end_date: dateInputValue("end_date"),
     enrolment_start: stringValue("enrolment_start"),
     enrolment_end: stringValue("enrolment_end"),
     time_zone: stringValue("time_zone"),
@@ -193,8 +203,8 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
     instructor_bio: stringValue("instructor_bio"),
     learning_objectives: parseLearningObjectives(record.learning_objectives),
     documents: Array.isArray(record.documents) ? (record.documents as unknown[]).map((d) => { if (typeof d === "string" && d.trim()) return { url: d, visibility: "public", downloadable: true }; if (d && typeof d === "object" && typeof (d as Record<string, unknown>).url === "string") { const r = d as Record<string, unknown>; return { url: r.url as string, visibility: typeof r.visibility === "string" ? r.visibility as string : "public", downloadable: typeof r.downloadable === "boolean" ? r.downloadable as boolean : true }; } return null; }).filter((v): v is { url: string; visibility: string; downloadable: boolean } => v !== null && Boolean(v.url)) : [],
-    start_time: stringValue("start_time"),
-    end_time: stringValue("end_time"),
+    start_time: timeInputValue("start_time", "start_date"),
+    end_time: timeInputValue("end_time", "end_date"),
     venue: stringValue("venue"),
     address: stringValue("address"),
     meeting_link: stringValue("meeting_link"),

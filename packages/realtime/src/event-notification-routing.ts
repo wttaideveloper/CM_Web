@@ -2,9 +2,16 @@ import type { RealtimeNotification } from "./types";
 
 const enterpriseEventTypes = new Set(["event_approved", "event_rejected", "event_changes_requested"]);
 const platformEventTypes = new Set(["event_submitted"]);
+const platformTrainingTypes = new Set([
+  "training_submitted",
+  "training_submitted_for_approval",
+  "training_submission",
+  "training_approval_requested",
+]);
 const enterpriseTrainingTypes = new Set([
   "training_approved",
   "training_published",
+  "training_submitted",
   "training_rejected",
   "training_changes_requested",
   "training_needs_revision",
@@ -42,6 +49,8 @@ function notificationData(notification: NotificationRouteInput): Record<string, 
 type NotificationRouteInput = Pick<RealtimeNotification, "notification_type" | "data"> & {
   category?: string;
   metadata?: Record<string, unknown>;
+  title?: string;
+  body?: string;
 };
 
 function eventIdForRoute(notification: NotificationRouteInput): string | null {
@@ -64,6 +73,11 @@ function trainingIdForRoute(notification: NotificationRouteInput): string | null
   const data = notificationData(notification);
   const direct = readNonEmptyString(data.training_id) ?? readNonEmptyString(data.trainingId);
   if (direct) return direct;
+  const nestedTraining = recordValue(data.training);
+  const nested = readNonEmptyString(nestedTraining.id)
+    ?? readNonEmptyString(nestedTraining.training_id)
+    ?? readNonEmptyString(nestedTraining.trainingId);
+  if (nested) return nested;
   return readNonEmptyString(data.entity_type)?.toLocaleLowerCase() === "training"
     ? readNonEmptyString(data.entity_id)
     : null;
@@ -82,9 +96,15 @@ function resolveNotificationEventName(notification: NotificationRouteInput): str
     const normalizedCandidate = candidate.toLocaleLowerCase();
     return platformEventTypes.has(normalizedCandidate)
       || enterpriseEventTypes.has(normalizedCandidate)
-      || enterpriseTrainingTypes.has(normalizedCandidate);
+      || enterpriseTrainingTypes.has(normalizedCandidate)
+      || platformTrainingTypes.has(normalizedCandidate);
   });
-  return (knownType ?? candidates[0] ?? "unknown").toLocaleLowerCase();
+  if (knownType) return knownType.toLocaleLowerCase();
+
+  const text = `${notification.title ?? ""} ${notification.body ?? ""}`.toLocaleLowerCase();
+  if (/\btraining\b/.test(text) && /\b(submitted|submission|approval requested)\b/.test(text)) return "training_submitted";
+  if (/\btraining\b/.test(text)) return "training_notification";
+  return (candidates[0] ?? "unknown").toLocaleLowerCase();
 }
 
 /** Resolves an Event or Training workflow notification to its relevant Web screen. */
@@ -95,15 +115,10 @@ export function resolveNotificationTarget(
   const eventName = resolveNotificationEventName(notification);
   if (scope === "platform") {
     if (eventName.toLocaleLowerCase() === "event_submitted") return "/approval-queue";
-    return eventName === "training_submitted" ? "/approval-queue?type=trainings" : null;
+    return platformTrainingTypes.has(eventName) ? "/approval-queue?type=trainings" : null;
   }
   const trainingId = trainingIdForRoute(notification);
-  if (trainingId && enterpriseTrainingTypes.has(eventName)) {
-    if (eventName === "training_enrollment_accepted" || eventName === "training_enrollment_rejected") {
-      return `/trainings/${encodeURIComponent(trainingId)}`;
-    }
-    return `/admin/trainings/${encodeURIComponent(trainingId)}`;
-  }
+  if (trainingId) return `/admin/trainings/${encodeURIComponent(trainingId)}`;
   if (!enterpriseEventTypes.has(eventName)) return null;
   const eventId = eventIdForRoute(notification);
   if (!eventId) return null;

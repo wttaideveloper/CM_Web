@@ -112,6 +112,8 @@ export default function EnterpriseNotificationHistoryScreen({ audience, messages
       category: notification.category,
       metadata: notification.metadata,
       data: notification.metadata,
+      title: notification.title,
+      body: notification.message,
     }, audience);
     const navigate = () => { if (target) router.push(target); };
     if (notification.is_read) navigate();

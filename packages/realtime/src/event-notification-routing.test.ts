@@ -24,6 +24,46 @@ test("Event notification targets use the Event metadata ID", () => {
   );
 });
 
+test("Training submission notifications open the Training approval queue tab", () => {
+  assert.equal(
+    resolveNotificationTarget({
+      notification_type: "training_submitted",
+      data: {},
+      title: "Training submitted for approval",
+      body: "selfplace was submitted for approval.",
+    }, "platform"),
+    "/approval-queue?type=trainings",
+  );
+  assert.equal(
+    resolveNotificationTarget({
+      notification_type: "workflow",
+      category: "workflow",
+      data: {},
+      title: "Training submitted for approval",
+      body: "selfplace was submitted for approval.",
+    }, "platform"),
+    "/approval-queue?type=trainings",
+  );
+});
+
+test("Enterprise Training notifications open the specific admin Training", () => {
+  assert.equal(
+    resolveNotificationTarget({
+      notification_type: "training_enrollment_accepted",
+      data: { training_id: "training-1" },
+    }, "enterprise"),
+    "/admin/trainings/training-1",
+  );
+  assert.equal(
+    resolveNotificationTarget({
+      notification_type: "workflow",
+      data: { training: { id: "training-2" } },
+      title: "Training published",
+    }, "enterprise"),
+    "/admin/trainings/training-2",
+  );
+});
+
 test("Event notification click marks the item and navigates when read fails", async () => {
   const calls: string[] = [];
   const target = handleNotificationClick(

@@ -337,11 +337,14 @@ function ConfiguredField({
   const key = field.key;
   const required = field.required ? " *" : "";
   const error = errors[key]?.[0] ?? (field.apiKey ? errors[field.apiKey]?.[0] : undefined) ?? (field.stable_key ? errors[field.stable_key]?.[0] : undefined);
-  const coreField = isLearningObjectivesField(field)
+  const mappedCoreField = isLearningObjectivesField(field)
     ? "learning_objectives"
-    : field.source === "custom"
-      ? undefined
-      : CORE_FIELDS[key] ?? (field.apiKey ? CORE_FIELDS[field.apiKey] : undefined) ?? (field.stable_key ? CORE_FIELDS[field.stable_key] : undefined);
+    : CORE_FIELDS[key] ?? (field.apiKey ? CORE_FIELDS[field.apiKey] : undefined) ?? (field.stable_key ? CORE_FIELDS[field.stable_key] : undefined);
+  const isScheduleCoreField = mappedCoreField !== undefined && [
+    "start_date", "end_date", "start_time", "end_time", "enrolment_start", "enrolment_end",
+  ].includes(mappedCoreField);
+  // Schedule values have dedicated Training API fields; never route them through custom_values.
+  const coreField = field.source === "custom" && !isScheduleCoreField ? undefined : mappedCoreField;
   const inputType = trainingInputType(field, key);
   const deliveryMode = values.delivery_mode;
   if (!isPricingFieldApplicable(field, values.pricing_type)) return null;

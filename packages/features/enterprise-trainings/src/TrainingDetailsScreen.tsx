@@ -8,7 +8,7 @@ import { useParams, useRouter } from "next/navigation";
 import TrainingActionsMenu from "./TrainingActionsMenu";
 import { ParticipantDashboardCard, ProviderDashboardCard } from "./dashboard-cards";
 import { TrainingAssessmentsTab, TrainingAttendanceTab, TrainingContentTab, TrainingEnrolmentsTab, TrainingLiveTab, TrainingReviewsTab, TrainingSectionsTab } from "./TrainingDetailsSections";
-import { displayValue, formatTrainingDate, formatTrainingDateTime, formatTrainingPrice, getTrainingModerationTimestamp, humanizeLabel } from "./detail-formatters";
+import { displayValue, formatTrainingDate, formatTrainingDateTime, formatTrainingPrice, formatTrainingScheduleDate, formatTrainingScheduleTime, getTrainingModerationTimestamp, humanizeLabel } from "./detail-formatters";
 import { getTrainingStatusBadgeClass, getTrainingStatusLabel } from "./training-status";
 import { getTrainingAdminNotes, getTrainingById, downloadTrainingNotesPdf, getTrainingMeetingLink, getTrainingModerationHistory, publishTrainingEnterprise, getTrainingParticipantDashboard, getTrainingProviderDashboard, TrainingsApiError } from "./trainings.service";
 import TrainingCalendarAction from "./TrainingCalendarAction";
@@ -326,6 +326,30 @@ export default function TrainingDetailsScreen({
     ? trainingRecord.custom_values as Record<string, unknown>
     : {};
   const rawTrainingCustomValues = trainingRecord.custom_values ?? trainingRecord.customValues;
+  const configuredFields = historicalFormQuery.data?.sections.flatMap((section) => section.fields) ?? [];
+  const getScheduleValue = (key: "start_date" | "end_date" | "start_time" | "end_time"): string | null => {
+    const camelKey = key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
+    const scheduleRecord = trainingRecord.schedule && typeof trainingRecord.schedule === "object" && !Array.isArray(trainingRecord.schedule)
+      ? trainingRecord.schedule as Record<string, unknown>
+      : {};
+    const directValue = [trainingRecord[key], trainingRecord[camelKey], scheduleRecord[key], scheduleRecord[camelKey]]
+      .find((candidate): candidate is string => typeof candidate === "string" && candidate.trim().length > 0);
+    if (directValue) return directValue;
+    const normalizeKey = (value: string) => value.trim().replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^(core|custom)_/, "").replace(/^_+|_+$/g, "");
+    const configuredField = configuredFields.find((field) => [field.key, field.apiKey ?? "", field.stable_key ?? "", field.label]
+      .some((alias) => normalizeKey(alias) === key));
+    if (!configuredField) return null;
+    if (Array.isArray(rawTrainingCustomValues)) {
+      const stored = rawTrainingCustomValues.find((entry) => entry && typeof entry === "object"
+        && "field_id" in entry && entry.field_id === configuredField.id) as { value?: unknown } | undefined;
+      if (typeof stored?.value === "string" && stored.value.trim()) return stored.value;
+    }
+    const customKeys = [configuredField.key, configuredField.apiKey, configuredField.stable_key, configuredField.id]
+      .filter((candidate): candidate is string => Boolean(candidate));
+    const customValue = customKeys.map((customKey) => trainingCustomValues[customKey])
+      .find((candidate): candidate is string => typeof candidate === "string" && candidate.trim().length > 0);
+    return customValue ?? null;
+  };
   const configuredCustomSections = (historicalFormQuery.data?.sections ?? []).flatMap((section) => {
     const fields = section.fields.flatMap((field) => {
       const isCustomField = field.source === "custom" || field.stable_key?.startsWith("custom_") === true || field.apiKey?.startsWith("custom_") === true;
@@ -442,10 +466,10 @@ export default function TrainingDetailsScreen({
               <DetailItem label="Meeting link" value={displayValue((training as unknown as Record<string, unknown>).meeting_link as string)} />
               <DetailItem label="Delivery instructions" value={displayValue((training as unknown as Record<string, unknown>).delivery_instructions as string)} />
               <DetailGroupHeading>Schedule</DetailGroupHeading>
-              <DetailItem label="Start date" value={displayValue(training.start_date as string)} />
-              <DetailItem label="Start time" value={displayValue((training as unknown as Record<string, unknown>).start_time as string)} />
-              <DetailItem label="End date" value={displayValue(training.end_date as string)} />
-              <DetailItem label="End time" value={displayValue((training as unknown as Record<string, unknown>).end_time as string)} />
+              <DetailItem label="Start date" value={formatTrainingScheduleDate(getScheduleValue("start_date"))} />
+              <DetailItem label="Start time" value={formatTrainingScheduleTime(getScheduleValue("start_time"))} />
+              <DetailItem label="End date" value={formatTrainingScheduleDate(getScheduleValue("end_date"))} />
+              <DetailItem label="End time" value={formatTrainingScheduleTime(getScheduleValue("end_time"))} />
               <DetailGroupHeading>Record Information</DetailGroupHeading>
               <DetailItem label="Learning objectives" value={formatLearningObjectives((training as unknown as Record<string, unknown>).learning_objectives)} />
               <DetailItem label="PDFs" value={Array.isArray((training as unknown as Record<string, unknown>).documents) ? ((training as unknown as Record<string, unknown>).documents as unknown[]).length + " files" : Array.isArray(training.documents) ? (training.documents as unknown[]).length + " files" : "—"} />

@@ -323,6 +323,39 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   const [pendingFocusField, setPendingFocusField] = useState<string | null>(null);
   const [isRefreshingActiveForm, setIsRefreshingActiveForm] = useState(false);
 
+  useEffect(() => {
+    if (mode !== "edit" || !initialTraining || !activeForm) return;
+    const hydratedCustomValues = hydrateConfiguredCustomValues(initialTraining, activeForm);
+    setCustomValues((current) => ({ ...hydratedCustomValues, ...current }));
+
+    const scheduleKeys = new Set(["start_date", "end_date", "start_time", "end_time", "enrolment_start", "enrolment_end"]);
+    const customScheduleValues = activeForm.sections.flatMap((section) => section.fields).flatMap((field) => {
+      const aliases = [...getTrainingFieldAliases(field), field.id, field.label]
+        .map(normalizeTrainingFieldKey);
+      const scheduleKey = aliases.find((alias) => scheduleKeys.has(alias));
+      if (!scheduleKey) return [];
+      const candidate = [field.key, field.apiKey, field.stable_key, field.id]
+        .filter((key): key is string => Boolean(key))
+        .map((key) => hydratedCustomValues[key])
+        .find((value) => typeof value === "string" && value.trim());
+      return typeof candidate === "string" ? [[scheduleKey, candidate] as const] : [];
+    });
+
+    if (customScheduleValues.length) {
+      setValues((current) => {
+        const next = { ...current };
+        for (const [key, value] of customScheduleValues) {
+          if (String(next[key as keyof CreateTrainingFormValues] ?? "").trim()) continue;
+          const normalizedValue = key === "start_date" || key === "end_date"
+            ? value.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? value
+            : value;
+          (next as unknown as Record<string, unknown>)[key] = normalizedValue;
+        }
+        return next;
+      });
+    }
+  }, [activeForm, initialTraining, mode]);
+
   // Backend rejects custom_values keys that collide with top-level TrainingCreate fields
   // (e.g. stale `tags` stored as custom → `400 Unknown custom field: tags`). Only send
   // custom keys that exist in the active form and are not top-level payload keys.

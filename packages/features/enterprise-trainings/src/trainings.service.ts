@@ -604,6 +604,52 @@ function readArrayResponse(value: unknown, operation: string): unknown[] {
 function normaliseTrainingRecord(value: TrainingListItem | TrainingDetail): TrainingListItem | TrainingDetail {
   const record = value as TrainingListItem & Partial<TrainingDetail> & Record<string, unknown>;
   const normalised = { ...record };
+  const schedule = isRecord(record.schedule) ? record.schedule : {};
+  const customValues = record.custom_values ?? record.customValues;
+  const readCustomScheduleValue = (...keys: string[]): unknown => {
+    const normalizedKeys = new Set(keys.map((key) => key.toLowerCase().replace(/[^a-z0-9]/g, "")));
+    if (isRecord(customValues)) {
+      const match = Object.entries(customValues).find(([key]) => normalizedKeys.has(key.toLowerCase().replace(/[^a-z0-9]/g, "")));
+      return match?.[1];
+    }
+    if (Array.isArray(customValues)) {
+      const match = customValues.find((entry) => {
+        if (!isRecord(entry)) return false;
+        return [entry.key, entry.api_key, entry.stable_key, entry.field_key, entry.label]
+          .some((key) => typeof key === "string" && normalizedKeys.has(key.toLowerCase().replace(/[^a-z0-9]/g, "")));
+      });
+      return isRecord(match) ? match.value : undefined;
+    }
+    return undefined;
+  };
+  const readString = (...candidates: unknown[]): string | undefined =>
+    candidates.find((candidate): candidate is string => typeof candidate === "string" && candidate.trim().length > 0);
+  normalised.start_date = readString(
+    record.start_date,
+    record.startDate,
+    record.training_start_date,
+    record.starts_at,
+    schedule.start_date,
+    schedule.startDate,
+    schedule.starts_at,
+    readCustomScheduleValue("start_date", "startDate", "training_start_date"),
+  ) ?? record.start_date ?? null;
+  normalised.end_date = readString(
+    record.end_date,
+    record.endDate,
+    record.training_end_date,
+    record.ends_at,
+    schedule.end_date,
+    schedule.endDate,
+    schedule.ends_at,
+    readCustomScheduleValue("end_date", "endDate", "training_end_date"),
+  ) ?? record.end_date ?? null;
+  normalised.start_time = readString(record.start_time, record.startTime, schedule.start_time, schedule.startTime, readCustomScheduleValue("start_time", "startTime"))
+    ?? (typeof normalised.start_date === "string" ? normalised.start_date.match(/T(\d{2}:\d{2})/)?.[1] : undefined)
+    ?? record.start_time ?? null;
+  normalised.end_time = readString(record.end_time, record.endTime, schedule.end_time, schedule.endTime, readCustomScheduleValue("end_time", "endTime"))
+    ?? (typeof normalised.end_date === "string" ? normalised.end_date.match(/T(\d{2}:\d{2})/)?.[1] : undefined)
+    ?? record.end_time ?? null;
   for (const key of ["capacity", "price"] as const) {
     const field = normalised[key];
     if (typeof field === "number") normalised[key] = String(field);

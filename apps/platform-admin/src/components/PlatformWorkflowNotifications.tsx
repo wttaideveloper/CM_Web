@@ -47,5 +47,7 @@ export function workflowNotificationTarget(item: WorkflowNotification): string |
     category: item.category,
     metadata: item.metadata,
     data: item.metadata,
+    title: item.title,
+    body: item.message,
   }, "platform");
 }
