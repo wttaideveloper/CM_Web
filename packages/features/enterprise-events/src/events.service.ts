@@ -1,5 +1,8 @@
 import { authenticatedFetch } from "@ihp/auth";
 import { mediaItemUrl, mediaUrlsFromUnknown, normalizeDocumentEntries, type EventDocumentEntry } from "./event-media";
+import { parseEventOrdersResponse, type EventOrder } from "./event-orders-parser";
+
+export type { EventOrder } from "./event-orders-parser";
 
 const fetch = authenticatedFetch;
 
@@ -462,24 +465,6 @@ export interface EventRegistration {
 
 /** The runtime-confirmed top-level registrations response for one Event. */
 export type EventRegistrationsResponse = readonly EventRegistration[];
-
-/** Runtime-confirmed purchase record returned for one Event. Monetary and quantity fields remain API strings. */
-export interface EventOrder {
-  id: string;
-  participant_email: string;
-  quantity: string;
-  currency: string;
-  status: string;
-  refund_reason: string | null;
-  updated_at: string;
-  event_id: string;
-  participant_name: string;
-  ticket_type_id: string;
-  amount: string;
-  payment_status: string;
-  payment_provider: string;
-  created_at: string;
-}
 
 /** Exact optional fields accepted by both Event registration and order refund endpoints. */
 export interface EventRefundPayload {
@@ -1151,32 +1136,6 @@ function isEventRegistration(value: unknown): value is EventRegistration {
 function parseEventRegistrationsResponse(value: unknown): EventRegistrationsResponse {
   if (!Array.isArray(value) || !value.every(isEventRegistration)) {
     throw new Error("Events API returned an invalid registrations response.");
-  }
-
-  return value;
-}
-
-function isEventOrder(value: unknown): value is EventOrder {
-  return isRecord(value) &&
-    typeof value.id === "string" &&
-    typeof value.participant_email === "string" &&
-    typeof value.quantity === "string" &&
-    typeof value.currency === "string" &&
-    typeof value.status === "string" &&
-    (value.refund_reason === null || typeof value.refund_reason === "string") &&
-    typeof value.updated_at === "string" &&
-    typeof value.event_id === "string" &&
-    typeof value.participant_name === "string" &&
-    typeof value.ticket_type_id === "string" &&
-    typeof value.amount === "string" &&
-    typeof value.payment_status === "string" &&
-    typeof value.payment_provider === "string" &&
-    typeof value.created_at === "string";
-}
-
-function parseEventOrdersResponse(value: unknown): EventOrdersResponse {
-  if (!Array.isArray(value) || !value.every(isEventOrder)) {
-    throw new Error("Events API returned an invalid orders response.");
   }
 
   return value;
