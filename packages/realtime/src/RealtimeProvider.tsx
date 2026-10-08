@@ -332,7 +332,9 @@ export function RealtimeProvider({
       }
     };
 
-    void syncRuntimeToken();
+    const initialSyncTimeoutId = window.setTimeout(() => {
+      void syncRuntimeToken();
+    }, 0);
 
     const intervalId = window.setInterval(() => {
       void syncRuntimeToken();
@@ -340,6 +342,7 @@ export function RealtimeProvider({
 
     return () => {
       active = false;
+      window.clearTimeout(initialSyncTimeoutId);
       window.clearInterval(intervalId);
     };
   }, [adapter, shouldConnect]);

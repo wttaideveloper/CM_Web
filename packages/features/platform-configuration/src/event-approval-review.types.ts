@@ -136,6 +136,23 @@ function isOptionalStringArray(value: unknown): value is string[] | null | undef
   return value === undefined || value === null || (Array.isArray(value) && value.every((item) => typeof item === "string"));
 }
 
+function normalizeMediaUrl(value: unknown): unknown {
+  if (value === null || value === undefined || typeof value === "string") return value;
+  return isRecord(value) && typeof value.url === "string" ? value.url : value;
+}
+
+/** Preserves complete backend media URLs when approval responses use media objects. */
+export function normalizeEventApprovalMedia(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  const normalizeArray = (field: string) => Array.isArray(value[field]) ? value[field].map(normalizeMediaUrl) : value[field];
+  return {
+    ...value,
+    primary_image: normalizeMediaUrl(value.primary_image),
+    gallery_images: normalizeArray("gallery_images"),
+    videos: normalizeArray("videos"),
+  };
+}
+
 function isDocumentValue(value: unknown): value is EventDocumentValue {
   return typeof value === "string" || (isRecord(value) && typeof value.url === "string" && (value.name === undefined || value.name === null || typeof value.name === "string"));
 }

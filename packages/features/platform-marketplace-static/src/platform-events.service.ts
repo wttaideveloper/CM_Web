@@ -87,8 +87,20 @@ function optionalString(value: unknown): string | null | undefined {
   return value === null || value === undefined || typeof value === "string" ? value : undefined;
 }
 
+function optionalMediaUrl(value: unknown): string | null | undefined {
+  if (value === null || value === undefined || typeof value === "string") return value;
+  return isRecord(value) && typeof value.url === "string" ? value.url : undefined;
+}
+
 function optionalStringArray(value: unknown): string[] | null | undefined {
   return value === null || value === undefined || (Array.isArray(value) && value.every((item) => typeof item === "string")) ? value as string[] | null | undefined : undefined;
+}
+
+function optionalMediaUrlArray(value: unknown): string[] | null | undefined {
+  if (value === null || value === undefined) return value;
+  if (!Array.isArray(value)) return undefined;
+  const urls = value.map(optionalMediaUrl);
+  return urls.every((item): item is string => typeof item === "string") ? urls : undefined;
 }
 
 function optionalVenue(value: unknown): EventVenue | null | undefined {
@@ -168,9 +180,9 @@ export function parsePublishedEventDetails(value: unknown): PublishedEventDetail
     end_date: optionalString(value.end_date),
     time_zone: optionalString(value.time_zone),
     registration_cutoff: optionalString(value.registration_cutoff),
-    primary_image: optionalString(value.primary_image),
-    gallery_images: optionalStringArray(value.gallery_images),
-    videos: optionalStringArray(value.videos),
+    primary_image: optionalMediaUrl(value.primary_image),
+    gallery_images: optionalMediaUrlArray(value.gallery_images),
+    videos: optionalMediaUrlArray(value.videos),
     documents: optionalDocuments(value.documents),
     delivery_mode: optionalString(value.delivery_mode),
     venue: optionalVenue(value.venue),
@@ -197,7 +209,7 @@ function parseEvents(value: unknown): EventsResponse {
   const items = value.items.map((item) => {
     const enterprise = isRecord(item.enterprise) ? item.enterprise : null;
     const enterpriseName = typeof item.enterprise_name === "string" ? item.enterprise_name : enterprise && (typeof enterprise.business_legal_name === "string" ? enterprise.business_legal_name : typeof enterprise.business_short_name === "string" ? enterprise.business_short_name : typeof enterprise.name === "string" ? enterprise.name : null);
-    return { ...item, enterprise_name: enterpriseName } as EventItem;
+    return { ...item, enterprise_name: enterpriseName, primary_image: optionalMediaUrl(item.primary_image) } as EventItem;
   });
   return { ...value, items } as EventsResponse;
 }

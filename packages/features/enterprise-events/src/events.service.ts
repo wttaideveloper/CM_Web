@@ -1,5 +1,5 @@
 import { authenticatedFetch } from "@ihp/auth";
-import { normalizeDocumentEntries, type EventDocumentEntry } from "./event-media";
+import { mediaItemUrl, mediaUrlsFromUnknown, normalizeDocumentEntries, type EventDocumentEntry } from "./event-media";
 
 const fetch = authenticatedFetch;
 
@@ -1050,9 +1050,9 @@ function normalizeEventResponse(value: unknown): Event | null {
     registration_cutoff: text("registration_cutoff"),
     registration_open_at: text("registration_open_at"),
     registration_close_at: text("registration_close_at"),
-    primary_image: text("primary_image"),
-    gallery_images: arrayOfStrings("gallery_images"),
-    videos: arrayOfStrings("videos"),
+    primary_image: mediaItemUrl(value.primary_image),
+    gallery_images: mediaUrlsFromUnknown(value.gallery_images),
+    videos: mediaUrlsFromUnknown(value.videos),
     documents: normalizeDocumentEntries(value.documents),
     delivery_mode: text("delivery_mode"),
     venue,

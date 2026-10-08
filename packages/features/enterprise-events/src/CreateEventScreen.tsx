@@ -161,7 +161,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     .filter((section) => section.fields.length > 0), [formConfiguration]);
   const currencyOptions = useMemo(() => {
     const configuredOptions = formConfiguration?.sections.flatMap((section) => section.fields).find((field) => field.source === "core" && (field.core_key === "currency" || field.stable_key === "currency"))?.options ?? [];
-    return configuredOptions.some((option) => option.value === "USD") ? configuredOptions : [{ value: "USD", label: "USD â€” US Dollar", position: 0 }, ...configuredOptions];
+    return configuredOptions.some((option) => option.value === "USD") ? configuredOptions : [{ value: "USD", label: "USD \u2014 US Dollar", position: 0 }, ...configuredOptions];
   }, [formConfiguration]);
   const requiresEventCategories = configuredSections.some((section) => section.fields.some((field) => field.source === "core" && (field.core_key === "category" || field.core_key === "subcategory")));
   const eventCategoriesQuery = useEventCategories(Boolean(formConfiguration) && requiresEventCategories);
@@ -469,7 +469,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const title = mode === "edit" ? "Edit Event" : "Create Event";
 
   if (mode === "edit" && hasHistoricalConfiguration && historicalFormConfiguration.isLoading) {
-    return <HistoricalFormStatus>Loading this Event&apos;s historical form configurationâ€¦</HistoricalFormStatus>;
+    return <HistoricalFormStatus>Loading this Event&apos;s historical form configuration{"\u2026"}</HistoricalFormStatus>;
   }
 
   if (mode === "edit" && hasHistoricalConfiguration && historicalFormConfiguration.isError) {
@@ -491,7 +491,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   }
 
   if (mode === "create" && activeFormConfiguration.isLoading) {
-    return <HistoricalFormStatus>Checking the active Event Form Configurationâ€¦</HistoricalFormStatus>;
+    return <HistoricalFormStatus>Checking the active Event Form Configuration{"\u2026"}</HistoricalFormStatus>;
   }
 
   if (mode === "create" && activeFormConfiguration.isError) {
@@ -515,7 +515,7 @@ function HistoricalFormStatus({ children, error = false, onRetry }: { children: 
 
 /** Displays non-sensitive active-form resolution metadata during this read-only integration phase. */
 function ActiveEventFormVerification({ query }: { query: ReturnType<typeof useActiveEventFormConfiguration> }) {
-  if (query.isLoading) return <aside role="status" className="mb-6 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-4 text-sm text-[#52736a]">Checking the active Event form configurationâ€¦</aside>;
+  if (query.isLoading) return <aside role="status" className="mb-6 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-4 text-sm text-[#52736a]">Checking the active Event form configuration{"\u2026"}</aside>;
   if (query.isError) return <aside role="alert" className="mb-6 rounded-xl border border-[#eadbb8] bg-[#fffaf0] p-4 text-sm text-[#735c1e]"><p>{query.error instanceof EventsApiError && (query.error.status === 401 || query.error.status === 403) ? "The active Event form could not be verified for this session. Please sign in again." : query.error instanceof Error ? `Active Event form verification failed: ${query.error.message}` : "Active Event form verification failed."}</p><button type="button" onClick={() => void query.refetch()} className="mt-3 rounded-full border border-current px-4 py-2 text-sm font-bold">Retry</button></aside>;
   if (!query.data) return <aside role="status" className="mb-6 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-4 text-sm text-[#52736a]"><p className="font-semibold text-[#06201c]">No active Event form configuration</p><p className="mt-1">The standard Event form is available.</p></aside>;
   return <aside role="status" className="mb-6 rounded-xl border border-[#cde5db] bg-[#f4faf7] p-4 text-sm text-[#355a51]"><p className="font-bold text-[#06201c]">Active Event Form</p><p className="mt-1 font-semibold text-[#1f6a58]">{query.data.name}</p><dl className="mt-3 grid gap-1 text-xs sm:grid-cols-2"><div><dt className="inline font-semibold">Scope: </dt><dd className="inline">{query.data.scope}</dd></div><div><dt className="inline font-semibold">Version: </dt><dd className="inline">{query.data.version}</dd></div><div><dt className="inline font-semibold">Configuration ID: </dt><dd className="inline break-all">{query.data.configuration_id}</dd></div><div><dt className="inline font-semibold">Version ID: </dt><dd className="inline break-all">{query.data.version_id}</dd></div><div><dt className="inline font-semibold">Sections: </dt><dd className="inline">{query.data.sections.length}</dd></div></dl></aside>;

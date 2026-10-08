@@ -167,6 +167,11 @@ export function mediaItemUrl(value: unknown): string {
   return typeof value === "string" ? value.trim() : isRecord(value) && typeof value.url === "string" ? value.url.trim() : "";
 }
 
+/** Extracts authoritative backend URLs while preserving their path and extension exactly. */
+export function mediaUrlsFromUnknown(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(mediaItemUrl).filter(Boolean) : [];
+}
+
 export function mediaUrls(values: readonly EventMediaItem[]): string[] {
   return values.map(mediaItemUrl).filter(Boolean);
 }

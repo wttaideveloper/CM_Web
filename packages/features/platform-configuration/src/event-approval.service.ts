@@ -1,6 +1,7 @@
 import {
   isEventApprovalReview,
   isHistoricalEventFormConfigurationVersion,
+  normalizeEventApprovalMedia,
   type EventApprovalReview,
   type HistoricalEventFormConfigurationVersion,
 } from "./event-approval-review.types";
@@ -39,7 +40,7 @@ export type EventApprovalHistoryResponse = readonly EventAuditRecord[];
 
 async function parseEvent(response: Response): Promise<EventApprovalReview> {
   if (!response.ok) throw await createEventApprovalError(response);
-  const value = await response.json();
+  const value = normalizeEventApprovalMedia(await response.json());
   if (!isEventApprovalReview(value)) throw new EventApprovalError();
   return value;
 }
