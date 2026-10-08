@@ -33,6 +33,7 @@ export interface TrainingFormUploadSettings {
 export interface TrainingFormFrontendSettings {
   visibility?: TrainingFormVisibilityCondition | null;
   upload?: TrainingFormUploadSettings | null;
+  input_mode?: "text" | "tags";
 }
 
 /** Composite Training metadata accepted by the Training Form Configuration API. */

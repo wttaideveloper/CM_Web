@@ -11,12 +11,13 @@ import EventServicesEditor from "./EventServicesEditor";
 import EventMediaEditor from "./EventMediaEditor";
 import type { EventMediaField, EventMediaPolicy, EventMediaUploadState } from "./event-media";
 import { eventFieldMaxLength } from "./event-field-limits";
-import { DateTimeLocalInput } from "@ihp/ui";
+import { DateLocalInput, DateTimeLocalInput } from "@ihp/ui";
 
 type UpdateForm = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => void;
 type Props = { section: ActiveEventFormSection; values: CreateEventFormValues; update: UpdateForm; errors: Record<string, string[]>; customValues: Record<string, string | string[] | boolean | number | null>; setCustomValues: (next: Record<string, string | string[] | boolean | number | null>) => void; categories: readonly EventCategory[]; categoriesLoading: boolean; categoriesError: boolean; eventTypes?: readonly EventTypeDefinition[]; eventTypesLoading?: boolean; eventTypesError?: boolean; currencyOptions?: readonly ActiveEventFormFieldOption[]; allowPastTemporalValues?: boolean; modules?: CreateEventFormValues["modules"]; selectedEventType?: EventTypeDefinition; mediaPolicy?: EventMediaPolicy; policyError?: string; uploads?: readonly EventMediaUploadState[]; onMediaLinkChange?: (field: EventMediaField, index: number, value: string) => void; onMediaAddLink?: (field: EventMediaField) => void; onMediaRemove?: (field: EventMediaField, index: number) => void; onMediaUpload?: (field: EventMediaField, file: File, replaceIndex?: number) => void; onMediaRetry?: (uploadId: string) => void; onMediaUploadRemove?: (uploadId: string) => void; sessionGenerationRules?: readonly SessionGenerationRule[]; onSessionGenerationRulesChange?: (rules: SessionGenerationRule[]) => void; };
 
 const inputClass = "mt-1.5 h-10 w-full min-w-0 max-w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm font-normal text-[#06201c] outline-none focus:border-[#1f6a58]";
+const NUMERIC_FIELD_TYPES = new Set(["number", "numeric", "integer", "decimal", "float", "number_input", "numeric_input"]);
 const CORE_FIELDS: Record<string, keyof CreateEventFormValues> = { title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", start_date: "start_date", start_datetime: "start_date", end_date: "end_date", end_datetime: "end_date", duration_type: "duration_type", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", timezone: "time_zone", time_zone: "time_zone", event_type: "event_type", delivery_mode: "delivery_mode", pricing_type: "pricing_type", meeting_provider: "meeting_provider", meeting_link: "meeting_link", price: "price", currency: "currency", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents" };
 const COMPOSITES = new Set(["venue", "ticket_types", "sessions", "registration_questions", "registration_fields", "custom_fields", "media", "primary_image", "gallery_images", "videos", "documents"]);
 
@@ -31,6 +32,9 @@ function disabledModuleFor(key: string, values: CreateEventFormValues): string |
 function isCompositeSubfieldEnabled(field: ActiveEventFormField, key: string): boolean { const enabled = field.composite_config?.enabled_fields ?? []; return enabled.length === 0 || enabled.includes(key); }
 function isCompositeSubfieldRequired(field: ActiveEventFormField, key: string): boolean { return (field.composite_config?.required_fields ?? []).includes(key); }
 function scalar(value: unknown): string { return typeof value === "string" || typeof value === "number" ? String(value) : ""; }
+function isNumericField(field: ActiveEventFormField): boolean {
+  return [field.renderer, field.value_type].some((value) => NUMERIC_FIELD_TYPES.has(value.trim().toLowerCase().replace(/[\s-]+/g, "_")));
+}
 function numberRangeError(value: unknown, label: string, min?: number | null, max?: number | null): string | undefined {
   if (value === null || value === undefined || value === "") return undefined;
   const numericValue = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
@@ -56,11 +60,11 @@ function isDeliveryFieldApplicable(key: string, deliveryMode: string): boolean {
 function fieldType(field: ActiveEventFormField, key: string): string {
   if (["start_date", "start_datetime", "end_date", "end_datetime", "registration_cutoff", "registration_open_at", "registration_close_at"].includes(key)) return "datetime-local";
   if (isDateTimeType(field.renderer) || isDateTimeType(field.value_type)) return "datetime-local";
-  if (field.renderer === "date" || field.value_type === "date" || ["date", "session_date"].includes(key)) return "date";
+  if (field.renderer?.trim().toLowerCase() === "date" || field.value_type?.trim().toLowerCase() === "date" || ["date", "session_date"].includes(key)) return "date";
   if (["start_time", "end_time"].includes(key)) return "time";
-  if (field.renderer === "textarea") return "textarea";
-  if (field.renderer === "number" || field.value_type === "number" || ["price", "capacity", "min_participants", "max_participants", "venue_latitude", "venue_longitude"].includes(key)) return "number";
-  if (field.renderer === "url" || field.value_type === "url" || ["primary_image", "gallery_images", "videos", "documents", "meeting_link"].includes(key)) return "url";
+  if (field.renderer?.trim().toLowerCase() === "textarea") return "textarea";
+  if (isNumericField(field) || ["price", "capacity", "min_participants", "max_participants", "venue_latitude", "venue_longitude"].includes(key)) return "number";
+  if (field.renderer?.trim().toLowerCase() === "url" || field.value_type?.trim().toLowerCase() === "url" || ["primary_image", "gallery_images", "videos", "documents", "meeting_link"].includes(key)) return "url";
   return "text";
 }
 function toDateTimeLocalNow(): string { const now = new Date(); now.setSeconds(0, 0); const offset = now.getTimezoneOffset() * 60_000; return new Date(now.getTime() - offset).toISOString().slice(0, 16); }
@@ -109,8 +113,8 @@ function ConfiguredField(props: Omit<Props, "section"> & { field: ActiveEventFor
   if (field.source === "core" && key === "delivery_mode") return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}<select value={values.delivery_mode} required={field.required} onChange={(event) => update("delivery_mode", event.target.value)} className={inputClass}>{field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
   const coreField = field.source === "core" ? CORE_FIELDS[key] ?? (key in values ? key as keyof CreateEventFormValues : undefined) : undefined;
   const value = coreField ? (coreField === "tags" ? values.tags.join(", ") : Array.isArray(values[coreField]) ? (values[coreField] as string[]).join(", ") : scalar(values[coreField])) : scalar(customValues[key]);
-  const isBoolean = field.value_type === "boolean" || field.renderer === "checkbox";
-  const isNumber = field.value_type === "number" || field.renderer === "number";
+  const isBoolean = [field.value_type, field.renderer].some((typeValue) => typeValue.trim().toLowerCase() === "boolean" || typeValue.trim().toLowerCase() === "checkbox");
+  const isNumber = isNumericField(field);
   const setValue = (next: string) => { if (coreField) { if (coreField === "tags") update("tags", next.split(",").map((item) => item.trim()).filter(Boolean)); else if (["gallery_images", "videos", "documents"].includes(coreField)) update(coreField, next.split(",").map((item) => item.trim()).filter(Boolean) as CreateEventFormValues[typeof coreField]); else update(coreField, next as CreateEventFormValues[typeof coreField]); } else setCustomValues({ ...customValues, [key]: isBoolean ? next === "true" : isNumber ? (next.trim() ? Number(next) : null) : next }); };
   const setNumberValue = (next: string) => {
     const adjusted = clampNumberToRange(next, field.validation.min, field.validation.max);
@@ -135,6 +139,15 @@ function ConfiguredField(props: Omit<Props, "section"> & { field: ActiveEventFor
   const displayedError = error ?? rangeError;
   const isTextEntry = !isTemporal && !(options.length || field.value_type === "enum" || key === "currency");
   const textLimit = isTextEntry ? eventFieldMaxLength(key, constraints.max_length) : undefined;
+  const numberHint = isNumber
+    ? constraints.min != null && constraints.max != null
+      ? t("numberInput.hintWithRange", { min: constraints.min, max: constraints.max })
+      : constraints.min != null
+        ? t("numberInput.hintWithMinimum", { min: constraints.min })
+        : constraints.max != null
+          ? t("numberInput.hintWithMaximum", { max: constraints.max })
+          : t("numberInput.hint")
+    : null;
   return (
     <div className="block text-sm font-semibold text-[#06201c]">
       <label htmlFor={id}>
@@ -149,6 +162,8 @@ function ConfiguredField(props: Omit<Props, "section"> & { field: ActiveEventFor
           <textarea id={id} disabled={moduleDisabled} value={value} required={field.required} placeholder={field.placeholder ?? undefined} minLength={constraints.min_length ?? undefined} maxLength={textLimit} onChange={(event) => setValue(event.target.value)} className={`${inputClass} h-24 resize-y py-2`} />
       ) : type === "datetime-local" ? (
           <DateTimeLocalInput id={id} disabled={moduleDisabled} value={value} required={field.required} min={bounds.min ?? (constraints.min == null ? undefined : String(constraints.min))} max={bounds.max ?? (constraints.max == null ? undefined : String(constraints.max))} persistDraft aria-invalid={displayedError ? true : undefined} aria-describedby={displayedError ? `${id}-error` : undefined} onChange={setValue} className={inputClass} />
+      ) : type === "date" ? (
+          <DateLocalInput id={id} disabled={moduleDisabled} value={value} required={field.required} min={bounds.min ?? (constraints.min == null ? undefined : String(constraints.min))} max={bounds.max ?? (constraints.max == null ? undefined : String(constraints.max))} aria-invalid={displayedError ? true : undefined} aria-describedby={displayedError ? `${id}-error` : undefined} onChange={setValue} className={inputClass} />
       ) : isTemporal ? (
           <input id={id} disabled={moduleDisabled} type={type} value={value} required={field.required} placeholder={field.placeholder ?? undefined} min={bounds.min ?? constraints.min ?? undefined} max={bounds.max ?? constraints.max ?? undefined} onChange={(event) => setValue(event.target.value)} className={inputClass} />
       ) : (
@@ -163,7 +178,7 @@ function ConfiguredField(props: Omit<Props, "section"> & { field: ActiveEventFor
             maxLength={textLimit}
             min={bounds.min ?? constraints.min ?? undefined}
             max={bounds.max ?? constraints.max ?? undefined}
-            pattern={constraints.pattern ?? undefined}
+            pattern={!isNumber ? constraints.pattern ?? undefined : undefined}
             step={isNumber ? "any" : undefined}
             aria-invalid={displayedError ? true : undefined}
             aria-describedby={displayedError ? `${id}-error` : undefined}
@@ -171,6 +186,7 @@ function ConfiguredField(props: Omit<Props, "section"> & { field: ActiveEventFor
             className={inputClass}
           />
       )}
+      {numberHint ? <p className="mt-1 text-xs font-normal text-[#7f9d94]">{numberHint}</p> : null}
       {textLimit != null ? <p className="mt-1 text-xs text-[#7f9d94]">{value.length}/{textLimit} characters</p> : null}
       {displayedError ? <p id={`${id}-error`} role="alert" className="mt-1 text-xs text-[#b42318]">{displayedError}</p> : null}
       {rangeAdjustment ? <p role="status" className="mt-1 text-xs text-[#52736a]">{t(`numberRange.adjustedTo${rangeAdjustment === "minimum" ? "Minimum" : "Maximum"}`, { value: rangeAdjustment === "minimum" ? constraints.min : constraints.max })}</p> : null}

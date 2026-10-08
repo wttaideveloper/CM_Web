@@ -729,7 +729,12 @@ export async function uploadTrainingMedia(
   ) {
     throw new Error("Trainings API returned an invalid media upload response.");
   }
-  return { url: value.url, name: value.name, size: value.size };
+  return {
+    url: value.url,
+    name: value.name,
+    size: value.size,
+    ...(typeof value.type === "string" ? { type: value.type } : {}),
+  };
 }
 
 function normaliseTrainingListItem(item: TrainingListItem): TrainingListItem {

@@ -10,9 +10,6 @@ import type { TrainingListItem } from "@ihp/enterprise-trainings";
 const filters = ["All", "draft", "published", "archived"] as const;
 const PAGE_SIZE = 20;
 
-/** Enterprise create lives at /admin/trainings/create (enterprise route in shell/enterprise-admin), not platform. */
-const createTrainingHref = "/admin/trainings/create";
-
 function pillClass(status: string) {
   const s = status.toLowerCase();
   if (s === "published") return "bg-[#e8f6ee] text-[#16825b]";
@@ -89,14 +86,6 @@ function PlatformTrainingsContent() {
           <h2 className="text-2xl font-bold text-[#06201c]">Training Management</h2>
           <p className="mt-1 text-sm text-[#52736a]">Create and manage training courses.</p>
         </div>
-        {createTrainingHref ? (
-          <Link
-            href={createTrainingHref}
-            className="inline-flex h-12 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm transition hover:bg-[#195646]"
-          >
-            + Create Course
-          </Link>
-        ) : null}
       </div>
 
       <div className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">

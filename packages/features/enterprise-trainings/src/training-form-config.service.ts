@@ -7,13 +7,30 @@ const fetch = authenticatedFetch;
 export type TrainingFormFieldType = "text" | "textarea" | "select" | "multiselect" | "number" | "date" | "datetime" | "time" | "url" | "checkbox";
 export interface TrainingFormOption { value: string; label: string; position: number; }
 
+const NUMERIC_TRAINING_FIELD_TYPES = new Set(["number", "numeric", "integer", "decimal", "float", "number_input", "numeric_input"]);
+
 function trainingFormFieldType(field: Record<string, unknown>): TrainingFormFieldType {
+  const configuredTypes = [field.renderer, field.type, field.value_type]
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim().toLowerCase().replace(/[\s-]+/g, "_"));
+  if (configuredTypes.some((type) => NUMERIC_TRAINING_FIELD_TYPES.has(type))) return "number";
+
   const configuredType = typeof field.renderer === "string"
     ? field.renderer
     : typeof field.type === "string"
       ? field.type
-      : "text";
-  return (configuredType === "multi_select" || configuredType === "multi-select" ? "multiselect" : configuredType) as TrainingFormFieldType;
+      : typeof field.value_type === "string"
+        ? field.value_type
+        : "text";
+  const normalizedType = configuredType.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (["multi_select", "multiselect"].includes(normalizedType)) return "multiselect";
+  if (NUMERIC_TRAINING_FIELD_TYPES.has(normalizedType)) return "number";
+  if (["datetime", "datetime_local"].includes(normalizedType)) return "datetime";
+  if (["boolean", "bool"].includes(normalizedType)) return "checkbox";
+  if (["text", "textarea", "select", "date", "time", "url", "checkbox"].includes(normalizedType)) {
+    return normalizedType as TrainingFormFieldType;
+  }
+  return "text";
 }
 
 function mapConfiguredTrainingOptions(options: unknown): TrainingFormOption[] | undefined {
@@ -49,6 +66,7 @@ export interface TrainingFormUploadSettings {
 export interface TrainingFormFrontendSettings {
   visibility?: TrainingFormVisibilityCondition | null;
   upload?: TrainingFormUploadSettings | null;
+  inputMode?: "text" | "tags";
   enabledFields?: string[];
   requiredFields?: string[];
 }
@@ -112,7 +130,15 @@ function getTrainingFieldKey(fld: Record<string, unknown>, fallbackIdx: number):
 
 function parseFrontendSettings(field: Record<string, unknown>): TrainingFormFrontendSettings | undefined {
   const composite = field.composite_config;
-  if (composite === undefined || composite === null) return undefined;
+  const renderer = typeof field.renderer === "string" ? field.renderer.trim().toLowerCase() : "";
+  const configurableListKeys = [field.core_key, field.key, field.stable_key, field.label]
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim().toLowerCase().replace(/^(core|custom)_/, "").replace(/[\s-]+/g, "_"));
+  const rendererInputMode = renderer === "tags"
+    && configurableListKeys.some((key) => key === "tags" || key === "learning_objectives")
+    ? "tags"
+    : undefined;
+  if (composite === undefined || composite === null) return rendererInputMode ? { inputMode: rendererInputMode } : undefined;
   if (typeof composite !== "object" || Array.isArray(composite)) {
     throw new Error("Training Form API returned invalid field configuration metadata.");
   }
@@ -127,9 +153,11 @@ function parseFrontendSettings(field: Record<string, unknown>): TrainingFormFron
     throw new Error("Training Form API returned invalid field settings.");
   }
   const source = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+  const inputMode = source.input_mode === "text" || source.input_mode === "tags" ? source.input_mode : rendererInputMode;
   const result: TrainingFormFrontendSettings = {
     ...(isStringArray(enabledFields) ? { enabledFields } : {}),
     ...(isStringArray(requiredFields) ? { requiredFields } : {}),
+    ...(inputMode ? { inputMode } : {}),
   };
   const visibility = source.visibility;
   if (visibility !== undefined && visibility !== null) {

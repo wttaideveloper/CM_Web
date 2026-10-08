@@ -19,8 +19,14 @@ function PreviewField({ field, registry, isTraining }: { field: ConfiguredField;
     : field.source === "core" ? getEventCompositeFieldDefinition(field.coreKey) : undefined;
   const taxonomySemantic = field.source === "core" ? getEventCoreFieldSemantic(field.coreKey) : undefined;
   const trainingDeliveryMode = isTraining && isTrainingDeliveryModeField(field);
+  const frontendSettings = field.compositeConfig?.frontend_settings;
+  const inputMode = frontendSettings && typeof frontendSettings === "object" && !Array.isArray(frontendSettings)
+    ? (frontendSettings as Record<string, unknown>).input_mode
+    : undefined;
+  const isLegacyLearningObjectives = isTraining && !inputMode && field.label.trim().toLowerCase() === "learning objectives";
   const registryField = field.coreKey ? registry.find((item) => item.key === field.coreKey) : undefined;
   const registryRuntimeSourced = Boolean(registryField?.valueSource || registryField?.sourceEndpoint);
+  if (isTraining && (inputMode === "tags" || isLegacyLearningObjectives)) return <div aria-label={`${field.label} tags input`} className="mt-1.5 flex min-h-11 flex-wrap items-center gap-2 rounded-lg border border-[#cfe0d8] bg-white p-2"><span className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">Example item <span aria-hidden="true">×</span></span><span className="text-xs font-normal text-[#7f9d94]">{field.placeholder || "Type an item and press Enter"}</span></div>;
   if (compositeDefinition) {
     const enabledFields = field.compositeConfig?.enabled_fields ?? compositeDefinition.subfields.map((subfield) => subfield.key);
     const labels = compositeDefinition.subfields.filter((subfield) => enabledFields.includes(subfield.key)).map((subfield) => subfield.label);
@@ -29,7 +35,7 @@ function PreviewField({ field, registry, isTraining }: { field: ConfiguredField;
   if (taxonomySemantic && isEventCoreFieldRuntimeSourced(field.coreKey)) return <div><select aria-label={field.label} disabled className={base}><option>{taxonomySemantic.optionsSource === "event_categories" ? "Event Categories (loaded at runtime)" : "Enterprise locations (loaded at runtime)"}</option></select><span className="mt-1 block text-xs font-normal text-[#52736a]">{taxonomySemantic.description}</span></div>;
   if (registryRuntimeSourced && !trainingDeliveryMode) return <div><select aria-label={field.label} disabled className={base}><option>Training values (loaded at runtime)</option></select><span className="mt-1 block text-xs font-normal text-[#52736a]">Values are supplied by the Training runtime source.</span></div>;
   if (field.renderer === "textarea") return <textarea aria-label={field.label} placeholder={field.placeholder} className={`${base} min-h-20`} />;
-  if (field.renderer === "select" || field.renderer === "multi_select") {
+  if (field.renderer === "dropdown" || field.renderer === "select" || field.renderer === "multi_select") {
     const multiSelect = field.renderer === "multi_select";
     const selectClass = multiSelect ? `${base} min-h-24 max-h-40 overflow-y-auto leading-7` : base;
     const options = trainingDeliveryMode ? TRAINING_DELIVERY_MODE_OPTIONS : field.options;

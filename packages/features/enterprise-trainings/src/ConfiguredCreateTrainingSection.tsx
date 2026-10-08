@@ -1,18 +1,20 @@
 "use client";
 
 import { useState } from "react";
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 
 import type { CreateTrainingFormValues } from "./create-training-form";
 import type { TrainingFormField, TrainingFormSection } from "./training-form-config.service";
 import { isTrainingFormFieldVisible } from "./training-form-field-settings";
 import TrainingMediaField from "./TrainingMediaField";
+import { ConfiguredTrainingUrlField } from "./ConfiguredTrainingUrlField";
 import TrainingFaqEditor from "./TrainingFaqEditor";
 import TrainingTaxonomyField from "./TrainingTaxonomyField";
 import type { TrainingCategoryOption } from "./training-categories.service";
 import { getEnabledTrainingDeliverySubfields, getTrainingDeliveryCompositeKey, isTrainingAccessInformationField, isTrainingDeliveryCompositeChild } from "./training-delivery-fields";
 import { getTrainingCurrencyOptions, getTrainingDateMinimum, getTrainingDateTimeMinimum, getTrainingTimeZoneOptions, preserveTrainingReferenceValue } from "./training-reference-options";
-import { DateTimeLocalInput } from "@ihp/ui";
+import { DateLocalInput, DateTimeLocalInput } from "@ihp/ui";
 
 type UpdateForm = <Key extends keyof CreateTrainingFormValues>(key: Key, value: CreateTrainingFormValues[Key]) => void;
 
@@ -165,6 +167,18 @@ function boundedDateTimeMax(min: string | undefined, max: string | number | unde
   if (min && typeof max === "string" && min > max) return undefined;
   return max;
 }
+
+function getNumberInputHint(
+  t: TFunction<"enterpriseTrainings">,
+  min?: number | null,
+  max?: number | null,
+): string {
+  if (min != null && max != null) return t("numberInput.hintWithRange", { min, max });
+  if (min != null) return t("numberInput.hintWithMinimum", { min });
+  if (max != null) return t("numberInput.hintWithMaximum", { max });
+  return t("numberInput.hint");
+}
+
 function trainingInputType(field: TrainingFormField, key: string): string {
   if (key === "start_time" || key === "end_time" || field.type === "time") return "time";
   const isDateTime = [field.type, field.valueType].some((value) =>
@@ -390,13 +404,15 @@ function ConfiguredField({
   }
   // Core field - bind to values
   if (coreField) {
-    const value = coreField === "tags" ? values.tags.join(", ") : Array.isArray((values as unknown as Record<string, unknown>)[coreField]) ? ((values as unknown as Record<string, unknown>)[coreField] as string[]).join(", ") : scalar((values as unknown as Record<string, unknown>)[coreField]);
+    const isRequirementsTagList = coreField === "requirements" && field.frontendSettings?.inputMode === "tags";
+    const value = coreField === "tags" ? values.tags.join(", ") : coreField === "learning_objectives" ? values.learning_objectives.join(", ") : Array.isArray((values as unknown as Record<string, unknown>)[coreField]) ? ((values as unknown as Record<string, unknown>)[coreField] as string[]).join(", ") : scalar((values as unknown as Record<string, unknown>)[coreField]);
     const isBoolean = field.type === "checkbox";
     const isNumber = field.type === "number";
     const rangeError = isNumber ? numberRangeError(value, field.label, field.validation?.min, field.validation?.max) : undefined;
     const displayedError = error ?? rangeError;
     const setValue = (next: string) => {
       if (coreField === "tags") update("tags", next.split(",").map((s) => s.trim()).filter(Boolean).filter((s, index, all) => all.findIndex((other) => other.toLocaleLowerCase() === s.toLocaleLowerCase()) === index));
+      else if (coreField === "learning_objectives") update("learning_objectives", next.split(",").map((item) => item.trim()).filter(Boolean));
       else if (coreField === "gallery_images") update("gallery_images", next.split(",").map((s) => s.trim()).filter(Boolean) as never);
       else update(coreField as keyof CreateTrainingFormValues, (isBoolean ? next === "true" : isNumber ? next : next) as never);
     };
@@ -432,18 +448,49 @@ function ConfiguredField({
     if (coreField === "pricing_type") {
       return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}<select value={value || "free"} onChange={(e) => setValue(e.target.value)} className={inputClass}><option value="free">Free</option><option value="paid">Paid</option></select>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
     }
-    // Tags / learning_objectives / badges chip editor (press Enter)
-    if (coreField === "tags" || coreField === "learning_objectives" || coreField === "badges") {
-      const arr = coreField === "tags" ? values.tags : coreField === "badges" ? values.badges : values.learning_objectives;
-      const placeholder = field.placeholder ?? (coreField === "tags" ? "Type a tag and press Enter" : coreField === "badges" ? "Type badge and press Enter" : "Type objective and press Enter");
+    // Tags and objective fields retain their list contracts; Requirements stays a string separated by newlines.
+    const hasConfigurableTagRenderer = coreField === "tags" || coreField === "learning_objectives";
+    const tagInputMode = coreField === "tags" ? "tags" : field.frontendSettings?.inputMode ?? "tags";
+    if (hasConfigurableTagRenderer && tagInputMode === "text") {
+      const inputId = `training-field-${field.id}`;
+      return (
+        <div className="block text-sm font-semibold text-[#06201c] md:col-span-2">
+          <label htmlFor={inputId}>{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</label>
+          <input
+            id={inputId}
+            type="text"
+            value={value}
+            placeholder={field.placeholder}
+            required={field.required}
+            minLength={field.validation?.minLength ?? undefined}
+            maxLength={field.validation?.maxLength ?? undefined}
+            pattern={field.validation?.pattern ?? undefined}
+            aria-invalid={Boolean(displayedError) || undefined}
+            onChange={(event) => setValue(event.target.value)}
+            className={inputClass}
+          />
+          {displayedError ? <p role="alert" className="mt-1 text-xs text-[#b42318]">{displayedError}</p> : null}
+        </div>
+      );
+    }
+    const useTagInput = (hasConfigurableTagRenderer ? tagInputMode === "tags" : coreField === "badges") || isRequirementsTagList;
+    if (useTagInput) {
+      const arr = isRequirementsTagList ? values.requirements.split(/\r?\n/).map((item) => item.trim()).filter(Boolean) : coreField === "tags" ? values.tags : coreField === "badges" ? values.badges : values.learning_objectives;
+      const placeholder = isRequirementsTagList
+        ? field.placeholder && field.placeholder !== "Learner requirements" ? field.placeholder : t("tagsInput.requirementPlaceholder")
+        : field.placeholder ?? (coreField === "tags" ? "Type a tag and press Enter" : coreField === "badges" ? "Type badge and press Enter" : "Type objective and press Enter");
+      const updateItems = (items: string[]) => {
+        if (isRequirementsTagList) update("requirements", items.join("\n"));
+        else update(coreField as keyof CreateTrainingFormValues, items as never);
+      };
       return (
         <div className="block text-sm font-semibold text-[#06201c] md:col-span-2">
           <p>{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</p>
           <input
             defaultValue=""
             placeholder={placeholder}
-            minLength={coreField === "tags" ? field.validation?.minLength ?? undefined : undefined}
-            pattern={coreField === "tags" ? field.validation?.pattern ?? undefined : undefined}
+            minLength={field.validation?.minLength ?? undefined}
+            pattern={field.validation?.pattern ?? undefined}
             aria-invalid={Boolean(tagDraftError || error) || undefined}
             onChange={() => setTagDraftError(null)}
             onKeyDown={(event) => {
@@ -452,37 +499,35 @@ function ConfiguredField({
               const input = event.currentTarget;
               const tag = input.value.trim();
               if (!tag) return;
-              if (coreField === "tags") {
-                const validation = field.validation;
-                if (validation?.minLength != null && tag.length < validation.minLength) {
-                  setTagDraftError(`${field.label} must be at least ${validation.minLength} characters.`);
-                  return;
-                }
-                if (validation?.maxLength != null && tag.length > validation.maxLength) {
-                  setTagDraftError(`${field.label} must be at most ${validation.maxLength} characters.`);
-                  return;
-                }
-                if (validation?.pattern) {
-                  try {
-                    if (!new RegExp(validation.pattern).test(tag)) {
-                      setTagDraftError(`${field.label} has an invalid format.`);
-                      return;
-                    }
-                  } catch {
-                    setTagDraftError(`${field.label} has an invalid validation pattern.`);
+              const validation = isRequirementsTagList ? field.validation : undefined;
+              if (validation?.minLength != null && tag.length < validation.minLength) {
+                setTagDraftError(`${field.label} must be at least ${validation.minLength} characters.`);
+                return;
+              }
+              if (validation?.maxLength != null && tag.length > validation.maxLength) {
+                setTagDraftError(`${field.label} must be at most ${validation.maxLength} characters.`);
+                return;
+              }
+              if (validation?.pattern) {
+                try {
+                  if (!new RegExp(validation.pattern).test(tag)) {
+                    setTagDraftError(`${field.label} has an invalid format.`);
                     return;
                   }
+                } catch {
+                  setTagDraftError(`${field.label} has an invalid validation pattern.`);
+                  return;
                 }
               }
               if (!(arr as string[]).some((item) => item.toLocaleLowerCase() === tag.toLocaleLowerCase())) {
-                update(coreField as keyof CreateTrainingFormValues, [...(arr as string[]), tag] as never);
+                updateItems([...(arr as string[]), tag]);
               }
               input.value = "";
               setTagDraftError(null);
             }}
             className={inputClass}
           />
-          {(arr as string[]).length > 0 ? <div className="mt-2 flex flex-wrap gap-2">{(arr as string[]).map((item) => <span key={item} className="inline-flex items-center gap-1 rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{item}<button type="button" onClick={() => update(coreField as keyof CreateTrainingFormValues, (arr as string[]).filter((t) => t !== item) as never)}>×</button></span>)}</div> : null}
+          {(arr as string[]).length > 0 ? <div className="mt-2 flex flex-wrap gap-2">{(arr as string[]).map((item) => <span key={item} className="inline-flex items-center gap-1 rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{item}<button type="button" aria-label={`Remove ${item}`} onClick={() => updateItems((arr as string[]).filter((current) => current !== item))}>×</button></span>)}</div> : null}
           {tagDraftError ? <p role="alert" className="mt-1 text-xs text-[#b42318]">{tagDraftError}</p> : error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}
         </div>
       );
@@ -635,7 +680,7 @@ function ConfiguredField({
       const selected = Array.isArray((values as unknown as Record<string, unknown>)[coreField]) ? ((values as unknown as Record<string, unknown>)[coreField] as string[]) : [];
       return <fieldset className="block text-sm font-semibold text-[#06201c]"><legend>{field.label}{required}</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{options.map((option) => <label key={option} className="flex items-center gap-2 text-sm font-normal"><input type="checkbox" checked={selected.includes(option)} onChange={(event) => update(coreField as keyof CreateTrainingFormValues, (event.target.checked ? [...selected, option] : selected.filter((item) => item !== option)) as never)} />{option}</label>)}</div>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</fieldset>;
     }
-    if (options.length && inputType !== "date" && inputType !== "datetime-local" && inputType !== "time") {
+    if (field.type === "select" && options.length && inputType !== "date" && inputType !== "datetime-local" && inputType !== "time") {
       // Delivery mode keeps the API's online/physical values while showing learner-facing Live/Venue labels.
       // Language codes from the server config render and submit as full names (English, not en).
       const DELIVERY_LABELS: Record<string, string> = { online: "Live", physical: "Venue", hybrid: "Hybrid", self_paced: "Self-paced" };
@@ -672,8 +717,10 @@ function ConfiguredField({
     const maximum = (coreField === "start_time" ? values.end_time || undefined : coreField === "enrolment_end" ? boundedDateTimeMax(values.enrolment_start || undefined, (values.start_date || field.validation?.max) ?? undefined) : field.validation?.max) ?? undefined;
     const input = inputType === "datetime-local"
       ? <DateTimeLocalInput id={inputId} value={value} required={field.required} min={minimum == null ? undefined : String(minimum)} max={maximum == null ? undefined : String(maximum)} persistDraft aria-invalid={displayedError ? true : undefined} aria-describedby={displayedError ? `${field.id}-error` : undefined} onChange={setValue} className={inputClass} />
+      : inputType === "date"
+        ? <DateLocalInput id={inputId} value={value} required={field.required} min={minimum == null ? undefined : String(minimum)} max={maximum == null ? undefined : String(maximum)} aria-invalid={displayedError ? true : undefined} aria-describedby={displayedError ? `${field.id}-error` : undefined} onChange={setValue} className={inputClass} />
       : <input id={inputId} type={inputType} value={value} required={field.required} placeholder={field.placeholder} min={minimum} max={maximum} step={isNumber ? "any" : undefined} minLength={field.validation?.minLength ?? undefined} aria-invalid={displayedError ? true : undefined} aria-describedby={displayedError ? `${field.id}-error` : undefined} onChange={(e) => isNumber ? setNumberValue(e.target.value) : setValue(e.target.value)} pattern={field.validation?.pattern ?? undefined} className={inputClass} />;
-    return <div className="block text-sm font-semibold text-[#06201c]"><label htmlFor={inputId}>{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</label>{input}{field.validation?.maxLength != null ? <p className="mt-1 text-xs text-[#7f9d94]">{value.length}/{field.validation?.maxLength} characters</p> : null}{displayedError ? <p id={`${field.id}-error`} role="alert" className="mt-1 text-xs text-[#b42318]">{displayedError}</p> : null}{rangeAdjustment ? <p role="status" className="mt-1 text-xs text-[#52736a]">{t(`numberRange.adjustedTo${rangeAdjustment === "minimum" ? "Minimum" : "Maximum"}`, { value: rangeAdjustment === "minimum" ? field.validation?.min : field.validation?.max })}</p> : null}</div>;
+    return <div className="block text-sm font-semibold text-[#06201c]"><label htmlFor={inputId}>{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</label>{input}{isNumber ? <p className="mt-1 text-xs font-normal text-[#7f9d94]">{getNumberInputHint(t, field.validation?.min, field.validation?.max)}</p> : null}{!isNumber && field.validation?.maxLength != null ? <p className="mt-1 text-xs text-[#7f9d94]">{value.length}/{field.validation?.maxLength} characters</p> : null}{displayedError ? <p id={`${field.id}-error`} role="alert" className="mt-1 text-xs text-[#b42318]">{displayedError}</p> : null}{rangeAdjustment ? <p role="status" className="mt-1 text-xs text-[#52736a]">{t(`numberRange.adjustedTo${rangeAdjustment === "minimum" ? "Minimum" : "Maximum"}`, { value: rangeAdjustment === "minimum" ? field.validation?.min : field.validation?.max })}</p> : null}</div>;
   }
   // Custom field
   const raw = customValues[key];
@@ -694,6 +741,18 @@ function ConfiguredField({
     const selected = Array.isArray(raw) ? raw.map(String) : [];
     return <fieldset className="block text-sm font-semibold text-[#06201c]"><legend>{field.label}{required}</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{configuredOptions.map((option) => <label key={option.value} className="flex items-center gap-2 text-sm font-normal"><input type="checkbox" checked={selected.includes(option.value) || selected.includes(option.label)} onChange={(event) => setValue(event.target.checked ? [...selected.filter((item) => item !== option.label), option.value] : selected.filter((item) => item !== option.value && item !== option.label))} />{option.label}</label>)}</div>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</fieldset>;
   }
+  if (field.type === "url") {
+    return <ConfiguredTrainingUrlField
+      fieldKey={field.stable_key ?? field.apiKey ?? field.key}
+      label={`${field.label}${required}`}
+      value={value}
+      placeholder={field.placeholder}
+      error={displayedError}
+      allowedMimeTypes={field.frontendSettings?.upload?.allowed_mime_types}
+      maxFileSizeMb={field.frontendSettings?.upload?.max_file_size_mb}
+      onChange={setValue}
+    />;
+  }
   if (configuredOptions.length && inputType !== "date" && inputType !== "datetime-local" && inputType !== "time") {
     const selectedOption = configuredOptions.find((option) => option.value === value || option.label === value);
     return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}<select value={selectedOption?.value ?? value} onChange={(e) => setValue(customSelectExpectsArray ? [e.target.value] : e.target.value)} className={inputClass}><option value="">Select</option>{configuredOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
@@ -705,6 +764,8 @@ function ConfiguredField({
   const minimum = dateFieldMinimum && (!configuredMinimum || configuredMinimum < dateFieldMinimum) ? dateFieldMinimum : configuredMinimum;
   const input = inputType === "datetime-local"
     ? <DateTimeLocalInput id={inputId} value={value} placeholder={field.placeholder} min={minimum} max={field.validation?.max == null ? undefined : String(field.validation.max)} persistDraft aria-invalid={displayedError ? true : undefined} aria-describedby={displayedError ? `${field.id}-error` : undefined} onChange={setValue} className={inputClass} />
+    : inputType === "date"
+      ? <DateLocalInput id={inputId} value={value} placeholder={field.placeholder} min={minimum} max={field.validation?.max == null ? undefined : String(field.validation.max)} aria-invalid={displayedError ? true : undefined} aria-describedby={displayedError ? `${field.id}-error` : undefined} onChange={setValue} className={inputClass} />
     : <input id={inputId} type={inputType} value={value} placeholder={field.placeholder} min={minimum} max={field.validation?.max ?? undefined} step={isNumber ? "any" : undefined} minLength={field.validation?.minLength ?? undefined} pattern={field.validation?.pattern ?? undefined} aria-invalid={displayedError ? true : undefined} aria-describedby={displayedError ? `${field.id}-error` : undefined} onChange={(e) => { if (!isNumber) { setValue(e.target.value); return; } const adjusted = clampNumberToRange(e.target.value, field.validation?.min, field.validation?.max); setRangeAdjustment(adjusted.bound); setValue(adjusted.value === "" ? null : Number(adjusted.value)); }} className={inputClass} />;
-  return <div className="block text-sm font-semibold text-[#06201c]"><label htmlFor={inputId}>{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</label>{input}{field.validation?.maxLength != null ? <p className="mt-1 text-xs text-[#7f9d94]">{value.length}/{field.validation?.maxLength} characters</p> : null}{displayedError ? <p id={`${field.id}-error`} role="alert" className="mt-1 text-xs text-[#b42318]">{displayedError}</p> : null}{rangeAdjustment ? <p role="status" className="mt-1 text-xs text-[#52736a]">{t(`numberRange.adjustedTo${rangeAdjustment === "minimum" ? "Minimum" : "Maximum"}`, { value: rangeAdjustment === "minimum" ? field.validation?.min : field.validation?.max })}</p> : null}</div>;
+  return <div className="block text-sm font-semibold text-[#06201c]"><label htmlFor={inputId}>{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</label>{input}{isNumber ? <p className="mt-1 text-xs font-normal text-[#7f9d94]">{getNumberInputHint(t, field.validation?.min, field.validation?.max)}</p> : null}{!isNumber && field.validation?.maxLength != null ? <p className="mt-1 text-xs text-[#7f9d94]">{value.length}/{field.validation?.maxLength} characters</p> : null}{displayedError ? <p id={`${field.id}-error`} role="alert" className="mt-1 text-xs text-[#b42318]">{displayedError}</p> : null}{rangeAdjustment ? <p role="status" className="mt-1 text-xs text-[#52736a]">{t(`numberRange.adjustedTo${rangeAdjustment === "minimum" ? "Minimum" : "Maximum"}`, { value: rangeAdjustment === "minimum" ? field.validation?.min : field.validation?.max })}</p> : null}</div>;
 }

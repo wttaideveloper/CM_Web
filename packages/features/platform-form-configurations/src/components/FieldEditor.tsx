@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { formConfigurationCopy as copy } from "../constants/form-configuration-copy";
+import { trainingFormConfigurationCopy } from "../constants/training-form-configuration-copy";
 import { getEventCompositeFieldDefinition } from "../model/event-composite-field-definitions";
 import { getTrainingCompositeFieldDefinition } from "../model/training-composite-field-definitions";
 import { getEventCoreFieldSemantic, isEventCoreFieldRuntimeSourced } from "../model/event-core-field-semantics";
@@ -16,6 +17,26 @@ import { getStandardReferenceOptions, type StandardReferenceField } from "../mod
 
 const renderers = Object.keys(copy.fieldTypes) as FormRenderer[];
 const textEntryRenderers = new Set(["text", "textarea", "url"]);
+
+function isTrainingTagInputField(field: ConfiguredField): boolean {
+  const key = (field.coreKey ?? field.stableKey ?? "").replace(/^(core_|custom_)/, "").toLowerCase();
+  const label = field.label.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  return ["learning_objectives", "tags"].some((name) => key === name || key.endsWith(`_${name}`) || label === name);
+}
+
+function isTrainingTagsField(field: ConfiguredField): boolean {
+  const key = (field.coreKey ?? field.stableKey ?? "").replace(/^(core_|custom_)/, "").toLowerCase();
+  return key === "tags" || key.endsWith("_tags") || field.label.trim().toLowerCase() === "tags";
+}
+
+function frontendSettingsForInputMode(field: ConfiguredField, mode: "text" | "tags"): NonNullable<ConfiguredField["compositeConfig"]>["frontend_settings"] {
+  const current = field.compositeConfig?.frontend_settings;
+  const settings = current && typeof current === "object" && !Array.isArray(current)
+    ? { ...(current as Record<string, unknown>) }
+    : {};
+  settings.input_mode = mode;
+  return settings;
+}
 
 function valueTypeForRenderer(renderer: FormRenderer): string {
   if (renderer === "number") return "number";
@@ -46,16 +67,49 @@ export function FieldEditor({ field, registry, trainingFields, isTrainingConfigu
     && (field.coreKey === "category" || field.coreKey === "subcategory");
   const registryRuntimeSourced = Boolean(core?.valueSource || core?.sourceEndpoint);
   const runtimeSourced = field.source === "core" && !trainingDeliveryMode && (isEventCoreFieldRuntimeSourced(field.coreKey) || registryRuntimeSourced);
+  const trainingTagInputField = isTrainingConfiguration && isTrainingTagInputField(field);
+  const trainingTagsField = isTrainingConfiguration && isTrainingTagsField(field);
+  const rawFrontendSettings = field.compositeConfig?.frontend_settings;
+  const configuredInputMode = rawFrontendSettings && typeof rawFrontendSettings === "object" && !Array.isArray(rawFrontendSettings)
+    ? (rawFrontendSettings as Record<string, unknown>).input_mode
+    : undefined;
+  const trainingInputMode = trainingTagsField
+    ? "tags"
+    : configuredInputMode === "text" || configuredInputMode === "tags"
+    ? configuredInputMode
+    : field.renderer === "tags" || field.label.trim().toLowerCase() === "learning objectives" ? "tags" : "text";
+  const allowedRenderers = (core?.allowedRenderers ?? renderers)
+    .map((renderer) => isTrainingConfiguration && renderer === "select" ? "dropdown" : renderer)
+    .filter((renderer) => !isTrainingConfiguration || (renderer !== "multi_select" && renderer !== "select"));
+  const fieldRenderers = trainingTagInputField
+    ? [...new Set(["text", ...allowedRenderers, "tags"])].filter((renderer) => !trainingTagsField || renderer !== "text")
+    : allowedRenderers;
+  const displayedRenderer = trainingTagInputField
+    ? trainingInputMode === "tags" ? "tags" : fieldRenderers.includes(field.renderer) ? field.renderer : "text"
+    : field.renderer;
   const optionsReadOnly = trainingDeliveryMode || taxonomySemantic?.optionsSource === "domain_owned";
   const compositeDefinition = isTrainingConfiguration
     ? getTrainingCompositeFieldDefinition(field.coreKey ?? field.stableKey, field.label)
     : field.source === "core" ? getEventCompositeFieldDefinition(field.coreKey) : undefined;
-  const allowedRenderers = (core?.allowedRenderers ?? renderers).filter((renderer) => !isTrainingConfiguration || (renderer !== "multi_select" && renderer !== "select"));
-  const rendererCanChange = !runtimeSourced && !trainingDeliveryMode && (!core || (core.configurable.renderer && core.allowedRenderers.length > 1));
+  const rendererCanChange = !runtimeSourced && !trainingDeliveryMode && (!core || (core.configurable.renderer && (core.allowedRenderers.length > 1 || trainingTagInputField)));
+  const changeRenderer = (renderer: string) => {
+    if (trainingTagInputField) {
+      const inputMode = renderer === "tags" ? "tags" : "text";
+      const nextCompositeConfig = { ...field.compositeConfig, frontend_settings: frontendSettingsForInputMode(field, inputMode) };
+      if (renderer === "tags") {
+        onChange({ compositeConfig: nextCompositeConfig });
+        return;
+      }
+      onChange({ renderer: renderer as FormRenderer, valueType: valueTypeForRenderer(renderer), compositeConfig: nextCompositeConfig });
+      return;
+    }
+    onChange({ renderer: renderer as FormRenderer, valueType: valueTypeForRenderer(renderer) });
+  };
   const isDeliveryDependent = !isTrainingConfiguration && isEventDeliveryDependentKey(field.coreKey);
   const canRemoveFromForm = field.source === "custom" || !core || (core.removable && !isDeliveryDependent);
-  const textValidation = (field.valueType === "string" || field.valueType === "url") && textEntryRenderers.has(field.renderer) && !runtimeSourced && !trainingDeliveryMode;
-  const numberValidation = field.valueType === "number";
+  const trainingTagsMode = trainingTagInputField && displayedRenderer === "tags";
+  const textValidation = !trainingTagsMode && !(isTrainingConfiguration && field.renderer === "url") && (field.valueType === "string" || field.valueType === "url") && textEntryRenderers.has(field.renderer) && !runtimeSourced && !trainingDeliveryMode;
+  const numberValidation = !trainingTagsMode && field.valueType === "number";
   const updateOption = (index: number, patch: Partial<FormFieldOption>) => onChange({ options: normalizeOptionPositions(field.options.map((option, optionIndex) => optionIndex === index ? { ...option, ...patch } : option)) });
   const moveOption = (index: number, amount: number) => { const target = index + amount; if (target < 0 || target >= field.options.length) return; const options = [...field.options]; [options[index], options[target]] = [options[target], options[index]]; onChange({ options: normalizeOptionPositions(options) }); };
   const setValidation = (patch: Partial<FormFieldValidation>) => onChange({ validation: { ...field.validation, ...patch } });
@@ -72,7 +126,7 @@ export function FieldEditor({ field, registry, trainingFields, isTrainingConfigu
       <>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {!core || core.configurable.label ? <TextControl label={copy.label} value={field.label} onChange={(label) => onChange({ label })} /> : null}
-          {rendererCanChange ? <SelectControl label={copy.renderer} value={field.renderer} onChange={(renderer) => onChange({ renderer: renderer as FormRenderer, valueType: valueTypeForRenderer(renderer) })} options={allowedRenderers.map((renderer) => [renderer, copy.fieldTypes[renderer as keyof typeof copy.fieldTypes] ?? renderer])} /> : null}
+          {rendererCanChange ? <SelectControl label={copy.renderer} value={displayedRenderer} onChange={changeRenderer} options={fieldRenderers.map((renderer) => [renderer, renderer === "tags" ? copy.tagsInput : (isTrainingConfiguration ? trainingFormConfigurationCopy.fieldTypes[renderer as keyof typeof trainingFormConfigurationCopy.fieldTypes] : copy.fieldTypes[renderer as keyof typeof copy.fieldTypes]) ?? renderer])} /> : null}
           {!core || core.configurable.placeholder ? <TextControl label={copy.placeholder} value={field.placeholder} onChange={(placeholder) => onChange({ placeholder })} /> : null}
           {!core || core.configurable.helpText ? <TextAreaControl label={copy.helpText} value={field.helpText} onChange={(helpText) => onChange({ helpText })} /> : null}
           <label className="flex items-center gap-2 pt-6 text-sm text-[#355a51]">
@@ -81,12 +135,12 @@ export function FieldEditor({ field, registry, trainingFields, isTrainingConfigu
             {core && !core.configurable.required ? <span className="text-xs text-[#52736a]">(managed by the field definition)</span> : null}
           </label>
           <label className="flex items-center gap-2 pt-6 text-sm text-[#355a51]">
-            <input type="checkbox" checked={field.enabled} disabled={Boolean(core && !core.hideable)} onChange={(event) => onChange({ enabled: event.target.checked })} />
+            <input type="checkbox" checked={field.enabled} disabled={Boolean(core && !core.hideable)} onChange={(event) => onChange({ enabled: event.target.checked, ...(!event.target.checked ? { required: false } : {}) })} />
             {copy.enabled}
           </label>
           <p className="md:col-span-2 text-xs leading-5 text-[#52736a]">{copy.fieldEnabledHelp}</p>
         </div>
-        {trainingReferenceField ? <StandardReferenceOptionEditor field={trainingReferenceField} options={field.options} onChange={(options) => onChange({ options })} /> : (!runtimeSourced && (field.renderer === "select" || field.renderer === "multi_select")) ? (optionsReadOnly ? <ReadOnlyOptionEditor options={trainingDeliveryMode ? TRAINING_DELIVERY_MODE_OPTIONS : field.options} domainName={trainingDeliveryMode ? "Training" : "Event"} /> : <OptionEditor options={field.options} onChange={(options) => onChange({ options: normalizeOptionPositions(options) })} onUpdate={updateOption} onMove={moveOption} />) : null}
+        {trainingReferenceField ? <StandardReferenceOptionEditor field={trainingReferenceField} options={field.options} onChange={(options) => onChange({ options })} /> : (!runtimeSourced && (field.renderer === "dropdown" || (!isTrainingConfiguration && (field.renderer === "select" || field.renderer === "multi_select")))) ? (optionsReadOnly ? <ReadOnlyOptionEditor options={trainingDeliveryMode ? TRAINING_DELIVERY_MODE_OPTIONS : field.options} domainName={trainingDeliveryMode ? "Training" : "Event"} /> : <OptionEditor options={field.options} onChange={(options) => onChange({ options: normalizeOptionPositions(options) })} onUpdate={updateOption} onMove={moveOption} />) : null}
       </>
     )}
     {trainingTaxonomyField ? (
@@ -111,13 +165,13 @@ function ValidationEditor({ validation, onChange, text = false }: { validation: 
   const rangeInvalid = validation.minLength !== null && validation.maxLength !== null && validation.minLength !== undefined && validation.maxLength !== undefined && validation.minLength > validation.maxLength;
   let patternInvalid = false; try { if (validation.pattern) new RegExp(validation.pattern); } catch { patternInvalid = true; }
   const selectedPreset = formatPresets.find((preset) => preset.pattern === (validation.pattern ?? null));
-  const formatChoice = selectedPreset?.value ?? (validation.pattern ? "custom" : "");
-  const customPatternSelected = formatChoice === "custom";
+  const formatChoice = selectedPreset?.value ?? "";
+  const hasExistingCustomPattern = Boolean(validation.pattern) && !selectedPreset;
   const setFormatChoice = (value: string) => {
     const preset = formatPresets.find((item) => item.value === value);
-    onChange({ pattern: preset ? preset.pattern : value === "custom" ? validation.pattern ?? null : null });
+    onChange({ pattern: preset?.pattern ?? null });
   };
-  return <fieldset className="mt-4 rounded-xl border border-[#edf3f0] p-3"><legend className="px-1 text-sm font-semibold text-[#355a51]">{copy.validation}</legend><p className="mb-3 text-xs font-normal text-[#52736a]">{copy.validationIntro}</p><div className="grid gap-3 sm:grid-cols-2"><NumberControl label={copy.minLength} placeholder="e.g. 3" value={validation.minLength} onChange={(minLength) => onChange({ minLength })} /><NumberControl label={copy.maxLength} placeholder="e.g. 100" value={validation.maxLength} onChange={(maxLength) => onChange({ maxLength })} /></div>{minInvalid ? <p className="mt-2 text-xs font-semibold text-[#b42318]">Minimum characters cannot be less than 0.</p> : null}{maxInvalid ? <p className="mt-2 text-xs font-semibold text-[#b42318]">Maximum characters cannot be less than 0.</p> : null}{rangeInvalid ? <p className="mt-2 text-xs font-semibold text-[#b42318]">Minimum characters cannot be greater than maximum characters.</p> : null}<div className="mt-4"><label className="text-sm font-semibold text-[#355a51]"><span>{copy.formatType}</span><select aria-label={copy.formatType} value={formatChoice} onChange={(event) => setFormatChoice(event.target.value)} className="mt-1.5 w-full rounded-lg border border-[#cfe0d8] bg-white px-3 py-2 font-normal">{formatPresets.map((preset) => <option key={preset.value} value={preset.value}>{preset.label}</option>)}<option value="custom">{copy.customFormat}</option></select></label>{customPatternSelected ? <div className="mt-3"><TextControl label={copy.customFormatRule} placeholder="Enter an advanced regular expression" value={validation.pattern ?? ""} onChange={(pattern) => onChange({ pattern: pattern || null })} /><p className="mt-1 text-xs font-normal text-[#52736a]">{copy.customFormatHelp}</p>{patternInvalid ? <p className="mt-1 text-xs font-semibold text-[#b42318]">This format rule is not valid. Check the pattern and try again.</p> : null}</div> : <p className="mt-1 text-xs font-normal text-[#52736a]">{formatPresets.find((preset) => preset.value === formatChoice)?.description}</p>}</div></fieldset>;
+  return <fieldset className="mt-4 rounded-xl border border-[#edf3f0] p-3"><legend className="px-1 text-sm font-semibold text-[#355a51]">{copy.validation}</legend><p className="mb-3 text-xs font-normal text-[#52736a]">{copy.validationIntro}</p><div className="grid gap-3 sm:grid-cols-2"><NumberControl label={copy.minLength} placeholder="e.g. 3" value={validation.minLength} onChange={(minLength) => onChange({ minLength })} /><NumberControl label={copy.maxLength} placeholder="e.g. 100" value={validation.maxLength} onChange={(maxLength) => onChange({ maxLength })} /></div>{minInvalid ? <p className="mt-2 text-xs font-semibold text-[#b42318]">Minimum characters cannot be less than 0.</p> : null}{maxInvalid ? <p className="mt-2 text-xs font-semibold text-[#b42318]">Maximum characters cannot be less than 0.</p> : null}{rangeInvalid ? <p className="mt-2 text-xs font-semibold text-[#b42318]">Minimum characters cannot be greater than maximum characters.</p> : null}<div className="mt-4"><label className="text-sm font-semibold text-[#355a51]"><span>{copy.formatType}</span><select aria-label={copy.formatType} value={formatChoice} onChange={(event) => setFormatChoice(event.target.value)} className="mt-1.5 w-full rounded-lg border border-[#cfe0d8] bg-white px-3 py-2 font-normal">{formatPresets.map((preset) => <option key={preset.value} value={preset.value}>{preset.label}</option>)}</select></label>{hasExistingCustomPattern ? <p className="mt-1 text-xs font-normal text-[#52736a]">{copy.existingCustomFormatRetained}</p> : <p className="mt-1 text-xs font-normal text-[#52736a]">{formatPresets.find((preset) => preset.value === formatChoice)?.description}</p>}{patternInvalid ? <p className="mt-1 text-xs font-semibold text-[#b42318]">This existing format rule is not valid. Choose a preset to replace it.</p> : null}</div></fieldset>;
 }
 function makeOptionValue(label: string, options: readonly FormFieldOption[], currentIndex: number): string { const base = label.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "option"; let value = base; let suffix = 2; while (options.some((option, index) => index !== currentIndex && option.value === value)) value = `${base}_${suffix++}`; return value; }
 function StandardReferenceOptionEditor({ field, options, onChange }: { field: StandardReferenceField; options: readonly FormFieldOption[]; onChange: (options: FormFieldOption[]) => void }) {

@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 
+import { DateLocalInput } from "@ihp/ui";
 import type { EventSessionRecord } from "./events.service";
 import { getEventSessionDates, getSessionTimeBounds, parseEventLocalDateTime } from "./event-session-date";
 import { createDefaultSessionGenerationRules, nextSessionGenerationRuleId, updateSessionGenerationRule, updateSessionGenerationRuleCount, updateSessionGenerationRuleDuration, type SessionGenerationRule } from "./session-generation-rules";
@@ -214,7 +215,7 @@ function Summary({ label, value }: { label: string; value: string }) { return <d
 function SessionCell({ field, session, eventStart, eventEnd, required, disabled, onChange }: { field: SessionField; session: SessionDraft; eventStart: string; eventEnd: string; required: boolean; disabled?: boolean; onChange: (value: string) => void }) {
   const value = session[field] ?? "";
   if (field === "session_date") {
-    return <input type="date" value={value} disabled={disabled} required={required} min={getEventSessionDates(eventStart, eventEnd)[0]} max={getEventSessionDates(eventStart, eventEnd).at(-1)} onChange={(event) => onChange(event.target.value)} className="h-9 w-36 rounded-lg border border-[#d7e5df] px-2" />;
+    return <DateLocalInput aria-label="Session date" value={value} disabled={disabled} required={required} min={getEventSessionDates(eventStart, eventEnd)[0]} max={getEventSessionDates(eventStart, eventEnd).at(-1)} onChange={onChange} className="h-9 w-44 rounded-lg border border-[#d7e5df] px-2" />;
   }
   const type = field === "start_time" || field === "end_time" ? "time" : field === "meeting_link" ? "url" : "text";
   const bounds = getSessionTimeBounds(session.session_date, eventStart, eventEnd);

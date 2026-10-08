@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 
 import TrainingActionsMenu from "./TrainingActionsMenu";
 import { ParticipantDashboardCard, ProviderDashboardCard } from "./dashboard-cards";
@@ -13,6 +13,7 @@ import { getTrainingStatusBadgeClass, getTrainingStatusLabel } from "./training-
 import { getTrainingAdminNotes, getTrainingById, downloadTrainingNotesPdf, getTrainingMeetingLink, getTrainingModerationHistory, publishTrainingEnterprise, getTrainingParticipantDashboard, getTrainingProviderDashboard, TrainingsApiError } from "./trainings.service";
 import TrainingCalendarAction from "./TrainingCalendarAction";
 import { getTrainingMediaPreviewUrl } from "./training-media-url";
+import { useTrainingHistoricalFormConfiguration } from "./training-form-configuration.queries";
 
 type TrainingDetailsTab = "details" | "content" | "sections" | "enrolments" | "attendance" | "assessments" | "reviews" | "live" | "dashboards";
 
@@ -262,6 +263,14 @@ function DetailGroupHeading({ children }: { children: string }) {
   );
 }
 
+function formatConfiguredTrainingValue(value: unknown): string {
+  if (Array.isArray(value)) return value.map((item) => typeof item === "string" || typeof item === "number" ? String(item) : "").filter(Boolean).join(", ");
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number") return String(value);
+  return "";
+}
+
 interface TrainingDetailsScreenProps {
   managementActions?: boolean;
 }
@@ -271,6 +280,7 @@ export default function TrainingDetailsScreen({
   managementActions = true,
 }: TrainingDetailsScreenProps) {
   const { trainingId } = useParams<{ trainingId: string }>();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<TrainingDetailsTab>("details");
   const trainingQuery = useQuery({
     queryKey: ["trainings", "detail", trainingId],
@@ -279,6 +289,7 @@ export default function TrainingDetailsScreen({
     staleTime: 30_000,
     retry: 1,
   });
+  const historicalFormQuery = useTrainingHistoricalFormConfiguration(trainingId, Boolean(trainingId));
 
   if (trainingQuery.isLoading) {
     return (
@@ -314,6 +325,21 @@ export default function TrainingDetailsScreen({
   const trainingCustomValues = trainingRecord.custom_values && typeof trainingRecord.custom_values === "object" && !Array.isArray(trainingRecord.custom_values)
     ? trainingRecord.custom_values as Record<string, unknown>
     : {};
+  const rawTrainingCustomValues = trainingRecord.custom_values ?? trainingRecord.customValues;
+  const configuredCustomSections = (historicalFormQuery.data?.sections ?? []).flatMap((section) => {
+    const fields = section.fields.flatMap((field) => {
+      const isCustomField = field.source === "custom" || field.stable_key?.startsWith("custom_") === true || field.apiKey?.startsWith("custom_") === true;
+      if (!isCustomField || field.enabled === false) return [];
+      const arrayValue = Array.isArray(rawTrainingCustomValues)
+        ? rawTrainingCustomValues.find((entry) => entry && typeof entry === "object" && "field_id" in entry && entry.field_id === field.id)?.value
+        : undefined;
+      const value = arrayValue
+        ?? [field.stable_key, field.apiKey, field.key, field.id].map((key) => key ? trainingCustomValues[key] : undefined).find((candidate) => candidate !== undefined);
+      const formattedValue = formatConfiguredTrainingValue(value);
+      return formattedValue ? [{ field, formattedValue }] : [];
+    });
+    return fields.length ? [{ id: section.id, title: section.title, fields }] : [];
+  });
   const promoPrice = trainingRecord.promo_price ?? trainingRecord.promoPrice ?? trainingCustomValues.promo_price ?? trainingCustomValues.promoPrice;
   const couponCode = trainingRecord.coupon_code ?? trainingRecord.couponCode ?? trainingCustomValues.coupon_code ?? trainingCustomValues.couponCode;
   const pricingType = [trainingRecord.pricing_type, trainingRecord.pricingType]
@@ -351,7 +377,7 @@ export default function TrainingDetailsScreen({
           </div>
           {managementActions ? (
             <div className="absolute top-4 right-4">
-              <TrainingActionsMenu training={training} />
+              <TrainingActionsMenu training={training} onDeleteSuccess={() => router.replace("/admin/trainings")} />
             </div>
           ) : null}
         </div>
@@ -362,7 +388,7 @@ export default function TrainingDetailsScreen({
             <h2 className="mt-1 text-2xl font-bold text-[#06201c] sm:text-3xl">{training.title}</h2>
             <span className={`mt-2 inline-block rounded-full px-3 py-1 text-[11px] font-bold ${getTrainingStatusBadgeClass(training.status)}`}>{getTrainingStatusLabel(training.status)}</span>
           </div>
-          {managementActions ? <TrainingActionsMenu training={training} /> : null}
+          {managementActions ? <TrainingActionsMenu training={training} onDeleteSuccess={() => router.replace("/admin/trainings")} /> : null}
         </div>
       )}
 
@@ -451,6 +477,12 @@ export default function TrainingDetailsScreen({
               <DetailItem label="Created" value={formatTrainingDate(training.created_at)} />
               <DetailItem label="Updated" value={formatTrainingDate(training.updated_at)} />
             </div>
+            {configuredCustomSections.map((section) => (
+              <div key={section.id} className="mt-4 grid gap-5 sm:grid-cols-2">
+                <DetailGroupHeading>{section.title}</DetailGroupHeading>
+                {section.fields.map(({ field, formattedValue }) => <DetailItem key={field.id} label={field.label} value={formattedValue} />)}
+              </div>
+            ))}
             {training.description?.trim() ? (
               <div className="mt-6">
                 <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Description</p>

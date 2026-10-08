@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { uploadTrainingMedia, type TrainingUploadResponse } from "./trainings.service";
 
 type TrainingMediaUploadPurpose = "image" | "lesson_document" | "lesson_video";
+type TrainingMediaUploadPurposeForFile = (file: File) => TrainingMediaUploadPurpose;
 const defaultMimeTypes: Record<TrainingMediaUploadPurpose, readonly string[]> = {
   image: ["image/jpeg", "image/png", "image/webp", "image/gif"],
   lesson_video: ["video/mp4", "video/webm", "video/quicktime"],
@@ -22,6 +23,7 @@ const defaultMimeTypes: Record<TrainingMediaUploadPurpose, readonly string[]> = 
     "application/rtf",
   ],
 };
+const configuredMediaMimeTypes = [...defaultMimeTypes.image, ...defaultMimeTypes.lesson_video, ...defaultMimeTypes.lesson_document];
 const mimeExtensions: Record<string, readonly string[]> = {
   "image/jpeg": [".jpg", ".jpeg"],
   "image/png": [".png"],
@@ -45,7 +47,7 @@ interface TrainingMediaUploadButtonProps {
   accept: string;
   fieldKey: string;
   label: string;
-  purpose: TrainingMediaUploadPurpose;
+  purpose: TrainingMediaUploadPurpose | TrainingMediaUploadPurposeForFile;
   allowedMimeTypes?: readonly string[];
   maxFileSizeMb?: number | null;
   onUploaded: (file: TrainingUploadResponse) => void;
@@ -89,7 +91,7 @@ export default function TrainingMediaUploadButton({
   const [feedback, setFeedback] = useState<{ message: string; isError: boolean } | null>(null);
   const { t } = useTranslation("enterpriseTrainings");
   const uploadMutation = useMutation({
-    mutationFn: (file: File) => uploadTrainingMedia(file, purpose, fieldKey),
+    mutationFn: (file: File) => uploadTrainingMedia(file, typeof purpose === "function" ? purpose(file) : purpose, fieldKey),
     onSuccess: (uploaded) => {
       onUploaded(uploaded);
       setFeedback({ message: t("media.uploadComplete"), isError: false });
@@ -110,7 +112,7 @@ export default function TrainingMediaUploadButton({
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = "";
     if (!file) return;
-    const acceptedTypes = allowedMimeTypes ?? defaultMimeTypes[purpose];
+    const acceptedTypes = allowedMimeTypes ?? (typeof purpose === "function" ? configuredMediaMimeTypes : defaultMimeTypes[purpose]);
     if (!acceptedTypes.length) {
       setFeedback({ message: t("media.noAllowedFormats"), isError: true });
       return;

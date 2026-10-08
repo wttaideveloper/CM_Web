@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { useCurrentEnterprise, useTenant } from "@ihp/enterprise-runtime";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -75,13 +76,44 @@ type NavigationEventLike = { destination?: { url?: string; sameDocument?: boolea
 type NavigationApiLike = { addEventListener: (type: "navigate", listener: (event: NavigationEventLike) => void) => void; removeEventListener: (type: "navigate", listener: (event: NavigationEventLike) => void) => void };
 const eventCreateHistoryIndexKey = "__ihpEventCreateHistoryIndex";
 
+const NUMERIC_EVENT_FIELD_TYPES = new Set(["number", "numeric", "integer", "decimal", "float", "number_input", "numeric_input"]);
+
+function isNumericEventField(field: ActiveEventFormField): boolean {
+  return [field.renderer, field.value_type].some((value) => NUMERIC_EVENT_FIELD_TYPES.has(value.trim().toLowerCase().replace(/[\s-]+/g, "_")));
+}
+
+function getEventFormatError(
+  field: ActiveEventFormField,
+  translate: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  const label = field.label;
+  if (isNumericEventField(field)) return translate("numberInput.invalid", { label });
+  const pattern = field.validation.pattern;
+  if (!pattern) return translate("formatValidation.custom", { label, pattern: "" });
+  const normalizedPattern = pattern.replace(/\\d/g, "[0-9]").replace(/\s/g, "");
+  if (normalizedPattern === "^[0-9]+$" || normalizedPattern === "^[0-9]*$") return translate("formatValidation.digitsOnly", { label });
+  const digitCount = normalizedPattern.match(/^\^\[0-9\]\{(\d+)(?:,(\d*))?\}\$$/);
+  if (digitCount) {
+    const minimumDigits = Number(digitCount[1]);
+    const maximumDigits = digitCount[2] ? Number(digitCount[2]) : null;
+    if (maximumDigits === null && digitCount[2] === undefined) return translate("formatValidation.exactDigits", { label, count: minimumDigits });
+    if (maximumDigits === null) return translate("formatValidation.minimumDigits", { label, min: minimumDigits });
+    return translate("formatValidation.digitRange", { label, min: minimumDigits, max: maximumDigits });
+  }
+  if (pattern === "^[A-Za-z ]+$") return translate("formatValidation.lettersAndSpaces", { label });
+  if (pattern === "^[A-Za-z0-9 ]+$") return translate("formatValidation.lettersNumbersAndSpaces", { label });
+  if (pattern.includes("@") && pattern.includes("\\.")) return translate("formatValidation.email", { label });
+  if (pattern.includes("[0-9() -]") || pattern.includes("[0-9()\\- ]")) return translate("formatValidation.phone", { label });
+  return translate("formatValidation.custom", { label, pattern });
+}
+
 /** Applies the active field's backend-supported type before custom-value serialization. */
 function serializeCustomFieldValue(field: ActiveEventFormField, value: CustomFieldValue): CustomFieldValue {
   if (value === null) return null;
-  if (field.value_type === "boolean" || field.renderer === "checkbox") {
+  if ([field.value_type, field.renderer].some((valueType) => valueType.trim().toLowerCase() === "boolean" || valueType.trim().toLowerCase() === "checkbox")) {
     return value === true || value === "true";
   }
-  if (field.value_type === "number" || field.renderer === "number") {
+  if (isNumericEventField(field)) {
     if (typeof value === "number") return value;
     if (typeof value === "string" && value.trim()) {
       const parsed = Number(value);
@@ -93,6 +125,7 @@ function serializeCustomFieldValue(field: ActiveEventFormField, value: CustomFie
 
 /** Renders the shared Enterprise Admin Event editor for create and edit workflows. */
 export default function CreateEventScreen({ mode = "create", initialEvent }: EventEditorProps) {
+  const { t } = useTranslation("enterpriseEvents");
   const router = useRouter(); const queryClient = useQueryClient();
   const { tenantId } = useTenant(); const { currentEnterprise, enterpriseId } = useCurrentEnterprise();
   const [activeStep, setActiveStep] = useState(0);
@@ -194,7 +227,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
       return createEvent(buildCreateEventPayload(values, tenantId, enterpriseId, locationId, activeConfiguration?.version_id, configuredCustomValues, configuredCoreFieldKeys, sessionsField?.composite_config?.enabled_fields));
     },
     onSuccess: async () => { eventCreateSubmitted.current = true; eventCreateAllowNavigation.current = true; setMediaUploads([]); clearPersistedDateTimeDrafts(); await queryClient.invalidateQueries({ queryKey: ["events", "list"] }); if (initialEvent) { await queryClient.invalidateQueries({ queryKey: ["events", "detail", initialEvent.id] }); router.push(`/admin/events/${initialEvent.id}`); } else router.push("/admin/events"); },
-    onError: (error) => { if (error instanceof EventsApiError) { const displayErrors = normalizeValidationErrors(error.fieldErrors, allFieldOrder); setErrors((current) => ({ ...current, ...displayErrors })); const firstStructuredItem = error.structuredErrors.find((item) => allFieldOrder.some((field) => resolveValidationKey(item.fieldKey, [field]) === field)); const firstStructuredRoot = firstStructuredItem?.fieldKey; const firstStructuredNested = firstStructuredItem?.nestedPath.filter((part) => part !== "options"); const structuredFocus = firstStructuredRoot && firstStructuredNested?.length ? `${firstStructuredRoot}.${firstStructuredNested.join(".")}` : firstStructuredRoot; const first = structuredFocus ?? firstErrorKey(allFieldOrder, displayErrors) ?? Object.keys(displayErrors).find((key) => displayErrors[key]?.length); if (first) { const sectionIndex = editorSteps.findIndex((_, index) => sectionFields(index).includes(firstStructuredRoot ?? first)); if (sectionIndex >= 0) setActiveStep(sectionIndex); setPendingFocusField(first); } const mappedToField = Boolean(firstStructuredRoot || firstErrorKey(allFieldOrder, displayErrors)); setSubmitError(error.status === 401 || error.status === 403 ? "Your session cannot save this event. Please sign in again." : mappedToField ? null : error.message); } else setSubmitError(error instanceof Error ? error.message : "Unable to save event."); },
+    onError: (error) => { if (error instanceof EventsApiError) { const configuredFields = formConfiguration?.sections.flatMap((section) => section.fields) ?? []; const actionableErrors = Object.fromEntries(Object.entries(error.fieldErrors).map(([fieldKey, messages]) => { const resolvedKey = resolveValidationKey(fieldKey, allFieldOrder) ?? fieldKey; const matchingField = configuredFields.find((field) => [field.core_key, field.stable_key, field.id].some((candidate) => candidate === resolvedKey || candidate === fieldKey)); return [fieldKey, matchingField && messages.some((message) => /invalid format/i.test(message)) ? [getEventFormatError(matchingField, t)] : messages]; })); const displayErrors = normalizeValidationErrors(actionableErrors, allFieldOrder); setErrors((current) => ({ ...current, ...displayErrors })); const firstStructuredItem = error.structuredErrors.find((item) => allFieldOrder.some((field) => resolveValidationKey(item.fieldKey, [field]) === field)); const firstStructuredRoot = firstStructuredItem?.fieldKey; const firstStructuredNested = firstStructuredItem?.nestedPath.filter((part) => part !== "options"); const structuredFocus = firstStructuredRoot && firstStructuredNested?.length ? `${firstStructuredRoot}.${firstStructuredNested.join(".")}` : firstStructuredRoot; const first = structuredFocus ?? firstErrorKey(allFieldOrder, displayErrors) ?? Object.keys(displayErrors).find((key) => displayErrors[key]?.length); if (first) { const sectionIndex = editorSteps.findIndex((_, index) => sectionFields(index).includes(firstStructuredRoot ?? first)); if (sectionIndex >= 0) setActiveStep(sectionIndex); setPendingFocusField(first); } const mappedToField = Boolean(firstStructuredRoot || firstErrorKey(allFieldOrder, displayErrors)); setSubmitError(error.status === 401 || error.status === 403 ? "Your session cannot save this event. Please sign in again." : mappedToField ? null : error.message); } else setSubmitError(error instanceof Error ? error.message : "Unable to save event."); },
   });
   const update = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => {
     hasUserEditedFormRef.current = true;
@@ -307,7 +340,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     window.setTimeout(() => element.classList.remove("event-validation-focus"), 1600);
     setPendingFocusField(null);
   }, [activeStep, pendingFocusField]);
-  const allErrors = useMemo(() => formConfiguration ? validateConfiguredEventForm(formConfiguration, values, customValues, eventCategoriesQuery.data ?? [], mode) : validateEventForm(values, mode), [customValues, eventCategoriesQuery.data, formConfiguration, mode, values]);
+  const allErrors = useMemo(() => formConfiguration ? validateConfiguredEventForm(formConfiguration, values, customValues, eventCategoriesQuery.data ?? [], mode, (field) => getEventFormatError(field, t)) : validateEventForm(values, mode), [customValues, eventCategoriesQuery.data, formConfiguration, mode, t, values]);
   const isDirty = JSON.stringify(values) !== JSON.stringify(initialValues)
     || JSON.stringify(customValues) !== JSON.stringify(initialCustomValues)
     || mediaUploads.length > 0
@@ -521,7 +554,7 @@ function ActiveEventFormVerification({ query }: { query: ReturnType<typeof useAc
   return <aside role="status" className="mb-6 rounded-xl border border-[#cde5db] bg-[#f4faf7] p-4 text-sm text-[#355a51]"><p className="font-bold text-[#06201c]">Active Event Form</p><p className="mt-1 font-semibold text-[#1f6a58]">{query.data.name}</p><dl className="mt-3 grid gap-1 text-xs sm:grid-cols-2"><div><dt className="inline font-semibold">Scope: </dt><dd className="inline">{query.data.scope}</dd></div><div><dt className="inline font-semibold">Version: </dt><dd className="inline">{query.data.version}</dd></div><div><dt className="inline font-semibold">Configuration ID: </dt><dd className="inline break-all">{query.data.configuration_id}</dd></div><div><dt className="inline font-semibold">Version ID: </dt><dd className="inline break-all">{query.data.version_id}</dd></div><div><dt className="inline font-semibold">Sections: </dt><dd className="inline">{query.data.sections.length}</dd></div></dl></aside>;
 }
 
-function validateConfiguredEventForm(configuration: ActiveEventFormConfiguration, values: CreateEventFormValues, customValues: Record<string, string | string[] | boolean | number | null>, categories: readonly EventCategory[], mode: "create" | "edit"): Record<string, string[]> {
+function validateConfiguredEventForm(configuration: ActiveEventFormConfiguration, values: CreateEventFormValues, customValues: Record<string, string | string[] | boolean | number | null>, categories: readonly EventCategory[], mode: "create" | "edit", getFormatError: (field: ActiveEventFormField) => string): Record<string, string[]> {
   const errors = validateRequiredConfiguredEventFields(configuration, values, customValues);
   if (values.description.length > EVENT_DESCRIPTION_MAX_LENGTH) errors.description = [`Description must be ${EVENT_DESCRIPTION_MAX_LENGTH} characters or fewer.`];
   if (mode === "create" && !values.event_type.trim()) errors.event_type = ["Event Type is required."];
@@ -543,7 +576,8 @@ function validateConfiguredEventForm(configuration: ActiveEventFormConfiguration
       : Array.isArray(value)
         ? value.filter((item): item is string => typeof item === "string")
         : [];
-    if (textValues.length > 0) {
+    const isNumber = isNumericEventField(field);
+    if (textValues.length > 0 && !isNumber) {
       const { min_length: minLength, pattern } = field.validation;
       const maxLength = eventFieldMaxLength(key, field.validation.max_length);
       if (minLength != null && textValues.some((text) => text.length < minLength)) {
@@ -555,14 +589,13 @@ function validateConfiguredEventForm(configuration: ActiveEventFormConfiguration
       if (pattern && !errors[key]) {
         try {
           if (textValues.some((text) => !new RegExp(pattern).test(text))) {
-            errors[key] = [`${field.label} has an invalid format.`];
+            errors[key] = [getFormatError(field)];
           }
         } catch {
           errors[key] = [`${field.label} has an invalid validation rule.`];
         }
       }
     }
-    const isNumber = field.renderer === "number" || field.value_type === "number";
     const numericValue = isNumber
       ? typeof value === "number"
         ? value
@@ -570,6 +603,7 @@ function validateConfiguredEventForm(configuration: ActiveEventFormConfiguration
           ? Number(value)
           : null
       : null;
+    if (isNumber && numericValue !== null && !Number.isFinite(numericValue)) errors[key] = [getFormatError(field)];
     if (numericValue !== null && Number.isFinite(numericValue)) {
       if (field.validation.min != null && numericValue < field.validation.min) errors[key] = [`${field.label} must be at least ${field.validation.min}.`];
       if (field.validation.max != null && numericValue > field.validation.max) errors[key] = [`${field.label} must be at most ${field.validation.max}.`];

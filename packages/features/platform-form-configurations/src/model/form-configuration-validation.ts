@@ -80,7 +80,7 @@ function validateFieldSettings(field: ConfiguredField, runtimeSourced: boolean, 
       fieldLocalId: field.localId,
     });
   }
-  if (!runtimeSourced && (field.renderer === "select" || field.renderer === "multi_select")) {
+  if (!runtimeSourced && (field.renderer === "dropdown" || field.renderer === "select" || field.renderer === "multi_select")) {
     const invalidOptions = field.enabled
       && (field.options.some((option) => !option.label.trim() || !option.value.trim())
         || new Set(field.options.map((option) => option.value)).size !== field.options.length);

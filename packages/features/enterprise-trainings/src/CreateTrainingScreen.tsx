@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { useCurrentEnterprise, useTenant } from "@ihp/enterprise-runtime";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -72,6 +73,50 @@ function normalizeTrainingFieldKey(value: string): string {
     .replace(/^_+|_+$/g, "");
 }
 
+function configurableListRendererKey(field: TrainingFormField): "tags" | "learning_objectives" | null {
+  const normalizedKeys = [field.key, field.apiKey ?? "", field.stable_key ?? "", field.label]
+    .map(normalizeTrainingFieldKey);
+  return normalizedKeys.find((key): key is "tags" | "learning_objectives" =>
+    key === "tags" || key === "learning_objectives") ?? null;
+}
+
+function applyActiveListRenderersToHistoricalForm(
+  historicalForm: TrainingFormConfig | null,
+  currentForm: TrainingFormConfig | null,
+): TrainingFormConfig | null {
+  if (!historicalForm || !currentForm) return historicalForm;
+
+  const currentFieldsByRendererKey = new Map<string, TrainingFormField>();
+  for (const section of currentForm.sections) {
+    for (const field of section.fields) {
+      const rendererKey = configurableListRendererKey(field);
+      if (rendererKey) currentFieldsByRendererKey.set(rendererKey, field);
+    }
+  }
+
+  return {
+    ...historicalForm,
+    sections: historicalForm.sections.map((section) => ({
+      ...section,
+      fields: section.fields.map((field) => {
+        const rendererKey = configurableListRendererKey(field);
+        const currentField = rendererKey ? currentFieldsByRendererKey.get(rendererKey) : undefined;
+        if (!currentField) return field;
+
+        const inputMode = currentField.frontendSettings?.inputMode
+          ?? (currentField.type === "text" ? "text" : undefined);
+        if (!inputMode) return field;
+
+        return {
+          ...field,
+          ...(inputMode === "text" ? { type: "text" as const } : {}),
+          frontendSettings: { ...field.frontendSettings, inputMode },
+        };
+      }),
+    })),
+  };
+}
+
 function hasConfiguredValue(value: unknown): boolean {
   if (typeof value === "string") return value.trim().length > 0;
   if (Array.isArray(value)) return value.length > 0;
@@ -94,11 +139,44 @@ function isConfiguredTrainingFieldApplicable(field: TrainingFormField, deliveryM
   return true;
 }
 
+function getTrainingFormatError(
+  field: TrainingFormField,
+  translate: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  const label = field.label;
+  if (field.type === "number" || field.valueType?.toLowerCase() === "number") {
+    return translate("numberInput.invalid", { label });
+  }
+
+  const pattern = field.validation?.pattern;
+  if (!pattern) return translate("formatValidation.custom", { label, pattern: "" });
+  const normalizedPattern = pattern.replace(/\\d/g, "[0-9]").replace(/\s/g, "");
+  if (normalizedPattern === "^[0-9]+$" || normalizedPattern === "^[0-9]*$") {
+    return translate("formatValidation.digitsOnly", { label });
+  }
+  const digitCount = normalizedPattern.match(/^\^\[0-9\]\{(\d+)(?:,(\d*))?\}\$$/);
+  if (digitCount) {
+    const minimumDigits = Number(digitCount[1]);
+    const maximumDigits = digitCount[2] ? Number(digitCount[2]) : null;
+    if (maximumDigits === null && digitCount[2] === undefined) {
+      return translate("formatValidation.exactDigits", { label, count: minimumDigits });
+    }
+    if (maximumDigits === null) return translate("formatValidation.minimumDigits", { label, min: minimumDigits });
+    return translate("formatValidation.digitRange", { label, min: minimumDigits, max: maximumDigits });
+  }
+  if (pattern === "^[A-Za-z ]+$") return translate("formatValidation.lettersAndSpaces", { label });
+  if (pattern === "^[A-Za-z0-9 ]+$") return translate("formatValidation.lettersNumbersAndSpaces", { label });
+  if (pattern.includes("@") && pattern.includes("\\.")) return translate("formatValidation.email", { label });
+  if (pattern.includes("[0-9() -]") || pattern.includes("[0-9()\\- ]")) return translate("formatValidation.phone", { label });
+  return translate("formatValidation.custom", { label, pattern });
+}
+
 function validateConfiguredSection(
   section: TrainingFormSection,
   values: CreateTrainingFormValues,
   customValues: Record<string, unknown>,
   allFields: readonly TrainingFormField[],
+  getFormatError: (field: TrainingFormField) => string,
 ): Record<string, string[]> {
   const errors: Record<string, string[]> = {};
 
@@ -137,30 +215,35 @@ function validateConfiguredSection(
     }
     if (!hasConfiguredValue(value)) continue;
     const validation = field.validation;
+    const isNumber = field.type === "number" || field.valueType === "number";
+    const isTagList = field.frontendSettings?.inputMode === "tags"
+      || field.key === "tags"
+      || (field.key === "learning_objectives" && field.frontendSettings?.inputMode !== "text");
     const textValues: string[] = typeof value === "string"
-      ? [value]
+      ? isTagList ? value.split(/\r?\n/).filter((item) => item.trim()) : [value]
       : Array.isArray(value)
         ? value.filter((item): item is string => typeof item === "string")
         : [];
     const pattern = validation?.pattern;
-    if (pattern && textValues.length > 0) {
+    if (!isNumber && !isTagList && pattern && textValues.length > 0) {
       try {
         if (textValues.some((text) => !new RegExp(pattern).test(text))) {
-          errors[field.key] = [`${field.label} has an invalid format.`];
+          errors[field.key] = [getFormatError(field)];
         }
       } catch {
         errors[field.key] = [`${field.label} has an invalid validation pattern.`];
       }
     }
-    const minLength = validation?.minLength;
-    if (minLength != null && textValues.some((text) => text.length < minLength)) {
-      errors[field.key] = [`${field.label} must be at least ${minLength} characters.`];
+    if (!isNumber && !isTagList) {
+      const minLength = validation?.minLength;
+      if (minLength != null && textValues.some((text) => text.length < minLength)) {
+        errors[field.key] = [`${field.label} must be at least ${minLength} characters.`];
+      }
+      const maxLength = validation?.maxLength;
+      if (maxLength != null && textValues.some((text) => text.length > maxLength)) {
+        errors[field.key] = [`${field.label} must be at most ${maxLength} characters.`];
+      }
     }
-    const maxLength = validation?.maxLength;
-    if (maxLength != null && textValues.some((text) => text.length > maxLength)) {
-      errors[field.key] = [`${field.label} must be at most ${maxLength} characters.`];
-    }
-    const isNumber = field.type === "number" || field.valueType === "number";
     const numericValue = isNumber
       ? typeof value === "number"
         ? value
@@ -168,6 +251,10 @@ function validateConfiguredSection(
           ? Number(value)
           : null
       : null;
+    if (isNumber && numericValue !== null && !Number.isFinite(numericValue)) {
+      errors[field.key] = [getFormatError(field)];
+      continue;
+    }
     if (numericValue !== null && Number.isFinite(numericValue) && validation?.min != null && numericValue < validation.min) {
       errors[field.key] = [`${field.label} must be at least ${validation.min}.`];
     }
@@ -207,18 +294,22 @@ function hydrateConfiguredCustomValues(initialTraining: Training | undefined, ac
 
 /** Renders the shared Enterprise Admin Training editor — uses active Super Admin form (global→enterprise-assigned) when present, else static fallback. */
 export default function CreateTrainingScreen({ mode = "create", initialTraining }: TrainingEditorProps) {
+  const { t } = useTranslation("enterpriseTrainings");
   const router = useRouter();
   const queryClient = useQueryClient();
   const { tenantId } = useTenant();
   const { enterpriseId, isLoadingEnterprise } = useCurrentEnterprise();
-  const activeFormQ = useActiveTrainingFormConfiguration(mode === "create");
+  const activeFormQ = useActiveTrainingFormConfiguration(mode === "create" || (mode === "edit" && Boolean(initialTraining)));
   const historicalFormQ = useTrainingHistoricalFormConfiguration(initialTraining?.id, mode === "edit" && Boolean(initialTraining));
-  const activeForm = (mode === "create" ? activeFormQ.data : historicalFormQ.data) ?? null;
+  const activeForm = useMemo(() => mode === "create"
+    ? activeFormQ.data ?? null
+    : applyActiveListRenderersToHistoricalForm(historicalFormQ.data ?? null, activeFormQ.data ?? null),
+  [mode, activeFormQ.data, historicalFormQ.data]);
   const trainingFormSections = useMemo(() => activeForm?.sections.map((section) => ({
     ...section,
     fields: section.fields.filter((field) => !isTrainingScheduleTimeField(field)),
   })).filter((section) => section.fields.length > 0) ?? [], [activeForm]);
-  const formConfigLoading = mode === "create" ? activeFormQ.isLoading : historicalFormQ.isLoading;
+  const formConfigLoading = mode === "create" ? activeFormQ.isLoading : historicalFormQ.isLoading || activeFormQ.isLoading;
   const formConfigError = mode === "create" ? activeFormQ.error : historicalFormQ.error;
   const trainingCategoriesQuery = useTrainingCategories(!formConfigLoading);
   const trainingCategories = useMemo(() => trainingCategoriesQuery.data ?? [], [trainingCategoriesQuery.data]);
@@ -390,7 +481,15 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
     },
     onError: (error) => {
       if (error instanceof TrainingsApiError) {
-        setErrors((current) => ({ ...current, ...error.fieldErrors }));
+        const configuredFields = activeForm?.sections.flatMap((section) => section.fields) ?? [];
+        const readableFieldErrors = Object.fromEntries(Object.entries(error.fieldErrors).map(([key, messages]) => {
+          const configuredField = configuredFields.find((field) => getTrainingFieldAliases(field).some((alias) =>
+            alias === key || normalizeTrainingFieldKey(alias) === normalizeTrainingFieldKey(key),
+          ));
+          const hasFormatError = messages.some((message) => /invalid format/i.test(message));
+          return [key, configuredField && hasFormatError ? [getTrainingFormatError(configuredField, t)] : messages];
+        }));
+        setErrors((current) => ({ ...current, ...readableFieldErrors }));
         setSubmitError(error.status === 401 || error.status === 403 ? "Your session cannot save this training. Please sign in again." : error.message);
       } else {
         setSubmitError(error instanceof Error ? error.message : "Unable to save training.");
@@ -502,7 +601,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
       }
     }
     const configuredErrors = trainingFormSections
-      .flatMap((section) => Object.entries(validateConfiguredSection(section, values, customValues, allFields)))
+      .flatMap((section) => Object.entries(validateConfiguredSection(section, values, customValues, allFields, (field) => getTrainingFormatError(field, t))))
       .reduce<Record<string, string[]>>((result, [key, messages]) => ({ ...result, [key]: messages }), {});
     Object.assign(validationErrors, configuredErrors);
     return validationErrors;
@@ -522,7 +621,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
       const currentSection = configuredSections[activeStep];
       if (currentSection) {
         const allFields = activeForm.sections.flatMap((section) => section.fields);
-        const configuredErrors = validateConfiguredSection(currentSection, values, customValues, allFields);
+        const configuredErrors = validateConfiguredSection(currentSection, values, customValues, allFields, (field) => getTrainingFormatError(field, t));
         const currentErrors = Object.fromEntries(
           Object.entries({ ...allErrors, ...configuredErrors }).filter(([field]) =>
             currentSection.fields.some((configuredField: TrainingFormField) => getTrainingFieldAliases(configuredField).includes(field)),
