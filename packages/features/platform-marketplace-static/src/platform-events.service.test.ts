@@ -25,6 +25,22 @@ test("normalizes the complete Event detail payload and preserves ownership field
   assert.deepEqual(event.modules, { registration: true, sessions: false });
 });
 
+test("preserves complete media URLs when published detail fields use media objects", () => {
+  const event = parsePublishedEventDetails({
+    id: "event-media-1",
+    title: "Published Event",
+    category: "Wellness",
+    status: "published",
+    primary_image: { id: "image-1", url: "https://chat.wisdomtooth.tech/api/v1/events/media/image-1.webp" },
+    gallery_images: [{ id: "image-2", url: "https://chat.wisdomtooth.tech/api/v1/events/media/image-2.png" }],
+    videos: [{ id: "video-1", url: "https://chat.wisdomtooth.tech/api/v1/events/media/video-1.mp4" }],
+  });
+
+  assert.equal(event.primary_image, "https://chat.wisdomtooth.tech/api/v1/events/media/image-1.webp");
+  assert.deepEqual(event.gallery_images, ["https://chat.wisdomtooth.tech/api/v1/events/media/image-2.png"]);
+  assert.deepEqual(event.videos, ["https://chat.wisdomtooth.tech/api/v1/events/media/video-1.mp4"]);
+});
+
 test("loads modal details through the existing platform detail BFF endpoint", async () => {
   const originalFetch = globalThis.fetch;
   let requestUrl = "";

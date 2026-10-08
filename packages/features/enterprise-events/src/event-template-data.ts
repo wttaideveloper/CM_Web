@@ -28,6 +28,7 @@ export function buildEventTemplateData(event: Event): Record<string, unknown> {
     venue: event.venue,
     meeting_link: event.meeting_link ?? null,
     meeting_provider: event.meeting_provider,
+    pricing_type: event.pricing_type,
     price: event.price,
     currency: event.currency,
     ticket_types: event.ticket_types,
