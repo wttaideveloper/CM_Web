@@ -6,7 +6,6 @@ import { useCurrentEnterprise, useTenant } from "@ihp/enterprise-runtime";
 import Link from "next/link";
 
 import EventActionsMenu from "./EventActionsMenu";
-import EventTemplatesDialog from "./EventTemplatesDialog";
 import { PRODUCT_EVENT_STATUSES, getEventStatusBadgeClass, getEventStatusLabel } from "./event-status";
 import { listEvents, type Event } from "./events.service";
 import { formatEventDeliveryMode } from "./event-detail-formatters";
@@ -189,7 +188,6 @@ export default function EnterpriseEventsScreen() {
   const [eventFilter, setEventFilter] = useState<EventFilter>("all");
   const [page, setPage] = useState(1);
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
-  const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
 
   const { tenantId } = useTenant();
   const { enterpriseId } = useCurrentEnterprise();
@@ -252,13 +250,6 @@ export default function EnterpriseEventsScreen() {
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={() => setIsTemplatesOpen(true)}
-            className="inline-flex h-12 items-center justify-center rounded-full border border-[#b9d6cb] bg-white px-5 text-sm font-bold text-[#1f6a58] shadow-sm transition hover:bg-[#f4faf7]"
-          >
-            Templates
-          </button>
           {enterpriseId ? (
             <Link
               href="/admin/events/create"
@@ -342,7 +333,6 @@ export default function EnterpriseEventsScreen() {
       </section>
 
       {statusFeedback ? <p role="status" className="mt-4 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">{statusFeedback}</p> : null}
-      {isTemplatesOpen ? <EventTemplatesDialog events={eventsQuery.data?.items ?? []} tenantId={tenantId} enterpriseId={enterpriseId} onClose={() => setIsTemplatesOpen(false)} /> : null}
 
       {eventsQuery.isLoading ? (
         <section className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">

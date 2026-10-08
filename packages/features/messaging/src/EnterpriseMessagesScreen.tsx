@@ -140,6 +140,41 @@ type BackendConversationParticipant = {
   joined_at?: string;
 };
 
+type ConversationArchiveState = Pick<Conversation, "isArchived" | "archivedAt">;
+
+function resolveConversationArchiveState(
+  data: Pick<BackendConversation, "is_archived" | "archived_at">,
+  fallback?: ConversationArchiveState,
+): ConversationArchiveState {
+  const hasArchiveFlag = typeof data.is_archived === "boolean";
+  const hasArchivedAt = data.archived_at !== undefined;
+
+  if (hasArchiveFlag) {
+    const isArchived = data.is_archived === true;
+
+    return {
+      isArchived,
+      archivedAt: isArchived
+        ? hasArchivedAt
+          ? data.archived_at
+          : fallback?.archivedAt ?? null
+        : null,
+    };
+  }
+
+  if (hasArchivedAt) {
+    return {
+      isArchived: Boolean(data.archived_at),
+      archivedAt: data.archived_at ?? null,
+    };
+  }
+
+  return {
+    isArchived: fallback?.isArchived ?? false,
+    archivedAt: fallback?.archivedAt ?? null,
+  };
+}
+
 type BackendPresenceEntry = {
   user_id?: string;
   userId?: string;
@@ -825,6 +860,7 @@ function formatRecordingDuration(totalSeconds: number) {
 
 function mapConversationSummary(data: BackendConversation): Conversation {
   const status = normalizeStatus(data.status, data.is_read_only);
+  const archiveState = resolveConversationArchiveState(data);
   const serviceName = firstString(data.subject) ?? "General enquiry";
   const customerName =
     getParticipantDisplayName(data.participants, ["customer", "patient", "user", "tenant"]) ??
@@ -836,7 +872,6 @@ function mapConversationSummary(data: BackendConversation): Conversation {
   const enterpriseName =
     getParticipantDisplayName(data.participants, ["enterprise", "organization", "organisation", "company", "clinic"]) ??
     "Enterprise";
-  const isArchived = data.is_archived ?? Boolean(data.archived_at);
   const otherParticipantUserId = firstString(data.other_participant_user_id) ?? getOtherParticipantUserId(data.participants);
 
   return {
@@ -846,7 +881,7 @@ function mapConversationSummary(data: BackendConversation): Conversation {
     doctorName: providerName,
     enterpriseName,
     status,
-    canSendMessage: status === "open" && !isArchived,
+    canSendMessage: status === "open" && !archiveState.isArchived,
     limitReason:
       status === "closed"
         ? "CHAT_WINDOW_CLOSED"
@@ -859,14 +894,15 @@ function mapConversationSummary(data: BackendConversation): Conversation {
     last_message_preview: firstString(data.last_message_preview) ?? "",
     lastMessageAt: formatTimestamp(data.last_message_at ?? data.updated_at),
     chatCloseAt: data.expires_at ? formatTimestamp(data.expires_at) : undefined,
-    isArchived,
-    archivedAt: data.archived_at ?? null,
+    isArchived: archiveState.isArchived,
+    archivedAt: archiveState.archivedAt,
     otherParticipantUserId,
   };
 }
 
 function mapConversationDetail(data: BackendConversation): Conversation {
   const status = normalizeStatus(data.status, data.is_read_only);
+  const archiveState = resolveConversationArchiveState(data);
   const serviceName = firstString(data.subject) ?? "General enquiry";
   const customerName =
     getParticipantDisplayName(data.participants, ["customer", "patient", "user", "tenant"]) ??
@@ -878,7 +914,6 @@ function mapConversationDetail(data: BackendConversation): Conversation {
   const enterpriseName =
     getParticipantDisplayName(data.participants, ["enterprise", "organization", "organisation", "company", "clinic"]) ??
     "Enterprise";
-  const isArchived = data.is_archived ?? Boolean(data.archived_at);
   const otherParticipantUserId = firstString(data.other_participant_user_id) ?? getOtherParticipantUserId(data.participants);
 
   return {
@@ -888,7 +923,7 @@ function mapConversationDetail(data: BackendConversation): Conversation {
     doctorName: providerName,
     enterpriseName,
     status,
-    canSendMessage: status === "open" && !isArchived,
+    canSendMessage: status === "open" && !archiveState.isArchived,
     limitReason:
       status === "closed"
         ? "CHAT_WINDOW_CLOSED"
@@ -901,8 +936,8 @@ function mapConversationDetail(data: BackendConversation): Conversation {
     last_message_preview: firstString(data.last_message_preview) ?? "",
     lastMessageAt: formatTimestamp(data.last_message_at ?? data.updated_at),
     chatCloseAt: data.expires_at ? formatTimestamp(data.expires_at) : undefined,
-    isArchived,
-    archivedAt: data.archived_at ?? null,
+    isArchived: archiveState.isArchived,
+    archivedAt: archiveState.archivedAt,
     otherParticipantUserId,
   };
 }
@@ -1115,14 +1150,21 @@ function mergeConversationWithMessage(
 function mergeConversationSnapshot(
   conversation: Conversation,
   data: BackendConversation,
+  options?: { preserveArchiveState?: boolean },
 ): Conversation {
   const mappedConversation = mapConversationSummary(data);
+  const archiveState = options?.preserveArchiveState
+    ? {
+        isArchived: conversation.isArchived ?? false,
+        archivedAt: conversation.archivedAt ?? null,
+      }
+    : resolveConversationArchiveState(data, conversation);
   const lastMessageAtSource = data.last_message_at ?? data.updated_at;
 
   return {
     ...conversation,
     status: mappedConversation.status,
-    canSendMessage: mappedConversation.canSendMessage,
+    canSendMessage: mappedConversation.status === "open" && !archiveState.isArchived,
     limitReason: mappedConversation.limitReason,
     unreadCount: typeof data.unread_count === "number" ? data.unread_count : conversation.unreadCount,
     lastMessage: firstString(data.last_message_preview) ?? conversation.lastMessage,
@@ -1130,8 +1172,8 @@ function mergeConversationSnapshot(
     last_message_preview: firstString(data.last_message_preview) ?? conversation.last_message_preview,
     lastMessageAt: lastMessageAtSource ? formatTimestamp(lastMessageAtSource) : conversation.lastMessageAt,
     chatCloseAt: data.expires_at ? formatTimestamp(data.expires_at) : conversation.chatCloseAt,
-    isArchived: data.is_archived ?? Boolean(data.archived_at) ?? mappedConversation.isArchived,
-    archivedAt: data.archived_at ?? mappedConversation.archivedAt ?? conversation.archivedAt ?? null,
+    isArchived: archiveState.isArchived,
+    archivedAt: archiveState.archivedAt,
     userName:
       mappedConversation.userName !== "Customer" ? mappedConversation.userName : conversation.userName,
     serviceName: conversation.serviceName || mappedConversation.serviceName,
@@ -1166,7 +1208,7 @@ function isConversationArchived(conversation: Pick<Conversation, "id" | "isArchi
 }
 
 function getListStatusLabel(conversation: Conversation) {
-  if (conversation.isArchived || conversation.status === "archived") {
+  if (isConversationArchived(conversation)) {
     return "Archived";
   }
 
@@ -1182,7 +1224,7 @@ function getListStatusLabel(conversation: Conversation) {
 }
 
 function getHeaderStatusLabel(conversation: Conversation) {
-  if (conversation.isArchived || conversation.status === "archived") {
+  if (isConversationArchived(conversation)) {
     return "Archived";
   }
 
@@ -3993,6 +4035,10 @@ export default function EnterpriseMessagesScreen() {
       }
 
       const conversationId = conversation.id;
+      const hasArchiveState =
+        typeof conversation.is_archived === "boolean" || conversation.archived_at !== undefined;
+      const indicatesArchiveTransition =
+        hasArchiveState || conversation.status?.trim().toLowerCase() === "archived";
 
       if (process.env.NODE_ENV !== "production") {
         console.log("[Chat socket] receive conversation_updated", {
@@ -4010,7 +4056,9 @@ export default function EnterpriseMessagesScreen() {
 
         const next = [...current];
         const existingConversation = next[index];
-        const mergedConversation = mergeConversationSnapshot(existingConversation, conversation);
+        const mergedConversation = mergeConversationSnapshot(existingConversation, conversation, {
+          preserveArchiveState: true,
+        });
 
         next[index] =
           selectedConversationIdRef.current === conversationId
@@ -4027,14 +4075,19 @@ export default function EnterpriseMessagesScreen() {
         setSelectedConversationDetail((current) =>
           current && current.id === conversationId
             ? {
-                ...mergeConversationSnapshot(current, conversation),
+                ...mergeConversationSnapshot(current, conversation, {
+                  preserveArchiveState: true,
+                }),
                 unreadCount: 0,
               }
             : current,
         );
       }
 
-      if (!conversationsRef.current.some((item) => item.id === conversationId)) {
+      if (
+        indicatesArchiveTransition ||
+        !conversationsRef.current.some((item) => item.id === conversationId)
+      ) {
         void refreshConversationList();
       }
     },
@@ -5240,6 +5293,10 @@ export default function EnterpriseMessagesScreen() {
 
   async function handleArchiveConversation(conversationId: string, archived: boolean) {
     const isSelectedConversation = selectedConversationIdRef.current === conversationId;
+    const conversationBeforeAction =
+      conversationsRef.current.find((conversation) => conversation.id === conversationId) ??
+      archivedConversationsRef.current.find((conversation) => conversation.id === conversationId) ??
+      (selectedConversationDetail?.id === conversationId ? selectedConversationDetail : null);
 
     setConversationActionError(null);
     setOpenConversationMenuId(null);
@@ -5263,28 +5320,39 @@ export default function EnterpriseMessagesScreen() {
           return current.filter((conversation) => conversation.id !== conversationId);
         }
 
-        return current.map((conversation) =>
-          conversation.id === conversationId
-            ? {
-                ...conversation,
-                isArchived: false,
-                archivedAt: null,
-              }
-            : conversation,
-        );
+        if (!conversationBeforeAction) {
+          return current;
+        }
+
+        const restoredConversation = {
+          ...conversationBeforeAction,
+          isArchived: false,
+          archivedAt: null,
+        };
+
+        return current.some((conversation) => conversation.id === conversationId)
+          ? current.map((conversation) =>
+              conversation.id === conversationId ? restoredConversation : conversation,
+            )
+          : [restoredConversation, ...current];
       });
 
       setArchivedConversations((current) => {
         if (archived) {
-          return current.map((conversation) =>
-            conversation.id === conversationId
-              ? {
-                  ...conversation,
-                  isArchived: true,
-                  archivedAt: conversation.archivedAt ?? new Date().toISOString(),
-                }
-              : conversation,
-          );
+          if (!conversationBeforeAction) {
+            return current;
+          }
+
+          const archivedConversation = {
+            ...conversationBeforeAction,
+            isArchived: true,
+            archivedAt: conversationBeforeAction.archivedAt ?? new Date().toISOString(),
+          };
+
+          return [
+            archivedConversation,
+            ...current.filter((conversation) => conversation.id !== conversationId),
+          ];
         }
 
         return current.filter((conversation) => conversation.id !== conversationId);
