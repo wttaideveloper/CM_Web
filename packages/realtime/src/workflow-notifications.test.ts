@@ -19,6 +19,26 @@ test("workflow notification read actions use the documented PUT contract", async
   ]);
 });
 
+test("workflow notification list and unread count use the UserNotification paths", async () => {
+  const requests: Array<{ path: string; init?: RequestInit }> = [];
+  const client = createWorkflowNotificationClient(async (path, init) => {
+    requests.push({ path, init });
+    if (path.includes("unread-count")) return { unread_count: 3 } as never;
+    return {
+      items: [],
+      pagination: { page: 2, page_size: 20, total: 0, total_pages: 0 },
+    } as never;
+  });
+
+  await client.list(2, 20);
+  await client.unreadCount();
+
+  assert.deepEqual(requests, [
+    { path: "/notifications?page=2&page_size=20", init: undefined },
+    { path: "/notifications/unread-count", init: undefined },
+  ]);
+});
+
 test("workflow history preserves Event notification type, category, and metadata", async () => {
   const eventId = "6784cc71-f2c7-4712-a732-29bcffdb849f";
   const client = createWorkflowNotificationClient(async () => ({

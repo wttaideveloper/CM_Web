@@ -907,6 +907,17 @@ function mapConversationDetail(data: BackendConversation): Conversation {
   };
 }
 
+function preserveResolvedCustomerName(current: Conversation | null | undefined, next: Conversation): Conversation {
+  if (next.userName !== "Customer" || !current || current.userName === "Customer") {
+    return next;
+  }
+
+  return {
+    ...next,
+    userName: current.userName,
+  };
+}
+
 let currentChatUserId = "";
 
 function getCurrentChatUserId() {
@@ -1121,7 +1132,8 @@ function mergeConversationSnapshot(
     chatCloseAt: data.expires_at ? formatTimestamp(data.expires_at) : conversation.chatCloseAt,
     isArchived: data.is_archived ?? Boolean(data.archived_at) ?? mappedConversation.isArchived,
     archivedAt: data.archived_at ?? mappedConversation.archivedAt ?? conversation.archivedAt ?? null,
-    userName: conversation.userName || mappedConversation.userName,
+    userName:
+      mappedConversation.userName !== "Customer" ? mappedConversation.userName : conversation.userName,
     serviceName: conversation.serviceName || mappedConversation.serviceName,
     doctorName: conversation.doctorName || mappedConversation.doctorName,
     enterpriseName: conversation.enterpriseName || mappedConversation.enterpriseName,
@@ -3415,10 +3427,32 @@ export default function EnterpriseMessagesScreen() {
         const hasMoreOlder = messagesResponse.pagination.has_more;
 
         if (detail) {
-          const mappedDetail = mapConversationDetail(detail);
+          const mappedDetail = preserveResolvedCustomerName(
+            conversationsRef.current.find((conversation) => conversation.id === activeConversationId) ??
+              archivedConversationsRef.current.find((conversation) => conversation.id === activeConversationId),
+            mapConversationDetail(detail),
+          );
+
+          if (mappedDetail.userName !== "Customer") {
+            setConversations((current) =>
+              current.map((conversation) =>
+                conversation.id === activeConversationId
+                  ? { ...conversation, userName: mappedDetail.userName }
+                  : conversation,
+              ),
+            );
+            setArchivedConversations((current) =>
+              current.map((conversation) =>
+                conversation.id === activeConversationId
+                  ? { ...conversation, userName: mappedDetail.userName }
+                  : conversation,
+              ),
+            );
+          }
+
           setSelectedConversationDetail((current) =>
             current && current.id === mappedDetail.id
-              ? mergeConversationPresence(current, mappedDetail)
+              ? mergeConversationPresence(current, preserveResolvedCustomerName(current, mappedDetail))
               : mappedDetail,
           );
         }

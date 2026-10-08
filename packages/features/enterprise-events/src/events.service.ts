@@ -1370,7 +1370,10 @@ async function createEventsApiError(response: Response, operation: string): Prom
         fieldErrors[field] = [...(fieldErrors[field] ?? []), ...messages];
         const path = detail.loc.slice(1).filter((item): item is string | number => typeof item === "string" || typeof item === "number");
         const fieldKey = path[0] === "modules" && path[1] === "online_meeting" ? "delivery_mode" : (typeof path[0] === "string" ? path[0] : field);
-        structuredErrors.push({ fieldKey, nestedPath: fieldKey === "delivery_mode" && path[0] === "modules" ? [] : path.slice(1), message: messages[0], source: "backend" });
+        const nestedPath = fieldKey === "delivery_mode" && path[0] === "modules" ? [] : path.slice(1);
+        const normalizedNestedPath = nestedPath[0] === "options" ? nestedPath.slice(1) : nestedPath;
+        if (normalizedNestedPath.length > 0) fieldErrors[`${fieldKey}.${normalizedNestedPath.join(".")}`] = [...(fieldErrors[`${fieldKey}.${normalizedNestedPath.join(".")}`] ?? []), ...messages];
+        structuredErrors.push({ fieldKey, nestedPath, message: messages[0], source: "backend" });
       }
     }
   }

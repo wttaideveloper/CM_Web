@@ -14,6 +14,7 @@ import type {
 } from "./events.service";
 import { buildEventMediaPayload, buildEventMediaUpdatePayload, normalizeDocumentEntries, validateEventMediaLink, type EventDocumentEntry } from "./event-media";
 import { validateSessions } from "./SessionTableEditor";
+import { EVENT_DESCRIPTION_MAX_LENGTH, eventServiceOptionLengthError } from "./event-field-limits";
 
 /** An editable ticket row in the Create Event workspace. */
 export interface EventTicketFormValue extends EventTicketType {}
@@ -353,13 +354,21 @@ export function validateServiceSchedule(values: CreateEventFormValues): Record<s
   const errors: Record<string, string[]> = {};
   const start = values.start_date;
   const end = values.end_date;
-  const check = (key: "meals" | "accommodation", options: readonly { date?: string | null; service_start_at?: string | null; service_end_at?: string | null }[]) => {
+  const check = (key: "meals" | "accommodation", options: readonly { name?: string | null; description?: string | null; date?: string | null; service_start_at?: string | null; service_end_at?: string | null }[]) => {
     options.forEach((option, index) => {
       const prefix = `${key}.${index}`;
-      if (option.date && ((start && option.date < start.slice(0, 10)) || (end && option.date > end.slice(0, 10)))) errors[prefix] = ["Service date must be within the Event schedule."];
-      if (option.service_start_at && start && option.service_start_at < start || option.service_start_at && end && option.service_start_at > end) errors[prefix] = ["Service start must be within the Event schedule."];
-      if (option.service_end_at && start && option.service_end_at < start || option.service_end_at && end && option.service_end_at > end) errors[prefix] = ["Service end must be within the Event schedule."];
-      if (option.service_start_at && option.service_end_at && option.service_end_at < option.service_start_at) errors[prefix] = ["Service end must be after service start."];
+      const addError = (field: string, message: string) => {
+        errors[`${prefix}.${field}`] = [message];
+        errors[key] = [...(errors[key] ?? []), message];
+      };
+      const nameError = eventServiceOptionLengthError(key, "name", option.name ?? "");
+      const descriptionError = eventServiceOptionLengthError(key, "description", option.description ?? "");
+      if (nameError) addError("name", nameError);
+      if (descriptionError) addError("description", descriptionError);
+      if (option.date && ((start && option.date < start.slice(0, 10)) || (end && option.date > end.slice(0, 10)))) addError("date", "Service date must be within the Event schedule.");
+      if (option.service_start_at && start && option.service_start_at < start || option.service_start_at && end && option.service_start_at > end) addError("service_start_at", "Service start must be within the Event schedule.");
+      if (option.service_end_at && start && option.service_end_at < start || option.service_end_at && end && option.service_end_at > end) addError("service_end_at", "Service end must be within the Event schedule.");
+      if (option.service_start_at && option.service_end_at && option.service_end_at < option.service_start_at) addError("service_end_at", "Service end must be after service start.");
     });
   };
   check("meals", values.meals?.options ?? []);
@@ -384,6 +393,7 @@ export function validateEventForm(values: CreateEventFormValues, mode: "create" 
     require("capacity", "Overall capacity");
     require("min_participants", "Minimum participants"); require("max_participants", "Maximum participants");
   }
+  if (values.description.length > EVENT_DESCRIPTION_MAX_LENGTH) errors.description = [`Description must be ${EVENT_DESCRIPTION_MAX_LENGTH} characters or fewer.`];
   if (values.delivery_mode !== "online") {
     if (!values.venue_name.trim()) errors.venue = ["Venue name is required."];
     else if (!values.venue_address.trim()) errors.venue = ["Venue address is required."];

@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const authApiBaseUrl = process.env.AUTH_API_BASE_URL;
 const resolvedAuthApiBaseUrl = authApiBaseUrl ?? "https://admin.apis.invigor8.app";
 const chatApiBaseUrl = process.env.CHAT_API_BASE_URL ?? "https://chat.wisdomtooth.tech/api/v1";
+const eventsApiBaseUrl = process.env.EVENTS_API_BASE_URL ?? chatApiBaseUrl;
 
 if (process.env.NODE_ENV === "development") {
   console.log("[AUTH PROXY DEBUG] AUTH_API_BASE_URL:", authApiBaseUrl ?? "(unset; using default)");
@@ -45,6 +46,11 @@ const nextConfig: NextConfig = {
   ],
   async rewrites() {
     const chatBaseHttps = chatApiBaseUrl.replace(/^http:/, "https:");
+    const chatApiV1Base = /\/api\/v1\/?$/.test(chatBaseHttps)
+      ? chatBaseHttps.replace(/\/$/, "")
+      : `${chatBaseHttps.replace(/\/$/, "")}/api/v1`;
+    const eventsBaseHttps = eventsApiBaseUrl.replace(/^http:/, "https:");
+    const eventsApiV1Base = /\/api\/v1\/?$/.test(eventsBaseHttps) ? eventsBaseHttps.replace(/\/$/, "") : `${eventsBaseHttps.replace(/\/$/, "")}/api/v1`;
     return {
       fallback: [
         {
@@ -54,6 +60,14 @@ const nextConfig: NextConfig = {
         {
           source: "/api/v1/tenant/:path*",
           destination: `${resolvedAuthApiBaseUrl}/api/v1/tenant/:path*`,
+        },
+        {
+          source: "/api/v1/users/me/notifications",
+          destination: `${chatApiV1Base}/users/me/notifications`,
+        },
+        {
+          source: "/api/v1/users/me/notifications/:path*",
+          destination: `${chatApiV1Base}/users/me/notifications/:path*`,
         },
         {
           source: "/api/v1/trainings/form-configuration/:path*",
@@ -126,6 +140,39 @@ const nextConfig: NextConfig = {
         {
           source: "/api/v1/admin/courses/:path*",
           destination: `${chatBaseHttps}/admin/courses/:path*`,
+        },
+        // Preserve the documented collection slash before proxying multipart Event media requests.
+        {
+          source: "/api/v1/events/media",
+          destination: `${eventsApiV1Base}/events/media/`,
+        },
+        {
+          source: "/api/v1/events/media/",
+          destination: `${eventsApiV1Base}/events/media/`,
+        },
+        {
+          source: "/api/v1/events",
+          destination: `${eventsApiV1Base}/events/`,
+        },
+        {
+          source: "/api/v1/events/:path*",
+          destination: `${eventsApiV1Base}/events/:path*`,
+        },
+        {
+          source: "/api/v1/event-categories",
+          destination: `${eventsApiV1Base}/event-categories/`,
+        },
+        {
+          source: "/api/v1/event-categories/:path*",
+          destination: `${eventsApiV1Base}/event-categories/:path*`,
+        },
+        {
+          source: "/api/v1/event-types",
+          destination: `${eventsApiV1Base}/event-types/`,
+        },
+        {
+          source: "/api/v1/event-types/:path*",
+          destination: `${eventsApiV1Base}/event-types/:path*`,
         },
       ],
     };

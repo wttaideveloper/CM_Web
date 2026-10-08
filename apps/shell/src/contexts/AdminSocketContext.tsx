@@ -1,6 +1,10 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { type ReactNode, useContext } from "react";
+
+import { useAuth } from "@ihp/auth";
+import { clearChatTokenSession, getChatAccessToken } from "@ihp/chat-runtime";
 
 import {
   defineRealtimeAdapter,
@@ -11,12 +15,14 @@ import {
 
 import { updatePresenceStatus } from "@/services/chat.service";
 import { createChatSocket } from "@/services/chat-socket.service";
+import { useChatAuth } from "@/contexts/ChatAuthContext";
 import {
   clearMarketplaceDemoSession,
   getMarketplaceChatToken,
   getMarketplaceDemoSession,
 } from "@/services/marketplace-demo-auth.service";
 import { notificationClient } from "@/services/notification.service";
+import { shouldUseNormalEnterpriseRealtimeAuth } from "./realtime-routing";
 
 const shellRealtimeAdapter = defineRealtimeAdapter({
   shouldConnect: (pathname) =>
@@ -28,8 +34,36 @@ const shellRealtimeAdapter = defineRealtimeAdapter({
   notificationClient,
 });
 
+const enterpriseRealtimeAdapter = defineRealtimeAdapter({
+  shouldConnect: () => true,
+  getToken: getChatAccessToken,
+  clearToken: clearChatTokenSession,
+  createSocket: createChatSocket,
+  updatePresenceStatus,
+  notificationClient,
+});
+
 export function AdminSocketProvider({ children }: { children: ReactNode }) {
-  return <RealtimeProvider adapter={shellRealtimeAdapter}>{children}</RealtimeProvider>;
+  const pathname = usePathname();
+  const { authenticated, authReady } = useAuth();
+  const { canUseProviderChat, isReady: chatAuthReady } = useChatAuth();
+  const useNormalEnterpriseRealtimeAuth = shouldUseNormalEnterpriseRealtimeAuth(
+    pathname,
+    authReady,
+    authenticated,
+    canUseProviderChat,
+    chatAuthReady,
+  );
+  const adapter = useNormalEnterpriseRealtimeAuth ? enterpriseRealtimeAdapter : shellRealtimeAdapter;
+
+  return (
+    <RealtimeProvider
+      adapter={adapter}
+      enabled={useNormalEnterpriseRealtimeAuth || undefined}
+    >
+      {children}
+    </RealtimeProvider>
+  );
 }
 
 export function useAdminSocket() {

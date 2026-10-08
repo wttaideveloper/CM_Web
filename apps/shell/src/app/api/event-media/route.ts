@@ -21,9 +21,7 @@ async function forward(request: NextRequest): Promise<Response> {
   if (!token) return invalidRequest("Not authenticated", 401);
 
   const upstreamUrl = request.nextUrl.searchParams.get("url")?.trim();
-  if (!upstreamUrl || !isAllowedEventMediaUrl(upstreamUrl, MEDIA_PROXY_ORIGIN)) {
-    return invalidRequest("Media URL is not allowed.");
-  }
+  if (!upstreamUrl || !isAllowedEventMediaUrl(upstreamUrl, MEDIA_PROXY_ORIGIN)) return invalidRequest("Media URL is not allowed.");
 
   let upstream: Response;
   try {
@@ -40,10 +38,7 @@ async function forward(request: NextRequest): Promise<Response> {
 
   const headers = copyProtectedMediaResponseHeaders(upstream.headers);
   headers.set("Cache-Control", "no-store");
-  return new NextResponse(request.method === "HEAD" ? null : upstream.body, {
-    status: upstream.status,
-    headers,
-  });
+  return new NextResponse(request.method === "HEAD" ? null : upstream.body, { status: upstream.status, headers });
 }
 
 export function GET(request: NextRequest): Promise<Response> {

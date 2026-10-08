@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { normalizeChatUpstreamPath } from "./proxy-path";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -22,7 +24,9 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   }
 
   const search = request.nextUrl.search;
-  const targetUrl = `${CHAT_PROXY_TARGET}/api/v1/${path.join("/")}${search}`;
+  const requestPath = `/${path.join("/")}`;
+  const upstreamPath = normalizeChatUpstreamPath(requestPath);
+  const targetUrl = `${CHAT_PROXY_TARGET}/api/v1/${upstreamPath}${search}`;
 
   const headers = new Headers();
 
