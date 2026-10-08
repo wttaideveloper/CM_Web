@@ -73,3 +73,9 @@ export function isAllowedProtectedMediaUrl(value: string, configuredOrigin: stri
   const url = parseHttpUrl(value);
   return Boolean(url && configuredOrigin && url.origin === configuredOrigin);
 }
+
+/** Returns true only for Event media paths on the configured protected media service. */
+export function isAllowedEventMediaUrl(value: string, configuredOrigin: string | null): boolean {
+  const url = parseHttpUrl(value);
+  return Boolean(url && configuredOrigin && url.origin === configuredOrigin && /^\/api\/v1\/events\/media(?:\/|$)/.test(url.pathname));
+}

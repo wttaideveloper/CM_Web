@@ -25,9 +25,9 @@ function safeUrl(value: string): string | null {
 
 function fallback(label: string, url: string, message: string) {
   return (
-    <div className="rounded-xl border border-dashed border-[#d7e5df] bg-[#f9fcfa] px-3 py-3 text-sm text-[#52736a]">
-      <p>{message}</p>
-      {url ? <a href={url} target="_blank" rel="noreferrer" className="mt-1 inline-block font-semibold text-[#1f6a58] underline">Open {label.toLowerCase()}</a> : null}
+    <div className="min-w-0 max-w-full overflow-hidden rounded-xl border border-dashed border-[#d7e5df] bg-[#f9fcfa] px-3 py-3 text-sm text-[#52736a]">
+      <p className="break-words [overflow-wrap:anywhere]">{message}</p>
+      {url ? <a href={url} target="_blank" rel="noreferrer" className="mt-1 inline-block max-w-full break-words font-semibold text-[#1f6a58] underline">Open {label.toLowerCase()}</a> : null}
     </div>
   );
 }
