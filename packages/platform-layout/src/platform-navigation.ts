@@ -15,7 +15,6 @@ export const platformNavigationGroups: readonly PlatformNavigationGroup[] = [
       { label: "Event Forms", href: "/form-configurations", icon: "forms" },
       { label: "Training Forms", href: "/training-form-configurations", icon: "forms" },
       { label: "Categories", href: "/categories", icon: "tag" },
-      { label: "Attributes", href: "/attributes", icon: "tag", disabled: true },
     ],
   },
   {
@@ -28,7 +27,6 @@ export const platformNavigationGroups: readonly PlatformNavigationGroup[] = [
       { label: "Services", href: "/services", icon: "service" },
       { label: "Events", href: "/events", icon: "calendar" },
       { label: "Trainings", href: "/trainings", icon: "training" },
-      { label: "Integrations", href: "/integrations", icon: "integration", disabled: true },
     ],
   },
 ];

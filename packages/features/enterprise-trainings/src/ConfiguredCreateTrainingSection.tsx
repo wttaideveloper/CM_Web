@@ -453,7 +453,7 @@ function ConfiguredField({
     }
     // Tags and objective fields retain their list contracts; Requirements stays a string separated by newlines.
     const hasConfigurableTagRenderer = coreField === "tags" || coreField === "learning_objectives";
-    const tagInputMode = coreField === "tags" ? "tags" : field.frontendSettings?.inputMode ?? "tags";
+    const tagInputMode = coreField === "tags" || coreField === "learning_objectives" ? "tags" : field.frontendSettings?.inputMode ?? "tags";
     if (hasConfigurableTagRenderer && tagInputMode === "text") {
       const inputId = `training-field-${field.id}`;
       return (

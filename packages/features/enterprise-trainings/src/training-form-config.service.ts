@@ -134,8 +134,8 @@ function parseFrontendSettings(field: Record<string, unknown>): TrainingFormFron
   const configurableListKeys = [field.core_key, field.key, field.stable_key, field.label]
     .filter((value): value is string => typeof value === "string")
     .map((value) => value.trim().toLowerCase().replace(/^(core|custom)_/, "").replace(/[\s-]+/g, "_"));
-  const rendererInputMode = renderer === "tags"
-    && configurableListKeys.some((key) => key === "tags" || key === "learning_objectives")
+  const usesTagListInput = configurableListKeys.some((key) => key === "tags" || key === "learning_objectives");
+  const rendererInputMode = usesTagListInput && (renderer === "tags" || configurableListKeys.includes("learning_objectives"))
     ? "tags"
     : undefined;
   if (composite === undefined || composite === null) return rendererInputMode ? { inputMode: rendererInputMode } : undefined;
@@ -153,7 +153,9 @@ function parseFrontendSettings(field: Record<string, unknown>): TrainingFormFron
     throw new Error("Training Form API returned invalid field settings.");
   }
   const source = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
-  const inputMode = source.input_mode === "text" || source.input_mode === "tags" ? source.input_mode : rendererInputMode;
+  const inputMode = configurableListKeys.includes("learning_objectives")
+    ? "tags"
+    : source.input_mode === "text" || source.input_mode === "tags" ? source.input_mode : rendererInputMode;
   const result: TrainingFormFrontendSettings = {
     ...(isStringArray(enabledFields) ? { enabledFields } : {}),
     ...(isStringArray(requiredFields) ? { requiredFields } : {}),
