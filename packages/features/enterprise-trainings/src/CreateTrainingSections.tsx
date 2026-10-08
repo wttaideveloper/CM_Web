@@ -57,7 +57,7 @@ export function TrainingBasicsSection({
   };
   const addObjective = (value: string) => {
     const obj = value.trim();
-    if (obj && !values.learning_objectives.includes(obj)) update("learning_objectives", [...values.learning_objectives, obj]);
+    if (obj && !values.learning_objectives.some((item) => item.toLocaleLowerCase() === obj.toLocaleLowerCase())) update("learning_objectives", [...values.learning_objectives, obj]);
   };
 
   return (

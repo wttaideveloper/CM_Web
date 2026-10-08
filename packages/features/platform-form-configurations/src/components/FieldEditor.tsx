@@ -26,7 +26,8 @@ function isTrainingTagInputField(field: ConfiguredField): boolean {
 
 function isTrainingTagsField(field: ConfiguredField): boolean {
   const key = (field.coreKey ?? field.stableKey ?? "").replace(/^(core_|custom_)/, "").toLowerCase();
-  return key === "tags" || key.endsWith("_tags") || field.label.trim().toLowerCase() === "tags";
+  const label = field.label.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  return ["tags", "learning_objectives"].some((name) => key === name || key.endsWith(`_${name}`) || label === name);
 }
 
 function frontendSettingsForInputMode(field: ConfiguredField, mode: "text" | "tags"): NonNullable<ConfiguredField["compositeConfig"]>["frontend_settings"] {
@@ -82,7 +83,7 @@ export function FieldEditor({ field, registry, trainingFields, isTrainingConfigu
     .map((renderer) => isTrainingConfiguration && renderer === "select" ? "dropdown" : renderer)
     .filter((renderer) => !isTrainingConfiguration || (renderer !== "multi_select" && renderer !== "select"));
   const fieldRenderers = trainingTagInputField
-    ? [...new Set(["text", ...allowedRenderers, "tags"])].filter((renderer) => !trainingTagsField || renderer !== "text")
+    ? trainingTagsField ? ["tags"] : [...new Set(["text", ...allowedRenderers, "tags"])]
     : allowedRenderers;
   const displayedRenderer = trainingTagInputField
     ? trainingInputMode === "tags" ? "tags" : fieldRenderers.includes(field.renderer) ? field.renderer : "text"
@@ -91,7 +92,8 @@ export function FieldEditor({ field, registry, trainingFields, isTrainingConfigu
   const compositeDefinition = isTrainingConfiguration
     ? getTrainingCompositeFieldDefinition(field.coreKey ?? field.stableKey, field.label)
     : field.source === "core" ? getEventCompositeFieldDefinition(field.coreKey) : undefined;
-  const rendererCanChange = !runtimeSourced && !trainingDeliveryMode && (!core || (core.configurable.renderer && (core.allowedRenderers.length > 1 || trainingTagInputField)));
+  const rendererCanChange = !runtimeSourced && !trainingDeliveryMode && fieldRenderers.length > 1
+    && (!core || (core.configurable.renderer && (core.allowedRenderers.length > 1 || trainingTagInputField)));
   const changeRenderer = (renderer: string) => {
     if (trainingTagInputField) {
       const inputMode = renderer === "tags" ? "tags" : "text";
