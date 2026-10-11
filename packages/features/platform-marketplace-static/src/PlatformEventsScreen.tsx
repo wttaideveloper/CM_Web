@@ -3,7 +3,7 @@
 import { protectedMediaPreviewUrl } from "@ihp/shared";
 import { getPlatformEnterpriseById } from "@ihp/platform-enterprises";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useTranslation } from "react-i18next";
 
@@ -15,7 +15,7 @@ import { PlatformModuleReviewsTab } from "./PlatformModuleReviewsTab";
 /** Renders the real, read-only catalogue of currently published Events. */
 export default function PlatformEventsScreen() {
   const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30_000 } } }));
-  return <QueryClientProvider client={client}><PublishedEvents /></QueryClientProvider>;
+  return <QueryClientProvider client={client}><Suspense fallback={<div role="status" className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{[1, 2, 3].map((item) => <div key={item} className="h-[290px] animate-pulse rounded-xl bg-[#edf3f0]" />)}</div>}><PublishedEvents /></Suspense></QueryClientProvider>;
 }
 
 function PublishedEvents() {
