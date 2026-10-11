@@ -208,7 +208,7 @@ export function formatTrainingNotificationDetails(
         readNonEmptyString(sender.display_name),
         readNonEmptyString(sender.full_name),
         readNonEmptyString(sender.name),
-      ].find((name): name is string => Boolean(name) && !name.includes("@")) ?? null
+      ].find((name): name is string => typeof name === "string" && !name.includes("@")) ?? null
     : null;
 
   return { trainingTitle, senderName };
