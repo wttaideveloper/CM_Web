@@ -1,4 +1,4 @@
-const enterpriseTrainingsEnglish = {
+export const enterpriseTrainingsEnglish = {
   list: {
     tags: "Tags",
     moreTags: "+{{count}} more",

@@ -1,8 +1,8 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 
-import enterpriseEventsEnglish from "./locales/en/enterprise-events";
-import enterpriseTrainingsEnglish from "./locales/en/enterprise-trainings";
+import { enterpriseEventsEnglish } from "@ihp/enterprise-events";
+import { enterpriseTrainingsEnglish } from "@ihp/enterprise-trainings";
 
 if (!i18n.isInitialized) {
   void i18n.use(initReactI18next).init({

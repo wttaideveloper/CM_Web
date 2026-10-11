@@ -11,3 +11,4 @@ export { default as PriceBreakdown } from "./PriceBreakdown";
 export { default as RegistrationServiceSelector } from "./RegistrationServiceSelector";
 export { default as EventServicesFulfilmentShell } from "./EventServicesFulfilmentShell";
 export { EVENT_STATUSES, PRODUCT_EVENT_STATUSES, canDeleteEvent, canEditEvent, getEventStatusActions, getEventStatusBadgeClass, getEventStatusLabel, isProductEventStatus, type EventStatus, type EventStatusAction, type EventStatusUpdatePayload, type ProductEventStatus } from "./event-status";
+export { default as enterpriseEventsEnglish } from "./locales/en";

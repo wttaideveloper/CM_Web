@@ -26,3 +26,4 @@ export { default as TrainingFormBuilderScreen } from "./TrainingFormBuilderScree
 export { default as TrainingBookingFlow } from "./TrainingBookingFlow";
 export { default as WishlistScreen } from "./WishlistScreen";
 export * from "./wishlist-storage";
+export { default as enterpriseTrainingsEnglish } from "./locales/en";

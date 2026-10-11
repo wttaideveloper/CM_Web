@@ -1,4 +1,4 @@
-const enterpriseEventsEnglish = {
+export const enterpriseEventsEnglish = {
   taxonomy: {
     chooseCategory: "Choose a category",
     chooseCategoryFirst: "Choose a category first",
