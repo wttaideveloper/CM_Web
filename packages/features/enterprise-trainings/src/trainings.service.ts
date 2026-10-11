@@ -654,6 +654,28 @@ function normaliseTrainingRecord(value: TrainingListItem | TrainingDetail): Trai
   normalised.end_time = readString(record.end_time, record.endTime, schedule.end_time, schedule.endTime, readCustomScheduleValue("end_time", "endTime"))
     ?? (typeof normalised.end_date === "string" ? normalised.end_date.match(/T(\d{2}:\d{2})/)?.[1] : undefined)
     ?? record.end_time ?? null;
+  normalised.enrolment_start = readString(
+    record.enrolment_start,
+    record.enrolmentStart,
+    record.enrollment_start,
+    record.enrollmentStart,
+    schedule.enrolment_start,
+    schedule.enrolmentStart,
+    schedule.enrollment_start,
+    schedule.enrollmentStart,
+    readCustomScheduleValue("enrolment_start", "enrolmentStart", "enrollment_start", "enrollmentStart"),
+  ) ?? record.enrolment_start ?? null;
+  normalised.enrolment_end = readString(
+    record.enrolment_end,
+    record.enrolmentEnd,
+    record.enrollment_end,
+    record.enrollmentEnd,
+    schedule.enrolment_end,
+    schedule.enrolmentEnd,
+    schedule.enrollment_end,
+    schedule.enrollmentEnd,
+    readCustomScheduleValue("enrolment_end", "enrolmentEnd", "enrollment_end", "enrollmentEnd"),
+  ) ?? record.enrolment_end ?? null;
   for (const key of ["capacity", "price"] as const) {
     const field = normalised[key];
     if (typeof field === "number") normalised[key] = String(field);

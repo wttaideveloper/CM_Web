@@ -377,6 +377,8 @@ export default function TrainingDetailsScreen({
     address: training.address ?? "",
     startDate: training.start_date ?? "",
     startTime: typeof trainingRecord.start_time === "string" ? trainingRecord.start_time : "",
+    endDate: training.end_date ?? "",
+    endTime: typeof trainingRecord.end_time === "string" ? trainingRecord.end_time : "",
   };
   const legacySessions = Array.isArray(trainingRecord.sessions) ? trainingRecord.sessions as Array<Record<string, unknown>> : [];
   const primaryImageUrl = getTrainingMediaPreviewUrl(training.primary_image);

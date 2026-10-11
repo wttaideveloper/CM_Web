@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { getTrainingMediaPreviewUrl } from "./training-media-url";
+import { getYouTubeEmbedUrl } from "./youtube-video-url";
 
 type LessonMediaPreviewProps = {
   url: string;
@@ -29,6 +30,7 @@ function isDocx(url: string, name: string): boolean {
 export function LessonMediaPreview({ url, name, kind, showPreview = true }: LessonMediaPreviewProps) {
   const { t } = useTranslation("enterpriseTrainings");
   const previewUrl = getTrainingMediaPreviewUrl(url);
+  const youtubeEmbedUrl = kind === "video" ? getYouTubeEmbedUrl(url) : null;
   const docxPreview = kind === "document" && isDocx(url, name);
   const documentQuery = useQuery({
     queryKey: ["trainings", "lesson-media-preview", previewUrl],
@@ -66,7 +68,16 @@ export function LessonMediaPreview({ url, name, kind, showPreview = true }: Less
 
   return (
     <section className="mt-2 overflow-hidden rounded-lg border border-[#d7e5df] bg-[#f9fcfa]" aria-label={`${name} ${t("media.preview")}`}>
-      {showPreview && kind === "video" ? (
+      {showPreview && youtubeEmbedUrl ? (
+        <iframe
+          src={youtubeEmbedUrl}
+          title={`${name} ${t("media.preview")}`}
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          referrerPolicy="strict-origin-when-cross-origin"
+          allowFullScreen
+          className="aspect-video w-full bg-black"
+        />
+      ) : showPreview && kind === "video" ? (
         <video src={previewUrl} controls preload="metadata" className="max-h-72 w-full" aria-label={`${name} ${t("media.preview")}`} />
       ) : showPreview && docxPreview ? (
         <div className="max-h-96 overflow-auto bg-white p-3">

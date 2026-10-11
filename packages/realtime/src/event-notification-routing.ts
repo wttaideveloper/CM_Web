@@ -163,14 +163,53 @@ export function notificationReason(notification: Pick<RealtimeNotification, "dat
   return reason && !notification.body.toLocaleLowerCase().includes(reason.toLocaleLowerCase()) ? reason : null;
 }
 
-/** Extracts structured Training and enrolled learner details from a notification payload. */
+/** Extracts Training titles and discussion sender names from notification API metadata. */
 export function formatTrainingNotificationDetails(
   notification: Pick<RealtimeNotification, "notification_type" | "title" | "body" | "data">,
-): { trainingTitle: string | null } {
+): { trainingTitle: string | null; senderName: string | null } {
+  const data = recordValue(notification.data);
+  const training = recordValue(data.training);
   const trainingTitle =
-    readNonEmptyString(notification.data.training_title) ??
-    readNonEmptyString(notification.data.trainingTitle) ??
-    readNonEmptyString(notification.data.course_title) ??
-    readNonEmptyString(notification.data.entity_title);
-  return { trainingTitle };
+    readNonEmptyString(data.training_title) ??
+    readNonEmptyString(data.trainingTitle) ??
+    readNonEmptyString(data.training_name) ??
+    readNonEmptyString(data.trainingName) ??
+    readNonEmptyString(data.course_title) ??
+    readNonEmptyString(data.entity_title) ??
+    readNonEmptyString(training.title) ??
+    readNonEmptyString(training.name);
+
+  const type = [
+    notification.notification_type,
+    readNonEmptyString(data.type),
+    readNonEmptyString(data.event_type),
+    readNonEmptyString(data.action),
+  ].filter(Boolean).join(" ").toLocaleLowerCase();
+  const isTrainingDiscussion = type.includes("discussion")
+    && (type.includes("training") || Boolean(trainingIdForRoute({ notification_type: notification.notification_type, data })));
+  const discussion = recordValue(data.discussion);
+  const sender = recordValue(
+    data.sender ?? data.author ?? data.actor ?? data.user ?? data.created_by
+      ?? discussion.sender ?? discussion.author ?? discussion.actor ?? discussion.user,
+  );
+  const senderName = isTrainingDiscussion
+    ? [
+        readNonEmptyString(data.sender_name),
+        readNonEmptyString(data.senderName),
+        readNonEmptyString(data.author_name),
+        readNonEmptyString(data.authorName),
+        readNonEmptyString(data.actor_name),
+        readNonEmptyString(data.actorName),
+        readNonEmptyString(data.user_name),
+        readNonEmptyString(data.userName),
+        readNonEmptyString(data.participant_name),
+        readNonEmptyString(data.created_by_name),
+        readNonEmptyString(data.createdByName),
+        readNonEmptyString(sender.display_name),
+        readNonEmptyString(sender.full_name),
+        readNonEmptyString(sender.name),
+      ].find((name): name is string => Boolean(name) && !name.includes("@")) ?? null
+    : null;
+
+  return { trainingTitle, senderName };
 }

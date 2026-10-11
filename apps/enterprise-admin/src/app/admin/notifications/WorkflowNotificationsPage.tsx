@@ -1,6 +1,5 @@
 "use client";
 
-import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useEnterpriseWorkflowNotifications } from "@/realtime/enterprise-workflow-notifications";
 import {
@@ -8,55 +7,12 @@ import {
   formatTrainingNotificationDetails,
   handleNotificationClick,
   notificationReason,
-  useRealtime,
 } from "@ihp/realtime";
-
-type EnterpriseNotificationViewItem = {
-  id: string;
-  notification_type: string;
-  category?: string;
-  title: string;
-  message: string;
-  metadata: Record<string, unknown>;
-  is_read: boolean;
-  created_at: string | null;
-};
 
 export default function WorkflowNotificationsPage() {
   const state = useEnterpriseWorkflowNotifications();
-  const realtime = useRealtime();
   const router = useRouter();
-  const items = useMemo(() => {
-    const workflowItems: EnterpriseNotificationViewItem[] = state.items.map((item) => ({
-      id: item.id,
-      notification_type: item.notification_type,
-      category: item.category,
-      title: item.title,
-      message: item.message,
-      metadata: item.metadata,
-      is_read: item.is_read,
-      created_at: item.created_at,
-    }));
-    const workflowIds = new Set(workflowItems.map((item) => item.id));
-    const realtimeItems: EnterpriseNotificationViewItem[] = realtime.notifications
-      .filter((item) => !workflowIds.has(item.id))
-      .map((item) => ({
-        id: item.id,
-        notification_type: item.notification_type,
-        category: item.category,
-        title: item.title,
-        message: item.body,
-        metadata: item.data,
-        is_read: item.is_read,
-        created_at: item.created_at,
-      }));
-
-    return [...workflowItems, ...realtimeItems].sort((left, right) => {
-      const leftDate = Date.parse(left.created_at ?? "");
-      const rightDate = Date.parse(right.created_at ?? "");
-      return (Number.isFinite(rightDate) ? rightDate : 0) - (Number.isFinite(leftDate) ? leftDate : 0);
-    });
-  }, [realtime.notifications, state.items]);
+  const items = state.items;
   const unreadCount = items.filter((item) => !item.is_read).length;
 
   return (
@@ -95,7 +51,7 @@ export default function WorkflowNotificationsPage() {
         <div className="divide-y divide-[#edf3f0] overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white">
           {items.map((item) => {
             const reason = notificationReason({ data: item.metadata, body: item.message });
-            const { trainingTitle } = formatTrainingNotificationDetails({
+            const { trainingTitle, senderName } = formatTrainingNotificationDetails({
               notification_type: item.notification_type,
               title: item.title,
               body: item.message,
@@ -106,13 +62,10 @@ export default function WorkflowNotificationsPage() {
                 key={item.id}
                 type="button"
                 onClick={() => {
-                  const markRead = state.items.some((workflowItem) => workflowItem.id === item.id)
-                    ? state.markRead
-                    : realtime.markNotificationAsRead;
                   handleNotificationClick(
                     { id: item.id, notification_type: item.notification_type, data: item.metadata },
                     "enterprise",
-                    (id) => Promise.resolve(markRead(id)).then(() => undefined),
+                    (id) => Promise.resolve(state.markRead(id)).then(() => undefined),
                     (target) => router.push(target),
                   );
                 }}
@@ -129,6 +82,7 @@ export default function WorkflowNotificationsPage() {
                   ) : null}
                 </div>
                 <p className="mt-1 text-sm text-[#52736a]">{item.message}</p>
+                {senderName ? <p className="mt-1 text-xs font-semibold text-[#52736a]">From: {senderName}</p> : null}
                 {trainingTitle ? (
                   <p className="mt-1 text-xs font-semibold text-[#1f6a58]">Training: {trainingTitle}</p>
                 ) : null}

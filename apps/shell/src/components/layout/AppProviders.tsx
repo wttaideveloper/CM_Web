@@ -36,9 +36,11 @@ export function EnterpriseProviders({ children }: { children: ReactNode }) {
   return (
     <AuthProvider>
       <ChatAuthProvider>
-        <TenantProvider>
-          <CurrentEnterpriseProvider>{children}</CurrentEnterpriseProvider>
-        </TenantProvider>
+        <AdminSocketProvider>
+          <TenantProvider>
+            <CurrentEnterpriseProvider>{children}</CurrentEnterpriseProvider>
+          </TenantProvider>
+        </AdminSocketProvider>
       </ChatAuthProvider>
     </AuthProvider>
   );

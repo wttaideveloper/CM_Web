@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { HeaderFrame } from "@ihp/ui";
+import { formatTrainingNotificationDetails } from "@ihp/realtime";
 
 import { useAdminSocket } from "@/contexts/AdminSocketContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -106,6 +107,18 @@ function clampBadge(value: number) {
   }
 
   return value > 99 ? "99+" : String(value);
+}
+
+function TrainingNotificationDetails({ notification }: { notification: NotificationLike }) {
+  const { trainingTitle, senderName } = formatTrainingNotificationDetails(notification);
+  if (!trainingTitle && !senderName) return null;
+
+  return (
+    <>
+      {senderName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">From: {senderName}</span> : null}
+      {trainingTitle ? <span className="mt-1 block truncate text-[11px] font-semibold text-[#1f6a58]">Training: {trainingTitle}</span> : null}
+    </>
+  );
 }
 
 function getInitials(name: string | undefined, email: string | undefined) {
@@ -382,6 +395,7 @@ function AppHeaderContent({
                           {formatNotificationTime(item.created_at)}
                         </span>
                       </span>
+                      <TrainingNotificationDetails notification={item} />
                     </span>
                   </button>
                 ))

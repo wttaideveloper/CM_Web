@@ -161,13 +161,18 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
   };
   const dateInputValue = (key: string) => {
     const value = stringValue(key);
-    // Date controls need the calendar portion only; API responses may include a time.
+    // The schedule editor uses a datetime input; retain any returned clock time.
     return value.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? value;
   };
   const timeInputValue = (key: string, dateKey: string) => {
     const time = stringValue(key);
     if (time) return time;
     return stringValue(dateKey).match(/T(\d{2}:\d{2})/)?.[1] ?? "";
+  };
+  const dateTimeInputValue = (dateKey: string, timeKey: string) => {
+    const date = dateInputValue(dateKey);
+    const time = timeInputValue(timeKey, dateKey).slice(0, 5);
+    return date && time ? `${date}T${time}` : date;
   };
   return {
     title: training.title ?? "",
@@ -183,8 +188,8 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
     delivery_mode: training.delivery_mode ?? "hybrid",
     course_type: training.course_type ?? "",
     duration: stringValue("duration"),
-    start_date: dateInputValue("start_date"),
-    end_date: dateInputValue("end_date"),
+    start_date: dateTimeInputValue("start_date", "start_time"),
+    end_date: dateTimeInputValue("end_date", "end_time"),
     enrolment_start: stringValue("enrolment_start"),
     enrolment_end: stringValue("enrolment_end"),
     time_zone: stringValue("time_zone"),

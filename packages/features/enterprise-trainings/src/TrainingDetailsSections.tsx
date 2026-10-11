@@ -61,6 +61,7 @@ import { enrolInTraining, type TrainingCheckoutRequest } from "./trainings.servi
 import { formatDetailDateTime, formatTrainingDate, humanizeLabel } from "./detail-formatters";
 import TrainingLessonAttendance from "./TrainingLessonAttendance";
 import { LessonMediaPreview } from "./LessonMediaPreview";
+import { getYouTubeEmbedUrl } from "./youtube-video-url";
 
 const LESSON_TYPE_OPTIONS = [
   { value: "text", label: "Topic" },
@@ -219,6 +220,8 @@ interface TrainingLessonDefaults {
   address: string;
   startDate: string;
   startTime: string;
+  endDate: string;
+  endTime: string;
 }
 
 type LessonDetailsSource = "existing" | "new";
@@ -241,6 +244,29 @@ function getTrainingScheduledAt(defaults: TrainingLessonDefaults): string {
   return datePart && timePart ? `${datePart}T${timePart}` : "";
 }
 
+function getTrainingScheduleBound(dateValue: string, timeValue: string, edge: "start" | "end"): string | undefined {
+  const date = dateValue.trim().match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+  if (!date) return undefined;
+  const time = timeValue.trim().match(/^(\d{2}:\d{2})/)?.[1]
+    ?? dateValue.match(/T(\d{2}:\d{2})/)?.[1]
+    ?? (edge === "start" ? "00:00" : "23:59");
+  return `${date}T${time}`;
+}
+
+function toDateTimeLocalValue(value: string): string {
+  const normalized = value.trim().replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})/, "$1T$2");
+  const match = normalized.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+  return match ? `${match[1]}T${match[2]}` : "";
+}
+
+function isLessonScheduleWithinTraining(value: string, defaults: TrainingLessonDefaults): boolean {
+  const scheduled = toDateTimeLocalValue(value);
+  if (!scheduled) return false;
+  const minimum = getTrainingScheduleBound(defaults.startDate, defaults.startTime, "start");
+  const maximum = getTrainingScheduleBound(defaults.endDate, defaults.endTime, "end");
+  return Boolean(minimum && maximum && scheduled >= minimum && scheduled <= maximum);
+}
+
 function getMeetingTypeFromProvider(provider: string): string {
   const normalizedProvider = provider.trim().toLowerCase();
   if (normalizedProvider === "meet" || normalizedProvider === "google meet") return "google_meet";
@@ -256,12 +282,6 @@ function formatLessonScheduledAt(value: string): string {
     : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
-function getLocalDateTimeMinimum(): string {
-  const now = new Date();
-  const localDateTime = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
-  return localDateTime.toISOString().slice(0, 16);
-}
-
 function LessonScheduleFields({
   type,
   defaults,
@@ -269,6 +289,7 @@ function LessonScheduleFields({
   setSource,
   scheduledAt,
   setScheduledAt,
+  scheduleError,
   meetingType,
   setMeetingType,
   meetingLink,
@@ -286,6 +307,7 @@ function LessonScheduleFields({
   setSource: (source: LessonDetailsSource) => void;
   scheduledAt: string;
   setScheduledAt: (value: string) => void;
+  scheduleError?: string | null;
   meetingType: string;
   setMeetingType: (value: string) => void;
   meetingLink: string;
@@ -305,12 +327,8 @@ function LessonScheduleFields({
     ? formatLessonScheduledAt(scheduledAtDefault)
     : [defaults.startDate, defaults.startTime].filter(Boolean).join(" · ");
   const isLive = type === "live";
-  const existingLiveDate = new Date(scheduledAt);
-  const lessonDateMinimum = isLive || type === "venue"
-    ? scheduledAt && !Number.isNaN(existingLiveDate.getTime()) && existingLiveDate < new Date()
-      ? scheduledAt
-      : getLocalDateTimeMinimum()
-    : undefined;
+  const lessonDateMinimum = getTrainingScheduleBound(defaults.startDate, defaults.startTime, "start");
+  const lessonDateMaximum = getTrainingScheduleBound(defaults.endDate, defaults.endTime, "end");
   const title = isLive ? copy("meetingSetup", "Meeting setup") : copy("venueSetup", "Venue setup");
 
   return (
@@ -333,11 +351,13 @@ function LessonScheduleFields({
           required
           value={scheduledAt}
           min={lessonDateMinimum}
+          max={lessonDateMaximum}
           onChange={setScheduledAt}
           aria-label={copy("lessonDateTime", "Lesson date and time (required)")}
           className="mt-1 h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]"
         />
       </label>
+      {scheduleError ? <p role="alert" className="text-xs font-semibold text-[#b42318]">{scheduleError}</p> : null}
       {source === "existing" ? (
         <div className="grid gap-1 text-xs text-[#52736a]">
           <p><span className="font-semibold">{copy("trainingSchedule", "Training schedule (reference)")}:</span> {scheduleDisplay
@@ -564,6 +584,7 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
   const [videoUrl, setVideoUrl] = useState("");
   const [lessonTypeValue, setLessonTypeValue] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [detailsSource, setDetailsSource] = useState<LessonDetailsSource>("new");
   const [meetingType, setMeetingType] = useState("google_meet");
   const [meetingLink, setMeetingLink] = useState("");
@@ -602,6 +623,8 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
       ? lessonRecord.content_url
       : typeof lessonRecord.video_url === "string" ? lessonRecord.video_url : "";
     if (!videoUrl) return;
+    const lessonType = typeof lessonRecord.type === "string" ? toUiLessonType(lessonRecord.type) : "";
+    if (lessonType === "youtube" || getYouTubeEmbedUrl(videoUrl)) return;
 
     let isCurrentLesson = true;
     void readVideoDurationInSeconds(videoUrl)
@@ -624,6 +647,11 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
       const videos = lessonVideos.filter((v) => v.trim() !== "");
       const notes = lessonNotes.filter((n) => n.trim() !== "");
       const docs = lessonDocs.filter((d) => d.url.trim() !== "");
+      if ((lessonTypeValue === "live" || lessonTypeValue === "venue")
+        && toDateTimeLocalValue(scheduledAt) !== toDateTimeLocalValue(lessonScheduledAt)
+        && !isLessonScheduleWithinTraining(scheduledAt, trainingLessonDefaults)) {
+        throw new Error("Set the Training start and end dates first, then choose a lesson date and time within that range.");
+      }
       return updateTrainingLesson(trainingId, sectionId, lessonId, {
         title: title.trim(),
         content: content.trim(),
@@ -659,9 +687,10 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
       }
       setFeedback("Lesson updated.");
       setEditMode(false);
+      void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "lesson", sectionId, lessonId] });
       void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "sections"] });
     },
-    onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to update lesson."),
+    onError: (error) => setFeedback(error instanceof Error ? error.message : "Unable to update lesson."),
   });
 
   const lesson = (lessonQuery.data ?? {}) as Record<string, unknown>;
@@ -690,13 +719,13 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
   const selectedLessonType = availableLessonTypes.some((option) => option.value === lessonTypeValue) ? lessonTypeValue : "";
 
   useEffect(() => {
-    if (!lessonQuery.data) return;
-    if (!editMode && title === "" && content === "" && videoUrl === "" && lessonTypeValue === "" && meetingLink === "" && joinUrl === "" && fileSize === "" && durationSeconds === "" && lessonVideos.length === 0 && lessonDocs.length === 0 && lessonNotes.length === 0) {
+    if (!lessonQuery.data || editMode) return;
+    {
       setTitle(lessonTitle);
       setContent(lessonContent);
       setVideoUrl(lessonVideoUrl);
       setLessonTypeValue(toUiLessonType(lessonType));
-      setScheduledAt(lessonScheduledAt ? lessonScheduledAt.slice(0, 16) : "");
+      setScheduledAt(toDateTimeLocalValue(lessonScheduledAt));
       setMeetingType(lessonMeetingType);
       setMeetingLink(lessonMeetingLink);
       setJoinUrl(lessonJoinUrl);
@@ -807,7 +836,8 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
               source={detailsSource}
               setSource={setDetailsSource}
               scheduledAt={scheduledAt}
-              setScheduledAt={setScheduledAt}
+              setScheduledAt={(value) => { setScheduledAt(value); setScheduleError(null); }}
+              scheduleError={scheduleError}
               meetingType={meetingType}
               setMeetingType={setMeetingType}
               meetingLink={meetingLink}
@@ -875,7 +905,11 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
       ) : (
         <div className="space-y-2">
           <p className="text-sm font-bold text-[#06201c]">{lessonTitle || "Untitled"}</p>
-          {lessonVideoUrl ? <LessonMediaPreview url={lessonVideoUrl} name={lessonVideoUrl.split("/").pop() || "Lesson video"} kind="video" /> : null}
+          {lessonVideoUrl && lessonType === "youtube" ? (
+            <a href={lessonVideoUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#1f6a58] underline">
+              Open YouTube lesson
+            </a>
+          ) : lessonVideoUrl ? <LessonMediaPreview url={lessonVideoUrl} name={lessonVideoUrl.split("/").pop() || "Lesson video"} kind="video" /> : null}
           {lessonType === "live" ? <p className="text-xs text-[#52736a]">{t("lessonScheduling.provider", { defaultValue: "Meeting provider" })}: {humanizeLabel(lessonMeetingType)}</p> : null}
           {lessonMeetingLink ? <p className="text-xs text-[#52736a]">{t("lessonScheduling.meetingLink", { defaultValue: "Meeting link" })}: <a href={lessonMeetingLink} className="text-[#1f6a58] underline">{lessonMeetingLink}</a></p> : null}
           {lessonJoinUrl ? <p className="text-xs text-[#52736a]">{t("lessonScheduling.joinInstructions", { defaultValue: "Join instructions" })}: <a href={lessonJoinUrl} className="text-[#1f6a58] underline">{lessonJoinUrl}</a></p> : null}
@@ -901,6 +935,7 @@ function AddLessonForm({ pending, trainingDeliveryMode, trainingLessonDefaults, 
   const [contentUrl, setContentUrl] = useState("");
   const [type, setType] = useState("text");
   const [scheduledAt, setScheduledAt] = useState("");
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [detailsSource, setDetailsSource] = useState<LessonDetailsSource>("new");
   const [meetingType, setMeetingType] = useState("google_meet");
   const [meetingLink, setMeetingLink] = useState("");
@@ -921,7 +956,7 @@ function AddLessonForm({ pending, trainingDeliveryMode, trainingLessonDefaults, 
   const [fileUploadError, setFileUploadError] = useState<string | null>(null);
 
   const reset = () => {
-    setTitle(""); setContent(""); setContentUrl(""); setType("text"); setScheduledAt(""); setDetailsSource("new"); setMeetingType("google_meet"); setMeetingLink(""); setJoinMeta("");
+    setTitle(""); setContent(""); setContentUrl(""); setType("text"); setScheduledAt(""); setScheduleError(null); setDetailsSource("new"); setMeetingType("google_meet"); setMeetingLink(""); setJoinMeta("");
     setVenueName(""); setVenueAddress("");
     setIsPreview(false); setIsDownloadable(false); setFileSize(""); setDuration(""); setVideos([]); setDocuments([]); setNotes([]);
     setVideoFileName(""); setPdfFileName(""); setNoteFileName("");
@@ -934,6 +969,10 @@ function AddLessonForm({ pending, trainingDeliveryMode, trainingLessonDefaults, 
       onSubmit={(event) => {
         event.preventDefault();
         if (!title.trim()) return;
+        if ((type === "live" || type === "venue") && !isLessonScheduleWithinTraining(scheduledAt, trainingLessonDefaults)) {
+          setScheduleError("Set the Training start and end dates first, then choose a lesson date and time within that range.");
+          return;
+        }
         onSubmit({
           title: title.trim(),
           content: content.trim() || undefined,
@@ -1008,7 +1047,8 @@ function AddLessonForm({ pending, trainingDeliveryMode, trainingLessonDefaults, 
           source={detailsSource}
           setSource={setDetailsSource}
           scheduledAt={scheduledAt}
-          setScheduledAt={setScheduledAt}
+          setScheduledAt={(value) => { setScheduledAt(value); setScheduleError(null); }}
+          scheduleError={scheduleError}
           meetingType={meetingType}
           setMeetingType={setMeetingType}
           meetingLink={meetingLink}

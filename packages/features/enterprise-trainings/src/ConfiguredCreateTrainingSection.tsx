@@ -409,7 +409,9 @@ function ConfiguredField({
   // Core field - bind to values
   if (coreField) {
     const isRequirementsTagList = coreField === "requirements" && field.frontendSettings?.inputMode === "tags";
-    const value = coreField === "tags" ? values.tags.join(", ") : coreField === "learning_objectives" ? values.learning_objectives.join(", ") : Array.isArray((values as unknown as Record<string, unknown>)[coreField]) ? ((values as unknown as Record<string, unknown>)[coreField] as string[]).join(", ") : scalar((values as unknown as Record<string, unknown>)[coreField]);
+    const rawCoreValue = (values as unknown as Record<string, unknown>)[coreField];
+    const coreValue = Array.isArray(rawCoreValue) ? rawCoreValue.join(", ") : scalar(rawCoreValue);
+    const value = coreField === "tags" ? values.tags.join(", ") : coreField === "learning_objectives" ? values.learning_objectives.join(", ") : inputType === "date" ? coreValue.slice(0, 10) : coreValue;
     const isBoolean = field.type === "checkbox";
     const isNumber = field.type === "number";
     const rangeError = isNumber ? numberRangeError(value, field.label, field.validation?.min, field.validation?.max) : undefined;
@@ -418,7 +420,12 @@ function ConfiguredField({
       if (coreField === "tags") update("tags", next.split(",").map((s) => s.trim()).filter(Boolean).filter((s, index, all) => all.findIndex((other) => other.toLocaleLowerCase() === s.toLocaleLowerCase()) === index));
       else if (coreField === "learning_objectives") update("learning_objectives", next.split(",").map((item) => item.trim()).filter(Boolean));
       else if (coreField === "gallery_images") update("gallery_images", next.split(",").map((s) => s.trim()).filter(Boolean) as never);
-      else update(coreField as keyof CreateTrainingFormValues, (isBoolean ? next === "true" : isNumber ? next : next) as never);
+      else if (coreField === "start_date" || coreField === "end_date") {
+        update(coreField, next as never);
+        const timeKey = coreField === "start_date" ? "start_time" : "end_time";
+        const time = next.match(/T(\d{2}:\d{2})/)?.[1] ?? "";
+        if (time || inputType === "datetime-local") update(timeKey, time as never);
+      } else update(coreField as keyof CreateTrainingFormValues, (isBoolean ? next === "true" : isNumber ? next : next) as never);
     };
     const setNumberValue = (next: string) => {
       const adjusted = clampNumberToRange(next, field.validation?.min, field.validation?.max);
@@ -748,7 +755,7 @@ function ConfiguredField({
   }
   if (field.type === "url") {
     return <ConfiguredTrainingUrlField
-      fieldKey={field.stable_key ?? field.apiKey ?? field.key}
+      fieldKey={field.source === "core" ? field.stable_key ?? field.apiKey ?? field.key : undefined}
       label={`${field.label}${required}`}
       value={value}
       placeholder={field.placeholder}
