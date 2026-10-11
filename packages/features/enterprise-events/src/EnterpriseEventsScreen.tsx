@@ -7,11 +7,11 @@ import Link from "next/link";
 
 import EventActionsMenu from "./EventActionsMenu";
 import { PRODUCT_EVENT_STATUSES, getEventStatusBadgeClass, getEventStatusLabel } from "./event-status";
-import { listEvents, type Event } from "./events.service";
+import { listEnterpriseEventReviewsManage, listEvents, type Event } from "./events.service";
 import { formatEventDeliveryMode } from "./event-detail-formatters";
 import { matchesEventTimeFilter, type EventTimeFilter } from "./event-time-filters";
 import { EnterpriseEventsReviewsTab } from "./EnterpriseEventsReviewsTab";
-import { listEnterpriseEventReviewsManage } from "./events.service";
+import { protectedMediaPreviewUrl } from "./event-media";
 
 type SortOption = "newest" | "oldest" | "az" | "status";
 const statusFilters = ["all", ...PRODUCT_EVENT_STATUSES] as const;
@@ -103,23 +103,24 @@ function lifecycleLabel(value: Event["lifecycle_state"]): string | null {
 
 function EventCard({ event, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess }: { event: Event; onStatusSuccess: () => void; onDuplicateSuccess: () => void; onDeleteSuccess: () => void }) {
   const primaryImage = event.primary_image?.trim() ?? "";
+  const primaryImageUrl = protectedMediaPreviewUrl(primaryImage);
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
-  const hasPrimaryImage = primaryImage.length > 0 && failedImageUrl !== primaryImage;
+  const hasPrimaryImage = primaryImageUrl.length > 0 && failedImageUrl !== primaryImageUrl;
 
   useEffect(() => {
-    if (!primaryImage) {
+    if (!primaryImageUrl) {
       setFailedImageUrl(null);
       return;
     }
 
     const image = new Image();
-    image.onerror = () => setFailedImageUrl(primaryImage);
-    image.src = primaryImage;
+    image.onerror = () => setFailedImageUrl(primaryImageUrl);
+    image.src = primaryImageUrl;
 
     return () => {
       image.onerror = null;
     };
-  }, [primaryImage]);
+  }, [primaryImageUrl]);
   const labelClass = hasPrimaryImage ? "text-white/75" : "text-[#7f9d94]";
   const primaryTextClass = hasPrimaryImage ? "text-white" : "text-[#06201c]";
   const secondaryTextClass = hasPrimaryImage ? "text-white/85" : "text-[#52736a]";
@@ -131,7 +132,7 @@ function EventCard({ event, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess
 
   return (
     <article className={`group relative flex h-full flex-col rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-200 ${interactionClass}`}>
-      {hasPrimaryImage ? <div aria-hidden="true" className="absolute inset-0 overflow-hidden rounded-[inherit]"><img src={primaryImage} alt="" className="h-full w-full object-cover object-center" /><div className="absolute inset-0 bg-gradient-to-br from-[#06201c]/60 via-[#0c382e]/48 to-[#1f6a58]/38" /></div> : null}
+      {hasPrimaryImage ? <div aria-hidden="true" className="absolute inset-0 overflow-hidden rounded-[inherit]"><img src={primaryImageUrl} alt="" className="h-full w-full object-cover object-center" onError={() => setFailedImageUrl(primaryImageUrl)} /><div className="absolute inset-0 bg-gradient-to-br from-[#06201c]/60 via-[#0c382e]/48 to-[#1f6a58]/38" /></div> : null}
       <div className="relative z-10 flex flex-1 flex-col">
         <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">

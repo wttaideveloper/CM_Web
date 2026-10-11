@@ -10,7 +10,7 @@ import { clearPersistedDateTimeDrafts, useUnsavedChangesWarning } from "@ihp/ui"
 
 import { AdditionalConfigurationSection, CapacityAndRegistrationSection, MediaSection, PricingAndTicketsSection, ReviewSection } from "./CreateEventConfigurationSections";
 import { BasicInformationSection, LocationAndHostSection, ScheduleSection } from "./CreateEventDetailsSections";
-import { buildCreateEventPayload, buildUpdateEventPayload, createEmptyEventForm, eventToFormValues, localDateTimeOrderValue, mapSessionForPayload, mergeLatestEventSessions, validateEventForm, validateParticipantCapacity, type CreateEventFormValues } from "./create-event-form";
+import { buildCreateEventPayload, buildUpdateEventPayload, createEmptyEventForm, eventToFormValues, localDateTimeOrderValue, mapSessionForPayload, mergeLatestEventSessions, synchronizeCreateEventServiceWindows, validateEventForm, validateParticipantCapacity, type CreateEventFormValues } from "./create-event-form";
 import { validateServiceSchedule } from "./create-event-form";
 import { useEventCategories, useEventType, useEventTypes } from "./event-categories.queries";
 import { useActiveEventFormConfiguration, useEventHistoricalFormConfiguration } from "./event-form-configuration.queries";
@@ -28,6 +28,7 @@ import { documentUrl, type EventMediaField, type EventMediaUploadState } from ".
 import { EVENT_CREATE_LEAVE_MESSAGE, shouldConfirmEventCreateLeave } from "./event-create-navigation-guard";
 import { eventFieldMaxLength, EVENT_DESCRIPTION_MAX_LENGTH } from "./event-field-limits";
 import EventCreateLeaveDialog from "./EventCreateLeaveDialog";
+import { eventCurrencyForSource, findEventCurrencyChange, getEventCurrencyPolicy, hasEventMonetaryValues, isEventCurrencySource, resetEventMonetaryValues, resolveEventCurrencySource, synchronizeEventCurrencies, validateEventCurrencies, type EventCurrencyPolicy, type EventCurrencySource, type EventCurrencyUiState } from "./event-currency";
 
 const steps = ["Basic Information", "Schedule", "Venue & Host", "Pricing & Tickets", "Capacity & Registration", "Images & Media", "Additional Configuration", "Review & Submit"] as const;
 const stepFields: ReadonlyArray<readonly string[]> = [["title", "description", "category", "organiser_name", "organiser_contact"], ["start_date", "end_date", "registration_cutoff", "registration_open_at", "registration_close_at"], ["venue_name", "venue_address", "venue_city"], ["price", "currency", "ticket_types"], ["capacity", "min_participants", "max_participants"], ["media"], ["sessions", "custom_fields"], []];
@@ -131,6 +132,10 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const [activeStep, setActiveStep] = useState(0);
   const [initialValues] = useState(() => initialEvent ? eventToFormValues(initialEvent) : createEmptyEventForm());
   const [values, setValues] = useState(() => initialEvent ? eventToFormValues(initialEvent) : createEmptyEventForm());
+  const valuesRef = useRef(values);
+  valuesRef.current = values;
+  const [currencySourcePreference, setCurrencySourcePreference] = useState<EventCurrencySource | null>(null);
+  const [pendingCurrencyChange, setPendingCurrencyChange] = useState<{ values: CreateEventFormValues; source: EventCurrencySource; currency: string } | null>(null);
   const [sessionGenerationRules, setSessionGenerationRules] = useState<SessionGenerationRule[]>(createDefaultSessionGenerationRules);
   const previousEventType = useRef(values.event_type);
   const initialLocationId = initialEvent?.location_id ?? "";
@@ -146,8 +151,11 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const [initialCustomValues, setInitialCustomValues] = useState<Record<string, string | string[] | boolean | number | null>>({});
   const eventCreateAllowNavigation = useRef(false);
   const eventCreateSubmitted = useRef(false);
+  const eventCreateSubmissionStarted = useRef(false);
   const eventCreateDirty = useRef(false);
   const pendingLeaveAction = useRef<(() => void) | null>(null);
+  const leaveConfirmationPending = useRef(false);
+  const leaveConfirmationTimer = useRef<number | null>(null);
   const historicalCustomValuesHydrated = useRef(false);
   const enterpriseName = currentEnterprise?.business_legal_name || currentEnterprise?.business_short_name || currentEnterprise?.name || "";
   const organiserContact = [currentEnterprise?.business_email, currentEnterprise?.business_phone].filter(Boolean).join(" | ");
@@ -181,6 +189,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const hasHistoricalConfiguration = Boolean(initialEvent?.form_configuration_id && initialEvent?.form_configuration_version_id);
   const historicalFormConfiguration = useEventHistoricalFormConfiguration(initialEvent?.id, mode === "edit" && hasHistoricalConfiguration);
   const formConfiguration = mode === "create" ? activeFormConfiguration.data : historicalFormConfiguration.data;
+  const currencyPolicy = useMemo<EventCurrencyPolicy | null>(() => mode === "create" && activeFormConfiguration.data ? getEventCurrencyPolicy(activeFormConfiguration.data) : null, [activeFormConfiguration.data, mode]);
   const configuredSections = useMemo(() => [...(formConfiguration?.sections ?? [])]
     .filter((section) => section.is_enabled)
     .sort((left, right) => left.position - right.position)
@@ -194,8 +203,16 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     .filter((section) => section.fields.length > 0), [formConfiguration]);
   const currencyOptions = useMemo(() => {
     const configuredOptions = formConfiguration?.sections.flatMap((section) => section.fields).find((field) => field.source === "core" && (field.core_key === "currency" || field.stable_key === "currency"))?.options ?? [];
-    return configuredOptions.some((option) => option.value === "USD") ? configuredOptions : [{ value: "USD", label: "USD \u2014 US Dollar", position: 0 }, ...configuredOptions];
-  }, [formConfiguration]);
+    if (mode !== "create") return configuredOptions.some((option) => option.value === "USD") ? configuredOptions : [{ value: "USD", label: "USD \u2014 US Dollar", position: 0 }, ...configuredOptions];
+    return configuredOptions;
+  }, [formConfiguration, mode]);
+  const effectiveCurrencySource = currencyPolicy ? resolveEventCurrencySource(values, currencyPolicy, currencySourcePreference) : null;
+  const effectiveCurrency = eventCurrencyForSource(values, effectiveCurrencySource);
+  const currencyState: EventCurrencyUiState | undefined = mode === "create" && currencyPolicy ? {
+    value: effectiveCurrency,
+    source: effectiveCurrencySource,
+    isLocked: (source) => Boolean(effectiveCurrencySource && !isEventCurrencySource(effectiveCurrencySource, source)),
+  } : undefined;
   const requiresEventCategories = configuredSections.some((section) => section.fields.some((field) => field.source === "core" && (field.core_key === "category" || field.core_key === "subcategory")));
   const eventCategoriesQuery = useEventCategories(Boolean(formConfiguration) && requiresEventCategories);
   const mediaPolicyQuery = useQuery({ queryKey: ["events", "media-policy"], queryFn: getEventMediaPolicy, staleTime: 5 * 60_000 });
@@ -224,26 +241,62 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
         ? activeConfiguration.sections.flatMap((section) => section.fields).filter((field) => field.source === "custom").map((field) => { const key = field.stable_key ?? field.id; return { field_id: field.id, value: serializeCustomFieldValue(field, customValues[key] ?? null) }; }).filter((entry) => entry.value !== null)
         : undefined;
       const sessionsField = activeConfiguration?.sections.flatMap((section) => section.fields).find((field) => field.source === "core" && (field.core_key === "sessions" || field.stable_key === "sessions"));
-      return createEvent(buildCreateEventPayload(values, tenantId, enterpriseId, locationId, activeConfiguration?.version_id, configuredCustomValues, configuredCoreFieldKeys, sessionsField?.composite_config?.enabled_fields));
+      return createEvent(buildCreateEventPayload(values, tenantId, enterpriseId, locationId, activeConfiguration?.version_id, configuredCustomValues, configuredCoreFieldKeys, sessionsField?.composite_config?.enabled_fields, currencyPolicy ?? undefined));
     },
-    onSuccess: async () => { eventCreateSubmitted.current = true; eventCreateAllowNavigation.current = true; setMediaUploads([]); clearPersistedDateTimeDrafts(); await queryClient.invalidateQueries({ queryKey: ["events", "list"] }); if (initialEvent) { await queryClient.invalidateQueries({ queryKey: ["events", "detail", initialEvent.id] }); router.push(`/admin/events/${initialEvent.id}`); } else router.push("/admin/events"); },
-    onError: (error) => { if (error instanceof EventsApiError) { const configuredFields = formConfiguration?.sections.flatMap((section) => section.fields) ?? []; const actionableErrors = Object.fromEntries(Object.entries(error.fieldErrors).map(([fieldKey, messages]) => { const resolvedKey = resolveValidationKey(fieldKey, allFieldOrder) ?? fieldKey; const matchingField = configuredFields.find((field) => [field.core_key, field.stable_key, field.id].some((candidate) => candidate === resolvedKey || candidate === fieldKey)); return [fieldKey, matchingField && messages.some((message) => /invalid format/i.test(message)) ? [getEventFormatError(matchingField, t)] : messages]; })); const displayErrors = normalizeValidationErrors(actionableErrors, allFieldOrder); setErrors((current) => ({ ...current, ...displayErrors })); const firstStructuredItem = error.structuredErrors.find((item) => allFieldOrder.some((field) => resolveValidationKey(item.fieldKey, [field]) === field)); const firstStructuredRoot = firstStructuredItem?.fieldKey; const firstStructuredNested = firstStructuredItem?.nestedPath.filter((part) => part !== "options"); const structuredFocus = firstStructuredRoot && firstStructuredNested?.length ? `${firstStructuredRoot}.${firstStructuredNested.join(".")}` : firstStructuredRoot; const first = structuredFocus ?? firstErrorKey(allFieldOrder, displayErrors) ?? Object.keys(displayErrors).find((key) => displayErrors[key]?.length); if (first) { const sectionIndex = editorSteps.findIndex((_, index) => sectionFields(index).includes(firstStructuredRoot ?? first)); if (sectionIndex >= 0) setActiveStep(sectionIndex); setPendingFocusField(first); } const mappedToField = Boolean(firstStructuredRoot || firstErrorKey(allFieldOrder, displayErrors)); setSubmitError(error.status === 401 || error.status === 403 ? "Your session cannot save this event. Please sign in again." : mappedToField ? null : error.message); } else setSubmitError(error instanceof Error ? error.message : "Unable to save event."); },
+    onSuccess: async () => { eventCreateSubmitted.current = true; eventCreateAllowNavigation.current = true; eventCreateSubmissionStarted.current = true; pendingLeaveAction.current = null; setLeaveConfirmationOpen(false); setMediaUploads([]); clearPersistedDateTimeDrafts(); if (!initialEvent) { router.push("/admin/events"); await queryClient.invalidateQueries({ queryKey: ["events", "list"] }); return; } await queryClient.invalidateQueries({ queryKey: ["events", "list"] }); await queryClient.invalidateQueries({ queryKey: ["events", "detail", initialEvent.id] }); router.push(`/admin/events/${initialEvent.id}`); },
+    onError: (error) => { eventCreateSubmissionStarted.current = false; if (error instanceof EventsApiError) { const configuredFields = formConfiguration?.sections.flatMap((section) => section.fields) ?? []; const actionableErrors = Object.fromEntries(Object.entries(error.fieldErrors).map(([fieldKey, messages]) => { const resolvedKey = resolveValidationKey(fieldKey, allFieldOrder) ?? fieldKey; const matchingField = configuredFields.find((field) => [field.core_key, field.stable_key, field.id].some((candidate) => candidate === resolvedKey || candidate === fieldKey)); return [fieldKey, matchingField && messages.some((message) => /invalid format/i.test(message)) ? [getEventFormatError(matchingField, t)] : messages]; })); const displayErrors = normalizeValidationErrors(actionableErrors, allFieldOrder); setErrors((current) => ({ ...current, ...displayErrors })); const firstStructuredItem = error.structuredErrors.find((item) => allFieldOrder.some((field) => resolveValidationKey(item.fieldKey, [field]) === field)); const firstStructuredRoot = firstStructuredItem?.fieldKey; const firstStructuredNested = firstStructuredItem?.nestedPath.filter((part) => part !== "options"); const structuredFocus = firstStructuredRoot && firstStructuredNested?.length ? `${firstStructuredRoot}.${firstStructuredNested.join(".")}` : firstStructuredRoot; const first = structuredFocus ?? firstErrorKey(allFieldOrder, displayErrors) ?? Object.keys(displayErrors).find((key) => displayErrors[key]?.length); if (first) { const sectionIndex = editorSteps.findIndex((_, index) => sectionFields(index).includes(firstStructuredRoot ?? first)); if (sectionIndex >= 0) setActiveStep(sectionIndex); setPendingFocusField(first); } const mappedToField = Boolean(firstStructuredRoot || firstErrorKey(allFieldOrder, displayErrors)); setSubmitError(error.status === 401 || error.status === 403 ? "Your session cannot save this event. Please sign in again." : mappedToField ? null : error.message); } else setSubmitError(error instanceof Error ? error.message : "Unable to save event."); },
   });
   const update = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => {
     hasUserEditedFormRef.current = true;
-    setValues((current) => {
-      if (key === "event_type") {
-        const selected = availableEventTypes.find((item) => item.key === value);
-        const reconciledModules = reconcileSelectedEventModules(selected, current.modules);
-        const modules = reconciledModules && current.delivery_mode === "in_person" ? { ...reconciledModules, online_meeting: false } : reconciledModules;
-        if (!modules) return { ...current, event_type: value as CreateEventFormValues["event_type"], modules: null, pricing_type: "free" };
-        return { ...current, event_type: value as CreateEventFormValues["event_type"], modules, pricing_type: modules.tickets ? current.pricing_type : "free" };
+    const current = valuesRef.current;
+    let next: CreateEventFormValues;
+    if (key === "event_type") {
+      const selected = availableEventTypes.find((item) => item.key === value);
+      const reconciledModules = reconcileSelectedEventModules(selected, current.modules);
+      const modules = reconciledModules && current.delivery_mode === "in_person" ? { ...reconciledModules, online_meeting: false } : reconciledModules;
+      next = !modules
+        ? { ...current, event_type: value as CreateEventFormValues["event_type"], modules: null, pricing_type: "free" }
+        : { ...current, event_type: value as CreateEventFormValues["event_type"], modules, pricing_type: modules.tickets ? current.pricing_type : "free" };
+    } else if (key === "delivery_mode" && value === "in_person" && current.modules?.online_meeting) {
+      next = { ...current, delivery_mode: value, modules: { ...current.modules, online_meeting: false } };
+    } else {
+      next = key === "modules" && value && !(value as CreateEventFormValues["modules"])?.tickets
+        ? { ...current, modules: value as CreateEventFormValues["modules"], pricing_type: "free" }
+        : { ...current, [key]: value } as CreateEventFormValues;
+    }
+    if (mode === "create" && currencyPolicy) {
+      const currencyChange = findEventCurrencyChange(current, next);
+      if (currencyChange) {
+        const currentSource = resolveEventCurrencySource(current, currencyPolicy, currencySourcePreference);
+        const currentCurrency = eventCurrencyForSource(current, currentSource);
+        if (currentSource && currentCurrency && !isEventCurrencySource(currentSource, currencyChange.source)) {
+          next = synchronizeEventCurrencies(next, currencyPolicy, currentCurrency);
+        } else if (currencyChange.value !== currentCurrency && hasEventMonetaryValues(current, currencyPolicy)) {
+          setPendingCurrencyChange({ values: next, source: currencyChange.source, currency: currencyChange.value });
+          return;
+        } else {
+          setCurrencySourcePreference(currencyChange.source);
+          next = synchronizeEventCurrencies(next, currencyPolicy, currencyChange.value);
+        }
       }
-      if (key === "delivery_mode" && value === "in_person" && current.modules?.online_meeting) return { ...current, delivery_mode: value, modules: { ...current.modules, online_meeting: false } };
-      return key === "modules" && value && !(value as CreateEventFormValues["modules"])?.tickets ? { ...current, modules: value as CreateEventFormValues["modules"], pricing_type: "free" } : { ...current, [key]: value };
-    });
-    setErrors((current) => ({ ...current, [key]: [] })); setSubmitError(null);
+    }
+    if (mode === "create") next = synchronizeCreateEventServiceWindows(next);
+    valuesRef.current = next;
+    setValues(next);
+    setErrors((currentErrors) => ({ ...currentErrors, [key]: [] })); setSubmitError(null);
   };
+  const confirmCurrencyChange = () => {
+    if (!pendingCurrencyChange || !currencyPolicy) return;
+    const reset = resetEventMonetaryValues(pendingCurrencyChange.values, currencyPolicy);
+    setCurrencySourcePreference(pendingCurrencyChange.source);
+    const synchronized = synchronizeEventCurrencies(reset, currencyPolicy, pendingCurrencyChange.currency);
+    valuesRef.current = synchronized;
+    setValues(synchronized);
+    setPendingCurrencyChange(null);
+    setErrors({});
+    setSubmitError(null);
+  };
+  const cancelCurrencyChange = () => setPendingCurrencyChange(null);
   const updateCustomValues = (next: Record<string, string | string[] | boolean | number | null>) => { const changedKey = Object.keys(next).find((key) => JSON.stringify(next[key]) !== JSON.stringify(customValues[key])); if (changedKey) hasUserEditedFormRef.current = true; setCustomValues(next); if (changedKey) setErrors((current) => ({ ...current, [changedKey]: [] })); setSubmitError(null); };
   const updateMediaUpload = (id: string, patch: Partial<EventMediaUploadState>) => setMediaUploads((current) => current.map((upload) => upload.id === id ? { ...upload, ...patch } : upload));
   const runMediaUpload = (upload: EventMediaUploadState) => {
@@ -340,7 +393,11 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     window.setTimeout(() => element.classList.remove("event-validation-focus"), 1600);
     setPendingFocusField(null);
   }, [activeStep, pendingFocusField]);
-  const allErrors = useMemo(() => formConfiguration ? validateConfiguredEventForm(formConfiguration, values, customValues, eventCategoriesQuery.data ?? [], mode, (field) => getEventFormatError(field, t)) : validateEventForm(values, mode), [customValues, eventCategoriesQuery.data, formConfiguration, mode, t, values]);
+  const allErrors = useMemo(() => {
+    const nextErrors = formConfiguration ? validateConfiguredEventForm(formConfiguration, values, customValues, eventCategoriesQuery.data ?? [], mode, (field) => getEventFormatError(field, t)) : validateEventForm(values, mode);
+    if (mode === "create" && currencyPolicy) Object.assign(nextErrors, validateEventCurrencies(values, currencyPolicy));
+    return nextErrors;
+  }, [currencyPolicy, customValues, eventCategoriesQuery.data, formConfiguration, mode, t, values]);
   const isDirty = JSON.stringify(values) !== JSON.stringify(initialValues)
     || JSON.stringify(customValues) !== JSON.stringify(initialCustomValues)
     || mediaUploads.length > 0
@@ -348,14 +405,19 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   useEffect(() => {
     eventCreateDirty.current = isDirty;
   }, [isDirty]);
+  const requestLeaveConfirmation = (action: () => void) => {
+    if (leaveConfirmationPending.current) return;
+    pendingLeaveAction.current = action;
+    leaveConfirmationPending.current = true;
+    leaveConfirmationTimer.current = window.setTimeout(() => {
+      leaveConfirmationTimer.current = null;
+      if (pendingLeaveAction.current) setLeaveConfirmationOpen(true);
+    }, 0);
+  };
   useEffect(() => {
     if (mode !== "create" || typeof window === "undefined") return;
 
     const shouldPrompt = () => shouldConfirmEventCreateLeave({ mode, isDirty: eventCreateDirty.current, hasSubmitted: eventCreateSubmitted.current });
-    const requestLeaveConfirmation = (action: () => void) => {
-      pendingLeaveAction.current = action;
-      setLeaveConfirmationOpen(true);
-    };
     const beforeUnload = (event: BeforeUnloadEvent) => {
       if (eventCreateAllowNavigation.current || !shouldPrompt()) return;
       event.preventDefault();
@@ -364,6 +426,11 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     window.addEventListener("beforeunload", beforeUnload);
 
     const navigationApi = (window as unknown as { navigation?: NavigationApiLike }).navigation;
+    const isNextInternalHistoryState = (state: unknown): boolean => {
+      if (!state || typeof state !== "object") return false;
+      const historyState = state as Record<string, unknown>;
+      return historyState.__NA === true || historyState._N === true;
+    };
     const onNavigate = (event: NavigationEventLike) => {
       const destinationUrl = event.destination?.url;
       if (eventCreateAllowNavigation.current || !destinationUrl || destinationUrl === window.location.href || !shouldPrompt()) return;
@@ -398,6 +465,10 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
 
     const guardedPushState: History["pushState"] = (state, title, url) => {
       const nextUrl = url == null ? window.location.href : new URL(String(url), window.location.href).href;
+      if (navigationApi && isNextInternalHistoryState(state)) {
+        originalPushState(state, title, url);
+        return;
+      }
       if (nextUrl !== window.location.href && !eventCreateAllowNavigation.current && shouldPrompt()) {
         requestLeaveConfirmation(() => {
           eventCreateAllowNavigation.current = true;
@@ -411,6 +482,10 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     };
     const guardedReplaceState: History["replaceState"] = (state, title, url) => {
       const nextUrl = url == null ? window.location.href : new URL(String(url), window.location.href).href;
+      if (navigationApi && isNextInternalHistoryState(state)) {
+        originalReplaceState(state, title, url);
+        return;
+      }
       if (nextUrl !== window.location.href && !eventCreateAllowNavigation.current && shouldPrompt()) {
         requestLeaveConfirmation(() => {
           eventCreateAllowNavigation.current = true;
@@ -456,6 +531,10 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
       else window.removeEventListener("popstate", handlePopState);
       history.pushState = originalPushState;
       history.replaceState = originalReplaceState;
+      if (leaveConfirmationTimer.current !== null) window.clearTimeout(leaveConfirmationTimer.current);
+      leaveConfirmationTimer.current = null;
+      leaveConfirmationPending.current = false;
+      pendingLeaveAction.current = null;
       if (window.location.href === initialUrl && readHistoryIndex(history.state) !== undefined) {
         const state = history.state as Record<string, unknown>;
         const rest = { ...state };
@@ -469,15 +548,20 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     if (!shouldConfirmEventCreateLeave({ mode, isDirty, hasSubmitted: eventCreateSubmitted.current })) return;
     event.preventDefault();
-    pendingLeaveAction.current = () => {
+    requestLeaveConfirmation(() => {
       eventCreateAllowNavigation.current = true;
       router.push(backHref);
-    };
-    setLeaveConfirmationOpen(true);
+    });
   };
-  useUnsavedChangesWarning(isDirty && (mode === "edit" || hasUserEditedFormRef.current));
-  const stayOnEventCreate = () => { pendingLeaveAction.current = null; setLeaveConfirmationOpen(false); };
-  const leaveEventCreate = () => { const action = pendingLeaveAction.current; pendingLeaveAction.current = null; setLeaveConfirmationOpen(false); action?.(); };
+  useUnsavedChangesWarning(isDirty && mode === "edit");
+  const clearPendingLeaveConfirmation = () => {
+    pendingLeaveAction.current = null;
+    leaveConfirmationPending.current = false;
+    if (leaveConfirmationTimer.current !== null) window.clearTimeout(leaveConfirmationTimer.current);
+    leaveConfirmationTimer.current = null;
+  };
+  const stayOnEventCreate = () => { clearPendingLeaveConfirmation(); setLeaveConfirmationOpen(false); };
+  const leaveEventCreate = () => { const action = pendingLeaveAction.current; clearPendingLeaveConfirmation(); setLeaveConfirmationOpen(false); action?.(); };
   const sectionFields = (index: number): string[] => {
     if (!formConfiguration) return [...(stepFields[index] ?? [])];
     const fields = configuredSections[index]?.fields.map((field) => field.source === "core" ? field.core_key ?? field.stable_key ?? field.id : field.stable_key ?? field.id) ?? [];
@@ -495,9 +579,9 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   };
   const sectionHasErrors = (index: number) => firstErrorKey(sectionFields(index), displayErrors) !== null;
   const continueToNext = () => { const currentErrors = Object.fromEntries(Object.entries(normalizedAllErrors).filter(([field]) => sectionFields(activeStep).includes(field))); const first = firstErrorKey(sectionFields(activeStep), currentErrors); if (first) { focusError(first, currentErrors); return; } setErrors({}); setActiveStep((current) => Math.min(current + 1, editorSteps.length - 1)); };
-  const submit = () => { if (mode === "edit" && !isDirty) return; if (mediaUploads.some((upload) => upload.status === "uploading" || upload.status === "error")) { setSubmitError("Finish or remove the Event media uploads before saving."); return; } const first = firstErrorKey(allFieldOrder, normalizedAllErrors) ?? Object.keys(normalizedAllErrors).find((field) => normalizedAllErrors[field]?.length); if (first) { const sectionIndex = editorSteps.findIndex((_, index) => sectionFields(index).includes(first)); focusError(first, normalizedAllErrors); if (sectionIndex >= 0) setActiveStep(sectionIndex); const count = errorCount(normalizedAllErrors); setSubmitError(`${count} validation error${count === 1 ? "" : "s"} need attention.`); return; } setSubmitError(null); saveMutation.mutate(); };
+  const submit = () => { if (mode === "create" && eventCreateSubmissionStarted.current) return; if (mode === "edit" && !isDirty) return; if (mediaUploads.some((upload) => upload.status === "uploading" || upload.status === "error")) { setSubmitError("Finish or remove the Event media uploads before saving."); return; } const first = firstErrorKey(allFieldOrder, normalizedAllErrors) ?? Object.keys(normalizedAllErrors).find((field) => normalizedAllErrors[field]?.length); if (first) { const sectionIndex = editorSteps.findIndex((_, index) => sectionFields(index).includes(first)); focusError(first, normalizedAllErrors); if (sectionIndex >= 0) setActiveStep(sectionIndex); const count = errorCount(normalizedAllErrors); setSubmitError(`${count} validation error${count === 1 ? "" : "s"} need attention.`); return; } setSubmitError(null); if (mode === "create") eventCreateSubmissionStarted.current = true; saveMutation.mutate(); };
   const mediaProps = { mediaPolicy: mediaPolicyQuery.data, policyError: mediaPolicyQuery.error instanceof Error ? mediaPolicyQuery.error.message : undefined, uploads: mediaUploads, onMediaLinkChange, onMediaAddLink, onMediaRemove, onMediaUpload, onMediaRetry, onMediaUploadRemove };
-  const sharedProps = { values, update, errors: displayErrors, currencyOptions, eventTypes: availableEventTypes, eventTypesLoading: eventTypesQuery.isLoading, eventTypesError: eventTypesQuery.isError, ...mediaProps, ...(mode === "create" ? { sessionGenerationRules, onSessionGenerationRulesChange: setSessionGenerationRules } : {}) };
+  const sharedProps = { values, update, errors: displayErrors, currencyOptions, eventTypes: availableEventTypes, eventTypesLoading: eventTypesQuery.isLoading, eventTypesError: eventTypesQuery.isError, createMode: mode === "create", ...mediaProps, ...(mode === "create" ? { sessionGenerationRules, onSessionGenerationRulesChange: setSessionGenerationRules, currencyState } : {}) };
   const backHref = initialEvent ? `/admin/events/${initialEvent.id}` : "/admin/events";
   const title = mode === "edit" ? "Edit Event" : "Create Event";
 
@@ -535,11 +619,25 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     return <HistoricalFormStatus error onRetry={() => void activeFormConfiguration.refetch()}><strong>No Event Form Available</strong><br />There is currently no active Event Form Configuration available. Please contact your Super Admin to publish and activate one before creating an Event.</HistoricalFormStatus>;
   }
 
-  return <div className="w-full"><EventCreateLeaveDialog open={leaveConfirmationOpen} onStay={stayOnEventCreate} onLeave={leaveEventCreate} /><header className="flex flex-col gap-4 border-b border-[#edf3f0] pb-6 sm:flex-row sm:items-start sm:justify-between"><div>{mode === "edit" ? <Link href={backHref} className="text-sm font-semibold text-[#1f6a58]">Back to Event</Link> : null}<p className="mt-4 text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">{mode === "edit" ? initialEvent?.status ?? "EVENT" : "DRAFT EVENT"}</p><h1 className="mt-2 text-2xl font-bold text-[#06201c] sm:text-3xl">{title}</h1><p className="mt-2 text-sm text-[#52736a] sm:text-base">{mode === "edit" ? initialEvent?.title : "Build and review a new event for your enterprise."}</p></div><Link href={backHref} onClick={handleCreateLeave} className="inline-flex h-11 items-center justify-center rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a]">Cancel</Link></header>
+  return <div className="w-full"><EventCreateLeaveDialog open={leaveConfirmationOpen} onStay={stayOnEventCreate} onLeave={leaveEventCreate} /><EventCurrencyChangeDialog open={Boolean(pendingCurrencyChange)} onCancel={cancelCurrencyChange} onConfirm={confirmCurrencyChange} /><header className="flex flex-col gap-4 border-b border-[#edf3f0] pb-6 sm:flex-row sm:items-start sm:justify-between"><div>{mode === "edit" ? <Link href={backHref} className="text-sm font-semibold text-[#1f6a58]">Back to Event</Link> : null}<p className="mt-4 text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">{mode === "edit" ? initialEvent?.status ?? "EVENT" : "DRAFT EVENT"}</p><h1 className="mt-2 text-2xl font-bold text-[#06201c] sm:text-3xl">{title}</h1><p className="mt-2 text-sm text-[#52736a] sm:text-base">{mode === "edit" ? initialEvent?.title : "Build and review a new event for your enterprise."}</p></div><Link href={backHref} onClick={handleCreateLeave} className="inline-flex h-11 items-center justify-center rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a]">Cancel</Link></header>
     {mode === "create" && !activeFormConfiguration.data && (activeFormConfiguration.isLoading || activeFormConfiguration.isError) ? <ActiveEventFormVerification query={activeFormConfiguration} /> : <div className="mt-6 grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]"><nav aria-label="Event editor sections" className="rounded-2xl border border-[#e1ebe6] bg-white p-3 shadow-sm">{editorSteps.map((step, index) => { const hasErrors = sectionHasErrors(index); return <button key={`${step}-${index}`} type="button" aria-current={activeStep === index ? "step" : undefined} aria-label={hasErrors ? `${step}, contains validation errors` : step} onClick={() => selectSection(index)} className={`flex min-w-0 w-full items-start gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${hasErrors ? "text-[#b42318]" : activeStep === index ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f9fcfa]"}`}><span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-current text-xs ${hasErrors ? "bg-[#fff1f0] font-bold" : ""}`}>{hasErrors ? <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full bg-[#b42318]" /> : index + 1}</span><span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">{step}</span></button>; })}</nav>
       <main className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm sm:p-6">{mode === "create" && (activeFormConfiguration.isError || !activeFormConfiguration.data) ? <ActiveEventFormVerification query={activeFormConfiguration} /> : null}{mode === "create" && activeFormConfiguration.data && activeStep < configuredSections.length ? <ConfiguredCreateEventSection section={configuredSections[activeStep]} {...sharedProps} customValues={customValues} setCustomValues={updateCustomValues} categories={eventCategoriesQuery.data ?? []} categoriesLoading={eventCategoriesQuery.isLoading} categoriesError={eventCategoriesQuery.isError} /> : null}{mode === "create" && activeFormConfiguration.data && activeStep === configuredSections.length ? <ConfiguredCreateEventReview configuration={activeFormConfiguration.data} values={values} customValues={customValues} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 0 ? <BasicInformationSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 1 ? <ScheduleSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 2 ? <LocationAndHostSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 3 ? <PricingAndTicketsSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 4 ? <CapacityAndRegistrationSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 5 ? <MediaSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 6 ? <AdditionalConfigurationSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 7 ? <ReviewSection values={values} /> : null}{mode === "edit" && activeStep === 0 ? <BasicInformationSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 1 ? <ScheduleSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 2 ? <LocationAndHostSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 3 ? <PricingAndTicketsSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 4 ? <CapacityAndRegistrationSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 5 ? <MediaSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 6 ? <AdditionalConfigurationSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 7 ? <ReviewSection values={values} /> : null}{isCreateBlockedByEnterprise ? <div role="status" className="mt-6 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-3 text-sm font-semibold text-[#735c1e]">Creating an Event is unavailable until an Enterprise is linked. The current backend EventCreate contract requires an enterprise_id.</div> : null}{submitError ? <div role="alert" className="mt-6 rounded-xl border border-[#f3d0cb] bg-[#fff6f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{submitError}</div> : null}
         <div className="mt-8 flex flex-col-reverse gap-3 border-t border-[#edf3f0] pt-5 sm:flex-row sm:justify-between">{activeStep > 0 ? <button type="button" onClick={() => setActiveStep((current) => current - 1)} disabled={saveMutation.isPending} className="h-11 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a] disabled:opacity-50">Back</button> : null}{activeStep === editorSteps.length - 1 ? <button type="button" onClick={submit} disabled={saveMutation.isPending || isCreateBlockedByEnterprise || (mode === "edit" && !isDirty)} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm disabled:opacity-60">{saveMutation.isPending ? mode === "edit" ? "Saving..." : "Creating..." : mode === "edit" ? "Save Changes" : "Create Event"}</button> : <button type="button" onClick={continueToNext} className="h-11 rounded-full bg-[#1f6a58] px-5 py-2.5 text-sm font-bold text-white shadow-sm">Continue</button>}</div>
       </main></div>}</div>;
+}
+
+function EventCurrencyChangeDialog({ open, onCancel, onConfirm }: { open: boolean; onCancel: () => void; onConfirm: () => void }) {
+  if (!open) return null;
+  return <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#06201c]/50 p-4" role="presentation">
+    <div role="dialog" aria-modal="true" aria-labelledby="event-currency-change-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+      <h2 id="event-currency-change-title" className="text-xl font-bold text-[#06201c]">Change Event currency?</h2>
+      <p className="mt-2 text-sm leading-6 text-[#52736a]">Changing currency will clear entered prices. No conversion will be applied.</p>
+      <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+        <button type="button" onClick={onCancel} className="h-11 rounded-full border border-[#d7e5df] px-5 text-sm font-bold text-[#52736a] focus:outline-none focus:ring-2 focus:ring-[#1f6a58] focus:ring-offset-2">Cancel</button>
+        <button type="button" onClick={onConfirm} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-[#1f6a58] focus:ring-offset-2">Change currency</button>
+      </div>
+    </div>
+  </div>;
 }
 
 function HistoricalFormStatus({ children, error = false, onRetry }: { children: React.ReactNode; error?: boolean; onRetry?: () => void }) {
@@ -627,7 +725,7 @@ function validateConfiguredEventForm(configuration: ActiveEventFormConfiguration
     const sessionError = validateSessions(values.sessions, values.start_date, values.end_date, sessionField.composite_config?.enabled_fields ?? undefined, sessionField.composite_config?.required_fields ?? [], [], values.delivery_mode);
     if (sessionError) errors.sessions = [sessionError];
   }
-  Object.assign(errors, validateServiceSchedule(values));
+  Object.assign(errors, validateServiceSchedule(values, mode === "create"));
   return errors;
 }
 

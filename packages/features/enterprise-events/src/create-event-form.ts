@@ -15,6 +15,8 @@ import type {
 import { buildEventMediaPayload, buildEventMediaUpdatePayload, normalizeDocumentEntries, validateEventMediaLink, type EventDocumentEntry } from "./event-media";
 import { validateSessions } from "./SessionTableEditor";
 import { EVENT_DESCRIPTION_MAX_LENGTH, eventServiceOptionLengthError } from "./event-field-limits";
+import { assertEventCurrencyConsistency, type EventCurrencyPolicy } from "./event-currency";
+import { deriveEventPurchaseWindow, syncPurchaseWindows } from "./event-service-purchase-window";
 
 /** An editable ticket row in the Create Event workspace. */
 export interface EventTicketFormValue extends EventTicketType {}
@@ -81,9 +83,23 @@ export function createEmptyEventForm(): CreateEventFormValues {
     organiser_contact: "", start_date: "", end_date: "", duration_type: "", registration_cutoff: "",
     registration_open_at: "", registration_close_at: "", time_zone: "America/New_York", event_type: "", delivery_mode: "in_person",
     venue_name: "", venue_address: "", venue_city: "", venue_latitude: "", venue_longitude: "",
-    meeting_link: "", meeting_provider: "", price: "", pricing_type: "paid", currency: "USD", ticket_types: [], capacity: "",
+    meeting_link: "", meeting_provider: "", price: "", pricing_type: "paid", currency: "", ticket_types: [], capacity: "",
     min_participants: "", max_participants: "", primary_image: "", gallery_images: [], videos: [], documents: [],
     custom_fields: [], sessions: [], modules: null, meals: null, accommodation: null,
+  };
+}
+
+/** Keeps Create Event service purchasing windows derived from registration dates. */
+export function synchronizeCreateEventServiceWindows(values: CreateEventFormValues): CreateEventFormValues {
+  const purchaseWindow = deriveEventPurchaseWindow(values.registration_open_at, values.registration_close_at, values.registration_cutoff);
+  return {
+    ...values,
+    meals: values.modules?.meals === true && values.meals
+      ? { ...values.meals, options: syncPurchaseWindows(values.meals.options ?? [], purchaseWindow) }
+      : values.meals,
+    accommodation: values.modules?.accommodation === true && values.accommodation
+      ? { ...values.accommodation, options: syncPurchaseWindows(values.accommodation.options ?? [], purchaseWindow) }
+      : values.accommodation,
   };
 }
 
@@ -97,9 +113,12 @@ export function buildCreateEventPayload(
   customValues?: Array<{ field_id: string; value: string | string[] | boolean | number | null }>,
   configuredCoreKeys?: ReadonlySet<string>,
   sessionsEnabledFields?: readonly string[],
+  currencyPolicy?: EventCurrencyPolicy,
 ): CreateEventPayload {
+  const synchronizedValues = synchronizeCreateEventServiceWindows(values);
   const eventType = values.event_type.trim();
   if (!eventType) throw new Error("Select an Event Type before creating this Event.");
+  if (currencyPolicy) assertEventCurrencyConsistency(values, currencyPolicy);
   const coordinates = buildCoordinates(values.venue_latitude, values.venue_longitude);
   const venue: CreateEventVenue = {
     name: values.venue_name.trim(),
@@ -133,8 +152,8 @@ export function buildCreateEventPayload(
     meeting_provider: values.delivery_mode === "in_person" ? null : values.meeting_provider.trim() || null,
     price: values.pricing_type === "free" ? null : values.price.trim(),
     pricing_type: values.pricing_type,
-    currency: values.currency.trim(),
-    ticket_types: values.ticket_types,
+    currency: values.pricing_type === "free" ? "" : values.currency.trim(),
+    ticket_types: values.pricing_type === "free" ? [] : values.ticket_types,
     capacity: toOptionalNumericString(values.capacity),
     min_participants: toOptionalNumericString(values.min_participants),
     max_participants: toOptionalNumericString(values.max_participants),
@@ -146,8 +165,8 @@ export function buildCreateEventPayload(
     ...(formConfigurationVersionId ? { form_configuration_version_id: formConfigurationVersionId } : {}),
     ...(customValues ? { custom_values: customValues } : {}),
     ...(values.modules ? { modules: values.modules } : {}),
-    ...(values.meals ? { meals: values.meals } : {}),
-    ...(values.accommodation ? { accommodation: values.accommodation } : {}),
+    ...(synchronizedValues.modules?.meals === true && synchronizedValues.meals ? { meals: synchronizedValues.meals } : {}),
+    ...(synchronizedValues.modules?.accommodation === true && synchronizedValues.accommodation ? { accommodation: synchronizedValues.accommodation } : {}),
   };
   if (configuredCoreKeys) {
     const payloadFields: Record<string, keyof CreateEventPayload> = { title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", start_date: "start_date", start_datetime: "start_date", end_date: "end_date", end_datetime: "end_date", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", timezone: "time_zone", time_zone: "time_zone", event_type: "event_type", delivery_mode: "delivery_mode", venue: "venue", pricing_type: "pricing_type", price: "price", currency: "currency", ticket_types: "ticket_types", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents", media: "primary_image", sessions: "sessions", custom_fields: "custom_fields", registration_questions: "custom_fields" };
@@ -164,8 +183,8 @@ export function buildCreateEventPayload(
     }
   }
   if (values.modules) payload.modules = values.modules;
-  if (values.meals) payload.meals = values.meals;
-  if (values.accommodation) payload.accommodation = values.accommodation;
+  if (synchronizedValues.modules?.meals === true && synchronizedValues.meals) payload.meals = synchronizedValues.meals;
+  if (synchronizedValues.modules?.accommodation === true && synchronizedValues.accommodation) payload.accommodation = synchronizedValues.accommodation;
   return payload;
 }
 
@@ -350,11 +369,11 @@ export function validateParticipantCapacity(values: Pick<CreateEventFormValues, 
 }
 
 /** Validates the safe, user-supplied Create Event values before submission. */
-export function validateServiceSchedule(values: CreateEventFormValues): Record<string, string[]> {
+export function validateServiceSchedule(values: CreateEventFormValues, includePurchaseWindow = true): Record<string, string[]> {
   const errors: Record<string, string[]> = {};
   const start = values.start_date;
   const end = values.end_date;
-  const check = (key: "meals" | "accommodation", options: readonly { name?: string | null; description?: string | null; date?: string | null; service_start_at?: string | null; service_end_at?: string | null }[]) => {
+  const check = (key: "meals" | "accommodation", options: readonly { name?: string | null; description?: string | null; date?: string | null; purchase_start_at?: string | null; purchase_end_at?: string | null; service_start_at?: string | null; service_end_at?: string | null }[]) => {
     options.forEach((option, index) => {
       const prefix = `${key}.${index}`;
       const addError = (field: string, message: string) => {
@@ -369,10 +388,11 @@ export function validateServiceSchedule(values: CreateEventFormValues): Record<s
       if (option.service_start_at && start && option.service_start_at < start || option.service_start_at && end && option.service_start_at > end) addError("service_start_at", "Service start must be within the Event schedule.");
       if (option.service_end_at && start && option.service_end_at < start || option.service_end_at && end && option.service_end_at > end) addError("service_end_at", "Service end must be within the Event schedule.");
       if (option.service_start_at && option.service_end_at && option.service_end_at < option.service_start_at) addError("service_end_at", "Service end must be after service start.");
+      if (includePurchaseWindow && option.purchase_start_at && option.purchase_end_at && option.purchase_end_at < option.purchase_start_at) addError("purchase_end_at", "Purchase end must be after purchase start.");
     });
   };
-  check("meals", values.meals?.options ?? []);
-  check("accommodation", values.accommodation?.options ?? []);
+  if (!includePurchaseWindow || values.modules?.meals === true) check("meals", values.meals?.options ?? []);
+  if (!includePurchaseWindow || values.modules?.accommodation === true) check("accommodation", values.accommodation?.options ?? []);
   return errors;
 }
 
@@ -403,7 +423,7 @@ export function validateEventForm(values: CreateEventFormValues, mode: "create" 
   validateNumbers(values, errors);
   validateUrls(values, errors);
   validateRepeatingValues(values, errors);
-  Object.assign(errors, validateServiceSchedule(values));
+  Object.assign(errors, validateServiceSchedule(values, mode === "create"));
   return errors;
 }
 

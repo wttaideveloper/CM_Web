@@ -254,6 +254,7 @@ export interface Event {
   price: string | null;
   pricing_type?: "free" | "paid" | null;
   currency: string;
+  default_ticket_type_id?: string | null;
   ticket_types: EventTicketType[];
   capacity: string;
   min_participants: string;
@@ -1020,6 +1021,7 @@ function normalizeEventResponse(value: unknown): Event | null {
   const sessions = Array.isArray(value.sessions) ? value.sessions.map(normalizeEventSession).filter((item): item is EventSessionRecord => item !== null) : [];
   const ticketTypes = Array.isArray(value.ticket_types) ? value.ticket_types.map(normalizeEventTicket).filter((item): item is EventTicketType => item !== null) : [];
   const venue = value.venue === null || value.venue === undefined ? null : isEventVenue(value.venue) ? value.venue : null;
+  const defaultTicketTypeId = typeof value.default_ticket_type_id === "string" && value.default_ticket_type_id.trim() ? value.default_ticket_type_id.trim() : null;
   return {
     ...(value as unknown as Event),
     id: value.id as string,
@@ -1051,6 +1053,7 @@ function normalizeEventResponse(value: unknown): Event | null {
     price: nullableText("price"),
     pricing_type: value.pricing_type === "free" || value.pricing_type === "paid" ? value.pricing_type : null,
     currency: text("currency"),
+    default_ticket_type_id: defaultTicketTypeId,
     capacity: text("capacity"),
     min_participants: text("min_participants"),
     max_participants: text("max_participants"),
@@ -1086,6 +1089,7 @@ function normalizeNullableEventFields(event: Event): Event {
     ...event,
     price: event.price ?? "",
     pricing_type: event.pricing_type ?? (event.price !== null && event.price !== undefined && String(event.price).trim() !== "" && Number(event.price) !== 0 ? "paid" : "free"),
+    default_ticket_type_id: event.default_ticket_type_id?.trim() || null,
     subcategory: event.subcategory ?? "",
     organiser_name: event.organiser_name ?? "",
     organiser_contact: event.organiser_contact ?? "",
