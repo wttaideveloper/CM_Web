@@ -81,7 +81,7 @@ export function FieldEditor({ field, registry, trainingFields, isTrainingConfigu
     : field.renderer === "tags" || field.label.trim().toLowerCase() === "learning objectives" ? "tags" : "text";
   const allowedRenderers = (core?.allowedRenderers ?? renderers)
     .map((renderer) => isTrainingConfiguration && renderer === "select" ? "dropdown" : renderer)
-    .filter((renderer) => !isTrainingConfiguration || (renderer !== "multi_select" && renderer !== "select"));
+    .filter((renderer) => !isTrainingConfiguration || (renderer !== "multi_select" && renderer !== "select" && renderer !== "time"));
   const fieldRenderers = trainingTagInputField
     ? trainingTagsField ? ["tags"] : [...new Set(["text", ...allowedRenderers, "tags"])]
     : allowedRenderers;
