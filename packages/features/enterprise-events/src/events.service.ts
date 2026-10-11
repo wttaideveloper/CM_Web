@@ -1,6 +1,8 @@
 import { authenticatedFetch } from "@ihp/auth";
 import { mediaItemUrl, mediaUrlsFromUnknown, normalizeDocumentEntries, type EventDocumentEntry } from "./event-media";
 import { parseEventOrdersResponse, type EventOrder } from "./event-orders-parser";
+import { parseEventReview, parseManagedEventReviews, normalizeUtcDate } from "./event-reviews.service";
+import type { EnterpriseEventReviewsParams, EventReview, EventReviewAuditEntry, EventReviewsManageResponse, ReviewModerationStatus } from "./event-reviews.types";
 
 export type { EventOrder } from "./event-orders-parser";
 
@@ -264,6 +266,8 @@ export interface Event {
   sessions: EventSessionRecord[];
   status: EventStatus;
   lifecycle_state?: EventLifecycleState | null;
+  average_rating?: number | null;
+  reviews_count?: number | null;
   is_deleted: boolean;
   created_at: string;
   updated_at: string;
@@ -1068,6 +1072,8 @@ function normalizeEventResponse(value: unknown): Event | null {
     updated_at: value.updated_at as string,
     status: value.status as EventStatus,
     lifecycle_state: value.lifecycle_state === "upcoming" || value.lifecycle_state === "ongoing" || value.lifecycle_state === "finished" ? value.lifecycle_state : null,
+    average_rating: typeof value.average_rating === "number" && Number.isFinite(value.average_rating) ? value.average_rating : null,
+    reviews_count: typeof value.reviews_count === "number" && Number.isFinite(value.reviews_count) ? value.reviews_count : null,
   };
 }
 
@@ -1460,6 +1466,63 @@ export async function getEventFeedback(eventId: string): Promise<EventFeedbackRe
 
   const contentType = response.headers.get("content-type") ?? "";
   return contentType.includes("application/json") ? response.json() : response.text();
+}
+
+/** Loads the authenticated Enterprise's paginated Event review queue. */
+export async function listEnterpriseEventReviewsManage(params: EnterpriseEventReviewsParams = {}): Promise<EventReviewsManageResponse> {
+  const query = new URLSearchParams({ module: "event", page: String(params.page ?? 1), page_size: String(params.pageSize ?? 20) });
+  if (params.eventId) query.set("item_id", params.eventId);
+  if (params.status && params.status !== "all") query.set("status", params.status);
+  if (params.rating && params.rating !== "all") query.set("rating", String(params.rating));
+  if (params.q?.trim()) query.set("q", params.q.trim());
+  const response = await fetch(`/api/v1/reviews/manage?${query.toString()}`, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw await createEventsApiError(response, "load Event reviews");
+  return parseManagedEventReviews((await response.json()) as unknown, params.page ?? 1, params.pageSize ?? 20);
+}
+
+/** Changes the moderation state of an Event review. */
+export async function moderateEventReview(reviewId: string, status: ReviewModerationStatus): Promise<void> {
+  const response = await fetch(`/api/v1/reviews/event/${encodeURIComponent(reviewId)}/moderate`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: status }) });
+  if (!response.ok) throw await createEventsApiError(response, "update this Event review");
+}
+
+/** Permanently deletes an Event review. */
+export async function deleteEventReview(reviewId: string): Promise<void> {
+  const response = await fetch(`/api/v1/reviews/event/${encodeURIComponent(reviewId)}`, { method: "DELETE", credentials: "include" });
+  if (!response.ok) throw await createEventsApiError(response, "delete this Event review");
+}
+
+/** Loads the approved public-facing reviews for an Event. */
+export async function listEventReviews(eventId: string): Promise<EventReview[]> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/reviews`, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw await createEventsApiError(response, "load this Event's reviews");
+  const value = (await response.json()) as unknown;
+  const rows = Array.isArray(value) ? value : isReviewEnvelope(value) && Array.isArray(value.items) ? value.items : isReviewEnvelope(value) && Array.isArray(value.reviews) ? value.reviews : null;
+  if (!rows) throw new EventsApiError("Events API returned invalid Event reviews.", response.status);
+  return rows.map(parseEventReview);
+}
+
+/** Loads moderation history for the Enterprise's Events, optionally narrowed to one Event. */
+export async function getEventReviewsAudit(eventId?: string): Promise<EventReviewAuditEntry[]> {
+  const query = new URLSearchParams({ module: "event" });
+  if (eventId) query.set("item_id", eventId);
+  const response = await fetch(`/api/v1/reviews/audit?${query.toString()}`, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw await createEventsApiError(response, "load Event review history");
+  const value = (await response.json()) as unknown;
+  if (!isReviewEnvelope(value) || !Array.isArray(value.items)) throw new EventsApiError("Reviews API returned invalid Event audit history.", response.status);
+  return value.items.filter(isEventReviewAuditEntry).map((entry) => ({ ...entry, created_at: normalizeUtcDate(entry.created_at) }));
+}
+
+function isReviewEnvelope(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
+function isEventReviewAuditEntry(value: unknown): value is EventReviewAuditEntry {
+  if (!isReviewEnvelope(value)) return false;
+  return typeof value.id === "string" && typeof value.review_id === "string" && typeof value.item_id === "string" && typeof value.to_status === "string"
+    && (value.module === undefined || value.module === "event")
+    && (value.item_name === undefined || value.item_name === null || typeof value.item_name === "string")
+    && (value.from_status === undefined || value.from_status === null || typeof value.from_status === "string")
+    && (value.actor_user_id === undefined || value.actor_user_id === null || typeof value.actor_user_id === "string")
+    && (value.actor_role === undefined || value.actor_role === null || typeof value.actor_role === "string")
+    && (value.created_at === undefined || value.created_at === null || typeof value.created_at === "string");
 }
 
 /** Reads the only documented Event report defaults: type=registration and format=json. */

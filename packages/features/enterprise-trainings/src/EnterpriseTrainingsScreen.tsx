@@ -3,14 +3,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useCurrentEnterprise, useTenant } from "@ihp/enterprise-runtime";
+import { isInternalUserRole, useAuth } from "@ihp/auth";
 import Link from "next/link";
 import { useTranslation } from "react-i18next";
 
 import TrainingActionsMenu from "./TrainingActionsMenu";
 import { humanizeLabel } from "./detail-formatters";
 import { PRODUCT_TRAINING_STATUSES, getTrainingStatusBadgeClass, getTrainingStatusLabel } from "./training-status";
-import { getTrainingProviderDashboard, listTrainings, searchTrainings, getTrainingsReportSummary, type TrainingListItem } from "./trainings.service";
+import { getTrainingProviderDashboard, listTrainings, searchTrainings, getTrainingsReportSummary, listEnterpriseReviewsManage, type TrainingListItem } from "./trainings.service";
 import { getTrainingMediaPreviewUrl } from "./training-media-url";
+import { EnterpriseTrainingsReviewsTab } from "./EnterpriseTrainingsReviewsTab";
 
 type SortOption = "newest" | "oldest" | "az" | "status";
 const statusFilters = ["all", ...PRODUCT_TRAINING_STATUSES] as const;
@@ -210,6 +212,14 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
             <h3 className={`mt-2 line-clamp-2 min-h-14 text-lg font-bold leading-7 ${primaryTextClass}`} title={training.title}>{training.title}</h3>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {typeof training.average_rating === "number" && Number.isFinite(training.average_rating) && training.average_rating > 0 ? (
+              <span
+                className={`rounded-full px-2.5 py-1 text-[11px] font-bold shadow-sm ${hasPrimaryImage ? "bg-white/90 text-[#1f6a58]" : "bg-[#e8f6ee] text-[#1f6a58]"}`}
+                aria-label={`Average rating ${training.average_rating.toFixed(1)} out of 5${typeof training.reviews_count === "number" ? ` from ${training.reviews_count} reviews` : ""}`}
+              >
+                {training.average_rating.toFixed(1)} ★{typeof training.reviews_count === "number" ? ` (${training.reviews_count})` : ""}
+              </span>
+            ) : null}
             <span className={`rounded-full px-3 py-1 text-[11px] font-bold shadow-sm ${getTrainingStatusBadgeClass(training.status)}`}>{getTrainingStatusLabel(training.status)}</span>
             <div className={hasPrimaryImage ? "rounded-full bg-white/90 shadow-sm" : undefined}>
               <TrainingActionsMenu training={training} onStatusSuccess={onStatusSuccess} onDuplicateSuccess={onDuplicateSuccess} onDeleteSuccess={onDeleteSuccess} />
@@ -267,6 +277,7 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
 
 /** Renders the authenticated enterprise's paginated Trainings list. */
 export default function EnterpriseTrainingsScreen() {
+  const [activeView, setActiveView] = useState<"trainings" | "reviews">("trainings");
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [sort, setSort] = useState<SortOption>("newest");
@@ -278,6 +289,8 @@ export default function EnterpriseTrainingsScreen() {
 
   const { tenantId } = useTenant();
   const { enterpriseId } = useCurrentEnterprise();
+  const { roles } = useAuth();
+  const canModerateReviews = Boolean(roles && !isInternalUserRole(roles.tenantRole));
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -316,7 +329,7 @@ export default function EnterpriseTrainingsScreen() {
             page,
             page_size: TRAININGS_PAGE_SIZE,
           }),
-    enabled: Boolean(tenantId),
+    enabled: Boolean(tenantId) && activeView === "trainings",
     staleTime: 30_000,
     retry: 1,
     placeholderData: keepPreviousData,
@@ -332,7 +345,14 @@ export default function EnterpriseTrainingsScreen() {
   const showDuplicateFeedback = () => setStatusFeedback("Training duplicated.");
   const showDeleteFeedback = () => setStatusFeedback("Training deleted.");
 
-  const summaryQuery = useQuery({ queryKey: ["trainings", "reports", "summary"], queryFn: () => getTrainingsReportSummary(), enabled: Boolean(tenantId), staleTime: 30_000, retry: 1 });
+  const summaryQuery = useQuery({ queryKey: ["trainings", "reports", "summary"], queryFn: () => getTrainingsReportSummary(), enabled: Boolean(tenantId) && activeView === "trainings", staleTime: 30_000, retry: 1 });
+  const pendingReviewsQuery = useQuery({
+    queryKey: ["training-reviews", "manage", "pending-count"],
+    queryFn: () => listEnterpriseReviewsManage({ status: "pending", page: 1 }),
+    enabled: Boolean(tenantId),
+    staleTime: 30_000,
+    retry: 1,
+  });
 
   return (
     <div className="w-full">
@@ -341,21 +361,21 @@ export default function EnterpriseTrainingsScreen() {
           <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">
             ADMIN PORTAL
           </p>
-          <h2 className="mt-2 text-2xl font-bold text-[#06201c] sm:text-3xl">Trainings</h2>
+          <h2 className="mt-2 text-2xl font-bold text-[#06201c] sm:text-3xl">{activeView === "reviews" ? "Training Reviews" : "Trainings"}</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[#52736a] sm:text-base">
-            Manage training courses for your enterprise.
+            {activeView === "reviews" ? "Review and manage learner feedback across your enterprise trainings." : "Manage training courses for your enterprise."}
           </p>
         </div>
 
         <div className="flex flex-wrap gap-3">
-          {enterpriseId ? (
+          {activeView === "trainings" && enterpriseId ? (
             <Link
               href="/admin/trainings/create"
               className="inline-flex h-12 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm transition hover:bg-[#195646]"
             >
               + Create Training
             </Link>
-          ) : (
+          ) : activeView === "trainings" ? (
             <button
               type="button"
               disabled
@@ -364,9 +384,16 @@ export default function EnterpriseTrainingsScreen() {
             >
               + Create Training
             </button>
-          )}
+          ) : null}
         </div>
       </div>
+
+      <nav aria-label="Training views" className="mt-5 flex flex-wrap gap-2 border-b border-[#d7e5df]">
+        <button type="button" role="tab" aria-selected={activeView === "trainings"} onClick={() => setActiveView("trainings")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${activeView === "trainings" ? "border-[#1f6a58] bg-[#effaf4] text-[#1f6a58]" : "border-transparent text-[#52736a] hover:bg-[#f4faf7]"}`}>Trainings</button>
+        <button type="button" role="tab" aria-selected={activeView === "reviews"} onClick={() => setActiveView("reviews")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${activeView === "reviews" ? "border-[#1f6a58] bg-[#effaf4] text-[#1f6a58]" : "border-transparent text-[#52736a] hover:bg-[#f4faf7]"}`}>Reviews ({pendingReviewsQuery.data?.counts.pending ?? 0})</button>
+      </nav>
+
+      {activeView === "reviews" ? <EnterpriseTrainingsReviewsTab canModerate={canModerateReviews} /> : <>
 
       {statusFeedback ? (
         <div role="status" className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">
@@ -509,6 +536,7 @@ export default function EnterpriseTrainingsScreen() {
           </nav>
         </>
       )}
+      </>}
     </div>
   );
 }

@@ -16,7 +16,6 @@ import {
   createTrainingDiscussion,
   createTrainingLesson,
   createTrainingSection,
-  deleteTrainingReview,
   deleteAssessmentQuestion,
   deleteTrainingAssessment,
   deleteTrainingAssignment,
@@ -41,7 +40,6 @@ import {
   listTrainingDiscussions,
   listTrainingEnrolments,
   listTrainingOrders,
-  listTrainingReviews,
   refundTrainingOrder,
   decideTrainingOrderRefund,
   patchTrainingOrderStatus,
@@ -2647,95 +2645,4 @@ export function TrainingAssignmentsTab({ trainingId }: { trainingId: string }) {
   );
 }
 
-/** Renders training reviews backed by `GET/POST /trainings/{id}/reviews`. */
-export function TrainingReviewsTab({ trainingId }: { trainingId: string }) {
-  const queryClient = useQueryClient();
-  const [feedback, setFeedback] = useState<string | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  const reviewsQuery = useQuery({
-    queryKey: ["trainings", trainingId, "reviews"],
-    queryFn: () => listTrainingReviews(trainingId),
-    enabled: Boolean(trainingId),
-    retry: 1,
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (reviewId: string) => deleteTrainingReview(trainingId, reviewId),
-    onSuccess: () => {
-      setDeleteError(null);
-      setFeedback("Review deleted.");
-      void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "reviews"] });
-      void queryClient.invalidateQueries({ queryKey: ["trainings", "detail", trainingId] });
-      void queryClient.invalidateQueries({ queryKey: ["trainings", "list"] });
-    },
-    onError: (error) => setDeleteError(error instanceof TrainingsApiError ? error.message : "Unable to delete review."),
-  });
-
-  const handleDeleteReview = (reviewId: string) => {
-    if (deleteMutation.isPending || !window.confirm("Permanently delete this review? This cannot be undone.")) return;
-    setFeedback(null);
-    setDeleteError(null);
-    deleteMutation.mutate(reviewId);
-  };
-
-  const reviews = reviewsQuery.data ?? [];
-
-  return (
-    <SectionCard title="Reviews">
-      {feedback ? <p role="status" className="mb-4 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">{feedback}</p> : null}
-      {deleteError ? <p role="alert" className="mb-4 rounded-xl border border-[#f3c7c3] bg-[#fff5f4] px-4 py-3 text-sm font-semibold text-[#b42318]">{deleteError}</p> : null}
-      {reviewsQuery.isLoading ? <p className="mt-4 text-sm text-[#52736a]">Loading reviews...</p> : null}
-      {reviewsQuery.isError ? (
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <p role="alert" className="text-sm font-semibold text-[#b42318]">{(reviewsQuery.error as Error).message}</p>
-          <button type="button" onClick={() => void reviewsQuery.refetch()} className="text-sm font-bold text-[#1f6a58] underline">Retry</button>
-        </div>
-      ) : null}
-      {!reviewsQuery.isLoading && !reviewsQuery.isError && reviews.length === 0 ? <p className="mt-4 text-sm text-[#52736a]">No reviews have been submitted for this Training yet.</p> : null}
-      {reviews.length > 0 ? (
-        <ul className="mt-4 grid gap-2">
-          {reviews.map((review, index) => {
-            const record = review as Record<string, unknown>;
-            const reviewId = typeof record.id === "string" && record.id.trim() ? record.id : null;
-            const id = reviewId ?? String(index);
-            const author = typeof record.participant_name === "string" && record.participant_name.trim()
-              ? record.participant_name
-              : typeof record.author === "string" && record.author.trim()
-                ? record.author
-                : typeof record.participant_email === "string"
-                  ? record.participant_email
-                  : "Participant";
-            const ratingValue = typeof record.rating === "number" ? record.rating : null;
-            const commentText = typeof record.comment === "string" ? record.comment : null;
-            const createdAt = typeof record.created_at === "string" ? record.created_at : null;
-            const verified = record.verified === true;
-            return (
-              <li key={id} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] px-4 py-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-bold text-[#06201c]">{author}{verified ? " · Verified" : ""}</p>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {ratingValue !== null ? <span className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{ratingValue} ★</span> : null}
-                    {reviewId ? (
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteReview(reviewId)}
-                        disabled={deleteMutation.isPending}
-                        aria-label={`Delete review by ${author}`}
-                        className="rounded-full border border-[#e1c9c6] px-3 py-1 text-xs font-bold text-[#a52a20] hover:bg-[#fff1ef] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {deleteMutation.isPending && deleteMutation.variables === reviewId ? "Deleting…" : "Delete review"}
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-                {commentText ? <p className="mt-1 text-sm text-[#52736a]">{commentText}</p> : null}
-                {createdAt ? <p className="mt-1 text-xs text-[#7f9d94]">{formatTrainingDate(createdAt)}</p> : null}
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
-    </SectionCard>
-  );
-}
+export { TrainingReviewsTab } from "./TrainingReviewsTab";

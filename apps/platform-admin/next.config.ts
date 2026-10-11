@@ -25,6 +25,10 @@ const nextConfig: NextConfig = {
   async rewrites() {
     const fallback = [
       {
+        source: "/api/v1/reviews/:path*",
+        destination: `${platformApiBaseUrl}/reviews/:path*`,
+      },
+      {
         source: "/api/v1/trainings/form-configuration/:path*",
         destination: `${platformApiBaseUrl}/trainings/form-configuration/:path*`,
       },

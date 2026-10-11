@@ -9,6 +9,20 @@
 
 import { authenticatedFetch } from "@ihp/auth";
 import type { TrainingStatus, TrainingStatusUpdatePayload } from "./training-status";
+import {
+  parseManagedTrainingReviews,
+  parseTrainingReviews,
+} from "./training-reviews.service";
+import type {
+  EnterpriseTrainingReviewsParams,
+  ReviewModerationStatus,
+  ReviewsManageResponse,
+  TrainingReview,
+  TrainingReviewAuditEntry,
+  TrainingStarRating,
+} from "./training-reviews.types";
+
+export type { EnterpriseTrainingReviewsParams, ReviewModerationStatus, ReviewsManageResponse, TrainingReview, TrainingReviewAuditEntry, TrainingRatingSummary, TrainingStarRating } from "./training-reviews.types";
 
 const fetch = authenticatedFetch;
 
@@ -40,6 +54,8 @@ export interface TrainingListItem {
   capacity: string | null;
   enrolled_count?: number | null;
   available_slots?: number | null;
+  average_rating?: number | null;
+  reviews_count?: number | null;
   price: string | null;
   currency: string | null;
   status: TrainingStatus;
@@ -93,18 +109,6 @@ export interface TrainingFaq {
   answer?: string | null;
   q?: string | null;
   a?: string | null;
-}
-/** Review `reviews[]`. */
-export interface TrainingReview {
-  id?: string | null;
-  training_id?: string | null;
-  author?: string | null;
-  participant_name?: string | null;
-  participant_email?: string | null;
-  rating?: number | null;
-  comment?: string | null;
-  created_at?: string | null;
-  verified?: boolean | null;
 }
 /** Lesson topic. */
 export interface TrainingLessonTopic {
@@ -1909,7 +1913,7 @@ export async function exportTrainingEnrolments(trainingId: string): Promise<{ bl
 }
 
 /** Lists reviews — `GET /trainings/{id}/reviews`. */
-export async function listTrainingReviews(trainingId: string): Promise<unknown[]> {
+export async function listTrainingReviews(trainingId: string): Promise<TrainingReview[]> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), 10_000);
   try {
@@ -1919,12 +1923,7 @@ export async function listTrainingReviews(trainingId: string): Promise<unknown[]
       signal: controller.signal,
     });
     if (!res.ok) throw await createTrainingsApiError(res, "load reviews");
-    const value = (await res.json()) as unknown;
-    if (Array.isArray(value)) return value;
-    if (value && typeof value === "object" && Array.isArray((value as { reviews?: unknown }).reviews)) {
-      return (value as { reviews: unknown[] }).reviews;
-    }
-    throw new Error("Trainings API returned an invalid reviews response.");
+    return parseTrainingReviews(await res.json());
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new Error("Loading reviews timed out. Please try again.");
@@ -1935,9 +1934,67 @@ export async function listTrainingReviews(trainingId: string): Promise<unknown[]
   }
 }
 
-/** Permanently deletes a review — `DELETE /trainings/{id}/reviews/{review_id}`. */
-export async function deleteTrainingReview(trainingId: string, reviewId: string): Promise<void> {
-  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/reviews/${encodeURIComponent(reviewId)}`, {
+/** Changes a Training review's moderation state through the deployed shared Reviews API. */
+export async function moderateTrainingReview(reviewId: string, status: ReviewModerationStatus): Promise<void> {
+  const payload = JSON.stringify({ action: status });
+  const globalResponse = await fetch(`/api/v1/reviews/training/${encodeURIComponent(reviewId)}/moderate`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: payload,
+  });
+  if (!globalResponse.ok) throw await createTrainingsApiError(globalResponse, "update review moderation");
+}
+
+/** Lists the authenticated Enterprise's managed Training reviews and aggregate status counts. */
+export async function listEnterpriseReviewsManage(params: EnterpriseTrainingReviewsParams = {}): Promise<ReviewsManageResponse> {
+  const searchParams = toSearchParams({
+    module: "training",
+    item_id: params.trainingId,
+    status: params.status === "all" ? undefined : params.status,
+    page: params.page ?? 1,
+    page_size: params.pageSize ?? 20,
+    rating: params.rating === "all" ? undefined : params.rating,
+    q: params.q?.trim().slice(0, 200) || undefined,
+  });
+  const response = await fetch(`/api/v1/reviews/manage?${searchParams.toString()}`, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw await createTrainingsApiError(response, "load managed Training reviews");
+
+  return parseManagedTrainingReviews(unwrapApiData(await response.json()), params.page ?? 1, params.pageSize ?? 20);
+}
+
+/** Loads Training review moderation audit entries, optionally filtered to one Training. */
+export async function getTrainingReviewsAudit(trainingId?: string): Promise<TrainingReviewAuditEntry[]> {
+  const searchParams = toSearchParams({ module: "training", item_id: trainingId, page: 1, page_size: 100 });
+  const response = await fetch(`/api/v1/reviews/audit?${searchParams.toString()}`, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw await createTrainingsApiError(response, "load review moderation history");
+  const payload = unwrapApiData(await response.json());
+  const rows = Array.isArray(payload)
+    ? payload
+    : isRecord(payload) && Array.isArray(payload.items)
+      ? payload.items
+      : isRecord(payload) && Array.isArray(payload.audit)
+        ? payload.audit
+        : null;
+  if (!rows) throw new Error("Training Reviews API returned an invalid moderation audit response.");
+
+  return rows.filter(isRecord).map((row, index) => ({
+    id: typeof row.id === "string" ? row.id : `audit-${index}`,
+    module: typeof row.module === "string" ? row.module : "training",
+    review_id: typeof row.review_id === "string" ? row.review_id : "",
+    item_id: typeof row.item_id === "string" ? row.item_id : "",
+    item_name: typeof row.item_name === "string" ? row.item_name : null,
+    from_status: typeof row.from_status === "string" ? row.from_status : null,
+    to_status: typeof row.to_status === "string" ? row.to_status : "updated",
+    actor_user_id: typeof row.actor_user_id === "string" ? row.actor_user_id : null,
+    actor_role: typeof row.actor_role === "string" ? row.actor_role : null,
+    created_at: typeof row.created_at === "string" ? row.created_at : null,
+  })).filter((entry) => entry.item_id && entry.review_id);
+}
+
+/** Permanently deletes a review — `DELETE /reviews/training/{review_id}`. */
+export async function deleteTrainingReview(reviewId: string): Promise<void> {
+  const res = await fetch(`/api/v1/reviews/training/${encodeURIComponent(reviewId)}`, {
     method: "DELETE",
     credentials: "include",
   });

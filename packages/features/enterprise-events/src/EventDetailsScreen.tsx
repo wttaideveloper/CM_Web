@@ -19,6 +19,7 @@ import { mediaItemUrl, type EventMediaItem } from "./event-media";
 import EventOrdersSection from "./EventOrdersSection";
 import EventOverviewSection from "./EventOverviewSection";
 import EventReportsSection from "./EventReportsSection";
+import { EventReviewsTab } from "./EventReviewsTab";
 import SessionAttendancePanel from "./SessionAttendancePanel";
 import {
   displayValue,
@@ -50,7 +51,6 @@ import {
   getEventRegistrationForm,
   getEventById,
   getEventAttendance,
-  getEventFeedback,
   getEventFulfilment,
   getEventRegistrations,
   getEventSessions,
@@ -78,7 +78,7 @@ type DetailItem = {
   label: string;
   value: string | number | boolean | null | undefined;
 };
-type EventDetailsTab = "overview" | "details" | "sessions" | "registrations" | "attendance" | "feedback" | "reports" | "orders" | "fulfilment";
+type EventDetailsTab = "overview" | "details" | "sessions" | "registrations" | "attendance" | "reviews" | "reports" | "orders" | "fulfilment";
 type RegistrationsSubview = "registered" | "waitlist";
 
 function AdminNoteBanner({ eventId, status }: { eventId: string; status: string }) {
@@ -126,7 +126,7 @@ const eventDetailsTabs: ReadonlyArray<{ id: EventDetailsTab; label: string }> =
     { id: "sessions", label: "Sessions" },
     { id: "registrations", label: "Registrations" },
     { id: "attendance", label: "Attendance" },
-    { id: "feedback", label: "Feedback" },
+    { id: "reviews", label: "Reviews" },
     { id: "reports", label: "Reports" },
     { id: "orders", label: "Orders" },
     { id: "fulfilment", label: "Fulfilment" },
@@ -489,9 +489,9 @@ export default function EventDetailsScreen() {
           <EventAttendanceSection eventId={event.id} eventStatus={event.status} timeZone={event.time_zone} checkInEnabled={event.modules?.check_in !== false} />
         </section>
       ) : null}
-      {effectiveActiveTab === "feedback" ? (
-        <section id="event-feedback-panel" role="tabpanel" aria-labelledby="event-feedback-tab" className="mt-6">
-          <FeedbackSection eventId={event.id} />
+      {effectiveActiveTab === "reviews" ? (
+        <section id="event-reviews-panel" role="tabpanel" aria-labelledby="event-reviews-tab" className="mt-6">
+          <EventReviewsTab eventId={event.id} />
         </section>
       ) : null}
       {effectiveActiveTab === "reports" ? (
@@ -515,34 +515,6 @@ function formatSeatAvailability(event: Event): string {
     return `${event.available_seats} ${event.available_seats === 1 ? "seat" : "seats"} left`;
   }
   return "—";
-}
-
-function FeedbackSection({ eventId }: { eventId: string }) {
-  const feedbackQuery = useQuery({
-    queryKey: ["event-feedback", eventId],
-    queryFn: () => getEventFeedback(eventId),
-    enabled: Boolean(eventId),
-    staleTime: 30_000,
-    retry: 1,
-  });
-
-  if (feedbackQuery.isLoading) return <section role="status" aria-label="Loading event feedback" className="space-y-3"><div className="h-20 animate-pulse rounded-2xl bg-[#edf3f0]" /><div className="h-28 animate-pulse rounded-2xl bg-[#f1f4f3]" /></section>;
-  if (feedbackQuery.isError) return <section className="rounded-2xl border border-[#e1ebe6] bg-white px-5 py-12 text-center shadow-sm"><p className="font-bold text-[#06201c]">Unable to load event feedback.</p><button type="button" onClick={() => void feedbackQuery.refetch()} className="mt-3 text-sm font-semibold text-[#1f6a58] underline">Try again</button></section>;
-  if (isEmptyFeedback(feedbackQuery.data)) return <section className="rounded-2xl border border-dashed border-[#d7e5df] bg-[#f9fcfa] px-5 py-12 text-center"><p className="font-bold text-[#06201c]">No feedback submitted yet.</p><p className="mt-2 text-sm text-[#52736a]">Submitted feedback will appear here for read-only review.</p></section>;
-
-  return <section className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-[#06201c]">Submitted feedback</h2><p className="mt-1 text-sm text-[#52736a]">Feedback is read-only for Enterprise Admin.</p><pre className="mt-4 max-h-[32rem] overflow-auto rounded-xl bg-[#f8fbf9] p-4 text-left text-xs leading-5 text-[#31594d]">{formatFeedbackResponse(feedbackQuery.data)}</pre></section>;
-}
-
-function isEmptyFeedback(value: unknown): boolean {
-  if (value === null || value === undefined || value === "") return true;
-  if (Array.isArray(value)) return value.length === 0;
-  if (typeof value === "object") return Object.keys(value as Record<string, unknown>).length === 0;
-  return false;
-}
-
-function formatFeedbackResponse(value: unknown): string {
-  if (typeof value === "string") return value;
-  try { return JSON.stringify(value, null, 2) ?? "Feedback response received."; } catch { return "Feedback response received."; }
 }
 
 function EventDetailsTabs({

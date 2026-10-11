@@ -129,6 +129,10 @@ const nextConfig: NextConfig = {
           destination: `${chatApiBaseUrl}/trainings/`,
         },
         {
+          source: "/api/v1/reviews/:path*",
+          destination: `${chatApiBaseUrl}/reviews/:path*`,
+        },
+        {
           source: "/api/v1/trainings/:path*",
           destination: `${chatApiBaseUrl}/trainings/:path*`,
         },

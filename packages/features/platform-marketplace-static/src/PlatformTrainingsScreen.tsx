@@ -4,8 +4,11 @@ import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-quer
 import { keepPreviousData } from "@tanstack/react-query";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { listTrainings } from "@ihp/enterprise-trainings";
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
+import { listPlatformReviewsManage } from "./platform-reviews.service";
+import { PlatformModuleReviewsTab } from "./PlatformModuleReviewsTab";
 
 const filters = ["All", "draft", "published", "archived"] as const;
 const PAGE_SIZE = 20;
@@ -57,6 +60,8 @@ export default function PlatformTrainingsScreen() {
 }
 
 function PlatformTrainingsContent() {
+  const { t } = useTranslation("platform");
+  const [view, setView] = useState<"trainings" | "reviews">("trainings");
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [filter, setFilter] = useState<(typeof filters)[number]>("All");
@@ -78,6 +83,7 @@ function PlatformTrainingsContent() {
   });
 
   const pagination = q.data?.pagination;
+  const pendingReviewsQuery = useQuery({ queryKey: ["platform", "reviews", "training", "pending-count"], queryFn: () => listPlatformReviewsManage({ module: "training", status: "pending", page: 1, pageSize: 1 }), staleTime: 30_000, retry: 1 });
 
   return (
     <>
@@ -87,6 +93,12 @@ function PlatformTrainingsContent() {
           <p className="mt-1 text-sm text-[#52736a]">Create and manage training courses.</p>
         </div>
       </div>
+
+      <div className="mt-5 flex gap-2 border-b border-[#e1ebe6]" role="tablist" aria-label={t("reviews.filterStatus")}>
+        <button type="button" role="tab" aria-selected={view === "trainings"} onClick={() => setView("trainings")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === "trainings" ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#52736a]"}`}>{t("reviews.tabs.trainings")}</button>
+        <button type="button" role="tab" aria-selected={view === "reviews"} onClick={() => setView("reviews")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === "reviews" ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#52736a]"}`}>{t("reviews.tabs.received", { count: pendingReviewsQuery.data?.counts.pending ?? 0 })}</button>
+      </div>
+      {view === "reviews" ? <PlatformModuleReviewsTab module="training" /> : <>
 
       <div className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -156,6 +168,7 @@ function PlatformTrainingsContent() {
           </nav>
         </>
       )}
+      </>}
     </>
   );
 }

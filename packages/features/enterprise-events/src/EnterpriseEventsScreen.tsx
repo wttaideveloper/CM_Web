@@ -10,11 +10,14 @@ import { PRODUCT_EVENT_STATUSES, getEventStatusBadgeClass, getEventStatusLabel }
 import { listEvents, type Event } from "./events.service";
 import { formatEventDeliveryMode } from "./event-detail-formatters";
 import { matchesEventTimeFilter, type EventTimeFilter } from "./event-time-filters";
+import { EnterpriseEventsReviewsTab } from "./EnterpriseEventsReviewsTab";
+import { listEnterpriseEventReviewsManage } from "./events.service";
 
 type SortOption = "newest" | "oldest" | "az" | "status";
 const statusFilters = ["all", ...PRODUCT_EVENT_STATUSES] as const;
 const eventFilters = [...statusFilters, "ongoing", "finished"] as const;
 type EventFilter = (typeof eventFilters)[number];
+type EventsView = "events" | "reviews";
 const EVENTS_PAGE_SIZE = 20;
 
 function isLifecycleFilter(filter: EventFilter): filter is (typeof PRODUCT_EVENT_STATUSES)[number] {
@@ -130,14 +133,14 @@ function EventCard({ event, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess
     <article className={`group relative flex h-full flex-col rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-200 ${interactionClass}`}>
       {hasPrimaryImage ? <div aria-hidden="true" className="absolute inset-0 overflow-hidden rounded-[inherit]"><img src={primaryImage} alt="" className="h-full w-full object-cover object-center" /><div className="absolute inset-0 bg-gradient-to-br from-[#06201c]/60 via-[#0c382e]/48 to-[#1f6a58]/38" /></div> : null}
       <div className="relative z-10 flex flex-1 flex-col">
-      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className={`text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>
             {event.category || "—"}
           </p>
           <h3 className={`mt-2 text-lg font-bold ${primaryTextClass}`}>{event.title}</h3>
         </div>
-        <div className="flex shrink-0 items-center gap-2"><span className={`rounded-full px-3 py-1 text-[11px] font-bold shadow-sm ${getEventStatusBadgeClass(event.status)}`}>{getEventStatusLabel(event.status)}</span>{lifecycleLabel(event.lifecycle_state) ? <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${hasPrimaryImage ? "bg-white/20 text-white" : "bg-[#f1f7f4] text-[#52736a]"}`}>{lifecycleLabel(event.lifecycle_state)}</span> : null}<div className={hasPrimaryImage ? "rounded-full bg-white/90 shadow-sm" : undefined}><EventActionsMenu event={event} onStatusSuccess={onStatusSuccess} onDuplicateSuccess={onDuplicateSuccess} onDeleteSuccess={onDeleteSuccess} /></div></div>
+        <div className="flex shrink-0 items-center gap-2">{typeof event.average_rating === "number" && event.average_rating > 0 ? <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${hasPrimaryImage ? "bg-white/90 text-[#1f6a58]" : "bg-[#e8f6ee] text-[#1f6a58]"}`}>{event.average_rating.toFixed(1)} ★{typeof event.reviews_count === "number" ? ` (${event.reviews_count})` : ""}</span> : null}<span className={`rounded-full px-3 py-1 text-[11px] font-bold shadow-sm ${getEventStatusBadgeClass(event.status)}`}>{getEventStatusLabel(event.status)}</span>{lifecycleLabel(event.lifecycle_state) ? <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${hasPrimaryImage ? "bg-white/20 text-white" : "bg-[#f1f7f4] text-[#52736a]"}`}>{lifecycleLabel(event.lifecycle_state)}</span> : null}<div className={hasPrimaryImage ? "rounded-full bg-white/90 shadow-sm" : undefined}><EventActionsMenu event={event} onStatusSuccess={onStatusSuccess} onDuplicateSuccess={onDuplicateSuccess} onDeleteSuccess={onDeleteSuccess} /></div></div>
       </div>
 
       <p className={`mt-2 line-clamp-2 min-h-10 text-sm leading-5 ${secondaryTextClass}`}>{event.description || "—"}</p>
@@ -182,6 +185,7 @@ function EventCard({ event, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess
 
 /** Renders the authenticated enterprise's paginated Events list. */
 export default function EnterpriseEventsScreen() {
+  const [view, setView] = useState<EventsView>("events");
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [sort, setSort] = useState<SortOption>("newest");
@@ -216,6 +220,7 @@ export default function EnterpriseEventsScreen() {
     retry: 1,
     placeholderData: keepPreviousData,
   });
+  const pendingReviewsQuery = useQuery({ queryKey: ["event-reviews", "manage", "pending-count"], queryFn: () => listEnterpriseEventReviewsManage({ status: "pending", page: 1, pageSize: 1 }), enabled: Boolean(tenantId), staleTime: 30_000, retry: 1 });
 
   const visibleEvents = useMemo(() => {
     const events = eventsQuery.data?.items ?? [];
@@ -274,6 +279,13 @@ export default function EnterpriseEventsScreen() {
           )}
         </div>
       </div>
+
+      <div className="mt-5 flex gap-2 border-b border-[#e1ebe6]" role="tablist" aria-label="Events views">
+        <button type="button" role="tab" aria-selected={view === "events"} onClick={() => setView("events")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === "events" ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#52736a]"}`}>Events</button>
+        <button type="button" role="tab" aria-selected={view === "reviews"} onClick={() => setView("reviews")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === "reviews" ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#52736a]"}`}>Reviews{pendingReviewsQuery.data?.counts.pending ? ` (${pendingReviewsQuery.data.counts.pending})` : ""}</button>
+      </div>
+
+      {view === "reviews" ? <EnterpriseEventsReviewsTab /> : <>
 
       <section className="mt-6 rounded-2xl border border-[#b9d6cb] bg-[#f4faf7] p-4 shadow-sm">
         <div className="grid gap-3 xl:grid-cols-[1fr_auto]">
@@ -370,6 +382,7 @@ export default function EnterpriseEventsScreen() {
           />
         </>
       )}
+      </>}
     </div>
   );
 }
