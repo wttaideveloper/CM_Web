@@ -28,6 +28,7 @@ export default function TrainingTaxonomyField({
   helpText,
   includeOther = false,
   onRetry,
+  placeholder,
 }: {
   field: TaxonomyField;
   label: string;
@@ -43,6 +44,7 @@ export default function TrainingTaxonomyField({
   helpText?: string | null;
   includeOther?: boolean;
   onRetry?: () => void;
+  placeholder?: string;
 }) {
   const { t } = useTranslation("enterpriseTrainings");
   const category = categories.find((item) => item.parent_id === null && item.name === categoryValue);
@@ -101,11 +103,11 @@ export default function TrainingTaxonomyField({
         <option value="">
           {categoriesLoading
             ? "Loading Training categories..."
-            : field === "category"
+            : placeholder?.trim() || (field === "category"
               ? t("taxonomy.chooseCategory")
               : categoryValue
                 ? t("taxonomy.chooseSubcategory")
-                : t("taxonomy.chooseCategoryFirst")}
+                : t("taxonomy.chooseCategoryFirst"))}
         </option>
         {hasLegacyValue ? <option value={value}>{value} (existing value)</option> : null}
         {options.map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}
@@ -121,7 +123,7 @@ export default function TrainingTaxonomyField({
               setCustomOtherValue(text);
               writeFieldText(text);
             }}
-            placeholder={`Enter custom ${label.toLowerCase()}`}
+            placeholder={placeholder?.trim() || `Enter custom ${label.toLowerCase()}`}
             aria-label={`Custom ${label}`}
             className={inputClass}
           />

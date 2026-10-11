@@ -399,7 +399,7 @@ function ConfiguredField({
       <label className="block text-sm font-semibold text-[#06201c]">
         {field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}
         <select id={`training-field-${field.id}`} value={isValueAllowed ? value : ""} required={field.required} aria-invalid={Boolean(error) || undefined} onChange={(event) => update(coreField, event.target.value)} className={inputClass}>
-          <option value="">{t(coreField === "time_zone" ? "referenceOptions.selectTimeZone" : "referenceOptions.selectCurrency")}</option>
+          <option value="">{field.placeholder?.trim() || t(coreField === "time_zone" ? "referenceOptions.selectTimeZone" : "referenceOptions.selectCurrency")}</option>
           {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
         {error ? <p role="alert" className="mt-1 text-xs text-[#b42318]">{error}</p> : null}
@@ -444,6 +444,7 @@ function ConfiguredField({
           onRetry={retryCategories}
           preserveLegacyValue={preserveLegacyCategoryValues}
           helpText={field.helpText}
+          placeholder={field.placeholder}
           includeOther
         />
       );
@@ -702,7 +703,7 @@ function ConfiguredField({
           <select value={selectValue} onChange={(event) => { setValue(event.target.value); }} className={inputClass}>
             {isDelivery
               ? isUnsupportedDeliveryValue ? <option value="" disabled>Select a supported delivery mode</option> : null
-              : <option value="">Select an option</option>}
+              : <option value="">{field.placeholder?.trim() || "Select an option"}</option>}
             {shownOptions.map((opt) => <option key={opt} value={opt}>{isDelivery ? (DELIVERY_LABELS[opt] ?? opt) : opt}</option>)}
           </select>
           {error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}
@@ -759,7 +760,7 @@ function ConfiguredField({
   }
   if (configuredOptions.length && inputType !== "date" && inputType !== "datetime-local" && inputType !== "time") {
     const selectedOption = configuredOptions.find((option) => option.value === value || option.label === value);
-    return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}<select value={selectedOption?.value ?? value} onChange={(e) => setValue(customSelectExpectsArray ? [e.target.value] : e.target.value)} className={inputClass}><option value="">Select</option>{configuredOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
+    return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}<select value={selectedOption?.value ?? value} onChange={(e) => setValue(customSelectExpectsArray ? [e.target.value] : e.target.value)} className={inputClass}><option value="">{field.placeholder?.trim() || "Select"}</option>{configuredOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
   }
   if (field.type === "textarea") return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}<textarea value={value} placeholder={field.placeholder} minLength={field.validation?.minLength ?? undefined} onChange={(e) => setValue(e.target.value)} className={`${inputClass} h-24 resize-y py-2`} />{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
   const inputId = `training-field-${field.id}`;

@@ -9,6 +9,40 @@ export const mockTenants = [
   { id: "tenant-aurora", name: copy.mock.tenants.aurora }, { id: "tenant-wellness", name: copy.mock.tenants.wellness }, { id: "tenant-horizon", name: copy.mock.tenants.horizon }, { id: "tenant-vital", name: copy.mock.tenants.vital },
 ];
 
+export function getTrainingDefaultPlaceholder(key: string, label: string, renderer: string): string {
+  const defaults: Record<string, string> = {
+    title: "e.g. Diabetes Reversal — 12-Week Program",
+    subtitle: "e.g. Reverse T2D with food, movement & sleep",
+    description: "What will learners achieve? Who is it for? What’s included?",
+    category: "Choose a category",
+    subcategory: "Choose a subcategory",
+    tags: "Type a tag and press Enter",
+    learning_objectives: "Type objective and press Enter",
+    requirements: "Learner requirements",
+    time_zone: "Select a time zone",
+    duration: "e.g. 4 weeks",
+    venue: "e.g. Main Hall",
+    address: "Full address",
+    meeting_link: "https://...",
+    instructor_name: "Display name",
+    instructor_bio: "Short bio",
+    instructor_credentials: "e.g. MBBS, RYT-500 · 10y experience",
+    language: "Select a language",
+    price: "Enter price",
+    currency: "Select a currency",
+    promo_price: "Enter promotional price",
+    coupon_code: "Enter coupon code",
+    capacity: "Enter participant limit",
+    access_duration_days: "e.g. 90",
+    faqs: '[{"question":"...","answer":"..."}]',
+  };
+  if (defaults[key]) return defaults[key];
+  if (renderer === "tags") return `Type ${label.toLowerCase()} and press Enter`;
+  if (renderer === "select") return `Select ${label.toLowerCase()}`;
+  if (renderer === "date" || renderer === "datetime" || renderer === "checkbox") return "";
+  return `Enter ${label.toLowerCase()}`;
+}
+
 /** Creates deterministic local seed identities; mock state never implies a server ID. */
 export function createSeededSections(): FormSection[] {
   return Object.entries(copy.seededSections).map(([key, name], index) => ({ localId: `section-${key}`, serverId: null, stableKey: `section_${key}`, name, description: "", enabled: true, position: index + 1 }));
@@ -70,11 +104,11 @@ export function createSeededFields(registry: readonly CoreFieldRegistryItem[], s
     const sectionLocalId = sections.some((section) => section.localId === def.section) ? def.section : sections[0]?.localId ?? "";
     const fieldOptions = def.options ? def.options.map((value, position) => ({ value, label: value.replaceAll("_", " "), position: position + 1 })) : [];
     if (definition) {
-      return [{ localId: `field-${def.section}-${def.key}`, serverId: null, stableKey: `core_${def.key}`, source: "core" as const, coreKey: def.key, label: displayName, sectionLocalId, position: index + 1, valueType: definition.valueType, required: def.required ?? definition.requiredByDomain, renderer: definition.defaultRenderer, placeholder: def.placeholder ?? "", helpText: def.helpText ?? "", options: fieldOptions, validation: def.validation ?? {}, ...(composite ? { compositeConfig: { enabled_fields: composite.subfields.map((subfield) => subfield.key), required_fields: composite.subfields.filter((subfield) => subfield.requiredByDomain).map((subfield) => subfield.key) } } : {}), enabled: true } as ConfiguredField];
+      return [{ localId: `field-${def.section}-${def.key}`, serverId: null, stableKey: `core_${def.key}`, source: "core" as const, coreKey: def.key, label: displayName, sectionLocalId, position: index + 1, valueType: definition.valueType, required: def.required ?? definition.requiredByDomain, renderer: definition.defaultRenderer, placeholder: def.placeholder ?? getTrainingDefaultPlaceholder(def.key, displayName, definition.defaultRenderer), helpText: def.helpText ?? "", options: fieldOptions, validation: def.validation ?? {}, ...(composite ? { compositeConfig: { enabled_fields: composite.subfields.map((subfield) => subfield.key), required_fields: composite.subfields.filter((subfield) => subfield.requiredByDomain).map((subfield) => subfield.key) } } : {}), enabled: true } as ConfiguredField];
     }
     // Not in registry — emit as deterministic generic custom key with label Tags etc.,
     // so backend accepts it as custom (never `custom_tags`/`core_tags`) and enterprise maps via label to tags
-    return [{ localId: `field-${def.section}-${def.key}`, serverId: null, stableKey: `field-custom-${def.section}-${def.key}`, source: "custom" as const, coreKey: null, label: displayName, sectionLocalId, position: index + 1, valueType: def.renderer === "url" ? "url" : def.renderer === "datetime" ? "datetime" : def.renderer === "checkbox" ? "boolean" : "string", required: def.required ?? false, renderer: def.renderer ?? "text", placeholder: def.placeholder ?? "", helpText: def.helpText ?? "", options: fieldOptions, validation: def.validation ?? {}, ...(composite ? { compositeConfig: { enabled_fields: composite.subfields.map((subfield) => subfield.key), required_fields: composite.subfields.filter((subfield) => subfield.requiredByDomain).map((subfield) => subfield.key) } } : {}), enabled: true } as ConfiguredField];
+    return [{ localId: `field-${def.section}-${def.key}`, serverId: null, stableKey: `field-custom-${def.section}-${def.key}`, source: "custom" as const, coreKey: null, label: displayName, sectionLocalId, position: index + 1, valueType: def.renderer === "url" ? "url" : def.renderer === "datetime" ? "datetime" : def.renderer === "checkbox" ? "boolean" : "string", required: def.required ?? false, renderer: def.renderer ?? "text", placeholder: def.placeholder ?? getTrainingDefaultPlaceholder(def.key, displayName, def.renderer ?? "text"), helpText: def.helpText ?? "", options: fieldOptions, validation: def.validation ?? {}, ...(composite ? { compositeConfig: { enabled_fields: composite.subfields.map((subfield) => subfield.key), required_fields: composite.subfields.filter((subfield) => subfield.requiredByDomain).map((subfield) => subfield.key) } } : {}), enabled: true } as ConfiguredField];
   });
 }
 

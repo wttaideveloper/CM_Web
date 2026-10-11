@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import AppProviders from "@/components/layout/AppProviders";
+import ShellI18nProvider from "@/i18n/ShellI18nProvider";
 
 export const metadata: Metadata = {
   title: "Create Next App",
@@ -15,7 +16,9 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col bg-white text-[#06201c]">
-        <AppProviders>{children}</AppProviders>
+        <ShellI18nProvider>
+          <AppProviders>{children}</AppProviders>
+        </ShellI18nProvider>
       </body>
     </html>
   );
