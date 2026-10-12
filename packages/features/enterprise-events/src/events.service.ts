@@ -3,6 +3,7 @@ import { mediaItemUrl, mediaUrlsFromUnknown, normalizeDocumentEntries, type Even
 import { parseEventOrdersResponse, type EventOrder } from "./event-orders-parser";
 import { parseEventReview, parseManagedEventReviews, normalizeUtcDate } from "./event-reviews.service";
 import type { EnterpriseEventReviewsParams, EventReview, EventReviewAuditEntry, EventReviewsManageResponse, ReviewModerationStatus } from "./event-reviews.types";
+import { normalizeEventVenue } from "./event-location";
 
 export type { EventOrder } from "./event-orders-parser";
 
@@ -910,24 +911,6 @@ function isActiveEventFormConfiguration(value: unknown): value is ActiveEventFor
 function isEventCustomValue(value: unknown): value is EventCustomValue { return isRecord(value) && typeof value.field_id === "string" && (value.value === null || typeof value.value === "string" || typeof value.value === "number" || typeof value.value === "boolean" || isStringArray(value.value)); }
 function isEventCategory(value: unknown): value is EventCategory { return isRecord(value) && typeof value.id === "string" && typeof value.name === "string" && isNullableString(value.parent_id) && isNullableString(value.description) && typeof value.created_at === "string"; }
 
-function isEventVenueCoordinates(value: unknown): value is EventVenueCoordinates {
-  return (
-    isRecord(value) &&
-    (value.lat === undefined || value.lat === null || typeof value.lat === "number") &&
-    (value.lng === undefined || value.lng === null || typeof value.lng === "number")
-  );
-}
-
-function isEventVenue(value: unknown): value is EventVenue {
-  return (
-    isRecord(value) &&
-    (value.name === undefined || value.name === null || typeof value.name === "string") &&
-    (value.address === undefined || value.address === null || typeof value.address === "string") &&
-    (value.city === undefined || value.city === null || typeof value.city === "string") &&
-    (value.coordinates === undefined || isEventVenueCoordinates(value.coordinates))
-  );
-}
-
 function isEventTicketType(value: unknown): value is EventTicketType {
   return (
     isRecord(value) &&
@@ -1020,7 +1003,7 @@ function normalizeEventResponse(value: unknown): Event | null {
   const customFields = Array.isArray(value.custom_fields) ? value.custom_fields.filter(isEventCustomField) : [];
   const sessions = Array.isArray(value.sessions) ? value.sessions.map(normalizeEventSession).filter((item): item is EventSessionRecord => item !== null) : [];
   const ticketTypes = Array.isArray(value.ticket_types) ? value.ticket_types.map(normalizeEventTicket).filter((item): item is EventTicketType => item !== null) : [];
-  const venue = value.venue === null || value.venue === undefined ? null : isEventVenue(value.venue) ? value.venue : null;
+  const venue = value.venue === null || value.venue === undefined ? null : normalizeEventVenue(value.venue);
   const defaultTicketTypeId = typeof value.default_ticket_type_id === "string" && value.default_ticket_type_id.trim() ? value.default_ticket_type_id.trim() : null;
   return {
     ...(value as unknown as Event),

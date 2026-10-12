@@ -8,7 +8,7 @@ import Link from "next/link";
 import EventActionsMenu from "./EventActionsMenu";
 import { PRODUCT_EVENT_STATUSES, getEventStatusBadgeClass, getEventStatusLabel } from "./event-status";
 import { listEnterpriseEventReviewsManage, listEvents, type Event } from "./events.service";
-import { formatEventDeliveryMode } from "./event-detail-formatters";
+import { formatEventDeliveryMode, formatEventScheduleDateTime } from "./event-detail-formatters";
 import { matchesEventTimeFilter, type EventTimeFilter } from "./event-time-filters";
 import { EnterpriseEventsReviewsTab } from "./EnterpriseEventsReviewsTab";
 import { protectedMediaPreviewUrl } from "./event-media";
@@ -61,14 +61,6 @@ function sortEvents(items: Event[], sort: SortOption) {
 
     return 0;
   });
-}
-
-function formatEventDate(value: string): string {
-  if (!isValidDate(value)) {
-    return "—";
-  }
-
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
 function formatSeatAvailability(event: Event): string {
@@ -146,10 +138,14 @@ function EventCard({ event, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess
 
       <p className={`mt-2 line-clamp-2 min-h-10 text-sm leading-5 ${secondaryTextClass}`}>{event.description || "—"}</p>
 
-      <div className={`mt-auto grid grid-cols-1 gap-x-6 gap-y-4 border-t pt-3 text-sm sm:grid-cols-2 xl:grid-cols-4 ${dividerClass}`}>
+      <div className={`mt-auto grid grid-cols-1 gap-x-6 gap-y-4 border-t pt-3 text-sm sm:grid-cols-2 xl:grid-cols-5 ${dividerClass}`}>
         <div className="min-w-0">
-          <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Date</p>
-          <p className={`mt-1 min-h-10 break-words font-medium leading-5 ${primaryTextClass}`}>{formatEventDate(event.start_date)}</p>
+          <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Starts</p>
+          <p className={`mt-1 inline-flex max-w-full whitespace-normal break-words rounded-xl px-3 py-1.5 font-bold leading-5 [overflow-wrap:anywhere] ${hasPrimaryImage ? "bg-[#06201c]/65 text-white" : "bg-[#e8f6ee] text-[#1f6a58]"}`}>{formatEventScheduleDateTime(event.start_date, event.time_zone)}</p>
+        </div>
+        <div className="min-w-0">
+          <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Ends</p>
+          <p className={`mt-1 inline-flex max-w-full whitespace-normal break-words rounded-xl px-3 py-1.5 font-bold leading-5 [overflow-wrap:anywhere] ${hasPrimaryImage ? "bg-[#06201c]/65 text-white" : "bg-[#e8f6ee] text-[#1f6a58]"}`}>{formatEventScheduleDateTime(event.end_date, event.time_zone)}</p>
         </div>
         <div className="min-w-0">
           <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Location / Delivery</p>

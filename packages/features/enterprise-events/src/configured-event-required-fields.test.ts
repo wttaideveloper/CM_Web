@@ -25,8 +25,6 @@ const emptyValues: CreateEventFormValues = {
   venue_name: "",
   venue_address: "",
   venue_city: "",
-  venue_latitude: "",
-  venue_longitude: "",
   meeting_link: "",
   meeting_provider: "",
   price: "",
@@ -110,6 +108,26 @@ test("required composite fields validate parent and configured venue subfields",
     venue: ["Venue: city is required."],
   });
   assert.deepEqual(validateRequiredConfiguredEventFields(configuration(venue), { ...emptyValues, venue_name: "Hall", venue_city: "Pune" }, {}), {});
+});
+
+test("legacy coordinate subfields do not become required venue inputs", () => {
+  const venue = field({
+    source: "core",
+    core_key: "venue",
+    stable_key: "venue",
+    label: "Venue",
+    renderer: "venue",
+    composite_config: {
+      enabled_fields: ["name", "address", "city", "coordinates.lat", "coordinates.lng"],
+      required_fields: ["name", "address", "city", "coordinates.lat", "coordinates.lng"],
+    },
+  });
+  assert.deepEqual(validateRequiredConfiguredEventFields(configuration(venue), {
+    ...emptyValues,
+    venue_name: "Hall",
+    venue_address: "1 Main Street",
+    venue_city: "Pune",
+  }, {}), {});
 });
 
 test("required ticket collections reject empty lists and incomplete configured rows", () => {

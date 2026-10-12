@@ -93,6 +93,11 @@ export function resolveEventOptionCurrency(optionCurrency: string | null | undef
   return optionCurrency?.trim() || eventCurrency?.trim() || "";
 }
 
+/** Resolves the currency assigned to a newly added Event row without fabricating a value. */
+export function resolveNewEventCurrency(eventCurrency: string | null | undefined, currencyState?: Pick<EventCurrencyUiState, "value">): string {
+  return currencyState?.value ?? eventCurrency?.trim() ?? "";
+}
+
 /** Returns the first direct currency edit represented by a form update. */
 export function findEventCurrencyChange(previous: CreateEventFormValues, next: CreateEventFormValues): { source: EventCurrencySource; value: string } | null {
   if (previous.currency !== next.currency) return { source: { kind: "base" }, value: next.currency.trim() };

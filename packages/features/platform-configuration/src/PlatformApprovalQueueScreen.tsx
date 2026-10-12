@@ -16,6 +16,8 @@ import {
   type EventApprovalStatus,
 } from "./event-approval-queries";
 import TrainingApprovalQueue from "./TrainingApprovalQueue";
+import { auditTimestampValue, formatAuditDateTime } from "./audit-date-formatters";
+import { approvalActorDisplayName } from "./approval-actor-display";
 
 type ApprovalType = "events" | "trainings";
 type Status = EventApprovalStatus;
@@ -37,11 +39,6 @@ function approvalStatusLabel(status: Status): string {
 function eventStatusLabel(status: string | undefined): string {
   if (!status) return "Status unavailable";
   return status.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
-function formatAuditDateTime(value: string): string {
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(parsed);
 }
 
 function auditDescription(record: EventAuditRecord): string {
@@ -242,6 +239,6 @@ function ApprovalHistory({ query }: { query: { data?: EventApprovalHistoryRespon
   if (query.isLoading) return <p role="status" className="mt-4 text-sm text-[#52736a]">Loading approval history...</p>;
   if (query.isError) return <div className="mt-4"><p role="alert" className="text-sm font-semibold text-[#b42318]">Unable to load approval history.</p><button type="button" onClick={() => void query.refetch()} className="mt-2 text-sm font-semibold text-[#1f6a58] underline">Retry</button></div>;
   if (!query.data || query.data.length === 0) return <p className="mt-4 text-sm text-[#52736a]">No approval history is available.</p>;
-  const records = [...query.data].sort((first, second) => Date.parse(second.created_at) - Date.parse(first.created_at));
-  return <ol className="mt-4 space-y-3 border-l-2 border-[#d7e5df] pl-4">{records.map((record) => <li key={record.id} className="relative"><span aria-hidden="true" className="absolute -left-[22px] top-1.5 h-3 w-3 rounded-full border-2 border-white bg-[#1f6a58]" /><p className="font-bold text-[#06201c]">{auditDescription(record)}</p>{auditDescription(record) === "Status changed" ? <p className="mt-1 text-sm text-[#52736a]">{eventStatusLabel(record.before.status)} → {eventStatusLabel(record.after.status)}</p> : null}{record.notes ? <p className="mt-1 text-sm text-[#31594d]">Reason: {record.notes}</p> : null}{record.changed_by ? <p className="mt-1 text-sm text-[#52736a]">Reviewer: {record.changed_by}</p> : null}<p className="mt-1 text-xs font-semibold text-[#7f9d94]">{formatAuditDateTime(record.created_at)}</p></li>)}</ol>;
+  const records = [...query.data].sort((first, second) => auditTimestampValue(second.created_at) - auditTimestampValue(first.created_at));
+  return <ol className="mt-4 space-y-3 border-l-2 border-[#d7e5df] pl-4">{records.map((record) => { const reviewer = approvalActorDisplayName(record.changed_by); return <li key={record.id} className="relative"><span aria-hidden="true" className="absolute -left-[22px] top-1.5 h-3 w-3 rounded-full border-2 border-white bg-[#1f6a58]" /><p className="font-bold text-[#06201c]">{auditDescription(record)}</p>{auditDescription(record) === "Status changed" ? <p className="mt-1 text-sm text-[#52736a]">{eventStatusLabel(record.before.status)} → {eventStatusLabel(record.after.status)}</p> : null}{record.notes ? <p className="mt-1 text-sm text-[#31594d]">Reason: {record.notes}</p> : null}{reviewer ? <p className="mt-1 text-sm text-[#52736a]">Reviewer: {reviewer}</p> : null}<p className="mt-1 text-xs font-semibold text-[#7f9d94]">{formatAuditDateTime(record.created_at)}</p></li>; })}</ol>;
 }

@@ -27,7 +27,8 @@ export function matchesEventTimeFilter(event: EventSchedule, filter: EventTimeFi
   return end < nowValue;
 }
 
-function eventDateTimeToEpoch(value: string, timeZone: string): number | null {
+/** Converts an Event-local date/time value into an epoch using the Event timezone. */
+export function eventDateTimeToEpoch(value: string, timeZone: string): number | null {
   const parsed = Date.parse(value);
   if (!Number.isFinite(parsed)) return null;
   if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(value)) return parsed;

@@ -1388,31 +1388,6 @@ function canEditMessage(message: ChatMessage) {
   return message.isMine && !message.isDeleted && message.messageType === "text" && !message.attachmentName;
 }
 
-function getQuickReplies(conversation: Conversation) {
-  if (!conversation.canSendMessage) {
-    return [];
-  }
-
-  const serviceName = conversation.serviceName.toLowerCase();
-  const isServiceChat = serviceName.includes("session") || serviceName.includes("follow-up");
-
-  if (isServiceChat) {
-    return [
-      "Thank you for reaching out. We are checking this for you.",
-      "Could you confirm your preferred date and time?",
-      "Please upload any relevant reports or prescriptions.",
-      "Your booking is confirmed. We will update you shortly.",
-    ];
-  }
-
-  return [
-    "Hi, I would like to know more about this service.",
-    "Can you please share more details about your concern?",
-    "The doctor will review this and get back to you.",
-    "Please upload any relevant reports or prescriptions.",
-  ];
-}
-
 function SearchIcon() {
   return (
     <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none">
@@ -4615,7 +4590,6 @@ export default function EnterpriseMessagesScreen() {
     [messagesByConversation, selectedConversationMessagesId],
   );
 
-  const quickReplies = visibleSelectedConversation ? getQuickReplies(visibleSelectedConversation) : [];
   const mediaDrawerHistoryMessages = useMemo(
     () => (selectedConversationId ? mediaDrawerMessagesByConversation[selectedConversationId] ?? [] : []),
     [mediaDrawerMessagesByConversation, selectedConversationId],
@@ -5646,11 +5620,6 @@ export default function EnterpriseMessagesScreen() {
     }
   }
 
-  function handleQuickReply(reply: string) {
-    setDraftMessage(reply);
-    setShowEmojiPicker(false);
-  }
-
   function handleEmojiPick(emoji: string) {
     setDraftMessage((current) => `${current}${current ? " " : ""}${emoji}`);
     setShowEmojiPicker(false);
@@ -6468,26 +6437,6 @@ export default function EnterpriseMessagesScreen() {
                             showPreview: false,
                           }}
                         />
-                      </div>
-                    ) : null}
-
-                    {quickReplies.length > 0 ? (
-                      <div className="mb-2">
-                        <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#7f9d94]">
-                          Quick replies
-                        </div>
-                        <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-                          {quickReplies.map((reply) => (
-                            <button
-                              key={reply}
-                              type="button"
-                              onClick={() => handleQuickReply(reply)}
-                              className="shrink-0 rounded-full border border-[#d7e5df] bg-[#f8fbf9] px-2 py-0.5 text-left text-[10px] text-[#355a51] transition hover:border-[#1f6a58] hover:bg-[#eef8f2]"
-                            >
-                              {reply}
-                            </button>
-                          ))}
-                        </div>
                       </div>
                     ) : null}
 

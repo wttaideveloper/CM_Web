@@ -135,7 +135,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const valuesRef = useRef(values);
   valuesRef.current = values;
   const [currencySourcePreference, setCurrencySourcePreference] = useState<EventCurrencySource | null>(null);
-  const [pendingCurrencyChange, setPendingCurrencyChange] = useState<{ values: CreateEventFormValues; source: EventCurrencySource; currency: string } | null>(null);
+  const [pendingCurrencyChange, setPendingCurrencyChange] = useState<{ values: CreateEventFormValues; previousValues: CreateEventFormValues; source: EventCurrencySource; currency: string } | null>(null);
   const [sessionGenerationRules, setSessionGenerationRules] = useState<SessionGenerationRule[]>(createDefaultSessionGenerationRules);
   const previousEventType = useRef(values.event_type);
   const initialLocationId = initialEvent?.location_id ?? "";
@@ -189,7 +189,11 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const hasHistoricalConfiguration = Boolean(initialEvent?.form_configuration_id && initialEvent?.form_configuration_version_id);
   const historicalFormConfiguration = useEventHistoricalFormConfiguration(initialEvent?.id, mode === "edit" && hasHistoricalConfiguration);
   const formConfiguration = mode === "create" ? activeFormConfiguration.data : historicalFormConfiguration.data;
-  const currencyPolicy = useMemo<EventCurrencyPolicy | null>(() => mode === "create" && activeFormConfiguration.data ? getEventCurrencyPolicy(activeFormConfiguration.data) : null, [activeFormConfiguration.data, mode]);
+  const currencyPolicy = useMemo<EventCurrencyPolicy | null>(() => {
+    if (!formConfiguration) return mode === "edit" ? { baseEnabled: true, ticketTypesEnabled: true, mealsEnabled: true, accommodationEnabled: true } : null;
+    const configuredPolicy = getEventCurrencyPolicy(formConfiguration);
+    return mode === "edit" ? { ...configuredPolicy, baseEnabled: true } : configuredPolicy;
+  }, [formConfiguration, mode]);
   const configuredSections = useMemo(() => [...(formConfiguration?.sections ?? [])]
     .filter((section) => section.is_enabled)
     .sort((left, right) => left.position - right.position)
@@ -208,10 +212,10 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   }, [formConfiguration, mode]);
   const effectiveCurrencySource = currencyPolicy ? resolveEventCurrencySource(values, currencyPolicy, currencySourcePreference) : null;
   const effectiveCurrency = eventCurrencyForSource(values, effectiveCurrencySource);
-  const currencyState: EventCurrencyUiState | undefined = mode === "create" && currencyPolicy ? {
+  const currencyState: EventCurrencyUiState | undefined = currencyPolicy ? {
     value: effectiveCurrency,
     source: effectiveCurrencySource,
-    isLocked: (source) => Boolean(effectiveCurrencySource && !isEventCurrencySource(effectiveCurrencySource, source)),
+    isLocked: (source) => source.kind !== "base" && Boolean(effectiveCurrencySource && !isEventCurrencySource(effectiveCurrencySource, source)),
   } : undefined;
   const requiresEventCategories = configuredSections.some((section) => section.fields.some((field) => field.source === "core" && (field.core_key === "category" || field.core_key === "subcategory")));
   const eventCategoriesQuery = useEventCategories(Boolean(formConfiguration) && requiresEventCategories);
@@ -264,15 +268,19 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
         ? { ...current, modules: value as CreateEventFormValues["modules"], pricing_type: "free" }
         : { ...current, [key]: value } as CreateEventFormValues;
     }
-    if (mode === "create" && currencyPolicy) {
+    if (currencyPolicy) {
       const currencyChange = findEventCurrencyChange(current, next);
       if (currencyChange) {
         const currentSource = resolveEventCurrencySource(current, currencyPolicy, currencySourcePreference);
         const currentCurrency = eventCurrencyForSource(current, currentSource);
-        if (currentSource && currentCurrency && !isEventCurrencySource(currentSource, currencyChange.source)) {
+        const explicitBaseChange = currencyPolicy.baseEnabled && currencyChange.source.kind === "base";
+        if (currentSource && currentCurrency && !explicitBaseChange && !isEventCurrencySource(currentSource, currencyChange.source)) {
           next = synchronizeEventCurrencies(next, currencyPolicy, currentCurrency);
         } else if (currencyChange.value !== currentCurrency && hasEventMonetaryValues(current, currencyPolicy)) {
-          setPendingCurrencyChange({ values: next, source: currencyChange.source, currency: currencyChange.value });
+          const selectedCurrencyValues = synchronizeEventCurrencies(next, currencyPolicy, currencyChange.value);
+          setPendingCurrencyChange({ values: selectedCurrencyValues, previousValues: current, source: currencyChange.source, currency: currencyChange.value });
+          valuesRef.current = selectedCurrencyValues;
+          setValues(selectedCurrencyValues);
           return;
         } else {
           setCurrencySourcePreference(currencyChange.source);
@@ -296,7 +304,13 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     setErrors({});
     setSubmitError(null);
   };
-  const cancelCurrencyChange = () => setPendingCurrencyChange(null);
+  const cancelCurrencyChange = () => {
+    if (pendingCurrencyChange) {
+      valuesRef.current = pendingCurrencyChange.previousValues;
+      setValues(pendingCurrencyChange.previousValues);
+    }
+    setPendingCurrencyChange(null);
+  };
   const updateCustomValues = (next: Record<string, string | string[] | boolean | number | null>) => { const changedKey = Object.keys(next).find((key) => JSON.stringify(next[key]) !== JSON.stringify(customValues[key])); if (changedKey) hasUserEditedFormRef.current = true; setCustomValues(next); if (changedKey) setErrors((current) => ({ ...current, [changedKey]: [] })); setSubmitError(null); };
   const updateMediaUpload = (id: string, patch: Partial<EventMediaUploadState>) => setMediaUploads((current) => current.map((upload) => upload.id === id ? { ...upload, ...patch } : upload));
   const runMediaUpload = (upload: EventMediaUploadState) => {
@@ -581,7 +595,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const continueToNext = () => { const currentErrors = Object.fromEntries(Object.entries(normalizedAllErrors).filter(([field]) => sectionFields(activeStep).includes(field))); const first = firstErrorKey(sectionFields(activeStep), currentErrors); if (first) { focusError(first, currentErrors); return; } setErrors({}); setActiveStep((current) => Math.min(current + 1, editorSteps.length - 1)); };
   const submit = () => { if (mode === "create" && eventCreateSubmissionStarted.current) return; if (mode === "edit" && !isDirty) return; if (mediaUploads.some((upload) => upload.status === "uploading" || upload.status === "error")) { setSubmitError("Finish or remove the Event media uploads before saving."); return; } const first = firstErrorKey(allFieldOrder, normalizedAllErrors) ?? Object.keys(normalizedAllErrors).find((field) => normalizedAllErrors[field]?.length); if (first) { const sectionIndex = editorSteps.findIndex((_, index) => sectionFields(index).includes(first)); focusError(first, normalizedAllErrors); if (sectionIndex >= 0) setActiveStep(sectionIndex); const count = errorCount(normalizedAllErrors); setSubmitError(`${count} validation error${count === 1 ? "" : "s"} need attention.`); return; } setSubmitError(null); if (mode === "create") eventCreateSubmissionStarted.current = true; saveMutation.mutate(); };
   const mediaProps = { mediaPolicy: mediaPolicyQuery.data, policyError: mediaPolicyQuery.error instanceof Error ? mediaPolicyQuery.error.message : undefined, uploads: mediaUploads, onMediaLinkChange, onMediaAddLink, onMediaRemove, onMediaUpload, onMediaRetry, onMediaUploadRemove };
-  const sharedProps = { values, update, errors: displayErrors, currencyOptions, eventTypes: availableEventTypes, eventTypesLoading: eventTypesQuery.isLoading, eventTypesError: eventTypesQuery.isError, createMode: mode === "create", ...mediaProps, ...(mode === "create" ? { sessionGenerationRules, onSessionGenerationRulesChange: setSessionGenerationRules, currencyState } : {}) };
+  const sharedProps = { values, update, errors: displayErrors, currencyOptions, eventTypes: availableEventTypes, eventTypesLoading: eventTypesQuery.isLoading, eventTypesError: eventTypesQuery.isError, createMode: mode === "create", ...mediaProps, ...(currencyState ? { currencyState } : {}), ...(mode === "create" ? { sessionGenerationRules, onSessionGenerationRulesChange: setSessionGenerationRules } : {}) };
   const backHref = initialEvent ? `/admin/events/${initialEvent.id}` : "/admin/events";
   const title = mode === "edit" ? "Edit Event" : "Create Event";
 
@@ -619,19 +633,19 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     return <HistoricalFormStatus error onRetry={() => void activeFormConfiguration.refetch()}><strong>No Event Form Available</strong><br />There is currently no active Event Form Configuration available. Please contact your Super Admin to publish and activate one before creating an Event.</HistoricalFormStatus>;
   }
 
-  return <div className="w-full"><EventCreateLeaveDialog open={leaveConfirmationOpen} onStay={stayOnEventCreate} onLeave={leaveEventCreate} /><EventCurrencyChangeDialog open={Boolean(pendingCurrencyChange)} onCancel={cancelCurrencyChange} onConfirm={confirmCurrencyChange} /><header className="flex flex-col gap-4 border-b border-[#edf3f0] pb-6 sm:flex-row sm:items-start sm:justify-between"><div>{mode === "edit" ? <Link href={backHref} className="text-sm font-semibold text-[#1f6a58]">Back to Event</Link> : null}<p className="mt-4 text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">{mode === "edit" ? initialEvent?.status ?? "EVENT" : "DRAFT EVENT"}</p><h1 className="mt-2 text-2xl font-bold text-[#06201c] sm:text-3xl">{title}</h1><p className="mt-2 text-sm text-[#52736a] sm:text-base">{mode === "edit" ? initialEvent?.title : "Build and review a new event for your enterprise."}</p></div><Link href={backHref} onClick={handleCreateLeave} className="inline-flex h-11 items-center justify-center rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a]">Cancel</Link></header>
+  return <div className="w-full"><EventCreateLeaveDialog open={leaveConfirmationOpen} onStay={stayOnEventCreate} onLeave={leaveEventCreate} /><EventCurrencyChangeDialog open={Boolean(pendingCurrencyChange)} targetCurrency={pendingCurrencyChange?.currency} onCancel={cancelCurrencyChange} onConfirm={confirmCurrencyChange} /><header className="flex flex-col gap-4 border-b border-[#edf3f0] pb-6 sm:flex-row sm:items-start sm:justify-between"><div>{mode === "edit" ? <Link href={backHref} className="text-sm font-semibold text-[#1f6a58]">Back to Event</Link> : null}<p className="mt-4 text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">{mode === "edit" ? initialEvent?.status ?? "EVENT" : "DRAFT EVENT"}</p><h1 className="mt-2 text-2xl font-bold text-[#06201c] sm:text-3xl">{title}</h1><p className="mt-2 text-sm text-[#52736a] sm:text-base">{mode === "edit" ? initialEvent?.title : "Build and review a new event for your enterprise."}</p></div><Link href={backHref} onClick={handleCreateLeave} className="inline-flex h-11 items-center justify-center rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a]">Cancel</Link></header>
     {mode === "create" && !activeFormConfiguration.data && (activeFormConfiguration.isLoading || activeFormConfiguration.isError) ? <ActiveEventFormVerification query={activeFormConfiguration} /> : <div className="mt-6 grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]"><nav aria-label="Event editor sections" className="rounded-2xl border border-[#e1ebe6] bg-white p-3 shadow-sm">{editorSteps.map((step, index) => { const hasErrors = sectionHasErrors(index); return <button key={`${step}-${index}`} type="button" aria-current={activeStep === index ? "step" : undefined} aria-label={hasErrors ? `${step}, contains validation errors` : step} onClick={() => selectSection(index)} className={`flex min-w-0 w-full items-start gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${hasErrors ? "text-[#b42318]" : activeStep === index ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f9fcfa]"}`}><span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-current text-xs ${hasErrors ? "bg-[#fff1f0] font-bold" : ""}`}>{hasErrors ? <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full bg-[#b42318]" /> : index + 1}</span><span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">{step}</span></button>; })}</nav>
       <main className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm sm:p-6">{mode === "create" && (activeFormConfiguration.isError || !activeFormConfiguration.data) ? <ActiveEventFormVerification query={activeFormConfiguration} /> : null}{mode === "create" && activeFormConfiguration.data && activeStep < configuredSections.length ? <ConfiguredCreateEventSection section={configuredSections[activeStep]} {...sharedProps} customValues={customValues} setCustomValues={updateCustomValues} categories={eventCategoriesQuery.data ?? []} categoriesLoading={eventCategoriesQuery.isLoading} categoriesError={eventCategoriesQuery.isError} /> : null}{mode === "create" && activeFormConfiguration.data && activeStep === configuredSections.length ? <ConfiguredCreateEventReview configuration={activeFormConfiguration.data} values={values} customValues={customValues} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 0 ? <BasicInformationSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 1 ? <ScheduleSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 2 ? <LocationAndHostSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 3 ? <PricingAndTicketsSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 4 ? <CapacityAndRegistrationSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 5 ? <MediaSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 6 ? <AdditionalConfigurationSection {...sharedProps} /> : null}{mode === "create" && !activeFormConfiguration.data && activeStep === 7 ? <ReviewSection values={values} /> : null}{mode === "edit" && activeStep === 0 ? <BasicInformationSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 1 ? <ScheduleSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 2 ? <LocationAndHostSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 3 ? <PricingAndTicketsSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 4 ? <CapacityAndRegistrationSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 5 ? <MediaSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 6 ? <AdditionalConfigurationSection {...sharedProps} /> : null}{mode === "edit" && activeStep === 7 ? <ReviewSection values={values} /> : null}{isCreateBlockedByEnterprise ? <div role="status" className="mt-6 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-3 text-sm font-semibold text-[#735c1e]">Creating an Event is unavailable until an Enterprise is linked. The current backend EventCreate contract requires an enterprise_id.</div> : null}{submitError ? <div role="alert" className="mt-6 rounded-xl border border-[#f3d0cb] bg-[#fff6f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{submitError}</div> : null}
         <div className="mt-8 flex flex-col-reverse gap-3 border-t border-[#edf3f0] pt-5 sm:flex-row sm:justify-between">{activeStep > 0 ? <button type="button" onClick={() => setActiveStep((current) => current - 1)} disabled={saveMutation.isPending} className="h-11 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a] disabled:opacity-50">Back</button> : null}{activeStep === editorSteps.length - 1 ? <button type="button" onClick={submit} disabled={saveMutation.isPending || isCreateBlockedByEnterprise || (mode === "edit" && !isDirty)} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm disabled:opacity-60">{saveMutation.isPending ? mode === "edit" ? "Saving..." : "Creating..." : mode === "edit" ? "Save Changes" : "Create Event"}</button> : <button type="button" onClick={continueToNext} className="h-11 rounded-full bg-[#1f6a58] px-5 py-2.5 text-sm font-bold text-white shadow-sm">Continue</button>}</div>
       </main></div>}</div>;
 }
 
-function EventCurrencyChangeDialog({ open, onCancel, onConfirm }: { open: boolean; onCancel: () => void; onConfirm: () => void }) {
+function EventCurrencyChangeDialog({ open, targetCurrency, onCancel, onConfirm }: { open: boolean; targetCurrency?: string; onCancel: () => void; onConfirm: () => void }) {
   if (!open) return null;
   return <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#06201c]/50 p-4" role="presentation">
     <div role="dialog" aria-modal="true" aria-labelledby="event-currency-change-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
       <h2 id="event-currency-change-title" className="text-xl font-bold text-[#06201c]">Change Event currency?</h2>
-      <p className="mt-2 text-sm leading-6 text-[#52736a]">Changing currency will clear entered prices. No conversion will be applied.</p>
+      <p className="mt-2 text-sm leading-6 text-[#52736a]">Changing the Event currency{targetCurrency ? ` to ${targetCurrency}` : ""} will clear entered prices. No conversion will be applied.</p>
       <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
         <button type="button" onClick={onCancel} className="h-11 rounded-full border border-[#d7e5df] px-5 text-sm font-bold text-[#52736a] focus:outline-none focus:ring-2 focus:ring-[#1f6a58] focus:ring-offset-2">Cancel</button>
         <button type="button" onClick={onConfirm} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-[#1f6a58] focus:ring-offset-2">Change currency</button>
