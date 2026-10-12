@@ -471,7 +471,9 @@ export default function ServiceCreateScreen({
     <>
       <div className="flex items-start gap-3">
         <button
+          type="button"
           aria-label="Back"
+          onClick={() => router.push(redirectTo || (isEnterpriseAdmin ? "/admin/services" : "/services"))}
           className="mt-1 flex h-10 w-10 items-center justify-center rounded-full border border-[#d7e5df] text-[#52736a]"
         >
           &larr;

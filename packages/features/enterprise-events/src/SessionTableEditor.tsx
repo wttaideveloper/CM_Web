@@ -6,6 +6,7 @@ import { DateLocalInput } from "@ihp/ui";
 import type { EventSessionRecord } from "./events.service";
 import { getEventSessionDates, getSessionTimeBounds, parseEventLocalDateTime } from "./event-session-date";
 import { createDefaultSessionGenerationRules, nextSessionGenerationRuleId, updateSessionGenerationRule, updateSessionGenerationRuleCount, updateSessionGenerationRuleDuration, type SessionGenerationRule } from "./session-generation-rules";
+import { isProtectedMeetingLink } from "./event-meeting-link";
 
 export type { SessionGenerationRule } from "./session-generation-rules";
 
@@ -213,7 +214,7 @@ export default function SessionTableEditor({
 function Summary({ label, value }: { label: string; value: string }) { return <div><p className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">{label}</p><p className="mt-1 font-bold text-[#06201c]">{value}</p></div>; }
 
 function SessionCell({ field, session, eventStart, eventEnd, required, disabled, onChange }: { field: SessionField; session: SessionDraft; eventStart: string; eventEnd: string; required: boolean; disabled?: boolean; onChange: (value: string) => void }) {
-  const value = session[field] ?? "";
+  const value = field === "meeting_link" && isProtectedMeetingLink(session[field]) ? "" : session[field] ?? "";
   if (field === "session_date") {
     return <DateLocalInput aria-label="Session date" value={value} disabled={disabled} required={required} min={getEventSessionDates(eventStart, eventEnd)[0]} max={getEventSessionDates(eventStart, eventEnd).at(-1)} onChange={onChange} className="h-9 w-44 rounded-lg border border-[#d7e5df] px-2" />;
   }
@@ -226,6 +227,7 @@ function SessionCell({ field, session, eventStart, eventEnd, required, disabled,
 function renderPersistedValue(session: SessionDraft, field: SessionField) {
   const value = session[field] ?? "";
   if (!value) return <span className="text-[#7f9d94]">—</span>;
+  if (field === "meeting_link" && isProtectedMeetingLink(value)) return <span className="text-[#52736a]">Protected meeting link</span>;
   if (field === "meeting_link") return <a href={String(value)} target="_blank" rel="noreferrer" className="font-semibold text-[#1f6a58] underline">Open link</a>;
   return <span>{field === "session_date" ? formatDate(String(value)) : String(value)}</span>;
 }

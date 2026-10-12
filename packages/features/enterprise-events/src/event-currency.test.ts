@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { CreateEventFormValues } from "./create-event-form.ts";
-import { assertEventCurrencyConsistency, EVENT_CURRENCY_MISMATCH_ERROR, getEventCurrencyPolicy, hasEventMonetaryValues, resetEventMonetaryValues, resolveEventCurrencySource, resolveEventOptionCurrency, synchronizeEventCurrencies, validateEventCurrencies, type EventCurrencyPolicy } from "./event-currency.ts";
+import { assertEventCurrencyConsistency, EVENT_CURRENCY_MISMATCH_ERROR, getEventCurrencyPolicy, hasEventMonetaryValues, resetEventMonetaryValues, resolveEventCurrencySource, resolveEventOptionCurrency, resolveNewEventCurrency, synchronizeEventCurrencies, validateEventCurrencies, type EventCurrencyPolicy } from "./event-currency.ts";
 import type { ActiveEventFormConfiguration } from "./events.service.ts";
 
 function form(overrides: Partial<CreateEventFormValues> = {}): CreateEventFormValues {
@@ -59,6 +59,49 @@ test("dependent option controls display the Event currency when their row is emp
   assert.equal(resolveEventOptionCurrency("  ", "THB"), "THB");
   assert.equal(resolveEventOptionCurrency(null, "USD"), "USD");
   assert.equal(resolveEventOptionCurrency("INR", "THB"), "INR");
+});
+
+test("new rows use the current edit Event currency without changing existing rows", () => {
+  assert.equal(resolveNewEventCurrency(" THB "), "THB");
+  assert.equal(resolveNewEventCurrency("USD", { value: "INR" }), "INR");
+  assert.equal(resolveNewEventCurrency("", undefined), "");
+});
+
+test("explicit currency synchronization preserves option identifiers", () => {
+  const values = form({
+    currency: "USD",
+    price: "100",
+    ticket_types: [{ id: "ticket-1", name: "VIP", price: "50", currency: "USD", capacity: "10" }],
+    modules: { registration: true, tickets: true, sessions: true, check_in: true, online_meeting: false, custom_questions: false, meals: true, accommodation: true },
+    meals: { options: [{ id: "meal-1", name: "Lunch", price: "10", currency: "USD" }] },
+    accommodation: { options: [{ id: "room-1", name: "Room", price: "20", currency: "USD" }] },
+  });
+  const synchronized = synchronizeEventCurrencies(values, fullPolicy, "INR");
+  assert.equal(synchronized.ticket_types[0].id, "ticket-1");
+  assert.equal(synchronized.meals?.options?.[0].id, "meal-1");
+  assert.equal(synchronized.accommodation?.options?.[0].id, "room-1");
+  assert.equal(synchronized.ticket_types[0].currency, "INR");
+  assert.equal(synchronized.meals?.options?.[0].currency, "INR");
+  assert.equal(synchronized.accommodation?.options?.[0].currency, "INR");
+});
+
+test("currency reset clears active prices but leaves disabled modules unchanged", () => {
+  const values = form({
+    currency: "USD",
+    price: "100",
+    ticket_types: [{ id: "ticket-1", name: "VIP", price: "50", currency: "USD", capacity: "10" }],
+    modules: { registration: true, tickets: true, sessions: true, check_in: true, online_meeting: false, custom_questions: false, meals: false, accommodation: true },
+    meals: { options: [{ id: "meal-1", name: "Lunch", price: "10", currency: "USD" }] },
+    accommodation: { options: [{ id: "room-1", name: "Room", price: "20", currency: "USD" }] },
+  });
+  const reset = resetEventMonetaryValues(values, fullPolicy);
+  assert.equal(reset.price, "");
+  assert.equal(reset.ticket_types[0].price, "");
+  assert.equal(reset.accommodation?.options?.[0].price, "");
+  assert.equal(reset.meals?.options?.[0].price, "10");
+  assert.equal(reset.ticket_types[0].id, "ticket-1");
+  assert.equal(reset.meals?.options?.[0].id, "meal-1");
+  assert.equal(reset.accommodation?.options?.[0].id, "room-1");
 });
 
 test("without a base field the first applicable ticket source establishes currency", () => {

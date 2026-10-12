@@ -17,6 +17,12 @@ import { validateSessions } from "./SessionTableEditor";
 import { EVENT_DESCRIPTION_MAX_LENGTH, eventServiceOptionLengthError } from "./event-field-limits";
 import { assertEventCurrencyConsistency, type EventCurrencyPolicy } from "./event-currency";
 import { deriveEventPurchaseWindow, syncPurchaseWindows } from "./event-service-purchase-window";
+import { buildEventVenue } from "./event-location";
+import {
+  hasUnsafeProtectedSessionMeetingLinkEdit,
+  isProtectedMeetingLink,
+  isUnsafeProtectedMeetingLinkEdit,
+} from "./event-meeting-link";
 
 /** An editable ticket row in the Create Event workspace. */
 export interface EventTicketFormValue extends EventTicketType {}
@@ -54,8 +60,6 @@ export interface CreateEventFormValues {
   venue_name: string;
   venue_address: string;
   venue_city: string;
-  venue_latitude: string;
-  venue_longitude: string;
   meeting_link: string;
   meeting_provider: string;
   price: string;
@@ -82,7 +86,7 @@ export function createEmptyEventForm(): CreateEventFormValues {
     title: "", description: "", category: "", subcategory: "", tags: [], organiser_name: "",
     organiser_contact: "", start_date: "", end_date: "", duration_type: "", registration_cutoff: "",
     registration_open_at: "", registration_close_at: "", time_zone: "America/New_York", event_type: "", delivery_mode: "in_person",
-    venue_name: "", venue_address: "", venue_city: "", venue_latitude: "", venue_longitude: "",
+    venue_name: "", venue_address: "", venue_city: "",
     meeting_link: "", meeting_provider: "", price: "", pricing_type: "paid", currency: "", ticket_types: [], capacity: "",
     min_participants: "", max_participants: "", primary_image: "", gallery_images: [], videos: [], documents: [],
     custom_fields: [], sessions: [], modules: null, meals: null, accommodation: null,
@@ -119,13 +123,7 @@ export function buildCreateEventPayload(
   const eventType = values.event_type.trim();
   if (!eventType) throw new Error("Select an Event Type before creating this Event.");
   if (currencyPolicy) assertEventCurrencyConsistency(values, currencyPolicy);
-  const coordinates = buildCoordinates(values.venue_latitude, values.venue_longitude);
-  const venue: CreateEventVenue = {
-    name: values.venue_name.trim(),
-    address: values.venue_address.trim(),
-    city: values.venue_city.trim(),
-    ...(coordinates ? { coordinates } : {}),
-  };
+  const venue: CreateEventVenue = buildEventVenue(values.venue_name, values.venue_address, values.venue_city);
 
   const mediaPayload = buildEventMediaPayload(values);
   const payload: CreateEventPayload = {
@@ -197,7 +195,6 @@ export function eventToFormValues(event: Event): CreateEventFormValues {
     registration_cutoff: toDateTimeLocal(event.registration_cutoff), registration_open_at: toDateTimeLocal(event.registration_open_at),
     registration_close_at: toDateTimeLocal(event.registration_close_at), time_zone: event.time_zone, event_type: event.event_type ?? "", delivery_mode: event.delivery_mode,
     venue_name: event.venue?.name ?? "", venue_address: event.venue?.address ?? "", venue_city: event.venue?.city ?? "",
-    venue_latitude: event.venue?.coordinates?.lat?.toString() ?? "", venue_longitude: event.venue?.coordinates?.lng?.toString() ?? "",
     meeting_link: event.meeting_link ?? "", meeting_provider: event.meeting_provider ?? "", price: event.price ?? "", pricing_type: event.pricing_type ?? (Number(event.price) === 0 ? "free" : "paid"),
     currency: event.currency, ticket_types: event.ticket_types, capacity: event.capacity,
     min_participants: event.min_participants, max_participants: event.max_participants, primary_image: event.primary_image ?? "",
@@ -293,16 +290,29 @@ export function buildUpdateEventPayload(values: CreateEventFormValues, initialVa
       else Object.assign(payload, { [key]: values[key] });
     }
   }
-  if (changed("sessions")) payload.sessions = values.sessions.map((session) => mapSessionForPayload(session, sessionsEnabledFields, values.delivery_mode));
+  if (changed("sessions")) {
+    if (hasUnsafeProtectedSessionMeetingLinkEdit(values.sessions, initialValues.sessions)) {
+      throw new Error("One or more Sessions have protected meeting links. Enter replacement URLs before clearing or changing other fields.");
+    }
+    payload.sessions = values.sessions.map((session) => mapSessionForPayload(session, sessionsEnabledFields, values.delivery_mode));
+  }
   if (changed("modules")) payload.modules = values.modules;
   if (changed("meals")) payload.meals = values.meals;
   if (changed("accommodation")) payload.accommodation = values.accommodation;
   const datetimeKeys: Array<keyof Pick<CreateEventFormValues, "start_date" | "end_date" | "registration_cutoff" | "registration_open_at" | "registration_close_at">> = ["start_date", "end_date", "registration_cutoff", "registration_open_at", "registration_close_at"];
   for (const key of datetimeKeys) if (changed(key)) Object.assign(payload, { [key]: toBackendLocalDateTime(values[key]) });
   const deliveryModeChanged = changed("delivery_mode");
-  if (values.meeting_link !== initialValues.meeting_link) payload.meeting_link = values.meeting_link.trim() || null;
+  if (values.meeting_link !== initialValues.meeting_link) {
+    if (isUnsafeProtectedMeetingLinkEdit(initialValues.meeting_link, values.meeting_link)) {
+      throw new Error("This Event has a protected meeting link. Enter a replacement URL before clearing it.");
+    }
+    payload.meeting_link = values.meeting_link.trim() || null;
+  }
   if (values.meeting_provider !== initialValues.meeting_provider) payload.meeting_provider = values.meeting_provider.trim() || null;
   if (deliveryModeChanged && values.delivery_mode === "in_person") {
+    if (isUnsafeProtectedMeetingLinkEdit(initialValues.meeting_link, values.meeting_link)) {
+      throw new Error("This Event has a protected meeting link and cannot be changed to In Person until the link is replaced.");
+    }
     payload.meeting_link = null;
     payload.meeting_provider = null;
   }
@@ -311,7 +321,7 @@ export function buildUpdateEventPayload(values: CreateEventFormValues, initialVa
     payload.location_id = null;
     payload.venue = null;
   }
-  const venueFields: Array<keyof CreateEventFormValues> = ["venue_name", "venue_address", "venue_city", "venue_latitude", "venue_longitude"];
+  const venueFields: Array<keyof CreateEventFormValues> = ["venue_name", "venue_address", "venue_city"];
   if (venueFields.some((field) => changed(field)) || (deliveryModeChanged && values.delivery_mode !== "online")) {
     payload.venue = values.delivery_mode === "online" ? null : buildVenue(values);
   }
@@ -328,7 +338,8 @@ export function mapSessionForPayload(session: EventSessionFormValue, enabledFiel
   const meetingLinkEnabled = enabledFields === undefined || enabledFields.length === 0 || enabledFields.includes("meeting_link");
   const locationApplicable = deliveryMode !== "online";
   const meetingLinkApplicable = deliveryMode === undefined || deliveryMode === "online" || deliveryMode === "hybrid";
-  return { ...base, description: base.description?.trim() || null, speaker_bio: base.speaker_bio?.trim() || null, ...(locationApplicable && location?.trim() ? { location: location.trim() } : {}), ...(meetingLinkApplicable && meetingLinkEnabled && meeting_link?.trim() ? { meeting_link: meeting_link.trim() } : {}) };
+  const normalizedMeetingLink = meeting_link?.trim();
+  return { ...base, description: base.description?.trim() || null, speaker_bio: base.speaker_bio?.trim() || null, ...(locationApplicable && location?.trim() ? { location: location.trim() } : {}), ...(meetingLinkApplicable && meetingLinkEnabled && normalizedMeetingLink && !isProtectedMeetingLink(normalizedMeetingLink) ? { meeting_link: normalizedMeetingLink } : {}) };
 }
 
 function toOptionalNumericString(value: string | number | null | undefined): string | null {
@@ -500,15 +511,8 @@ function isUrl(value: string): boolean {
   try { new URL(value); return true; } catch { return false; }
 }
 
-function buildCoordinates(latitude: string, longitude: string): CreateEventVenue["coordinates"] | undefined {
-  if (!latitude.trim() && !longitude.trim()) return undefined;
-  const lat = Number(latitude); const lng = Number(longitude);
-  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : undefined;
-}
-
 function buildVenue(values: CreateEventFormValues): CreateEventVenue {
-  const coordinates = buildCoordinates(values.venue_latitude, values.venue_longitude);
-  return { name: values.venue_name.trim(), address: values.venue_address.trim(), city: values.venue_city.trim(), ...(coordinates ? { coordinates } : {}) };
+  return buildEventVenue(values.venue_name, values.venue_address, values.venue_city);
 }
 
 function toDateTimeLocal(value: string): string {

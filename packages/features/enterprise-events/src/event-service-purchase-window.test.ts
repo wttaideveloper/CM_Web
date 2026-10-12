@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { deriveEventPurchaseWindow, syncPurchaseWindow, syncPurchaseWindows } from "./event-service-purchase-window.ts";
+import { deriveEventPurchaseWindow, deriveNewEventServiceOptionDefaults, syncPurchaseWindow, syncPurchaseWindows } from "./event-service-purchase-window.ts";
 
 test("uses registration opening and the earliest available closing value", () => {
   assert.deepEqual(
@@ -18,6 +18,17 @@ test("falls back to registration close when cutoff is missing", () => {
 
 test("leaves missing registration values empty without inventing dates", () => {
   assert.deepEqual(deriveEventPurchaseWindow("", "", ""), { start: "", end: "" });
+});
+
+test("new edit service rows inherit currency and the current registration window", () => {
+  assert.deepEqual(
+    deriveNewEventServiceOptionDefaults(" THB ", deriveEventPurchaseWindow("2026-10-10T09:00", "2026-10-12T18:00", "2026-10-11T18:00")),
+    { currency: "THB", purchase_start_at: "2026-10-10T09:00", purchase_end_at: "2026-10-11T18:00" },
+  );
+  assert.deepEqual(
+    deriveNewEventServiceOptionDefaults("", deriveEventPurchaseWindow("", "", "")),
+    { currency: null, purchase_start_at: null, purchase_end_at: null },
+  );
 });
 
 test("synchronizes existing options without changing service fields", () => {

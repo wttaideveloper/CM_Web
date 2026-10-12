@@ -23,10 +23,12 @@ import { EventReviewsTab } from "./EventReviewsTab";
 import SessionAttendancePanel from "./SessionAttendancePanel";
 import {
   displayValue,
+  formatAuditDateTime,
   formatEventDate,
   formatEventDateTime,
   formatEventDeliveryMode,
   formatEventDurationType,
+  formatEventScheduleDateTime,
   formatEventTime,
 } from "./event-detail-formatters";
 import {
@@ -77,6 +79,14 @@ import {
   formatEventTicketOptionLabel,
   getEventTicketOptions,
 } from "./event-ticket-options";
+import {
+  getWalkInEligibility,
+  type WalkInEligibilityEvent,
+} from "./event-walk-in-eligibility";
+import {
+  isProtectedMeetingLink,
+  isUnsafeProtectedMeetingLinkEdit,
+} from "./event-meeting-link";
 
 type DetailItem = {
   label: string;
@@ -251,10 +261,22 @@ export default function EventDetailsScreen() {
             <h1 className="mt-2 text-2xl font-bold text-[#06201c] sm:text-3xl">
               {displayValue(event.title)}
             </h1>
+            <div className="mt-3 flex max-w-full flex-wrap gap-2" aria-label="Event schedule">
+              <div className="max-w-full rounded-xl bg-[#e8f6ee] px-3 py-2 text-[#1f6a58]">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em]">Starts</p>
+                <p className="break-words text-sm font-bold leading-5 [overflow-wrap:anywhere]">{formatEventScheduleDateTime(event.start_date, event.time_zone)}</p>
+              </div>
+              <div className="max-w-full rounded-xl bg-[#e8f6ee] px-3 py-2 text-[#1f6a58]">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em]">Ends</p>
+                <p className="break-words text-sm font-bold leading-5 [overflow-wrap:anywhere]">{formatEventScheduleDateTime(event.end_date, event.time_zone)}</p>
+              </div>
+              <div className="max-w-full rounded-xl bg-[#f1f7f4] px-3 py-2 text-[#52736a]">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em]">Timezone</p>
+                <p className="break-words text-sm font-semibold leading-5 [overflow-wrap:anywhere]">{displayValue(event.time_zone)}</p>
+              </div>
+            </div>
             <p className="mt-2 text-sm text-[#52736a]">
-              {formatEventDateTime(event.start_date, event.time_zone)} ·{" "}
-              {displayValue(event.delivery_mode)} ·{" "}
-              {displayValue(event.enterprise_name ?? "Tenant-owned")}
+              {displayValue(event.delivery_mode)} · {displayValue(event.enterprise_name ?? "Tenant-owned")}
             </p>
           </div>
           <span
@@ -461,11 +483,11 @@ export default function EventDetailsScreen() {
               { label: "Location ID", value: event.location_id },
               {
                 label: "Created At",
-                value: formatEventDateTime(event.created_at, event.time_zone),
+                value: formatAuditDateTime(event.created_at),
               },
               {
                 label: "Updated At",
-                value: formatEventDateTime(event.updated_at, event.time_zone),
+                value: formatAuditDateTime(event.updated_at),
               },
               {
                 label: "Record State",
@@ -484,7 +506,7 @@ export default function EventDetailsScreen() {
           aria-labelledby="event-registrations-tab"
           className="mt-6"
         >
-          <RegistrationsSection eventId={event.id} timeZone={event.time_zone} ticketTypes={event.ticket_types} defaultTicketTypeId={event.default_ticket_type_id} pricingType={event.pricing_type} basePrice={event.price} currency={event.currency} sessions={event.sessions} modules={event.modules} meals={event.meals} accommodation={event.accommodation} historicalConfiguration={historicalConfiguration.data ?? undefined} />
+          <RegistrationsSection event={event} eventId={event.id} timeZone={event.time_zone} ticketTypes={event.ticket_types} defaultTicketTypeId={event.default_ticket_type_id} pricingType={event.pricing_type} basePrice={event.price} currency={event.currency} sessions={event.sessions} modules={event.modules} meals={event.meals} accommodation={event.accommodation} historicalConfiguration={historicalConfiguration.data ?? undefined} />
         </section>
       ) : null}
       {effectiveActiveTab === "sessions" ? <section id="event-sessions-panel" role="tabpanel" aria-labelledby="event-sessions-tab" className="mt-6"><SessionsSection eventId={event.id} deliveryMode={event.delivery_mode} startDate={event.start_date} endDate={event.end_date} enabled={sessionsOperational} /><SessionAttendancePanel eventId={event.id} sessions={event.sessions} enabled={sessionsOperational} /></section> : null}
@@ -582,7 +604,7 @@ function handleTabKeyDown(
   event.preventDefault();
 }
 
-function RegistrationsSection({ eventId, timeZone, ticketTypes, defaultTicketTypeId, pricingType, basePrice, currency, sessions, modules, meals, accommodation, historicalConfiguration }: { eventId: string; timeZone: string; ticketTypes: Event["ticket_types"]; defaultTicketTypeId?: Event["default_ticket_type_id"]; pricingType?: Event["pricing_type"]; basePrice: string | null; currency: string; sessions: Event["sessions"]; modules: Event["modules"]; meals: Event["meals"]; accommodation: Event["accommodation"]; historicalConfiguration?: ActiveEventFormConfiguration }) {
+function RegistrationsSection({ event, eventId, timeZone, ticketTypes, defaultTicketTypeId, pricingType, basePrice, currency, sessions, modules, meals, accommodation, historicalConfiguration }: { event: Event; eventId: string; timeZone: string; ticketTypes: Event["ticket_types"]; defaultTicketTypeId?: Event["default_ticket_type_id"]; pricingType?: Event["pricing_type"]; basePrice: string | null; currency: string; sessions: Event["sessions"]; modules: Event["modules"]; meals: Event["meals"]; accommodation: Event["accommodation"]; historicalConfiguration?: ActiveEventFormConfiguration }) {
   const [activeSubview, setActiveSubview] =
     useState<RegistrationsSubview>("registered");
   const [isExporting, setIsExporting] = useState(false);
@@ -661,7 +683,7 @@ function RegistrationsSection({ eventId, timeZone, ticketTypes, defaultTicketTyp
   };
 
   const registrationHeader = (
-    <><RegistrationsHeader activeSubview={activeSubview} isExporting={isExporting} onExport={() => void exportRegistrations()} />{activeSubview === "registered" ? <div className="mt-3 grid gap-2 sm:grid-cols-4"><select aria-label="Registration status" value={attendeeStatus} onChange={(event) => { setAttendeeStatus(event.target.value); setAttendeePage(1); }} className="h-10 rounded-xl border border-[#d7e5df] px-3 text-sm"><option value="">All statuses</option><option value="confirmed">Confirmed</option><option value="attended">Attended</option><option value="cancelled">Cancelled</option><option value="no_show">No show</option></select><select aria-label="Registration source" value={attendeeSource} onChange={(event) => { setAttendeeSource(event.target.value as typeof attendeeSource); setAttendeePage(1); }} className="h-10 rounded-xl border border-[#d7e5df] px-3 text-sm"><option value="">All sources</option><option value="online">Online</option><option value="walk_in">Walk-in</option></select><select aria-label="Checked-in status" value={attendeeCheckedIn} onChange={(event) => { setAttendeeCheckedIn(event.target.value as typeof attendeeCheckedIn); setAttendeePage(1); }} className="h-10 rounded-xl border border-[#d7e5df] px-3 text-sm"><option value="">All check-in states</option><option value="true">Checked in</option><option value="false">Not checked in</option></select><select aria-label="Attendee sort" value={attendeeSort} onChange={(event) => { setAttendeeSort(event.target.value); setAttendeePage(1); }} className="h-10 rounded-xl border border-[#d7e5df] px-3 text-sm"><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="name">Name</option><option value="email">Email</option></select><select aria-label="Payment status" value={attendeePaymentStatus} onChange={(event) => { setAttendeePaymentStatus(event.target.value); setAttendeePage(1); }} className="h-10 rounded-xl border border-[#d7e5df] px-3 text-sm"><option value="">All payment states</option><option value="free">Free</option><option value="unpaid">Unpaid</option><option value="pending">Pending</option><option value="paid">Paid</option><option value="refund_requested">Refund requested</option><option value="refunded">Refunded</option><option value="cancelled">Cancelled</option><option value="failed">Failed</option></select>{ticketOptions.length > 0 ? <select aria-label="Ticket type" value={attendeeTicketTypeId} onChange={(event) => { setAttendeeTicketTypeId(event.target.value); setAttendeePage(1); }} className="h-10 rounded-xl border border-[#d7e5df] px-3 text-sm"><option value="">All ticket types</option>{ticketOptions.map((ticket) => <option key={ticket.id} value={ticket.id}>{formatEventTicketOptionLabel(ticket)}</option>)}</select> : null}</div> : null}{activeSubview === "registered" && modules?.registration !== false ? <WalkInRegistration eventId={eventId} ticketTypes={ticketOptions} defaultTicketTypeId={defaultTicketTypeId} pricingType={pricingType} sessions={sessions} sessionsEnabled={modules?.sessions === true} onSuccess={() => void registrationsQuery.refetch()} /> : null}</>
+    <><RegistrationsHeader activeSubview={activeSubview} isExporting={isExporting} onExport={() => void exportRegistrations()} />{activeSubview === "registered" ? <div className="mt-3 grid gap-2 sm:grid-cols-4"><select aria-label="Registration status" value={attendeeStatus} onChange={(event) => { setAttendeeStatus(event.target.value); setAttendeePage(1); }} className="h-10 rounded-xl border border-[#d7e5df] px-3 text-sm"><option value="">All statuses</option><option value="confirmed">Confirmed</option><option value="attended">Attended</option><option value="cancelled">Cancelled</option><option value="no_show">No show</option></select><select aria-label="Registration source" value={attendeeSource} onChange={(event) => { setAttendeeSource(event.target.value as typeof attendeeSource); setAttendeePage(1); }} className="h-10 rounded-xl border border-[#d7e5df] px-3 text-sm"><option value="">All sources</option><option value="online">Online</option><option value="walk_in">Walk-in</option></select><select aria-label="Checked-in status" value={attendeeCheckedIn} onChange={(event) => { setAttendeeCheckedIn(event.target.value as typeof attendeeCheckedIn); setAttendeePage(1); }} className="h-10 rounded-xl border border-[#d7e5df] px-3 text-sm"><option value="">All check-in states</option><option value="true">Checked in</option><option value="false">Not checked in</option></select><select aria-label="Attendee sort" value={attendeeSort} onChange={(event) => { setAttendeeSort(event.target.value); setAttendeePage(1); }} className="h-10 rounded-xl border border-[#d7e5df] px-3 text-sm"><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="name">Name</option><option value="email">Email</option></select><select aria-label="Payment status" value={attendeePaymentStatus} onChange={(event) => { setAttendeePaymentStatus(event.target.value); setAttendeePage(1); }} className="h-10 rounded-xl border border-[#d7e5df] px-3 text-sm"><option value="">All payment states</option><option value="free">Free</option><option value="unpaid">Unpaid</option><option value="pending">Pending</option><option value="paid">Paid</option><option value="refund_requested">Refund requested</option><option value="refunded">Refunded</option><option value="cancelled">Cancelled</option><option value="failed">Failed</option></select>{ticketOptions.length > 0 ? <select aria-label="Ticket type" value={attendeeTicketTypeId} onChange={(event) => { setAttendeeTicketTypeId(event.target.value); setAttendeePage(1); }} className="h-10 rounded-xl border border-[#d7e5df] px-3 text-sm"><option value="">All ticket types</option>{ticketOptions.map((ticket) => <option key={ticket.id} value={ticket.id}>{formatEventTicketOptionLabel(ticket)}</option>)}</select> : null}</div> : null}{activeSubview === "registered" && modules?.registration !== false ? <WalkInRegistration event={event} eventId={eventId} ticketTypes={ticketOptions} defaultTicketTypeId={defaultTicketTypeId} pricingType={pricingType} sessions={sessions} sessionsEnabled={modules?.sessions === true} onSuccess={() => void registrationsQuery.refetch()} /> : null}</>
   );
   const subviewNavigation = (
     <RegistrationsSubviewTabs
@@ -733,7 +755,7 @@ function RegistrationsSection({ eventId, timeZone, ticketTypes, defaultTicketTyp
                       <td className="px-3 py-3 font-semibold text-[#06201c]">{record.participant_name || "Unknown participant"}</td>
                       <td className="px-3 py-3 text-[#52736a]">{record.participant_email || "—"}</td>
                       <td className="px-3 py-3"><span className="inline-flex rounded-full bg-[#edf3f0] px-2.5 py-1 text-xs font-semibold text-[#31594d]">{humanizeRegistrationStatus(record.status)}</span></td>
-                      <td className="px-3 py-3 text-[#52736a]">{formatEventDateTime(record.created_at, timeZone)}</td>
+                      <td className="px-3 py-3 text-[#52736a]">{formatAuditDateTime(record.created_at)}</td>
                       <td className="px-3 py-3 text-[#52736a]">{record.registration_id ? "Registered / Promoted" : "Not registered"}</td>
                       <td className="px-3 py-3 text-[#52736a]">{record.payment_offer_expires_at ? formatEventDateTime(record.payment_offer_expires_at, timeZone) : "Not offered"}</td>
                     </tr>
@@ -836,22 +858,34 @@ function RegistrationsSection({ eventId, timeZone, ticketTypes, defaultTicketTyp
   );
 }
 
-function WalkInRegistration({ eventId, ticketTypes, defaultTicketTypeId, pricingType, sessions, sessionsEnabled, modules = null, meals = null, accommodation = null, onSuccess }: { eventId: string; ticketTypes: Event["ticket_types"]; defaultTicketTypeId?: Event["default_ticket_type_id"]; pricingType?: Event["pricing_type"]; sessions: Event["sessions"]; sessionsEnabled: boolean; modules?: Event["modules"]; meals?: Event["meals"]; accommodation?: Event["accommodation"]; onSuccess: () => void }) {
+function WalkInRegistration({ event, eventId, ticketTypes, defaultTicketTypeId, pricingType, sessions, sessionsEnabled, modules = null, meals = null, accommodation = null, onSuccess }: { event: WalkInEligibilityEvent; eventId: string; ticketTypes: Event["ticket_types"]; defaultTicketTypeId?: Event["default_ticket_type_id"]; pricingType?: Event["pricing_type"]; sessions: Event["sessions"]; sessionsEnabled: boolean; modules?: Event["modules"]; meals?: Event["meals"]; accommodation?: Event["accommodation"]; onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
   const [successResult, setSuccessResult] = useState<unknown>(null);
   const queryClient = useQueryClient();
   const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [ticket, setTicket] = useState(""); const [session, setSession] = useState("");
   const [mealSelections, setMealSelections] = useState<string[]>([]); const [accommodationSelections, setAccommodationSelections] = useState<string[]>([]);
+  const eligibility = getWalkInEligibility(event, new Date());
   const registrationForm = useQuery({ queryKey: ["event-registration-form", eventId], queryFn: () => getEventRegistrationForm(eventId), enabled: open, staleTime: 60_000, retry: 1 });
   const [customFields, setCustomFields] = useState<Record<string, unknown>>({});
   const quote = useQuery({ queryKey: ["event-checkout-quote", eventId, ticket, mealSelections, accommodationSelections], queryFn: () => quoteEventCheckout(eventId, { ticket_type_id: ticket, quantity: 1, meal_selections: mealSelections, accommodation_selections: accommodationSelections }), enabled: open && Boolean(ticket), staleTime: 0, retry: 0 });
-  const mutation = useMutation({ mutationFn: () => createEventWalkIn(eventId, { participant_name: name.trim(), participant_email: email.trim(), ticket_type_id: ticket || null, ...(session ? { session_id: session } : {}), custom_fields: customFields, meal_selections: mealSelections, accommodation_selections: accommodationSelections, check_in: modules?.check_in === true }), onSuccess: async (result) => { setSuccessResult(result); setName(""); setEmail(""); setTicket(""); setSession(""); await Promise.all([queryClient.invalidateQueries({ queryKey: ["event-attendees", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-registrations", eventId] }), queryClient.invalidateQueries({ queryKey: ["events", "dashboard", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-attendance", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-orders", eventId] })]); onSuccess(); } });
-  if (!open) return <button type="button" onClick={() => { setSuccessResult(null); setOpen(true); }} className="mt-3 h-10 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white">Register walk-in</button>;
+  const mutation = useMutation({ mutationFn: async () => {
+    let latestEvent: Event;
+    try {
+      latestEvent = await getEventById(eventId);
+    } catch {
+      throw new Error("Unable to verify walk-in availability. Refresh and try again.");
+    }
+    queryClient.setQueryData(["events", "detail", eventId], latestEvent);
+    const latestEligibility = getWalkInEligibility(latestEvent, new Date());
+    if (!latestEligibility.allowed) throw new Error(latestEligibility.message);
+    return createEventWalkIn(eventId, { participant_name: name.trim(), participant_email: email.trim(), ticket_type_id: ticket || null, ...(session ? { session_id: session } : {}), custom_fields: customFields, meal_selections: mealSelections, accommodation_selections: accommodationSelections, check_in: modules?.check_in === true });
+  }, onSuccess: async (result) => { setSuccessResult(result); setName(""); setEmail(""); setTicket(""); setSession(""); await Promise.all([queryClient.invalidateQueries({ queryKey: ["events", "detail", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-attendees", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-registrations", eventId] }), queryClient.invalidateQueries({ queryKey: ["events", "dashboard", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-attendance", eventId] }), queryClient.invalidateQueries({ queryKey: ["event-orders", eventId] })]); onSuccess(); } });
+  if (!open) return <div className="mt-3"><button type="button" disabled={!eligibility.allowed} onClick={() => { setSuccessResult(null); setOpen(true); }} className="h-10 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">Register walk-in</button>{!eligibility.allowed ? <p role="status" className="mt-2 text-sm font-semibold text-[#b42318]">{eligibility.message}</p> : null}</div>;
   if (successResult) return <div className="mt-3 rounded-xl border border-[#b7dfc7] bg-[#f1fbf4] p-4"><p className="font-bold text-[#1f6a58]">Walk-In Registered</p><WalkInSuccessDetails result={successResult} /><button type="button" onClick={() => setSuccessResult(null)} className="mt-3 h-10 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white">Register another walk-in</button></div>;
   const options = (kind: "meals" | "accommodation") => (kind === "meals" ? meals?.options ?? [] : accommodation?.options ?? []);
   const toggle = (kind: "meals" | "accommodation", id: string) => { const setter = kind === "meals" ? setMealSelections : setAccommodationSelections; setter((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]); };
   const serviceOptions = (kind: "meals" | "accommodation") => modules?.[kind] === true && options(kind).length ? <fieldset className="md:col-span-4"><legend className="text-sm font-bold">{kind === "meals" ? "Meals" : "Accommodation"}</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{options(kind).map((option) => { const selected = (kind === "meals" ? mealSelections : accommodationSelections).includes(option.id); const disabled = !option.active || option.sold_out === true; return <label key={option.id} className="rounded-xl border border-[#d7e5df] p-3 text-sm"><input type="checkbox" checked={selected} disabled={disabled} onChange={() => toggle(kind, option.id)} /> <span className="font-semibold">{option.name}</span>{option.description ? <span className="block text-xs text-[#52736a]">{option.description}</span> : null}<span className="block text-xs text-[#52736a]">{option.price ?? "Not provided"} {option.currency ?? ""}{option.remaining_capacity !== undefined && option.remaining_capacity !== null ? ` · ${option.remaining_capacity} remaining` : ""}{option.sold_out ? " · Sold out" : !option.active ? " · Inactive" : ""}</span></label>; })}</div></fieldset> : null;
-  return <form onSubmit={(event) => { event.preventDefault(); mutation.mutate(); }} className="mt-3 grid gap-3 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-4 md:grid-cols-4"><input required value={name} onChange={(event) => setName(event.target.value)} placeholder="Participant name" className="h-10 rounded-lg border border-[#d7e5df] px-3 text-sm" /><input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" className="h-10 rounded-lg border border-[#d7e5df] px-3 text-sm" /><div><select value={ticket} onChange={(event) => setTicket(event.target.value)} className="h-10 w-full rounded-lg border border-[#d7e5df] px-3 text-sm"><option value="">Select ticket</option>{ticketTypes.map((item) => <option key={item.id} value={item.id}>{formatEventTicketOptionLabel(item)}</option>)}</select>{pricingType === "paid" && !defaultTicketTypeId?.trim() ? <p className="mt-1 text-xs leading-4 text-[#52736a]">Walk-in registration using the Event&apos;s default/base price is unavailable until payment integration is enabled. Select a configured ticket.</p> : null}</div>{sessionsEnabled && sessions.length > 0 ? <label className="text-sm font-semibold text-[#31594d]"><span className="mb-1 block">Session (optional)</span><select aria-label="Session (optional)" value={session} onChange={(event) => setSession(event.target.value)} className="h-10 w-full rounded-lg border border-[#d7e5df] px-3 text-sm"><option value="">No session</option>{sessions.map((item) => item.id ? <option key={item.id} value={item.id}>{item.title}</option> : null)}</select></label> : null}{serviceOptions("meals")}{serviceOptions("accommodation")}{quote.data ? <div className="md:col-span-4 rounded-xl border border-[#d7e5df] bg-white p-3 text-sm"><p>Ticket: {quote.data.ticket_subtotal} · Meals: {quote.data.meal_subtotal} · Accommodation: {quote.data.accommodation_subtotal}</p><p>Discount: {quote.data.discount ?? 0} · Tax: {quote.data.tax ?? 0} · <strong>Total: {quote.data.grand_total} {quote.data.currency}</strong></p></div> : null}{quote.isFetching ? <p className="md:col-span-4 text-sm">Quoting…</p> : null}{quote.isError ? <p role="alert" className="md:col-span-4 text-sm font-semibold text-[#b42318]">Unable to quote this selection. Refresh and try again.</p> : null}<div className="md:col-span-4 flex items-center gap-3"><button type="submit" disabled={mutation.isPending || quote.isFetching || Boolean(ticket && !quote.data)} className="h-10 rounded-full bg-[#1f6a58] px-4 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white disabled:opacity-60">{mutation.isPending ? "Registering..." : "Register"}</button><button type="button" onClick={() => setOpen(false)} className="h-10 rounded-full border border-[#d7e5df] px-4 text-sm font-semibold">Cancel</button>{mutation.isError ? <p role="alert" className="text-sm font-semibold text-[#b42318]">{mutation.error instanceof EventsApiError ? mutation.error.message : "Unable to register walk-in."}</p> : null}</div></form>;
+  return <form onSubmit={(event) => { event.preventDefault(); if (!eligibility.allowed || mutation.isPending) return; mutation.mutate(); }} className="mt-3 grid gap-3 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-4 md:grid-cols-4"><input required value={name} onChange={(event) => setName(event.target.value)} placeholder="Participant name" className="h-10 rounded-lg border border-[#d7e5df] px-3 text-sm" /><input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" className="h-10 rounded-lg border border-[#d7e5df] px-3 text-sm" /><div><select value={ticket} onChange={(event) => setTicket(event.target.value)} className="h-10 w-full rounded-lg border border-[#d7e5df] px-3 text-sm"><option value="">Select ticket</option>{ticketTypes.map((item) => <option key={item.id} value={item.id}>{formatEventTicketOptionLabel(item)}</option>)}</select>{pricingType === "paid" && !defaultTicketTypeId?.trim() ? <p className="mt-1 text-xs leading-4 text-[#52736a]">Walk-in registration using the Event&apos;s default/base price is unavailable until payment integration is enabled. Select a configured ticket.</p> : null}</div>{sessionsEnabled && sessions.length > 0 ? <label className="text-sm font-semibold text-[#31594d]"><span className="mb-1 block">Session (optional)</span><select aria-label="Session (optional)" value={session} onChange={(event) => setSession(event.target.value)} className="h-10 w-full rounded-lg border border-[#d7e5df] px-3 text-sm"><option value="">No session</option>{sessions.map((item) => item.id ? <option key={item.id} value={item.id}>{item.title}</option> : null)}</select></label> : null}{serviceOptions("meals")}{serviceOptions("accommodation")}{quote.data ? <div className="md:col-span-4 rounded-xl border border-[#d7e5df] bg-white p-3 text-sm"><p>Ticket: {quote.data.ticket_subtotal} · Meals: {quote.data.meal_subtotal} · Accommodation: {quote.data.accommodation_subtotal}</p><p>Discount: {quote.data.discount ?? 0} · Tax: {quote.data.tax ?? 0} · <strong>Total: {quote.data.grand_total} {quote.data.currency}</strong></p></div> : null}{quote.isFetching ? <p className="md:col-span-4 text-sm">Quoting…</p> : null}{quote.isError ? <p role="alert" className="md:col-span-4 text-sm font-semibold text-[#b42318]">Unable to quote this selection. Refresh and try again.</p> : null}{!eligibility.allowed ? <p role="alert" className="md:col-span-4 text-sm font-semibold text-[#b42318]">{eligibility.message}</p> : null}<div className="md:col-span-4 flex items-center gap-3"><button type="submit" disabled={!eligibility.allowed || mutation.isPending || quote.isFetching || Boolean(ticket && !quote.data)} className="h-10 rounded-full bg-[#1f6a58] px-4 rounded-full bg-[#1f6a58] px-4 text-sm font-bold text-white disabled:opacity-60">{mutation.isPending ? "Registering..." : "Register"}</button><button type="button" onClick={() => setOpen(false)} className="h-10 rounded-full border border-[#d7e5df] px-4 text-sm font-semibold">Cancel</button>{mutation.isError ? <p role="alert" className="text-sm font-semibold text-[#b42318]">{mutation.error instanceof EventsApiError || mutation.error instanceof Error ? mutation.error.message : "Unable to register walk-in."}</p> : null}</div></form>;
 }
 
 function humanizeRegistrationStatus(value: string): string {
@@ -906,7 +940,7 @@ function RegistrationTable({
   basePrice: string | null;
 }) {
   const countLabel = totalRegistrations === 1 ? "registered participant" : "registered participants";
-  return <section className="space-y-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><label className="w-full sm:max-w-sm"><span className="sr-only">Search registrations</span><input type="search" value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search attendees by name or email" className="h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]" /></label><p aria-live="polite" className="text-sm text-[#52736a]">{search.trim() ? registrations.length + " of " + totalRegistrations + " registrations" : totalRegistrations + " " + countLabel}</p></div>{registrations.length === 0 ? <div className="rounded-xl border border-dashed border-[#d7e5df] bg-[#f9fcfa] px-4 py-8 text-center"><p className="text-sm font-bold text-[#06201c]">No registrations found.</p></div> : <div className="overflow-x-auto"><table className="min-w-[900px] w-full table-fixed text-left text-sm"><thead className="border-y border-[#e1ebe6] bg-[#f9fcfa] text-xs font-bold uppercase tracking-[.08em] text-[#52736a]"><tr><th className="w-[28%] px-3 py-2">Attendee</th><th className="w-[17%] px-3 py-2">Ticket</th><th className="w-[16%] px-3 py-2">Registration</th><th className="w-[15%] px-3 py-2">Check-in</th><th className="w-[16%] px-3 py-2">Registered at</th><th className="w-[100px] px-3 py-2"><span className="sr-only">Actions</span></th></tr></thead><tbody>{registrations.map((registration) => { const ticket = getRegistrationTicketLabel(registration, ticketTypes, pricingType, basePrice); const session = sessions.find((item) => item.id === registration.session_id); const checkIn = registration.checked_out_at ? "Checked out" : registration.checked_in_at ? "Checked in" : "Not checked in"; return <tr key={registration.id} onClick={() => onSelect(registration)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(registration); } }} role="button" tabIndex={0} className="cursor-pointer border-b border-[#edf3f0] text-[#06201c] last:border-b-0 hover:bg-[#f4faf7]"><td className="px-3 py-2.5"><div className="truncate font-semibold">{registration.participant_name}</div><div className="truncate text-xs text-[#52736a]">{registration.participant_email}</div></td><td className="px-3 py-2.5 text-[#52736a]">{ticket}</td><td className="px-3 py-2.5"><span className="inline-flex rounded-full bg-[#edf3f0] px-2.5 py-1 text-xs font-semibold text-[#31594d]">{humanizeRegistrationStatus(registration.status)}</span></td><td className="px-3 py-2.5"><div className="font-semibold">{checkIn}</div>{registration.checked_in_at ? <div className="text-xs text-[#52736a]">{formatEventDateTime(registration.checked_in_at, "UTC")}</div> : null}</td><td className="px-3 py-2.5 text-[#52736a]">{formatEventDateTime(registration.created_at, "UTC")}</td><td className="px-3 py-2.5" onClick={(event) => event.stopPropagation()}><EventRefundAction eventId={eventId} target="registration" targetId={registration.id} refundState={getRegistrationRefundState(registration.status)} /></td></tr>; })}</tbody></table></div>}</section>;
+  return <section className="space-y-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><label className="w-full sm:max-w-sm"><span className="sr-only">Search registrations</span><input type="search" value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search attendees by name or email" className="h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]" /></label><p aria-live="polite" className="text-sm text-[#52736a]">{search.trim() ? registrations.length + " of " + totalRegistrations + " registrations" : totalRegistrations + " " + countLabel}</p></div>{registrations.length === 0 ? <div className="rounded-xl border border-dashed border-[#d7e5df] bg-[#f9fcfa] px-4 py-8 text-center"><p className="text-sm font-bold text-[#06201c]">No registrations found.</p></div> : <div className="overflow-x-auto"><table className="min-w-[900px] w-full table-fixed text-left text-sm"><thead className="border-y border-[#e1ebe6] bg-[#f9fcfa] text-xs font-bold uppercase tracking-[.08em] text-[#52736a]"><tr><th className="w-[28%] px-3 py-2">Attendee</th><th className="w-[17%] px-3 py-2">Ticket</th><th className="w-[16%] px-3 py-2">Registration</th><th className="w-[15%] px-3 py-2">Check-in</th><th className="w-[16%] px-3 py-2">Registered at</th><th className="w-[100px] px-3 py-2"><span className="sr-only">Actions</span></th></tr></thead><tbody>{registrations.map((registration) => { const ticket = getRegistrationTicketLabel(registration, ticketTypes, pricingType, basePrice); const session = sessions.find((item) => item.id === registration.session_id); const checkIn = registration.checked_out_at ? "Checked out" : registration.checked_in_at ? "Checked in" : "Not checked in"; return <tr key={registration.id} onClick={() => onSelect(registration)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(registration); } }} role="button" tabIndex={0} className="cursor-pointer border-b border-[#edf3f0] text-[#06201c] last:border-b-0 hover:bg-[#f4faf7]"><td className="px-3 py-2.5"><div className="truncate font-semibold">{registration.participant_name}</div><div className="truncate text-xs text-[#52736a]">{registration.participant_email}</div></td><td className="px-3 py-2.5 text-[#52736a]">{ticket}</td><td className="px-3 py-2.5"><span className="inline-flex rounded-full bg-[#edf3f0] px-2.5 py-1 text-xs font-semibold text-[#31594d]">{humanizeRegistrationStatus(registration.status)}</span></td><td className="px-3 py-2.5"><div className="font-semibold">{checkIn}</div>{registration.checked_in_at ? <div className="text-xs text-[#52736a]">{formatAuditDateTime(registration.checked_in_at)}</div> : null}</td><td className="px-3 py-2.5 text-[#52736a]">{formatAuditDateTime(registration.created_at)}</td><td className="px-3 py-2.5" onClick={(event) => event.stopPropagation()}><EventRefundAction eventId={eventId} target="registration" targetId={registration.id} refundState={getRegistrationRefundState(registration.status)} /></td></tr>; })}</tbody></table></div>}</section>;
 }
 
 function RegistrationsHeader({
@@ -960,6 +994,7 @@ function registrationAnswerEntries(value: EventAttendeeAnswers): Array<[string, 
 }
 
 function RegistrationDetailsDrawer({ registration, ticketTypes, pricingType, basePrice, sessions, meals, accommodation, historicalConfiguration, timeZone, onClose }: { registration: EventRegistration; ticketTypes: Event["ticket_types"]; pricingType?: Event["pricing_type"]; basePrice: string | null; sessions: Event["sessions"]; meals: Event["meals"]; accommodation: Event["accommodation"]; historicalConfiguration?: ActiveEventFormConfiguration; timeZone: string; onClose: () => void }) {
+  const formatEventDateTime = (value: string | null | undefined, _eventTimeZone: string) => formatAuditDateTime(value);
   const fields = historicalConfiguration?.sections.flatMap((section) => section.fields) ?? [];
   const ticket = ticketTypes.find((item) => item.id === registration.ticket_type_id);
   const session = sessions.find((item) => item.id === registration.session_id);
@@ -1190,7 +1225,7 @@ function ExternalValue({
   label: string;
   value: string | null | undefined;
 }) {
-  const href = validUrl(value) ? value : null;
+  const href = !isProtectedMeetingLink(value) && validUrl(value) ? value : null;
   return (
     <div className="mt-4">
       <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
@@ -1207,7 +1242,7 @@ function ExternalValue({
         </a>
       ) : (
         <p className="mt-1 text-sm font-semibold text-[#06201c]">
-          {displayValue(value)}
+          {isProtectedMeetingLink(value) ? "Protected meeting link" : displayValue(value)}
         </p>
       )}
     </div>
@@ -1472,7 +1507,7 @@ function AddSessionDialog({
     start_time: initialSession?.start_time ?? "",
     end_time: initialSession?.end_time ?? "",
     location: initialSession?.location ?? "",
-    meeting_link: initialSession?.meeting_link ?? "",
+    meeting_link: isProtectedMeetingLink(initialSession?.meeting_link) ? "" : initialSession?.meeting_link ?? "",
   });
   const [validationError, setValidationError] = useState<string | null>(null);
   const bounds = getSessionTimeBounds(values.session_date, startDate, endDate);
@@ -1539,6 +1574,10 @@ function AddSessionDialog({
       location: initialSession?.location ?? "",
       meeting_link: initialSession?.meeting_link ?? "",
     };
+    if (isUnsafeProtectedMeetingLinkEdit(original.meeting_link, values.meeting_link)) {
+      setValidationError("This Session has a protected meeting link. Enter a replacement URL before clearing it.");
+      return;
+    }
     const payload = Object.fromEntries(
       Object.entries(normalized).filter(([key, value]) => value !== original[key as keyof typeof original]),
     ) as UpdateEventSessionPayload;

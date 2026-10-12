@@ -51,8 +51,6 @@ export const eventCompositeFieldDefinitions: Readonly<Record<string, EventCompos
       { key: "name", label: "Name" },
       { key: "address", label: "Address" },
       { key: "city", label: "City" },
-      { key: "coordinates.lat", label: "Latitude", group: "Coordinates" },
-      { key: "coordinates.lng", label: "Longitude", group: "Coordinates" },
     ],
   },
   custom_fields: {

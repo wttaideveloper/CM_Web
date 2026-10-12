@@ -47,8 +47,6 @@ const venueValues: Record<string, keyof CreateEventFormValues> = {
   name: "venue_name",
   address: "venue_address",
   city: "venue_city",
-  "coordinates.lat": "venue_latitude",
-  "coordinates.lng": "venue_longitude",
 };
 
 const customFieldValues: Record<string, keyof CreateEventFormValues["custom_fields"][number]> = {
@@ -80,7 +78,11 @@ function hasValue(value: unknown, requiredBoolean = false): boolean {
   if (value === null || value === undefined) return false;
   if (typeof value === "string") return value.trim() !== "";
   if (Array.isArray(value)) {
-    return value.some((item) => typeof item === "string" ? item.trim() !== "" : typeof item === "object" && item !== null && "url" in item && typeof item.url === "string" && item.url.trim() !== "");
+    return value.some((item) => {
+      if (typeof item === "string") return item.trim() !== "";
+      if (typeof item !== "object" || item === null) return false;
+      return Object.values(item).some((child) => hasValue(child));
+    });
   }
   if (requiredBoolean && typeof value === "boolean") return value;
   return true;
@@ -88,7 +90,7 @@ function hasValue(value: unknown, requiredBoolean = false): boolean {
 
 function coreValue(field: ActiveEventFormField, key: string, values: CreateEventFormValues): unknown {
   if (field.source !== "core") return undefined;
-  if (key === "venue") return [values.venue_name, values.venue_address, values.venue_city, values.venue_latitude, values.venue_longitude];
+  if (key === "venue") return [values.venue_name, values.venue_address, values.venue_city];
   if (key === "media") return [values.primary_image, ...values.gallery_images, ...values.videos, ...values.documents];
   const valueKey = coreValueKeys[key] ?? (key in values ? key as keyof CreateEventFormValues : undefined);
   return valueKey ? values[valueKey] : undefined;
