@@ -1982,7 +1982,7 @@ export function TrainingOrdersTab({ trainingId }: { trainingId: string }) {
 }
 
 /** Renders live sessions, discussions (with create/reply), and announcements. */
-export function TrainingLiveTab({ trainingId }: { trainingId: string }) {
+export function TrainingLiveTab({ trainingId, discussionId }: { trainingId: string; discussionId?: string | null }) {
   const queryClient = useQueryClient();
   const [newDiscussionMessage, setNewDiscussionMessage] = useState("");
   const [replyToDiscussion, setReplyToDiscussion] = useState<string | null>(null);
@@ -2041,6 +2041,14 @@ export function TrainingLiveTab({ trainingId }: { trainingId: string }) {
   const discussions = discussionsQuery.data ?? [];
   const announcements = announcementsQuery.data ?? [];
 
+  useEffect(() => {
+    if (!discussionId || discussionsQuery.isLoading) return;
+    const target = document.getElementById(`training-discussion-${discussionId}`);
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [discussionId, discussionsQuery.isLoading, discussions]);
+
   return (
     <div className="grid gap-5">
       {feedback ? <p role="status" className="rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">{feedback}</p> : null}
@@ -2065,11 +2073,19 @@ export function TrainingLiveTab({ trainingId }: { trainingId: string }) {
               ...(postedReplies[id] ?? []),
             ];
             const isReplying = replyToDiscussion === id;
+            const isTargeted = Boolean(
+              discussionId && (
+                id === discussionId ||
+                String(record.id) === discussionId ||
+                String(record.discussion_id) === discussionId ||
+                String(record.question_id) === discussionId
+              )
+            );
             return (
-              <li key={id} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-4">
+              <li key={id} id={`training-discussion-${id}`} className={`rounded-xl border p-4 transition-all duration-300 ${isTargeted ? "border-[#1f6a58] bg-[#effaf4] ring-2 ring-[#1f6a58] ring-offset-2" : "border-[#e1ebe6] bg-[#f9fcfa]"}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-[#06201c]">{message}</p>
+                    <p className="text-sm font-semibold text-[#06201c]">{message}{isTargeted ? <span className="ml-2 rounded-full bg-[#1f6a58] px-2 py-0.5 text-[10px] font-bold text-white">Notified question</span> : null}</p>
                     {author ? <p className="mt-1 text-xs text-[#7f9d94]">by {author}</p> : null}
                     {createdAt ? <p className="text-xs text-[#7f9d94]">{formatTrainingDate(createdAt)}</p> : null}
                   </div>

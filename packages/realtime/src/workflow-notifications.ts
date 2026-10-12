@@ -42,11 +42,11 @@ function normalizeWorkflowNotification(candidate: unknown): WorkflowNotification
   if (!isRecord(candidate)) return null;
   const id = firstString(candidate, "id", "notification_id");
   if (!id) return null;
-  const metadata = isRecord(candidate.metadata)
-    ? candidate.metadata
-    : isRecord(candidate.data)
-      ? candidate.data
-      : {};
+  const metadata = {
+    ...candidate,
+    ...(isRecord(candidate.data) ? candidate.data : {}),
+    ...(isRecord(candidate.metadata) ? candidate.metadata : {}),
+  };
   const readAt = candidate.read_at;
   const deliveredAt = candidate.delivered_at;
   return {
@@ -59,7 +59,7 @@ function normalizeWorkflowNotification(candidate: unknown): WorkflowNotification
     title: firstString(candidate, "title"),
     message: firstString(candidate, "message", "body"),
     notification_type: firstString(candidate, "notification_type", "type") || "unknown",
-    category: firstString(candidate, "category"),
+    category: firstString(candidate, "category") || firstString(metadata, "category"),
     metadata,
     created_at: firstString(candidate, "created_at"),
   };

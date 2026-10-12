@@ -1,14 +1,14 @@
 import { strict as assert } from "node:assert";
 import test from "node:test";
 
-import { handleNotificationClick, resolveNotificationTarget } from "./event-notification-routing.ts";
+import { formatTrainingNotificationDetails, handleNotificationClick, resolveNotificationTarget } from "./event-notification-routing.ts";
 
 const resubmittedEventId = "6784cc71-f2c7-4712-a732-29bcffdb849f";
 
 test("Event notification targets use the Event metadata ID", () => {
   assert.equal(
     resolveNotificationTarget({ notification_type: "event_submitted", data: { event_id: "event-1" } }, "platform"),
-    "/approval-queue",
+    "/approval-queue?type=events",
   );
   assert.equal(
     resolveNotificationTarget({ notification_type: "event_approved", data: { event_id: "event-1" } }, "enterprise"),
@@ -105,7 +105,20 @@ test("Event routing prefers the workflow notification type over a generic catego
       metadata: { event_id: resubmittedEventId },
       data: {},
     }, "platform"),
-    "/approval-queue",
+    "/approval-queue?type=events",
+  );
+});
+
+test("generic Event submission notifications still open the Event approval tab", () => {
+  assert.equal(
+    resolveNotificationTarget({
+      notification_type: "automatic",
+      category: "workflow",
+      metadata: { entity_type: "event", event_id: "event-approval-1" },
+      data: {},
+      title: "Event submitted for approval",
+    }, "platform"),
+    "/approval-queue?type=events",
   );
 });
 
@@ -125,4 +138,50 @@ test("Event click routing reads metadata and navigates when the read request fai
   );
   await Promise.resolve();
   assert.deepEqual(calls, [`/admin/events/${resubmittedEventId}/edit`]);
+});
+
+test("training discussion and review notifications open the matching Enterprise tab", () => {
+  assert.equal(
+    resolveNotificationTarget({ notification_type: "automatic", category: "training_question_posted", metadata: { training_id: "training-1", discussion_id: "discussion-1" }, data: {} }, "enterprise"),
+    "/admin/trainings/training-1?tab=live&discussion_id=discussion-1",
+  );
+  assert.equal(
+    resolveNotificationTarget({ notification_type: "automatic", category: "review_submitted", metadata: { entity_type: "training", training_id: "training-2", review_id: "review-1" }, data: {} }, "enterprise"),
+    "/admin/trainings/training-2?tab=reviews&review_id=review-1",
+  );
+  assert.equal(
+    resolveNotificationTarget({ notification_type: "automatic", category: "review_submitted", metadata: { entity_type: "event", event_id: "event-3", review_id: "review-2" }, data: {} }, "enterprise"),
+    "/admin/events/event-3?tab=reviews&review_id=review-2",
+  );
+});
+
+test("review moderation and deletion notifications open the matching Super Admin queue", () => {
+  assert.equal(
+    resolveNotificationTarget({ notification_type: "automatic", category: "review_moderated", metadata: { entity_type: "training", training_id: "training-1", review_id: "review-1", new_status: "approved" }, data: {} }, "platform"),
+    "/trainings?view=reviews&item_id=training-1&review_id=review-1&status=approved",
+  );
+  assert.equal(
+    resolveNotificationTarget({ notification_type: "automatic", category: "review_deleted", metadata: { entity_type: "event", event_id: "event-1", review_id: "review-2", new_status: "deleted" }, data: {} }, "platform"),
+    "/events?view=reviews&item_id=event-1&review_id=review-2&show_audit=true",
+  );
+});
+
+test("Enterprise review notifications open the exact review and deletion history", () => {
+  assert.equal(
+    resolveNotificationTarget({ notification_type: "automatic", category: "review_moderated", metadata: { entity_type: "training", training_id: "training-4", review_id: "review-4", new_status: "approved" }, data: {} }, "enterprise"),
+    "/admin/trainings/training-4?tab=reviews&review_id=review-4",
+  );
+  assert.equal(
+    resolveNotificationTarget({ notification_type: "automatic", category: "review_deleted", metadata: { entity_type: "event", event_id: "event-5", review_id: "review-5", action: "deleted" }, data: {} }, "enterprise"),
+    "/admin/events/event-5?tab=reviews&review_id=review-5&show_audit=true",
+  );
+});
+
+test("training question notifications expose the learner and training labels", () => {
+  assert.deepEqual(formatTrainingNotificationDetails({
+    notification_type: "automatic",
+    title: "New question in a training discussion",
+    body: "Lena asked in Python Advanced Bootcamp: How do I access lesson 3 resources?",
+    data: { category: "training_question_posted", learner_name: "Lena", training_name: "Python Advanced Bootcamp", training_id: "training-1" },
+  }), { trainingTitle: "Python Advanced Bootcamp", senderName: "Lena" });
 });

@@ -2,13 +2,14 @@
 
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { keepPreviousData } from "@tanstack/react-query";
-import Link from "next/link";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import { listTrainings } from "@ihp/enterprise-trainings";
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
 import { listPlatformReviewsManage } from "./platform-reviews.service";
 import { PlatformModuleReviewsTab } from "./PlatformModuleReviewsTab";
+import PlatformTrainingDetailsModal from "./PlatformTrainingDetailsModal";
 
 const filters = ["All", "draft", "published", "archived"] as const;
 const PAGE_SIZE = 20;
@@ -21,12 +22,12 @@ function pillClass(status: string) {
   return "bg-[#eef4ff] text-[#2563eb]";
 }
 
-function TrainingCard({ training }: { training: TrainingListItem }) {
+function TrainingCard({ training, onOpen }: { training: TrainingListItem; onOpen: (trigger: HTMLElement) => void }) {
   const primaryImage = typeof training.primary_image === "string" ? training.primary_image.trim() : "";
   const hasImage = primaryImage.length > 0;
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg">
+    <article role="button" tabIndex={0} aria-label={`View details for ${training.title}`} onClick={(event) => onOpen(event.currentTarget)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(event.currentTarget); } }} className="group overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-sm outline-none transition-all hover:-translate-y-1 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2">
       <div className={`relative h-[140px] p-5 ${hasImage ? "bg-cover bg-center" : "bg-gradient-to-br from-[#1f6a58] via-[#5a9b78] to-[#c3d8a6]"}`} style={hasImage ? { backgroundImage: `url(${JSON.stringify(primaryImage)})` } : undefined}>
         {hasImage ? <div className="absolute inset-0 bg-gradient-to-br from-[#06201c]/55 via-[#0c382e]/40 to-[#1f6a58]/28" /> : null}
         <span className={`relative rounded-full px-3 py-1 text-xs font-bold ${hasImage ? "bg-white/90 text-[#06201c]" : "bg-white/90 text-[#1f6a58]"}`}>{training.category || "—"}</span>
@@ -36,12 +37,9 @@ function TrainingCard({ training }: { training: TrainingListItem }) {
         <h3 className="text-lg font-bold leading-tight text-[#06201c]">{training.title}</h3>
         <p className="mt-2 line-clamp-2 text-sm text-[#52736a]">{training.description || "—"}</p>
         <div className="mt-4 flex items-center justify-between text-sm">
-          <span className="text-[#52736a]">{training.delivery_mode || "—"} · {training.course_type || "—"}</span>
+          <span className="text-[#52736a]">{training.delivery_mode || "—"}</span>
           <span className="font-semibold text-[#06201c]">{training.price ? `${training.price} ${training.currency ?? ""}`.trim() : "—"}</span>
         </div>
-        <Link href={`/trainings/${training.id}`} className="mt-4 block border-t border-[#edf3f0] pt-3 text-sm font-semibold text-[#1f6a58] hover:underline">
-          View training details
-        </Link>
       </div>
     </article>
   );
@@ -54,14 +52,40 @@ export default function PlatformTrainingsScreen() {
   const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30_000 } } }));
   return (
     <QueryClientProvider client={client}>
-      <PlatformTrainingsContent />
+      <Suspense fallback={<div role="status" className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{[1, 2, 3].map((item) => <div key={item} className="h-[290px] animate-pulse rounded-xl bg-[#edf3f0]" />)}</div>}>
+        <PlatformTrainingsContent />
+      </Suspense>
     </QueryClientProvider>
   );
 }
 
 function PlatformTrainingsContent() {
   const { t } = useTranslation("platform");
+  const searchParams = useSearchParams();
   const [view, setView] = useState<"trainings" | "reviews">("trainings");
+  const [reviewItemId, setReviewItemId] = useState<string | null>(null);
+  const [reviewId, setReviewId] = useState<string | null>(null);
+  const [reviewStatus, setReviewStatus] = useState<"pending" | "approved" | "rejected" | "all">("pending");
+  const [showReviewAudit, setShowReviewAudit] = useState(false);
+  const [selectedTrainingId, setSelectedTrainingId] = useState<string | null>(null);
+  const [selectedReviewId, setSelectedReviewId] = useState<string | null>(null);
+  const [selectedReviewStatus, setSelectedReviewStatus] = useState<"pending" | "approved" | "rejected" | "all">("all");
+  const [showSelectedReviewAudit, setShowSelectedReviewAudit] = useState(false);
+  const triggerRef = useRef<HTMLElement | null>(null);
+
+  const openTraining = (trainingId: string, trigger?: HTMLElement) => {
+    if (trigger) triggerRef.current = trigger;
+    setSelectedReviewId(null);
+    setSelectedReviewStatus("all");
+    setShowSelectedReviewAudit(false);
+    setSelectedTrainingId(trainingId);
+  };
+  const closeTraining = () => {
+    setSelectedTrainingId(null);
+    setSelectedReviewId(null);
+    setShowSelectedReviewAudit(false);
+    window.setTimeout(() => triggerRef.current?.focus(), 0);
+  };
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [filter, setFilter] = useState<(typeof filters)[number]>("All");
@@ -74,6 +98,30 @@ function PlatformTrainingsContent() {
     }, 300);
     return () => window.clearTimeout(id);
   }, [query]);
+
+  useEffect(() => {
+    const reviewItem = searchParams.get("reviewItem");
+    if (reviewItem) {
+      setView("trainings");
+      setSelectedTrainingId(reviewItem);
+      setSelectedReviewId(searchParams.get("review_id"));
+      const requestedStatus = searchParams.get("status");
+      setSelectedReviewStatus(requestedStatus === "pending" || requestedStatus === "approved" || requestedStatus === "rejected" ? requestedStatus : "all");
+      setShowSelectedReviewAudit(searchParams.get("show_audit") === "true");
+    }
+    if (searchParams.get("view") === "reviews") {
+      setView("reviews");
+      setReviewItemId(searchParams.get("item_id"));
+      setReviewId(searchParams.get("review_id"));
+      const requestedStatus = searchParams.get("status");
+      if (requestedStatus === "pending" || requestedStatus === "approved" || requestedStatus === "rejected" || requestedStatus === "all") {
+        setReviewStatus(requestedStatus);
+      }
+      setShowReviewAudit(searchParams.get("show_audit") === "true");
+    } else if (searchParams.get("view") === "trainings") {
+      setView("trainings");
+    }
+  }, [searchParams]);
 
   const q = useQuery({
     queryKey: ["trainings", "platform-list", debounced, filter, page],
@@ -98,7 +146,7 @@ function PlatformTrainingsContent() {
         <button type="button" role="tab" aria-selected={view === "trainings"} onClick={() => setView("trainings")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === "trainings" ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#52736a]"}`}>{t("reviews.tabs.trainings")}</button>
         <button type="button" role="tab" aria-selected={view === "reviews"} onClick={() => setView("reviews")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === "reviews" ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#52736a]"}`}>{t("reviews.tabs.received", { count: pendingReviewsQuery.data?.counts.pending ?? 0 })}</button>
       </div>
-      {view === "reviews" ? <PlatformModuleReviewsTab module="training" /> : <>
+      {view === "reviews" ? <PlatformModuleReviewsTab module="training" itemId={reviewItemId} reviewId={reviewId} initialStatus={reviewStatus} openAuditOnLoad={showReviewAudit} /> : <>
 
       <div className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -150,7 +198,7 @@ function PlatformTrainingsContent() {
         <>
           <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3" aria-busy={q.isFetching}>
             {(q.data?.items ?? []).map((t) => (
-              <TrainingCard key={t.id} training={t} />
+              <TrainingCard key={t.id} training={t} onOpen={(trigger) => openTraining(t.id, trigger)} />
             ))}
           </div>
           <nav aria-label="Trainings pagination" className="mt-6 flex flex-col gap-3 rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
@@ -168,6 +216,7 @@ function PlatformTrainingsContent() {
           </nav>
         </>
       )}
+      {selectedTrainingId ? <PlatformTrainingDetailsModal trainingId={selectedTrainingId} reviewId={selectedReviewId} reviewStatus={selectedReviewStatus} openReviewAudit={showSelectedReviewAudit} onClose={closeTraining} /> : null}
       </>}
     </>
   );

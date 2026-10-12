@@ -22,11 +22,18 @@ function PublishedEvents() {
   const { t } = useTranslation("platform");
   const searchParams = useSearchParams();
   const [view, setView] = useState<"events" | "reviews">("events");
+  const [reviewItemId, setReviewItemId] = useState<string | null>(null);
+  const [reviewId, setReviewId] = useState<string | null>(null);
+  const [reviewStatus, setReviewStatus] = useState<"pending" | "approved" | "rejected" | "all">("pending");
+  const [showReviewAudit, setShowReviewAudit] = useState(false);
   const [input, setInput] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<TemporalFilter>("all");
   const [page, setPage] = useState(1);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [selectedReviewId, setSelectedReviewId] = useState<string | null>(null);
+  const [selectedReviewStatus, setSelectedReviewStatus] = useState<"pending" | "approved" | "rejected" | "all">("all");
+  const [showSelectedReviewAudit, setShowSelectedReviewAudit] = useState(false);
   const triggerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => { const timer = window.setTimeout(() => { setSearch(input.trim()); setPage(1); }, 300); return () => window.clearTimeout(timer); }, [input]);
@@ -34,18 +41,35 @@ function PublishedEvents() {
   const pendingReviewsQuery = useQuery({ queryKey: ["platform", "reviews", "event", "pending-count"], queryFn: () => listPlatformReviewsManage({ module: "event", status: "pending", page: 1, pageSize: 1 }), staleTime: 30_000, retry: 1 });
   const visible = (eventsQuery.data?.items ?? []).filter((event) => filter === "all" || temporalState(event) === filter);
   const emptyTitle = filter === "all" ? "No published events" : "No " + filter + " events";
-  const openDetails = (eventId: string, trigger: HTMLElement) => { triggerRef.current = trigger; setSelectedEventId(eventId); };
-  const closeDetails = () => { setSelectedEventId(null); const trigger = triggerRef.current; window.setTimeout(() => trigger?.focus(), 0); };
-  useEffect(() => { const reviewItem = searchParams.get("reviewItem"); if (reviewItem) { setView("events"); setSelectedEventId(reviewItem); } }, [searchParams]);
+  const openDetails = (eventId: string, trigger: HTMLElement) => { triggerRef.current = trigger; setSelectedReviewId(null); setSelectedReviewStatus("all"); setShowSelectedReviewAudit(false); setSelectedEventId(eventId); };
+  const closeDetails = () => { setSelectedEventId(null); setSelectedReviewId(null); setShowSelectedReviewAudit(false); const trigger = triggerRef.current; window.setTimeout(() => trigger?.focus(), 0); };
+  useEffect(() => {
+    const reviewItem = searchParams.get("reviewItem");
+    if (reviewItem) {
+      setView("events");
+      setSelectedEventId(reviewItem);
+      setSelectedReviewId(searchParams.get("review_id"));
+      const requestedReviewStatus = searchParams.get("status");
+      setSelectedReviewStatus(requestedReviewStatus === "pending" || requestedReviewStatus === "approved" || requestedReviewStatus === "rejected" ? requestedReviewStatus : "all");
+      setShowSelectedReviewAudit(searchParams.get("show_audit") === "true");
+    }
+    if (searchParams.get("view") !== "reviews") return;
+    setView("reviews");
+    setReviewItemId(searchParams.get("item_id"));
+    setReviewId(searchParams.get("review_id"));
+    const requestedStatus = searchParams.get("status");
+    if (requestedStatus === "pending" || requestedStatus === "approved" || requestedStatus === "rejected" || requestedStatus === "all") setReviewStatus(requestedStatus);
+    setShowReviewAudit(searchParams.get("show_audit") === "true");
+  }, [searchParams]);
 
   return <>
     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-2xl font-bold text-[#06201c]">Event Management</h2><p className="mt-1 text-sm text-[#52736a]">Browse published events across all enterprises.</p></div></div>
     <div className="mt-5 flex gap-2 border-b border-[#e1ebe6]" role="tablist" aria-label={t("reviews.filterStatus")}><button type="button" role="tab" aria-selected={view === "events"} onClick={() => setView("events")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === "events" ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#52736a]"}`}>{t("reviews.tabs.events")}</button><button type="button" role="tab" aria-selected={view === "reviews"} onClick={() => setView("reviews")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === "reviews" ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#52736a]"}`}>{t("reviews.tabs.received", { count: pendingReviewsQuery.data?.counts.pending ?? 0 })}</button></div>
-    {view === "reviews" ? <PlatformModuleReviewsTab module="event" /> : <>
+    {view === "reviews" ? <PlatformModuleReviewsTab module="event" itemId={reviewItemId} reviewId={reviewId} initialStatus={reviewStatus} openAuditOnLoad={showReviewAudit} /> : <>
     <div className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><label className="w-full lg:max-w-sm"><span className="sr-only">Search published events and enterprises</span><input type="search" value={input} onChange={(event) => setInput(event.target.value)} placeholder="Search events or enterprises..." className="h-12 w-full rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]" /></label><div className="flex flex-wrap gap-2">{(["all", "upcoming", "ongoing", "finished"] as const).map((item) => <button key={item} type="button" aria-pressed={filter === item} onClick={() => setFilter(item)} className={filter === item ? "h-10 rounded-full bg-[#e8f6ee] px-4 text-sm font-semibold text-[#1f6a58]" : "h-10 rounded-full border border-[#d7e5df] px-4 text-sm font-semibold text-[#52736a]"}>{item[0].toUpperCase() + item.slice(1)}</button>)}</div></div></div>
     {eventsQuery.isLoading ? <div role="status" className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{[1, 2, 3].map((item) => <div key={item} className="h-[290px] animate-pulse rounded-2xl bg-[#edf3f0]" />)}</div> : eventsQuery.isError ? <div className="mt-5 rounded-2xl bg-white p-6 shadow-sm"><p role="alert" className="font-semibold text-[#b42318]">{eventsQuery.error instanceof Error ? eventsQuery.error.message : "Unable to load published events."}</p><button type="button" onClick={() => void eventsQuery.refetch()} className="mt-3 font-semibold text-[#1f6a58] underline">Retry</button></div> : visible.length === 0 ? <div className="mt-5 rounded-2xl bg-white p-10 text-center shadow-sm"><p className="font-bold">{emptyTitle}</p><p className="mt-2 text-sm text-[#52736a]">{filter === "all" ? "Published events will appear here once they have been approved and published." : "Try another temporal filter."}</p></div> : <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{visible.map((event) => <PublishedEventCard key={event.id} event={event} onOpen={(trigger) => openDetails(event.id, trigger)} />)}</div>}
     {eventsQuery.data && eventsQuery.data.pagination.total_pages > 1 ? <nav aria-label="Published Event pages" className="mt-6 flex justify-between"><button type="button" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>Previous</button><span>Page {eventsQuery.data.pagination.page} of {eventsQuery.data.pagination.total_pages}</span><button type="button" disabled={page >= eventsQuery.data.pagination.total_pages} onClick={() => setPage((current) => current + 1)}>Next</button></nav> : null}
-    {selectedEventId ? <PublishedEventDetailsModal eventId={selectedEventId} onClose={closeDetails} /> : null}
+    {selectedEventId ? <PublishedEventDetailsModal eventId={selectedEventId} reviewId={selectedReviewId} reviewStatus={selectedReviewStatus} openReviewAudit={showSelectedReviewAudit} onClose={closeDetails} /> : null}
     </>}
   </>;
 }

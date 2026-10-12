@@ -5,8 +5,15 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import { getPublishedEventDetails, type EventDocument, type EventSession, type PublishedEventDetails } from "./platform-events.service";
+import { PlatformModuleReviewsTab } from "./PlatformModuleReviewsTab";
 
-type PublishedEventDetailsModalProps = { eventId: string; onClose: () => void };
+type PublishedEventDetailsModalProps = {
+  eventId: string;
+  reviewId?: string | null;
+  reviewStatus?: "pending" | "approved" | "rejected" | "all";
+  openReviewAudit?: boolean;
+  onClose: () => void;
+};
 
 function valueOrMissing(value: string | null | undefined): string {
   return value?.trim() || "Not provided";
@@ -84,7 +91,7 @@ function EventDetailContent({ event }: { event: PublishedEventDetails }) {
 }
 
 /** Read-only Event dossier for the Super Admin published catalogue. */
-export default function PublishedEventDetailsModal({ eventId, onClose }: PublishedEventDetailsModalProps) {
+export default function PublishedEventDetailsModal({ eventId, reviewId, reviewStatus = "all", openReviewAudit = false, onClose }: PublishedEventDetailsModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const query = useQuery({ queryKey: ["platform", "published-event-details", eventId], queryFn: () => getPublishedEventDetails(eventId), enabled: Boolean(eventId), staleTime: 30_000, retry: 1 });
 
@@ -97,7 +104,7 @@ export default function PublishedEventDetailsModal({ eventId, onClose }: Publish
 
   const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "Tab") return;
-    const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("button:not([disabled]), a[href], video[controls]"));
+    const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), video[controls]"));
     if (focusable.length === 0) return;
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
@@ -107,6 +114,6 @@ export default function PublishedEventDetailsModal({ eventId, onClose }: Publish
 
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#06201c]/55 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="published-event-details-title" onKeyDown={handleDialogKeyDown}>
     <div className="flex items-start justify-between gap-4 border-b border-[#e1ebe6] p-5"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6a8a80]">Published Event</p><h2 id="published-event-details-title" className="mt-1 text-2xl font-bold text-[#06201c]">{query.data?.title ?? "Event details"}</h2></div><button ref={closeButtonRef} type="button" onClick={onClose} aria-label="Close Event details" className="rounded-full border border-[#d7e5df] px-3 py-2 text-sm font-semibold text-[#31594d] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1f6a58]">Close</button></div>
-    <div className="overflow-y-auto p-5">{query.isLoading ? <div role="status" className="space-y-3"><div className="h-8 animate-pulse rounded bg-[#edf3f0]" /><div className="h-40 animate-pulse rounded-2xl bg-[#edf3f0]" /><p className="text-sm text-[#52736a]">Loading complete Event details…</p></div> : query.isError ? <div className="rounded-2xl border border-[#f2c7c2] bg-[#fff7f5] p-5"><p role="alert" className="font-semibold text-[#b42318]">{query.error instanceof Error ? query.error.message : "Unable to load Event details."}</p><button type="button" onClick={() => void query.refetch()} className="mt-3 font-semibold text-[#1f6a58] underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1f6a58]">Retry</button></div> : query.data ? <EventDetailContent event={query.data} /> : <p className="text-sm text-[#52736a]">No Event details were returned.</p>}</div>
+    <div className="overflow-y-auto p-5">{query.isLoading ? <div role="status" className="space-y-3"><div className="h-8 animate-pulse rounded bg-[#edf3f0]" /><div className="h-40 animate-pulse rounded-2xl bg-[#edf3f0]" /><p className="text-sm text-[#52736a]">Loading complete Event details…</p></div> : query.isError ? <div className="rounded-2xl border border-[#f2c7c2] bg-[#fff7f5] p-5"><p role="alert" className="font-semibold text-[#b42318]">{query.error instanceof Error ? query.error.message : "Unable to load Event details."}</p><button type="button" onClick={() => void query.refetch()} className="mt-3 font-semibold text-[#1f6a58] underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1f6a58]">Retry</button></div> : query.data ? <div className="space-y-4"><EventDetailContent event={query.data} /><PlatformModuleReviewsTab module="event" itemId={eventId} reviewId={reviewId} initialStatus={reviewStatus} openAuditOnLoad={openReviewAudit} /></div> : <p className="text-sm text-[#52736a]">No Event details were returned.</p>}</div>
   </div></div>;
 }

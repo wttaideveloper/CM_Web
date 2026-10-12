@@ -83,20 +83,20 @@ export async function listPlatformReviewsManage(params: PlatformReviewsParams): 
   if (params.rating && params.rating !== "all") query.set("rating", String(params.rating));
   if (params.q?.trim()) query.set("q", params.q.trim());
   if (params.itemId) query.set("item_id", params.itemId);
-  const response = await fetch(`/api/v1/reviews/manage?${query}`, { credentials: "include", cache: "no-store" });
+  const response = await fetch(`/api/platform-super-admin/reviews/manage?${query}`, { credentials: "include", cache: "no-store" });
   if (!response.ok) throw await platformReviewError(response, "Unable to load reviews.");
   return parsePlatformReviewsManageResponse(await response.json(), params.page ?? 1, params.pageSize ?? 20);
 }
 
 /** Applies a moderation action to a review in any platform module. */
 export async function moderatePlatformReview(module: ReviewModule, reviewId: string, action: ReviewModerationStatus): Promise<void> {
-  const response = await fetch(`/api/v1/reviews/${module}/${encodeURIComponent(reviewId)}/moderate`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+  const response = await fetch(`/api/platform-super-admin/reviews/${module}/${encodeURIComponent(reviewId)}/moderate`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
   if (!response.ok) throw await platformReviewError(response, "Unable to update this review.");
 }
 
 /** Permanently deletes a review in any platform module. */
 export async function deletePlatformReview(module: ReviewModule, reviewId: string): Promise<void> {
-  const response = await fetch(`/api/v1/reviews/${module}/${encodeURIComponent(reviewId)}`, { method: "DELETE", credentials: "include" });
+  const response = await fetch(`/api/platform-super-admin/reviews/${module}/${encodeURIComponent(reviewId)}`, { method: "DELETE", credentials: "include" });
   if (!response.ok) throw await platformReviewError(response, "Unable to delete this review.");
 }
 
@@ -104,14 +104,14 @@ export async function deletePlatformReview(module: ReviewModule, reviewId: strin
 export async function getPlatformReviewsAudit(module: ReviewModule, itemId?: string): Promise<PlatformReviewAuditEntry[]> {
   const query = new URLSearchParams({ module });
   if (itemId) query.set("item_id", itemId);
-  const response = await fetch(`/api/v1/reviews/audit?${query}`, { credentials: "include", cache: "no-store" });
+  const response = await fetch(`/api/platform-super-admin/reviews/audit?${query}`, { credentials: "include", cache: "no-store" });
   if (!response.ok) throw await platformReviewError(response, "Unable to load review history.");
   const raw = await response.json() as unknown;
   const auditItems = Array.isArray(raw) ? raw : isRecord(raw) && Array.isArray(raw.items) ? raw.items : isRecord(raw) && Array.isArray(raw.audit) ? raw.audit : null;
   if (!auditItems) throw new Error("Reviews API returned invalid audit history.");
   return auditItems.flatMap((item, index): PlatformReviewAuditEntry[] => {
     if (!isRecord(item) || typeof item.review_id !== "string" || typeof item.item_id !== "string" || typeof item.to_status !== "string") return [];
-    return [{ id: typeof item.id === "string" ? item.id : `audit-${index}`, module, review_id: item.review_id, item_id: item.item_id, item_name: typeof item.item_name === "string" ? item.item_name : null, from_status: typeof item.from_status === "string" ? item.from_status : null, to_status: item.to_status, actor_user_id: typeof item.actor_user_id === "string" ? item.actor_user_id : null, actor_role: typeof item.actor_role === "string" ? item.actor_role : null, created_at: normalizeUtcDate(typeof item.created_at === "string" ? item.created_at : null) }];
+    return [{ id: typeof item.id === "string" ? item.id : `audit-${index}`, module, review_id: item.review_id, item_id: item.item_id, item_name: typeof item.item_name === "string" ? item.item_name : null, from_status: typeof item.from_status === "string" ? item.from_status : null, to_status: item.to_status, actor_name: typeof item.actor_name === "string" ? item.actor_name : null, actor_user_id: typeof item.actor_user_id === "string" ? item.actor_user_id : null, actor_role: typeof item.actor_role === "string" ? item.actor_role : null, created_at: normalizeUtcDate(typeof item.created_at === "string" ? item.created_at : null) }];
   });
 }
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getPlatformReviewsAudit, moderatePlatformReview, normalizeUtcDate, parsePlatformReviewItem, parsePlatformReviewsManageResponse, sanitizePlatformReviewerName, validateComment, validateRating } from "./platform-reviews.service";
+import { getPlatformReviewsAudit, listPlatformReviewsManage, moderatePlatformReview, normalizeUtcDate, parsePlatformReviewItem, parsePlatformReviewsManageResponse, sanitizePlatformReviewerName, validateComment, validateRating } from "./platform-reviews.service";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -35,8 +35,21 @@ describe("Platform review parsing and rules", () => {
     expect(() => parsePlatformReviewItem({ review_id: "r", item_id: "i", module: "other" })).toThrow();
   });
   it("accepts successful moderation responses without parsing a response body", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
     await expect(moderatePlatformReview("event", "review-1", "approved")).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith("/api/platform-super-admin/reviews/event/review-1/moderate", expect.objectContaining({ method: "PATCH", credentials: "include" }));
+  });
+  it("sends the trimmed search term to the managed reviews API", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ items: [], counts: {}, pagination: {} }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await listPlatformReviewsManage({ module: "training", itemId: "89580d23-6a70-4dff-8a97-3c2c1dc25893", q: "  privacy  " });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/platform-super-admin/reviews/manage?module=training&page=1&page_size=20&item_id=89580d23-6a70-4dff-8a97-3c2c1dc25893&q=privacy",
+      expect.objectContaining({ credentials: "include", cache: "no-store" }),
+    );
   });
   it("parses direct and enveloped audit lists while skipping invalid entries", async () => {
     const valid = { review_id: "review-1", item_id: "item-1", to_status: "approved", created_at: "2026-10-08T10:20:00" };

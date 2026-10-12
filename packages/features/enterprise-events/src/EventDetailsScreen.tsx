@@ -2,8 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 
 import EventActionsMenu from "./EventActionsMenu";
 import ConfiguredEventDetails from "./ConfiguredEventDetails";
@@ -169,11 +169,28 @@ function isDeliveryFieldApplicable(field: SessionSubfield, deliveryMode: string)
 
 /** Renders every supported field from a single authenticated Event response. */
 export default function EventDetailsScreen() {
+  return (
+    <Suspense fallback={<EventDetailsSkeleton />}>
+      <EventDetailsContent />
+    </Suspense>
+  );
+}
+
+function EventDetailsContent() {
   const { eventId } = useParams<{ eventId: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<EventDetailsTab>("overview");
+  const [notificationReviewId, setNotificationReviewId] = useState<string | undefined>();
+  const [openReviewAudit, setOpenReviewAudit] = useState(false);
+  useEffect(() => {
+    const requestedTab = searchParams.get("tab");
+    if (eventDetailsTabs.some((tab) => tab.id === requestedTab)) setActiveTab(requestedTab as EventDetailsTab);
+    setNotificationReviewId(searchParams.get("review_id") ?? undefined);
+    setOpenReviewAudit(searchParams.get("show_audit") === "true");
+  }, [searchParams]);
   const eventQuery = useQuery({
     queryKey: ["events", "detail", eventId],
     queryFn: () => getEventById(eventId),
@@ -495,7 +512,7 @@ export default function EventDetailsScreen() {
       ) : null}
       {effectiveActiveTab === "reviews" ? (
         <section id="event-reviews-panel" role="tabpanel" aria-labelledby="event-reviews-tab" className="mt-6">
-          <EventReviewsTab eventId={event.id} />
+        <EventReviewsTab eventId={event.id} reviewId={notificationReviewId} openAuditOnLoad={openReviewAudit} />
         </section>
       ) : null}
       {effectiveActiveTab === "reports" ? (

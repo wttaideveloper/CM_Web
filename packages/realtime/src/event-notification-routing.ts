@@ -8,6 +8,24 @@ const platformTrainingTypes = new Set([
   "training_submission",
   "training_approval_requested",
 ]);
+const eventRegistrationTypes = new Set([
+  "event_registration",
+  "event_registered",
+  "event_registration_created",
+  "event_registration_accepted",
+  "event_registration_confirmed",
+  "event_enrollment",
+  "event_enrolled",
+  "event_enrollment_created",
+  "event_enrolment_accepted",
+  "event_enrolment",
+  "event_enrolment_created",
+  "event_booking_created",
+  "event_ticket_purchased",
+]);
+const trainingDiscussionTypes = new Set(["training_question_posted", "training_discussion_new", "training_new_discussion", "training_question"]);
+const reviewSubmissionTypes = new Set(["review_submitted", "training_review_submitted", "event_review_submitted"]);
+const reviewModerationTypes = new Set(["review_moderated", "review_deleted", "training_review_moderated", "event_review_moderated", "training_review_deleted", "event_review_deleted"]);
 const enterpriseTrainingTypes = new Set([
   "training_approved",
   "training_published",
@@ -40,9 +58,17 @@ function recordValue(value: unknown): Record<string, unknown> {
 }
 
 function notificationData(notification: NotificationRouteInput): Record<string, unknown> {
+  const metadata = recordValue(notification.metadata);
+  const data = recordValue(notification.data);
   return {
-    ...recordValue(notification.metadata),
-    ...recordValue(notification.data),
+    ...recordValue(metadata.metadata),
+    ...recordValue(metadata.data),
+    ...recordValue(metadata.payload),
+    ...metadata,
+    ...recordValue(data.metadata),
+    ...recordValue(data.data),
+    ...recordValue(data.payload),
+    ...data,
   };
 }
 
@@ -55,7 +81,7 @@ type NotificationRouteInput = Pick<RealtimeNotification, "notification_type" | "
 
 function eventIdForRoute(notification: NotificationRouteInput): string | null {
   const data = notificationData(notification);
-  const direct = readNonEmptyString(data.event_id) ?? readNonEmptyString(data.eventId);
+  const direct = readNonEmptyString(data.event_id) ?? readNonEmptyString(data.eventId) ?? readNonEmptyString(data.item_id) ?? readNonEmptyString(data.itemId);
   if (direct) return direct;
 
   const nestedEvent = recordValue(data.event);
@@ -64,23 +90,39 @@ function eventIdForRoute(notification: NotificationRouteInput): string | null {
     ?? readNonEmptyString(nestedEvent.eventId);
   if (nested) return nested;
 
-  return readNonEmptyString(data.entity_type)?.toLocaleLowerCase() === "event"
+  return ["event", "events"].includes((readNonEmptyString(data.entity_type) ?? readNonEmptyString(data.module) ?? readNonEmptyString(data.item_type))?.toLocaleLowerCase() ?? "")
     ? readNonEmptyString(data.entity_id)
     : null;
 }
 
 function trainingIdForRoute(notification: NotificationRouteInput): string | null {
   const data = notificationData(notification);
-  const direct = readNonEmptyString(data.training_id) ?? readNonEmptyString(data.trainingId);
+  const direct = readNonEmptyString(data.training_id) ?? readNonEmptyString(data.trainingId) ?? readNonEmptyString(data.item_id) ?? readNonEmptyString(data.itemId);
   if (direct) return direct;
   const nestedTraining = recordValue(data.training);
   const nested = readNonEmptyString(nestedTraining.id)
     ?? readNonEmptyString(nestedTraining.training_id)
     ?? readNonEmptyString(nestedTraining.trainingId);
   if (nested) return nested;
-  return readNonEmptyString(data.entity_type)?.toLocaleLowerCase() === "training"
+  return ["training", "trainings", "course"].includes((readNonEmptyString(data.entity_type) ?? readNonEmptyString(data.module) ?? readNonEmptyString(data.item_type))?.toLocaleLowerCase() ?? "")
     ? readNonEmptyString(data.entity_id)
     : null;
+}
+
+function reviewModuleForRoute(notification: NotificationRouteInput, eventName: string): "event" | "training" | null {
+  const data = notificationData(notification);
+  const entityType = (
+    readNonEmptyString(data.entity_type)
+    ?? readNonEmptyString(data.module)
+    ?? readNonEmptyString(data.item_type)
+    ?? readNonEmptyString(data.entityType)
+  )?.toLocaleLowerCase();
+
+  if (entityType === "event" || entityType === "events" || readNonEmptyString(data.event_id) || readNonEmptyString(data.eventId)) return "event";
+  if (entityType === "training" || entityType === "trainings" || entityType === "course" || readNonEmptyString(data.training_id) || readNonEmptyString(data.trainingId)) return "training";
+  if (eventName.includes("event")) return "event";
+  if (eventName.includes("training")) return "training";
+  return null;
 }
 
 function resolveNotificationEventName(notification: NotificationRouteInput): string {
@@ -97,12 +139,23 @@ function resolveNotificationEventName(notification: NotificationRouteInput): str
     return platformEventTypes.has(normalizedCandidate)
       || enterpriseEventTypes.has(normalizedCandidate)
       || enterpriseTrainingTypes.has(normalizedCandidate)
-      || platformTrainingTypes.has(normalizedCandidate);
+      || platformTrainingTypes.has(normalizedCandidate)
+      || eventRegistrationTypes.has(normalizedCandidate)
+      || trainingDiscussionTypes.has(normalizedCandidate)
+      || reviewSubmissionTypes.has(normalizedCandidate)
+      || reviewModerationTypes.has(normalizedCandidate);
   });
   if (knownType) return knownType.toLocaleLowerCase();
 
-  const text = `${notification.title ?? ""} ${notification.body ?? ""}`.toLocaleLowerCase();
+  const text = `${candidates.join(" ")} ${notification.title ?? ""} ${notification.body ?? ""}`.toLocaleLowerCase();
+  const entityType = readNonEmptyString(data.entity_type)?.toLocaleLowerCase();
+  if (/review.*(moder|delet)|(?:moder|delet).*review/.test(text)) return text.includes("delet") ? "review_deleted" : "review_moderated";
+  if (entityType === "training" && /\b(enrol|enroll|registration|registered|booking|booked)\w*\b/.test(text)) return "training_enrollment";
+  if (entityType === "event" && /\b(enrol|enroll|registration|registered|booking|booked|ticket)\w*\b/.test(text)) return "event_registration";
   if (/\btraining\b/.test(text) && /\b(submitted|submission|approval requested)\b/.test(text)) return "training_submitted";
+  if (/\bevent\b/.test(text) && /\b(submitted|submission|approval requested)\b/.test(text)) return "event_submitted";
+  if (/\btraining\b/.test(text) && /\b(enrol|enroll|registration|registered|booking|booked)\w*\b/.test(text)) return "training_enrollment";
+  if (/\bevent\b/.test(text) && /\b(enrol|enroll|registration|registered|booking|booked|ticket)\w*\b/.test(text)) return "event_registration";
   if (/\btraining\b/.test(text)) return "training_notification";
   return (candidates[0] ?? "unknown").toLocaleLowerCase();
 }
@@ -114,11 +167,65 @@ export function resolveNotificationTarget(
 ): string | null {
   const eventName = resolveNotificationEventName(notification);
   if (scope === "platform") {
-    if (eventName.toLocaleLowerCase() === "event_submitted") return "/approval-queue";
+    if (eventName.toLocaleLowerCase() === "event_submitted") return "/approval-queue?type=events";
+    if (reviewModerationTypes.has(eventName) || reviewSubmissionTypes.has(eventName)) {
+      const data = notificationData(notification);
+      const module = reviewModuleForRoute(notification, eventName);
+      const itemId = module === "event" ? eventIdForRoute(notification) : module === "training" ? trainingIdForRoute(notification) : null;
+      if (!module || !itemId) return null;
+      const reviewId = readNonEmptyString(data.review_id) || readNonEmptyString(data.reviewId) || readNonEmptyString(data.id);
+      const status = (readNonEmptyString(data.new_status) ?? readNonEmptyString(data.action))?.toLocaleLowerCase();
+      const isDelete = eventName.includes("delete") || status === "deleted";
+      const params = new URLSearchParams({ view: "reviews", item_id: itemId });
+      if (reviewId) params.set("review_id", reviewId);
+      if (status === "pending" || status === "approved" || status === "rejected") params.set("status", status);
+      if (isDelete) params.set("show_audit", "true");
+      return `/${module === "training" ? "trainings" : "events"}?${params.toString()}`;
+    }
     return platformTrainingTypes.has(eventName) ? "/approval-queue?type=trainings" : null;
   }
+  if (trainingDiscussionTypes.has(eventName)) {
+    const trainingId = trainingIdForRoute(notification);
+    if (!trainingId) return null;
+    const params = new URLSearchParams({ tab: "live" });
+    const discussionId = readNonEmptyString(notificationData(notification).discussion_id);
+    if (discussionId) params.set("discussion_id", discussionId);
+    return `/admin/trainings/${encodeURIComponent(trainingId)}?${params.toString()}`;
+  }
+  if (reviewModerationTypes.has(eventName) || reviewSubmissionTypes.has(eventName)) {
+    const data = notificationData(notification);
+    const module = reviewModuleForRoute(notification, eventName);
+    const itemId = module === "event" ? eventIdForRoute(notification) : module === "training" ? trainingIdForRoute(notification) : null;
+    if (!module || !itemId) return null;
+    const reviewId = readNonEmptyString(data.review_id) ?? readNonEmptyString(data.reviewId);
+    const status = (readNonEmptyString(data.new_status) ?? readNonEmptyString(data.action))?.toLocaleLowerCase();
+    const isDeleted = eventName.includes("delete") || status === "deleted";
+    const params = new URLSearchParams({ tab: "reviews" });
+    if (reviewId) params.set("review_id", reviewId);
+    if (isDeleted) params.set("show_audit", "true");
+    return `/admin/${module === "training" ? "trainings" : "events"}/${encodeURIComponent(itemId)}?${params.toString()}`;
+  }
   const trainingId = trainingIdForRoute(notification);
-  if (trainingId) return `/admin/trainings/${encodeURIComponent(trainingId)}`;
+  if (trainingId) {
+    const tab = reviewSubmissionTypes.has(eventName) ? "reviews" : null;
+    const params = tab ? new URLSearchParams({ tab }) : null;
+    const reviewId = readNonEmptyString(notificationData(notification).review_id);
+    if (params && reviewId) params.set("review_id", reviewId);
+    return `/admin/trainings/${encodeURIComponent(trainingId)}${params ? `?${params.toString()}` : ""}`;
+  }
+  if (reviewSubmissionTypes.has(eventName)) {
+    const eventId = eventIdForRoute(notification);
+    if (!eventId) return null;
+    const params = new URLSearchParams({ tab: "reviews" });
+    const reviewId = readNonEmptyString(notificationData(notification).review_id);
+    if (reviewId) params.set("review_id", reviewId);
+    return `/admin/events/${encodeURIComponent(eventId)}?${params.toString()}`;
+  }
+  if (eventRegistrationTypes.has(eventName) || /registration|registered|enrol|enroll|booking|ticket/.test(eventName)) {
+    const eventId = eventIdForRoute(notification);
+    if (!eventId) return null;
+    return `/admin/events/${encodeURIComponent(eventId)}?tab=registrations`;
+  }
   if (!enterpriseEventTypes.has(eventName)) return null;
   const eventId = eventIdForRoute(notification);
   if (!eventId) return null;
@@ -184,8 +291,9 @@ export function formatTrainingNotificationDetails(
     readNonEmptyString(data.type),
     readNonEmptyString(data.event_type),
     readNonEmptyString(data.action),
+    readNonEmptyString(data.category),
   ].filter(Boolean).join(" ").toLocaleLowerCase();
-  const isTrainingDiscussion = type.includes("discussion")
+  const isTrainingDiscussion = (type.includes("discussion") || type.includes("question_posted"))
     && (type.includes("training") || Boolean(trainingIdForRoute({ notification_type: notification.notification_type, data })));
   const discussion = recordValue(data.discussion);
   const sender = recordValue(
@@ -203,6 +311,7 @@ export function formatTrainingNotificationDetails(
         readNonEmptyString(data.user_name),
         readNonEmptyString(data.userName),
         readNonEmptyString(data.participant_name),
+        readNonEmptyString(data.learner_name),
         readNonEmptyString(data.created_by_name),
         readNonEmptyString(data.createdByName),
         readNonEmptyString(sender.display_name),

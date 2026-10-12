@@ -41,6 +41,7 @@ export interface PlatformReviewAuditEntry {
   item_name: string | null;
   from_status: string | null;
   to_status: string;
+  actor_name: string | null;
   actor_user_id: string | null;
   actor_role: string | null;
   created_at: string | null;

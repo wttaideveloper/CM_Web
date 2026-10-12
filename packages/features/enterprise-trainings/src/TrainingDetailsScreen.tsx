@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 
 import TrainingActionsMenu from "./TrainingActionsMenu";
 import { ParticipantDashboardCard, ProviderDashboardCard } from "./dashboard-cards";
@@ -276,12 +276,44 @@ interface TrainingDetailsScreenProps {
 }
 
 /** Renders every supported field from a single authenticated Training response. */
-export default function TrainingDetailsScreen({
+export default function TrainingDetailsScreen(props: TrainingDetailsScreenProps) {
+  return (
+    <Suspense
+      fallback={
+        <div className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm" aria-live="polite" aria-busy="true">
+          <div className="animate-pulse space-y-4">
+            <div className="h-8 w-3/4 rounded-lg bg-[#edf3f0]" />
+            <div className="h-4 w-1/2 rounded bg-[#edf3f0]" />
+            <div className="h-32 rounded-xl bg-[#edf3f0]" />
+            <div className="h-20 rounded-xl bg-[#edf3f0]" />
+          </div>
+          <p className="sr-only">Loading training…</p>
+        </div>
+      }
+    >
+      <TrainingDetailsContent {...props} />
+    </Suspense>
+  );
+}
+
+function TrainingDetailsContent({
   managementActions = true,
 }: TrainingDetailsScreenProps) {
   const { trainingId } = useParams<{ trainingId: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TrainingDetailsTab>("details");
+  const [notificationReviewId, setNotificationReviewId] = useState<string | undefined>();
+  const [openReviewAudit, setOpenReviewAudit] = useState(false);
+  const [discussionId, setDiscussionId] = useState<string | undefined>();
+
+  useEffect(() => {
+    const requestedTab = searchParams.get("tab");
+    if (trainingDetailsTabs.some((tab) => tab.id === requestedTab)) setActiveTab(requestedTab as TrainingDetailsTab);
+    setNotificationReviewId(searchParams.get("review_id") ?? undefined);
+    setOpenReviewAudit(searchParams.get("show_audit") === "true");
+    setDiscussionId(searchParams.get("discussion_id") ?? undefined);
+  }, [searchParams]);
   const trainingQuery = useQuery({
     queryKey: ["trainings", "detail", trainingId],
     queryFn: () => getTrainingById(trainingId),
@@ -579,8 +611,8 @@ export default function TrainingDetailsScreen({
       {activeTab === "enrolments" ? <div className="mt-6"><TrainingEnrolmentsTab trainingId={trainingId} /></div> : null}
       {activeTab === "attendance" ? <div className="mt-6"><TrainingAttendanceTab trainingId={trainingId} /></div> : null}
       {activeTab === "assessments" ? <div className="mt-6"><TrainingAssessmentsTab trainingId={trainingId} /></div> : null}
-      {activeTab === "reviews" ? <div className="mt-6"><TrainingReviewsTab trainingId={trainingId} /></div> : null}
-      {activeTab === "live" ? <div className="mt-6"><TrainingLiveTab trainingId={trainingId} /></div> : null}
+      {activeTab === "reviews" ? <div className="mt-6"><TrainingReviewsTab trainingId={trainingId} reviewId={notificationReviewId} openAuditOnLoad={openReviewAudit} /></div> : null}
+      {activeTab === "live" ? <div className="mt-6"><TrainingLiveTab trainingId={trainingId} discussionId={discussionId} /></div> : null}
       {activeTab === "dashboards" ? <div className="mt-6"><TrainingDashboardsTab trainingId={trainingId} /></div> : null}
     </div>
   );

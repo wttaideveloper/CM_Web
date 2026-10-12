@@ -1524,6 +1524,7 @@ function isEventReviewAuditEntry(value: unknown): value is EventReviewAuditEntry
     && (value.module === undefined || value.module === "event")
     && (value.item_name === undefined || value.item_name === null || typeof value.item_name === "string")
     && (value.from_status === undefined || value.from_status === null || typeof value.from_status === "string")
+    && (value.actor_name === undefined || value.actor_name === null || typeof value.actor_name === "string")
     && (value.actor_user_id === undefined || value.actor_user_id === null || typeof value.actor_user_id === "string")
     && (value.actor_role === undefined || value.actor_role === null || typeof value.actor_role === "string")
     && (value.created_at === undefined || value.created_at === null || typeof value.created_at === "string");

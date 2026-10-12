@@ -838,9 +838,9 @@ export async function createTraining(payload: CreateTrainingPayload): Promise<Tr
   return value as TrainingDetail;
 }
 
-/** Retrieves one Training by id. */
-export async function getTrainingById(trainingId: string): Promise<TrainingDetail> {
-  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}`, { credentials: "include", cache: "no-store" });
+/** Retrieves one Training by id, optionally through a caller-owned authenticated proxy path. */
+export async function getTrainingById(trainingId: string, endpointBasePath = trainingsBasePath): Promise<TrainingDetail> {
+  const res = await fetch(`${endpointBasePath}${encodeURIComponent(trainingId)}`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "load this training");
   const value = unwrapApiData((await res.json()) as unknown);
   if (!isTrainingDetail(value)) throw new Error("Trainings API returned an invalid training response.");
@@ -2008,6 +2008,7 @@ export async function getTrainingReviewsAudit(trainingId?: string): Promise<Trai
     item_name: typeof row.item_name === "string" ? row.item_name : null,
     from_status: typeof row.from_status === "string" ? row.from_status : null,
     to_status: typeof row.to_status === "string" ? row.to_status : "updated",
+    actor_name: typeof row.actor_name === "string" ? row.actor_name : null,
     actor_user_id: typeof row.actor_user_id === "string" ? row.actor_user_id : null,
     actor_role: typeof row.actor_role === "string" ? row.actor_role : null,
     created_at: typeof row.created_at === "string" ? row.created_at : null,

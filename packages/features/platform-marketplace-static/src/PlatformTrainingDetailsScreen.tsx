@@ -20,6 +20,11 @@ function humanize(value: string | null | undefined): string {
   return displayValue(value).replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
+function showsVenue(mode: string | null | undefined): boolean {
+  const normalized = mode?.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  return ["physical", "venue", "in_person", "hybrid", "blended"].includes(normalized ?? "");
+}
+
 function DetailItem({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -48,7 +53,7 @@ export default function PlatformTrainingDetailsScreen() {
   const { trainingId } = useParams<{ trainingId: string }>();
   const trainingQuery = useQuery({
     queryKey: ["trainings", "platform-detail", trainingId],
-    queryFn: () => getTrainingById(trainingId),
+    queryFn: () => getTrainingById(trainingId, "/api/platform-super-admin/training-approvals/"),
     enabled: Boolean(trainingId),
     staleTime: 30_000,
     retry: 1,
@@ -88,11 +93,10 @@ export default function PlatformTrainingDetailsScreen() {
           </div>
 
           <dl className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            <DetailItem label="Course type" value={humanize(training.course_type)} />
             <DetailItem label="Starts" value={formatDate(training.start_date)} />
             <DetailItem label="Ends" value={formatDate(training.end_date)} />
             <DetailItem label="Instructor" value={displayValue(instructorName)} />
-            <DetailItem label="Venue" value={displayValue(training.venue)} />
+            {showsVenue(training.delivery_mode) ? <DetailItem label="Venue" value={displayValue(training.venue)} /> : null}
             <DetailItem label="Price" value={training.price ? `${training.price} ${training.currency ?? ""}`.trim() : "Not provided"} />
             <DetailItem label="Capacity" value={displayValue(training.capacity)} />
             <DetailItem label="Difficulty" value={displayValue(training.difficulty_level)} />
