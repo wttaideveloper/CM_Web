@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { deletePlatformReview, listPlatformReviewsManage, moderatePlatformReview, normalizeUtcDate } from "./platform-reviews.service";
-import type { PlatformReviewQueueItem, ReviewModerationStatus, StarRating } from "./platform-reviews.types";
+import { deletePlatformReview, getPlatformReviewsAudit, listPlatformReviewsManage, moderatePlatformReview, normalizeUtcDate } from "./platform-reviews.service";
+import type { PlatformReviewAuditEntry, PlatformReviewQueueItem, ReviewModerationStatus, StarRating } from "./platform-reviews.types";
 import { PlatformReviewAuditModal } from "./PlatformReviewAuditModal";
 
 type StatusFilter = ReviewModerationStatus | "all";
@@ -44,10 +44,19 @@ export function PlatformModuleReviewsTab({ module, itemId, reviewId, initialStat
 
   const moduleTitle = t(`reviews.modules.${module}`);
   const queue = useQuery({ queryKey: ["platform", "reviews", module, itemId, status, rating, search, page], queryFn: () => listPlatformReviewsManage({ module, itemId: itemId ?? undefined, status, rating, q: search.trim() || undefined, page, pageSize: 20 }), staleTime: 15_000, refetchOnMount: "always", retry: 1 });
+  const rows = queue.data?.items ?? [];
+  const auditItemIds = useMemo(() => [...new Set(rows.map((item) => item.item_id).filter(Boolean))], [rows]);
+  const audit = useQuery({ queryKey: ["platform", "review-audit", module, "items", auditItemIds], queryFn: async () => (await Promise.all(auditItemIds.map((id) => getPlatformReviewsAudit(module, id)))).flat(), enabled: auditItemIds.length > 0, staleTime: 15_000, retry: 1 });
   const refresh = () => { void queryClient.invalidateQueries({ queryKey: ["platform", "reviews", module] }); void queryClient.invalidateQueries({ queryKey: ["platform", "review-audit", module] }); };
   const moderate = useMutation({ mutationFn: ({ id, action }: { id: string; action: ReviewModerationStatus }) => moderatePlatformReview(module, id, action), onSuccess: refresh });
   const remove = useMutation({ mutationFn: (reviewId: string) => deletePlatformReview(module, reviewId), onSuccess: refresh });
-  const rows = queue.data?.items ?? [];
+  const latestAuditByReviewId = useMemo(() => {
+    const latest = new Map<string, PlatformReviewAuditEntry>();
+    for (const entry of audit.data ?? []) {
+      if (!latest.has(entry.review_id)) latest.set(entry.review_id, entry);
+    }
+    return latest;
+  }, [audit.data]);
   const businesses = useMemo(() => [...new Set(rows.map((item) => item.business_name).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [rows]);
   const filtered = useMemo(() => rows.filter((item) => !focusedReviewId || item.review_id === focusedReviewId).filter((item) => business === "all" || item.business_name === business).filter((item) => { if (!search.trim()) return true; const term = search.trim().toLowerCase(); return [item.comment, item.item_name, item.reviewer_name].some((value) => value?.toLowerCase().includes(term)); }), [rows, focusedReviewId, business, search]);
   const counts = queue.data?.counts ?? { pending: 0, approved: 0, rejected: 0, all: 0 };
@@ -80,19 +89,29 @@ export function PlatformModuleReviewsTab({ module, itemId, reviewId, initialStat
     {queue.isLoading ? <p aria-live="polite" className="mt-4 animate-pulse rounded-xl bg-[#f4faf7] p-5 text-sm">{t("reviews.loading")}</p> : null}
     {queue.isError ? <p role="alert" className="mt-4 text-sm text-[#b42318]">{(queue.error as Error).message} <button type="button" onClick={() => void queue.refetch()} className="font-bold underline">{t("reviews.retry")}</button></p> : null}
     {!queue.isLoading && !queue.isError && !filtered.length ? <p className="mt-4 text-sm text-[#52736a]">{t("reviews.empty")}</p> : null}
-    {filtered.length ? <div className="mt-4 grid gap-3">{filtered.map((item) => <ReviewRow key={item.review_id} item={item} expanded={expanded.has(item.review_id)} busy={moderate.isPending || remove.isPending} isFocused={Boolean(focusedReviewId && item.review_id === focusedReviewId)} onToggle={() => setExpanded((current) => { const next = new Set(current); next.has(item.review_id) ? next.delete(item.review_id) : next.add(item.review_id); return next; })} onAction={(next) => action(item, next)} onDelete={() => removeItem(item)} />)}</div> : null}
+    {filtered.length ? <div className="mt-4 grid gap-3">{filtered.map((item) => <ReviewRow key={item.review_id} item={item} latestAudit={latestAuditByReviewId.get(item.review_id) ?? null} expanded={expanded.has(item.review_id)} busy={moderate.isPending || remove.isPending} isFocused={Boolean(focusedReviewId && item.review_id === focusedReviewId)} onToggle={() => setExpanded((current) => { const next = new Set(current); next.has(item.review_id) ? next.delete(item.review_id) : next.add(item.review_id); return next; })} onAction={(next) => action(item, next)} onDelete={() => removeItem(item)} />)}</div> : null}
     {pagination && pagination.total_pages > 1 ? <nav aria-label={t("reviews.pagination.label")} className="mt-5 flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-[#52736a]">{t("reviews.pagination.page", { page: pagination.page, pages: pagination.total_pages })}</p><div className="flex gap-2"><button type="button" disabled={page <= 1 || queue.isFetching} onClick={() => setPage((current) => current - 1)} className="rounded-full border border-[#d7e5df] px-4 py-2 text-sm disabled:opacity-50">{t("reviews.pagination.previous")}</button><button type="button" disabled={page >= pagination.total_pages || queue.isFetching} onClick={() => setPage((current) => current + 1)} className="rounded-full border border-[#1f6a58] bg-[#1f6a58] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{t("reviews.pagination.next")}</button></div></nav> : null}
     {showAudit ? <PlatformReviewAuditModal module={module} itemId={itemId ?? undefined} reviewId={focusedReviewId ?? undefined} onClose={() => setShowAudit(false)} /> : null}
   </section>;
 }
 
-function ReviewRow({ item, expanded, busy, onToggle, onAction, onDelete, isFocused }: { item: PlatformReviewQueueItem; expanded: boolean; busy: boolean; onToggle: () => void; onAction: (status: ReviewModerationStatus) => void; onDelete: () => void; isFocused?: boolean }) {
+function auditActorLabel(entry: PlatformReviewAuditEntry): string {
+  const roleValue = entry.actor_role?.toLocaleLowerCase().replace(/[\s-]+/g, "_") ?? "";
+  const role = roleValue.includes("super_admin") || roleValue.includes("platform_admin") ? "Super Admin"
+    : roleValue.includes("provider") ? "Provider"
+      : roleValue.includes("enterprise_admin") || roleValue === "admin" ? "Enterprise Admin"
+        : entry.actor_role || "Staff";
+  const name = entry.actor_name && !entry.actor_name.includes("@") ? entry.actor_name : null;
+  return [role, name].filter(Boolean).join(" · ");
+}
+
+function ReviewRow({ item, latestAudit, expanded, busy, onToggle, onAction, onDelete, isFocused }: { item: PlatformReviewQueueItem; latestAudit: PlatformReviewAuditEntry | null; expanded: boolean; busy: boolean; onToggle: () => void; onAction: (status: ReviewModerationStatus) => void; onDelete: () => void; isFocused?: boolean }) {
   const { t } = useTranslation("platform");
   const isLong = (item.comment?.length ?? 0) > 240;
   const dateValue = normalizeUtcDate(item.created_at);
   const date = dateValue ? new Date(dateValue) : null;
   const dateText = date && Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date) : t("reviews.dateUnavailable");
-  return <article id={`platform-review-${item.review_id}`} className={`rounded-xl border p-4 transition-all duration-300 ${isFocused ? "border-[#1f6a58] bg-[#f0f9f5] ring-2 ring-[#1f6a58] ring-offset-2" : "border-[#e1ebe6] bg-[#f9fcfa]"}`}><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="font-bold text-[#1f6a58]">🏢 {item.business_name}</p><p className="mt-1 text-sm"><Link href={item.module === "training" ? `/trainings?reviewItem=${encodeURIComponent(item.item_id)}&review_id=${encodeURIComponent(item.review_id)}&status=${encodeURIComponent(item.moderation_status)}` : `/events?reviewItem=${encodeURIComponent(item.item_id)}`} className="font-semibold text-[#1f6a58] underline">{item.item_name}</Link></p><p className="mt-1 font-semibold text-[#06201c]">{item.reviewer_name}{item.is_verified ? <span className="ml-2 rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[11px] text-[#1f6a58]">{t("reviews.verified")}</span> : null}{isFocused ? <span className="ml-2 rounded-full bg-[#1f6a58] px-2 py-0.5 text-[11px] font-bold text-white">Notified review</span> : null}</p>{item.reviewer_email ? <p className="text-xs text-[#52736a]">{item.reviewer_email}</p> : null}<time className="mt-1 block text-xs text-[#7f9d94]">{dateText}</time></div><div className="flex items-center gap-2"><span className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{item.rating ? `${item.rating} ★` : t("reviews.ratingUnavailable")}</span><span className={`rounded-full px-3 py-1 text-xs font-bold ${STATUS_CLASS[item.moderation_status]}`}>{t(`reviews.status.${item.moderation_status}`)}</span></div></div>
+  return <article id={`platform-review-${item.review_id}`} className={`rounded-xl border p-4 transition-all duration-300 ${isFocused ? "border-[#1f6a58] bg-[#f0f9f5] ring-2 ring-[#1f6a58] ring-offset-2" : "border-[#e1ebe6] bg-[#f9fcfa]"}`}><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="font-bold text-[#1f6a58]">🏢 {item.business_name}</p><p className="mt-1 text-sm"><Link href={item.module === "training" ? `/trainings?reviewItem=${encodeURIComponent(item.item_id)}&review_id=${encodeURIComponent(item.review_id)}&status=${encodeURIComponent(item.moderation_status)}` : `/events?reviewItem=${encodeURIComponent(item.item_id)}`} className="font-semibold text-[#1f6a58] underline">{item.item_name}</Link></p><p className="mt-1 font-semibold text-[#06201c]">{item.reviewer_name}{item.is_verified ? <span className="ml-2 rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[11px] text-[#1f6a58]">{t("reviews.verified")}</span> : null}{isFocused ? <span className="ml-2 rounded-full bg-[#1f6a58] px-2 py-0.5 text-[11px] font-bold text-white">Notified review</span> : null}</p>{item.reviewer_email ? <p className="text-xs text-[#52736a]">{item.reviewer_email}</p> : null}<time className="mt-1 block text-xs text-[#7f9d94]">{dateText}</time>{latestAudit ? <p className="mt-2 text-xs font-semibold text-[#52736a]">Latest action: {latestAudit.to_status.replace(/[_-]+/g, " ")} by {auditActorLabel(latestAudit)}</p> : null}</div><div className="flex items-center gap-2"><span className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{item.rating ? `${item.rating} ★` : t("reviews.ratingUnavailable")}</span><span className={`rounded-full px-3 py-1 text-xs font-bold ${STATUS_CLASS[item.moderation_status]}`}>{t(`reviews.status.${item.moderation_status}`)}</span></div></div>
     {item.comment ? <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#3c5d54]">{isLong && !expanded ? `${item.comment.slice(0, 240)}…` : item.comment}{isLong ? <button type="button" onClick={onToggle} className="ml-2 font-semibold text-[#1f6a58] underline">{expanded ? t("reviews.showLess") : t("reviews.readMore")}</button> : null}</p> : null}
     <div className="mt-3 flex flex-wrap gap-2 border-t border-[#e1ebe6] pt-3">{nextStatuses(item.moderation_status).map((next) => <button key={next} type="button" disabled={busy} onClick={() => onAction(next)} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-xs font-bold text-[#1f6a58] disabled:opacity-50">{t(`reviews.actions.${next}`)}</button>)}<button type="button" disabled={busy} onClick={onDelete} className="rounded-full border border-[#e1c9c6] px-3 py-1.5 text-xs font-bold text-[#a52a20] disabled:opacity-50">{t("reviews.actions.delete")}</button></div>
     </article>;

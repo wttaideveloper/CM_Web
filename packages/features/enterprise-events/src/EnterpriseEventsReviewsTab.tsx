@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isInternalUserRole, useAuth } from "@ihp/auth";
-import { deleteEventReview, listEnterpriseEventReviewsManage, moderateEventReview } from "./events.service";
+import { deleteEventReview, getEventReviewsAudit, listEnterpriseEventReviewsManage, moderateEventReview } from "./events.service";
 import { EventReviewModerationAuditModal } from "./EventReviewModerationAuditModal";
 import { normalizeUtcDate } from "./event-reviews.service";
-import type { EventStarRating, ReviewModerationStatus } from "./event-reviews.types";
+import type { EventReviewAuditEntry, EventStarRating, ReviewModerationStatus } from "./event-reviews.types";
 
 type QueueStatus = ReviewModerationStatus | "all";
 const statuses: readonly QueueStatus[] = ["pending", "approved", "rejected", "all"];
@@ -15,6 +15,12 @@ const badge: Record<ReviewModerationStatus, string> = { pending: "bg-[#fff4d6] t
 function dateLabel(value: string | null) { const normalized = normalizeUtcDate(value); if (!normalized) return "Date unavailable"; const date = new Date(normalized); return Number.isNaN(date.getTime()) ? "Date unavailable" : new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date); }
 function statusOptions(status: ReviewModerationStatus): ReviewModerationStatus[] { return status === "pending" ? ["approved", "rejected"] : status === "approved" ? ["rejected", "pending"] : ["approved", "pending"]; }
 function label(status: ReviewModerationStatus) { return status === "approved" ? "Approve" : status === "rejected" ? "Reject" : "Move to Pending"; }
+function auditActorLabel(entry: EventReviewAuditEntry): string {
+  const role = entry.actor_role?.toLocaleLowerCase().replace(/[\s-]+/g, "_") ?? "";
+  const roleLabel = role.includes("super_admin") || role.includes("platform_admin") ? "Super Admin" : entry.actor_role ?? "Staff";
+  const name = entry.actor_name && !entry.actor_name.includes("@") ? entry.actor_name : null;
+  return [roleLabel, name].filter(Boolean).join(" · ");
+}
 
 /** Enterprise-wide paginated review management for Events. */
 export function EnterpriseEventsReviewsTab() {
@@ -27,6 +33,13 @@ export function EnterpriseEventsReviewsTab() {
   const [page, setPage] = useState(1);
   const [showAudit, setShowAudit] = useState(false);
   const queue = useQuery({ queryKey: ["event-reviews", "manage", "enterprise", status, rating, search, page], queryFn: () => listEnterpriseEventReviewsManage({ status, rating, q: search, page, pageSize: 20 }), staleTime: 15_000, retry: 1 });
+  const auditItemIds = [...new Set((queue.data?.reviews ?? []).map((review) => review.event_id).filter((id): id is string => Boolean(id)))];
+  const auditQuery = useQuery({ queryKey: ["event-reviews", "audit", "items", auditItemIds], queryFn: async () => (await Promise.all(auditItemIds.map((id) => getEventReviewsAudit(id)))).flat(), enabled: canModerate && auditItemIds.length > 0, staleTime: 15_000, refetchOnMount: "always", retry: 1 });
+  const latestAuditByReviewId = useMemo(() => {
+    const latest = new Map<string, EventReviewAuditEntry>();
+    for (const entry of auditQuery.data ?? []) if (!latest.has(entry.review_id)) latest.set(entry.review_id, entry);
+    return latest;
+  }, [auditQuery.data]);
   const refresh = () => { void client.invalidateQueries({ queryKey: ["event-reviews", "manage"] }); void client.invalidateQueries({ queryKey: ["event-reviews", "audit"] }); void client.invalidateQueries({ queryKey: ["events", "list"] }); };
   const moderate = useMutation({ mutationFn: ({ id, next }: { id: string; next: ReviewModerationStatus }) => moderateEventReview(id, next), onSuccess: refresh });
   const remove = useMutation({ mutationFn: deleteEventReview, onSuccess: refresh });
@@ -44,7 +57,7 @@ export function EnterpriseEventsReviewsTab() {
     {queue.isLoading ? <p aria-live="polite" className="mt-4 animate-pulse rounded-xl bg-[#f4faf7] p-5 text-sm">Loading Event reviews…</p> : null}
     {queue.isError ? <p role="alert" className="mt-4 text-sm text-[#b42318]">{(queue.error as Error).message} <button type="button" onClick={() => void queue.refetch()} className="font-bold underline">Retry</button></p> : null}
     {!queue.isLoading && !queue.isError && !data?.reviews.length ? <p className="mt-4 text-sm text-[#52736a]">No Event reviews match these filters.</p> : null}
-    {data?.reviews.length ? <div className="mt-4 grid gap-3">{data.reviews.map((review) => <article key={review.id} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="font-bold text-[#06201c]">{review.participant_name}{review.verified ? <span className="ml-2 rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[11px] text-[#1f6a58]">Verified</span> : null}</p>{canModerate && review.participant_email ? <p className="mt-0.5 text-xs text-[#52736a]">{review.participant_email}</p> : null}<p className="mt-1 text-sm text-[#52736a]"><Link className="font-semibold text-[#1f6a58] underline" href={review.event_id ? `/admin/events/${review.event_id}` : "/admin/events"}>{review.event_title ?? "View Event"}</Link> · {dateLabel(review.created_at)}</p></div><div className="flex items-center gap-2"><span className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{review.rating ? `${review.rating} ★` : "Rating unavailable"}</span><span className={`rounded-full px-3 py-1 text-xs font-bold ${badge[review.moderation_status]}`}>{review.moderation_status}</span></div></div>{review.comment ? <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#3c5d54]">{review.comment}</p> : null}{canModerate ? <div className="mt-3 flex flex-wrap gap-2 border-t border-[#e1ebe6] pt-3">{statusOptions(review.moderation_status).map((next) => <button key={next} type="button" disabled={moderate.isPending || remove.isPending} onClick={() => change(review.id, next)} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-xs font-bold text-[#1f6a58] disabled:opacity-50">{label(next)}</button>)}<button type="button" disabled={moderate.isPending || remove.isPending} onClick={() => { if (window.confirm("Permanently delete this Event review? This cannot be undone.")) remove.mutate(review.id); }} className="rounded-full border border-[#e1c9c6] px-3 py-1.5 text-xs font-bold text-[#a52a20]">Delete</button></div> : null}</article>)}</div> : null}
+    {data?.reviews.length ? <div className="mt-4 grid gap-3">{data.reviews.map((review) => <article key={review.id} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="font-bold text-[#06201c]">{review.participant_name}{review.verified ? <span className="ml-2 rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[11px] text-[#1f6a58]">Verified</span> : null}</p>{canModerate && review.participant_email ? <p className="mt-0.5 text-xs text-[#52736a]">{review.participant_email}</p> : null}<p className="mt-1 text-sm text-[#52736a]"><Link className="font-semibold text-[#1f6a58] underline" href={review.event_id ? `/admin/events/${review.event_id}` : "/admin/events"}>{review.event_title ?? "View Event"}</Link> · {dateLabel(review.created_at)}</p>{latestAuditByReviewId.get(review.id) ? <p className="mt-2 text-xs font-semibold text-[#52736a]">Latest action: {latestAuditByReviewId.get(review.id)?.to_status.replace(/[_-]+/g, " ")} by {auditActorLabel(latestAuditByReviewId.get(review.id)!)}</p> : null}</div><div className="flex items-center gap-2"><span className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{review.rating ? `${review.rating} ★` : "Rating unavailable"}</span><span className={`rounded-full px-3 py-1 text-xs font-bold ${badge[review.moderation_status]}`}>{review.moderation_status}</span></div></div>{review.comment ? <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#3c5d54]">{review.comment}</p> : null}{canModerate ? <div className="mt-3 flex flex-wrap gap-2 border-t border-[#e1ebe6] pt-3">{statusOptions(review.moderation_status).map((next) => <button key={next} type="button" disabled={moderate.isPending || remove.isPending} onClick={() => change(review.id, next)} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-xs font-bold text-[#1f6a58] disabled:opacity-50">{label(next)}</button>)}<button type="button" disabled={moderate.isPending || remove.isPending} onClick={() => { if (window.confirm("Permanently delete this Event review? This cannot be undone.")) remove.mutate(review.id); }} className="rounded-full border border-[#e1c9c6] px-3 py-1.5 text-xs font-bold text-[#a52a20]">Delete</button></div> : null}</article>)}</div> : null}
     {data && data.total_pages > 1 ? <nav aria-label="Review pagination" className="mt-4 flex items-center justify-between"><span className="text-sm text-[#52736a]">Page {page} of {pageCount}</span><span className="flex gap-2"><button type="button" disabled={page <= 1} onClick={() => setPage((current) => current - 1)} className="rounded-full border px-3 py-1.5 text-sm disabled:opacity-50">Previous</button><button type="button" disabled={page >= pageCount} onClick={() => setPage((current) => current + 1)} className="rounded-full border px-3 py-1.5 text-sm disabled:opacity-50">Next</button></span></nav> : null}
     {showAudit && canModerate ? <EventReviewModerationAuditModal onClose={() => setShowAudit(false)} /> : null}
   </section>;

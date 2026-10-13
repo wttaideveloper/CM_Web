@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEnterpriseWorkflowNotifications } from "@/realtime/enterprise-workflow-notifications";
 import {
   formatRelativeBackendTimestamp,
+  formatReviewModerationNotificationTitle,
   formatTrainingNotificationDetails,
   handleNotificationClick,
   notificationReason,
@@ -50,8 +51,16 @@ export default function WorkflowNotificationsPage() {
       ) : (
         <div className="divide-y divide-[#edf3f0] overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white">
           {items.map((item) => {
+            const notificationTitle = formatReviewModerationNotificationTitle({
+              notification_type: item.notification_type,
+              category: item.category,
+              metadata: item.metadata,
+              data: item.metadata,
+              title: item.title,
+              body: item.message,
+            }) ?? item.title;
             const reason = notificationReason({ data: item.metadata, body: item.message });
-            const { trainingTitle, senderName } = formatTrainingNotificationDetails({
+            const { trainingTitle, senderName, learnerName, enrollmentStatus } = formatTrainingNotificationDetails({
               notification_type: item.notification_type,
               title: item.title,
               body: item.message,
@@ -74,7 +83,7 @@ export default function WorkflowNotificationsPage() {
                 }`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <p className="font-semibold text-[#06201c]">{item.title}</p>
+                  <p className="font-semibold text-[#06201c]">{notificationTitle}</p>
                   {item.created_at ? (
                     <span className="text-xs font-semibold text-[#7f9d94]">
                       {formatRelativeBackendTimestamp(item.created_at)}
@@ -83,9 +92,11 @@ export default function WorkflowNotificationsPage() {
                 </div>
                 <p className="mt-1 text-sm text-[#52736a]">{item.message}</p>
                 {senderName ? <p className="mt-1 text-xs font-semibold text-[#52736a]">From: {senderName}</p> : null}
+                {learnerName ? <p className="mt-1 text-xs font-semibold text-[#52736a]">Learner: {learnerName}</p> : null}
                 {trainingTitle ? (
                   <p className="mt-1 text-xs font-semibold text-[#1f6a58]">Training: {trainingTitle}</p>
                 ) : null}
+                {enrollmentStatus ? <p className="mt-1 text-xs font-semibold text-[#52736a]">Enrollment status: {enrollmentStatus.replace(/[_-]+/g, " ")}</p> : null}
                 {reason ? <p className="mt-1 text-xs text-[#8a5a00]">Reason: {reason}</p> : null}
               </button>
             );

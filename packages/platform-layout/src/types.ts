@@ -56,7 +56,7 @@ export type PlatformAdminLayoutProps = {
     unreadCount?: number;
     unreadCountError?: unknown;
     error?: string | null;
-    items: readonly { id: string; title: string; message: string; notification_type: string; is_read: boolean; target?: string | null }[];
+    items: readonly { id: string; title: string; message: string; notification_type: string; category?: string; metadata?: Record<string, unknown>; is_read: boolean; target?: string | null }[];
     onRead: (id: string) => void;
     onMarkAllRead: () => void;
   };

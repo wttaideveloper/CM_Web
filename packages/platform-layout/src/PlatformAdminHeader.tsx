@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { HeaderFrame } from "@ihp/ui";
+import { formatReviewModerationNotificationDetails, formatReviewModerationNotificationTitle, formatReviewNotificationDetails } from "@ihp/realtime";
 
 import type { PlatformAdminHeaderProps } from "./types";
 
@@ -172,7 +173,12 @@ export function PlatformAdminHeader({
                       ) : null}
                       {workflowNotifications.error ? <p role="alert" className="rounded-lg bg-[#fff8f7] px-2 py-2 text-xs text-[#8f3b2f]">{workflowNotifications.error}</p> : null}
                       {workflowNotifications.items.length > 0 ? (
-                        <div className="mt-1 space-y-1">{workflowNotifications.items.slice(0, 5).map((item) => <Link key={item.id} href={item.target ?? notificationsHref} onClick={() => { workflowNotifications.onRead(item.id); closeMenu(); }} className={`block rounded-xl px-3 py-2 text-sm hover:bg-[#eef7f2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1f6a58] ${item.is_read ? "" : "bg-[#f7fbf9]"}`}><span className="block font-semibold">{item.title}</span><span className="block truncate text-xs text-[#52736a]">{item.message}</span></Link>)}</div>
+                        <div className="mt-1 space-y-1">{workflowNotifications.items.slice(0, 5).map((item) => {
+                          const review = formatReviewNotificationDetails({ notification_type: item.notification_type, category: item.category, metadata: item.metadata, data: item.metadata ?? {} });
+                          const moderation = formatReviewModerationNotificationDetails({ notification_type: item.notification_type, category: item.category, metadata: item.metadata, data: item.metadata ?? {}, title: item.title, body: item.message });
+                          const title = formatReviewModerationNotificationTitle({ notification_type: item.notification_type, category: item.category, metadata: item.metadata, data: item.metadata ?? {}, title: item.title, body: item.message }) ?? item.title;
+                          return <Link key={item.id} href={item.target ?? notificationsHref} onClick={() => { workflowNotifications.onRead(item.id); closeMenu(); }} className={`block rounded-xl px-3 py-2 text-sm hover:bg-[#eef7f2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1f6a58] ${item.is_read ? "" : "bg-[#f7fbf9]"}`}><span className="block font-semibold">{title}</span><span className="block truncate text-xs text-[#52736a]">{item.message}</span>{moderation.actorName ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">By: {moderation.actorName}{moderation.actorRole ? ` (${moderation.actorRole})` : ""}</span> : null}{moderation.action ? <span className="block text-xs font-semibold capitalize text-[#52736a]">Action: {moderation.action.replace(/[_-]+/g, " ")}</span> : null}{moderation.itemName ? <span className="block truncate text-xs font-semibold text-[#1f6a58]">{moderation.itemType ?? "Item"}: {moderation.itemName}</span> : null}{review.learnerName ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">Learner: {review.learnerName}</span> : null}{review.rating !== null ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">Rating: {review.rating} ★</span> : null}{review.itemName ? <span className="mt-1 block truncate text-xs font-semibold text-[#1f6a58]">{review.itemType ?? "Item"}: {review.itemName}</span> : null}</Link>;
+                        })}</div>
                       ) : null}
                       <div className="mt-1 flex items-center justify-between pt-1"><button type="button" onClick={workflowNotifications.onMarkAllRead} className="px-2 text-xs font-semibold text-[#1f6a58]">Mark all read</button><Link href={notificationsHref} onClick={closeMenu} className="px-2 text-xs font-semibold text-[#1f6a58]">View all</Link></div>
                     </div>

@@ -8,9 +8,11 @@ import type { PlatformReviewAuditEntry, ReviewModule } from "./platform-reviews.
 
 function auditActorLabel(entry: PlatformReviewAuditEntry): string {
   const name = entry.actor_name && !entry.actor_name.includes("@") ? entry.actor_name : null;
-  const role = entry.actor_role?.toLocaleLowerCase().includes("provider") ? "Provider"
-    : entry.actor_role?.toLocaleLowerCase().includes("admin") ? "Enterprise Admin"
-      : entry.actor_role || "Staff";
+  const normalizedRole = entry.actor_role?.toLocaleLowerCase().replace(/[\s-]+/g, "_") ?? "";
+  const role = normalizedRole.includes("super_admin") || normalizedRole.includes("platform_admin") ? "Super Admin"
+    : normalizedRole.includes("provider") ? "Provider"
+      : normalizedRole.includes("enterprise_admin") || normalizedRole === "admin" ? "Enterprise Admin"
+        : entry.actor_role || "Staff";
   return [role, name ?? (!entry.actor_name ? entry.actor_user_id : null)].filter(Boolean).join(" · ");
 }
 

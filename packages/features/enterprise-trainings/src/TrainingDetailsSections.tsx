@@ -337,7 +337,19 @@ function LessonScheduleFields({
         {title}
         <select
           value={source}
-          onChange={(event) => setSource(event.target.value as LessonDetailsSource)}
+          onChange={(event) => {
+            const nextSource = event.target.value as LessonDetailsSource;
+            setSource(nextSource);
+            if (nextSource === "new") {
+              if (isLive) {
+                setMeetingLink("");
+                setJoinUrl("");
+              } else {
+                setVenueName("");
+                setVenueAddress("");
+              }
+            }
+          }}
           aria-label={copy("detailsSource", `${title} source`)}
           className="mt-1 h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]"
         >
@@ -701,6 +713,7 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
   const lessonScheduledAt = typeof lesson.scheduled_at === "string" ? lesson.scheduled_at : "";
   const lessonMeetingType = typeof lesson.meeting_type === "string" && lesson.meeting_type ? lesson.meeting_type : "google_meet";
   const lessonMeetingLink = typeof lesson.meeting_link === "string" ? lesson.meeting_link : "";
+  const lessonJoinInstructions = typeof lesson.join_meta === "string" ? lesson.join_meta : "";
   const lessonJoinUrl = typeof lesson.join_meta === "string" && lesson.join_meta.trim() ? lesson.join_meta : typeof lesson.join_url === "string" ? lesson.join_url : "";
   const lessonVenueName = typeof lesson.venue_name === "string" ? lesson.venue_name : "";
   const lessonVenueAddress = typeof lesson.venue_address === "string" ? lesson.venue_address : "";
@@ -790,7 +803,7 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
       <div className="flex items-center justify-between">
         <p className="text-xs font-bold uppercase tracking-[.08em] text-[#7f9d94]">Lesson Detail — Videos · PDF · Notes</p>
         <div className="flex gap-1">
-          <button type="button" onClick={() => setEditMode(!editMode)} className="rounded-full border border-[#1f6a58] px-2 py-0.5 text-[10px] font-bold text-[#1f6a58]">{editMode ? "Cancel" : "Edit"}</button>
+          <button type="button" onClick={() => { if (!editMode) setFeedback(null); setEditMode(!editMode); }} className="rounded-full border border-[#1f6a58] px-2 py-0.5 text-[10px] font-bold text-[#1f6a58]">{editMode ? "Cancel" : "Edit"}</button>
           <button type="button" onClick={onClose} className="rounded-full border border-[#d7e5df] px-2 py-0.5 text-[10px] font-bold text-[#52736a]">Close</button>
         </div>
       </div>
@@ -912,7 +925,7 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
           ) : lessonVideoUrl ? <LessonMediaPreview url={lessonVideoUrl} name={lessonVideoUrl.split("/").pop() || "Lesson video"} kind="video" /> : null}
           {lessonType === "live" ? <p className="text-xs text-[#52736a]">{t("lessonScheduling.provider", { defaultValue: "Meeting provider" })}: {humanizeLabel(lessonMeetingType)}</p> : null}
           {lessonMeetingLink ? <p className="text-xs text-[#52736a]">{t("lessonScheduling.meetingLink", { defaultValue: "Meeting link" })}: <a href={lessonMeetingLink} className="text-[#1f6a58] underline">{lessonMeetingLink}</a></p> : null}
-          {lessonJoinUrl ? <p className="text-xs text-[#52736a]">{t("lessonScheduling.joinInstructions", { defaultValue: "Join instructions" })}: <a href={lessonJoinUrl} className="text-[#1f6a58] underline">{lessonJoinUrl}</a></p> : null}
+          {lessonJoinInstructions ? <p className="whitespace-pre-wrap text-xs text-[#52736a]">{t("lessonScheduling.joinInstructions", { defaultValue: "Join instructions" })}: {lessonJoinInstructions}</p> : null}
           {lessonType === "venue" && lessonVenueName ? <p className="text-xs text-[#52736a]">{t("lessonScheduling.venue", { defaultValue: "Venue" })}: {lessonVenueName}</p> : null}
           {lessonType === "venue" && lessonVenueAddress ? <p className="text-xs text-[#52736a]">{t("lessonScheduling.address", { defaultValue: "Address" })}: {lessonVenueAddress}</p> : null}
           {lessonScheduledAt ? <p className="text-xs text-[#52736a]">{t("lessonScheduling.scheduled", { defaultValue: "Scheduled" })}: {formatLessonScheduledAt(lessonScheduledAt)}</p> : null}

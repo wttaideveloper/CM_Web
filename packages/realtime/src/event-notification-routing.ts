@@ -39,6 +39,41 @@ const enterpriseTrainingTypes = new Set([
   "training_enrollment",
   "training_enrolment_created",
   "training_enrollment_created",
+  "training_enrolment_submitted",
+  "training_enrollment_submitted",
+  "training_enrolment_requested",
+  "training_enrollment_requested",
+  "training_enrollment_application",
+  "training_enrolment_application",
+  "training_application_submitted",
+  "training_application_created",
+  "enrolment_application_created",
+  "enrollment_application_created",
+  "training_enrolment_approved",
+  "training_enrollment_accepted",
+  "training_enrollment_rejected",
+  "training_enrolment_accepted",
+  "training_enrolment_rejected",
+  "training_order_created",
+  "enrolment_created",
+  "enrollment_created",
+]);
+const trainingEnrollmentTypes = new Set([
+  "training_enrolled",
+  "training_enrolment",
+  "training_enrollment",
+  "training_enrolment_created",
+  "training_enrollment_created",
+  "training_enrolment_submitted",
+  "training_enrollment_submitted",
+  "training_enrolment_requested",
+  "training_enrollment_requested",
+  "training_enrollment_application",
+  "training_enrolment_application",
+  "training_application_submitted",
+  "training_application_created",
+  "enrolment_application_created",
+  "enrollment_application_created",
   "training_enrolment_approved",
   "training_enrollment_accepted",
   "training_enrollment_rejected",
@@ -160,6 +195,48 @@ function resolveNotificationEventName(notification: NotificationRouteInput): str
   return (candidates[0] ?? "unknown").toLocaleLowerCase();
 }
 
+/** Returns a module-specific title for review moderation notifications. */
+export function formatReviewModerationNotificationTitle(notification: NotificationRouteInput): string | null {
+  const eventName = resolveNotificationEventName(notification);
+  if (!reviewModerationTypes.has(eventName)) return null;
+
+  const module = reviewModuleForRoute(notification, eventName);
+  if (!module) return null;
+
+  const data = notificationData(notification);
+  const action = (readNonEmptyString(data.action) ?? readNonEmptyString(data.new_status) ?? "").toLocaleLowerCase();
+  const isDeleted = eventName.includes("deleted") || action === "deleted";
+  return `${module === "event" ? "Event" : "Training"} review ${isDeleted ? "deleted" : "updated"}`;
+}
+
+/** Extracts safe actor, action, and item details from review moderation notifications. */
+export function formatReviewModerationNotificationDetails(
+  notification: NotificationRouteInput,
+): { actorName: string | null; actorRole: string | null; action: string | null; itemName: string | null; itemType: "Training" | "Event" | null } {
+  const eventName = resolveNotificationEventName(notification);
+  if (!reviewModerationTypes.has(eventName)) {
+    return { actorName: null, actorRole: null, action: null, itemName: null, itemType: null };
+  }
+
+  const data = notificationData(notification);
+  const module = reviewModuleForRoute(notification, eventName);
+  const actorNameValue = readNonEmptyString(data.actor_name) ?? readNonEmptyString(data.actorName);
+  const actorName = actorNameValue && !actorNameValue.includes("@") ? actorNameValue : null;
+  const rawRole = (readNonEmptyString(data.actor_role) ?? readNonEmptyString(data.actorRole))?.toLocaleLowerCase().replace(/[\s-]+/g, "_");
+  const actorRole = rawRole?.includes("super_admin") || rawRole?.includes("platform_admin") ? "Super Admin"
+    : rawRole?.includes("provider") ? "Provider"
+      : rawRole?.includes("admin") ? "Enterprise Admin"
+        : null;
+  const action = readNonEmptyString(data.action)
+    ?? readNonEmptyString(data.new_status)
+    ?? readNonEmptyString(data.to_status);
+  const itemName = [data.item_name, data.training_name, data.event_name, data.item_title, data.training_title, data.event_title]
+    .map(readNonEmptyString)
+    .find((value): value is string => value !== null) ?? null;
+
+  return { actorName, actorRole, action, itemName, itemType: module === "training" ? "Training" : module === "event" ? "Event" : null };
+}
+
 /** Resolves an Event or Training workflow notification to its relevant Web screen. */
 export function resolveNotificationTarget(
   notification: NotificationRouteInput,
@@ -208,7 +285,12 @@ export function resolveNotificationTarget(
   const trainingId = trainingIdForRoute(notification);
   if (trainingId) {
     const tab = reviewSubmissionTypes.has(eventName) ? "reviews" : null;
-    const params = tab ? new URLSearchParams({ tab }) : null;
+    const data = notificationData(notification);
+    const hasEnrollmentId = Boolean(readNonEmptyString(data.enrollment_id) ?? readNonEmptyString(data.enrolment_id));
+    const enrollmentTab = trainingEnrollmentTypes.has(eventName)
+      || hasEnrollmentId
+      || /enrol|enroll|registration|registered|booking|application/.test(eventName);
+    const params = tab ? new URLSearchParams({ tab }) : enrollmentTab ? new URLSearchParams({ tab: "enrolments" }) : null;
     const reviewId = readNonEmptyString(notificationData(notification).review_id);
     if (params && reviewId) params.set("review_id", reviewId);
     return `/admin/trainings/${encodeURIComponent(trainingId)}${params ? `?${params.toString()}` : ""}`;
@@ -273,8 +355,8 @@ export function notificationReason(notification: Pick<RealtimeNotification, "dat
 /** Extracts Training titles and discussion sender names from notification API metadata. */
 export function formatTrainingNotificationDetails(
   notification: Pick<RealtimeNotification, "notification_type" | "title" | "body" | "data">,
-): { trainingTitle: string | null; senderName: string | null } {
-  const data = recordValue(notification.data);
+): { trainingTitle: string | null; senderName: string | null; learnerName: string | null; enrollmentStatus: string | null } {
+  const data = notificationData({ notification_type: notification.notification_type, data: notification.data, title: notification.title, body: notification.body });
   const training = recordValue(data.training);
   const trainingTitle =
     readNonEmptyString(data.training_title) ??
@@ -295,6 +377,9 @@ export function formatTrainingNotificationDetails(
   ].filter(Boolean).join(" ").toLocaleLowerCase();
   const isTrainingDiscussion = (type.includes("discussion") || type.includes("question_posted"))
     && (type.includes("training") || Boolean(trainingIdForRoute({ notification_type: notification.notification_type, data })));
+  const hasEnrollmentId = Boolean(readNonEmptyString(data.enrollment_id) ?? readNonEmptyString(data.enrolment_id));
+  const isTrainingEnrollment = trainingEnrollmentTypes.has(resolveNotificationEventName({ notification_type: notification.notification_type, data, title: notification.title, body: notification.body }))
+    || (hasEnrollmentId && Boolean(trainingIdForRoute({ notification_type: notification.notification_type, data })));
   const discussion = recordValue(data.discussion);
   const sender = recordValue(
     data.sender ?? data.author ?? data.actor ?? data.user ?? data.created_by
@@ -320,5 +405,55 @@ export function formatTrainingNotificationDetails(
       ].find((name): name is string => typeof name === "string" && !name.includes("@")) ?? null
     : null;
 
-  return { trainingTitle, senderName };
+  const learnerName = isTrainingEnrollment
+    ? [data.learner_name, data.applicant_name, data.participant_name, data.student_name, data.user_name, data.sender_name]
+        .map(readNonEmptyString)
+        .find((name): name is string => Boolean(name && !name.includes("@"))) ?? null
+    : null;
+  const enrollmentStatus = isTrainingEnrollment
+    ? readNonEmptyString(data.enrollment_status) ?? readNonEmptyString(data.enrolment_status) ?? readNonEmptyString(data.status)
+    : null;
+
+  return { trainingTitle, senderName, learnerName, enrollmentStatus };
+}
+
+/** Extracts safe learner and item details from a new review notification. */
+export function formatReviewNotificationDetails(
+  notification: Pick<RealtimeNotification, "notification_type" | "data"> & {
+    category?: string;
+    metadata?: Record<string, unknown>;
+  },
+): { learnerName: string | null; itemName: string | null; itemType: "Training" | "Event" | null; rating: number | null } {
+  const data = notificationData(notification);
+  const notificationType = resolveNotificationEventName(notification);
+  if (!reviewSubmissionTypes.has(notificationType)) {
+    return { learnerName: null, itemName: null, itemType: null, rating: null };
+  }
+
+  const learnerName = [data.learner_name, data.reviewer_name, data.participant_name, data.author_name]
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0 && !value.includes("@"))
+    ?.trim() ?? null;
+  const module = reviewModuleForRoute(notification, notificationType);
+  const itemName = [
+    data.item_name,
+    data.training_name,
+    data.event_name,
+    data.training_title,
+    data.event_title,
+    data.item_title,
+    data.entity_title,
+  ].find((value): value is string => typeof value === "string" && value.trim().length > 0)?.trim() ?? null;
+  const rawRating = data.rating;
+  const rating = typeof rawRating === "number" && Number.isInteger(rawRating) && rawRating >= 1 && rawRating <= 5
+    ? rawRating
+    : typeof rawRating === "string" && /^[1-5]$/.test(rawRating)
+      ? Number(rawRating)
+      : null;
+
+  return {
+    learnerName,
+    itemName,
+    itemType: module === "training" ? "Training" : module === "event" ? "Event" : null,
+    rating,
+  };
 }

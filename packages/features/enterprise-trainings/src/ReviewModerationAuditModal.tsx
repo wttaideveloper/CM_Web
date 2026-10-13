@@ -13,6 +13,13 @@ function formatLocalTimestamp(value: string | null): string {
   return Number.isNaN(date.getTime()) ? "Date unavailable" : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
+function auditActorLabel(entry: { actor_role: string | null; actor_name?: string | null; actor_user_id: string | null }): string {
+  const role = entry.actor_role?.toLocaleLowerCase().replace(/[\s-]+/g, "_") ?? "";
+  const roleLabel = role.includes("super_admin") || role.includes("platform_admin") ? "Super Admin" : entry.actor_role ?? "Staff";
+  const name = entry.actor_name && !entry.actor_name.includes("@") ? entry.actor_name : null;
+  return [roleLabel, name ?? (!entry.actor_name ? entry.actor_user_id : null)].filter(Boolean).join(" · ");
+}
+
 /** Displays Training review moderation audit records in an accessible modal. */
 export function ReviewModerationAuditModal({ trainingId, reviewId, onClose }: { trainingId?: string; reviewId?: string; onClose: () => void }) {
   useEffect(() => {
@@ -41,7 +48,7 @@ export function ReviewModerationAuditModal({ trainingId, reviewId, onClose }: { 
         {auditQuery.isLoading ? <p className="mt-5 text-sm text-[#52736a]">Loading moderation history…</p> : null}
         {auditQuery.isError ? <div role="alert" className="mt-5 rounded-lg bg-[#fff5f4] p-3 text-sm text-[#b42318]">{(auditQuery.error as Error).message}<button type="button" onClick={() => void auditQuery.refetch()} className="ml-2 font-bold underline">Retry</button></div> : null}
         {!auditQuery.isLoading && !auditQuery.isError && entries.length === 0 ? <p className="mt-5 text-sm text-[#52736a]">No moderation history yet.</p> : null}
-        {entries.length > 0 ? <ol className="mt-5 grid gap-3">{entries.map((entry) => <li key={entry.id} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-3"><div className="flex flex-wrap justify-between gap-2"><p className="font-semibold capitalize text-[#06201c]">{entry.from_status ? `${entry.from_status} → ` : ""}{entry.to_status.replace(/[_-]+/g, " ")}</p><time className="text-xs text-[#7f9d94]">{formatLocalTimestamp(entry.created_at)}</time></div><p className="mt-1 text-sm text-[#52736a]">{entry.item_name ?? (trainingId ? "This Training" : "Training")} · Review {entry.review_id.slice(0, 8)}</p><p className="mt-1 text-xs text-[#7f9d94]">{entry.actor_role ?? "Staff"}{entry.actor_name && !entry.actor_name.includes("@") ? ` · ${entry.actor_name}` : !entry.actor_name && entry.actor_user_id ? ` · ${entry.actor_user_id}` : ""}</p></li>)}</ol> : null}
+        {entries.length > 0 ? <ol className="mt-5 grid gap-3">{entries.map((entry) => <li key={entry.id} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-3"><div className="flex flex-wrap justify-between gap-2"><p className="font-semibold capitalize text-[#06201c]">{entry.from_status ? `${entry.from_status} → ` : ""}{entry.to_status.replace(/[_-]+/g, " ")}</p><time className="text-xs text-[#7f9d94]">{formatLocalTimestamp(entry.created_at)}</time></div><p className="mt-1 text-sm text-[#52736a]">{entry.item_name ?? (trainingId ? "This Training" : "Training")} · Review {entry.review_id.slice(0, 8)}</p><p className="mt-1 text-xs text-[#7f9d94]">{auditActorLabel(entry)}</p></li>)}</ol> : null}
       </section>
     </div>
   );

@@ -8,6 +8,9 @@ import {
   browserWorkflowRequest,
   createWorkflowNotificationClient,
   formatRelativeBackendTimestamp,
+  formatReviewModerationNotificationTitle,
+  formatReviewNotificationDetails,
+  formatTrainingNotificationDetails,
   resolveNotificationTarget,
   type WorkflowNotification,
 } from "@ihp/realtime";
@@ -157,8 +160,25 @@ export default function EnterpriseNotificationHistoryScreen({ audience, messages
           <div className="px-5 py-10 text-sm text-[#52736a]">No notifications yet.</div>
         ) : (
           <div className="divide-y divide-[#edf3f0]">
-            {notifications.map((notification) => (
-              <button
+            {notifications.map((notification) => {
+              const notificationTitle = audience === "enterprise"
+                ? formatReviewModerationNotificationTitle({
+                    notification_type: notification.notification_type,
+                    category: notification.category,
+                    metadata: notification.metadata,
+                    data: notification.metadata,
+                    title: notification.title,
+                    body: notification.message,
+                  }) ?? notification.title
+                : notification.title;
+              const review = formatReviewNotificationDetails({ notification_type: notification.notification_type, category: notification.category, metadata: notification.metadata, data: notification.metadata });
+              const training = formatTrainingNotificationDetails({
+                notification_type: notification.notification_type,
+                title: notification.title,
+                body: notification.message,
+                data: notification.metadata,
+              });
+              return <button
                 key={notification.id}
                 type="button"
                 onClick={() => handleNotificationClick(notification)}
@@ -168,7 +188,7 @@ export default function EnterpriseNotificationHistoryScreen({ audience, messages
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-start justify-between gap-3">
                     <span className="min-w-0">
-                      <span className="block text-sm font-bold text-[#06201c]">{notification.title}</span>
+                      <span className="block text-sm font-bold text-[#06201c]">{notificationTitle}</span>
                       <span className="mt-1 block text-sm leading-6 text-[#52736a]">{notification.message}</span>
                     </span>
                     <span className="shrink-0 text-xs font-semibold text-[#7f9d94]">
@@ -178,9 +198,15 @@ export default function EnterpriseNotificationHistoryScreen({ audience, messages
                   <span className="mt-2 block text-xs font-semibold uppercase tracking-[0.12em] text-[#7f9d94]">
                     {notification.category || notification.notification_type}
                   </span>
+                  {review.learnerName ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">Learner: {review.learnerName}</span> : null}
+                  {review.rating !== null ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">Rating: {review.rating} ★</span> : null}
+                  {review.itemName ? <span className="mt-1 block text-xs font-semibold text-[#1f6a58]">{review.itemType ?? "Item"}: {review.itemName}</span> : null}
+                  {audience === "enterprise" && training.learnerName ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">Learner: {training.learnerName}</span> : null}
+                  {audience === "enterprise" && !review.itemName && training.trainingTitle ? <span className="mt-1 block text-xs font-semibold text-[#1f6a58]">Training: {training.trainingTitle}</span> : null}
+                  {audience === "enterprise" && training.enrollmentStatus ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">Enrollment status: {training.enrollmentStatus.replace(/[_-]+/g, " ")}</span> : null}
                 </span>
               </button>
-            ))}
+            })}
           </div>
         )}
 

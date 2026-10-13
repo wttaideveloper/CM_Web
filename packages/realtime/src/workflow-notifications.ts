@@ -66,21 +66,28 @@ function normalizeWorkflowNotification(candidate: unknown): WorkflowNotification
 }
 
 function normalizeHistory(response: unknown, page: number, pageSize: number): WorkflowNotificationHistoryResponse {
-  const envelope = isRecord(response) && isRecord(response.data) ? response.data : response;
-  if (!isRecord(envelope)) throw new Error("Invalid workflow notification history response.");
-  const rows = Array.isArray(envelope.items)
-    ? envelope.items
-    : Array.isArray(envelope.notifications)
-      ? envelope.notifications
-      : null;
+  const envelope = isRecord(response) && (isRecord(response.data) || Array.isArray(response.data)) ? response.data : response;
+  const rows = Array.isArray(response)
+    ? response
+    : Array.isArray(envelope)
+      ? envelope
+      : isRecord(envelope) && Array.isArray(envelope.items)
+        ? envelope.items
+        : isRecord(envelope) && Array.isArray(envelope.notifications)
+          ? envelope.notifications
+          : isRecord(envelope) && (typeof envelope.id === "string" || typeof envelope.notification_id === "string")
+            ? [envelope]
+            : null;
   if (!rows) throw new Error("Invalid workflow notification history response.");
 
-  const pagination = isRecord(envelope.pagination)
-    ? envelope.pagination
-    : isRecord(response) && isRecord(response.meta) && isRecord(response.meta.pagination)
-      ? response.meta.pagination
-      : isRecord(response) && isRecord(response.meta)
-        ? response.meta
+  const envelopeRecord = isRecord(envelope) ? envelope : {};
+  const responseRecord = isRecord(response) ? response : {};
+  const pagination = isRecord(envelopeRecord.pagination)
+    ? envelopeRecord.pagination
+    : isRecord(responseRecord.meta) && isRecord(responseRecord.meta.pagination)
+      ? responseRecord.meta.pagination
+      : isRecord(responseRecord.meta)
+        ? responseRecord.meta
         : {};
   const items = rows
     .map(normalizeWorkflowNotification)
@@ -92,7 +99,7 @@ function normalizeHistory(response: unknown, page: number, pageSize: number): Wo
       page: Number(pagination.page) || page,
       page_size: Number(pagination.page_size) || pageSize,
       total: Number(pagination.total) || items.length,
-      total_pages: Number(pagination.total_pages) || 0,
+      total_pages: Number(pagination.total_pages) || (items.length > 0 ? 1 : 0),
     },
   };
 }

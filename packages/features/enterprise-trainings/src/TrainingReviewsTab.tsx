@@ -4,9 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isInternalUserRole, useAuth } from "@ihp/auth";
 
-import { moderateTrainingReview, deleteTrainingReview, listEnterpriseReviewsManage, listTrainingReviews, TrainingsApiError } from "./trainings.service";
+import { moderateTrainingReview, deleteTrainingReview, getTrainingReviewsAudit, listEnterpriseReviewsManage, listTrainingReviews, TrainingsApiError } from "./trainings.service";
 import { normalizeUtcDate } from "./training-reviews.service";
-import type { ReviewModerationStatus, TrainingReview, TrainingStarRating } from "./training-reviews.types";
+import type { ReviewModerationStatus, TrainingReview, TrainingReviewAuditEntry, TrainingStarRating } from "./training-reviews.types";
 import { TrainingRatingSummaryCard } from "./TrainingRatingSummaryCard";
 import { ReviewModerationAuditModal } from "./ReviewModerationAuditModal";
 
@@ -39,6 +39,13 @@ function statusActions(status: ReviewModerationStatus): ReviewModerationStatus[]
 
 function actionLabel(status: ReviewModerationStatus): string {
   return status === "pending" ? "Move to Pending" : status === "approved" ? "Approve" : "Reject";
+}
+
+function auditActorLabel(entry: TrainingReviewAuditEntry): string {
+  const role = entry.actor_role?.toLocaleLowerCase().replace(/[\s-]+/g, "_") ?? "";
+  const roleLabel = role.includes("super_admin") || role.includes("platform_admin") ? "Super Admin" : entry.actor_role ?? "Staff";
+  const name = entry.actor_name && !entry.actor_name.includes("@") ? entry.actor_name : null;
+  return [roleLabel, name].filter(Boolean).join(" · ");
 }
 
 function compareNewestFirst(left: TrainingReview, right: TrainingReview, order: ReviewSortOrder): number {
@@ -79,6 +86,14 @@ export function TrainingReviewsTab({ trainingId, reviewId, openAuditOnLoad = fal
     refetchOnMount: "always",
     retry: 1,
   });
+  const auditQuery = useQuery({
+    queryKey: ["training-reviews", "audit", trainingId ?? "all"],
+    queryFn: () => getTrainingReviewsAudit(trainingId),
+    enabled: canModerateReviews,
+    staleTime: 15_000,
+    refetchOnMount: "always",
+    retry: 1,
+  });
   const refreshReviewData = () => {
     void queryClient.invalidateQueries({ queryKey: ["training-reviews", "manage", trainingId] });
     void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "reviews"] });
@@ -99,6 +114,11 @@ export function TrainingReviewsTab({ trainingId, reviewId, openAuditOnLoad = fal
   });
 
   const reviews = reviewsQuery.data?.reviews ?? [];
+  const latestAuditByReviewId = useMemo(() => {
+    const latest = new Map<string, NonNullable<typeof auditQuery.data>[number]>();
+    for (const entry of auditQuery.data ?? []) if (!latest.has(entry.review_id)) latest.set(entry.review_id, entry);
+    return latest;
+  }, [auditQuery.data]);
   useEffect(() => {
     if (!reviewId || reviewsQuery.isLoading) return;
     document.getElementById(`training-review-${reviewId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -145,10 +165,12 @@ export function TrainingReviewsTab({ trainingId, reviewId, openAuditOnLoad = fal
         </div>
         {filteredReviews.length === 0 ? <p className="mt-4 text-sm text-[#52736a]">{reviews.length === 0 ? "No reviews have been submitted for this Training yet." : "No reviews match these filters."}</p> : <ul className="mt-4 grid gap-3">{filteredReviews.map((review) => {
           const isExpanded = expandedComments.has(review.id);
+          const latestAudit = latestAuditByReviewId.get(review.id);
           const truncated = Boolean(review.comment && review.comment.length > 240 && !isExpanded);
           const comment = review.comment ? truncated ? `${review.comment.slice(0, 240).trimEnd()}…` : review.comment : null;
           return <li key={review.id} id={`training-review-${review.id}`} className={`rounded-xl border p-4 transition-all duration-300 ${review.id === reviewId ? "border-[#1f6a58] bg-[#effaf4] ring-2 ring-[#1f6a58] ring-offset-2" : "border-[#e1ebe6] bg-[#f9fcfa]"}`}>
             <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="font-bold text-[#06201c]">{review.participant_name}{review.verified ? <span className="ml-2 rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[11px] font-semibold text-[#1f6a58]">Verified</span> : null}{review.id === reviewId ? <span className="ml-2 rounded-full bg-[#1f6a58] px-2 py-0.5 text-[11px] font-bold text-white">Notified review</span> : null}</p>{canModerateReviews && review.participant_email ? <p className="mt-0.5 text-xs text-[#52736a]">{review.participant_email}</p> : null}<span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${REVIEW_STATUS_CLASS[review.moderation_status]}`}>{getStatusLabel(review.moderation_status)}</span></div><div className="flex shrink-0 items-center gap-2"><span className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{review.rating === null ? "Rating unavailable" : `${review.rating} ★`}</span>{canModerateReviews ? <button type="button" onClick={() => removeReview(review)} disabled={deleteMutation.isPending || moderateMutation.isPending} className="rounded-full border border-[#e1c9c6] px-3 py-1 text-xs font-bold text-[#a52a20] hover:bg-[#fff1ef] hover:underline disabled:opacity-60">{deleteMutation.isPending && deleteMutation.variables === review.id ? "Deleting…" : "Delete"}</button> : null}</div></div>
+            {latestAudit ? <p className="mt-2 text-xs font-semibold text-[#52736a]">Latest action: {latestAudit.to_status.replace(/[_-]+/g, " ")} by {auditActorLabel(latestAudit)}</p> : null}
             {comment ? <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#3c5d54]">{comment}{review.comment && review.comment.length > 240 ? <button type="button" onClick={() => setExpandedComments((current) => { const next = new Set(current); if (next.has(review.id)) next.delete(review.id); else next.add(review.id); return next; })} className="ml-1 font-semibold text-[#1f6a58] underline">{isExpanded ? "Show less" : "Read more"}</button> : null}</p> : null}
             <time className="mt-2 block text-xs text-[#7f9d94]">{formatReviewDate(review.created_at)}</time>
             {canModerateReviews ? <div className="mt-3 flex flex-wrap gap-2 border-t border-[#e1ebe6] pt-3">{statusActions(review.moderation_status).map((status) => <button key={status} type="button" onClick={() => updateStatus(review, status)} disabled={moderateMutation.isPending || deleteMutation.isPending} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-xs font-bold text-[#1f6a58] hover:bg-[#e8f6ee] disabled:opacity-60">{moderateMutation.isPending && moderateMutation.variables?.reviewId === review.id && moderateMutation.variables.status === status ? "Saving…" : actionLabel(status)}</button>)}</div> : null}

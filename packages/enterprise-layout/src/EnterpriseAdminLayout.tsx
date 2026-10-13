@@ -6,6 +6,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
   formatRelativeBackendTimestamp,
+  formatReviewModerationNotificationTitle,
+  formatReviewNotificationDetails,
   formatTrainingNotificationDetails,
   notificationReason,
   resolveNotificationTarget,
@@ -247,16 +249,22 @@ export function EnterpriseAdminLayout({
               </div>
               <div className="max-h-96 overflow-y-auto">
                 {displayNotifications.length === 0 ? <p className="px-4 py-6 text-sm text-[#52736a]">No new notifications</p> : displayNotifications.slice(0, 8).map((item) => {
-                  const { trainingTitle, senderName } = formatTrainingNotificationDetails(item);
+                  const notificationTitle = formatReviewModerationNotificationTitle(item) ?? item.title;
+                  const { trainingTitle, senderName, learnerName, enrollmentStatus } = formatTrainingNotificationDetails(item);
+                  const review = formatReviewNotificationDetails(item);
                   const reason = notificationReason(item);
                   return (
                     <button key={item.id} type="button" onClick={() => { void handleNotificationClick(item); }} className={`flex w-full gap-3 border-b border-[#edf3f0] px-4 py-3 text-left hover:bg-[#f4faf7] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#1f6a58] ${item.is_read ? "bg-[#fbfdfc]" : "bg-white"}`}>
                       <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${item.is_read ? "bg-[#d0dbd7]" : "bg-[#1f6a58]"}`} />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-bold text-[#06201c]">{item.title || "Notification"}</span>
+                        <span className="block truncate text-sm font-bold text-[#06201c]">{notificationTitle || "Notification"}</span>
                         <span className="mt-1 block text-xs text-[#52736a]">{item.body}</span>
                         {senderName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">From: {senderName}</span> : null}
-                        {trainingTitle ? <span className="mt-1 block truncate text-[11px] font-semibold text-[#1f6a58]">Training: {trainingTitle}</span> : null}
+                        {learnerName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">Learner: {learnerName}</span> : null}
+                        {enrollmentStatus ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">Enrollment status: {enrollmentStatus.replace(/[_-]+/g, " ")}</span> : null}
+                        {review.learnerName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">Learner: {review.learnerName}</span> : null}
+                        {review.rating !== null ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">Rating: {review.rating} ★</span> : null}
+                        {review.itemName ? <span className="mt-1 block truncate text-[11px] font-semibold text-[#1f6a58]">{review.itemType ?? "Item"}: {review.itemName}</span> : trainingTitle ? <span className="mt-1 block truncate text-[11px] font-semibold text-[#1f6a58]">Training: {trainingTitle}</span> : null}
                         {reason ? <span className="mt-0.5 block text-[11px] text-[#8a5a00]">Reason: {reason}</span> : null}
                         <span className="mt-1 block text-[11px] font-semibold text-[#7f9d94]">{item.created_at ? formatRelativeBackendTimestamp(item.created_at) : ""}</span>
                       </span>

@@ -66,6 +66,9 @@ export interface TrainingListItem {
   end_date?: string | null;
   start_time?: string | null;
   end_time?: string | null;
+  enrolment_start?: string | null;
+  enrolment_end?: string | null;
+  time_zone?: string | null;
   venue?: string | null;
   address?: string | null;
   meeting_link?: string | null;
@@ -676,6 +679,8 @@ function normaliseTrainingRecord(value: TrainingListItem | TrainingDetail): Trai
     schedule.enrollmentEnd,
     readCustomScheduleValue("enrolment_end", "enrolmentEnd", "enrollment_end", "enrollmentEnd"),
   ) ?? record.enrolment_end ?? null;
+  normalised.time_zone = readString(record.time_zone, record.timezone, record.timeZone, schedule.time_zone, schedule.timezone, schedule.timeZone)
+    ?? record.time_zone ?? null;
   for (const key of ["capacity", "price"] as const) {
     const field = normalised[key];
     if (typeof field === "number") normalised[key] = String(field);

@@ -52,7 +52,16 @@ test("Enterprise Training notifications open the specific admin Training", () =>
       notification_type: "training_enrollment_accepted",
       data: { training_id: "training-1" },
     }, "enterprise"),
-    "/admin/trainings/training-1",
+    "/admin/trainings/training-1?tab=enrolments",
+  );
+  assert.equal(
+    resolveNotificationTarget({
+      notification_type: "automatic",
+      category: "training_enrollment_created",
+      metadata: { entity_type: "training", training_id: "training-3", enrollment_id: "enrollment-3", status: "pending_approval" },
+      data: {},
+    }, "enterprise"),
+    "/admin/trainings/training-3?tab=enrolments",
   );
   assert.equal(
     resolveNotificationTarget({
@@ -183,5 +192,27 @@ test("training question notifications expose the learner and training labels", (
     title: "New question in a training discussion",
     body: "Lena asked in Python Advanced Bootcamp: How do I access lesson 3 resources?",
     data: { category: "training_question_posted", learner_name: "Lena", training_name: "Python Advanced Bootcamp", training_id: "training-1" },
-  }), { trainingTitle: "Python Advanced Bootcamp", senderName: "Lena" });
+  }), { trainingTitle: "Python Advanced Bootcamp", senderName: "Lena", learnerName: null, enrollmentStatus: null });
+});
+
+test("training application notifications expose learner, training, and pending status", () => {
+  assert.deepEqual(formatTrainingNotificationDetails({
+    notification_type: "automatic",
+    title: "New training enrollment application",
+    body: "A learner submitted an application.",
+    data: {
+      category: "training_enrollment_created",
+      entity_type: "training",
+      training_id: "training-4",
+      training_name: "Clinical Telemedicine",
+      enrollment_id: "enrollment-4",
+      learner_name: "Taylor Learner",
+      status: "pending_approval",
+    },
+  }), {
+    trainingTitle: "Clinical Telemedicine",
+    senderName: null,
+    learnerName: "Taylor Learner",
+    enrollmentStatus: "pending_approval",
+  });
 });

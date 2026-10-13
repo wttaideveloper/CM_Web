@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { deleteTrainingReview, listEnterpriseReviewsManage, moderateTrainingReview, TrainingsApiError } from "./trainings.service";
+import { deleteTrainingReview, getTrainingReviewsAudit, listEnterpriseReviewsManage, moderateTrainingReview, TrainingsApiError } from "./trainings.service";
 import { normalizeUtcDate } from "./training-reviews.service";
-import type { ReviewModerationStatus, TrainingStarRating } from "./training-reviews.types";
+import type { ReviewModerationStatus, TrainingReviewAuditEntry, TrainingStarRating } from "./training-reviews.types";
 import { ReviewModerationAuditModal } from "./ReviewModerationAuditModal";
 
 type ManageStatus = ReviewModerationStatus | "all";
@@ -33,6 +33,13 @@ function actionName(status: ReviewModerationStatus): string {
   return status === "pending" ? "Move to Pending" : status === "approved" ? "Approve" : "Reject";
 }
 
+function auditActorLabel(entry: TrainingReviewAuditEntry): string {
+  const role = entry.actor_role?.toLocaleLowerCase().replace(/[\s-]+/g, "_") ?? "";
+  const roleLabel = role.includes("super_admin") || role.includes("platform_admin") ? "Super Admin" : entry.actor_role ?? "Staff";
+  const name = entry.actor_name && !entry.actor_name.includes("@") ? entry.actor_name : null;
+  return [roleLabel, name].filter(Boolean).join(" · ");
+}
+
 /** Lists and moderates reviews across the current Enterprise's Trainings. */
 export function EnterpriseTrainingsReviewsTab({ canModerate }: { canModerate: boolean }) {
   const queryClient = useQueryClient();
@@ -48,6 +55,15 @@ export function EnterpriseTrainingsReviewsTab({ canModerate }: { canModerate: bo
     queryKey: ["training-reviews", "manage", status, page, rating, query],
     queryFn: () => listEnterpriseReviewsManage({ status, page, rating, q: query }),
     staleTime: 15_000,
+    retry: 1,
+  });
+  const auditItemIds = [...new Set((reviewsQuery.data?.reviews ?? []).map((review) => review.training_id).filter((id): id is string => Boolean(id)))];
+  const auditQuery = useQuery({
+    queryKey: ["training-reviews", "audit", "items", auditItemIds],
+    queryFn: async () => (await Promise.all(auditItemIds.map((id) => getTrainingReviewsAudit(id)))).flat(),
+    enabled: canModerate && auditItemIds.length > 0,
+    staleTime: 15_000,
+    refetchOnMount: "always",
     retry: 1,
   });
   const pageCount = Math.max(1, Math.ceil((reviewsQuery.data?.total ?? 0) / Math.max(1, reviewsQuery.data?.page_size ?? 1)));
@@ -68,6 +84,11 @@ export function EnterpriseTrainingsReviewsTab({ canModerate }: { canModerate: bo
   });
 
   const reviews = useMemo(() => reviewsQuery.data?.reviews ?? [], [reviewsQuery.data?.reviews]);
+  const latestAuditByReviewId = useMemo(() => {
+    const latest = new Map<string, TrainingReviewAuditEntry>();
+    for (const entry of auditQuery.data ?? []) if (!latest.has(entry.review_id)) latest.set(entry.review_id, entry);
+    return latest;
+  }, [auditQuery.data]);
   const counts = reviewsQuery.data?.counts ?? { pending: 0, approved: 0, rejected: 0, all: 0 };
   const mutateStatus = (review: (typeof reviews)[number], nextStatus: ReviewModerationStatus) => {
     if (!canModerate || !review.training_id || moderateMutation.isPending || deleteMutation.isPending) return;
@@ -98,7 +119,7 @@ export function EnterpriseTrainingsReviewsTab({ canModerate }: { canModerate: bo
       {reviewsQuery.isError ? <div role="alert" className="mt-4 flex flex-wrap gap-3 text-sm text-[#b42318]"><span>{(reviewsQuery.error as Error).message}</span><button type="button" onClick={() => void reviewsQuery.refetch()} className="font-bold underline">Retry</button></div> : null}
       {!reviewsQuery.isLoading && !reviewsQuery.isError && reviews.length === 0 ? <p className="mt-5 text-sm text-[#52736a]">No Training reviews match these filters.</p> : null}
       {reviews.length > 0 ? <div className="mt-4 grid gap-3">{reviews.map((review) => <article key={review.id} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="font-bold text-[#06201c]">{review.participant_name}{review.verified ? <span className="ml-2 rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[11px] font-semibold text-[#1f6a58]">Verified</span> : null}</p>{canModerate && review.participant_email ? <p className="mt-0.5 text-xs text-[#52736a]">{review.participant_email}</p> : null}<p className="mt-1 text-sm text-[#52736a]"><Link className="font-semibold text-[#1f6a58] underline" href={review.training_id ? `/admin/trainings/${review.training_id}` : "/admin/trainings"}>{review.training_title || "View Training"}</Link><span> · {formatDate(review.created_at)}</span></p></div><div className="flex items-center gap-2"><span className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{review.rating === null ? "Rating unavailable" : `${review.rating} ★`}</span><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${STATUS_BADGE_CLASS[review.moderation_status]}`}>{review.moderation_status}</span></div></div>
+        <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="font-bold text-[#06201c]">{review.participant_name}{review.verified ? <span className="ml-2 rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[11px] font-semibold text-[#1f6a58]">Verified</span> : null}</p>{canModerate && review.participant_email ? <p className="mt-0.5 text-xs text-[#52736a]">{review.participant_email}</p> : null}<p className="mt-1 text-sm text-[#52736a]"><Link className="font-semibold text-[#1f6a58] underline" href={review.training_id ? `/admin/trainings/${review.training_id}` : "/admin/trainings"}>{review.training_title || "View Training"}</Link><span> · {formatDate(review.created_at)}</span></p>{latestAuditByReviewId.get(review.id) ? <p className="mt-2 text-xs font-semibold text-[#52736a]">Latest action: {latestAuditByReviewId.get(review.id)?.to_status.replace(/[_-]+/g, " ")} by {auditActorLabel(latestAuditByReviewId.get(review.id)!)}</p> : null}</div><div className="flex items-center gap-2"><span className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{review.rating === null ? "Rating unavailable" : `${review.rating} ★`}</span><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${STATUS_BADGE_CLASS[review.moderation_status]}`}>{review.moderation_status}</span></div></div>
         {review.comment ? <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#3c5d54]">{review.comment}</p> : null}
         {canModerate ? <div className="mt-3 flex flex-wrap gap-2 border-t border-[#e1ebe6] pt-3">{reviewActions(review.moderation_status).map((nextStatus) => <button key={nextStatus} type="button" onClick={() => mutateStatus(review, nextStatus)} disabled={!review.training_id || moderateMutation.isPending || deleteMutation.isPending} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-xs font-bold text-[#1f6a58] hover:bg-[#e8f6ee] disabled:opacity-50">{actionName(nextStatus)}</button>)}<button type="button" onClick={() => deleteReview(review)} disabled={!review.training_id || moderateMutation.isPending || deleteMutation.isPending} className="rounded-full border border-[#e1c9c6] px-3 py-1.5 text-xs font-bold text-[#a52a20] hover:bg-[#fff1ef] disabled:opacity-50">Delete</button></div> : null}
       </article>)}</div> : null}
