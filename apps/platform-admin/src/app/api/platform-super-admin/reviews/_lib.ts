@@ -33,8 +33,8 @@ function validQueueQuery(request: NextRequest, audit: boolean): boolean {
   const query = request.nextUrl.searchParams;
   const allowed = audit ? ["module", "item_id"] : ["module", "item_id", "status", "rating", "q", "page", "page_size"];
   if ([...query.keys()].some((key) => !allowed.includes(key))) return false;
-  const module = query.get("module");
-  if (!module || !MODULES.has(module)) return false;
+  const moduleParam = query.get("module");
+  if (!moduleParam || !MODULES.has(moduleParam)) return false;
   const itemId = query.get("item_id");
   if (itemId && !UUID.test(itemId)) return false;
   if (!audit) {
