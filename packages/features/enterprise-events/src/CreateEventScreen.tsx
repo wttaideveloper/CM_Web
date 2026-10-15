@@ -215,7 +215,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const currencyState: EventCurrencyUiState | undefined = currencyPolicy ? {
     value: effectiveCurrency,
     source: effectiveCurrencySource,
-    isLocked: (source) => source.kind !== "base" && Boolean(effectiveCurrencySource && !isEventCurrencySource(effectiveCurrencySource, source)),
+    isLocked: (source) => values.pricing_type === "paid" && source.kind !== "base" && Boolean(effectiveCurrencySource && !isEventCurrencySource(effectiveCurrencySource, source)),
   } : undefined;
   const requiresEventCategories = configuredSections.some((section) => section.fields.some((field) => field.source === "core" && (field.core_key === "category" || field.core_key === "subcategory")));
   const eventCategoriesQuery = useEventCategories(Boolean(formConfiguration) && requiresEventCategories);
@@ -235,7 +235,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const isCreateBlockedByEnterprise = mode === "create" && !enterpriseId;
   const saveMutation = useMutation({
     mutationFn: async () => {
-      if (mode === "edit") { if (!initialEvent) throw new Error("The event could not be loaded."); if (!canEditEvent(initialEvent.status)) throw new Error("This Event cannot be edited in its current lifecycle state."); const sessionsDirty = JSON.stringify(values.sessions) !== JSON.stringify(initialValues.sessions); const configuredFieldKeys = formConfiguration ? configuredCoreKeys(formConfiguration) : undefined; const sessionsField = formConfiguration?.sections.flatMap((section) => section.fields).find((field) => field.source === "core" && (field.core_key === "sessions" || field.stable_key === "sessions")); const sessionsEnabledFields = sessionsField?.composite_config?.enabled_fields; const payload = buildUpdateEventPayload(values, initialValues, locationId, initialLocationId, configuredFieldKeys, sessionsEnabledFields); if (sessionsDirty && payload.sessions) { const latestEvent = await getEventById(initialEvent.id); payload.sessions = mergeLatestEventSessions(initialValues.sessions, values.sessions, latestEvent.sessions).map((session) => mapSessionForPayload(session, sessionsEnabledFields, values.delivery_mode)); } if (formConfiguration && JSON.stringify(customValues) !== JSON.stringify(initialCustomValues)) payload.custom_values = formConfiguration.sections.flatMap((section) => section.fields).filter((field) => field.source === "custom").map((field) => { const key = field.stable_key ?? field.id; return { field_id: field.id, value: serializeCustomFieldValue(field, customValues[key] ?? null) }; }); return updateEvent(initialEvent.id, payload); }
+      if (mode === "edit") { if (!initialEvent) throw new Error("The event could not be loaded."); if (!canEditEvent(initialEvent.status)) throw new Error("This Event cannot be edited in its current lifecycle state."); const sessionsDirty = JSON.stringify(values.sessions) !== JSON.stringify(initialValues.sessions); const configuredFieldKeys = formConfiguration ? configuredCoreKeys(formConfiguration) : undefined; const sessionsField = formConfiguration?.sections.flatMap((section) => section.fields).find((field) => field.source === "core" && (field.core_key === "sessions" || field.stable_key === "sessions")); const sessionsEnabledFields = sessionsField?.composite_config?.enabled_fields; const payload = buildUpdateEventPayload(values, initialValues, locationId, initialLocationId, configuredFieldKeys, sessionsEnabledFields, currencyPolicy ?? undefined); if (sessionsDirty && payload.sessions) { const latestEvent = await getEventById(initialEvent.id); payload.sessions = mergeLatestEventSessions(initialValues.sessions, values.sessions, latestEvent.sessions).map((session) => mapSessionForPayload(session, sessionsEnabledFields, values.delivery_mode)); } if (formConfiguration && JSON.stringify(customValues) !== JSON.stringify(initialCustomValues)) payload.custom_values = formConfiguration.sections.flatMap((section) => section.fields).filter((field) => field.source === "custom").map((field) => { const key = field.stable_key ?? field.id; return { field_id: field.id, value: serializeCustomFieldValue(field, customValues[key] ?? null) }; }); return updateEvent(initialEvent.id, payload); }
       if (!tenantId || !enterpriseId) throw new Error("A tenant and enterprise are required.");
       const activeConfiguration = activeFormConfiguration.data;
       const configuredCoreFieldKeys = activeConfiguration
@@ -274,7 +274,12 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
         const currentSource = resolveEventCurrencySource(current, currencyPolicy, currencySourcePreference);
         const currentCurrency = eventCurrencyForSource(current, currentSource);
         const explicitBaseChange = currencyPolicy.baseEnabled && currencyChange.source.kind === "base";
-        if (currentSource && currentCurrency && !explicitBaseChange && !isEventCurrencySource(currentSource, currencyChange.source)) {
+        const freeServiceSelection = current.pricing_type === "free" && (currencyChange.source.kind === "meals" || currencyChange.source.kind === "accommodation");
+        if (freeServiceSelection) {
+          const sharedServiceCurrency = currencyChange.value || currentCurrency;
+          setCurrencySourcePreference(currencyChange.value ? currencyChange.source : currentSource);
+          next = synchronizeEventCurrencies(next, currencyPolicy, sharedServiceCurrency);
+        } else if (currentSource && currentCurrency && !explicitBaseChange && !isEventCurrencySource(currentSource, currencyChange.source)) {
           next = synchronizeEventCurrencies(next, currencyPolicy, currentCurrency);
         } else if (currencyChange.value !== currentCurrency && hasEventMonetaryValues(current, currencyPolicy)) {
           const selectedCurrencyValues = synchronizeEventCurrencies(next, currencyPolicy, currencyChange.value);
@@ -409,7 +414,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   }, [activeStep, pendingFocusField]);
   const allErrors = useMemo(() => {
     const nextErrors = formConfiguration ? validateConfiguredEventForm(formConfiguration, values, customValues, eventCategoriesQuery.data ?? [], mode, (field) => getEventFormatError(field, t)) : validateEventForm(values, mode);
-    if (mode === "create" && currencyPolicy) Object.assign(nextErrors, validateEventCurrencies(values, currencyPolicy));
+    if (currencyPolicy) Object.assign(nextErrors, validateEventCurrencies(values, currencyPolicy));
     return nextErrors;
   }, [currencyPolicy, customValues, eventCategoriesQuery.data, formConfiguration, mode, t, values]);
   const isDirty = JSON.stringify(values) !== JSON.stringify(initialValues)

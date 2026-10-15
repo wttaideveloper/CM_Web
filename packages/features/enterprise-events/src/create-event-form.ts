@@ -15,7 +15,7 @@ import type {
 import { buildEventMediaPayload, buildEventMediaUpdatePayload, normalizeDocumentEntries, validateEventMediaLink, type EventDocumentEntry } from "./event-media";
 import { validateSessions } from "./SessionTableEditor";
 import { EVENT_DESCRIPTION_MAX_LENGTH, eventServiceOptionLengthError } from "./event-field-limits";
-import { assertEventCurrencyConsistency, type EventCurrencyPolicy } from "./event-currency";
+import { assertEventCurrencyConsistency, eventCurrencyForSource, normalizeEventFormCurrency, resolveEventCurrencySource, synchronizeEventCurrencies, synchronizeEventServiceEnablement, type EventCurrencyPolicy } from "./event-currency";
 import { deriveEventPurchaseWindow, syncPurchaseWindows } from "./event-service-purchase-window";
 import { buildEventVenue } from "./event-location";
 import {
@@ -96,7 +96,7 @@ export function createEmptyEventForm(): CreateEventFormValues {
 /** Keeps Create Event service purchasing windows derived from registration dates. */
 export function synchronizeCreateEventServiceWindows(values: CreateEventFormValues): CreateEventFormValues {
   const purchaseWindow = deriveEventPurchaseWindow(values.registration_open_at, values.registration_close_at, values.registration_cutoff);
-  return {
+  return synchronizeEventServiceEnablement({
     ...values,
     meals: values.modules?.meals === true && values.meals
       ? { ...values.meals, options: syncPurchaseWindows(values.meals.options ?? [], purchaseWindow) }
@@ -104,7 +104,15 @@ export function synchronizeCreateEventServiceWindows(values: CreateEventFormValu
     accommodation: values.modules?.accommodation === true && values.accommodation
       ? { ...values.accommodation, options: syncPurchaseWindows(values.accommodation.options ?? [], purchaseWindow) }
       : values.accommodation,
-  };
+  });
+}
+
+/** Applies the authoritative service currency and module flags to writable service payloads. */
+function synchronizeServicePayloadValues(values: CreateEventFormValues, currencyPolicy?: EventCurrencyPolicy): CreateEventFormValues {
+  const source = currencyPolicy ? resolveEventCurrencySource(values, currencyPolicy, null) : null;
+  const currency = eventCurrencyForSource(values, source);
+  const currencyValues = currencyPolicy && currency ? synchronizeEventCurrencies(values, currencyPolicy, currency) : values;
+  return synchronizeEventServiceEnablement(currencyValues);
 }
 
 /** Builds a confirmed Create Event payload without response-only fields. */
@@ -119,10 +127,10 @@ export function buildCreateEventPayload(
   sessionsEnabledFields?: readonly string[],
   currencyPolicy?: EventCurrencyPolicy,
 ): CreateEventPayload {
-  const synchronizedValues = synchronizeCreateEventServiceWindows(values);
+  if (currencyPolicy) assertEventCurrencyConsistency(values, currencyPolicy);
+  const synchronizedValues = synchronizeCreateEventServiceWindows(synchronizeServicePayloadValues(values, currencyPolicy));
   const eventType = values.event_type.trim();
   if (!eventType) throw new Error("Select an Event Type before creating this Event.");
-  if (currencyPolicy) assertEventCurrencyConsistency(values, currencyPolicy);
   const venue: CreateEventVenue = buildEventVenue(values.venue_name, values.venue_address, values.venue_city);
 
   const mediaPayload = buildEventMediaPayload(values);
@@ -150,8 +158,8 @@ export function buildCreateEventPayload(
     meeting_provider: values.delivery_mode === "in_person" ? null : values.meeting_provider.trim() || null,
     price: values.pricing_type === "free" ? null : values.price.trim(),
     pricing_type: values.pricing_type,
-    currency: values.pricing_type === "free" ? "" : values.currency.trim(),
-    ticket_types: values.pricing_type === "free" ? [] : values.ticket_types,
+    currency: synchronizedValues.pricing_type === "free" ? "" : synchronizedValues.currency.trim(),
+    ticket_types: synchronizedValues.pricing_type === "free" ? [] : synchronizedValues.ticket_types,
     capacity: toOptionalNumericString(values.capacity),
     min_participants: toOptionalNumericString(values.min_participants),
     max_participants: toOptionalNumericString(values.max_participants),
@@ -162,7 +170,7 @@ export function buildCreateEventPayload(
     status: "draft",
     ...(formConfigurationVersionId ? { form_configuration_version_id: formConfigurationVersionId } : {}),
     ...(customValues ? { custom_values: customValues } : {}),
-    ...(values.modules ? { modules: values.modules } : {}),
+    ...(synchronizedValues.modules ? { modules: synchronizedValues.modules } : {}),
     ...(synchronizedValues.modules?.meals === true && synchronizedValues.meals ? { meals: synchronizedValues.meals } : {}),
     ...(synchronizedValues.modules?.accommodation === true && synchronizedValues.accommodation ? { accommodation: synchronizedValues.accommodation } : {}),
   };
@@ -188,6 +196,7 @@ export function buildCreateEventPayload(
 
 /** Converts a real Event response into usable editable controls without literal null values. */
 export function eventToFormValues(event: Event): CreateEventFormValues {
+  const pricingType = event.pricing_type ?? (Number(event.price) === 0 ? "free" : "paid");
   return {
     title: event.title, description: event.description, category: event.category, subcategory: event.subcategory,
     tags: event.tags, organiser_name: event.organiser_name, organiser_contact: event.organiser_contact,
@@ -195,8 +204,8 @@ export function eventToFormValues(event: Event): CreateEventFormValues {
     registration_cutoff: toDateTimeLocal(event.registration_cutoff), registration_open_at: toDateTimeLocal(event.registration_open_at),
     registration_close_at: toDateTimeLocal(event.registration_close_at), time_zone: event.time_zone, event_type: event.event_type ?? "", delivery_mode: event.delivery_mode,
     venue_name: event.venue?.name ?? "", venue_address: event.venue?.address ?? "", venue_city: event.venue?.city ?? "",
-    meeting_link: event.meeting_link ?? "", meeting_provider: event.meeting_provider ?? "", price: event.price ?? "", pricing_type: event.pricing_type ?? (Number(event.price) === 0 ? "free" : "paid"),
-    currency: event.currency, ticket_types: event.ticket_types, capacity: event.capacity,
+    meeting_link: event.meeting_link ?? "", meeting_provider: event.meeting_provider ?? "", price: event.price ?? "", pricing_type: pricingType,
+    currency: normalizeEventFormCurrency(pricingType, event.currency), ticket_types: event.ticket_types, capacity: event.capacity,
     min_participants: event.min_participants, max_participants: event.max_participants, primary_image: event.primary_image ?? "",
     gallery_images: event.gallery_images, videos: event.videos, documents: normalizeDocumentEntries(event.documents),
     custom_fields: event.custom_fields, sessions: event.sessions.map((session) => ({ ...(session.id ? { id: session.id } : {}), session_date: session.session_date ?? "", title: session.title, description: session.description ?? "", speaker: session.speaker ?? "", speaker_bio: session.speaker_bio ?? "", start_time: session.start_time ?? "", end_time: session.end_time ?? "", location: session.location ?? "", meeting_link: session.meeting_link ?? null })),
@@ -276,56 +285,58 @@ function mergeChangedSession(
 }
 
 /** Builds the partial writable EventUpdate request, preserving untouched backend values. */
-export function buildUpdateEventPayload(values: CreateEventFormValues, initialValues: CreateEventFormValues, locationId: string, initialLocationId: string, configuredCoreKeys?: ReadonlySet<string>, sessionsEnabledFields?: readonly string[]): UpdateEventPayload {
-  const changed = <Key extends keyof CreateEventFormValues>(key: Key): boolean => JSON.stringify(values[key]) !== JSON.stringify(initialValues[key]);
+export function buildUpdateEventPayload(values: CreateEventFormValues, initialValues: CreateEventFormValues, locationId: string, initialLocationId: string, configuredCoreKeys?: ReadonlySet<string>, sessionsEnabledFields?: readonly string[], currencyPolicy?: EventCurrencyPolicy): UpdateEventPayload {
+  if (currencyPolicy) assertEventCurrencyConsistency(values, currencyPolicy);
+  const synchronizedValues = synchronizeServicePayloadValues(values, currencyPolicy);
+  const changed = <Key extends keyof CreateEventFormValues>(key: Key): boolean => JSON.stringify(synchronizedValues[key]) !== JSON.stringify(initialValues[key]);
   const payload: UpdateEventPayload = {};
   const mediaUpdate = buildEventMediaUpdatePayload(values, initialValues);
   const scalarKeys: Array<keyof Pick<CreateEventFormValues, "title" | "description" | "category" | "subcategory" | "tags" | "organiser_name" | "organiser_contact" | "duration_type" | "time_zone" | "event_type" | "delivery_mode" | "primary_image" | "gallery_images" | "videos" | "documents" | "price" | "pricing_type" | "currency" | "ticket_types" | "capacity" | "min_participants" | "max_participants" | "custom_fields" | "sessions">> = ["title", "description", "category", "subcategory", "tags", "organiser_name", "organiser_contact", "duration_type", "time_zone", "event_type", "delivery_mode", "primary_image", "gallery_images", "videos", "documents", "price", "pricing_type", "currency", "ticket_types", "capacity", "min_participants", "max_participants", "custom_fields", "sessions"];
   for (const key of scalarKeys) {
     if (!changed(key)) continue;
     if (key === "capacity" || key === "min_participants" || key === "max_participants") {
-      Object.assign(payload, { [key]: toOptionalNumericString(values[key]) });
+      Object.assign(payload, { [key]: toOptionalNumericString(synchronizedValues[key]) });
     } else {
       if (key === "primary_image" || key === "gallery_images" || key === "videos" || key === "documents") Object.assign(payload, mediaUpdate);
-      else Object.assign(payload, { [key]: values[key] });
+      else Object.assign(payload, { [key]: synchronizedValues[key] });
     }
   }
   if (changed("sessions")) {
-    if (hasUnsafeProtectedSessionMeetingLinkEdit(values.sessions, initialValues.sessions)) {
+    if (hasUnsafeProtectedSessionMeetingLinkEdit(synchronizedValues.sessions, initialValues.sessions)) {
       throw new Error("One or more Sessions have protected meeting links. Enter replacement URLs before clearing or changing other fields.");
     }
-    payload.sessions = values.sessions.map((session) => mapSessionForPayload(session, sessionsEnabledFields, values.delivery_mode));
+    payload.sessions = synchronizedValues.sessions.map((session) => mapSessionForPayload(session, sessionsEnabledFields, synchronizedValues.delivery_mode));
   }
-  if (changed("modules")) payload.modules = values.modules;
-  if (changed("meals")) payload.meals = values.meals;
-  if (changed("accommodation")) payload.accommodation = values.accommodation;
+  if (changed("modules")) payload.modules = synchronizedValues.modules;
+  if (changed("meals")) payload.meals = synchronizedValues.meals;
+  if (changed("accommodation")) payload.accommodation = synchronizedValues.accommodation;
   const datetimeKeys: Array<keyof Pick<CreateEventFormValues, "start_date" | "end_date" | "registration_cutoff" | "registration_open_at" | "registration_close_at">> = ["start_date", "end_date", "registration_cutoff", "registration_open_at", "registration_close_at"];
-  for (const key of datetimeKeys) if (changed(key)) Object.assign(payload, { [key]: toBackendLocalDateTime(values[key]) });
+  for (const key of datetimeKeys) if (changed(key)) Object.assign(payload, { [key]: toBackendLocalDateTime(synchronizedValues[key]) });
   const deliveryModeChanged = changed("delivery_mode");
-  if (values.meeting_link !== initialValues.meeting_link) {
-    if (isUnsafeProtectedMeetingLinkEdit(initialValues.meeting_link, values.meeting_link)) {
+  if (synchronizedValues.meeting_link !== initialValues.meeting_link) {
+    if (isUnsafeProtectedMeetingLinkEdit(initialValues.meeting_link, synchronizedValues.meeting_link)) {
       throw new Error("This Event has a protected meeting link. Enter a replacement URL before clearing it.");
     }
-    payload.meeting_link = values.meeting_link.trim() || null;
+    payload.meeting_link = synchronizedValues.meeting_link.trim() || null;
   }
-  if (values.meeting_provider !== initialValues.meeting_provider) payload.meeting_provider = values.meeting_provider.trim() || null;
-  if (deliveryModeChanged && values.delivery_mode === "in_person") {
-    if (isUnsafeProtectedMeetingLinkEdit(initialValues.meeting_link, values.meeting_link)) {
+  if (synchronizedValues.meeting_provider !== initialValues.meeting_provider) payload.meeting_provider = synchronizedValues.meeting_provider.trim() || null;
+  if (deliveryModeChanged && synchronizedValues.delivery_mode === "in_person") {
+    if (isUnsafeProtectedMeetingLinkEdit(initialValues.meeting_link, synchronizedValues.meeting_link)) {
       throw new Error("This Event has a protected meeting link and cannot be changed to In Person until the link is replaced.");
     }
     payload.meeting_link = null;
     payload.meeting_provider = null;
   }
   if (locationId !== initialLocationId) payload.location_id = locationId || null;
-  if (deliveryModeChanged && values.delivery_mode === "online") {
+  if (deliveryModeChanged && synchronizedValues.delivery_mode === "online") {
     payload.location_id = null;
     payload.venue = null;
   }
   const venueFields: Array<keyof CreateEventFormValues> = ["venue_name", "venue_address", "venue_city"];
-  if (venueFields.some((field) => changed(field)) || (deliveryModeChanged && values.delivery_mode !== "online")) {
-    payload.venue = values.delivery_mode === "online" ? null : buildVenue(values);
+  if (venueFields.some((field) => changed(field)) || (deliveryModeChanged && synchronizedValues.delivery_mode !== "online")) {
+    payload.venue = synchronizedValues.delivery_mode === "online" ? null : buildVenue(synchronizedValues);
   }
-  if (values.pricing_type === "free" && (changed("pricing_type") || changed("price"))) payload.price = null;
+  if (synchronizedValues.pricing_type === "free" && (changed("pricing_type") || changed("price"))) payload.price = null;
   if (configuredCoreKeys) {
     const payloadKeys: Record<string, keyof UpdateEventPayload> = { title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", duration_type: "duration_type", start_date: "start_date", end_date: "end_date", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", time_zone: "time_zone", event_type: "event_type", delivery_mode: "delivery_mode", venue: "venue", location_id: "location_id", meeting_link: "meeting_link", meeting_provider: "meeting_provider", pricing_type: "pricing_type", price: "price", currency: "currency", ticket_types: "ticket_types", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents", sessions: "sessions" };
     for (const [configurationKey, payloadKey] of Object.entries(payloadKeys)) if (!configuredCoreKeys.has(configurationKey) && !(configuredCoreKeys.has("media") && ["primary_image", "gallery_images", "videos", "documents"].includes(configurationKey))) delete (payload as Partial<UpdateEventPayload>)[payloadKey];
