@@ -1,5 +1,6 @@
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
 import type { TenantMember } from "@ihp/enterprise-runtime";
+import type { GroupChatLearner as ApiGroupChatLearner, GroupChatProvider as ApiGroupChatProvider } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
 export type GroupRole = "Owner" | "Admin" | "Member";
@@ -66,6 +67,21 @@ export function applyPreviewMemberAction(members: readonly PreviewGroupMember[],
     if (member.id !== memberId || member.role === "Owner") return member;
     return { ...member, role: action === "make-admin" ? "Admin" : "Member" };
   });
+}
+
+/** Returns whether the backend has authorized a learner for a future invitation. */
+export function isGroupChatLearnerSelectable(learner: ApiGroupChatLearner): boolean {
+  return Boolean(learner.user_id && learner.can_invite);
+}
+
+/** Returns whether a Provider can be selected as an additional group member. */
+export function isGroupChatProviderSelectable(provider: ApiGroupChatProvider): boolean {
+  return Boolean(provider.user_id && !provider.is_me);
+}
+
+/** Calculates additional member capacity after reserving the group owner slot. */
+export function remainingGroupChatMemberSlots(maxMembers: number, selectedCount: number): number {
+  return Math.max(0, Math.max(1, maxMembers) - 1 - Math.max(0, selectedCount));
 }
 
 function readString(value: Record<string, unknown>, ...keys: string[]): string {
