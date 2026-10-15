@@ -1,0 +1,6 @@
+The archived test covered:
+
+- Empty Form starts as an Event with one enabled Untitled Section and no fields.
+- Separate Empty Form instances receive independent local section IDs.
+- Persisted server IDs do not remove Empty Form recognition.
+- Ordinary Event sections do not opt into Empty Form mode.

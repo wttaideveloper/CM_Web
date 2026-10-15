@@ -1,0 +1,25 @@
+import type { FormConfiguration } from "./form-configuration.types";
+
+export const EMPTY_EVENT_FORM_SECTION_STABLE_KEY = "section_untitled";
+
+export function createEmptyEventFormConfiguration(id = "new-event-form-empty"): FormConfiguration {
+  const sectionId = `section-${crypto.randomUUID()}`;
+  return {
+    id,
+    type: "event",
+    name: "",
+    description: "",
+    scope: "global",
+    status: "draft",
+    active: false,
+    version: 0,
+    updatedAt: "",
+    tenantIds: [],
+    sections: [{ localId: sectionId, serverId: null, stableKey: EMPTY_EVENT_FORM_SECTION_STABLE_KEY, name: "Untitled Section", description: "", enabled: true, position: 1 }],
+    fields: [],
+  };
+}
+
+export function isEmptyEventFormConfiguration(configuration: Pick<FormConfiguration, "type" | "sections">): boolean {
+  return configuration.type === "event" && configuration.sections.some((section) => section.stableKey === EMPTY_EVENT_FORM_SECTION_STABLE_KEY);
+}

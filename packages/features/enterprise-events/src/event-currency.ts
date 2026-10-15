@@ -22,6 +22,7 @@ export interface EventCurrencyUiState {
 }
 
 export const EVENT_CURRENCY_MISMATCH_ERROR = "All Event prices must use the selected Event currency.";
+export const EVENT_SERVICE_CURRENCY_MISMATCH_ERROR = "All Meal and Accommodation prices must use the same service currency.";
 
 function fieldKey(field: ActiveEventFormField): string {
   return (field.core_key ?? field.stable_key ?? field.id).replace(/^(core_|custom_)/, "").trim().toLowerCase();
@@ -98,6 +99,20 @@ export function resolveNewEventCurrency(eventCurrency: string | null | undefined
   return currencyState?.value ?? eventCurrency?.trim() ?? "";
 }
 
+/** Keeps the backend's event-level fallback out of Free Event service currency state. */
+export function normalizeEventFormCurrency(pricingType: "free" | "paid", eventCurrency: string | null | undefined): string {
+  return pricingType === "free" ? "" : eventCurrency?.trim() ?? "";
+}
+
+/** Makes service enablement agree with the authoritative Event module flags. */
+export function synchronizeEventServiceEnablement(values: CreateEventFormValues): CreateEventFormValues {
+  return {
+    ...values,
+    meals: values.meals ? { ...values.meals, enabled: values.modules?.meals === true } : values.meals,
+    accommodation: values.accommodation ? { ...values.accommodation, enabled: values.modules?.accommodation === true } : values.accommodation,
+  };
+}
+
 /** Returns the first direct currency edit represented by a form update. */
 export function findEventCurrencyChange(previous: CreateEventFormValues, next: CreateEventFormValues): { source: EventCurrencySource; value: string } | null {
   if (previous.currency !== next.currency) return { source: { kind: "base" }, value: next.currency.trim() };
@@ -157,18 +172,21 @@ export function hasEventMonetaryValues(values: CreateEventFormValues, policy: Ev
 /** Validates the active create payload without changing the backend contract. */
 export function validateEventCurrencies(values: CreateEventFormValues, policy: EventCurrencyPolicy): Record<string, string[]> {
   const errors: Record<string, string[]> = {};
-  if (values.pricing_type === "free") return errors;
   const entries: Array<{ key: string; currency: string; hasValue: boolean }> = [];
-  if (policy.baseEnabled && values.pricing_type === "paid") entries.push({ key: "currency", currency: values.currency.trim(), hasValue: true });
-  if (policy.ticketTypesEnabled && values.pricing_type === "paid" && values.modules?.tickets !== false) values.ticket_types.forEach((item, index) => entries.push({ key: `ticket_types.${index}.currency`, currency: item.currency?.trim() ?? "", hasValue: Boolean(item.name.trim() || item.price?.trim() || item.capacity?.trim()) }));
+  const paid = values.pricing_type === "paid";
+  if (paid && policy.baseEnabled) entries.push({ key: "currency", currency: values.currency.trim(), hasValue: true });
+  if (paid && policy.ticketTypesEnabled && values.modules?.tickets !== false) values.ticket_types.forEach((item, index) => entries.push({ key: `ticket_types.${index}.currency`, currency: item.currency?.trim() ?? "", hasValue: Boolean(item.name.trim() || item.price?.trim() || item.capacity?.trim()) }));
   if (policy.mealsEnabled && values.modules?.meals === true) (values.meals?.options ?? []).forEach((item, index) => entries.push({ key: `meals.${index}.currency`, currency: item.currency?.trim() ?? "", hasValue: Boolean(item.name.trim() || item.price?.trim()) }));
   if (policy.accommodationEnabled && values.modules?.accommodation === true) (values.accommodation?.options ?? []).forEach((item, index) => entries.push({ key: `accommodation.${index}.currency`, currency: item.currency?.trim() ?? "", hasValue: Boolean(item.name.trim() || item.price?.trim()) }));
   const expected = entries.find((entry) => entry.currency)?.currency ?? "";
-  if (!expected && entries.some((entry) => entry.hasValue)) errors.currency = ["Select a currency for all Event prices."];
+  if (!expected && entries.some((entry) => entry.hasValue)) {
+    errors[paid ? "currency" : "meals"] = [paid ? "Select a currency for all Event prices." : "Select a shared currency for Meal and Accommodation prices."];
+  }
   for (const entry of entries) {
     if (!entry.hasValue && !entry.currency) continue;
-    if (!entry.currency) errors[entry.key.split(".")[0]] = ["Select a currency for this Event price."];
-    else if (expected && entry.currency !== expected) errors[entry.key.split(".")[0]] = [EVENT_CURRENCY_MISMATCH_ERROR];
+    const root = entry.key.split(".")[0];
+    if (!entry.currency) errors[root] = [paid ? "Select a currency for this Event price." : "Select a shared service currency."];
+    else if (expected && entry.currency !== expected) errors[root] = [paid ? EVENT_CURRENCY_MISMATCH_ERROR : EVENT_SERVICE_CURRENCY_MISMATCH_ERROR];
   }
   return errors;
 }

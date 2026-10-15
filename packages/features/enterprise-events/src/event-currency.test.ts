@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { CreateEventFormValues } from "./create-event-form.ts";
-import { assertEventCurrencyConsistency, EVENT_CURRENCY_MISMATCH_ERROR, getEventCurrencyPolicy, hasEventMonetaryValues, resetEventMonetaryValues, resolveEventCurrencySource, resolveEventOptionCurrency, resolveNewEventCurrency, synchronizeEventCurrencies, validateEventCurrencies, type EventCurrencyPolicy } from "./event-currency.ts";
+import { assertEventCurrencyConsistency, EVENT_CURRENCY_MISMATCH_ERROR, EVENT_SERVICE_CURRENCY_MISMATCH_ERROR, eventCurrencyForSource, getEventCurrencyPolicy, hasEventMonetaryValues, normalizeEventFormCurrency, resetEventMonetaryValues, resolveEventCurrencySource, resolveEventOptionCurrency, resolveNewEventCurrency, synchronizeEventCurrencies, synchronizeEventServiceEnablement, validateEventCurrencies, type EventCurrencyPolicy } from "./event-currency.ts";
 import type { ActiveEventFormConfiguration } from "./events.service.ts";
 
 function form(overrides: Partial<CreateEventFormValues> = {}): CreateEventFormValues {
@@ -157,4 +157,67 @@ test("free Events do not require or synthesize a currency", () => {
   const values = form({ pricing_type: "free", currency: "", price: "", ticket_types: [] });
   assert.deepEqual(resolveEventCurrencySource(values, fullPolicy, null), null);
   assert.deepEqual(validateEventCurrencies(values, fullPolicy), {});
+});
+
+test("free service currency selection is shared by Meals and Accommodation", () => {
+  const values = form({
+    pricing_type: "free",
+    currency: "",
+    modules: { registration: true, tickets: false, sessions: true, check_in: true, online_meeting: false, custom_questions: false, meals: true, accommodation: true },
+    meals: { options: [{ name: "Lunch", price: "10", currency: "INR" }] },
+    accommodation: { options: [{ name: "Room", price: "20", currency: "INR" }] },
+  });
+  const fromMeals = synchronizeEventCurrencies(values, fullPolicy, "INR");
+  const fromAccommodation = synchronizeEventCurrencies(fromMeals, fullPolicy, "USD");
+  assert.equal(fromMeals.accommodation?.options?.[0].currency, "INR");
+  assert.equal(fromAccommodation.meals?.options?.[0].currency, "USD");
+  assert.equal(fromAccommodation.accommodation?.options?.[0].currency, "USD");
+  assert.equal(fromAccommodation.meals?.options?.[0].price, "10");
+  assert.equal(fromAccommodation.accommodation?.options?.[0].price, "20");
+});
+
+test("new free service options inherit the selected shared currency", () => {
+  assert.equal(resolveNewEventCurrency("", { value: "INR" }), "INR");
+  assert.equal(resolveNewEventCurrency("", { value: "USD" }), "USD");
+});
+
+test("removing a Free Event service row preserves the remaining shared currency", () => {
+  const values = form({
+    pricing_type: "free",
+    modules: { registration: true, tickets: false, sessions: true, check_in: true, online_meeting: false, custom_questions: false, meals: true, accommodation: true },
+    meals: { options: [] },
+    accommodation: { options: [{ name: "Room", price: "20", currency: "INR" }] },
+  });
+  assert.deepEqual(resolveEventCurrencySource(values, fullPolicy, { kind: "meals", index: 0 }), { kind: "accommodation", index: 0 });
+  assert.equal(eventCurrencyForSource(values, { kind: "accommodation", index: 0 }), "INR");
+});
+
+test("free Events with conflicting saved service currencies require resolution", () => {
+  const values = form({
+    pricing_type: "free",
+    modules: { registration: true, tickets: false, sessions: true, check_in: true, online_meeting: false, custom_questions: false, meals: true, accommodation: true },
+    meals: { options: [{ name: "Lunch", price: "10", currency: "INR" }] },
+    accommodation: { options: [{ name: "Room", price: "20", currency: "USD" }] },
+  });
+  const errors = validateEventCurrencies(values, fullPolicy);
+  assert.equal(errors.accommodation?.[0], EVENT_SERVICE_CURRENCY_MISMATCH_ERROR);
+});
+
+test("free Event edit hydration does not treat event-level fallback currency as selected", () => {
+  assert.equal(normalizeEventFormCurrency("free", "INR"), "");
+  assert.equal(normalizeEventFormCurrency("free", ""), "");
+  assert.equal(normalizeEventFormCurrency("paid", " INR "), "INR");
+});
+
+test("service enabled flags follow modules without removing service options", () => {
+  const values = form({
+    modules: { registration: true, tickets: false, sessions: true, check_in: true, online_meeting: false, custom_questions: false, meals: true, accommodation: true },
+    meals: { enabled: false, options: [{ name: "Lunch", price: "10", currency: "INR" }] },
+    accommodation: { enabled: false, options: [{ name: "Room", price: "20", currency: "INR" }] },
+  });
+  const next = synchronizeEventServiceEnablement(values);
+  assert.equal(next.meals?.enabled, true);
+  assert.equal(next.accommodation?.enabled, true);
+  assert.equal(next.meals?.options?.[0].name, "Lunch");
+  assert.equal(next.accommodation?.options?.[0].name, "Room");
 });
