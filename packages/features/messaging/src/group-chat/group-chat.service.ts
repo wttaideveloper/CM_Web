@@ -1,23 +1,44 @@
 import { chatRequestResponse } from "@ihp/chat-runtime";
 
 import type {
+  AcceptGroupInvitationPayload,
+  CreateGroupPayload,
+  GroupChatDetails,
+  GroupChatInvitation,
+  GroupChatInvitationDetails,
+  GroupChatInvitationListParams,
+  GroupChatInvitationListResponse,
   GroupChatLearner,
   GroupChatLearnerListParams,
   GroupChatLearnerListResponse,
+  GroupChatListParams,
+  GroupChatListResponse,
+  GroupChatMember,
+  GroupChatMemberListParams,
+  GroupChatMemberListResponse,
   GroupChatPagination,
+  GroupChatPermissions,
   GroupChatProvider,
   GroupChatProviderListParams,
   GroupChatProviderListResponse,
+  GroupChatSummary,
   GroupChatTraining,
   GroupChatTrainingListParams,
   GroupChatTrainingListResponse,
+  GroupChatInvitee,
+  InviteMembersPayload,
+  InviteEnrolledLearnersPayload,
+  UpdateGroupDetailsPayload,
+  UpdateGroupSettingsPayload,
 } from "./group-chat.types";
+import { buildGroupMemberInvitePayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, getGroupChatMemberDisplayName } from "../group-chat-models";
+export { buildCreateGroupPayload, buildGroupMemberInvitePayload } from "../group-chat-models";
 
 const GROUP_CHAT_API_PATH = "/groups";
 const DEFAULT_PAGE_SIZE = 10;
 const DEFAULT_MAX_MEMBERS = 50;
 
-/** Safe, status-aware error exposed by the read-only Group Chat API client. */
+/** Safe, status-aware error exposed by the Group Chat API client. */
 export class GroupChatApiError extends Error {
   readonly status: number;
 
@@ -27,6 +48,12 @@ export class GroupChatApiError extends Error {
     this.status = status;
   }
 }
+
+type RequestOptions = {
+  method?: "GET" | "POST" | "PATCH";
+  body?: unknown;
+  signal?: AbortSignal;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -44,38 +71,76 @@ function readBoolean(value: unknown, fallback = false): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
-function readPagination(value: unknown, page: number, pageSize: number, totalFallback: number): GroupChatPagination {
-  const source = isRecord(value) ? value : {};
-  const total = readNumber(source.total) ?? totalFallback;
-  const resolvedPage = readNumber(source.page) ?? page;
-  const resolvedPageSize = readNumber(source.page_size) ?? pageSize;
-  const totalPages = readNumber(source.total_pages) ?? Math.max(1, Math.ceil(total / Math.max(1, resolvedPageSize)));
-  return { total, page: resolvedPage, page_size: resolvedPageSize, total_pages: totalPages };
+function readNullableBoolean(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
 }
 
-function readPaginationFromEnvelope(envelope: Record<string, unknown>, page: number, pageSize: number, total: number): GroupChatPagination {
-  return readPagination(isRecord(envelope.pagination) ? envelope.pagination : envelope, page, pageSize, readNumber(envelope.total) ?? total);
+function unwrapData(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) return {};
+  if (isRecord(value.data)) return value.data;
+  if (isRecord(value.result)) return value.result;
+  return value;
+}
+
+function readCollection(value: unknown, keys: readonly string[]): unknown[] {
+  const source = unwrapData(value);
+  for (const key of keys) {
+    if (Array.isArray(source[key])) return source[key];
+  }
+  return [];
+}
+
+function readPagination(value: unknown, page: number, pageSize: number, totalFallback: number): GroupChatPagination {
+  const source = unwrapData(value);
+  const pagination = isRecord(source.pagination) ? source.pagination : source;
+  const total = readNumber(pagination.total) ?? totalFallback;
+  const resolvedPage = readNumber(pagination.page) ?? page;
+  const resolvedPageSize = readNumber(pagination.page_size) ?? readNumber(pagination.pageSize) ?? pageSize;
+  const totalPages = readNumber(pagination.total_pages) ?? readNumber(pagination.totalPages) ?? Math.max(1, Math.ceil(total / Math.max(1, resolvedPageSize)));
+  return { total, page: resolvedPage, page_size: resolvedPageSize, total_pages: totalPages };
 }
 
 function safeApiMessage(status: number): string {
   if (status === 401) return "Your session has expired. Sign in again.";
-  if (status === 403) return "You do not have access to this Training group data.";
-  if (status === 404) return "The requested Training group data was not found.";
-  if (status === 422) return "The Training group request was invalid.";
+  if (status === 403) return "You do not have access to this Group Chat action.";
+  if (status === 404) return "The requested Group Chat data was not found.";
+  if (status === 409) return "This Group Chat changed or has reached its member capacity.";
+  if (status === 422) return "The Group Chat request was invalid.";
   if (status === 429) return "Too many requests. Try again shortly.";
-  if (status >= 500) return "Training group data is temporarily unavailable.";
-  return "Unable to load Training group data.";
+  if (status >= 500) return "Group Chat data is temporarily unavailable.";
+  return "Unable to complete the Group Chat request.";
 }
 
-async function request<T>(path: string, params: URLSearchParams, signal?: AbortSignal): Promise<T> {
+async function backendErrorMessage(response: Response): Promise<string> {
+  const text = await response.text().catch(() => "");
+  if (!text) return safeApiMessage(response.status);
   try {
-    const response = await chatRequestResponse(`${GROUP_CHAT_API_PATH}${path}?${params.toString()}`, { signal });
-    if (!response.ok) throw new GroupChatApiError(response.status, safeApiMessage(response.status));
+    const body: unknown = JSON.parse(text);
+    if (isRecord(body)) {
+      return readString(body.detail) ?? readString(body.message) ?? readString(body.title) ?? safeApiMessage(response.status);
+    }
+  } catch {
+    // Keep the safe status message when the backend did not return JSON.
+  }
+  return safeApiMessage(response.status);
+}
+
+async function request<T>(path: string, params = new URLSearchParams(), options: RequestOptions = {}): Promise<T> {
+  const query = params.toString();
+  const url = `${GROUP_CHAT_API_PATH}${path}${query ? `?${query}` : ""}`;
+  const init: RequestInit = { method: options.method ?? "GET", signal: options.signal };
+  if (options.body !== undefined) init.body = JSON.stringify(options.body);
+
+  try {
+    const response = await chatRequestResponse(url, init);
+    if (!response.ok) throw new GroupChatApiError(response.status, await backendErrorMessage(response));
+    if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
   } catch (error: unknown) {
     if (error instanceof GroupChatApiError) throw error;
+    if (error instanceof Error && error.name === "AbortError") throw error;
     const status = isRecord(error) && typeof error.status === "number" ? error.status : 0;
-    throw new GroupChatApiError(status, status ? safeApiMessage(status) : "Unable to load Training group data.");
+    throw new GroupChatApiError(status, status ? safeApiMessage(status) : "Unable to reach the Group Chat service.");
   }
 }
 
@@ -84,13 +149,33 @@ function appendCommonParams(params: URLSearchParams, page: number, pageSize: num
   params.set("page_size", String(pageSize));
 }
 
+function makeParams(page = 1, pageSize = DEFAULT_PAGE_SIZE): URLSearchParams {
+  const params = new URLSearchParams();
+  appendCommonParams(params, page, pageSize);
+  return params;
+}
+
+function parsePermissions(value: unknown): GroupChatPermissions {
+  const permissions = isRecord(value) ? value : {};
+  return {
+    can_view_members: readNullableBoolean(permissions.can_view_members ?? permissions.can_read_members),
+    can_invite_members: readNullableBoolean(permissions.can_invite_members ?? permissions.can_add_members),
+    can_manage_members: readNullableBoolean(permissions.can_manage_members),
+    can_manage_group: readNullableBoolean(permissions.can_manage_group),
+    can_edit_group: readNullableBoolean(permissions.can_edit_group),
+    can_update_settings: readNullableBoolean(permissions.can_update_settings),
+    can_close_group: readNullableBoolean(permissions.can_close_group),
+    can_reopen_group: readNullableBoolean(permissions.can_reopen_group),
+  };
+}
+
 function parseTraining(value: unknown): GroupChatTraining | null {
   if (!isRecord(value)) return null;
-  const id = readString(value.id);
+  const id = readString(value.id ?? value.training_id);
   if (!id) return null;
   return {
     id,
-    title: readString(value.title) ?? "Untitled Training",
+    title: readString(value.title ?? value.name) ?? "Untitled Training",
     status: readString(value.status) ?? "",
     delivery_mode: readString(value.delivery_mode),
     instructor_name: readString(value.instructor_name),
@@ -103,21 +188,20 @@ function parseTraining(value: unknown): GroupChatTraining | null {
 }
 
 function parseTrainingList(value: unknown, page: number, pageSize: number): GroupChatTrainingListResponse {
-  if (!isRecord(value) || !Array.isArray(value.items)) throw new Error("The Training list response was invalid.");
-  const items = value.items.map(parseTraining).filter((item): item is GroupChatTraining => item !== null);
-  return { items, pagination: readPaginationFromEnvelope(value, page, pageSize, items.length) };
+  const items = readCollection(value, ["items", "trainings"]).map(parseTraining).filter((item): item is GroupChatTraining => item !== null);
+  return { items, pagination: readPagination(value, page, pageSize, items.length) };
 }
 
 function parseLearner(value: unknown): GroupChatLearner | null {
   if (!isRecord(value)) return null;
-  const enrolmentId = readString(value.enrolment_id);
+  const enrolmentId = readString(value.enrolment_id ?? value.enrollment_id ?? value.id);
   if (!enrolmentId) return null;
   const groupIds = Array.isArray(value.group_ids) ? value.group_ids.filter((id): id is string => typeof id === "string" && Boolean(id.trim())) : [];
   return {
     enrolment_id: enrolmentId,
-    name: readString(value.name) ?? "Enrolled learner",
+    name: readString(value.name ?? value.display_name ?? value.full_name) ?? "Enrolled learner",
     email: readString(value.email),
-    enrolment_status: readString(value.enrolment_status) ?? "",
+    enrolment_status: readString(value.enrolment_status ?? value.enrollment_status) ?? "",
     user_id: readString(value.user_id),
     can_invite: readBoolean(value.can_invite),
     reason: readString(value.reason),
@@ -128,26 +212,26 @@ function parseLearner(value: unknown): GroupChatLearner | null {
 }
 
 function parseLearnerList(value: unknown, trainingId: string, page: number, pageSize: number): GroupChatLearnerListResponse {
-  if (!isRecord(value) || !Array.isArray(value.items)) throw new Error("The learner list response was invalid.");
-  const items = value.items.map(parseLearner).filter((item): item is GroupChatLearner => item !== null);
-  const maxMembers = readNumber(value.max_members) ?? DEFAULT_MAX_MEMBERS;
+  const source = unwrapData(value);
+  const items = readCollection(value, ["items", "learners", "enrolments", "enrollments"]).map(parseLearner).filter((item): item is GroupChatLearner => item !== null);
+  const maxMembers = readNumber(source.max_members) ?? DEFAULT_MAX_MEMBERS;
   return {
-    training_id: readString(value.training_id) ?? trainingId,
-    training_title: readString(value.training_title),
+    training_id: readString(source.training_id) ?? trainingId,
+    training_title: readString(source.training_title),
     items,
-    pagination: readPaginationFromEnvelope(value, page, pageSize, items.length),
-    eligible_total: readNumber(value.eligible_total),
+    pagination: readPagination(value, page, pageSize, items.length),
+    eligible_total: readNumber(source.eligible_total),
     max_members: maxMembers > 0 ? maxMembers : DEFAULT_MAX_MEMBERS,
   };
 }
 
 function parseProvider(value: unknown): GroupChatProvider | null {
   if (!isRecord(value)) return null;
-  const userId = readString(value.user_id);
+  const userId = readString(value.user_id ?? value.id);
   if (!userId) return null;
   return {
     user_id: userId,
-    name: readString(value.name) ?? "Verified Provider",
+    name: readString(value.name ?? value.display_name ?? value.full_name) ?? "Verified Provider",
     registration_number: readString(value.registration_number),
     is_training_instructor: readBoolean(value.is_training_instructor),
     is_me: readBoolean(value.is_me),
@@ -155,31 +239,145 @@ function parseProvider(value: unknown): GroupChatProvider | null {
 }
 
 function parseProviderList(value: unknown, trainingId: string, page: number, pageSize: number): GroupChatProviderListResponse {
-  if (!isRecord(value) || !Array.isArray(value.items)) throw new Error("The Provider list response was invalid.");
-  const items = value.items.map(parseProvider).filter((item): item is GroupChatProvider => item !== null);
+  const source = unwrapData(value);
+  const items = readCollection(value, ["items", "providers"]).map(parseProvider).filter((item): item is GroupChatProvider => item !== null);
   return {
-    training_id: readString(value.training_id) ?? trainingId,
-    instructor_name: readString(value.instructor_name),
+    training_id: readString(source.training_id) ?? trainingId,
+    instructor_name: readString(source.instructor_name),
     items,
-    pagination: readPaginationFromEnvelope(value, page, pageSize, items.length),
+    pagination: readPagination(value, page, pageSize, items.length),
   };
 }
 
-function makeParams(page = 1, pageSize = DEFAULT_PAGE_SIZE): URLSearchParams {
-  const params = new URLSearchParams();
-  appendCommonParams(params, page, pageSize);
-  return params;
+function parseLastMessage(value: unknown): { text: string | null; at: string | null } {
+  if (typeof value === "string") return { text: value, at: null };
+  if (!isRecord(value)) return { text: null, at: null };
+  return { text: readString(value.text ?? value.content ?? value.body), at: readString(value.created_at ?? value.sent_at) };
 }
 
-/** Loads the Trainings visible to the authenticated Group Chat creator. */
+function parseGroup(value: unknown): GroupChatSummary | null {
+  if (!isRecord(value)) return null;
+  const id = readString(value.id ?? value.group_id);
+  if (!id) return null;
+  const lastMessage = parseLastMessage(value.last_message ?? value.latest_message);
+  const context = isRecord(value.context) ? value.context : {};
+  return {
+    id,
+    name: readString(value.name ?? value.title) ?? "Untitled group",
+    description: readString(value.description),
+    kind: readString(value.kind),
+    context_type: readString(value.context_type),
+    context_id: readString(value.context_id),
+    context_name: readString(value.context_name ?? value.training_title ?? context.name ?? context.title),
+    status: readString(value.status),
+    member_count: readNumber(value.member_count ?? value.members_count),
+    max_members: readNumber(value.max_members ?? value.capacity),
+    pending_invitation_count: readNumber(value.pending_invitation_count ?? value.pending_count),
+    unread_count: readNumber(value.unread_count) ?? 0,
+    last_message: lastMessage.text,
+    last_message_at: readString(value.last_message_at ?? value.latest_message_at) ?? lastMessage.at,
+    owner_name: readString(value.owner_name),
+    owner_user_id: readString(value.owner_user_id),
+    avatar_url: readString(value.avatar_url),
+    admins_only_posting: readNullableBoolean(value.admins_only_posting),
+    visibility_notice: readString(value.visibility_notice),
+    emergency_notice: readString(value.emergency_notice),
+    my_role: readString(value.my_role ?? value.current_user_role),
+    permissions: parsePermissions(value.permissions),
+  };
+}
+
+function parseGroupList(value: unknown, page: number, pageSize: number): GroupChatListResponse {
+  const items = readCollection(value, ["items", "groups"]).map(parseGroup).filter((item): item is GroupChatSummary => item !== null);
+  return { items, pagination: readPagination(value, page, pageSize, items.length) };
+}
+
+function parseMember(value: unknown): GroupChatMember | null {
+  if (!isRecord(value)) return null;
+  const id = readString(value.id ?? value.member_id ?? value.user_id);
+  if (!id) return null;
+  const membershipStatus = readString(value.membership_status ?? value.status) ?? "active";
+  const memberKind = readString(value.member_kind ?? value.kind);
+  return {
+    id,
+    user_id: readString(value.user_id),
+    name: getGroupChatMemberDisplayName(readString(value.name ?? value.display_name ?? value.full_name), membershipStatus, memberKind),
+    role: readString(value.role ?? value.group_role) ?? "Member",
+    member_kind: memberKind,
+    membership_status: membershipStatus,
+    joined_at: readString(value.joined_at ?? value.created_at),
+    is_current_user: readBoolean(value.is_current_user ?? value.is_me),
+    can_manage: readNullableBoolean(value.can_manage),
+  };
+}
+
+function parseInvitation(value: unknown): GroupChatInvitation | null {
+  if (!isRecord(value)) return null;
+  const id = readString(value.id ?? value.invitation_id);
+  if (!id) return null;
+  const names = Array.isArray(value.member_names) ? value.member_names.filter((name): name is string => typeof name === "string" && Boolean(name.trim())) : [];
+  return {
+    id,
+    group_id: readString(value.group_id) ?? "",
+    group_name: readString(value.group_name ?? value.name) ?? "Group invitation",
+    description: readString(value.description),
+    invited_by_name: readString(value.invited_by_name ?? value.inviter_name),
+    status: readString(value.status) ?? "pending",
+    created_at: readString(value.created_at),
+    member_names: names,
+    visibility_notice: readString(value.visibility_notice),
+    emergency_notice: readString(value.emergency_notice),
+    guardian_consent_required: readBoolean(value.guardian_consent_required),
+  };
+}
+
+function parseMemberList(value: unknown, groupId: string, page: number, pageSize: number): GroupChatMemberListResponse {
+  const source = unwrapData(value);
+  const items = readCollection(value, ["items", "members"]).map(parseMember).filter((item): item is GroupChatMember => item !== null);
+  const pending = readCollection(value, ["pending_invitations", "invitations"]).map(parseInvitation).filter((item): item is GroupChatInvitation => item !== null);
+  return { group_id: readString(source.group_id) ?? groupId, items, pending_invitations: pending, pagination: readPagination(value, page, pageSize, items.length) };
+}
+
+function parseInvitationList(value: unknown, page: number, pageSize: number): GroupChatInvitationListResponse {
+  const items = readCollection(value, ["items", "invitations"]).map(parseInvitation).filter((item): item is GroupChatInvitation => item !== null);
+  return { items, pagination: readPagination(value, page, pageSize, items.length) };
+}
+
+function parseGroupDetails(value: unknown): GroupChatDetails | null {
+  const source = unwrapData(value);
+  const group = parseGroup(source.group ?? source);
+  if (!group) return null;
+  const owner = parseMember(source.owner);
+  return { ...group, training_title: readString(source.training_title ?? source.context_name), owner };
+}
+
+function parseInvitationDetails(value: unknown): GroupChatInvitationDetails | null {
+  const source = unwrapData(value);
+  const invitation = parseInvitation(source.invitation ?? source);
+  if (!invitation) return null;
+  const providerNames = Array.isArray(source.provider_names) ? source.provider_names.filter((name): name is string => typeof name === "string" && Boolean(name.trim())) : [];
+  return {
+    ...invitation,
+    purpose: readString(source.purpose),
+    provider_names: providerNames,
+    what_members_can_see: readString(source.what_members_can_see),
+    guardian_consent_text: readString(source.guardian_consent_text),
+  };
+}
+
+function requireParsed<T>(value: T | null, message: string): T {
+  if (!value) throw new GroupChatApiError(0, message);
+  return value;
+}
+
+/** Loads Trainings visible to the authenticated Group Chat creator. */
 export async function listGroupChatTrainings(params: GroupChatTrainingListParams = {}): Promise<GroupChatTrainingListResponse> {
   const page = params.page ?? 1;
   const pageSize = params.pageSize ?? DEFAULT_PAGE_SIZE;
   const query = makeParams(page, pageSize);
   if (params.q?.trim()) query.set("q", params.q.trim());
   if (params.status?.trim()) query.set("status", params.status.trim());
-  const response = await request<unknown>("/trainings", query, params.signal);
-  return parseTrainingList(response, page, pageSize);
+  return parseTrainingList(await request<unknown>("/trainings", query, { signal: params.signal }), page, pageSize);
 }
 
 /** Loads enrolled learner candidates for one Training without changing membership. */
@@ -192,14 +390,104 @@ export async function listGroupChatLearners(trainingId: string, params: GroupCha
   if (params.enrolmentStatus?.trim()) query.set("enrolment_status", params.enrolmentStatus.trim());
   if (params.notInGroup !== undefined) query.set("not_in_group", String(params.notInGroup));
   if (params.groupId?.trim()) query.set("group_id", params.groupId.trim());
-  const response = await request<unknown>(`/trainings/${encodeURIComponent(trainingId)}/learners`, query, params.signal);
-  return parseLearnerList(response, trainingId, page, pageSize);
+  return parseLearnerList(await request<unknown>(`/trainings/${encodeURIComponent(trainingId)}/learners`, query, { signal: params.signal }), trainingId, page, pageSize);
 }
 
 /** Loads authorized verified Provider candidates for one Training. */
 export async function listGroupChatProviders(trainingId: string, params: GroupChatProviderListParams = {}): Promise<GroupChatProviderListResponse> {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? DEFAULT_PAGE_SIZE;
   const query = new URLSearchParams();
   if (params.q?.trim()) query.set("q", params.q.trim());
-  const response = await request<unknown>(`/trainings/${encodeURIComponent(trainingId)}/providers`, query, params.signal);
-  return parseProviderList(response, trainingId, 1, DEFAULT_PAGE_SIZE);
+  if (params.page !== undefined) appendCommonParams(query, page, pageSize);
+  return parseProviderList(await request<unknown>(`/trainings/${encodeURIComponent(trainingId)}/providers`, query, { signal: params.signal }), trainingId, page, pageSize);
+}
+
+/** Loads the authenticated user's Group Chat list. */
+export async function listGroupChatGroups(params: GroupChatListParams = {}): Promise<GroupChatListResponse> {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? DEFAULT_PAGE_SIZE;
+  const query = makeParams(page, pageSize);
+  if (params.q?.trim()) query.set("q", params.q.trim());
+  if (params.status?.trim()) query.set("status", params.status.trim());
+  return parseGroupList(await request<unknown>("", query, { signal: params.signal }), page, pageSize);
+}
+
+/** Loads one Group Chat's server-provided details. */
+export async function getGroupChat(groupId: string, signal?: AbortSignal): Promise<GroupChatDetails> {
+  return requireParsed(parseGroupDetails(await request<unknown>(`/${encodeURIComponent(groupId)}`, new URLSearchParams(), { signal })), "The Group Chat details response was invalid.");
+}
+
+/** Updates only the editable Group Chat identity fields. */
+export async function updateGroupDetails(groupId: string, payload: UpdateGroupDetailsPayload): Promise<void> {
+  await request<unknown>(`/${encodeURIComponent(groupId)}`, new URLSearchParams(), { method: "PATCH", body: buildUpdateGroupDetailsPayload(payload.name, payload.description) });
+}
+
+/** Updates only the Group Chat posting permission. */
+export async function updateGroupSettings(groupId: string, payload: UpdateGroupSettingsPayload): Promise<void> {
+  await request<unknown>(`/${encodeURIComponent(groupId)}/settings`, new URLSearchParams(), { method: "PATCH", body: buildUpdateGroupSettingsPayload(payload.admins_only_posting) });
+}
+
+/** Closes a Group Chat through the documented no-body action endpoint. */
+export async function closeGroupChat(groupId: string): Promise<void> {
+  await request<unknown>(`/${encodeURIComponent(groupId)}/close`, new URLSearchParams(), { method: "POST" });
+}
+
+/** Loads groups associated with one Training. */
+export async function listTrainingGroupChats(trainingId: string, params: GroupChatListParams = {}): Promise<GroupChatListResponse> {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? DEFAULT_PAGE_SIZE;
+  const query = makeParams(page, pageSize);
+  if (params.q?.trim()) query.set("q", params.q.trim());
+  return parseGroupList(await request<unknown>(`/trainings/${encodeURIComponent(trainingId)}/groups`, query, { signal: params.signal }), page, pageSize);
+}
+
+/** Creates a real Training Group and returns the created group details. */
+export async function createGroup(payload: CreateGroupPayload): Promise<GroupChatDetails> {
+  return requireParsed(parseGroupDetails(await request<unknown>("", new URLSearchParams(), { method: "POST", body: payload })), "The Group Chat creation response was invalid.");
+}
+
+/** Loads members and pending invitations visible for one Group Chat. */
+export async function listGroupChatMembers(groupId: string, params: GroupChatMemberListParams = {}): Promise<GroupChatMemberListResponse> {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? DEFAULT_PAGE_SIZE;
+  const query = makeParams(page, pageSize);
+  if (params.q?.trim()) query.set("q", params.q.trim());
+  return parseMemberList(await request<unknown>(`/${encodeURIComponent(groupId)}/members`, query, { signal: params.signal }), groupId, page, pageSize);
+}
+
+/** Invites additional authorized members using the documented InviteMembers schema. */
+export async function inviteGroupMembers(groupId: string, invitees: readonly GroupChatInvitee[]): Promise<void> {
+  const payload: InviteMembersPayload = buildGroupMemberInvitePayload(invitees);
+  if (payload.invitees.length === 0) throw new GroupChatApiError(422, "Select at least one valid member.");
+  await request<unknown>(`/${encodeURIComponent(groupId)}/members`, new URLSearchParams(), { method: "POST", body: payload });
+}
+
+/** Invites selected enrolled learners without automatically inviting future enrollments. */
+export async function inviteEnrolledLearners(groupId: string, payload: InviteEnrolledLearnersPayload): Promise<void> {
+  const userIds = payload.user_ids ? [...new Set(payload.user_ids.map((id) => id.trim()).filter(Boolean))] : undefined;
+  if (userIds && userIds.length === 0) throw new GroupChatApiError(422, "Select at least one eligible learner.");
+  await request<unknown>(`/${encodeURIComponent(groupId)}/members/invite-enrolled`, new URLSearchParams(), { method: "POST", body: { ...payload, user_ids: userIds } });
+}
+
+/** Loads pending invitations for the authenticated recipient. */
+export async function listGroupChatInvitations(params: GroupChatInvitationListParams = {}): Promise<GroupChatInvitationListResponse> {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? DEFAULT_PAGE_SIZE;
+  return parseInvitationList(await request<unknown>("/invitations", makeParams(page, pageSize), { signal: params.signal }), page, pageSize);
+}
+
+/** Loads invitation details before the recipient accepts it. */
+export async function getGroupChatInvitation(invitationId: string, signal?: AbortSignal): Promise<GroupChatInvitationDetails> {
+  return requireParsed(parseInvitationDetails(await request<unknown>(`/invitations/${encodeURIComponent(invitationId)}`, new URLSearchParams(), { signal })), "The invitation details response was invalid.");
+}
+
+/** Accepts an invitation only after the recipient explicitly provides consent. */
+export async function acceptGroupChatInvitation(groupId: string, payload: AcceptGroupInvitationPayload): Promise<void> {
+  await request<unknown>(`/${encodeURIComponent(groupId)}/accept`, new URLSearchParams(), { method: "POST", body: payload });
+}
+
+/** Declines an invitation after the recipient explicitly confirms the action. */
+export async function declineGroupChatInvitation(groupId: string): Promise<void> {
+  await request<unknown>(`/${encodeURIComponent(groupId)}/decline`, new URLSearchParams(), { method: "POST" });
 }

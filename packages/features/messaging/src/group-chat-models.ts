@@ -1,6 +1,6 @@
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
 import type { TenantMember } from "@ihp/enterprise-runtime";
-import type { GroupChatLearner as ApiGroupChatLearner, GroupChatProvider as ApiGroupChatProvider } from "./group-chat/group-chat.types";
+import type { CreateGroupPayload, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, InviteMembersPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
 export type GroupRole = "Owner" | "Admin" | "Member";
@@ -82,6 +82,91 @@ export function isGroupChatProviderSelectable(provider: ApiGroupChatProvider): b
 /** Calculates additional member capacity after reserving the group owner slot. */
 export function remainingGroupChatMemberSlots(maxMembers: number, selectedCount: number): number {
   return Math.max(0, Math.max(1, maxMembers) - 1 - Math.max(0, selectedCount));
+}
+
+/** Identifies the backend status used for an outgoing invitation not yet accepted. */
+export function isGroupChatPendingMember(member: Pick<GroupChatMember, "membership_status">): boolean {
+  return member.membership_status.trim().toLowerCase() === "invited";
+}
+
+/** Splits a visible member response without treating pending invitees as active members. */
+export function splitGroupChatMembers(members: readonly GroupChatMember[]): { active: GroupChatMember[]; pending: GroupChatMember[] } {
+  return members.reduce<{ active: GroupChatMember[]; pending: GroupChatMember[] }>((result, member) => {
+    (isGroupChatPendingMember(member) ? result.pending : result.active).push(member);
+    return result;
+  }, { active: [], pending: [] });
+}
+
+/** Returns an authorized name or a status-specific privacy-safe fallback. */
+export function getGroupChatMemberDisplayName(name: string | null | undefined, membershipStatus: string, memberKind: string | null | undefined): string {
+  if (name?.trim()) return name.trim();
+  if (membershipStatus.trim().toLowerCase() !== "invited") return "Group member";
+  const normalizedKind = memberKind?.trim().toLowerCase() ?? "";
+  if (normalizedKind === "provider") return "Invited Provider";
+  if (normalizedKind === "patient" || normalizedKind === "learner") return "Invited learner";
+  return "Invited member";
+}
+
+/** Returns whether the authenticated user may close an open Group Chat. */
+export function canCloseGroupChat(input: { status: string | null; my_role: string | null; permissions: Pick<GroupChatPermissions, "can_close_group"> }): boolean {
+  if (input.status?.trim().toLowerCase() === "closed") return false;
+  const role = input.my_role?.trim().toLowerCase();
+  if (role === "owner") return input.permissions.can_close_group !== false;
+  return role === "admin" && input.permissions.can_close_group === true;
+}
+
+/** Returns whether the authenticated user may edit open Group Chat details. */
+export function canEditGroupChat(input: { status: string | null; my_role: string | null; permissions: Pick<GroupChatPermissions, "can_manage_group" | "can_edit_group"> }): boolean {
+  if (input.status?.trim().toLowerCase() === "closed") return false;
+  if (input.my_role?.trim().toLowerCase() === "owner") return true;
+  return input.permissions.can_manage_group === true && input.permissions.can_edit_group === true;
+}
+
+/** Returns whether the authenticated user may update open Group Chat posting settings. */
+export function canUpdateGroupChatSettings(input: { status: string | null; my_role: string | null; permissions: Pick<GroupChatPermissions, "can_manage_group" | "can_update_settings"> }): boolean {
+  if (input.status?.trim().toLowerCase() === "closed") return false;
+  if (input.my_role?.trim().toLowerCase() === "owner") return true;
+  return input.permissions.can_manage_group === true && input.permissions.can_update_settings === true;
+}
+
+/** Builds the minimal PATCH payload for editable Group Chat details. */
+export function buildUpdateGroupDetailsPayload(name: string, description: string): UpdateGroupDetailsPayload {
+  return { name: name.trim(), description: description.trim() };
+}
+
+/** Builds the minimal PATCH payload for Group Chat posting permissions. */
+export function buildUpdateGroupSettingsPayload(adminsOnlyPosting: boolean): UpdateGroupSettingsPayload {
+  return { admins_only_posting: adminsOnlyPosting };
+}
+
+/** Builds the server-owned Training Group creation payload from selected user IDs. */
+export function buildCreateGroupPayload(input: { name: string; contextId: string; description: string; userIds: readonly string[]; adminsOnlyPosting: boolean }): CreateGroupPayload {
+  const userIds = [...new Set(input.userIds.map((id) => id.trim()).filter(Boolean))];
+  return {
+    name: input.name.trim(),
+    kind: "program",
+    context_type: "training",
+    context_id: input.contextId,
+    description: input.description.trim(),
+    invitees: userIds.map((user_id) => ({ user_id })),
+    admins_only_posting: input.adminsOnlyPosting,
+  };
+}
+
+/** Builds the documented additional-member invitation payload without inventing member data. */
+export function buildGroupMemberInvitePayload(invitees: readonly GroupChatInvitee[]): InviteMembersPayload {
+  const normalized = new Map<string, GroupChatInvitee>();
+  for (const invitee of invitees) {
+    const userId = invitee.user_id.trim();
+    if (!userId) continue;
+    const displayName = invitee.display_name?.trim();
+    normalized.set(userId, {
+      user_id: userId,
+      ...(displayName ? { display_name: displayName } : {}),
+      ...(invitee.is_minor === undefined ? {} : { is_minor: invitee.is_minor }),
+    });
+  }
+  return { invitees: [...normalized.values()] };
 }
 
 function readString(value: Record<string, unknown>, ...keys: string[]): string {
