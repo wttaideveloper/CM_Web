@@ -1,6 +1,6 @@
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
 import type { TenantMember } from "@ihp/enterprise-runtime";
-import type { CreateGroupPayload, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, InviteMembersPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
+import type { CreateGroupPayload, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, InviteMembersPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
 export type GroupRole = "Owner" | "Admin" | "Member";
@@ -105,6 +105,53 @@ export function getGroupChatMemberDisplayName(name: string | null | undefined, m
   if (normalizedKind === "provider") return "Invited Provider";
   if (normalizedKind === "patient" || normalizedKind === "learner") return "Invited learner";
   return "Invited member";
+}
+
+/** Normalizes one received invitation without treating its invitation ID as its group ID. */
+export function normalizeGroupChatInvitation(value: unknown): GroupChatInvitation | null {
+  if (!isRecord(value)) return null;
+  const id = readString(value, "id", "invitation_id");
+  const group = isRecord(value.group) ? value.group : {};
+  const groupId = readString(value, "group_id") || readString(group, "id", "group_id");
+  if (!id || !groupId) return null;
+  const memberNames = Array.isArray(value.member_names) ? value.member_names.filter((name): name is string => typeof name === "string" && Boolean(name.trim())).map((name) => name.trim()) : [];
+  return {
+    id,
+    group_id: groupId,
+    group_name: readString(value, "group_name", "name") || "Group invitation",
+    description: readString(value, "description") || null,
+    invited_by_name: readString(value, "invited_by_name", "inviter_name") || null,
+    status: readString(value, "status") || "pending",
+    created_at: readString(value, "created_at") || null,
+    member_names: memberNames,
+    visibility_notice: readString(value, "visibility_notice") || null,
+    emergency_notice: readString(value, "emergency_notice") || null,
+    guardian_consent_required: value.guardian_consent_required === true || value.requires_guardian_consent === true,
+  };
+}
+
+/** Normalizes invitation details while preserving the separately supplied group ID. */
+export function normalizeGroupChatInvitationDetails(value: unknown): GroupChatInvitationDetails | null {
+  if (!isRecord(value)) return null;
+  const source = isRecord(value.data) ? value.data : isRecord(value.result) ? value.result : value;
+  const nestedInvitation = isRecord(source.invitation) ? source.invitation : null;
+  const outerGroup = isRecord(source.group) ? source.group : null;
+  const invitationSource = nestedInvitation
+    ? {
+        ...nestedInvitation,
+        group_id: nestedInvitation.group_id ?? source.group_id ?? outerGroup?.id ?? outerGroup?.group_id,
+      }
+    : source;
+  const invitation = normalizeGroupChatInvitation(invitationSource);
+  if (!invitation) return null;
+  const providerNames = Array.isArray(source.provider_names) ? source.provider_names.filter((name): name is string => typeof name === "string" && Boolean(name.trim())).map((name) => name.trim()) : [];
+  return {
+    ...invitation,
+    purpose: readString(source, "purpose") || null,
+    provider_names: providerNames,
+    what_members_can_see: readString(source, "what_members_can_see") || null,
+    guardian_consent_text: readString(source, "guardian_consent_text") || null,
+  };
 }
 
 /** Returns whether the authenticated user may close an open Group Chat. */

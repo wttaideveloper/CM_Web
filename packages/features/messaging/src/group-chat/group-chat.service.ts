@@ -31,7 +31,7 @@ import type {
   UpdateGroupDetailsPayload,
   UpdateGroupSettingsPayload,
 } from "./group-chat.types";
-import { buildGroupMemberInvitePayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, getGroupChatMemberDisplayName } from "../group-chat-models";
+import { buildGroupMemberInvitePayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, getGroupChatMemberDisplayName, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails } from "../group-chat-models";
 export { buildCreateGroupPayload, buildGroupMemberInvitePayload } from "../group-chat-models";
 
 const GROUP_CHAT_API_PATH = "/groups";
@@ -311,35 +311,15 @@ function parseMember(value: unknown): GroupChatMember | null {
   };
 }
 
-function parseInvitation(value: unknown): GroupChatInvitation | null {
-  if (!isRecord(value)) return null;
-  const id = readString(value.id ?? value.invitation_id);
-  if (!id) return null;
-  const names = Array.isArray(value.member_names) ? value.member_names.filter((name): name is string => typeof name === "string" && Boolean(name.trim())) : [];
-  return {
-    id,
-    group_id: readString(value.group_id) ?? "",
-    group_name: readString(value.group_name ?? value.name) ?? "Group invitation",
-    description: readString(value.description),
-    invited_by_name: readString(value.invited_by_name ?? value.inviter_name),
-    status: readString(value.status) ?? "pending",
-    created_at: readString(value.created_at),
-    member_names: names,
-    visibility_notice: readString(value.visibility_notice),
-    emergency_notice: readString(value.emergency_notice),
-    guardian_consent_required: readBoolean(value.guardian_consent_required),
-  };
-}
-
 function parseMemberList(value: unknown, groupId: string, page: number, pageSize: number): GroupChatMemberListResponse {
   const source = unwrapData(value);
   const items = readCollection(value, ["items", "members"]).map(parseMember).filter((item): item is GroupChatMember => item !== null);
-  const pending = readCollection(value, ["pending_invitations", "invitations"]).map(parseInvitation).filter((item): item is GroupChatInvitation => item !== null);
+  const pending = readCollection(value, ["pending_invitations", "invitations"]).map(normalizeGroupChatInvitation).filter((item): item is GroupChatInvitation => item !== null);
   return { group_id: readString(source.group_id) ?? groupId, items, pending_invitations: pending, pagination: readPagination(value, page, pageSize, items.length) };
 }
 
 function parseInvitationList(value: unknown, page: number, pageSize: number): GroupChatInvitationListResponse {
-  const items = readCollection(value, ["items", "invitations"]).map(parseInvitation).filter((item): item is GroupChatInvitation => item !== null);
+  const items = readCollection(value, ["items", "invitations"]).map(normalizeGroupChatInvitation).filter((item): item is GroupChatInvitation => item !== null);
   return { items, pagination: readPagination(value, page, pageSize, items.length) };
 }
 
@@ -349,20 +329,6 @@ function parseGroupDetails(value: unknown): GroupChatDetails | null {
   if (!group) return null;
   const owner = parseMember(source.owner);
   return { ...group, training_title: readString(source.training_title ?? source.context_name), owner };
-}
-
-function parseInvitationDetails(value: unknown): GroupChatInvitationDetails | null {
-  const source = unwrapData(value);
-  const invitation = parseInvitation(source.invitation ?? source);
-  if (!invitation) return null;
-  const providerNames = Array.isArray(source.provider_names) ? source.provider_names.filter((name): name is string => typeof name === "string" && Boolean(name.trim())) : [];
-  return {
-    ...invitation,
-    purpose: readString(source.purpose),
-    provider_names: providerNames,
-    what_members_can_see: readString(source.what_members_can_see),
-    guardian_consent_text: readString(source.guardian_consent_text),
-  };
 }
 
 function requireParsed<T>(value: T | null, message: string): T {
@@ -479,7 +445,7 @@ export async function listGroupChatInvitations(params: GroupChatInvitationListPa
 
 /** Loads invitation details before the recipient accepts it. */
 export async function getGroupChatInvitation(invitationId: string, signal?: AbortSignal): Promise<GroupChatInvitationDetails> {
-  return requireParsed(parseInvitationDetails(await request<unknown>(`/invitations/${encodeURIComponent(invitationId)}`, new URLSearchParams(), { signal })), "The invitation details response was invalid.");
+  return requireParsed(normalizeGroupChatInvitationDetails(await request<unknown>(`/invitations/${encodeURIComponent(invitationId)}`, new URLSearchParams(), { signal })), "The invitation details response was invalid.");
 }
 
 /** Accepts an invitation only after the recipient explicitly provides consent. */

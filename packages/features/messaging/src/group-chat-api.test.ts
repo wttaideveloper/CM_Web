@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCreateGroupPayload, buildGroupMemberInvitePayload, isGroupChatLearnerSelectable, isGroupChatProviderSelectable, remainingGroupChatMemberSlots } from "./group-chat-models.ts";
+import { buildCreateGroupPayload, buildGroupMemberInvitePayload, isGroupChatLearnerSelectable, isGroupChatProviderSelectable, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, remainingGroupChatMemberSlots } from "./group-chat-models.ts";
 import type { GroupChatLearner, GroupChatProvider } from "./group-chat/group-chat.types";
 
 const learner = (overrides: Partial<GroupChatLearner> = {}): GroupChatLearner => ({
@@ -79,4 +79,54 @@ test("additional member invitation matches the InviteMembers schema", () => {
       { user_id: "learner-1" },
     ],
   });
+});
+
+test("invitation parsing keeps invitation and group identifiers separate", () => {
+  assert.deepEqual(normalizeGroupChatInvitation({ invitation_id: "invitation-1", group_id: "group-1", group_name: "Wellness cohort", status: "pending" }), {
+    id: "invitation-1",
+    group_id: "group-1",
+    group_name: "Wellness cohort",
+    description: null,
+    invited_by_name: null,
+    status: "pending",
+    created_at: null,
+    member_names: [],
+    visibility_notice: null,
+    emergency_notice: null,
+    guardian_consent_required: false,
+  });
+  assert.equal(normalizeGroupChatInvitation({ invitation_id: "invitation-without-group" }), null);
+});
+
+test("nested invitation details can use the top-level group identifier", () => {
+  assert.deepEqual(normalizeGroupChatInvitationDetails({
+    group_id: "group-2",
+    invitation: { invitation_id: "invitation-2", group_name: "Provider cohort", requires_guardian_consent: true },
+    purpose: "Care coordination",
+    provider_names: ["Provider One"],
+  }), {
+    id: "invitation-2",
+    group_id: "group-2",
+    group_name: "Provider cohort",
+    description: null,
+    invited_by_name: null,
+    status: "pending",
+    created_at: null,
+    member_names: [],
+    visibility_notice: null,
+    emergency_notice: null,
+    guardian_consent_required: true,
+    purpose: "Care coordination",
+    provider_names: ["Provider One"],
+    what_members_can_see: null,
+    guardian_consent_text: null,
+  });
+});
+
+test("invitation details support the existing response envelope", () => {
+  const result = normalizeGroupChatInvitationDetails({
+    data: { invitation: { id: "invitation-3", group_id: "group-3", group_name: "Care cohort" } },
+  });
+  assert.equal(result?.id, "invitation-3");
+  assert.equal(result?.group_id, "group-3");
 });

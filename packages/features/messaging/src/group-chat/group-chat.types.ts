@@ -200,7 +200,7 @@ export interface InviteEnrolledLearnersPayload {
 /** Payload accepted by POST /groups/{group_id}/accept. */
 export interface AcceptGroupInvitationPayload {
   consent: true;
-  display_name: string;
+  display_name?: string;
   guardian_name?: string;
   guardian_relationship?: string;
 }
