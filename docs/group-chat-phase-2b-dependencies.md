@@ -13,20 +13,21 @@ or add backend capabilities that are not present in the response contract.
   display name is sent only when the user provides one.
 - Decline uses the separately returned `group_id` with
   `POST /groups/{group_id}/decline` after explicit confirmation.
-- If an invitation response does not provide both an invitation identifier
-  and a group identifier, the frontend treats it as invalid rather than
-  substituting one identifier for the other.
+- Explicit invitation and group identifiers remain separate when provided.
+  For the documented response shape that provides only `conversation_id`,
+  the frontend uses that value for the invitation-detail lookup and the
+  group membership action identifier because the backend documents the same
+  `{id}` path for those operations.
 - Group messaging and Group Socket.IO remain unavailable until their backend
   contracts are integrated.
+- Provider verification is a separate one-time Group Chat registry operation;
+  the Enterprise Admin management panel is implemented in Phase 2C.
 
 ## Pending backend dependencies
 
 The following questions remain outside Phase 2B and must be answered by the
 backend/API owners before expanding the UI:
 
-- Whether Provider verification is a separate prerequisite for invitation
-  receipt or acceptance. The frontend does not call a verification endpoint or
-  bypass a rejected Provider authorization response.
 - Whether one learner may belong to multiple Groups for the same Training.
 - Whether pending invitee names are authorized and which response field is the
   privacy-safe source. The frontend does not cross-match names from another

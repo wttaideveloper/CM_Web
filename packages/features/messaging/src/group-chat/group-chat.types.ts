@@ -167,6 +167,34 @@ export interface GroupChatInvitationDetails extends GroupChatInvitation {
   guardian_consent_text: string | null;
 }
 
+/** A Provider registered in the separate Group Chat verification registry. */
+export interface GroupChatVerifiedProvider {
+  user_id: string;
+  display_name: string | null;
+  email: string | null;
+  verified_at: string | null;
+}
+
+/** Paginated Group Chat verification registry response. */
+export interface GroupChatVerifiedProviderListResponse {
+  items: GroupChatVerifiedProvider[];
+  pagination: GroupChatPagination;
+}
+
+/** Query options for the Group Chat verification registry. */
+export interface GroupChatVerifiedProviderListParams {
+  page?: number;
+  pageSize?: number;
+  signal?: AbortSignal;
+}
+
+/** Payload accepted by POST /groups/verified-providers. */
+export interface RegisterGroupChatVerifiedProviderPayload {
+  user_id: string;
+  registration_number?: string;
+  registration_council?: string;
+}
+
 /** Payload accepted by POST /groups. */
 export interface CreateGroupPayload {
   name: string;
@@ -195,6 +223,12 @@ export interface InviteEnrolledLearnersPayload {
   user_ids?: string[];
   all_eligible?: boolean;
   exclude_user_ids?: string[];
+}
+
+/** Outcome returned by the member invitation endpoints. */
+export interface GroupChatInvitationResult {
+  invited: string[];
+  skipped: string[];
 }
 
 /** Payload accepted by POST /groups/{group_id}/accept. */

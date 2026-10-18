@@ -1,6 +1,6 @@
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
 import type { TenantMember } from "@ihp/enterprise-runtime";
-import type { CreateGroupPayload, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, InviteMembersPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
+import type { CreateGroupPayload, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatVerifiedProvider, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
 export type GroupRole = "Owner" | "Admin" | "Member";
@@ -84,6 +84,25 @@ export function remainingGroupChatMemberSlots(maxMembers: number, selectedCount:
   return Math.max(0, Math.max(1, maxMembers) - 1 - Math.max(0, selectedCount));
 }
 
+/** Prevents a previous Training result set from being selected for a newer search. */
+export function isGroupChatTrainingSearchResultStale(rawSearch: string, debouncedSearch: string, hasData: boolean, isFetching: boolean, isPlaceholderData: boolean, isError: boolean): boolean {
+  if (!hasData) return false;
+  return rawSearch.trim() !== debouncedSearch.trim() || isFetching || isPlaceholderData || isError;
+}
+
+/** Formats invitation outcome counts without claiming skipped entries were successful. */
+export function formatGroupChatInvitationFeedback(kind: "learner" | "Provider", result: GroupChatInvitationResult): string | null {
+  const invitedCount = result.invited.length;
+  const skippedCount = result.skipped.length;
+  const noun = kind === "Provider" ? (invitedCount === 1 ? "Provider" : "Providers") : (invitedCount === 1 ? "learner" : "learners");
+  if (invitedCount > 0) {
+    const success = `${invitedCount} ${noun} invited successfully.`;
+    return skippedCount > 0 ? `${success} ${skippedCount} skipped.` : success;
+  }
+  if (skippedCount > 0) return `No ${kind === "Provider" ? "Providers" : "learners"} were invited. ${skippedCount} skipped.`;
+  return null;
+}
+
 /** Identifies the backend status used for an outgoing invitation not yet accepted. */
 export function isGroupChatPendingMember(member: Pick<GroupChatMember, "membership_status">): boolean {
   return member.membership_status.trim().toLowerCase() === "invited";
@@ -95,6 +114,14 @@ export function splitGroupChatMembers(members: readonly GroupChatMember[]): { ac
     (isGroupChatPendingMember(member) ? result.pending : result.active).push(member);
     return result;
   }, { active: [], pending: [] });
+}
+
+/** Returns whether a Provider is already active or invited in this specific Group Chat. */
+export function isGroupChatProviderUnavailableInCurrentGroup(providerUserId: string, members: readonly Pick<GroupChatMember, "user_id" | "membership_status">[]): boolean {
+  return members.some((member) => {
+    const status = member.membership_status?.trim().toLowerCase();
+    return member.user_id === providerUserId && (status === "active" || status === "invited" || status === "pending");
+  });
 }
 
 /** Returns an authorized name or a status-specific privacy-safe fallback. */
@@ -110,9 +137,10 @@ export function getGroupChatMemberDisplayName(name: string | null | undefined, m
 /** Normalizes one received invitation without treating its invitation ID as its group ID. */
 export function normalizeGroupChatInvitation(value: unknown): GroupChatInvitation | null {
   if (!isRecord(value)) return null;
-  const id = readString(value, "id", "invitation_id");
+  const id = readString(value, "id", "invitation_id", "conversation_id");
+  const conversationId = readString(value, "conversation_id");
   const group = isRecord(value.group) ? value.group : {};
-  const groupId = readString(value, "group_id") || readString(group, "id", "group_id");
+  const groupId = readString(value, "group_id") || readString(group, "id", "group_id") || conversationId;
   if (!id || !groupId) return null;
   const memberNames = Array.isArray(value.member_names) ? value.member_names.filter((name): name is string => typeof name === "string" && Boolean(name.trim())).map((name) => name.trim()) : [];
   return {
@@ -140,6 +168,7 @@ export function normalizeGroupChatInvitationDetails(value: unknown): GroupChatIn
     ? {
         ...nestedInvitation,
         group_id: nestedInvitation.group_id ?? source.group_id ?? outerGroup?.id ?? outerGroup?.group_id,
+        conversation_id: nestedInvitation.conversation_id ?? source.conversation_id,
       }
     : source;
   const invitation = normalizeGroupChatInvitation(invitationSource);
@@ -152,6 +181,44 @@ export function normalizeGroupChatInvitationDetails(value: unknown): GroupChatIn
     what_members_can_see: readString(source, "what_members_can_see") || null,
     guardian_consent_text: readString(source, "guardian_consent_text") || null,
   };
+}
+
+/** Normalizes one registry entry without exposing a user ID as a fabricated name. */
+export function normalizeGroupChatVerifiedProvider(value: unknown): GroupChatVerifiedProvider | null {
+  if (!isRecord(value)) return null;
+  const userId = readString(value, "user_id", "userId");
+  if (!userId) return null;
+  return {
+    user_id: userId,
+    display_name: readString(value, "display_name", "full_name", "name") || null,
+    email: readString(value, "email") || null,
+    verified_at: readString(value, "verified_at", "created_at") || null,
+  };
+}
+
+/** Resolves a registry entry to an authorized tenant-member name when available. */
+export function resolveGroupChatVerifiedProviderName(provider: GroupChatVerifiedProvider, members?: readonly TenantMember[]): string | null {
+  const directoryName = members?.find((member) => member.userId === provider.user_id)?.fullName?.trim();
+  return directoryName || provider.display_name?.trim() || null;
+}
+
+/** Builds the exact Provider verification request body without inventing registration details. */
+export function buildVerifiedProviderPayload(userId: string, registrationNumber = "", registrationCouncil = ""): RegisterGroupChatVerifiedProviderPayload | null {
+  const normalizedUserId = userId.trim();
+  const normalizedRegistrationNumber = registrationNumber.trim();
+  const normalizedRegistrationCouncil = registrationCouncil.trim();
+  if (!normalizedUserId) return null;
+  return {
+    user_id: normalizedUserId,
+    ...(normalizedRegistrationNumber ? { registration_number: normalizedRegistrationNumber } : {}),
+    ...(normalizedRegistrationCouncil ? { registration_council: normalizedRegistrationCouncil } : {}),
+  };
+}
+
+/** Applies the same active internal-user Provider directory rule used by Enterprise selectors. */
+export function isGroupChatProviderDirectoryCandidate(member: Pick<TenantMember, "status" | "role" | "roleSlug" | "tenantRbacRoles">): boolean {
+  const roleValues = [member.role, member.roleSlug, ...(member.tenantRbacRoles ?? [])].map((role) => role.trim().toLowerCase());
+  return member.status.trim().toLowerCase() === "active" && roleValues.includes("internal_user");
 }
 
 /** Returns whether the authenticated user may close an open Group Chat. */

@@ -8,6 +8,7 @@ import type {
   GroupChatInvitationDetails,
   GroupChatInvitationListParams,
   GroupChatInvitationListResponse,
+  GroupChatInvitationResult,
   GroupChatLearner,
   GroupChatLearnerListParams,
   GroupChatLearnerListResponse,
@@ -26,12 +27,16 @@ import type {
   GroupChatTrainingListParams,
   GroupChatTrainingListResponse,
   GroupChatInvitee,
+  GroupChatVerifiedProvider,
+  GroupChatVerifiedProviderListParams,
+  GroupChatVerifiedProviderListResponse,
+  RegisterGroupChatVerifiedProviderPayload,
   InviteMembersPayload,
   InviteEnrolledLearnersPayload,
   UpdateGroupDetailsPayload,
   UpdateGroupSettingsPayload,
 } from "./group-chat.types";
-import { buildGroupMemberInvitePayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, getGroupChatMemberDisplayName, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails } from "../group-chat-models";
+import { buildGroupMemberInvitePayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails } from "../group-chat-models";
 export { buildCreateGroupPayload, buildGroupMemberInvitePayload } from "../group-chat-models";
 
 const GROUP_CHAT_API_PATH = "/groups";
@@ -50,7 +55,7 @@ export class GroupChatApiError extends Error {
 }
 
 type RequestOptions = {
-  method?: "GET" | "POST" | "PATCH";
+  method?: "DELETE" | "GET" | "POST" | "PATCH";
   body?: unknown;
   signal?: AbortSignal;
 };
@@ -83,6 +88,8 @@ function unwrapData(value: unknown): Record<string, unknown> {
 }
 
 function readCollection(value: unknown, keys: readonly string[]): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (isRecord(value) && Array.isArray(value.data)) return value.data;
   const source = unwrapData(value);
   for (const key of keys) {
     if (Array.isArray(source[key])) return source[key];
@@ -323,6 +330,32 @@ function parseInvitationList(value: unknown, page: number, pageSize: number): Gr
   return { items, pagination: readPagination(value, page, pageSize, items.length) };
 }
 
+function parseInvitationResult(value: unknown): GroupChatInvitationResult {
+  const source = unwrapData(value);
+  const invited = Array.isArray(source.invited) ? source.invited.filter((item): item is string => typeof item === "string" && Boolean(item.trim())) : [];
+  const skipped = Array.isArray(source.skipped) ? source.skipped.filter((item): item is string => typeof item === "string" && Boolean(item.trim())) : [];
+  return { invited, skipped };
+}
+
+function parseVerifiedProvider(value: unknown): GroupChatVerifiedProvider | null {
+  if (!isRecord(value)) return null;
+  const userId = readString(value.user_id ?? value.userId);
+  if (!userId) return null;
+  return {
+    user_id: userId,
+    display_name: readString(value.display_name ?? value.full_name ?? value.name),
+    email: readString(value.email),
+    verified_at: readString(value.verified_at ?? value.created_at),
+  };
+}
+
+function parseVerifiedProviderList(value: unknown, page: number, pageSize: number): GroupChatVerifiedProviderListResponse {
+  const items = readCollection(value, ["items", "providers", "verified_providers"])
+    .map(parseVerifiedProvider)
+    .filter((item): item is GroupChatVerifiedProvider => item !== null);
+  return { items, pagination: readPagination(value, page, pageSize, items.length) };
+}
+
 function parseGroupDetails(value: unknown): GroupChatDetails | null {
   const source = unwrapData(value);
   const group = parseGroup(source.group ?? source);
@@ -423,17 +456,17 @@ export async function listGroupChatMembers(groupId: string, params: GroupChatMem
 }
 
 /** Invites additional authorized members using the documented InviteMembers schema. */
-export async function inviteGroupMembers(groupId: string, invitees: readonly GroupChatInvitee[]): Promise<void> {
+export async function inviteGroupMembers(groupId: string, invitees: readonly GroupChatInvitee[]): Promise<GroupChatInvitationResult> {
   const payload: InviteMembersPayload = buildGroupMemberInvitePayload(invitees);
   if (payload.invitees.length === 0) throw new GroupChatApiError(422, "Select at least one valid member.");
-  await request<unknown>(`/${encodeURIComponent(groupId)}/members`, new URLSearchParams(), { method: "POST", body: payload });
+  return parseInvitationResult(await request<unknown>(`/${encodeURIComponent(groupId)}/members`, new URLSearchParams(), { method: "POST", body: payload }));
 }
 
 /** Invites selected enrolled learners without automatically inviting future enrollments. */
-export async function inviteEnrolledLearners(groupId: string, payload: InviteEnrolledLearnersPayload): Promise<void> {
+export async function inviteEnrolledLearners(groupId: string, payload: InviteEnrolledLearnersPayload): Promise<GroupChatInvitationResult> {
   const userIds = payload.user_ids ? [...new Set(payload.user_ids.map((id) => id.trim()).filter(Boolean))] : undefined;
   if (userIds && userIds.length === 0) throw new GroupChatApiError(422, "Select at least one eligible learner.");
-  await request<unknown>(`/${encodeURIComponent(groupId)}/members/invite-enrolled`, new URLSearchParams(), { method: "POST", body: { ...payload, user_ids: userIds } });
+  return parseInvitationResult(await request<unknown>(`/${encodeURIComponent(groupId)}/members/invite-enrolled`, new URLSearchParams(), { method: "POST", body: { ...payload, user_ids: userIds } }));
 }
 
 /** Loads pending invitations for the authenticated recipient. */
@@ -456,4 +489,25 @@ export async function acceptGroupChatInvitation(groupId: string, payload: Accept
 /** Declines an invitation after the recipient explicitly confirms the action. */
 export async function declineGroupChatInvitation(groupId: string): Promise<void> {
   await request<unknown>(`/${encodeURIComponent(groupId)}/decline`, new URLSearchParams(), { method: "POST" });
+}
+
+/** Loads the tenant-scoped Group Chat Provider verification registry. */
+export async function listVerifiedGroupChatProviders(params: GroupChatVerifiedProviderListParams = {}): Promise<GroupChatVerifiedProviderListResponse> {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? DEFAULT_PAGE_SIZE;
+  return parseVerifiedProviderList(await request<unknown>("/verified-providers", makeParams(page, pageSize), { signal: params.signal }), page, pageSize);
+}
+
+/** Registers one existing Provider for Group Chat after explicit administrator action. */
+export async function registerVerifiedGroupChatProvider(input: RegisterGroupChatVerifiedProviderPayload): Promise<void> {
+  const payload = buildVerifiedProviderPayload(input.user_id, input.registration_number, input.registration_council);
+  if (!payload) throw new GroupChatApiError(422, "Select a Provider to verify.");
+  await request<unknown>("/verified-providers", new URLSearchParams(), { method: "POST", body: payload });
+}
+
+/** Revokes one Provider's separate Group Chat verification. */
+export async function revokeVerifiedGroupChatProvider(userId: string): Promise<void> {
+  const normalizedUserId = userId.trim();
+  if (!normalizedUserId) throw new GroupChatApiError(422, "The Provider identifier is required.");
+  await request<unknown>(`/verified-providers/${encodeURIComponent(normalizedUserId)}`, new URLSearchParams(), { method: "DELETE" });
 }
