@@ -18,7 +18,6 @@ import type {
   GroupChatMemberListParams,
   GroupChatMemberListResponse,
   GroupChatPagination,
-  GroupChatPermissions,
   GroupChatProvider,
   GroupChatProviderListParams,
   GroupChatProviderListResponse,
@@ -31,12 +30,13 @@ import type {
   GroupChatVerifiedProviderListParams,
   GroupChatVerifiedProviderListResponse,
   RegisterGroupChatVerifiedProviderPayload,
+  ReopenGroupPayload,
   InviteMembersPayload,
   InviteEnrolledLearnersPayload,
   UpdateGroupDetailsPayload,
   UpdateGroupSettingsPayload,
 } from "./group-chat.types";
-import { buildGroupMemberInvitePayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails } from "../group-chat-models";
+import { buildGroupMemberInvitePayload, buildReopenGroupPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatPermissions, getGroupChatReopenReasonError } from "../group-chat-models";
 export { buildCreateGroupPayload, buildGroupMemberInvitePayload } from "../group-chat-models";
 
 const GROUP_CHAT_API_PATH = "/groups";
@@ -162,20 +162,6 @@ function makeParams(page = 1, pageSize = DEFAULT_PAGE_SIZE): URLSearchParams {
   return params;
 }
 
-function parsePermissions(value: unknown): GroupChatPermissions {
-  const permissions = isRecord(value) ? value : {};
-  return {
-    can_view_members: readNullableBoolean(permissions.can_view_members ?? permissions.can_read_members),
-    can_invite_members: readNullableBoolean(permissions.can_invite_members ?? permissions.can_add_members),
-    can_manage_members: readNullableBoolean(permissions.can_manage_members),
-    can_manage_group: readNullableBoolean(permissions.can_manage_group),
-    can_edit_group: readNullableBoolean(permissions.can_edit_group),
-    can_update_settings: readNullableBoolean(permissions.can_update_settings),
-    can_close_group: readNullableBoolean(permissions.can_close_group),
-    can_reopen_group: readNullableBoolean(permissions.can_reopen_group),
-  };
-}
-
 function parseTraining(value: unknown): GroupChatTraining | null {
   if (!isRecord(value)) return null;
   const id = readString(value.id ?? value.training_id);
@@ -290,7 +276,7 @@ function parseGroup(value: unknown): GroupChatSummary | null {
     visibility_notice: readString(value.visibility_notice),
     emergency_notice: readString(value.emergency_notice),
     my_role: readString(value.my_role ?? value.current_user_role),
-    permissions: parsePermissions(value.permissions),
+    permissions: normalizeGroupChatPermissions(value.permissions),
   };
 }
 
@@ -430,6 +416,13 @@ export async function updateGroupSettings(groupId: string, payload: UpdateGroupS
 /** Closes a Group Chat through the documented no-body action endpoint. */
 export async function closeGroupChat(groupId: string): Promise<void> {
   await request<unknown>(`/${encodeURIComponent(groupId)}/close`, new URLSearchParams(), { method: "POST" });
+}
+
+/** Reopens a closed Group Chat with the backend-required reason. */
+export async function reopenGroupChat(groupId: string, reason: string): Promise<void> {
+  const payload: ReopenGroupPayload | null = buildReopenGroupPayload(reason);
+  if (!payload) throw new GroupChatApiError(422, getGroupChatReopenReasonError(reason) ?? "A valid reopen reason is required.");
+  await request<unknown>(`/${encodeURIComponent(groupId)}/reopen`, new URLSearchParams(), { method: "POST", body: payload });
 }
 
 /** Loads groups associated with one Training. */

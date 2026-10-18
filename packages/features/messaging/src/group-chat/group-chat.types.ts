@@ -69,14 +69,27 @@ export interface GroupChatProviderListResponse {
 
 /** Server-declared permissions for a Group Chat resource. */
 export interface GroupChatPermissions {
-  can_view_members: boolean | null;
-  can_invite_members: boolean | null;
-  can_manage_members: boolean | null;
-  can_manage_group: boolean | null;
+  can_post: boolean | null;
   can_edit_group: boolean | null;
-  can_update_settings: boolean | null;
-  can_close_group: boolean | null;
-  can_reopen_group: boolean | null;
+  can_change_settings: boolean | null;
+  can_invite: boolean | null;
+  can_view_members: boolean | null;
+  can_view_pending_invitations: boolean | null;
+  can_remove_members: boolean | null;
+  can_make_admin: boolean | null;
+  can_remove_admin: boolean | null;
+  can_mute_members: boolean | null;
+  can_hide_messages: boolean | null;
+  can_pin_messages: boolean | null;
+  can_close: boolean | null;
+  can_reopen: boolean | null;
+  can_transfer_ownership: boolean | null;
+  can_reassign_owner: boolean | null;
+  can_leave: boolean | null;
+  can_view_audit: boolean | null;
+  can_set_legal_hold: boolean | null;
+  can_report: boolean | null;
+  can_mute_group: boolean | null;
 }
 
 /** A group summary returned by the Group Chat list endpoint. */
@@ -248,6 +261,11 @@ export interface UpdateGroupDetailsPayload {
 /** Payload accepted by PATCH /groups/{group_id}/settings. */
 export interface UpdateGroupSettingsPayload {
   admins_only_posting: boolean;
+}
+
+/** Payload accepted by POST /groups/{group_id}/reopen. */
+export interface ReopenGroupPayload {
+  reason: string;
 }
 
 /** Query options for the authorized Training selection endpoint. */

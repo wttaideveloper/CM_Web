@@ -1,36 +1,49 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyPreviewMemberAction, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canUpdateGroupChatSettings, getGroupChatMemberDisplayName, getMemberManagementActions, normalizeGroupLearner, normalizeGroupProvider, PREVIEW_GROUP_MEMBERS, splitGroupChatMembers } from "./group-chat-models.ts";
+import { applyPreviewMemberAction, buildReopenGroupPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canReopenGroupChat, canUpdateGroupChatSettings, getGroupChatMemberDisplayName, getGroupChatReopenReasonError, getMemberManagementActions, normalizeGroupChatPermissions, normalizeGroupLearner, normalizeGroupProvider, PREVIEW_GROUP_MEMBERS, splitGroupChatMembers } from "./group-chat-models.ts";
 import type { GroupChatMember } from "./group-chat/group-chat.types";
 
-test("confirmed owners can close an open group when the role is present", () => {
-  assert.equal(canCloseGroupChat({ status: "open", my_role: "owner", permissions: { can_close_group: null } }), true);
+test("uses only the explicit backend close permission", () => {
+  assert.equal(canCloseGroupChat({ status: "open", permissions: { can_close: true } }), true);
+  assert.equal(canCloseGroupChat({ status: "open", permissions: { can_close: null } }), false);
 });
 
-test("admins require the explicit close permission", () => {
-  assert.equal(canCloseGroupChat({ status: "open", my_role: "admin", permissions: { can_close_group: true } }), true);
-  assert.equal(canCloseGroupChat({ status: "open", my_role: "admin", permissions: { can_close_group: null } }), false);
+test("missing and false backend permissions deny controls", () => {
+  assert.equal(canEditGroupChat({ status: "open", permissions: { can_edit_group: null } }), false);
+  assert.equal(canUpdateGroupChatSettings({ status: "open", permissions: { can_change_settings: null } }), false);
+  assert.equal(canCloseGroupChat({ status: "open", permissions: { can_close: false } }), false);
 });
 
-test("members and compliance viewers cannot close a group", () => {
-  assert.equal(canCloseGroupChat({ status: "open", my_role: "member", permissions: { can_close_group: true } }), false);
-  assert.equal(canCloseGroupChat({ status: "open", my_role: "compliance", permissions: { can_close_group: true } }), false);
+test("normalizes the confirmed backend permission names", () => {
+  const permissions = normalizeGroupChatPermissions({ can_post: true, can_edit_group: true, can_change_settings: false, can_invite: true, can_reopen: true });
+  assert.equal(permissions.can_post, true);
+  assert.equal(permissions.can_edit_group, true);
+  assert.equal(permissions.can_change_settings, false);
+  assert.equal(permissions.can_invite, true);
+  assert.equal(permissions.can_reopen, true);
+  assert.equal(permissions.can_close, null);
 });
 
-test("closed groups cannot be closed again", () => {
-  assert.equal(canCloseGroupChat({ status: "closed", my_role: "owner", permissions: { can_close_group: true } }), false);
+test("closed groups are read-only and reopen requires explicit permission", () => {
+  assert.equal(canCloseGroupChat({ status: "closed", permissions: { can_close: true } }), false);
+  assert.equal(canEditGroupChat({ status: "closed", permissions: { can_edit_group: true } }), false);
+  assert.equal(canUpdateGroupChatSettings({ status: "closed", permissions: { can_change_settings: true } }), false);
+  assert.equal(canReopenGroupChat({ status: "closed", permissions: { can_reopen: true } }), true);
+  assert.equal(canReopenGroupChat({ status: "closed", permissions: { can_reopen: false } }), false);
 });
 
-test("confirmed owners can access group details and messaging settings", () => {
-  const group = { status: "open", my_role: "owner" };
-  assert.equal(canEditGroupChat({ ...group, permissions: { can_manage_group: null, can_edit_group: null } }), true);
-  assert.equal(canUpdateGroupChatSettings({ ...group, permissions: { can_manage_group: null, can_update_settings: null } }), true);
+test("open-group controls follow backend permissions instead of role", () => {
+  const group = { status: "open" };
+  assert.equal(canEditGroupChat({ ...group, permissions: { can_edit_group: true } }), true);
+  assert.equal(canUpdateGroupChatSettings({ ...group, permissions: { can_change_settings: true } }), true);
 });
 
-test("non-owners still require explicit management permissions", () => {
-  const group = { status: "open", my_role: "member" };
-  assert.equal(canEditGroupChat({ ...group, permissions: { can_manage_group: null, can_edit_group: null } }), false);
-  assert.equal(canUpdateGroupChatSettings({ ...group, permissions: { can_manage_group: null, can_update_settings: null } }), false);
+test("reopen reason validation and payload are backend-compatible", () => {
+  assert.equal(getGroupChatReopenReasonError(""), "A reason is required to reopen this group.");
+  assert.equal(getGroupChatReopenReasonError("no"), "The reopen reason must be at least 3 characters.");
+  assert.equal(getGroupChatReopenReasonError("x".repeat(256)), "The reopen reason must be 255 characters or fewer.");
+  assert.deepEqual(buildReopenGroupPayload("  Reopen for the next cohort  "), { reason: "Reopen for the next cohort" });
+  assert.equal(buildReopenGroupPayload("  "), null);
 });
 
 test("normalizes enrolled learners and preserves eligibility", () => {

@@ -1,6 +1,6 @@
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
 import type { TenantMember } from "@ihp/enterprise-runtime";
-import type { CreateGroupPayload, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatVerifiedProvider, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
+import type { CreateGroupPayload, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatVerifiedProvider, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
 export type GroupRole = "Owner" | "Admin" | "Member";
@@ -221,26 +221,68 @@ export function isGroupChatProviderDirectoryCandidate(member: Pick<TenantMember,
   return member.status.trim().toLowerCase() === "active" && roleValues.includes("internal_user");
 }
 
-/** Returns whether the authenticated user may close an open Group Chat. */
-export function canCloseGroupChat(input: { status: string | null; my_role: string | null; permissions: Pick<GroupChatPermissions, "can_close_group"> }): boolean {
-  if (input.status?.trim().toLowerCase() === "closed") return false;
-  const role = input.my_role?.trim().toLowerCase();
-  if (role === "owner") return input.permissions.can_close_group !== false;
-  return role === "admin" && input.permissions.can_close_group === true;
+/** Normalizes the backend's explicit Group Chat permissions with default-deny semantics. */
+export function normalizeGroupChatPermissions(value: unknown): GroupChatPermissions {
+  const permissions = isRecord(value) ? value : {};
+  const readPermission = (key: keyof GroupChatPermissions): boolean | null => typeof permissions[key] === "boolean" ? permissions[key] as boolean : null;
+  return {
+    can_post: readPermission("can_post"),
+    can_edit_group: readPermission("can_edit_group"),
+    can_change_settings: readPermission("can_change_settings"),
+    can_invite: readPermission("can_invite"),
+    can_view_members: readPermission("can_view_members"),
+    can_view_pending_invitations: readPermission("can_view_pending_invitations"),
+    can_remove_members: readPermission("can_remove_members"),
+    can_make_admin: readPermission("can_make_admin"),
+    can_remove_admin: readPermission("can_remove_admin"),
+    can_mute_members: readPermission("can_mute_members"),
+    can_hide_messages: readPermission("can_hide_messages"),
+    can_pin_messages: readPermission("can_pin_messages"),
+    can_close: readPermission("can_close"),
+    can_reopen: readPermission("can_reopen"),
+    can_transfer_ownership: readPermission("can_transfer_ownership"),
+    can_reassign_owner: readPermission("can_reassign_owner"),
+    can_leave: readPermission("can_leave"),
+    can_view_audit: readPermission("can_view_audit"),
+    can_set_legal_hold: readPermission("can_set_legal_hold"),
+    can_report: readPermission("can_report"),
+    can_mute_group: readPermission("can_mute_group"),
+  };
 }
 
-/** Returns whether the authenticated user may edit open Group Chat details. */
-export function canEditGroupChat(input: { status: string | null; my_role: string | null; permissions: Pick<GroupChatPermissions, "can_manage_group" | "can_edit_group"> }): boolean {
-  if (input.status?.trim().toLowerCase() === "closed") return false;
-  if (input.my_role?.trim().toLowerCase() === "owner") return true;
-  return input.permissions.can_manage_group === true && input.permissions.can_edit_group === true;
+/** Returns whether the backend authorizes closing an open Group Chat. */
+export function canCloseGroupChat(input: { status: string | null; permissions: Pick<GroupChatPermissions, "can_close"> }): boolean {
+  return input.status?.trim().toLowerCase() !== "closed" && input.permissions.can_close === true;
 }
 
-/** Returns whether the authenticated user may update open Group Chat posting settings. */
-export function canUpdateGroupChatSettings(input: { status: string | null; my_role: string | null; permissions: Pick<GroupChatPermissions, "can_manage_group" | "can_update_settings"> }): boolean {
-  if (input.status?.trim().toLowerCase() === "closed") return false;
-  if (input.my_role?.trim().toLowerCase() === "owner") return true;
-  return input.permissions.can_manage_group === true && input.permissions.can_update_settings === true;
+/** Returns whether the backend authorizes editing open Group Chat details. */
+export function canEditGroupChat(input: { status: string | null; permissions: Pick<GroupChatPermissions, "can_edit_group"> }): boolean {
+  return input.status?.trim().toLowerCase() !== "closed" && input.permissions.can_edit_group === true;
+}
+
+/** Returns whether the backend authorizes changing open Group Chat settings. */
+export function canUpdateGroupChatSettings(input: { status: string | null; permissions: Pick<GroupChatPermissions, "can_change_settings"> }): boolean {
+  return input.status?.trim().toLowerCase() !== "closed" && input.permissions.can_change_settings === true;
+}
+
+/** Returns whether the backend authorizes reopening a closed Group Chat. */
+export function canReopenGroupChat(input: { status: string | null; permissions: Pick<GroupChatPermissions, "can_reopen"> }): boolean {
+  return input.status?.trim().toLowerCase() === "closed" && input.permissions.can_reopen === true;
+}
+
+/** Returns a user-facing validation message for a Group Chat reopen reason. */
+export function getGroupChatReopenReasonError(reason: string): string | null {
+  const trimmedReason = reason.trim();
+  if (!trimmedReason) return "A reason is required to reopen this group.";
+  if (trimmedReason.length < 3) return "The reopen reason must be at least 3 characters.";
+  if (trimmedReason.length > 255) return "The reopen reason must be 255 characters or fewer.";
+  return null;
+}
+
+/** Builds the validated reopen request body without sending a state-changing request. */
+export function buildReopenGroupPayload(reason: string): ReopenGroupPayload | null {
+  if (getGroupChatReopenReasonError(reason)) return null;
+  return { reason: reason.trim() };
 }
 
 /** Builds the minimal PATCH payload for editable Group Chat details. */
