@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCreateGroupPayload, buildGroupMemberInvitePayload, buildVerifiedProviderPayload, formatGroupChatInvitationFeedback, isGroupChatLearnerSelectable, isGroupChatProviderDirectoryCandidate, isGroupChatProviderSelectable, isGroupChatProviderUnavailableInCurrentGroup, isGroupChatTrainingSearchResultStale, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatVerifiedProvider, remainingGroupChatMemberSlots, resolveGroupChatOwnerName, resolveGroupChatVerifiedProviderName } from "./group-chat-models.ts";
+import { buildCreateGroupPayload, buildGroupMemberInvitePayload, buildTransferGroupOwnershipPayload, buildVerifiedProviderPayload, formatGroupChatInvitationFeedback, isGroupChatLearnerSelectable, isGroupChatProviderDirectoryCandidate, isGroupChatProviderSelectable, isGroupChatProviderUnavailableInCurrentGroup, isGroupChatTrainingSearchResultStale, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatVerifiedProvider, remainingGroupChatMemberSlots, resolveGroupChatOwnerName, resolveGroupChatVerifiedProviderName } from "./group-chat-models.ts";
 import type { GroupChatLearner, GroupChatProvider } from "./group-chat/group-chat.types";
 
 const learner = (overrides: Partial<GroupChatLearner> = {}): GroupChatLearner => ({
@@ -260,4 +260,9 @@ test("invitation feedback uses actual learner and Provider outcomes", () => {
   assert.equal(formatGroupChatInvitationFeedback("learner", { invited: ["learner-1"], skipped: ["learner-2"] }), "1 learner invited successfully. 1 skipped.");
   assert.equal(formatGroupChatInvitationFeedback("Provider", { invited: [], skipped: ["provider-1", "provider-2"] }), "No Providers were invited. 2 skipped.");
   assert.equal(formatGroupChatInvitationFeedback("learner", { invited: [], skipped: [] }), null);
+});
+
+test("ownership transfer uses the documented target user payload", () => {
+  assert.deepEqual(buildTransferGroupOwnershipPayload(" provider-user "), { user_id: "provider-user" });
+  assert.equal(buildTransferGroupOwnershipPayload(""), null);
 });

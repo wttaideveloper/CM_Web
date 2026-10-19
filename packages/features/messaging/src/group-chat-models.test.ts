@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildGroupAvatarUploadFormData, buildGroupChatMemberMutePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canReopenGroupChat, canUpdateGroupChatSettings, getGroupChatMemberDisplayName, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatReopenReasonError, getMemberManagementActions, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatPermissions, normalizeGroupLearner, normalizeGroupProvider, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
+import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildGroupAvatarUploadFormData, buildGroupChatMemberMutePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canReopenGroupChat, canUpdateGroupChatSettings, getGroupChatMemberDisplayName, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatReopenReasonError, getMemberManagementActions, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatPermissions, normalizeGroupLearner, normalizeGroupProvider, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
 import type { GroupChatMember } from "./group-chat/group-chat.types";
 
 test("builds the documented Group Chat avatar multipart fields", () => {
@@ -191,6 +191,27 @@ test("promotion respects the three-admin limit and backend permissions", () => {
   const admins: GroupChatMember[] = [1, 2, 3].map((id) => ({ ...provider, id: `admin-${id}`, user_id: `admin-user-${id}`, role: "admin" }));
   assert.deepEqual(getGroupChatMemberRoleActions(provider, { can_make_admin: true, can_remove_admin: true }, new Set(["provider-user"]), admins, null), []);
   assert.deepEqual(getGroupChatMemberRoleActions(provider, { can_make_admin: null, can_remove_admin: true }, new Set(["provider-user"]), [], null), []);
+});
+
+test("ownership transfer is limited to an active verified Provider in an open group", () => {
+  const provider: GroupChatMember = { id: "provider", user_id: "provider-user", name: "Provider", role: "member", member_kind: "provider", membership_status: "active", joined_at: null, is_current_user: false, can_manage: null, posting_muted: false, posting_muted_until: null };
+  const permissions = { can_transfer_ownership: true } as const;
+  const verified = new Set(["provider-user"]);
+  assert.equal(getGroupChatMemberOwnershipAction(provider, permissions, verified, "owner-user", "open"), "transfer-ownership");
+  assert.equal(getGroupChatMemberOwnershipAction(provider, { can_transfer_ownership: false }, verified, "owner-user", "open"), null);
+  assert.equal(getGroupChatMemberOwnershipAction(provider, permissions, verified, "owner-user", "closed"), null);
+  assert.equal(getGroupChatMemberOwnershipAction(provider, permissions, verified, "owner-user", null), null);
+  assert.equal(getGroupChatMemberOwnershipAction({ ...provider, member_kind: "patient" }, permissions, verified, "owner-user", "open"), null);
+  assert.equal(getGroupChatMemberOwnershipAction({ ...provider, membership_status: "invited" }, permissions, verified, "owner-user", "open"), null);
+  assert.equal(getGroupChatMemberOwnershipAction({ ...provider, membership_status: "removed" }, permissions, verified, "owner-user", "open"), null);
+  assert.equal(getGroupChatMemberOwnershipAction(provider, permissions, new Set(), "owner-user", "open"), null);
+  assert.equal(getGroupChatMemberOwnershipAction({ ...provider, user_id: "owner-user", role: "owner" }, permissions, verified, "owner-user", "open"), null);
+  assert.equal(getGroupChatMemberOwnershipAction({ ...provider, user_id: null }, permissions, verified, "owner-user", "open"), null);
+});
+
+test("ownership transfer payload trims and requires the target user ID", () => {
+  assert.deepEqual(buildTransferGroupOwnershipPayload(" provider-user "), { user_id: "provider-user" });
+  assert.equal(buildTransferGroupOwnershipPayload("   "), null);
 });
 
 test("builds exact promotion and demotion role payloads", () => {

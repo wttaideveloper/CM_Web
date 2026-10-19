@@ -154,6 +154,11 @@ export interface ChangeGroupMemberRolePayload {
   reason?: string;
 }
 
+/** Payload accepted by POST /groups/{group_id}/transfer-ownership. */
+export interface TransferGroupOwnershipPayload {
+  user_id: string;
+}
+
 /** Optional fields accepted by the backend mute request; timed mute is not enabled yet. */
 export interface GroupChatMemberPostingMutePayload {
   until?: string | null;

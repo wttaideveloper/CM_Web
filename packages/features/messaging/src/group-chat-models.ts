@@ -1,6 +1,6 @@
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
 import type { TenantMember } from "@ihp/enterprise-runtime";
-import type { ChangeGroupMemberRolePayload, CreateGroupPayload, GroupAvatarUploadResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatVerifiedProvider, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
+import type { ChangeGroupMemberRolePayload, CreateGroupPayload, GroupAvatarUploadResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatVerifiedProvider, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
 export type GroupRole = "Owner" | "Admin" | "Member";
@@ -10,7 +10,7 @@ export type MemberManagementAction = "make-admin" | "remove-admin" | "remove-mem
 /** Actions available in the live Group Chat member-role menu. */
 export type GroupChatMemberRoleAction = "make-admin" | "remove-admin";
 /** Actions available for active members and pending invitations. */
-export type GroupChatMemberAction = GroupChatMemberRoleAction | "remove-member" | "cancel-invitation" | "mute-posting" | "unmute-posting";
+export type GroupChatMemberAction = GroupChatMemberRoleAction | "remove-member" | "cancel-invitation" | "mute-posting" | "unmute-posting" | "transfer-ownership";
 export type GroupChatMemberPostingAction = "mute-posting" | "unmute-posting";
 
 export type GroupLearner = {
@@ -147,6 +147,23 @@ export function getGroupChatMemberRoleActions(
   return ["make-admin"];
 }
 
+/** Returns ownership transfer only for an active, verified Provider in an open group. */
+export function getGroupChatMemberOwnershipAction(
+  member: GroupChatMember,
+  permissions: Pick<GroupChatPermissions, "can_transfer_ownership">,
+  verifiedProviderIds: ReadonlySet<string>,
+  ownerUserId: string | null,
+  groupStatus: string | null,
+): "transfer-ownership" | null {
+  const status = member.membership_status.trim().toLowerCase();
+  const role = member.role.trim().toLowerCase();
+  const isOwner = role === "owner" || (Boolean(member.user_id) && member.user_id === ownerUserId);
+  const userId = member.user_id;
+  const isVerifiedProvider = member.member_kind?.trim().toLowerCase() === "provider" && userId !== null && userId.trim() !== "" && verifiedProviderIds.has(userId);
+  if (permissions.can_transfer_ownership !== true || groupStatus?.trim().toLowerCase() !== "open" || status !== "active" || isOwner || !userId || !isVerifiedProvider) return null;
+  return "transfer-ownership";
+}
+
 /** Returns the conservative removal action for one active member or pending invitation. */
 export function getGroupChatMemberRemovalAction(
   member: GroupChatMember,
@@ -196,6 +213,12 @@ export function buildChangeGroupMemberRolePayload(role: GroupChatMemberRole, rea
   if (role === "admin") return { role: "admin" };
   const normalizedReason = reason.trim();
   return normalizedReason ? { role: "member", reason: normalizedReason } : null;
+}
+
+/** Builds the exact ownership-transfer request body and rejects missing target IDs. */
+export function buildTransferGroupOwnershipPayload(userId: string): TransferGroupOwnershipPayload | null {
+  const normalizedUserId = userId.trim();
+  return normalizedUserId ? { user_id: normalizedUserId } : null;
 }
 
 /** Builds the optional, URL-encoded reason query for member removal or invitation cancellation. */

@@ -35,12 +35,13 @@ import type {
   GroupChatVerifiedProviderListResponse,
   RegisterGroupChatVerifiedProviderPayload,
   ReopenGroupPayload,
+  TransferGroupOwnershipPayload,
   InviteMembersPayload,
   InviteEnrolledLearnersPayload,
   UpdateGroupDetailsPayload,
   UpdateGroupSettingsPayload,
 } from "./group-chat.types";
-import { buildChangeGroupMemberRolePayload, buildGroupAvatarUploadFormData, buildGroupChatMemberMutePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberPostingMute, normalizeGroupChatPermissions, getGroupChatReopenReasonError, resolveGroupChatOwnerName } from "../group-chat-models";
+import { buildChangeGroupMemberRolePayload, buildGroupAvatarUploadFormData, buildGroupChatMemberMutePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberPostingMute, normalizeGroupChatPermissions, getGroupChatReopenReasonError, resolveGroupChatOwnerName } from "../group-chat-models";
 export { buildCreateGroupPayload, buildGroupMemberInvitePayload } from "../group-chat-models";
 
 const GROUP_CHAT_API_PATH = "/groups";
@@ -479,6 +480,14 @@ export async function changeGroupMemberRole(groupId: string, userId: string, rol
   const payload: ChangeGroupMemberRolePayload | null = buildChangeGroupMemberRolePayload(role, reason);
   if (!payload) throw new GroupChatApiError(422, "A reason is required when removing an Admin role.");
   await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/members/${encodeURIComponent(normalizedUserId)}/role`, new URLSearchParams(), { method: "PATCH", body: payload });
+}
+
+/** Transfers ownership to an eligible Provider through the authenticated Group Chat API. */
+export async function transferGroupOwnership(groupId: string, userId: string): Promise<void> {
+  const normalizedGroupId = groupId.trim();
+  const payload: TransferGroupOwnershipPayload | null = buildTransferGroupOwnershipPayload(userId);
+  if (!normalizedGroupId || !payload) throw new GroupChatApiError(422, "The Group Chat and new owner identifiers are required.");
+  await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/transfer-ownership`, new URLSearchParams(), { method: "POST", body: payload });
 }
 
 /** Removes an active member or cancels a pending invitation without sending a request body. */
