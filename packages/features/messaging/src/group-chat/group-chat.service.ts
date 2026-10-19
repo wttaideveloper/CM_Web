@@ -4,6 +4,7 @@ import type {
   AcceptGroupInvitationPayload,
   CreateGroupPayload,
   GroupChatDetails,
+  GroupAvatarUploadResponse,
   GroupChatInvitation,
   GroupChatInvitationDetails,
   GroupChatInvitationListParams,
@@ -36,7 +37,7 @@ import type {
   UpdateGroupDetailsPayload,
   UpdateGroupSettingsPayload,
 } from "./group-chat.types";
-import { buildGroupMemberInvitePayload, buildReopenGroupPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatPermissions, getGroupChatReopenReasonError } from "../group-chat-models";
+import { buildGroupAvatarUploadFormData, buildGroupMemberInvitePayload, buildReopenGroupPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatPermissions, getGroupChatReopenReasonError, resolveGroupChatOwnerName } from "../group-chat-models";
 export { buildCreateGroupPayload, buildGroupMemberInvitePayload } from "../group-chat-models";
 
 const GROUP_CHAT_API_PATH = "/groups";
@@ -51,6 +52,23 @@ export class GroupChatApiError extends Error {
     super(message);
     this.name = "GroupChatApiError";
     this.status = status;
+  }
+}
+
+/** Uploads one validated Group Chat avatar through the authenticated upload endpoint. */
+export async function uploadGroupAvatar(file: File): Promise<string> {
+  if (!isSupportedGroupAvatarFile(file)) throw new GroupChatApiError(422, "Select an image file for the Group Chat avatar.");
+  try {
+    const response = await chatRequestResponse("/uploads/", { method: "POST", body: buildGroupAvatarUploadFormData(file) }, false);
+    if (!response.ok) throw new GroupChatApiError(response.status, await backendErrorMessage(response));
+    const body: unknown = await response.json();
+    const parsed: GroupAvatarUploadResponse | null = normalizeGroupAvatarUploadResponse(body);
+    if (!parsed) throw new GroupChatApiError(502, "The upload service did not return an avatar URL.");
+    return parsed.url;
+  } catch (error: unknown) {
+    if (error instanceof GroupChatApiError) throw error;
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    throw new GroupChatApiError(0, "Unable to upload the Group Chat avatar.");
   }
 }
 
@@ -347,7 +365,8 @@ function parseGroupDetails(value: unknown): GroupChatDetails | null {
   const group = parseGroup(source.group ?? source);
   if (!group) return null;
   const owner = parseMember(source.owner);
-  return { ...group, training_title: readString(source.training_title ?? source.context_name), owner };
+  const ownerName = resolveGroupChatOwnerName(group.owner_name, owner?.name);
+  return { ...group, training_title: readString(source.training_title ?? source.context_name), owner: owner && ownerName ? { ...owner, name: ownerName } : owner };
 }
 
 function requireParsed<T>(value: T | null, message: string): T {
@@ -405,7 +424,7 @@ export async function getGroupChat(groupId: string, signal?: AbortSignal): Promi
 
 /** Updates only the editable Group Chat identity fields. */
 export async function updateGroupDetails(groupId: string, payload: UpdateGroupDetailsPayload): Promise<void> {
-  await request<unknown>(`/${encodeURIComponent(groupId)}`, new URLSearchParams(), { method: "PATCH", body: buildUpdateGroupDetailsPayload(payload.name, payload.description) });
+  await request<unknown>(`/${encodeURIComponent(groupId)}`, new URLSearchParams(), { method: "PATCH", body: buildUpdateGroupDetailsPayload(payload.name, payload.description, payload.avatar_url) });
 }
 
 /** Updates only the Group Chat posting permission. */

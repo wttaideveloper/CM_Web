@@ -1,7 +1,62 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyPreviewMemberAction, buildReopenGroupPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canReopenGroupChat, canUpdateGroupChatSettings, getGroupChatMemberDisplayName, getGroupChatReopenReasonError, getMemberManagementActions, normalizeGroupChatPermissions, normalizeGroupLearner, normalizeGroupProvider, PREVIEW_GROUP_MEMBERS, splitGroupChatMembers } from "./group-chat-models.ts";
+import { applyPreviewMemberAction, buildCreateGroupPayload, buildGroupAvatarUploadFormData, buildReopenGroupPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canReopenGroupChat, canUpdateGroupChatSettings, getGroupChatMemberDisplayName, getGroupChatReopenReasonError, getMemberManagementActions, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatPermissions, normalizeGroupLearner, normalizeGroupProvider, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
 import type { GroupChatMember } from "./group-chat/group-chat.types";
+
+test("builds the documented Group Chat avatar multipart fields", () => {
+  const file = new File(["image"], "group.png", { type: "image/png" });
+  const formData = buildGroupAvatarUploadFormData(file);
+  assert.equal(formData.get("file"), file);
+  assert.equal(formData.get("folder"), "group-avatars");
+});
+
+test("keeps avatar optional and normalizes uploaded avatar URLs", () => {
+  const base = { name: "Group", contextId: "training-1", description: "", userIds: [], adminsOnlyPosting: true };
+  assert.equal(buildCreateGroupPayload(base).avatar_url, undefined);
+  assert.equal(buildCreateGroupPayload({ ...base, avatarUrl: " " }).avatar_url, undefined);
+  assert.equal(buildCreateGroupPayload({ ...base, avatarUrl: " https://cdn.test/group.png " }).avatar_url, "https://cdn.test/group.png");
+  assert.deepEqual(buildUpdateGroupDetailsPayload("Group", "Description", " https://cdn.test/group.png "), { name: "Group", description: "Description", avatar_url: "https://cdn.test/group.png" });
+  assert.deepEqual(normalizeGroupAvatarUploadResponse({ url: " https://cdn.test/group.png " }), { url: "https://cdn.test/group.png" });
+  assert.deepEqual(normalizeGroupAvatarUploadResponse({ data: { url: "https://cdn.test/group.png" } }), { url: "https://cdn.test/group.png" });
+  assert.equal(normalizeGroupAvatarUploadResponse({ data: {} }), null);
+});
+
+test("prefers the selected local avatar preview and falls back to initials when absent", () => {
+  assert.equal(resolveGroupAvatarDisplayUrl(" blob:group-preview ", "https://cdn.test/current.png"), "blob:group-preview");
+  assert.equal(resolveGroupAvatarDisplayUrl(null, "/api/v1/uploads/group-avatars/current.webp"), "/api/v1/uploads/group-avatars/current.webp");
+  assert.equal(resolveGroupAvatarDisplayUrl(" ", "https://cdn.test/current.png"), "https://cdn.test/current.png");
+  assert.equal(resolveGroupAvatarDisplayUrl(null), null);
+});
+
+test("resolves backend-relative avatars through the Enterprise gateway", () => {
+  const backendRelativeUrl = "/api/v1/uploads/group-avatars/group.webp";
+  assert.equal(
+    resolveGroupChatAvatarUrl(backendRelativeUrl, { chatApiBaseUrl: "/api/chat", gatewayMode: true }),
+    "/api/chat/uploads/group-avatars/group.webp",
+  );
+});
+
+test("resolves backend-relative avatars against the Shell direct Chat origin", () => {
+  assert.equal(
+    resolveGroupChatAvatarUrl("/api/v1/uploads/group-avatars/group.webp", { chatApiBaseUrl: "https://chat.wisdomtooth.tech/api/v1", gatewayMode: false }),
+    "https://chat.wisdomtooth.tech/api/v1/uploads/group-avatars/group.webp",
+  );
+});
+
+test("preserves supported avatar URLs and rejects unsupported values", () => {
+  assert.equal(resolveGroupChatAvatarUrl("https://cdn.test/group.webp"), "https://cdn.test/group.webp");
+  assert.equal(resolveGroupChatAvatarUrl("blob:group-preview"), "blob:group-preview");
+  assert.equal(resolveGroupChatAvatarUrl(null), null);
+  assert.equal(resolveGroupChatAvatarUrl("  "), null);
+  assert.equal(resolveGroupChatAvatarUrl("javascript:alert(1)"), null);
+  assert.equal(resolveGroupChatAvatarUrl("data:image/png;base64,unsafe"), null);
+  assert.equal(resolveGroupChatAvatarUrl("/other/path/group.webp", { chatApiBaseUrl: "/api/chat", gatewayMode: true }), null);
+});
+
+test("accepts image avatars without inventing a size restriction", () => {
+  assert.equal(isSupportedGroupAvatarFile(new File(["image"], "group.png", { type: "image/png" })), true);
+  assert.equal(isSupportedGroupAvatarFile(new File(["text"], "notes.txt", { type: "text/plain" })), false);
+});
 
 test("uses only the explicit backend close permission", () => {
   assert.equal(canCloseGroupChat({ status: "open", permissions: { can_close: true } }), true);

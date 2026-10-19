@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCreateGroupPayload, buildGroupMemberInvitePayload, buildVerifiedProviderPayload, formatGroupChatInvitationFeedback, isGroupChatLearnerSelectable, isGroupChatProviderDirectoryCandidate, isGroupChatProviderSelectable, isGroupChatProviderUnavailableInCurrentGroup, isGroupChatTrainingSearchResultStale, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatVerifiedProvider, remainingGroupChatMemberSlots, resolveGroupChatVerifiedProviderName } from "./group-chat-models.ts";
+import { buildCreateGroupPayload, buildGroupMemberInvitePayload, buildVerifiedProviderPayload, formatGroupChatInvitationFeedback, isGroupChatLearnerSelectable, isGroupChatProviderDirectoryCandidate, isGroupChatProviderSelectable, isGroupChatProviderUnavailableInCurrentGroup, isGroupChatTrainingSearchResultStale, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatVerifiedProvider, remainingGroupChatMemberSlots, resolveGroupChatOwnerName, resolveGroupChatVerifiedProviderName } from "./group-chat-models.ts";
 import type { GroupChatLearner, GroupChatProvider } from "./group-chat/group-chat.types";
 
 const learner = (overrides: Partial<GroupChatLearner> = {}): GroupChatLearner => ({
@@ -173,7 +173,7 @@ test("verified Provider registry entries preserve the real user ID and safe name
   assert.equal(normalizeGroupChatVerifiedProvider({ display_name: "Missing ID" }), null);
 });
 
-test("verified Provider names resolve from the authorized tenant directory across the full returned collection", () => {
+test("backend verified Provider names take precedence over the authorized directory", () => {
   const provider = normalizeGroupChatVerifiedProvider({ user_id: "provider-2" });
   assert.ok(provider);
   const members = [
@@ -181,7 +181,7 @@ test("verified Provider names resolve from the authorized tenant directory acros
     { userId: "provider-2", fullName: "Enzo Provider" },
   ];
   assert.equal(resolveGroupChatVerifiedProviderName(provider, members as never), "Enzo Provider");
-  assert.equal(resolveGroupChatVerifiedProviderName({ ...provider, display_name: "Registry Name" }, []), "Registry Name");
+  assert.equal(resolveGroupChatVerifiedProviderName({ ...provider, display_name: "Registry Name" }, members as never), "Registry Name");
   assert.equal(resolveGroupChatVerifiedProviderName({ ...provider, display_name: null }, []), null);
 });
 
@@ -192,7 +192,15 @@ test("verified Provider name resolution is safe while the directory is loading o
   assert.equal(resolveGroupChatVerifiedProviderName({ ...provider, display_name: null }, [{ userId: "other", fullName: "Other Provider" }] as never), null);
   assert.equal(resolveGroupChatVerifiedProviderName(provider, [{ userId: "provider-1", fullName: "   " }] as never), "Registry Name");
   assert.equal(resolveGroupChatVerifiedProviderName(provider, [{ userId: "provider-1" }] as never), "Registry Name");
-  assert.equal(resolveGroupChatVerifiedProviderName(provider, [{ userId: "provider-1", fullName: "Loaded Provider" }] as never), "Loaded Provider");
+  assert.equal(resolveGroupChatVerifiedProviderName(provider, [{ userId: "provider-1", fullName: "Loaded Provider" }] as never), "Registry Name");
+  assert.equal(resolveGroupChatVerifiedProviderName({ ...provider, display_name: null, email: "provider@example.test" }, []), null);
+});
+
+test("owner name resolution prefers genuine stored names over generic placeholders", () => {
+  assert.equal(resolveGroupChatOwnerName("Enterprise Owner", "Group member"), "Enterprise Owner");
+  assert.equal(resolveGroupChatOwnerName("Group member", "Directory Owner"), "Directory Owner");
+  assert.equal(resolveGroupChatOwnerName(null, "Group member"), null);
+  assert.equal(resolveGroupChatOwnerName("  ", null), null);
 });
 
 test("Provider verification always accepts user_id and omits blank optional details", () => {

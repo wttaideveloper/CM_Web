@@ -208,6 +208,11 @@ export interface RegisterGroupChatVerifiedProviderPayload {
   registration_council?: string;
 }
 
+/** Response returned by POST /api/v1/uploads/ for a Group Chat avatar. */
+export interface GroupAvatarUploadResponse {
+  url: string;
+}
+
 /** Payload accepted by POST /groups. */
 export interface CreateGroupPayload {
   name: string;
@@ -217,6 +222,7 @@ export interface CreateGroupPayload {
   description: string;
   invitees: Array<{ user_id: string }>;
   admins_only_posting: boolean;
+  avatar_url?: string;
 }
 
 /** One additional member accepted by POST /groups/{group_id}/members. */
@@ -256,6 +262,7 @@ export interface AcceptGroupInvitationPayload {
 export interface UpdateGroupDetailsPayload {
   name: string;
   description: string;
+  avatar_url?: string;
 }
 
 /** Payload accepted by PATCH /groups/{group_id}/settings. */

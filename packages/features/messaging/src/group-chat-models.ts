@@ -1,6 +1,6 @@
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
 import type { TenantMember } from "@ihp/enterprise-runtime";
-import type { CreateGroupPayload, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatVerifiedProvider, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
+import type { CreateGroupPayload, GroupAvatarUploadResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatVerifiedProvider, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
 export type GroupRole = "Owner" | "Admin" | "Member";
@@ -198,8 +198,20 @@ export function normalizeGroupChatVerifiedProvider(value: unknown): GroupChatVer
 
 /** Resolves a registry entry to an authorized tenant-member name when available. */
 export function resolveGroupChatVerifiedProviderName(provider: GroupChatVerifiedProvider, members?: readonly TenantMember[]): string | null {
-  const directoryName = members?.find((member) => member.userId === provider.user_id)?.fullName?.trim();
-  return directoryName || provider.display_name?.trim() || null;
+  const backendName = provider.display_name?.trim();
+  if (backendName) return backendName;
+  return members?.find((member) => member.userId === provider.user_id)?.fullName?.trim() || null;
+}
+
+const GENERIC_GROUP_CHAT_NAME_PLACEHOLDERS = new Set(["group member", "invited member", "invited provider", "invited learner", "provider name unavailable", "name unavailable"]);
+
+/** Resolves the canonical owner name without allowing generic parser placeholders to mask a real name. */
+export function resolveGroupChatOwnerName(ownerName: string | null | undefined, ownerMemberName: string | null | undefined): string | null {
+  const normalizedOwnerName = ownerName?.trim();
+  if (normalizedOwnerName && !GENERIC_GROUP_CHAT_NAME_PLACEHOLDERS.has(normalizedOwnerName.toLowerCase())) return normalizedOwnerName;
+  const normalizedMemberName = ownerMemberName?.trim();
+  if (normalizedMemberName && !GENERIC_GROUP_CHAT_NAME_PLACEHOLDERS.has(normalizedMemberName.toLowerCase())) return normalizedMemberName;
+  return null;
 }
 
 /** Builds the exact Provider verification request body without inventing registration details. */
@@ -286,8 +298,9 @@ export function buildReopenGroupPayload(reason: string): ReopenGroupPayload | nu
 }
 
 /** Builds the minimal PATCH payload for editable Group Chat details. */
-export function buildUpdateGroupDetailsPayload(name: string, description: string): UpdateGroupDetailsPayload {
-  return { name: name.trim(), description: description.trim() };
+export function buildUpdateGroupDetailsPayload(name: string, description: string, avatarUrl?: string): UpdateGroupDetailsPayload {
+  const normalizedAvatarUrl = avatarUrl?.trim();
+  return { name: name.trim(), description: description.trim(), ...(normalizedAvatarUrl ? { avatar_url: normalizedAvatarUrl } : {}) };
 }
 
 /** Builds the minimal PATCH payload for Group Chat posting permissions. */
@@ -296,8 +309,9 @@ export function buildUpdateGroupSettingsPayload(adminsOnlyPosting: boolean): Upd
 }
 
 /** Builds the server-owned Training Group creation payload from selected user IDs. */
-export function buildCreateGroupPayload(input: { name: string; contextId: string; description: string; userIds: readonly string[]; adminsOnlyPosting: boolean }): CreateGroupPayload {
+export function buildCreateGroupPayload(input: { name: string; contextId: string; description: string; userIds: readonly string[]; adminsOnlyPosting: boolean; avatarUrl?: string }): CreateGroupPayload {
   const userIds = [...new Set(input.userIds.map((id) => id.trim()).filter(Boolean))];
+  const normalizedAvatarUrl = input.avatarUrl?.trim();
   return {
     name: input.name.trim(),
     kind: "program",
@@ -306,7 +320,81 @@ export function buildCreateGroupPayload(input: { name: string; contextId: string
     description: input.description.trim(),
     invitees: userIds.map((user_id) => ({ user_id })),
     admins_only_posting: input.adminsOnlyPosting,
+    ...(normalizedAvatarUrl ? { avatar_url: normalizedAvatarUrl } : {}),
   };
+}
+
+/** Accepts image files without inventing backend size restrictions. */
+export function isSupportedGroupAvatarFile(file: File): boolean {
+  return file.type.startsWith("image/");
+}
+
+/** Builds the documented multipart fields for a Group Chat avatar upload. */
+export function buildGroupAvatarUploadFormData(file: File): FormData {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("folder", "group-avatars");
+  return formData;
+}
+
+/** Prefers a local preview while retaining an existing avatar when no replacement is selected. */
+export type GroupChatAvatarUrlConfig = {
+  chatApiBaseUrl: string;
+  gatewayMode?: boolean;
+};
+
+/** Resolves trusted backend avatar paths without exposing credentials in image URLs. */
+export function resolveGroupChatAvatarUrl(
+  value: string | null | undefined,
+  config?: GroupChatAvatarUrlConfig,
+): string | null {
+  const trimmedValue = value?.trim();
+  if (!trimmedValue) return null;
+
+  if (trimmedValue.startsWith("blob:")) {
+    return trimmedValue;
+  }
+
+  try {
+    const absoluteUrl = new URL(trimmedValue);
+    return absoluteUrl.protocol === "https:" ? trimmedValue : null;
+  } catch {
+    // Backend-relative upload paths are resolved below; unsupported relative values are rejected.
+  }
+
+  if (!trimmedValue.startsWith("/api/v1/uploads/")) return null;
+
+  if (!config) return null;
+  const configuredBase = config.chatApiBaseUrl.trim();
+  if (!configuredBase) return null;
+
+  if (config.gatewayMode ?? configuredBase.startsWith("/")) {
+    const gatewayBase = configuredBase.replace(/\/+$/, "");
+    return `${gatewayBase}${trimmedValue.slice("/api/v1".length)}`;
+  }
+
+  try {
+    const configuredUrl = new URL(configuredBase);
+    if (!["http:", "https:"].includes(configuredUrl.protocol)) return null;
+    return `${configuredUrl.origin}${trimmedValue}`;
+  } catch {
+    return null;
+  }
+}
+
+export function resolveGroupAvatarDisplayUrl(
+  previewUrl?: string | null,
+  currentUrl?: string | null,
+): string | null {
+  return previewUrl?.trim() || currentUrl?.trim() || null;
+}
+
+/** Normalizes the documented uploaded avatar URL, including the standard data envelope. */
+export function normalizeGroupAvatarUploadResponse(value: unknown): GroupAvatarUploadResponse | null {
+  if (!isRecord(value)) return null;
+  const source = isRecord(value.data) ? value.data : value;
+  const url = source.url;
+  return typeof url === "string" && url.trim() ? { url: url.trim() } : null;
 }
 
 /** Builds the documented additional-member invitation payload without inventing member data. */

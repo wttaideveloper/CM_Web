@@ -7,6 +7,7 @@ import CreateTrainingGroupWizard from "./CreateTrainingGroupWizard";
 import GroupChatInvitations from "./GroupChatInvitations";
 import GroupChatProviderVerificationPanel, { canManageGroupChatProviderVerification } from "./GroupChatProviderVerificationPanel";
 import GroupChatWorkspace from "./GroupChatWorkspace";
+import { GroupAvatarDisplay } from "./GroupChatAvatar";
 import { listGroupChatGroups } from "./group-chat/group-chat.service";
 import type { GroupChatListResponse, GroupChatSummary } from "./group-chat/group-chat.types";
 
@@ -14,10 +15,6 @@ type PreviewState = "home" | "create";
 type GroupMode = "groups" | "invitations" | "verification";
 type Query<T> = UseQueryResult<T, Error>;
 const PAGE_SIZE = 10;
-
-function initials(name: string): string {
-  return name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
-}
 
 function ConversationIcon() {
   return <span aria-hidden="true" className="flex h-14 w-14 items-center justify-center rounded-full bg-[#e8f6ee] text-[#1f6a58] motion-safe:animate-pulse"><svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M5 6.5A3.5 3.5 0 0 1 8.5 3h7A3.5 3.5 0 0 1 19 6.5v5a3.5 3.5 0 0 1-3.5 3.5H11l-4.5 4v-4.6A3.5 3.5 0 0 1 5 11.5v-5Z" /><path d="M9 8.75h6M9 11.75h3" /></svg></span>;
@@ -38,7 +35,7 @@ function Pagination({ page, totalPages, onChange }: { page: number; totalPages: 
 
 function GroupListItem({ group, selected, onSelect }: { group: GroupChatSummary; selected: boolean; onSelect: () => void }) {
   const baseClass = "flex w-full cursor-pointer items-center gap-3 rounded-xl p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2";
-  return <button type="button" aria-pressed={selected} onClick={onSelect} className={`${baseClass} ${selected ? "bg-[#e8f6ee]" : "hover:bg-[#f4faf7]"}`}><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#dceee5] text-sm font-bold text-[#1f6a58]">{initials(group.name)}</span><span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-2"><span className="truncate text-sm font-bold text-[#16332b]">{group.name}</span>{group.unread_count > 0 ? <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#1f6a58] px-1.5 text-[10px] font-bold text-white">{group.unread_count}</span> : null}</span><span className="mt-0.5 block truncate text-xs text-[#52736a]">{group.last_message || group.description || "No messages yet"}</span><span className="mt-1 block text-[11px] text-[#7f9d94]">{group.member_count ?? "—"} members · {group.status || "Active"}</span></span></button>;
+  return <button type="button" aria-pressed={selected} onClick={onSelect} className={`${baseClass} ${selected ? "bg-[#e8f6ee]" : "hover:bg-[#f4faf7]"}`}><GroupAvatarDisplay name={group.name} url={group.avatar_url} size="small" /><span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-2"><span className="truncate text-sm font-bold text-[#16332b]">{group.name}</span>{group.unread_count > 0 ? <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#1f6a58] px-1.5 text-[10px] font-bold text-white">{group.unread_count}</span> : null}</span><span className="mt-0.5 block truncate text-xs text-[#52736a]">{group.last_message || group.description || "No messages yet"}</span><span className="mt-1 block text-[11px] text-[#7f9d94]">{group.member_count ?? "—"} members · {group.status || "Active"}</span></span></button>;
 }
 
 function Retry({ message, onRetry }: { message: string; onRetry: () => void }) {
