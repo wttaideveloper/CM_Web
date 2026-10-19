@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyPreviewMemberAction, buildCreateGroupPayload, buildGroupAvatarUploadFormData, buildReopenGroupPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canReopenGroupChat, canUpdateGroupChatSettings, getGroupChatMemberDisplayName, getGroupChatReopenReasonError, getMemberManagementActions, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatPermissions, normalizeGroupLearner, normalizeGroupProvider, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
+import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildGroupAvatarUploadFormData, buildGroupChatMemberMutePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canReopenGroupChat, canUpdateGroupChatSettings, getGroupChatMemberDisplayName, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatReopenReasonError, getMemberManagementActions, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatPermissions, normalizeGroupLearner, normalizeGroupProvider, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
 import type { GroupChatMember } from "./group-chat/group-chat.types";
 
 test("builds the documented Group Chat avatar multipart fields", () => {
@@ -149,9 +149,9 @@ test("mock promotion and demotion update only local membership state", () => {
 
 test("splits active and invited members without exposing pending user IDs", () => {
   const members: GroupChatMember[] = [
-    { id: "owner", user_id: "owner-user", name: "Owner", role: "owner", member_kind: "provider", membership_status: "active", joined_at: null, is_current_user: true, can_manage: true },
-    { id: "learner-1", user_id: "learner-user-1", name: "Invited learner", role: "member", member_kind: "patient", membership_status: "invited", joined_at: null, is_current_user: false, can_manage: false },
-    { id: "provider-1", user_id: "provider-user-1", name: "Invited Provider", role: "member", member_kind: "provider", membership_status: "invited", joined_at: null, is_current_user: false, can_manage: false },
+    { id: "owner", user_id: "owner-user", name: "Owner", role: "owner", member_kind: "provider", membership_status: "active", joined_at: null, is_current_user: true, can_manage: true, posting_muted: false, posting_muted_until: null },
+    { id: "learner-1", user_id: "learner-user-1", name: "Invited learner", role: "member", member_kind: "patient", membership_status: "invited", joined_at: null, is_current_user: false, can_manage: false, posting_muted: null, posting_muted_until: null },
+    { id: "provider-1", user_id: "provider-user-1", name: "Invited Provider", role: "member", member_kind: "provider", membership_status: "invited", joined_at: null, is_current_user: false, can_manage: false, posting_muted: null, posting_muted_until: null },
   ];
   const result = splitGroupChatMembers(members);
   assert.equal(result.active.length, 1);
@@ -159,8 +159,100 @@ test("splits active and invited members without exposing pending user IDs", () =
   assert.deepEqual(result.pending.map((member) => member.name), ["Invited learner", "Invited Provider"]);
 });
 
+test("classifies pending and removes removed or unknown records from Active Members", () => {
+  const base: GroupChatMember = { id: "member", user_id: "user", name: "Member", role: "member", member_kind: "patient", membership_status: "active", joined_at: null, is_current_user: false, can_manage: null, posting_muted: false, posting_muted_until: null };
+  const result = splitGroupChatMembers([
+    base,
+    { ...base, id: "pending", membership_status: "pending" },
+    { ...base, id: "removed", membership_status: "removed" },
+    { ...base, id: "unknown", membership_status: "left" },
+  ]);
+  assert.deepEqual(result.active.map((member) => member.id), ["member"]);
+  assert.deepEqual(result.pending.map((member) => member.id), ["pending"]);
+  assert.deepEqual(result.excluded.map((member) => member.id), ["removed", "unknown"]);
+});
+
+test("only an active verified Provider can be promoted and only an eligible Admin can be demoted", () => {
+  const permissions = { can_make_admin: true, can_remove_admin: true } as const;
+  const provider: GroupChatMember = { id: "provider", user_id: "provider-user", name: "Provider", role: "member", member_kind: "provider", membership_status: "active", joined_at: null, is_current_user: false, can_manage: null, posting_muted: false, posting_muted_until: null };
+  const admin: GroupChatMember = { ...provider, id: "admin", user_id: "admin-user", role: "admin" };
+  const learner: GroupChatMember = { ...provider, id: "learner", user_id: "learner-user", member_kind: "patient" };
+  const owner: GroupChatMember = { ...provider, id: "owner", user_id: "owner-user", role: "owner" };
+  const verified = new Set(["provider-user"]);
+  assert.deepEqual(getGroupChatMemberRoleActions(provider, permissions, verified, [provider], "owner-user"), ["make-admin"]);
+  assert.deepEqual(getGroupChatMemberRoleActions(admin, permissions, verified, [admin], "owner-user"), ["remove-admin"]);
+  assert.deepEqual(getGroupChatMemberRoleActions(learner, permissions, new Set(), [learner], "owner-user"), []);
+  assert.deepEqual(getGroupChatMemberRoleActions(owner, permissions, verified, [owner], "owner-user"), []);
+  assert.deepEqual(getGroupChatMemberRoleActions({ ...provider, can_manage: false }, permissions, verified, [provider], "owner-user"), []);
+});
+
+test("promotion respects the three-admin limit and backend permissions", () => {
+  const provider: GroupChatMember = { id: "provider", user_id: "provider-user", name: "Provider", role: "member", member_kind: "provider", membership_status: "active", joined_at: null, is_current_user: false, can_manage: true, posting_muted: false, posting_muted_until: null };
+  const admins: GroupChatMember[] = [1, 2, 3].map((id) => ({ ...provider, id: `admin-${id}`, user_id: `admin-user-${id}`, role: "admin" }));
+  assert.deepEqual(getGroupChatMemberRoleActions(provider, { can_make_admin: true, can_remove_admin: true }, new Set(["provider-user"]), admins, null), []);
+  assert.deepEqual(getGroupChatMemberRoleActions(provider, { can_make_admin: null, can_remove_admin: true }, new Set(["provider-user"]), [], null), []);
+});
+
+test("builds exact promotion and demotion role payloads", () => {
+  assert.deepEqual(buildChangeGroupMemberRolePayload("admin"), { role: "admin" });
+  assert.deepEqual(buildChangeGroupMemberRolePayload("member", "  compliance review  "), { role: "member", reason: "compliance review" });
+  assert.equal(buildChangeGroupMemberRolePayload("member", "   "), null);
+});
+
+test("allows owners to remove eligible active members and cancel their pending invitations", () => {
+  const member: GroupChatMember = { id: "member", user_id: "member-user", name: "Member", role: "member", member_kind: "patient", membership_status: "active", joined_at: null, is_current_user: false, can_manage: null, posting_muted: false, posting_muted_until: null };
+  const pending = { ...member, id: "pending", role: "invited", membership_status: "pending", can_manage: false } satisfies GroupChatMember;
+  const permissions = { can_remove_members: true } as const;
+  assert.equal(getGroupChatMemberRemovalAction(member, permissions, "owner-user"), "remove-member");
+  assert.equal(getGroupChatMemberRemovalAction(pending, permissions, "owner-user"), "cancel-invitation");
+});
+
+test("hides removal and cancellation for owners, current users, admins, and unmanaged members", () => {
+  const base: GroupChatMember = { id: "member", user_id: "member-user", name: "Member", role: "member", member_kind: "provider", membership_status: "active", joined_at: null, is_current_user: false, can_manage: null, posting_muted: false, posting_muted_until: null };
+  const permissions = { can_remove_members: true } as const;
+  assert.equal(getGroupChatMemberRemovalAction({ ...base, role: "owner" }, permissions, "owner-user"), null);
+  assert.equal(getGroupChatMemberRemovalAction({ ...base, is_current_user: true }, permissions, "owner-user"), null);
+  assert.equal(getGroupChatMemberRemovalAction({ ...base, role: "admin" }, permissions, "owner-user"), null);
+  assert.equal(getGroupChatMemberRemovalAction({ ...base, can_manage: false }, permissions, "owner-user"), null);
+  assert.equal(getGroupChatMemberRemovalAction({ ...base, user_id: null }, permissions, "owner-user"), null);
+  assert.equal(getGroupChatMemberRemovalAction(base, { can_remove_members: false }, "owner-user"), null);
+  assert.equal(getGroupChatMemberRemovalAction(base, { can_remove_members: null }, "owner-user"), null);
+});
+
+test("encodes an optional member-removal reason without sending a body", () => {
+  assert.equal(buildGroupMemberRemovalQuery("  compliance & safety review  ").toString(), "reason=compliance+%26+safety+review");
+  assert.equal(buildGroupMemberRemovalQuery("   ").toString(), "");
+});
+
+test("normalizes confirmed member posting-mute fields and preserves unknown state", () => {
+  assert.deepEqual(normalizeGroupChatMemberPostingMute({ posting_muted: true, posting_muted_until: " 2030-01-02T03:04:05Z " }), { posting_muted: true, posting_muted_until: "2030-01-02T03:04:05Z" });
+  assert.deepEqual(normalizeGroupChatMemberPostingMute({ posting_muted: false, posting_muted_until: null }), { posting_muted: false, posting_muted_until: null });
+  assert.deepEqual(normalizeGroupChatMemberPostingMute({}), { posting_muted: null, posting_muted_until: null });
+  assert.deepEqual(normalizeGroupChatMemberPostingMute({ posting_muted: "false", posting_muted_until: 123 }), { posting_muted: null, posting_muted_until: null });
+});
+
+test("builds the required empty JSON body for basic mute", () => {
+  assert.deepEqual(buildGroupChatMemberMutePayload(), {});
+});
+
+test("shows mute and unmute only for eligible active members with known state", () => {
+  const permissions = { can_mute_members: true } as const;
+  const member: GroupChatMember = { id: "member", user_id: "member-user", name: "Member", role: "member", member_kind: "patient", membership_status: "active", joined_at: null, is_current_user: false, can_manage: null, posting_muted: false, posting_muted_until: null };
+  assert.equal(getGroupChatMemberPostingAction(member, permissions, "owner-user"), "mute-posting");
+  assert.equal(getGroupChatMemberPostingAction({ ...member, posting_muted: true }, permissions, "owner-user"), "unmute-posting");
+  assert.equal(getGroupChatMemberPostingAction({ ...member, posting_muted: null }, permissions, "owner-user"), null);
+  assert.equal(getGroupChatMemberPostingAction({ ...member, posting_muted: undefined } as unknown as GroupChatMember, permissions, "owner-user"), null);
+  assert.equal(getGroupChatMemberPostingAction({ ...member, role: "owner" }, permissions, "owner-user"), null);
+  assert.equal(getGroupChatMemberPostingAction({ ...member, is_current_user: true }, permissions, "owner-user"), null);
+  assert.equal(getGroupChatMemberPostingAction({ ...member, membership_status: "pending" }, permissions, "owner-user"), null);
+  assert.equal(getGroupChatMemberPostingAction({ ...member, membership_status: "removed" }, permissions, "owner-user"), null);
+  assert.equal(getGroupChatMemberPostingAction(member, { can_mute_members: false }, "owner-user"), null);
+  assert.equal(getGroupChatMemberPostingAction(member, { can_mute_members: null }, "owner-user"), null);
+});
+
 test("uses privacy-safe names for null pending invitees", () => {
   assert.equal(getGroupChatMemberDisplayName(null, "invited", "patient"), "Invited learner");
+  assert.equal(getGroupChatMemberDisplayName(null, "pending", "patient"), "Invited learner");
   assert.equal(getGroupChatMemberDisplayName("  ", "invited", "provider"), "Invited Provider");
   assert.equal(getGroupChatMemberDisplayName(null, "active", "patient"), "Group member");
 });

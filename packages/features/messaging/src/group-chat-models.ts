@@ -1,12 +1,17 @@
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
 import type { TenantMember } from "@ihp/enterprise-runtime";
-import type { CreateGroupPayload, GroupAvatarUploadResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatVerifiedProvider, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
+import type { ChangeGroupMemberRolePayload, CreateGroupPayload, GroupAvatarUploadResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatVerifiedProvider, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
 export type GroupRole = "Owner" | "Admin" | "Member";
-export type MembershipStatus = "active" | "pending" | "removed";
+export type MembershipStatus = "active" | "invited" | "pending" | "removed" | "left" | "declined";
 export type ProviderVerificationStatus = "verified" | "unverified" | "unavailable";
 export type MemberManagementAction = "make-admin" | "remove-admin" | "remove-member";
+/** Actions available in the live Group Chat member-role menu. */
+export type GroupChatMemberRoleAction = "make-admin" | "remove-admin";
+/** Actions available for active members and pending invitations. */
+export type GroupChatMemberAction = GroupChatMemberRoleAction | "remove-member" | "cancel-invitation" | "mute-posting" | "unmute-posting";
+export type GroupChatMemberPostingAction = "mute-posting" | "unmute-posting";
 
 export type GroupLearner = {
   id: string;
@@ -105,15 +110,100 @@ export function formatGroupChatInvitationFeedback(kind: "learner" | "Provider", 
 
 /** Identifies the backend status used for an outgoing invitation not yet accepted. */
 export function isGroupChatPendingMember(member: Pick<GroupChatMember, "membership_status">): boolean {
-  return member.membership_status.trim().toLowerCase() === "invited";
+  const status = member.membership_status.trim().toLowerCase();
+  return status === "invited" || status === "pending";
 }
 
-/** Splits a visible member response without treating pending invitees as active members. */
-export function splitGroupChatMembers(members: readonly GroupChatMember[]): { active: GroupChatMember[]; pending: GroupChatMember[] } {
-  return members.reduce<{ active: GroupChatMember[]; pending: GroupChatMember[] }>((result, member) => {
-    (isGroupChatPendingMember(member) ? result.pending : result.active).push(member);
+/** Splits a visible member response while keeping removed and unknown statuses out of Active Members. */
+export function splitGroupChatMembers(members: readonly GroupChatMember[]): { active: GroupChatMember[]; pending: GroupChatMember[]; excluded: GroupChatMember[] } {
+  return members.reduce<{ active: GroupChatMember[]; pending: GroupChatMember[]; excluded: GroupChatMember[] }>((result, member) => {
+    const status = member.membership_status.trim().toLowerCase();
+    if (status === "active") result.active.push(member);
+    else if (isGroupChatPendingMember(member)) result.pending.push(member);
+    else result.excluded.push(member);
     return result;
-  }, { active: [], pending: [] });
+  }, { active: [], pending: [], excluded: [] });
+}
+
+/** Returns backend-authorized role actions for one active member. */
+export function getGroupChatMemberRoleActions(
+  member: GroupChatMember,
+  permissions: Pick<GroupChatPermissions, "can_make_admin" | "can_remove_admin">,
+  verifiedProviderIds: ReadonlySet<string>,
+  activeMembers: readonly GroupChatMember[],
+  ownerUserId: string | null,
+): readonly GroupChatMemberRoleAction[] {
+  const status = member.membership_status.trim().toLowerCase();
+  const role = member.role.trim().toLowerCase();
+  const isOwner = role === "owner" || (Boolean(member.user_id) && member.user_id === ownerUserId);
+  if (status !== "active" || isOwner || !member.user_id || member.can_manage === false) return [];
+
+  if (role === "admin") return permissions.can_remove_admin === true ? ["remove-admin"] : [];
+  if (role !== "member") return [];
+
+  const activeAdminCount = activeMembers.filter((candidate) => candidate.membership_status.trim().toLowerCase() === "active" && candidate.role.trim().toLowerCase() === "admin" && candidate.user_id !== ownerUserId).length;
+  const isVerifiedProvider = member.member_kind?.trim().toLowerCase() === "provider" && verifiedProviderIds.has(member.user_id);
+  if (permissions.can_make_admin !== true || !isVerifiedProvider || activeAdminCount >= 3) return [];
+  return ["make-admin"];
+}
+
+/** Returns the conservative removal action for one active member or pending invitation. */
+export function getGroupChatMemberRemovalAction(
+  member: GroupChatMember,
+  permissions: Pick<GroupChatPermissions, "can_remove_members">,
+  ownerUserId: string | null,
+): "remove-member" | "cancel-invitation" | null {
+  const status = member.membership_status.trim().toLowerCase();
+  const role = member.role.trim().toLowerCase();
+  const isOwner = role === "owner" || (Boolean(member.user_id) && member.user_id === ownerUserId);
+  if (permissions.can_remove_members !== true || !member.user_id || member.is_current_user || isOwner) return null;
+  if (status === "active") {
+    if (role !== "member" || member.can_manage === false) return null;
+    return "remove-member";
+  }
+  if (isGroupChatPendingMember(member) && role !== "admin") return "cancel-invitation";
+  return null;
+}
+
+/** Returns a posting-mute action only when the backend supplied a known mute state. */
+export function getGroupChatMemberPostingAction(
+  member: GroupChatMember,
+  permissions: Pick<GroupChatPermissions, "can_mute_members">,
+  ownerUserId: string | null,
+): GroupChatMemberPostingAction | null {
+  const status = member.membership_status.trim().toLowerCase();
+  const role = member.role.trim().toLowerCase();
+  const isOwner = role === "owner" || (Boolean(member.user_id) && member.user_id === ownerUserId);
+  if (permissions.can_mute_members !== true || status !== "active" || !member.user_id || member.is_current_user || isOwner || typeof member.posting_muted !== "boolean") return null;
+  return member.posting_muted ? "unmute-posting" : "mute-posting";
+}
+
+/** Normalizes only the confirmed member posting-mute fields with unknown default semantics. */
+export function normalizeGroupChatMemberPostingMute(value: unknown): Pick<GroupChatMember, "posting_muted" | "posting_muted_until"> {
+  if (!isRecord(value)) return { posting_muted: null, posting_muted_until: null };
+  const postingMuted = typeof value.posting_muted === "boolean" ? value.posting_muted : null;
+  const postingMutedUntil = typeof value.posting_muted_until === "string" && value.posting_muted_until.trim() ? value.posting_muted_until.trim() : null;
+  return { posting_muted: postingMuted, posting_muted_until: postingMutedUntil };
+}
+
+/** Builds the documented basic mute body without inventing an expiry or reason. */
+export function buildGroupChatMemberMutePayload(): GroupChatMemberPostingMutePayload {
+  return {};
+}
+
+/** Builds the exact role-change payload and enforces the client-side reason requirement for demotion. */
+export function buildChangeGroupMemberRolePayload(role: GroupChatMemberRole, reason = ""): ChangeGroupMemberRolePayload | null {
+  if (role === "admin") return { role: "admin" };
+  const normalizedReason = reason.trim();
+  return normalizedReason ? { role: "member", reason: normalizedReason } : null;
+}
+
+/** Builds the optional, URL-encoded reason query for member removal or invitation cancellation. */
+export function buildGroupMemberRemovalQuery(reason = ""): URLSearchParams {
+  const query = new URLSearchParams();
+  const normalizedReason = reason.trim();
+  if (normalizedReason) query.set("reason", normalizedReason);
+  return query;
 }
 
 /** Returns whether a Provider is already active or invited in this specific Group Chat. */
@@ -127,7 +217,8 @@ export function isGroupChatProviderUnavailableInCurrentGroup(providerUserId: str
 /** Returns an authorized name or a status-specific privacy-safe fallback. */
 export function getGroupChatMemberDisplayName(name: string | null | undefined, membershipStatus: string, memberKind: string | null | undefined): string {
   if (name?.trim()) return name.trim();
-  if (membershipStatus.trim().toLowerCase() !== "invited") return "Group member";
+  const normalizedStatus = membershipStatus.trim().toLowerCase();
+  if (normalizedStatus !== "invited" && normalizedStatus !== "pending") return "Group member";
   const normalizedKind = memberKind?.trim().toLowerCase() ?? "";
   if (normalizedKind === "provider") return "Invited Provider";
   if (normalizedKind === "patient" || normalizedKind === "learner") return "Invited learner";

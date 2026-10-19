@@ -2,6 +2,7 @@ import { chatRequestResponse } from "@ihp/chat-runtime";
 
 import type {
   AcceptGroupInvitationPayload,
+  ChangeGroupMemberRolePayload,
   CreateGroupPayload,
   GroupChatDetails,
   GroupAvatarUploadResponse,
@@ -16,6 +17,8 @@ import type {
   GroupChatListParams,
   GroupChatListResponse,
   GroupChatMember,
+  GroupChatMemberPostingMutePayload,
+  GroupChatMemberRole,
   GroupChatMemberListParams,
   GroupChatMemberListResponse,
   GroupChatPagination,
@@ -37,7 +40,7 @@ import type {
   UpdateGroupDetailsPayload,
   UpdateGroupSettingsPayload,
 } from "./group-chat.types";
-import { buildGroupAvatarUploadFormData, buildGroupMemberInvitePayload, buildReopenGroupPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatPermissions, getGroupChatReopenReasonError, resolveGroupChatOwnerName } from "../group-chat-models";
+import { buildChangeGroupMemberRolePayload, buildGroupAvatarUploadFormData, buildGroupChatMemberMutePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberPostingMute, normalizeGroupChatPermissions, getGroupChatReopenReasonError, resolveGroupChatOwnerName } from "../group-chat-models";
 export { buildCreateGroupPayload, buildGroupMemberInvitePayload } from "../group-chat-models";
 
 const GROUP_CHAT_API_PATH = "/groups";
@@ -319,6 +322,7 @@ function parseMember(value: unknown): GroupChatMember | null {
     joined_at: readString(value.joined_at ?? value.created_at),
     is_current_user: readBoolean(value.is_current_user ?? value.is_me),
     can_manage: readNullableBoolean(value.can_manage),
+    ...normalizeGroupChatMemberPostingMute(value),
   };
 }
 
@@ -465,6 +469,41 @@ export async function listGroupChatMembers(groupId: string, params: GroupChatMem
   const query = makeParams(page, pageSize);
   if (params.q?.trim()) query.set("q", params.q.trim());
   return parseMemberList(await request<unknown>(`/${encodeURIComponent(groupId)}/members`, query, { signal: params.signal }), groupId, page, pageSize);
+}
+
+/** Changes an active Group Chat member's role through the authenticated role endpoint. */
+export async function changeGroupMemberRole(groupId: string, userId: string, role: GroupChatMemberRole, reason = ""): Promise<void> {
+  const normalizedGroupId = groupId.trim();
+  const normalizedUserId = userId.trim();
+  if (!normalizedGroupId || !normalizedUserId) throw new GroupChatApiError(422, "The Group Chat and member identifiers are required.");
+  const payload: ChangeGroupMemberRolePayload | null = buildChangeGroupMemberRolePayload(role, reason);
+  if (!payload) throw new GroupChatApiError(422, "A reason is required when removing an Admin role.");
+  await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/members/${encodeURIComponent(normalizedUserId)}/role`, new URLSearchParams(), { method: "PATCH", body: payload });
+}
+
+/** Removes an active member or cancels a pending invitation without sending a request body. */
+export async function removeGroupMember(groupId: string, userId: string, reason = ""): Promise<void> {
+  const normalizedGroupId = groupId.trim();
+  const normalizedUserId = userId.trim();
+  if (!normalizedGroupId || !normalizedUserId) throw new GroupChatApiError(422, "The Group Chat and member identifiers are required.");
+  await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/members/${encodeURIComponent(normalizedUserId)}`, buildGroupMemberRemovalQuery(reason), { method: "DELETE" });
+}
+
+/** Mutes an active Group Chat member's posting without guessing an expiry payload. */
+export async function muteGroupMemberPosting(groupId: string, userId: string): Promise<void> {
+  const normalizedGroupId = groupId.trim();
+  const normalizedUserId = userId.trim();
+  if (!normalizedGroupId || !normalizedUserId) throw new GroupChatApiError(422, "The Group Chat and member identifiers are required.");
+  const payload: GroupChatMemberPostingMutePayload = buildGroupChatMemberMutePayload();
+  await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/members/${encodeURIComponent(normalizedUserId)}/mute-posting`, new URLSearchParams(), { method: "POST", body: payload });
+}
+
+/** Restores an active Group Chat member's posting access. */
+export async function unmuteGroupMemberPosting(groupId: string, userId: string): Promise<void> {
+  const normalizedGroupId = groupId.trim();
+  const normalizedUserId = userId.trim();
+  if (!normalizedGroupId || !normalizedUserId) throw new GroupChatApiError(422, "The Group Chat and member identifiers are required.");
+  await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/members/${encodeURIComponent(normalizedUserId)}/mute-posting`, new URLSearchParams(), { method: "DELETE" });
 }
 
 /** Invites additional authorized members using the documented InviteMembers schema. */

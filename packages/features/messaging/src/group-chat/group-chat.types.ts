@@ -141,6 +141,23 @@ export interface GroupChatMember {
   joined_at: string | null;
   is_current_user: boolean;
   can_manage: boolean | null;
+  posting_muted: boolean | null;
+  posting_muted_until: string | null;
+}
+
+/** Role values accepted by the Group Chat member-role endpoint. */
+export type GroupChatMemberRole = "admin" | "member";
+
+/** Payload accepted by PATCH /groups/{group_id}/members/{user_id}/role. */
+export interface ChangeGroupMemberRolePayload {
+  role: GroupChatMemberRole;
+  reason?: string;
+}
+
+/** Optional fields accepted by the backend mute request; timed mute is not enabled yet. */
+export interface GroupChatMemberPostingMutePayload {
+  until?: string | null;
+  reason?: string | null;
 }
 
 /** A pending invitation visible to the authorized caller. */
