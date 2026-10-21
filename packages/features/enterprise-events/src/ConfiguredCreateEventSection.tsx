@@ -182,7 +182,7 @@ function ConfiguredField(props: Omit<Props, "section"> & { field: ActiveEventFor
             min={bounds.min ?? constraints.min ?? undefined}
             max={bounds.max ?? constraints.max ?? undefined}
             pattern={!isNumber ? constraints.pattern ?? undefined : undefined}
-            step={isNumber ? "any" : undefined}
+            step={isNumber ? (["capacity", "min_participants", "max_participants"].includes(String(coreField)) ? "1" : "any") : undefined}
             aria-invalid={displayedError ? true : undefined}
             aria-describedby={displayedError ? `${id}-error` : undefined}
             onChange={(event) => isNumber ? setNumberValue(event.target.value) : setValue(event.target.value)}

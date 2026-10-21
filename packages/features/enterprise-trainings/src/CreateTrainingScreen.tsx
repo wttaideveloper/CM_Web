@@ -17,7 +17,7 @@ import { useTrainingCategories } from "./training-categories.queries";
 import { canEditTraining } from "./training-status";
 import ConfiguredCreateTrainingSection from "./ConfiguredCreateTrainingSection";
 import { isTrainingFormFieldVisible, TRAINING_OTHER_OPTION_VALUE } from "./training-form-field-settings";
-import { getRequiredTrainingDeliverySubfields, getRequiredTrainingDeliveryValueKeys, getTrainingDeliveryCompositeValueKeys, isTrainingAccessInformationField } from "./training-delivery-fields";
+import { getRequiredTrainingDeliverySubfields, getRequiredTrainingDeliveryValueKeys, getTrainingDeliveryCompositeKey, getTrainingDeliveryCompositeValueKeys, isTrainingAccessInformationField } from "./training-delivery-fields";
 
 const steps = ["Basic Information", "Schedule", "Location & Host", "Pricing & Tickets", "Capacity & Registration", "Images & Media", "Additional Configuration"] as const;
 const stepFields: ReadonlyArray<readonly string[]> = [
@@ -187,7 +187,8 @@ function validateConfiguredSection(
       || !isTrainingFormFieldVisible(field, allFields, values, customValues)) continue;
     const aliases = getTrainingFieldAliases(field);
     const isLearningObjectives = aliases.some((value) => normalizeTrainingFieldKey(value) === "learning_objectives");
-    const valueKey = field.source === "custom" && !isLearningObjectives
+    const isDeliveryComposite = getTrainingDeliveryCompositeKey(field) !== undefined;
+    const valueKey = field.source === "custom" && !isLearningObjectives && !isDeliveryComposite
       ? undefined
       : aliases.find((candidate) => candidate in values);
     const key = (valueKey ?? field.key) as keyof CreateTrainingFormValues;

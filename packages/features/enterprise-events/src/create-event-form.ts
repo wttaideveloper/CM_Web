@@ -371,6 +371,8 @@ export function validateParticipantCapacity(values: Pick<CreateEventFormValues, 
     const value = valuesByField[field];
     if (value.text && (value.number === null || !Number.isFinite(value.number) || value.number < 0)) {
       errors[field] = ["Enter a non-negative number."];
+    } else if (value.number !== null && !Number.isInteger(value.number)) {
+      errors[field] = ["Enter a whole number."];
     }
   }
   const minimum = valuesByField.min_participants.number;
