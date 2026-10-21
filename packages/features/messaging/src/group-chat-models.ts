@@ -1,6 +1,6 @@
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
 import type { TenantMember } from "@ihp/enterprise-runtime";
-import type { ChangeGroupMemberRolePayload, CreateGroupPayload, GroupAvatarUploadResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatVerifiedProvider, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
+import type { ChangeGroupMemberRolePayload, CreateGroupPayload, GroupAvatarUploadResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageHistoryResponse, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatVerifiedProvider, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
 export type GroupRole = "Owner" | "Admin" | "Member";
@@ -129,7 +129,6 @@ export function splitGroupChatMembers(members: readonly GroupChatMember[]): { ac
 export function getGroupChatMemberRoleActions(
   member: GroupChatMember,
   permissions: Pick<GroupChatPermissions, "can_make_admin" | "can_remove_admin">,
-  verifiedProviderIds: ReadonlySet<string>,
   activeMembers: readonly GroupChatMember[],
   ownerUserId: string | null,
 ): readonly GroupChatMemberRoleAction[] {
@@ -142,8 +141,7 @@ export function getGroupChatMemberRoleActions(
   if (role !== "member") return [];
 
   const activeAdminCount = activeMembers.filter((candidate) => candidate.membership_status.trim().toLowerCase() === "active" && candidate.role.trim().toLowerCase() === "admin" && candidate.user_id !== ownerUserId).length;
-  const isVerifiedProvider = member.member_kind?.trim().toLowerCase() === "provider" && verifiedProviderIds.has(member.user_id);
-  if (permissions.can_make_admin !== true || !isVerifiedProvider || activeAdminCount >= 3) return [];
+  if (permissions.can_make_admin !== true || member.can_be_admin !== true || activeAdminCount >= 3) return [];
   return ["make-admin"];
 }
 
@@ -151,7 +149,6 @@ export function getGroupChatMemberRoleActions(
 export function getGroupChatMemberOwnershipAction(
   member: GroupChatMember,
   permissions: Pick<GroupChatPermissions, "can_transfer_ownership">,
-  verifiedProviderIds: ReadonlySet<string>,
   ownerUserId: string | null,
   groupStatus: string | null,
 ): "transfer-ownership" | null {
@@ -159,8 +156,7 @@ export function getGroupChatMemberOwnershipAction(
   const role = member.role.trim().toLowerCase();
   const isOwner = role === "owner" || (Boolean(member.user_id) && member.user_id === ownerUserId);
   const userId = member.user_id;
-  const isVerifiedProvider = member.member_kind?.trim().toLowerCase() === "provider" && userId !== null && userId.trim() !== "" && verifiedProviderIds.has(userId);
-  if (permissions.can_transfer_ownership !== true || groupStatus?.trim().toLowerCase() !== "open" || status !== "active" || isOwner || !userId || !isVerifiedProvider) return null;
+  if (permissions.can_transfer_ownership !== true || groupStatus?.trim().toLowerCase() !== "open" || status !== "active" || isOwner || !userId || member.can_receive_ownership !== true) return null;
   return "transfer-ownership";
 }
 
@@ -201,6 +197,16 @@ export function normalizeGroupChatMemberPostingMute(value: unknown): Pick<GroupC
   const postingMuted = typeof value.posting_muted === "boolean" ? value.posting_muted : null;
   const postingMutedUntil = typeof value.posting_muted_until === "string" && value.posting_muted_until.trim() ? value.posting_muted_until.trim() : null;
   return { posting_muted: postingMuted, posting_muted_until: postingMutedUntil };
+}
+
+/** Preserves only explicit member eligibility flags; absent or malformed values remain denied. */
+export function normalizeGroupChatMemberEligibility(value: unknown): Pick<GroupChatMember, "is_verified_provider" | "can_be_admin" | "can_receive_ownership"> {
+  if (!isRecord(value)) return { is_verified_provider: null, can_be_admin: null, can_receive_ownership: null };
+  return {
+    is_verified_provider: typeof value.is_verified_provider === "boolean" ? value.is_verified_provider : null,
+    can_be_admin: typeof value.can_be_admin === "boolean" ? value.can_be_admin : null,
+    can_receive_ownership: typeof value.can_receive_ownership === "boolean" ? value.can_receive_ownership : null,
+  };
 }
 
 /** Builds the documented basic mute body without inventing an expiry or reason. */
@@ -328,6 +334,113 @@ export function resolveGroupChatOwnerName(ownerName: string | null | undefined, 
   return null;
 }
 
+/** Normalizes only the documented Group Chat message fields. */
+export function normalizeGroupChatMessage(value: unknown): GroupChatMessage | null {
+  if (!isRecord(value)) return null;
+  const id = readString(value, "id");
+  const conversationId = readString(value, "conversation_id");
+  const senderId = readString(value, "sender_id");
+  const senderName = typeof value.sender_name === "string" ? value.sender_name : "";
+  const senderKind = readString(value, "sender_kind");
+  const messageType = readString(value, "message_type");
+  const status = readString(value, "status");
+  const createdAt = readString(value, "created_at");
+  if (!id || !conversationId || !senderId || !senderName.trim() || !senderKind || !messageType || !status || !createdAt) return null;
+  const content = typeof value.content === "string" ? value.content : null;
+  const attachmentId = typeof value.attachment_id === "string" && value.attachment_id.trim() ? value.attachment_id.trim() : null;
+  const placeholder = typeof value.placeholder === "string" && value.placeholder.trim() ? value.placeholder.trim() : null;
+  const replyTo = isRecord(value.reply_to) ? value.reply_to : null;
+  const mentions = Array.isArray(value.mentions) ? value.mentions.filter((item): item is string => typeof item === "string") : [];
+  const myReactions = Array.isArray(value.my_reactions) ? value.my_reactions.filter((item): item is string => typeof item === "string") : [];
+  const readBy = Array.isArray(value.read_by) ? value.read_by.filter((item): item is string => typeof item === "string") : null;
+  return {
+    id,
+    conversation_id: conversationId,
+    sender_id: senderId,
+    sender_name: senderName,
+    sender_kind: senderKind,
+    message_type: messageType,
+    content,
+    attachment_id: attachmentId,
+    status,
+    placeholder,
+    reply_to: replyTo,
+    mentions,
+    mentions_all: value.mentions_all === true,
+    mentions_me: value.mentions_me === true,
+    is_edited: value.is_edited === true,
+    edited_at: typeof value.edited_at === "string" && value.edited_at.trim() ? value.edited_at.trim() : null,
+    pinned: value.pinned === true,
+    reactions: isRecord(value.reactions) ? value.reactions : {},
+    my_reactions: myReactions,
+    read_by: readBy,
+    created_at: createdAt,
+  };
+}
+
+/** Normalizes the documented cursor response without inventing message fields. */
+export function normalizeGroupChatMessageHistory(value: unknown): GroupChatMessageHistoryResponse | null {
+  if (!isRecord(value) || !Array.isArray(value.items) || typeof value.has_more !== "boolean") return null;
+  const nextCursor = value.next_cursor === null ? null : readString(value, "next_cursor") || null;
+  const firstUnreadMessageId = value.first_unread_message_id === null ? null : readString(value, "first_unread_message_id") || null;
+  const unreadCount = typeof value.unread_count === "number" && Number.isFinite(value.unread_count) ? value.unread_count : null;
+  const pinnedCount = typeof value.pinned_count === "number" && Number.isFinite(value.pinned_count) ? value.pinned_count : null;
+  if (unreadCount === null || pinnedCount === null) return null;
+  return {
+    items: value.items.map(normalizeGroupChatMessage).filter((item): item is GroupChatMessage => item !== null),
+    has_more: value.has_more,
+    next_cursor: nextCursor,
+    unread_count: unreadCount,
+    first_unread_message_id: firstUnreadMessageId,
+    pinned_count: pinnedCount,
+  };
+}
+
+/** Builds the documented text-message body and rejects blank content. */
+export function buildGroupChatTextMessagePayload(content: string, replyToId = ""): SendGroupChatMessagePayload | null {
+  const normalizedContent = content.trim();
+  const normalizedReplyToId = replyToId.trim();
+  if (!normalizedContent) return null;
+  return {
+    content: normalizedContent,
+    ...(normalizedReplyToId ? { reply_to_id: normalizedReplyToId } : {}),
+  };
+}
+
+/** Returns the safe display text for visible, system, and removed messages. */
+export function getGroupChatMessageDisplayText(message: GroupChatMessage): string {
+  const status = message.status.trim().toLowerCase();
+  if (status === "retracted" || status === "removed_by_admin") return message.placeholder?.trim() || "This message is no longer available.";
+  if (message.content !== null) return message.content;
+  return message.placeholder?.trim() || "Message content unavailable.";
+}
+
+/** Merges cursor pages from newest-to-oldest while restoring chronological order and removing duplicates. */
+export function mergeGroupChatMessagePages(pages: readonly GroupChatMessageHistoryResponse[]): GroupChatMessage[] {
+  return Array.from(new Map([...pages].reverse().flatMap((page) => page.items).map((message) => [message.id, message])).values());
+}
+
+/** Uses backend group status, posting permission, and explicit member mute state to gate the composer. */
+export function canSendGroupChatMessage(groupStatus: string | null, canPost: boolean | null, postingMuted = false): boolean {
+  return groupStatus?.trim().toLowerCase() !== "closed" && canPost === true && postingMuted !== true;
+}
+
+/** Returns the highest-priority read-only notice for the current Group Chat member. */
+export function getGroupChatPostingRestrictionMessage(groupStatus: string | null, canPost: boolean | null, postingMuted: boolean | null): string | null {
+  if (groupStatus?.trim().toLowerCase() === "closed") return "This group is closed. It is read-only.";
+  if (postingMuted === true) return "You have been muted by the Group Owner.";
+  if (canPost !== true) return "You cannot send messages in this group.";
+  return null;
+}
+
+/** Builds the documented Group Chat message-history query without adding unsupported filters. */
+export function buildGroupChatMessageHistoryQuery(limit = 50, cursor = ""): URLSearchParams {
+  const query = new URLSearchParams();
+  query.set("limit", String(limit));
+  if (cursor.trim()) query.set("cursor", cursor.trim());
+  return query;
+}
+
 /** Builds the exact Provider verification request body without inventing registration details. */
 export function buildVerifiedProviderPayload(userId: string, registrationNumber = "", registrationCouncil = ""): RegisterGroupChatVerifiedProviderPayload | null {
   const normalizedUserId = userId.trim();
@@ -341,10 +454,51 @@ export function buildVerifiedProviderPayload(userId: string, registrationNumber 
   };
 }
 
-/** Applies the same active internal-user Provider directory rule used by Enterprise selectors. */
+/** Returns active internal users, clinic tenant admins, and tenant owners eligible for explicit Group Chat verification. */
 export function isGroupChatProviderDirectoryCandidate(member: Pick<TenantMember, "status" | "role" | "roleSlug" | "tenantRbacRoles">): boolean {
   const roleValues = [member.role, member.roleSlug, ...(member.tenantRbacRoles ?? [])].map((role) => role.trim().toLowerCase());
-  return member.status.trim().toLowerCase() === "active" && roleValues.includes("internal_user");
+  return member.status.trim().toLowerCase() === "active" && (
+    roleValues.includes("internal_user") ||
+    roleValues.includes("tenant_admin") ||
+    roleValues.includes("tenant_owner")
+  );
+}
+
+/** Excludes Providers already present in the separate Group Chat verification registry. */
+export function isGroupChatProviderRegistrationCandidate(
+  member: Pick<TenantMember, "userId" | "status" | "role" | "roleSlug" | "tenantRbacRoles">,
+  verifiedUserIds: ReadonlySet<string>,
+): boolean {
+  return isGroupChatProviderDirectoryCandidate(member) && !verifiedUserIds.has(member.userId);
+}
+
+/** Accepts only the explicit not-verified state returned by the candidate endpoint. */
+export function isGroupChatProviderVerificationCandidate(candidate: { verification: string | null }): boolean {
+  return candidate.verification?.trim().toLowerCase() === "not_verified";
+}
+
+/** Normalizes the candidate endpoint without inventing names, roles, or verification state. */
+export function normalizeGroupChatProviderVerificationCandidate(value: unknown): GroupChatProviderVerificationCandidate | null {
+  if (!isRecord(value)) return null;
+  const userId = readString(value, "user_id");
+  if (!userId) return null;
+  const roles = Array.isArray(value.roles) ? value.roles.filter((role): role is string => typeof role === "string" && Boolean(role.trim())).map((role) => role.trim()) : [];
+  return {
+    user_id: userId,
+    name: readString(value, "name") || null,
+    roles,
+    verification: readString(value, "verification") || null,
+    registration_number: readString(value, "registration_number") || null,
+  };
+}
+
+/** Builds the all-roles, paginated query required by the verification candidate endpoint. */
+export function buildGroupChatProviderVerificationCandidateQuery(page = 1, pageSize = 50): URLSearchParams {
+  const query = new URLSearchParams();
+  query.set("all_roles", "true");
+  query.set("page", String(page));
+  query.set("page_size", String(pageSize));
+  return query;
 }
 
 /** Normalizes the backend's explicit Group Chat permissions with default-deny semantics. */

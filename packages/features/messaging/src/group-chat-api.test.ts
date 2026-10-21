@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCreateGroupPayload, buildGroupMemberInvitePayload, buildTransferGroupOwnershipPayload, buildVerifiedProviderPayload, formatGroupChatInvitationFeedback, isGroupChatLearnerSelectable, isGroupChatProviderDirectoryCandidate, isGroupChatProviderSelectable, isGroupChatProviderUnavailableInCurrentGroup, isGroupChatTrainingSearchResultStale, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatVerifiedProvider, remainingGroupChatMemberSlots, resolveGroupChatOwnerName, resolveGroupChatVerifiedProviderName } from "./group-chat-models.ts";
+import { buildCreateGroupPayload, buildGroupChatProviderVerificationCandidateQuery, buildGroupMemberInvitePayload, buildTransferGroupOwnershipPayload, buildVerifiedProviderPayload, formatGroupChatInvitationFeedback, isGroupChatLearnerSelectable, isGroupChatProviderDirectoryCandidate, isGroupChatProviderRegistrationCandidate, isGroupChatProviderSelectable, isGroupChatProviderUnavailableInCurrentGroup, isGroupChatProviderVerificationCandidate, isGroupChatTrainingSearchResultStale, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatVerifiedProvider, remainingGroupChatMemberSlots, resolveGroupChatOwnerName, resolveGroupChatVerifiedProviderName } from "./group-chat-models.ts";
 import type { GroupChatLearner, GroupChatProvider } from "./group-chat/group-chat.types";
 
 const learner = (overrides: Partial<GroupChatLearner> = {}): GroupChatLearner => ({
@@ -221,11 +221,62 @@ test("Provider verification always accepts user_id and omits blank optional deta
   assert.equal(buildVerifiedProviderPayload("   ", "REG-123", "Medical Council"), null);
 });
 
-test("Provider directory candidates are active internal users only", () => {
+test("Provider directory candidates include active internal, tenant admin, and tenant owner accounts without broad role fallback", () => {
   const base = { status: "active", role: "internal_user", roleSlug: "internal_user", tenantRbacRoles: [] };
   assert.equal(isGroupChatProviderDirectoryCandidate(base), true);
+  assert.equal(isGroupChatProviderDirectoryCandidate({ ...base, role: "tenant_admin", roleSlug: "tenant_admin" }), true);
+  assert.equal(isGroupChatProviderDirectoryCandidate({ ...base, role: "unknown_role", roleSlug: "unknown_role", tenantRbacRoles: ["tenant_admin"] }), true);
   assert.equal(isGroupChatProviderDirectoryCandidate({ ...base, status: "inactive" }), false);
-  assert.equal(isGroupChatProviderDirectoryCandidate({ ...base, role: "tenant_admin", roleSlug: "tenant_admin" }), false);
+  assert.equal(isGroupChatProviderDirectoryCandidate({ ...base, status: "removed", role: "tenant_admin", roleSlug: "tenant_admin" }), false);
+  assert.equal(isGroupChatProviderDirectoryCandidate({ ...base, role: "tenant_owner", roleSlug: "tenant_owner", tenantRbacRoles: ["enterprise_admin", "tenant_owner"] }), true);
+  assert.equal(isGroupChatProviderDirectoryCandidate({ ...base, status: "inactive", role: "tenant_owner", roleSlug: "tenant_owner" }), false);
+  assert.equal(isGroupChatProviderDirectoryCandidate({ ...base, role: "external_user", roleSlug: "external_user" }), false);
+  assert.equal(isGroupChatProviderDirectoryCandidate({ ...base, role: "unknown_role", roleSlug: "unknown_role", tenantRbacRoles: [] }), false);
+});
+
+test("Provider verification uses the tenant member global user ID", () => {
+  assert.deepEqual(buildVerifiedProviderPayload(" global-user-id "), { user_id: "global-user-id" });
+});
+
+test("Provider registration excludes already verified global user IDs", () => {
+  const member = { userId: "global-user-id", status: "active", role: "tenant_admin", roleSlug: "tenant_admin", tenantRbacRoles: [] };
+  assert.equal(isGroupChatProviderRegistrationCandidate(member, new Set()), true);
+  assert.equal(isGroupChatProviderRegistrationCandidate(member, new Set(["global-user-id"])), false);
+  assert.equal(isGroupChatProviderRegistrationCandidate({ ...member, userId: "membership-id" }, new Set(["global-user-id"])), true);
+});
+
+test("Group member eligibility flags preserve explicit backend values and fail closed", () => {
+  assert.deepEqual(normalizeGroupChatMemberEligibility({ is_verified_provider: true, can_be_admin: true, can_receive_ownership: false }), {
+    is_verified_provider: true,
+    can_be_admin: true,
+    can_receive_ownership: false,
+  });
+  assert.deepEqual(normalizeGroupChatMemberEligibility({ is_verified_provider: "true", can_be_admin: 1 }), {
+    is_verified_provider: null,
+    can_be_admin: null,
+    can_receive_ownership: null,
+  });
+});
+
+test("verification candidates require the explicit not_verified state", () => {
+  assert.equal(isGroupChatProviderVerificationCandidate({ verification: "not_verified" }), true);
+  assert.equal(isGroupChatProviderVerificationCandidate({ verification: "verified" }), false);
+  assert.equal(isGroupChatProviderVerificationCandidate({ verification: null }), false);
+});
+
+test("verification candidate normalization preserves roles and pagination fields", () => {
+  assert.deepEqual(normalizeGroupChatProviderVerificationCandidate({ user_id: "owner-user", name: "Enterprise Owner", roles: ["tenant_owner"], verification: "not_verified", registration_number: null }), {
+    user_id: "owner-user",
+    name: "Enterprise Owner",
+    roles: ["tenant_owner"],
+    verification: "not_verified",
+    registration_number: null,
+  });
+  assert.equal(normalizeGroupChatProviderVerificationCandidate({ name: "Missing user" }), null);
+});
+
+test("verification candidate requests include all_roles and pagination", () => {
+  assert.equal(buildGroupChatProviderVerificationCandidateQuery(2, 50).toString(), "all_roles=true&page=2&page_size=50");
 });
 
 test("Provider eligibility is scoped to the current Group Chat membership status", () => {

@@ -19,12 +19,17 @@ import type {
   GroupChatMember,
   GroupChatMemberPostingMutePayload,
   GroupChatMemberRole,
+  GroupChatMessage,
+  GroupChatMessageHistoryResponse,
+  GroupChatMessageListParams,
   GroupChatMemberListParams,
   GroupChatMemberListResponse,
   GroupChatPagination,
   GroupChatProvider,
   GroupChatProviderListParams,
   GroupChatProviderListResponse,
+  GroupChatProviderVerificationCandidateListParams,
+  GroupChatProviderVerificationCandidateListResponse,
   GroupChatSummary,
   GroupChatTraining,
   GroupChatTrainingListParams,
@@ -41,7 +46,7 @@ import type {
   UpdateGroupDetailsPayload,
   UpdateGroupSettingsPayload,
 } from "./group-chat.types";
-import { buildChangeGroupMemberRolePayload, buildGroupAvatarUploadFormData, buildGroupChatMemberMutePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberPostingMute, normalizeGroupChatPermissions, getGroupChatReopenReasonError, resolveGroupChatOwnerName } from "../group-chat-models";
+import { buildChangeGroupMemberRolePayload, buildGroupAvatarUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatProviderVerificationCandidateQuery, buildGroupChatTextMessagePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatPermissions, normalizeGroupChatProviderVerificationCandidate, getGroupChatReopenReasonError, resolveGroupChatOwnerName } from "../group-chat-models";
 export { buildCreateGroupPayload, buildGroupMemberInvitePayload } from "../group-chat-models";
 
 const GROUP_CHAT_API_PATH = "/groups";
@@ -323,6 +328,7 @@ function parseMember(value: unknown): GroupChatMember | null {
     joined_at: readString(value.joined_at ?? value.created_at),
     is_current_user: readBoolean(value.is_current_user ?? value.is_me),
     can_manage: readNullableBoolean(value.can_manage),
+    ...normalizeGroupChatMemberEligibility(value),
     ...normalizeGroupChatMemberPostingMute(value),
   };
 }
@@ -362,6 +368,13 @@ function parseVerifiedProviderList(value: unknown, page: number, pageSize: numbe
   const items = readCollection(value, ["items", "providers", "verified_providers"])
     .map(parseVerifiedProvider)
     .filter((item): item is GroupChatVerifiedProvider => item !== null);
+  return { items, pagination: readPagination(value, page, pageSize, items.length) };
+}
+
+function parseProviderVerificationCandidateList(value: unknown, page: number, pageSize: number): GroupChatProviderVerificationCandidateListResponse {
+  const items = readCollection(value, ["items", "candidates"])
+    .map(normalizeGroupChatProviderVerificationCandidate)
+    .filter((item): item is NonNullable<typeof item> => item !== null);
   return { items, pagination: readPagination(value, page, pageSize, items.length) };
 }
 
@@ -425,6 +438,31 @@ export async function listGroupChatGroups(params: GroupChatListParams = {}): Pro
 /** Loads one Group Chat's server-provided details. */
 export async function getGroupChat(groupId: string, signal?: AbortSignal): Promise<GroupChatDetails> {
   return requireParsed(parseGroupDetails(await request<unknown>(`/${encodeURIComponent(groupId)}`, new URLSearchParams(), { signal })), "The Group Chat details response was invalid.");
+}
+
+/** Loads oldest-first Group Chat history using the documented cursor contract. */
+export async function listGroupChatMessages(groupId: string, params: GroupChatMessageListParams = {}): Promise<GroupChatMessageHistoryResponse> {
+  const normalizedGroupId = groupId.trim();
+  if (!normalizedGroupId) throw new GroupChatApiError(422, "The Group Chat identifier is required.");
+  const query = buildGroupChatMessageHistoryQuery(params.limit ?? 50, params.cursor ?? "");
+  const response = normalizeGroupChatMessageHistory(await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/messages`, query, { signal: params.signal }));
+  return requireParsed(response, "The Group Chat message history response was invalid.");
+}
+
+/** Sends one Group Chat text message through the REST-only message endpoint. */
+export async function sendGroupChatTextMessage(groupId: string, content: string, replyToId = ""): Promise<GroupChatMessage> {
+  const normalizedGroupId = groupId.trim();
+  const payload = buildGroupChatTextMessagePayload(content, replyToId);
+  if (!normalizedGroupId || !payload) throw new GroupChatApiError(422, "A Group Chat and non-empty message are required.");
+  const response = normalizeGroupChatMessage(await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/messages`, new URLSearchParams(), { method: "POST", body: payload }));
+  return requireParsed(response, "The Group Chat send response was invalid.");
+}
+
+/** Marks the authenticated member's Group Chat messages as read. */
+export async function markGroupChatRead(groupId: string): Promise<void> {
+  const normalizedGroupId = groupId.trim();
+  if (!normalizedGroupId) throw new GroupChatApiError(422, "The Group Chat identifier is required.");
+  await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/read`, new URLSearchParams(), { method: "POST" });
 }
 
 /** Updates only the editable Group Chat identity fields. */
@@ -556,6 +594,17 @@ export async function listVerifiedGroupChatProviders(params: GroupChatVerifiedPr
   const page = params.page ?? 1;
   const pageSize = params.pageSize ?? DEFAULT_PAGE_SIZE;
   return parseVerifiedProviderList(await request<unknown>("/verified-providers", makeParams(page, pageSize), { signal: params.signal }), page, pageSize);
+}
+
+/** Loads backend-authoritative verification candidates across all supported tenant roles. */
+export async function listGroupChatProviderVerificationCandidates(params: GroupChatProviderVerificationCandidateListParams = {}): Promise<GroupChatProviderVerificationCandidateListResponse> {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? 50;
+  return parseProviderVerificationCandidateList(
+    await request<unknown>("/verified-providers/candidates", buildGroupChatProviderVerificationCandidateQuery(page, pageSize), { signal: params.signal }),
+    page,
+    pageSize,
+  );
 }
 
 /** Registers one existing Provider for Group Chat after explicit administrator action. */

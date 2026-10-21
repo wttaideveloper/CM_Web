@@ -2,14 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { changeGroupMemberRole, closeGroupChat, getGroupChat, inviteEnrolledLearners, inviteGroupMembers, listGroupChatLearners, listGroupChatMembers, listGroupChatProviders, listVerifiedGroupChatProviders, muteGroupMemberPosting, removeGroupMember, reopenGroupChat, transferGroupOwnership, unmuteGroupMemberPosting, updateGroupDetails, updateGroupSettings, uploadGroupAvatar } from "./group-chat/group-chat.service";
+import { changeGroupMemberRole, closeGroupChat, getGroupChat, inviteEnrolledLearners, inviteGroupMembers, listGroupChatLearners, listGroupChatMembers, listGroupChatProviders, muteGroupMemberPosting, removeGroupMember, reopenGroupChat, transferGroupOwnership, unmuteGroupMemberPosting, updateGroupDetails, updateGroupSettings, uploadGroupAvatar } from "./group-chat/group-chat.service";
 import { buildReopenGroupPayload, canCloseGroupChat, canEditGroupChat, canReopenGroupChat, canUpdateGroupChatSettings, formatGroupChatInvitationFeedback, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatReopenReasonError, isGroupChatProviderUnavailableInCurrentGroup, isSupportedGroupAvatarFile, splitGroupChatMembers, type GroupChatMemberAction, type GroupChatMemberRoleAction } from "./group-chat-models";
 import type { GroupChatDetails, GroupChatLearner, GroupChatMember, GroupChatPermissions, GroupChatProvider } from "./group-chat/group-chat.types";
 import { GroupAvatarDisplay, GroupAvatarPicker, useGroupAvatarPreview } from "./GroupChatAvatar";
+import GroupChatMessages from "./GroupChatMessages";
 
-type Props = { groupId: string };
-type Tab = "overview" | "members" | "invite" | "settings";
-
+type Props = { groupId: string; onClose?: () => void };
 const groupKey = (groupId: string) => ["group-chat", "group", groupId];
 const memberKey = (groupId: string, search: string) => ["group-chat", "members", groupId, search];
 const inviteMemberKey = (groupId: string) => ["group-chat", "invite-members", groupId];
@@ -34,27 +33,6 @@ async function listAllGroupChatMembers(groupId: string, signal: AbortSignal): Pr
     page += 1;
   }
   return members;
-}
-
-async function listAllVerifiedGroupChatProviderIds(signal: AbortSignal): Promise<Set<string>> {
-  const userIds = new Set<string>();
-  let page = 1;
-  let totalPages = 1;
-  while (page <= totalPages) {
-    const response = await listVerifiedGroupChatProviders({ page, pageSize: 100, signal });
-    response.items.forEach((provider) => userIds.add(provider.user_id));
-    totalPages = response.pagination.total_pages;
-    page += 1;
-  }
-  return userIds;
-}
-
-function MessageIcon({ closed = false }: { closed?: boolean }) {
-  return <span aria-hidden="true" className={`flex h-14 w-14 items-center justify-center rounded-full ${closed ? "bg-[#f4faf7] text-[#52736a]" : "bg-[#e8f6ee] text-[#1f6a58] motion-safe:animate-pulse"}`}><svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="1.8"><path d={closed ? "M7 10V8a5 5 0 0 1 10 0v2M6 10h12v9H6z" : "M5 6.5A3.5 3.5 0 0 1 8.5 3h7A3.5 3.5 0 0 1 19 6.5v5a3.5 3.5 0 0 1-3.5 3.5H11l-4.5 4v-4.6A3.5 3.5 0 0 1 5 11.5v-5Z"} />{closed ? null : <path d="M9 8.75h6M9 11.75h3" />}</svg></span>;
-}
-
-function ConversationPlaceholder({ closed }: { closed: boolean }) {
-  return <section className={`flex flex-col items-center rounded-xl border p-6 text-center ${closed ? "border-[#d7e5df] bg-[#f9fcfa]" : "border-[#d7e5df] bg-[#f9fcfa]"}`} aria-live="polite"><MessageIcon closed={closed} /><h3 className="mt-4 text-base font-bold text-[#16332b]">{closed ? "This group is closed" : "Group messaging coming soon"}</h3><p className="mt-1 max-w-md text-sm text-[#52736a]">{closed ? "This conversation is read-only. New messages and invitations are disabled." : "This group is ready. Messages will appear here once Group Chat messaging is connected."}</p></section>;
 }
 
 function LegacyMemberRow({ member, actions, menuOpen, pendingAction, reason, disabled, onToggleMenu, onSelectAction, onReasonChange, onConfirm, onCancel }: { member: GroupChatMember; actions: readonly GroupChatMemberAction[]; menuOpen: boolean; pendingAction: GroupChatMemberAction | null; reason: string; disabled: boolean; onToggleMenu: () => void; onSelectAction: (action: GroupChatMemberAction) => void; onReasonChange: (reason: string) => void; onConfirm: () => void; onCancel: () => void }) {
@@ -99,11 +77,52 @@ function MemberRow({ member, actions, menuOpen, pendingAction, reason, disabled,
   );
 }
 
-function Overview({ group }: { group: GroupChatDetails }) {
+function GroupDetailsOverview({ group }: { group: GroupChatDetails }) {
   const groupIsClosed = group.status?.trim().toLowerCase() === "closed";
-  return <div className="space-y-4">{groupIsClosed ? <div className="rounded-xl border border-[#f1d8ad] bg-[#fffaf0] p-3 text-sm text-[#8b5e00]" role="status">This group is closed. It is read-only.</div> : null}<div className="rounded-xl bg-[#f9fcfa] p-4"><h3 className="text-base font-bold text-[#16332b]">{group.name}</h3><p className="mt-1 text-sm text-[#52736a]">{group.description || "No description provided."}</p><dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">Training</dt><dd className="mt-1 text-[#16332b]">{group.training_title || group.context_name || "Training context"}</dd></div><div><dt className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">Status</dt><dd className="mt-1 text-[#16332b]">{groupIsClosed ? "Closed" : group.status || "Active"}</dd></div><div><dt className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">Members</dt><dd className="mt-1 text-[#16332b]">{group.member_count ?? "Unavailable"}</dd></div><div><dt className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">Posting</dt><dd className="mt-1 text-[#16332b]">{groupIsClosed ? "Read-only" : group.permissions.can_post === true ? group.admins_only_posting === true ? "Providers and admins only" : "All members" : "Posting unavailable"}</dd></div></dl></div>{group.owner || group.owner_name ? <div className="rounded-xl border border-[#e1ebe6] p-4"><p className="text-xs font-bold uppercase tracking-wide text-[#7f9d94]">Group owner</p><p className="mt-2 text-sm font-semibold text-[#16332b]">{group.owner?.name || group.owner_name}</p><p className="mt-1 text-xs text-[#52736a]">{group.owner?.role || "Owner"}</p></div> : null}<ConversationPlaceholder closed={groupIsClosed} />{group.visibility_notice ? <p className="rounded-xl border border-[#d7e5df] p-3 text-sm text-[#52736a]">{group.visibility_notice}</p> : null}{group.emergency_notice ? <p className="rounded-xl border border-[#f1d8ad] bg-[#fffaf0] p-3 text-sm text-[#8b5e00]">{group.emergency_notice}</p> : null}</div>;
+  return <div className="space-y-3">
+    {groupIsClosed ? <div className="rounded-xl border border-[#f1d8ad] bg-[#fffaf0] p-3 text-sm text-[#8b5e00]" role="status">This group is closed. It is read-only.</div> : null}
+    <section className="rounded-xl border border-[#e1ebe6] p-3">
+      <h4 className="text-sm font-bold text-[#16332b]">Group overview</h4>
+      <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">Status</dt><dd className="mt-1 text-[#16332b]">{groupIsClosed ? "Closed" : group.status || "Active"}</dd></div>
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">Posting</dt><dd className="mt-1 text-[#16332b]">{groupIsClosed ? "Read-only" : group.permissions.can_post === true ? group.admins_only_posting === true ? "Providers and admins only" : "All members" : "Posting unavailable"}</dd></div>
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">Member count</dt><dd className="mt-1 text-[#16332b]">{group.member_count ?? "Unavailable"}</dd></div>
+        {group.owner || group.owner_name ? <div><dt className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">Owner</dt><dd className="mt-1 text-[#16332b]">{group.owner?.name || group.owner_name}</dd></div> : null}
+      </dl>
+    </section>
+    {group.visibility_notice ? <p className="rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-3 text-xs text-[#52736a]">{group.visibility_notice}</p> : null}
+    {group.emergency_notice ? <p className="rounded-xl border border-[#f1d8ad] bg-[#fffaf0] p-3 text-xs text-[#8b5e00]">{group.emergency_notice}</p> : null}
+  </div>;
 }
-
+type GroupDetailsTab = "overview" | "members" | "invite" | "settings";
+function GroupDetailsPanel({ group, groupId, canViewMembers, canInviteMembers, onClose }: { group: GroupChatDetails; groupId: string; canViewMembers: boolean; canInviteMembers: boolean; onClose: () => void }) {
+  const [tab, setTab] = useState<GroupDetailsTab>("overview");
+  const groupIsClosed = group.status?.trim().toLowerCase() === "closed";
+  return <section className="flex min-h-0 h-full flex-col bg-white" aria-label="Group details">
+    <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[#e1ebe6] px-3 py-2.5 sm:px-4">
+      <div className="min-w-0">
+        <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Group details</p>
+        <h3 className="truncate text-base font-bold text-[#16332b]">{group.name}</h3>
+      </div>
+      <button type="button" onClick={onClose} className="shrink-0 rounded-full border border-[#d7e5df] px-3 py-1.5 text-xs font-semibold text-[#1f6a58] hover:bg-[#f4faf7]" aria-label="Back to conversation">Back to conversation</button>
+    </div>
+    <div className="flex shrink-0 gap-3 border-b border-[#e1ebe6] px-3 py-3 sm:px-4">
+      <GroupAvatarDisplay name={group.name} url={group.avatar_url} size="medium" />
+      <div className="min-w-0 flex-1">
+        <h4 className="truncate text-base font-bold text-[#16332b]">{group.name}</h4>
+        <p className="mt-0.5 text-xs text-[#52736a]">{group.member_count ?? "—"} members · {group.training_title || group.context_name || "Training context"}</p>
+        <p className="mt-2 line-clamp-2 text-sm text-[#52736a]">{group.description || "No description provided."}</p>
+        <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${groupIsClosed ? "bg-[#fff3d6] text-[#8b5e00]" : "bg-[#e8f6ee] text-[#1f6a58]"}`}>{groupIsClosed ? "Closed" : group.status || "Active"}</span>
+      </div>
+    </div>
+    <div className="flex shrink-0 flex-wrap gap-1.5 border-b border-[#e1ebe6] px-3 py-2 sm:px-4" role="tablist" aria-label="Group management">
+      {([["overview", "Overview"], ["members", "Members"], ["invite", "Invite members"], ["settings", "Settings"]] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={tab === value ? "rounded-full bg-[#1f6a58] px-3 py-1.5 text-xs font-semibold text-white" : "rounded-full bg-[#f4faf7] px-3 py-1.5 text-xs font-semibold text-[#52736a]"}>{label}</button>)}
+    </div>
+    <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+      {tab === "overview" ? <GroupDetailsOverview group={group} /> : tab === "members" ? <Members groupId={groupId} ownerUserId={group.owner_user_id} groupStatus={group.status} permissions={group.permissions} canViewMembers={canViewMembers} /> : tab === "invite" ? <Invite group={group} groupId={groupId} canInviteMembers={canInviteMembers} /> : <Settings group={group} groupId={groupId} />}
+    </div>
+  </section>;
+}
 function Members({ groupId, ownerUserId, groupStatus, permissions, canViewMembers }: { groupId: string; ownerUserId: string | null; groupStatus: string | null; permissions: GroupChatPermissions; canViewMembers: boolean }) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
@@ -114,8 +133,7 @@ function Members({ groupId, ownerUserId, groupStatus, permissions, canViewMember
   const query = useQuery({ queryKey: memberKey(groupId, search), queryFn: ({ signal }) => listGroupChatMembers(groupId, { q: search, pageSize: 50, signal }), enabled: canViewMembers, staleTime: 15000, retry: false });
   const canManageRoles = permissions.can_make_admin === true || permissions.can_remove_admin === true;
   const roleRosterQuery = useQuery({ queryKey: ["group-chat", "member-role-roster", groupId], queryFn: ({ signal }) => listAllGroupChatMembers(groupId, signal), enabled: canViewMembers && canManageRoles, staleTime: 15000, retry: false });
-  const verifiedProvidersQuery = useQuery({ queryKey: ["group-chat", "verified-providers", "member-actions"], queryFn: ({ signal }) => listAllVerifiedGroupChatProviderIds(signal), enabled: canViewMembers && (permissions.can_make_admin === true || permissions.can_transfer_ownership === true), staleTime: 15000, retry: false });
-  const refreshMembership = async () => { await Promise.all([queryClient.invalidateQueries({ queryKey: ["group-chat", "group", groupId] }), queryClient.invalidateQueries({ queryKey: ["group-chat", "members", groupId] }), queryClient.invalidateQueries({ queryKey: ["group-chat", "member-role-roster", groupId] }), queryClient.invalidateQueries({ queryKey: ["group-chat", "groups"] })]); };
+  const refreshMembership = async () => { await Promise.all([queryClient.invalidateQueries({ queryKey: ["group-chat", "group", groupId] }), queryClient.invalidateQueries({ queryKey: ["group-chat", "members", groupId] }), queryClient.invalidateQueries({ queryKey: ["group-chat", "member-role-roster", groupId] }), queryClient.invalidateQueries({ queryKey: ["group-chat", "current-member", groupId] }), queryClient.invalidateQueries({ queryKey: ["group-chat", "groups"] })]); };
   const resetMemberAction = () => { setPendingMemberAction(null); setOpenMemberMenuId(null); setDemotionReason(""); };
   const roleMutation = useMutation({ mutationFn: ({ member, action, reason }: { member: GroupChatMember; action: GroupChatMemberRoleAction; reason: string }) => changeGroupMemberRole(groupId, member.user_id ?? "", action === "make-admin" ? "admin" : "member", reason), retry: false, onSuccess: async () => { resetMemberAction(); setFeedback("Member role updated successfully."); await refreshMembership(); }, onError: (error: Error) => setFeedback(error.message) });
   const ownershipMutation = useMutation({ mutationFn: (member: GroupChatMember) => transferGroupOwnership(groupId, member.user_id ?? ""), retry: false, onSuccess: async () => { resetMemberAction(); setFeedback("Group ownership transferred successfully."); await refreshMembership(); }, onError: (error: Error) => setFeedback(error.message) });
@@ -127,9 +145,8 @@ function Members({ groupId, ownerUserId, groupStatus, permissions, canViewMember
   const members = query.data?.items ?? [];
   const { active, pending, excluded } = splitGroupChatMembers(members);
   const visiblePending = permissions.can_view_pending_invitations === true ? pending : [];
-  const verifiedProviderIds = !verifiedProvidersQuery.isError ? verifiedProvidersQuery.data ?? new Set<string>() : new Set<string>();
   const roleRoster = roleRosterQuery.data ?? [];
-  const roleActions = (member: GroupChatMember) => getGroupChatMemberRoleActions(member, permissions, verifiedProviderIds, roleRoster, ownerUserId);
+  const roleActions = (member: GroupChatMember) => getGroupChatMemberRoleActions(member, permissions, roleRoster, ownerUserId);
   const removalAction = (member: GroupChatMember) => getGroupChatMemberRemovalAction(member, permissions, ownerUserId);
   const isMutationPending = roleMutation.isPending || removalMutation.isPending || muteMutation.isPending || ownershipMutation.isPending;
   const confirmMemberAction = () => {
@@ -150,7 +167,7 @@ function Members({ groupId, ownerUserId, groupStatus, permissions, canViewMember
   };
   const memberActions = (member: GroupChatMember): readonly GroupChatMemberAction[] => {
     const actions: GroupChatMemberAction[] = [...roleActions(member)];
-    const ownershipAction = getGroupChatMemberOwnershipAction(member, permissions, verifiedProviderIds, ownerUserId, groupStatus);
+    const ownershipAction = getGroupChatMemberOwnershipAction(member, permissions, ownerUserId, groupStatus);
     if (ownershipAction) actions.push(ownershipAction);
     const removal = removalAction(member);
     if (removal) actions.push(removal);
@@ -159,7 +176,7 @@ function Members({ groupId, ownerUserId, groupStatus, permissions, canViewMember
     return actions;
   };
   const mutationError = roleMutation.isError || removalMutation.isError || muteMutation.isError || ownershipMutation.isError;
-  return <div className="space-y-4">{feedback ? <p className={`rounded-xl border p-3 text-sm font-semibold ${mutationError ? "border-[#f3d5d1] bg-[#fff7f6] text-[#7a271a]" : "border-[#b7dfc7] bg-[#e8f6ee] text-[#1f6a58]"}`} role={mutationError ? "alert" : "status"}>{feedback}</p> : null}<label className="sr-only" htmlFor="live-group-member-search">Search members</label><input id="live-group-member-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search members" className="h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm outline-none focus:border-[#1f6a58]" />{verifiedProvidersQuery.isError && permissions.can_make_admin === true ? <p className="rounded-xl border border-[#f1d8ad] bg-[#fffaf0] p-3 text-sm text-[#8b5e00]" role="status">Provider verification is unavailable, so promotion actions are hidden.</p> : null}<section><h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-[#7f9d94]">Active members ({active.length})</h3><div className="space-y-2">{active.length === 0 ? <p className="rounded-xl bg-[#f9fcfa] p-4 text-sm text-[#52736a]">No active members match this search.</p> : active.map((member) => <MemberRow key={member.id} member={member} actions={memberActions(member)} menuOpen={openMemberMenuId === member.id} pendingAction={pendingMemberAction?.member.id === member.id ? pendingMemberAction.action : null} reason={demotionReason} disabled={isMutationPending} onToggleMenu={() => { setOpenMemberMenuId((current) => current === member.id ? null : member.id); setPendingMemberAction(null); setDemotionReason(""); setFeedback(null); }} onSelectAction={(action) => { setOpenMemberMenuId(member.id); setPendingMemberAction({ member, action }); setDemotionReason(""); setFeedback(null); }} onReasonChange={setDemotionReason} onConfirm={confirmMemberAction} onCancel={() => { setPendingMemberAction(null); setDemotionReason(""); }} />)}</div></section><section className="border-t border-[#e1ebe6] pt-4"><h3 className="text-xs font-bold uppercase tracking-wide text-[#7f9d94]">Pending invitations ({visiblePending.length})</h3>{visiblePending.length === 0 ? <p className="mt-2 text-sm text-[#52736a]">{permissions.can_view_pending_invitations === true ? "No pending invitations." : "Pending invitations are not available for your permissions."}</p> : <div className="space-y-2">{visiblePending.map((member) => <MemberRow key={member.id} member={member} actions={memberActions(member)} menuOpen={openMemberMenuId === member.id} pendingAction={pendingMemberAction?.member.id === member.id ? pendingMemberAction.action : null} reason={demotionReason} disabled={isMutationPending} onToggleMenu={() => { setOpenMemberMenuId((current) => current === member.id ? null : member.id); setPendingMemberAction(null); setDemotionReason(""); setFeedback(null); }} onSelectAction={(action) => { setOpenMemberMenuId(member.id); setPendingMemberAction({ member, action }); setDemotionReason(""); setFeedback(null); }} onReasonChange={setDemotionReason} onConfirm={confirmMemberAction} onCancel={() => { setPendingMemberAction(null); setDemotionReason(""); }} />)}</div>}</section>{excluded.length > 0 ? <p className="rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-3 text-xs text-[#52736a]">{excluded.length} member record{excluded.length === 1 ? "" : "s"} hidden because the membership status is not active or pending.</p> : null}</div>;
+  return <div className="space-y-4">{feedback ? <p className={`rounded-xl border p-3 text-sm font-semibold ${mutationError ? "border-[#f3d5d1] bg-[#fff7f6] text-[#7a271a]" : "border-[#b7dfc7] bg-[#e8f6ee] text-[#1f6a58]"}`} role={mutationError ? "alert" : "status"}>{feedback}</p> : null}<label className="sr-only" htmlFor="live-group-member-search">Search members</label><input id="live-group-member-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search members" className="h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm outline-none focus:border-[#1f6a58]" /><section><h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-[#7f9d94]">Active members ({active.length})</h3><div className="space-y-2">{active.length === 0 ? <p className="rounded-xl bg-[#f9fcfa] p-4 text-sm text-[#52736a]">No active members match this search.</p> : active.map((member) => <MemberRow key={member.id} member={member} actions={memberActions(member)} menuOpen={openMemberMenuId === member.id} pendingAction={pendingMemberAction?.member.id === member.id ? pendingMemberAction.action : null} reason={demotionReason} disabled={isMutationPending} onToggleMenu={() => { setOpenMemberMenuId((current) => current === member.id ? null : member.id); setPendingMemberAction(null); setDemotionReason(""); setFeedback(null); }} onSelectAction={(action) => { setOpenMemberMenuId(member.id); setPendingMemberAction({ member, action }); setDemotionReason(""); setFeedback(null); }} onReasonChange={setDemotionReason} onConfirm={confirmMemberAction} onCancel={() => { setPendingMemberAction(null); setDemotionReason(""); }} />)}</div></section><section className="border-t border-[#e1ebe6] pt-4"><h3 className="text-xs font-bold uppercase tracking-wide text-[#7f9d94]">Pending invitations ({visiblePending.length})</h3>{visiblePending.length === 0 ? <p className="mt-2 text-sm text-[#52736a]">{permissions.can_view_pending_invitations === true ? "No pending invitations." : "Pending invitations are not available for your permissions."}</p> : <div className="space-y-2">{visiblePending.map((member) => <MemberRow key={member.id} member={member} actions={memberActions(member)} menuOpen={openMemberMenuId === member.id} pendingAction={pendingMemberAction?.member.id === member.id ? pendingMemberAction.action : null} reason={demotionReason} disabled={isMutationPending} onToggleMenu={() => { setOpenMemberMenuId((current) => current === member.id ? null : member.id); setDemotionReason(""); setFeedback(null); }} onSelectAction={(action) => { setOpenMemberMenuId(member.id); setPendingMemberAction({ member, action }); setDemotionReason(""); setFeedback(null); }} onReasonChange={setDemotionReason} onConfirm={confirmMemberAction} onCancel={() => { setPendingMemberAction(null); setDemotionReason(""); }} />)}</div>}</section>{excluded.length > 0 ? <p className="rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-3 text-xs text-[#52736a]">{excluded.length} member record{excluded.length === 1 ? "" : "s"} hidden because the membership status is not active or pending.</p> : null}</div>;
 }
 
 function Invite({ group, groupId, canInviteMembers }: { group: GroupChatDetails; groupId: string; canInviteMembers: boolean }) {
@@ -221,18 +238,56 @@ function Settings({ group, groupId }: { group: GroupChatDetails; groupId: string
   return <div className="space-y-4">{feedback ? <p className="rounded-xl border border-[#b7dfc7] bg-[#e8f6ee] p-3 text-sm font-semibold text-[#1f6a58]" role="status">{feedback}</p> : null}{canEdit ? <section className="rounded-xl border border-[#e1ebe6] p-4"><h3 className="text-base font-bold text-[#16332b]">Group details</h3><label className="mt-3 block text-sm font-semibold text-[#16332b]">Name<input required value={name} onChange={(event) => setName(event.target.value)} disabled={detailsMutation.isPending} className="mt-1 h-10 w-full rounded-xl border border-[#d7e5df] px-3 font-normal" /></label><label className="mt-3 block text-sm font-semibold text-[#16332b]">Description<textarea value={description} onChange={(event) => setDescription(event.target.value)} disabled={detailsMutation.isPending} className="mt-1 min-h-24 w-full rounded-xl border border-[#d7e5df] p-3 font-normal" /></label><GroupAvatarPicker name={group.name} currentUrl={group.avatar_url} previewUrl={replacementAvatarPreviewUrl} fileName={replacementAvatarFile?.name ?? null} error={avatarError} disabled={detailsMutation.isPending} onSelect={(file) => { if (file && !isSupportedGroupAvatarFile(file)) { setReplacementAvatarFile(null); setAvatarError("Select an image file for the Group Chat avatar."); return; } setAvatarError(null); setReplacementAvatarFile(file); }} onClear={() => { setReplacementAvatarFile(null); setAvatarError(null); }} /><button type="button" disabled={!name.trim() || Boolean(avatarError) || detailsMutation.isPending} onClick={() => detailsMutation.mutate()} className="mt-3 rounded-full bg-[#1f6a58] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{detailsMutation.isPending ? "Saving..." : "Save details"}</button><p className="mt-2 text-xs text-[#7f9d94]">Training context and Group type cannot be changed here.</p></section> : null}{canUpdatePosting ? <section className="rounded-xl border border-[#e1ebe6] p-4"><h3 className="text-base font-bold text-[#16332b]">Messaging permissions</h3><fieldset disabled={settingsMutation.isPending || adminsOnlyPosting === null} className="mt-3 space-y-2 text-sm text-[#16332b]"><legend className="sr-only">Who can send messages</legend><label className="flex items-center gap-2"><input type="radio" name={`posting-permission-${groupId}`} checked={adminsOnlyPosting === true} onChange={() => setAdminsOnlyPosting(true)} /> Only Admins can send messages</label><label className="flex items-center gap-2"><input type="radio" name={`posting-permission-${groupId}`} checked={adminsOnlyPosting === false} onChange={() => setAdminsOnlyPosting(false)} /> All Members can send messages</label></fieldset><button type="button" disabled={adminsOnlyPosting === null || settingsMutation.isPending} onClick={() => settingsMutation.mutate()} className="mt-3 rounded-full bg-[#1f6a58] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{settingsMutation.isPending ? "Saving..." : "Save permissions"}</button></section> : null}{canClose ? <section className="rounded-xl border border-[#efc4bd] bg-[#fff7f6] p-4" aria-labelledby="group-management-heading"><h3 id="group-management-heading" className="text-base font-bold text-[#16332b]">Group Management</h3><p className="mt-1 text-sm text-[#7a271a]">Closing this group makes it read-only and starts the retention period.</p>{closeConfirmation ? <div className="mt-3 rounded-lg border border-[#efc4bd] bg-white p-3 text-sm"><p className="font-semibold text-[#16332b]">Close this group?</p><p className="mt-1 text-[#52736a]">Closing this group makes it read-only and starts the retention period. Members will no longer be able to send messages.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={closeMutation.isPending} onClick={() => closeMutation.mutate()} className="rounded-full bg-[#b54708] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{closeMutation.isPending ? "Closing..." : "Close Group"}</button><button type="button" disabled={closeMutation.isPending} onClick={() => setCloseConfirmation(false)} className="rounded-full border border-[#d7e5df] px-4 py-2 text-sm font-semibold text-[#16332b]">Cancel</button></div></div> : <button type="button" onClick={() => setCloseConfirmation(true)} className="mt-3 rounded-full border border-[#b54708] px-4 py-2 text-sm font-semibold text-[#b54708]">Close Group</button>}</section> : null}</div>;
 }
 
-export default function GroupChatWorkspace({ groupId }: Props) {
-  const [tab, setTab] = useState<Tab>("overview");
+export default function GroupChatWorkspace({ groupId, onClose }: Props) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const query = useQuery({ queryKey: groupKey(groupId), queryFn: ({ signal }) => getGroupChat(groupId, signal), staleTime: 15000, retry: false });
-  if (query.isPending) return <section className="rounded-2xl border border-[#e1ebe6] bg-white p-5 text-sm text-[#52736a]">Loading Group Chat details...</section>;
+  const currentMemberQuery = useQuery({ queryKey: ["group-chat", "current-member", groupId], queryFn: ({ signal }) => listAllGroupChatMembers(groupId, signal), enabled: query.data?.permissions.can_view_members === true, staleTime: 15000, retry: false });
+
+  useEffect(() => {
+    if (!detailsOpen) return undefined;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDetailsOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [detailsOpen]);
+
+  useEffect(() => {
+    setDetailsOpen(false);
+  }, [groupId]);
+
+  if (query.isPending) return <section className="flex min-h-0 flex-1 items-center rounded-2xl border border-[#e1ebe6] bg-white p-4 text-sm text-[#52736a]">Loading Group Chat details...</section>;
   if (query.isError) return <Retry message={query.error.message} onRetry={() => void query.refetch()} />;
   const group = query.data;
   const groupIsClosed = group.status?.trim().toLowerCase() === "closed";
   const canViewMembers = group.permissions.can_view_members === true;
   const canInviteMembers = group.status?.trim().toLowerCase() !== "closed" && group.permissions.can_invite === true;
-  return <section className="rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><GroupAvatarDisplay name={group.name} url={group.avatar_url} size="medium" /><div className="min-w-0"><h2 className="truncate text-lg font-bold text-[#06201c]">{group.name}</h2><p className="mt-1 text-sm text-[#52736a]">{group.member_count ?? ""} members · {group.context_name || "Training Group"}</p></div></div><span className={`rounded-full px-3 py-1 text-xs font-semibold ${groupIsClosed ? "bg-[#fff3d6] text-[#8b5e00]" : "bg-[#e8f6ee] text-[#1f6a58]"}`}>{groupIsClosed ? "Closed" : group.status || "Active"}</span></div><div className="mt-4 flex flex-wrap gap-2 border-b border-[#e1ebe6] pb-2" role="tablist" aria-label="Group details"><button type="button" role="tab" aria-selected={tab === "overview"} onClick={() => setTab("overview")} className={tab === "overview" ? "rounded-full bg-[#1f6a58] px-4 py-2 text-sm font-semibold text-white" : "rounded-full bg-[#f4faf7] px-4 py-2 text-sm font-semibold text-[#52736a]"}>Overview</button><button type="button" role="tab" aria-selected={tab === "members"} onClick={() => setTab("members")} className={tab === "members" ? "rounded-full bg-[#1f6a58] px-4 py-2 text-sm font-semibold text-white" : "rounded-full bg-[#f4faf7] px-4 py-2 text-sm font-semibold text-[#52736a]"}>Members</button><button type="button" role="tab" aria-selected={tab === "invite"} onClick={() => setTab("invite")} className={tab === "invite" ? "rounded-full bg-[#1f6a58] px-4 py-2 text-sm font-semibold text-white" : "rounded-full bg-[#f4faf7] px-4 py-2 text-sm font-semibold text-[#52736a]"}>Invite members</button><button type="button" role="tab" aria-selected={tab === "settings"} onClick={() => setTab("settings")} className={tab === "settings" ? "rounded-full bg-[#1f6a58] px-4 py-2 text-sm font-semibold text-white" : "rounded-full bg-[#f4faf7] px-4 py-2 text-sm font-semibold text-[#52736a]"}>Settings</button></div><div className="mt-4">{tab === "overview" ? <Overview group={group} /> : tab === "members" ? <Members groupId={groupId} ownerUserId={group.owner_user_id} groupStatus={group.status} permissions={group.permissions} canViewMembers={canViewMembers} /> : tab === "invite" ? <Invite group={group} groupId={groupId} canInviteMembers={canInviteMembers} /> : <Settings group={group} groupId={groupId} />}</div></section>;
+  const currentMember = currentMemberQuery.data?.find((member) => member.is_current_user);
+  const conversationClass = detailsOpen ? "hidden" : "flex";
+  return <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white p-3 shadow-sm sm:p-4">
+    <div className={`${conversationClass} min-h-0 flex-1 flex-col`} aria-hidden={detailsOpen}>
+      <div className="flex shrink-0 items-center justify-between gap-3">
+        <button type="button" onClick={() => setDetailsOpen(true)} aria-label={`Open group details for ${group.name}`} className="flex min-w-0 items-center gap-3 rounded-xl text-left hover:bg-[#f9fcfa] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2">
+          <GroupAvatarDisplay name={group.name} url={group.avatar_url} size="medium" />
+          <span className="min-w-0">
+            <span className="block truncate text-base font-bold text-[#06201c]">{group.name}</span>
+            <span className="mt-0.5 block text-xs text-[#52736a]">{group.member_count ?? "—"} members</span>
+          </span>
+        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${groupIsClosed ? "bg-[#fff3d6] text-[#8b5e00]" : "bg-[#e8f6ee] text-[#1f6a58]"}`}>{groupIsClosed ? "Closed" : group.status || "Active"}</span>
+          {onClose ? <button type="button" aria-label="Close group view" title="Close conversation" onClick={onClose} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#b7dfc7] bg-[#e8f6ee] text-[#1f6a58] shadow-sm transition-colors hover:bg-[#d7efe1] hover:text-[#16332b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2">
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="m7 7 10 10M17 7 7 17" /></svg>
+          </button> : null}
+        </div>
+      </div>
+      <div className="mt-2 min-h-0 flex-1 flex flex-col">
+        <GroupChatMessages groupId={group.id} groupStatus={group.status} canPost={group.permissions.can_post} postingMuted={currentMember?.posting_muted ?? null} />
+      </div>
+    </div>
+    {detailsOpen ? <GroupDetailsPanel group={group} groupId={groupId} canViewMembers={canViewMembers} canInviteMembers={canInviteMembers} onClose={() => setDetailsOpen(false)} /> : null}
+  </section>;
 }
-
 function SearchInput({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
   return <label className="block"><span className="sr-only">{placeholder}</span><input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm outline-none focus:border-[#1f6a58]" /></label>;
 }

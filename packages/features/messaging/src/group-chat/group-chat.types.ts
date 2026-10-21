@@ -130,6 +130,54 @@ export interface GroupChatDetails extends GroupChatSummary {
   owner: GroupChatMember | null;
 }
 
+/** Message returned by the Group Chat REST history and send endpoints. */
+export interface GroupChatMessage {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  sender_name: string;
+  sender_kind: string;
+  message_type: string;
+  content: string | null;
+  attachment_id: string | null;
+  status: string;
+  placeholder: string | null;
+  reply_to: Record<string, unknown> | null;
+  mentions: string[];
+  mentions_all: boolean;
+  mentions_me: boolean;
+  is_edited: boolean;
+  edited_at: string | null;
+  pinned: boolean;
+  reactions: Record<string, unknown>;
+  my_reactions: string[];
+  read_by: string[] | null;
+  created_at: string;
+}
+
+/** Cursor-paginated Group Chat message history response. */
+export interface GroupChatMessageHistoryResponse {
+  items: GroupChatMessage[];
+  has_more: boolean;
+  next_cursor: string | null;
+  unread_count: number;
+  first_unread_message_id: string | null;
+  pinned_count: number;
+}
+
+/** Query options for Group Chat message history. */
+export interface GroupChatMessageListParams {
+  limit?: number;
+  cursor?: string;
+  signal?: AbortSignal;
+}
+
+/** Request body accepted by the Group Chat text-message endpoint. */
+export interface SendGroupChatMessagePayload {
+  content: string;
+  reply_to_id?: string;
+}
+
 /** A member returned by the Group Chat membership endpoint. */
 export interface GroupChatMember {
   id: string;
@@ -141,6 +189,9 @@ export interface GroupChatMember {
   joined_at: string | null;
   is_current_user: boolean;
   can_manage: boolean | null;
+  is_verified_provider: boolean | null;
+  can_be_admin: boolean | null;
+  can_receive_ownership: boolean | null;
   posting_muted: boolean | null;
   posting_muted_until: string | null;
 }
@@ -218,6 +269,28 @@ export interface GroupChatVerifiedProviderListResponse {
 
 /** Query options for the Group Chat verification registry. */
 export interface GroupChatVerifiedProviderListParams {
+  page?: number;
+  pageSize?: number;
+  signal?: AbortSignal;
+}
+
+/** A backend-authoritative candidate for Group Chat Provider verification. */
+export interface GroupChatProviderVerificationCandidate {
+  user_id: string;
+  name: string | null;
+  roles: string[];
+  verification: string | null;
+  registration_number: string | null;
+}
+
+/** Paginated candidates returned by the Group Chat verification directory. */
+export interface GroupChatProviderVerificationCandidateListResponse {
+  items: GroupChatProviderVerificationCandidate[];
+  pagination: GroupChatPagination;
+}
+
+/** Query options for the Group Chat verification candidate directory. */
+export interface GroupChatProviderVerificationCandidateListParams {
   page?: number;
   pageSize?: number;
   signal?: AbortSignal;
