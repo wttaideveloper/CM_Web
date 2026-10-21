@@ -216,6 +216,17 @@ export interface GroupChatMessageHistoryResponse {
   pinned_count: number;
 }
 
+/** Allowed reaction configuration returned for an eligible Group Chat. */
+export interface GroupChatReactionSettings {
+  enabled: boolean;
+  emojis: string[];
+}
+
+/** Request body for adding one reaction to a Group Chat message. */
+export interface GroupChatReactionPayload {
+  emoji: string;
+}
+
 /** Query options for Group Chat message history. */
 export interface GroupChatMessageListParams {
   limit?: number;

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatTextMessagePayload, buildHideGroupChatMessagePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canEditGroupChatMessage, canHideGroupChatMessage, canReplyToGroupChatMessage, canReopenGroupChat, canRetractGroupChatMessage, canSendGroupChatMessage, canUpdateGroupChatSettings, formatGroupChatAttachmentSummary, getGroupChatMessageDisplayText, getGroupChatMemberDisplayName, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatPostingRestrictionMessage, getGroupChatReopenReasonError, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, getMemberManagementActions, isSupportedGroupAvatarFile, mergeGroupChatMessagePages, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageMutationResponse, normalizeGroupChatPermissions, normalizeGroupChatReplyReference, normalizeGroupLearner, normalizeGroupProvider, parseGroupChatAttachmentFileName, parseGroupChatMessageTimestamp, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAttachmentMetadata, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
+import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatTextMessagePayload, buildHideGroupChatMessagePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canEditGroupChatMessage, canHideGroupChatMessage, canReactToGroupChatMessage, canReplyToGroupChatMessage, canReopenGroupChat, canRetractGroupChatMessage, canSendGroupChatMessage, canUpdateGroupChatSettings, formatGroupChatAttachmentSummary, getGroupChatMessageDisplayText, getGroupChatMemberDisplayName, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatPostingRestrictionMessage, getGroupChatReopenReasonError, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, getMemberManagementActions, isGroupChatReactionSelected, isSupportedGroupAvatarFile, mergeGroupChatMessagePages, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageMutationResponse, normalizeGroupChatPermissions, normalizeGroupChatReactionCounts, normalizeGroupChatReactionSettings, normalizeGroupChatReplyReference, normalizeGroupLearner, normalizeGroupProvider, parseGroupChatAttachmentFileName, parseGroupChatMessageTimestamp, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAttachmentMetadata, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
 import type { GroupChatMember } from "./group-chat/group-chat.types";
 
 test("builds the documented Group Chat avatar multipart fields", () => {
@@ -600,4 +600,31 @@ test("uses the correct Group Chat posting restriction priority", () => {
   assert.equal(getGroupChatPostingRestrictionMessage("open", true, true), "You have been muted by the Group Owner.");
   assert.equal(getGroupChatPostingRestrictionMessage("open", false, false), "You cannot send messages in this group.");
   assert.equal(canSendGroupChatMessage("open", true, true), false);
+});
+
+test("normalizes backend reaction settings without inventing emojis", () => {
+  assert.deepEqual(normalizeGroupChatReactionSettings({ enabled: true, emojis: ["👍", " ❤️ ", "", "abcdefghijklmnopq", "👍"] }), { enabled: true, emojis: ["👍", "❤️"] });
+  assert.deepEqual(normalizeGroupChatReactionSettings({ enabled: false, emojis: [] }), { enabled: false, emojis: [] });
+  assert.equal(normalizeGroupChatReactionSettings({ enabled: true }), null);
+});
+
+test("builds the exact reaction mutation body and encoded removal query", () => {
+  assert.deepEqual(buildGroupChatReactionPayload(" 👍 "), { emoji: "👍" });
+  assert.equal(buildGroupChatReactionPayload(""), null);
+  assert.equal(buildGroupChatReactionPayload("12345678901234567"), null);
+  const query = buildGroupChatReactionQuery("❤️");
+  assert.equal(query?.get("emoji"), "❤️");
+  assert.match(query?.toString() ?? "", /^emoji=/);
+});
+
+test("normalizes reaction counts and enforces visible non-system reaction controls", () => {
+  const message = normalizeGroupChatMessage({ id: "reaction-message", conversation_id: "group-1", sender_id: "user-1", sender_name: "User", sender_kind: "provider", message_type: "text", content: "Hello", attachment_id: null, status: "visible", placeholder: null, reply_to: null, mentions: [], mentions_all: false, mentions_me: false, is_edited: false, edited_at: null, pinned: false, reactions: { "👍": 2.9, "❤️": -1, invalid: "3" }, my_reactions: [" 👍 ", "👍", ""], read_by: null, created_at: "2026-10-21T09:00:00Z" })!;
+  assert.deepEqual(message.reactions, { "👍": 2 });
+  assert.deepEqual(message.my_reactions, ["👍"]);
+  assert.equal(canReactToGroupChatMessage(message), true);
+  assert.equal(isGroupChatReactionSelected(message, "👍"), true);
+  assert.equal(isGroupChatReactionSelected(message, "❤️"), false);
+  assert.deepEqual(normalizeGroupChatReactionCounts({ "👏": 1, bad: null }), { "👏": 1 });
+  assert.equal(canReactToGroupChatMessage({ message_type: "system", status: "visible" }), false);
+  assert.equal(canReactToGroupChatMessage({ message_type: "text", status: "hidden" }), false);
 });

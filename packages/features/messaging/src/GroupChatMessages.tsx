@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { useAuth } from "@ihp/auth";
-import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { downloadGroupChatAttachment, editGroupChatMessage, hideGroupChatMessage, listGroupChatMessages, markGroupChatRead, retractGroupChatMessage, sendGroupChatAttachmentMessage, sendGroupChatTextMessage, uploadGroupChatAttachment } from "./group-chat/group-chat.service";
-import { buildEditGroupChatMessagePayload, canEditGroupChatMessage, canHideGroupChatMessage, canReplyToGroupChatMessage, canRetractGroupChatMessage, canSendGroupChatMessage, formatGroupChatAttachmentSummary, getGroupChatMessageDisplayText, getGroupChatPostingRestrictionMessage, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, mergeGroupChatMessagePages, resolveGroupChatAttachmentMetadata } from "./group-chat-models";
-import type { GroupChatAttachment, GroupChatAttachmentType, GroupChatMessage } from "./group-chat/group-chat.types";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { addGroupChatMessageReaction, downloadGroupChatAttachment, editGroupChatMessage, getGroupChatReactions, hideGroupChatMessage, listGroupChatMessages, markGroupChatRead, removeGroupChatMessageReaction, retractGroupChatMessage, sendGroupChatAttachmentMessage, sendGroupChatTextMessage, uploadGroupChatAttachment } from "./group-chat/group-chat.service";
+import { buildEditGroupChatMessagePayload, canEditGroupChatMessage, canHideGroupChatMessage, canReactToGroupChatMessage, canReplyToGroupChatMessage, canRetractGroupChatMessage, canSendGroupChatMessage, formatGroupChatAttachmentSummary, getGroupChatMessageDisplayText, getGroupChatPostingRestrictionMessage, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, isGroupChatReactionSelected, mergeGroupChatMessagePages, normalizeGroupChatReactionCounts, resolveGroupChatAttachmentMetadata } from "./group-chat-models";
+import type { GroupChatAttachment, GroupChatAttachmentType, GroupChatMessage, GroupChatReactionSettings } from "./group-chat/group-chat.types";
 
 type Props = {
   groupId: string;
@@ -24,6 +24,7 @@ type HideVariables = MessageActionVariables & { reason: string };
 type SendVariables = { content: string; replyToId?: string };
 type AttachmentUploadVariables = { groupId: string; file: File; attachmentType: GroupChatAttachmentType };
 type AttachmentSendVariables = { groupId: string; attachment: GroupChatAttachment };
+type ReactionVariables = { groupId: string; messageId: string; emoji: string; remove: boolean };
 
 function formatMessageTime(value: string): string {
   const date = new Date(value);
@@ -112,6 +113,37 @@ function GroupChatAttachmentMessage({ message }: { message: GroupChatMessage }) 
 
 type MessageAction = "reply" | "edit" | "retract" | "hide";
 
+type ReactionControlsProps = {
+  message: GroupChatMessage;
+  settings: GroupChatReactionSettings | null;
+  pickerOpen: boolean;
+  mutationPending: boolean;
+  onTogglePicker: () => void;
+  onToggleReaction: (emoji: string) => void;
+};
+
+function GroupChatReactionControls({ message, settings, pickerOpen, mutationPending, onTogglePicker, onToggleReaction }: ReactionControlsProps) {
+  const counts = normalizeGroupChatReactionCounts(message.reactions);
+  const entries = Object.entries(counts);
+  const canControl = settings?.enabled === true && settings.emojis.length > 0 && canReactToGroupChatMessage(message);
+  if (message.status.trim().toLowerCase() !== "visible") return null;
+  if (!canControl && entries.length === 0) return null;
+  const selected = new Set(message.my_reactions);
+  return <div className="mt-2 flex flex-wrap items-center gap-1" aria-label="Message reactions">
+    {entries.map(([emoji, count]) => {
+      const isSelected = selected.has(emoji);
+      const canToggleExisting = canControl && (settings?.emojis.includes(emoji) || isSelected);
+      return canToggleExisting ? <button key={emoji} type="button" disabled={mutationPending} aria-pressed={isSelected} onClick={() => onToggleReaction(emoji)} className={`rounded-full border px-2 py-0.5 text-xs transition ${isSelected ? "border-[#1f6a58] bg-[#d8f3e4] text-[#16332b]" : "border-[#d7e5df] bg-white/80 text-[#52736a]"} disabled:opacity-50`}>{emoji} {count}</button> : <span key={emoji} className="rounded-full border border-[#d7e5df] bg-white/70 px-2 py-0.5 text-xs text-[#52736a]">{emoji} {count}</span>;
+    })}
+    {canControl ? <div className="relative">
+      <button type="button" aria-label="Add reaction" aria-expanded={pickerOpen} disabled={mutationPending} onClick={onTogglePicker} className="rounded-full border border-[#d7e5df] bg-white/80 px-2 py-0.5 text-xs font-semibold text-[#52736a] hover:border-[#1f6a58] hover:text-[#1f6a58] disabled:opacity-50">+</button>
+      {pickerOpen ? <div className="absolute bottom-7 left-0 z-20 flex max-w-56 flex-wrap gap-1 rounded-xl border border-[#d7e5df] bg-white p-2 shadow-lg" role="menu" aria-label="Available reactions">
+        {settings.emojis.map((emoji) => { const isSelected = selected.has(emoji); return <button key={emoji} type="button" role="menuitem" aria-label={isSelected ? `Remove ${emoji} reaction` : `React with ${emoji}`} aria-pressed={isSelected} disabled={mutationPending} onClick={() => onToggleReaction(emoji)} className={`rounded-lg px-2 py-1 text-base hover:bg-[#e8f6ee] ${isSelected ? "bg-[#d8f3e4]" : ""}`}>{emoji}</button>; })}
+      </div> : null}
+    </div> : null}
+  </div>;
+}
+
 type MessageBubbleProps = {
   message: GroupChatMessage;
   isOwnMessage: boolean;
@@ -135,9 +167,14 @@ type MessageBubbleProps = {
   onHideReasonChange: (value: string) => void;
   onConfirmAction: () => void;
   onCancelAction: () => void;
+  reactionSettings: GroupChatReactionSettings | null;
+  reactionPickerOpen: boolean;
+  reactionMutationPending: boolean;
+  onToggleReactionPicker: () => void;
+  onToggleReaction: (emoji: string) => void;
 };
 
-function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen, pendingAction, editMode, editDraft, editError, hideReason, mutationPending, replyTarget, highlighted, onToggleMenu, onSelectAction, onReplyReference, onEditDraftChange, onSaveEdit, onCancelEdit, onHideReasonChange, onConfirmAction, onCancelAction }: MessageBubbleProps) {
+function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen, pendingAction, editMode, editDraft, editError, hideReason, mutationPending, replyTarget, highlighted, onToggleMenu, onSelectAction, onReplyReference, onEditDraftChange, onSaveEdit, onCancelEdit, onHideReasonChange, onConfirmAction, onCancelAction, reactionSettings, reactionPickerOpen, reactionMutationPending, onToggleReactionPicker, onToggleReaction }: MessageBubbleProps) {
   const isSystemMessage = message.message_type.trim().toLowerCase() === "system";
   const status = message.status.trim().toLowerCase();
   const unavailable = status === "retracted" || status === "removed_by_admin";
@@ -172,6 +209,7 @@ function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen
           {replyTarget ? <button type="button" onClick={() => onReplyReference(message.reply_to!.id)} className="block max-w-full text-left hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d8f3e4]"><span className={`block truncate font-semibold ${isOwnMessage ? "text-white" : "text-[#1f6a58]"}`}>{message.reply_to.sender_name}</span><span className="block truncate">{getGroupChatReplyReferencePreview(message.reply_to, replyTarget)}</span></button> : <div><span className={`block truncate font-semibold ${isOwnMessage ? "text-white" : "text-[#1f6a58]"}`}>{message.reply_to.sender_name}</span><span className="block truncate">{getGroupChatReplyReferencePreview(message.reply_to)}</span></div>}
         </div> : null}
         {editMode ? <div><label className="sr-only" htmlFor={`edit-group-message-${message.id}`}>Edit message</label><textarea id={`edit-group-message-${message.id}`} value={editDraft} onChange={(event) => onEditDraftChange(event.target.value)} disabled={mutationPending} className="min-h-20 w-full resize-y rounded-lg border border-[#b7dfc7] bg-white p-2 text-sm text-[#16332b] outline-none focus:border-[#1f6a58]" />{editError ? <p className="mt-1 text-xs text-[#b42318]" role="alert">{editError}</p> : null}<div className="mt-2 flex gap-2"><button type="button" disabled={mutationPending || !editDraft.trim()} onClick={onSaveEdit} className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#1f6a58] disabled:opacity-50">{mutationPending ? "Saving..." : "Save"}</button><button type="button" disabled={mutationPending} onClick={onCancelEdit} className="rounded-full border border-white/70 px-3 py-1.5 text-xs font-semibold text-current">Cancel</button></div></div> : unavailable ? <p className="italic opacity-80">{getGroupChatMessageDisplayText(message)}</p> : message.attachment_id ? <GroupChatAttachmentMessage message={message} /> : <p className="whitespace-pre-wrap break-words">{getGroupChatMessageDisplayText(message)}</p>}
+        <GroupChatReactionControls message={message} settings={reactionSettings} pickerOpen={reactionPickerOpen} mutationPending={reactionMutationPending} onTogglePicker={onToggleReactionPicker} onToggleReaction={onToggleReaction} />
       </article>
     </div> : null}
   </div>;
@@ -203,12 +241,19 @@ export default function GroupChatMessages({ groupId, groupStatus, canPost, posti
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<GroupChatMessage | null>(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+  const [openReactionPickerId, setOpenReactionPickerId] = useState<string | null>(null);
   const groupIsClosed = groupStatus?.trim().toLowerCase() === "closed";
   const historyQuery = useInfiniteQuery({
     queryKey: messageKey(groupId),
     initialPageParam: null as string | null,
     queryFn: ({ pageParam, signal }) => listGroupChatMessages(groupId, { limit: 50, ...(pageParam ? { cursor: pageParam } : {}), signal }),
     getNextPageParam: (lastPage) => lastPage.has_more && lastPage.next_cursor ? lastPage.next_cursor : undefined,
+    retry: false,
+  });
+  const reactionQuery = useQuery({
+    queryKey: ["group-chat", "reactions", groupId],
+    queryFn: ({ signal }) => getGroupChatReactions(groupId, signal),
+    enabled: Boolean(groupId.trim()),
     retry: false,
   });
   const pages = historyQuery.data?.pages ?? [];
@@ -301,6 +346,19 @@ export default function GroupChatMessages({ groupId, groupStatus, canPost, posti
       if (variables.groupId === groupId) setActionError(error.message);
     },
   });
+  const reactionMutation = useMutation({
+    mutationFn: ({ groupId: targetGroupId, messageId, emoji, remove }: ReactionVariables) => remove ? removeGroupChatMessageReaction(targetGroupId, messageId, emoji) : addGroupChatMessageReaction(targetGroupId, messageId, emoji),
+    retry: false,
+    onSuccess: async (_result, variables) => {
+      if (variables.groupId !== groupId) return;
+      setOpenReactionPickerId(null);
+      setActionError(null);
+      await queryClient.invalidateQueries({ queryKey: messageKey(groupId) });
+    },
+    onError: (error: Error, variables) => {
+      if (variables.groupId === groupId) setActionError(`Unable to update reaction: ${error.message}`);
+    },
+  });
   const hasLoadedHistory = pages.length > 0;
 
   useEffect(() => {
@@ -321,8 +379,10 @@ export default function GroupChatMessages({ groupId, groupStatus, canPost, posti
     setAttachmentError(null);
     setReplyingTo(null);
     setHighlightedMessageId(null);
+    setOpenReactionPickerId(null);
     attachmentUploadMutation.reset();
     attachmentSendMutation.reset();
+    reactionMutation.reset();
   }, [groupId]);
 
   useEffect(() => {
@@ -453,6 +513,12 @@ export default function GroupChatMessages({ groupId, groupStatus, canPost, posti
   const postingDisabled = !canSendGroupChatMessage(groupStatus, canPost, postingMuted === true);
   const restrictionMessage = getGroupChatPostingRestrictionMessage(groupStatus, canPost, postingMuted);
   const mutationPending = editMutation.isPending || retractMutation.isPending || hideMutation.isPending || attachmentUploadMutation.isPending || attachmentSendMutation.isPending;
+  const reactionSettings = reactionQuery.data ?? null;
+  const reactionMutationPending = reactionMutation.isPending;
+  const toggleReaction = (message: GroupChatMessage, emoji: string) => {
+    if (!reactionSettings?.enabled || !reactionSettings.emojis.includes(emoji) || !canReactToGroupChatMessage(message) || reactionMutation.isPending) return;
+    reactionMutation.mutate({ groupId, messageId: message.id, emoji, remove: isGroupChatReactionSelected(message, emoji) });
+  };
   const getMessageActions = (message: GroupChatMessage): readonly MessageAction[] => {
     const actions: MessageAction[] = [];
     if (!attachmentFile && canReplyToGroupChatMessage(message, groupStatus, canPost, postingMuted === true)) actions.push("reply");
@@ -467,6 +533,8 @@ export default function GroupChatMessages({ groupId, groupStatus, canPost, posti
     {restrictionMessage ? <p className={`mt-2 shrink-0 rounded-lg p-2 text-xs ${groupIsClosed ? "border border-[#f1d8ad] bg-[#fffaf0] text-[#8b5e00]" : "border border-[#d7e5df] bg-white text-[#52736a]"}`} role="status">{restrictionMessage}</p> : null}
     {readError ? <p className="mt-2 shrink-0 rounded-lg border border-[#f3d5d1] bg-[#fff7f6] p-2 text-xs text-[#7a271a]" role="alert">{readError}</p> : null}
     {actionError ? <p className="mt-2 shrink-0 rounded-lg border border-[#f3d5d1] bg-[#fff7f6] p-2 text-xs text-[#7a271a]" role="alert">{actionError}</p> : null}
+    {reactionQuery.isPending ? <p className="mt-2 shrink-0 rounded-lg border border-[#d7e5df] bg-white p-2 text-xs text-[#52736a]" role="status">Loading reactions...</p> : null}
+    {reactionQuery.isError ? <p className="mt-2 shrink-0 rounded-lg border border-[#f3d5d1] bg-[#fff7f6] p-2 text-xs text-[#7a271a]" role="alert">Reactions are unavailable right now. <button type="button" onClick={() => void reactionQuery.refetch()} className="font-semibold underline">Try again</button></p> : null}
     {historyQuery.isPending ? <div className="mt-2 min-h-0 flex-1 animate-pulse rounded-lg bg-[#f9fcfa]" aria-busy="true" aria-label="Loading messages" /> : <>
       {historyQuery.isError ? <div className="mt-2 shrink-0 rounded-lg border border-[#f3d5d1] bg-[#fff7f6] p-2 text-xs text-[#7a271a]" role="alert"><p>{historyQuery.error.message}</p><button type="button" onClick={() => void historyQuery.refetch()} className="mt-1 font-semibold underline">Try again</button></div> : null}
       {historyQuery.isError && messages.length === 0 ? null : <div ref={scrollRef} className="mt-2 min-h-0 flex-1 overflow-y-auto px-1 py-2" aria-live="polite">
@@ -476,7 +544,7 @@ export default function GroupChatMessages({ groupId, groupStatus, canPost, posti
         const actions = getMessageActions(message);
         const messagePendingAction = pendingAction?.messageId === message.id ? pendingAction.action : null;
         const messageIsEditing = editingMessageId === message.id;
-        return <MessageBubble key={message.id} message={message} isOwnMessage={message.sender_id === userId} isFirstUnread={message.id === firstUnreadMessageId} actions={actions} menuOpen={openMenuId === message.id} pendingAction={messagePendingAction} editMode={messageIsEditing} editDraft={editDraft} editError={messageIsEditing ? editError : null} hideReason={hideReason} mutationPending={mutationPending} replyTarget={message.reply_to ? messages.find((candidate) => candidate.id === message.reply_to?.id) ?? null : null} highlighted={highlightedMessageId === message.id} onToggleMenu={() => { if (!mutationPending) { setOpenMenuId((current) => current === message.id ? null : message.id); setPendingAction(null); setActionError(null); } }} onReplyReference={locateReplyTarget} onSelectAction={(action) => { setActionError(null); if (action === "reply") { setReplyingTo(message); setOpenMenuId(null); setPendingAction(null); return; } if (action === "edit") { setEditingMessageId(message.id); setEditDraft(message.content ?? ""); setEditError(null); setPendingAction(null); setOpenMenuId(null); } else { setPendingAction({ messageId: message.id, action }); setOpenMenuId(message.id); if (action === "hide") setHideReason(""); } }} onEditDraftChange={(value) => { setEditDraft(value); setEditError(null); }} onSaveEdit={() => { const payload = buildEditGroupChatMessagePayload(editDraft); if (!payload) { setEditError("Message content cannot be empty."); return; } editMutation.mutate({ groupId, messageId: message.id, content: payload.content }); }} onCancelEdit={() => { setEditingMessageId(null); setEditDraft(""); setEditError(null); setActionError(null); }} onHideReasonChange={(value) => { setHideReason(value); setActionError(null); }} onConfirmAction={() => { if (messagePendingAction === "retract") retractMutation.mutate({ groupId, messageId: message.id }); if (messagePendingAction === "hide" && hideReason.trim()) hideMutation.mutate({ groupId, messageId: message.id, reason: hideReason }); }} onCancelAction={() => { setOpenMenuId(null); setPendingAction(null); setHideReason(""); setActionError(null); }} />;
+        return <MessageBubble key={message.id} message={message} isOwnMessage={message.sender_id === userId} isFirstUnread={message.id === firstUnreadMessageId} actions={actions} menuOpen={openMenuId === message.id} pendingAction={messagePendingAction} editMode={messageIsEditing} editDraft={editDraft} editError={messageIsEditing ? editError : null} hideReason={hideReason} mutationPending={mutationPending} replyTarget={message.reply_to ? messages.find((candidate) => candidate.id === message.reply_to?.id) ?? null : null} highlighted={highlightedMessageId === message.id} reactionSettings={reactionSettings} reactionPickerOpen={openReactionPickerId === message.id} reactionMutationPending={reactionMutationPending} onToggleReactionPicker={() => { if (!reactionMutationPending && reactionSettings?.enabled) setOpenReactionPickerId((current) => current === message.id ? null : message.id); }} onToggleReaction={(emoji) => toggleReaction(message, emoji)} onToggleMenu={() => { if (!mutationPending) { setOpenMenuId((current) => current === message.id ? null : message.id); setPendingAction(null); setActionError(null); } }} onReplyReference={locateReplyTarget} onSelectAction={(action) => { setActionError(null); if (action === "reply") { setReplyingTo(message); setOpenMenuId(null); setPendingAction(null); return; } if (action === "edit") { setEditingMessageId(message.id); setEditDraft(message.content ?? ""); setEditError(null); setPendingAction(null); setOpenMenuId(null); } else { setPendingAction({ messageId: message.id, action }); setOpenMenuId(message.id); if (action === "hide") setHideReason(""); } }} onEditDraftChange={(value) => { setEditDraft(value); setEditError(null); }} onSaveEdit={() => { const payload = buildEditGroupChatMessagePayload(editDraft); if (!payload) { setEditError("Message content cannot be empty."); return; } editMutation.mutate({ groupId, messageId: message.id, content: payload.content }); }} onCancelEdit={() => { setEditingMessageId(null); setEditDraft(""); setEditError(null); setActionError(null); }} onHideReasonChange={(value) => { setHideReason(value); setActionError(null); }} onConfirmAction={() => { if (messagePendingAction === "retract") retractMutation.mutate({ groupId, messageId: message.id }); if (messagePendingAction === "hide" && hideReason.trim()) hideMutation.mutate({ groupId, messageId: message.id, reason: hideReason }); }} onCancelAction={() => { setOpenMenuId(null); setPendingAction(null); setHideReason(""); setActionError(null); }} />;
       })}
       </div>
       </div>}

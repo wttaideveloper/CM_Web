@@ -1,6 +1,6 @@
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
 import type { TenantMember } from "@ihp/enterprise-runtime";
-import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReplyReference, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
+import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReplyReference, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
 export type GroupRole = "Owner" | "Admin" | "Member";
@@ -334,6 +334,52 @@ export function resolveGroupChatOwnerName(ownerName: string | null | undefined, 
   return null;
 }
 
+/** Normalizes the backend-authoritative reaction configuration without supplying local defaults. */
+export function normalizeGroupChatReactionSettings(value: unknown): GroupChatReactionSettings | null {
+  if (!isRecord(value)) return null;
+  const source = isRecord(value.data) ? value.data : value;
+  if (typeof source.enabled !== "boolean" || !Array.isArray(source.emojis)) return null;
+  const emojis = Array.from(new Set(source.emojis
+    .filter((emoji): emoji is string => typeof emoji === "string")
+    .map((emoji) => emoji.trim())
+    .filter((emoji) => emoji.length > 0 && emoji.length <= 16)));
+  return { enabled: source.enabled, emojis };
+}
+
+/** Keeps only finite, non-negative backend reaction counts for safe rendering. */
+export function normalizeGroupChatReactionCounts(value: unknown): Record<string, number> {
+  if (!isRecord(value)) return {};
+  return Object.entries(value).reduce<Record<string, number>>((counts, [emoji, count]) => {
+    if (emoji.trim() && typeof count === "number" && Number.isFinite(count) && count >= 0) counts[emoji] = Math.floor(count);
+    return counts;
+  }, {});
+}
+
+/** Builds the exact reaction mutation body and enforces the documented emoji length. */
+export function buildGroupChatReactionPayload(emoji: string): GroupChatReactionPayload | null {
+  const normalizedEmoji = emoji.trim();
+  return normalizedEmoji.length > 0 && normalizedEmoji.length <= 16 ? { emoji: normalizedEmoji } : null;
+}
+
+/** Builds the encoded emoji query used by reaction removal. */
+export function buildGroupChatReactionQuery(emoji: string): URLSearchParams | null {
+  const payload = buildGroupChatReactionPayload(emoji);
+  if (!payload) return null;
+  const query = new URLSearchParams();
+  query.set("emoji", payload.emoji);
+  return query;
+}
+
+/** Reaction controls are available only for visible, non-system messages. */
+export function canReactToGroupChatMessage(message: Pick<GroupChatMessage, "message_type" | "status">): boolean {
+  return message.status.trim().toLowerCase() === "visible" && message.message_type.trim().toLowerCase() !== "system";
+}
+
+/** Uses the backend-provided current-user reaction list for toggle state. */
+export function isGroupChatReactionSelected(message: Pick<GroupChatMessage, "my_reactions">, emoji: string): boolean {
+  return message.my_reactions.includes(emoji);
+}
+
 /** Normalizes only the documented Group Chat message fields. */
 export function normalizeGroupChatMessage(value: unknown): GroupChatMessage | null {
   if (!isRecord(value)) return null;
@@ -352,7 +398,7 @@ export function normalizeGroupChatMessage(value: unknown): GroupChatMessage | nu
   const placeholder = typeof value.placeholder === "string" && value.placeholder.trim() ? value.placeholder.trim() : null;
   const replyTo = normalizeGroupChatReplyReference(value.reply_to);
   const mentions = Array.isArray(value.mentions) ? value.mentions.filter((item): item is string => typeof item === "string") : [];
-  const myReactions = Array.isArray(value.my_reactions) ? value.my_reactions.filter((item): item is string => typeof item === "string") : [];
+  const myReactions = Array.from(new Set(Array.isArray(value.my_reactions) ? value.my_reactions.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter((item) => item.length > 0 && item.length <= 16) : []));
   const readBy = Array.isArray(value.read_by) ? value.read_by.filter((item): item is string => typeof item === "string") : null;
   return {
     id,
@@ -378,7 +424,7 @@ export function normalizeGroupChatMessage(value: unknown): GroupChatMessage | nu
     is_edited: value.is_edited === true,
     edited_at: typeof value.edited_at === "string" && value.edited_at.trim() ? value.edited_at.trim() : null,
     pinned: value.pinned === true,
-    reactions: isRecord(value.reactions) ? value.reactions : {},
+    reactions: normalizeGroupChatReactionCounts(value.reactions),
     my_reactions: myReactions,
     read_by: readBy,
     created_at: createdAt,
