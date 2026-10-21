@@ -367,13 +367,13 @@ export function resolveNotificationTarget(
       params.set("status", "deleted");
       params.set("show_audit", "true");
     }
-    if (itemId) {
-      if (module === "product" || module === "service") {
-        return `/admin/${module}s/${encodeURIComponent(itemId)}#${module}-reviews`;
+      if (itemId) {
+        if (module === "product" || module === "service") {
+          return `/admin/${module}s/${encodeURIComponent(itemId)}?${params.toString()}`;
+        }
+        return `/admin/${module === "training" ? "trainings" : `${module}s`}/${encodeURIComponent(itemId)}?${params.toString()}`;
       }
-      return `/admin/${module === "training" ? "trainings" : `${module}s`}/${encodeURIComponent(itemId)}?${params.toString()}`;
-    }
-    if (module === "product" || module === "service") return `/admin/${module}s?view=reviews${reviewId ? `&review_id=${encodeURIComponent(reviewId)}` : ""}`;
+      if (module === "product" || module === "service") return `/admin/${module}s?${params.toString()}`;
     return `/admin/${module === "training" ? "trainings" : `${module}s`}?${params.toString()}`;
   }
   const trainingId = trainingIdForRoute(notification);
