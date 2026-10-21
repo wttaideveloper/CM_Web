@@ -28,6 +28,7 @@ import {
   updateTypingStatus,
 } from "./chat.service";
 import type { ConversationMessagesResponse } from "./types";
+import { resolveCustomerDisplayName } from "./conversation-name";
 import {
   Suspense,
   useCallback,
@@ -119,6 +120,7 @@ type BackendConversation = {
   status?: string;
   conversation_type?: string;
   subject?: string;
+  customer_name?: string | null;
   last_message_at?: string;
   last_message_preview?: string;
   unread_count?: number;
@@ -862,9 +864,10 @@ function mapConversationSummary(data: BackendConversation): Conversation {
   const status = normalizeStatus(data.status, data.is_read_only);
   const archiveState = resolveConversationArchiveState(data);
   const serviceName = firstString(data.subject) ?? "General enquiry";
-  const customerName =
-    getParticipantDisplayName(data.participants, ["customer", "patient", "user", "tenant"]) ??
-    "Customer";
+  const customerName = resolveCustomerDisplayName(
+    data.customer_name,
+    getParticipantDisplayName(data.participants, ["customer", "patient", "user", "tenant"]),
+  );
   const providerName =
     getParticipantDisplayName(data.participants, ["provider", "doctor", "staff", "clinician"]) ??
     shortenIdentifier(data.assigned_provider_id) ??
@@ -904,9 +907,10 @@ function mapConversationDetail(data: BackendConversation): Conversation {
   const status = normalizeStatus(data.status, data.is_read_only);
   const archiveState = resolveConversationArchiveState(data);
   const serviceName = firstString(data.subject) ?? "General enquiry";
-  const customerName =
-    getParticipantDisplayName(data.participants, ["customer", "patient", "user", "tenant"]) ??
-    "Customer";
+  const customerName = resolveCustomerDisplayName(
+    data.customer_name,
+    getParticipantDisplayName(data.participants, ["customer", "patient", "user", "tenant"]),
+  );
   const providerName =
     getParticipantDisplayName(data.participants, ["provider", "doctor", "staff", "clinician"]) ??
     shortenIdentifier(data.assigned_provider_id) ??

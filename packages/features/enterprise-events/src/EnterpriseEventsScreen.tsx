@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { isInternalUserRole, useAuth } from "@ihp/auth";
 import { useCurrentEnterprise, useTenant } from "@ihp/enterprise-runtime";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -204,6 +205,8 @@ function EnterpriseEventsScreenContent() {
 
   const { tenantId } = useTenant();
   const { enterpriseId } = useCurrentEnterprise();
+  const { roles } = useAuth();
+  const readOnly = isInternalUserRole(roles?.tenantRole);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -264,14 +267,14 @@ function EnterpriseEventsScreenContent() {
         </div>
 
         <div className="flex flex-wrap gap-3">
-          {enterpriseId ? (
+          {!readOnly && enterpriseId ? (
             <Link
               href="/admin/events/create"
               className="inline-flex h-12 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm transition hover:bg-[#195646]"
             >
               + Create Event
             </Link>
-          ) : (
+          ) : !readOnly ? (
             <div>
               <button
                 type="button"
@@ -285,7 +288,7 @@ function EnterpriseEventsScreenContent() {
                 Creating an Event requires a linked Enterprise under the current backend contract.
               </p>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
 

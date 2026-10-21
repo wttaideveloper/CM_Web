@@ -1,7 +1,7 @@
-import { EnterpriseMessagesScreen } from "@ihp/messaging";
+import { EnterpriseMessagingHubScreen } from "@ihp/messaging";
 
 export const dynamic = "force-dynamic";
 
 export default function EnterpriseMessagesPage() {
-  return <EnterpriseMessagesScreen />;
+  return <EnterpriseMessagingHubScreen />;
 }
