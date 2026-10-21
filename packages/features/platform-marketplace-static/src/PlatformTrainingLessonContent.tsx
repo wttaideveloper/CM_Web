@@ -47,23 +47,72 @@ function formatScheduledAt(value: string, timeZone: string): string {
   }
 }
 
+function answerValues(value: unknown, depth = 0): string[] {
+  if (depth > 3 || value == null) return [];
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [String(value)];
+  if (Array.isArray(value)) return value.flatMap((entry) => answerValues(entry, depth + 1));
+  if (!isRecord(value)) return [];
+  return answerValues(value.value ?? value.id ?? value.label ?? value.text ?? value.answer ?? value.option_id ?? value.option_key, depth + 1);
+}
+
 function QuizQuestions({ questions }: { questions: unknown[] }) {
   const validQuestions = questions.filter(isRecord);
   if (!validQuestions.length) return <p className="text-sm text-[#52736a]">No quiz questions are available.</p>;
   return <ol className="space-y-3">{validQuestions.map((question, index) => {
-    const options = (Array.isArray(question.options) ? question.options : []).map((option, optionIndex) => {
-      if (typeof option === "string") return { label: option, value: option, index: optionIndex };
-      if (!isRecord(option)) return { label: "", value: "", index: optionIndex };
-      const label = stringValue(option, "label", "text", "value");
-      return { label, value: stringValue(option, "value", "id") || label, index: optionIndex };
-    }).filter((option) => option.label);
-    const correctRaw = question.correct_answer ?? question.correct_answers ?? question.correct_option ?? question.answer;
-    const correctValues = Array.isArray(correctRaw) ? correctRaw.map(String) : correctRaw == null ? [] : [String(correctRaw)];
+    const questionType = stringValue(question, "question_type", "questionType", "type").toLowerCase().replace(/[\s-]+/g, "_");
+    const rawOptions = Array.isArray(question.options) ? question.options : [];
+    const optionEntries = rawOptions.map((option, optionIndex) => {
+      if (typeof option === "string") return { label: option.trim(), values: [option.trim()], index: optionIndex, explicitlyCorrect: false };
+      if (!isRecord(option)) return { label: "", values: [], index: optionIndex, explicitlyCorrect: false };
+      const label = stringValue(option, "label", "text", "option_text", "option", "name", "value");
+      const values = [...new Set([label, stringValue(option, "value", "id", "key", "option_id", "option_key")].filter(Boolean))];
+      return { label, values, index: optionIndex, explicitlyCorrect: option.is_correct === true || option.isCorrect === true || option.correct === true };
+    });
+    const options = optionEntries.filter((option) => option.label);
+    const displayOptions = options.length || !["true_false", "truefalse"].includes(questionType)
+      ? options
+      : ["True", "False"].map((label, optionIndex) => ({ label, values: [label, label.toLowerCase()], index: optionIndex, explicitlyCorrect: false }));
+    const correctRaw = question.correct_answer ?? question.correct_answers ?? question.correct_answer_text ?? question.correct_option ?? question.correct_options ?? question.correct_option_id ?? question.correct_option_index ?? question.correct_index ?? question.answer_index ?? question.answer_key ?? question.correctAnswer ?? question.correctOption ?? question.answer;
+    const correctValues = answerValues(correctRaw);
+    const correctOptionIndexes = new Set<number>(displayOptions.filter((option) => option.explicitlyCorrect).map((option) => option.index));
+    const multipleChoice = questionType.includes("multi") || questionType.includes("checkbox");
+    const normalize = (value: string) => value.normalize("NFKC").toLocaleLowerCase().replace(/[\s\p{P}\p{S}]/gu, "");
+
+    for (const correctValue of correctValues) {
+      const normalizedCorrectValue = correctValue.trim().toLocaleLowerCase();
+      const exactMatches = displayOptions.filter((option) => option.values.some((value) => value.trim().toLocaleLowerCase() === normalizedCorrectValue));
+      if (exactMatches.length) {
+        for (const option of exactMatches) correctOptionIndexes.add(option.index);
+        continue;
+      }
+      if (multipleChoice) {
+        const normalizedAnswer = normalize(correctValue);
+        const candidates = displayOptions.flatMap((option) => option.values.map((value) => ({ index: option.index, value: normalize(value) })))
+          .filter((option) => option.value.length > 0)
+          .map((option) => ({ ...option, start: normalizedAnswer.indexOf(option.value), end: normalizedAnswer.indexOf(option.value) + option.value.length }))
+          .filter((option) => option.start >= 0)
+          .sort((left, right) => right.value.length - left.value.length);
+        const matchedRanges: Array<{ start: number; end: number; value: string }> = [];
+        for (const candidate of candidates) {
+          const overlapsAnotherOption = matchedRanges.some((range) => candidate.start < range.end && candidate.end > range.start && candidate.value !== range.value);
+          if (!overlapsAnotherOption) {
+            matchedRanges.push(candidate);
+            correctOptionIndexes.add(candidate.index);
+          }
+        }
+        if (candidates.length) continue;
+      }
+      const letterIndex = /^[a-z]$/i.test(correctValue.trim()) ? correctValue.trim().toUpperCase().charCodeAt(0) - 65 : -1;
+      const indexMatch = displayOptions.find((option) => String(option.index) === correctValue.trim())
+        ?? (letterIndex >= 0 ? displayOptions.find((option) => option.index === letterIndex) : undefined);
+      if (indexMatch) correctOptionIndexes.add(indexMatch.index);
+    }
+
     const questionText = stringValue(question, "question", "question_text", "text", "title") || "Question";
-    return <li key={stringValue(question, "id") || `${index}-${questionText}`} className="rounded-xl bg-white p-3"><p className="font-semibold text-[#183d32]">{index + 1}. {questionText}</p>{options.length ? <ul className="mt-2 space-y-1">{options.map((option) => {
-      const correct = correctValues.includes(option.value) || correctValues.includes(option.label) || correctValues.includes(String(option.index));
+    return <li key={stringValue(question, "id", "question_id") || `${index}-${questionText}`} className="rounded-xl bg-white p-3"><p className="font-semibold text-[#183d32]">{index + 1}. {questionText}</p>{displayOptions.length ? <ul className="mt-2 space-y-1">{displayOptions.map((option) => {
+      const correct = correctOptionIndexes.has(option.index);
       return <li key={`${option.index}-${option.label}`} className={`rounded-lg border px-3 py-2 text-sm ${correct ? "border-[#bce8d1] bg-[#effaf4] font-semibold text-[#167550]" : "border-[#e1ebe6] text-[#52736a]"}`}>{String.fromCharCode(65 + option.index)}. {option.label}{correct ? " (correct answer)" : ""}</li>;
-    })}</ul> : correctValues.length ? <p className="mt-2 text-sm font-semibold text-[#167550]">Answer: {correctValues.join(", ")}</p> : null}</li>;
+    })}</ul> : correctValues.length ? <p className="mt-2 text-sm font-semibold text-[#167550]">Correct answer: {correctValues.join(", ")}</p> : <p className="mt-2 text-sm text-[#7f9d94]">No answer key is available for this question.</p>}</li>;
   })}</ol>;
 }
 

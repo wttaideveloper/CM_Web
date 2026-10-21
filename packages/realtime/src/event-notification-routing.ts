@@ -23,9 +23,42 @@ const eventRegistrationTypes = new Set([
   "event_booking_created",
   "event_ticket_purchased",
 ]);
+const eventFeedbackTypes = new Set(["event_feedback", "event_feedback_submitted"]);
 const trainingDiscussionTypes = new Set(["training_question_posted", "training_discussion_new", "training_new_discussion", "training_question"]);
-const reviewSubmissionTypes = new Set(["review_submitted", "training_review_submitted", "event_review_submitted"]);
-const reviewModerationTypes = new Set(["review_moderated", "review_deleted", "training_review_moderated", "event_review_moderated", "training_review_deleted", "event_review_deleted"]);
+const reviewSubmissionTypes = new Set([
+  "review_submitted",
+  "training_review_submitted",
+  "event_review_submitted",
+  "product_review_submitted",
+  "service_review_submitted",
+  "product_review_published",
+  "service_review_published",
+]);
+const reviewModerationTypes = new Set([
+  "review_moderated",
+  "review_approved",
+  "review_pending",
+  "review_rejected",
+  "review_deleted",
+  "training_review_moderated",
+  "event_review_moderated",
+  "training_review_pending",
+  "event_review_pending",
+  "training_review_rejected",
+  "event_review_rejected",
+  "training_review_deleted",
+  "event_review_deleted",
+  "product_review_approved",
+  "service_review_approved",
+  "product_review_moderated",
+  "service_review_moderated",
+  "product_review_pending",
+  "service_review_pending",
+  "product_review_rejected",
+  "service_review_rejected",
+  "product_review_deleted",
+  "service_review_deleted",
+]);
 const enterpriseTrainingTypes = new Set([
   "training_approved",
   "training_published",
@@ -125,9 +158,12 @@ function eventIdForRoute(notification: NotificationRouteInput): string | null {
     ?? readNonEmptyString(nestedEvent.eventId);
   if (nested) return nested;
 
-  return ["event", "events"].includes((readNonEmptyString(data.entity_type) ?? readNonEmptyString(data.module) ?? readNonEmptyString(data.item_type))?.toLocaleLowerCase() ?? "")
-    ? readNonEmptyString(data.entity_id)
-    : null;
+  const entityType = (readNonEmptyString(data.entity_type) ?? readNonEmptyString(data.module) ?? readNonEmptyString(data.item_type))?.toLocaleLowerCase();
+  if (["event", "events"].includes(entityType ?? "")) return readNonEmptyString(data.entity_id);
+  if (entityType === "review" && (readNonEmptyString(data.module)?.toLocaleLowerCase() === "event" || readNonEmptyString(data.item_type)?.toLocaleLowerCase() === "event")) {
+    return readNonEmptyString(data.entity_id);
+  }
+  return null;
 }
 
 function trainingIdForRoute(notification: NotificationRouteInput): string | null {
@@ -139,25 +175,59 @@ function trainingIdForRoute(notification: NotificationRouteInput): string | null
     ?? readNonEmptyString(nestedTraining.training_id)
     ?? readNonEmptyString(nestedTraining.trainingId);
   if (nested) return nested;
-  return ["training", "trainings", "course"].includes((readNonEmptyString(data.entity_type) ?? readNonEmptyString(data.module) ?? readNonEmptyString(data.item_type))?.toLocaleLowerCase() ?? "")
-    ? readNonEmptyString(data.entity_id)
-    : null;
+  const entityType = (readNonEmptyString(data.entity_type) ?? readNonEmptyString(data.module) ?? readNonEmptyString(data.item_type))?.toLocaleLowerCase();
+  if (["training", "trainings", "course"].includes(entityType ?? "")) return readNonEmptyString(data.entity_id);
+  if (entityType === "review" && (["training", "trainings", "course"].includes(readNonEmptyString(data.module)?.toLocaleLowerCase() ?? "") || ["training", "trainings", "course"].includes(readNonEmptyString(data.item_type)?.toLocaleLowerCase() ?? ""))) {
+    return readNonEmptyString(data.entity_id);
+  }
+  return null;
 }
 
-function reviewModuleForRoute(notification: NotificationRouteInput, eventName: string): "event" | "training" | null {
+function reviewModuleForRoute(notification: NotificationRouteInput, eventName: string): "event" | "training" | "product" | "service" | null {
   const data = notificationData(notification);
+  const explicitModule = (
+    readNonEmptyString(data.module)
+    ?? readNonEmptyString(data.item_type)
+    ?? readNonEmptyString(data.module_type)
+  )?.toLocaleLowerCase();
+
+  if (explicitModule === "event" || explicitModule === "events") return "event";
+  if (explicitModule === "training" || explicitModule === "trainings" || explicitModule === "course") return "training";
+  if (explicitModule === "product" || explicitModule === "products") return "product";
+  if (explicitModule === "service" || explicitModule === "services") return "service";
+
   const entityType = (
     readNonEmptyString(data.entity_type)
-    ?? readNonEmptyString(data.module)
-    ?? readNonEmptyString(data.item_type)
     ?? readNonEmptyString(data.entityType)
   )?.toLocaleLowerCase();
 
-  if (entityType === "event" || entityType === "events" || readNonEmptyString(data.event_id) || readNonEmptyString(data.eventId)) return "event";
-  if (entityType === "training" || entityType === "trainings" || entityType === "course" || readNonEmptyString(data.training_id) || readNonEmptyString(data.trainingId)) return "training";
-  if (eventName.includes("event")) return "event";
-  if (eventName.includes("training")) return "training";
+  if (entityType === "event" || entityType === "events") return "event";
+  if (entityType === "training" || entityType === "trainings" || entityType === "course") return "training";
+  if (entityType === "product" || entityType === "products") return "product";
+  if (entityType === "service" || entityType === "services") return "service";
+
+  if (readNonEmptyString(data.event_id) || readNonEmptyString(data.eventId)) return "event";
+  if (readNonEmptyString(data.training_id) || readNonEmptyString(data.trainingId)) return "training";
+  if (readNonEmptyString(data.product_id) || readNonEmptyString(data.productId)) return "product";
+  if (readNonEmptyString(data.service_id) || readNonEmptyString(data.serviceId)) return "service";
+
+  const text = `${notification.title ?? ""} ${notification.body ?? ""} ${eventName}`.toLocaleLowerCase();
+  if (text.includes("event")) return "event";
+  if (text.includes("product")) return "product";
+  if (text.includes("service")) return "service";
+  if (text.includes("training") || text.includes("course")) return "training";
+
   return null;
+}
+
+function reviewItemIdForModule(notification: NotificationRouteInput, module: "event" | "training" | "product" | "service"): string | null {
+  const data = notificationData(notification);
+  if (module === "event") return eventIdForRoute(notification);
+  if (module === "training") return trainingIdForRoute(notification);
+  const direct = readNonEmptyString(data[`${module}_id`]) ?? readNonEmptyString(data[`${module}Id`]) ?? readNonEmptyString(data.item_id) ?? readNonEmptyString(data.itemId) ?? readNonEmptyString(data.entity_id);
+  if (direct) return direct;
+  const item = recordValue(data[module]);
+  return readNonEmptyString(item.id) ?? readNonEmptyString(item[`${module}_id`]);
 }
 
 function resolveNotificationEventName(notification: NotificationRouteInput): string {
@@ -176,6 +246,7 @@ function resolveNotificationEventName(notification: NotificationRouteInput): str
       || enterpriseTrainingTypes.has(normalizedCandidate)
       || platformTrainingTypes.has(normalizedCandidate)
       || eventRegistrationTypes.has(normalizedCandidate)
+      || eventFeedbackTypes.has(normalizedCandidate)
       || trainingDiscussionTypes.has(normalizedCandidate)
       || reviewSubmissionTypes.has(normalizedCandidate)
       || reviewModerationTypes.has(normalizedCandidate);
@@ -206,13 +277,14 @@ export function formatReviewModerationNotificationTitle(notification: Notificati
   const data = notificationData(notification);
   const action = (readNonEmptyString(data.action) ?? readNonEmptyString(data.new_status) ?? "").toLocaleLowerCase();
   const isDeleted = eventName.includes("deleted") || action === "deleted";
-  return `${module === "event" ? "Event" : "Training"} review ${isDeleted ? "deleted" : "updated"}`;
+  const moduleLabel = module === "event" ? "Event" : module === "training" ? "Training" : module === "product" ? "Product" : "Service";
+  return `${moduleLabel} review ${isDeleted ? "deleted" : "updated"}`;
 }
 
 /** Extracts safe actor, action, and item details from review moderation notifications. */
 export function formatReviewModerationNotificationDetails(
   notification: NotificationRouteInput,
-): { actorName: string | null; actorRole: string | null; action: string | null; itemName: string | null; itemType: "Training" | "Event" | null } {
+): { actorName: string | null; actorRole: string | null; action: string | null; itemName: string | null; itemType: "Training" | "Event" | "Product" | "Service" | null } {
   const eventName = resolveNotificationEventName(notification);
   if (!reviewModerationTypes.has(eventName)) {
     return { actorName: null, actorRole: null, action: null, itemName: null, itemType: null };
@@ -230,11 +302,11 @@ export function formatReviewModerationNotificationDetails(
   const action = readNonEmptyString(data.action)
     ?? readNonEmptyString(data.new_status)
     ?? readNonEmptyString(data.to_status);
-  const itemName = [data.item_name, data.training_name, data.event_name, data.item_title, data.training_title, data.event_title]
+  const itemName = [data.item_name, data.training_name, data.event_name, data.product_name, data.service_name, data.item_title, data.training_title, data.event_title, data.product_title, data.service_title]
     .map(readNonEmptyString)
     .find((value): value is string => value !== null) ?? null;
 
-  return { actorName, actorRole, action, itemName, itemType: module === "training" ? "Training" : module === "event" ? "Event" : null };
+  return { actorName, actorRole, action, itemName, itemType: module === "training" ? "Training" : module === "event" ? "Event" : module === "product" ? "Product" : module === "service" ? "Service" : null };
 }
 
 /** Resolves an Event or Training workflow notification to its relevant Web screen. */
@@ -245,21 +317,28 @@ export function resolveNotificationTarget(
   const eventName = resolveNotificationEventName(notification);
   if (scope === "platform") {
     if (eventName.toLocaleLowerCase() === "event_submitted") return "/approval-queue?type=events";
+    if (eventFeedbackTypes.has(eventName)) {
+      const eventId = eventIdForRoute(notification);
+      return eventId ? `/events?view=reviews&item_id=${encodeURIComponent(eventId)}&subview=feedback` : null;
+    }
     if (reviewModerationTypes.has(eventName) || reviewSubmissionTypes.has(eventName)) {
+      const module = reviewModuleForRoute(notification, eventName) ?? "training";
       const data = notificationData(notification);
-      const module = reviewModuleForRoute(notification, eventName);
-      const itemId = module === "event" ? eventIdForRoute(notification) : module === "training" ? trainingIdForRoute(notification) : null;
-      if (!module || !itemId) return null;
-      const reviewId = readNonEmptyString(data.review_id) || readNonEmptyString(data.reviewId) || readNonEmptyString(data.id);
-      const status = (readNonEmptyString(data.new_status) ?? readNonEmptyString(data.action))?.toLocaleLowerCase();
-      const isDelete = eventName.includes("delete") || status === "deleted";
-      const params = new URLSearchParams({ view: "reviews", item_id: itemId });
+      const params = new URLSearchParams({ view: "reviews" });
+      const itemId = reviewItemIdForModule(notification, module);
+      const reviewId = readNonEmptyString(data.review_id);
+      const status = readNonEmptyString(data.status) ?? readNonEmptyString(data.new_status);
+      if (itemId) params.set("item_id", itemId);
       if (reviewId) params.set("review_id", reviewId);
-      if (status === "pending" || status === "approved" || status === "rejected") params.set("status", status);
-      if (isDelete) params.set("show_audit", "true");
-      return `/${module === "training" ? "trainings" : "events"}?${params.toString()}`;
+      if (status) params.set("status", status);
+      if (eventName.includes("deleted") || status === "deleted") params.set("show_audit", "true");
+      return `/${module === "training" ? "trainings" : `${module}s`}?${params.toString()}`;
     }
     return platformTrainingTypes.has(eventName) ? "/approval-queue?type=trainings" : null;
+  }
+  if (eventFeedbackTypes.has(eventName)) {
+    const eventId = eventIdForRoute(notification);
+    return eventId ? `/admin/events/${encodeURIComponent(eventId)}?tab=reviews&subview=feedback` : null;
   }
   if (trainingDiscussionTypes.has(eventName)) {
     const trainingId = trainingIdForRoute(notification);
@@ -271,16 +350,31 @@ export function resolveNotificationTarget(
   }
   if (reviewModerationTypes.has(eventName) || reviewSubmissionTypes.has(eventName)) {
     const data = notificationData(notification);
-    const module = reviewModuleForRoute(notification, eventName);
-    const itemId = module === "event" ? eventIdForRoute(notification) : module === "training" ? trainingIdForRoute(notification) : null;
-    if (!module || !itemId) return null;
-    const reviewId = readNonEmptyString(data.review_id) ?? readNonEmptyString(data.reviewId);
-    const status = (readNonEmptyString(data.new_status) ?? readNonEmptyString(data.action))?.toLocaleLowerCase();
-    const isDeleted = eventName.includes("delete") || status === "deleted";
+    const module = reviewModuleForRoute(notification, eventName) ?? "training";
+    const itemId = reviewItemIdForModule(notification, module);
+    const reviewId = readNonEmptyString(data.review_id) ?? readNonEmptyString(data.reviewId) ?? readNonEmptyString(data.id);
+    const status = (
+      readNonEmptyString(data.new_status)
+      ?? readNonEmptyString(data.to_status)
+      ?? readNonEmptyString(data.action)
+      ?? readNonEmptyString(data.status)
+    )?.toLocaleLowerCase();
+    const combinedText = `${notification.title ?? ""} ${notification.body ?? ""} ${eventName} ${status ?? ""}`.toLocaleLowerCase();
+    const isDeleted = eventName.includes("delete") || status === "deleted" || combinedText.includes("deleted") || combinedText.includes("delet");
     const params = new URLSearchParams({ tab: "reviews" });
     if (reviewId) params.set("review_id", reviewId);
-    if (isDeleted) params.set("show_audit", "true");
-    return `/admin/${module === "training" ? "trainings" : "events"}/${encodeURIComponent(itemId)}?${params.toString()}`;
+    if (isDeleted) {
+      params.set("status", "deleted");
+      params.set("show_audit", "true");
+    }
+    if (itemId) {
+      if (module === "product" || module === "service") {
+        return `/admin/${module}s/${encodeURIComponent(itemId)}#${module}-reviews`;
+      }
+      return `/admin/${module === "training" ? "trainings" : `${module}s`}/${encodeURIComponent(itemId)}?${params.toString()}`;
+    }
+    if (module === "product" || module === "service") return `/admin/${module}s?view=reviews${reviewId ? `&review_id=${encodeURIComponent(reviewId)}` : ""}`;
+    return `/admin/${module === "training" ? "trainings" : `${module}s`}?${params.toString()}`;
   }
   const trainingId = trainingIdForRoute(notification);
   if (trainingId) {
@@ -316,10 +410,7 @@ export function resolveNotificationTarget(
 
 /** Marks a notification read without allowing a read failure to block app-router navigation. */
 export function handleNotificationClick(
-  notification: Pick<RealtimeNotification, "id" | "notification_type" | "data"> & {
-    category?: string;
-    metadata?: Record<string, unknown>;
-  },
+  notification: NotificationRouteInput & { id: string },
   scope: "enterprise" | "platform",
   markRead: (id: string) => Promise<void> | void,
   navigate: (target: string) => void,
@@ -343,13 +434,41 @@ export function resolveEventNotificationTarget(
   return resolveNotificationTarget(notification, scope);
 }
 
-export function notificationReason(notification: Pick<RealtimeNotification, "data" | "body">): string | null {
+export function notificationReason(notification: Pick<RealtimeNotification, "data" | "body"> & { metadata?: Record<string, unknown> }): string | null {
   const reason =
     readNonEmptyString(notification.data.reason) ??
+    readNonEmptyString(notification.metadata?.reason) ??
     readNonEmptyString(notification.data.rejection_reason) ??
+    readNonEmptyString(notification.metadata?.rejection_reason) ??
+    readNonEmptyString(notification.data.deletion_reason) ??
+    readNonEmptyString(notification.metadata?.deletion_reason) ??
+    readNonEmptyString(notification.data.moderation_reason) ??
+    readNonEmptyString(notification.metadata?.moderation_reason) ??
     readNonEmptyString(notification.data.note) ??
-    readNonEmptyString(notification.data.admin_note);
+    readNonEmptyString(notification.metadata?.note) ??
+    readNonEmptyString(notification.data.admin_note) ??
+    readNonEmptyString(notification.metadata?.admin_note);
   return reason && !notification.body.toLocaleLowerCase().includes(reason.toLocaleLowerCase()) ? reason : null;
+}
+
+/** Reads attendee and Event labels from Mobile Event feedback notification metadata. */
+export function formatEventFeedbackNotificationDetails(
+  notification: NotificationRouteInput,
+): { attendeeName: string | null; eventTitle: string | null; comment: string | null } | null {
+  if (!eventFeedbackTypes.has(resolveNotificationEventName(notification))) {
+    return null;
+  }
+  const data = notificationData(notification);
+  const attendee = recordValue(data.attendee ?? data.participant ?? data.learner ?? data.author);
+  const event = recordValue(data.event);
+  const attendeeName = [data.attendee_name, data.participant_name, data.learner_name, data.reviewer_name, attendee.full_name, attendee.name, attendee.display_name]
+    .map(readNonEmptyString)
+    .find((value): value is string => value !== null && !value.includes("@")) ?? null;
+  const eventTitle = [data.event_title, data.event_name, data.item_name, data.item_title, event.title, event.name]
+    .map(readNonEmptyString)
+    .find((value): value is string => value !== null) ?? null;
+  const comment = readNonEmptyString(data.comment);
+  return { attendeeName, eventTitle, comment };
 }
 
 /** Extracts Training titles and discussion sender names from notification API metadata. */
@@ -423,11 +542,11 @@ export function formatReviewNotificationDetails(
     category?: string;
     metadata?: Record<string, unknown>;
   },
-): { learnerName: string | null; itemName: string | null; itemType: "Training" | "Event" | null; rating: number | null } {
+): { learnerName: string | null; itemName: string | null; itemType: "Training" | "Event" | "Product" | "Service" | null; rating: number | null; reviewComment: string | null } {
   const data = notificationData(notification);
   const notificationType = resolveNotificationEventName(notification);
   if (!reviewSubmissionTypes.has(notificationType)) {
-    return { learnerName: null, itemName: null, itemType: null, rating: null };
+    return { learnerName: null, itemName: null, itemType: null, rating: null, reviewComment: null };
   }
 
   const learnerName = [data.learner_name, data.reviewer_name, data.participant_name, data.author_name]
@@ -438,6 +557,8 @@ export function formatReviewNotificationDetails(
     data.item_name,
     data.training_name,
     data.event_name,
+    data.product_name,
+    data.service_name,
     data.training_title,
     data.event_title,
     data.item_title,
@@ -449,11 +570,63 @@ export function formatReviewNotificationDetails(
     : typeof rawRating === "string" && /^[1-5]$/.test(rawRating)
       ? Number(rawRating)
       : null;
+  const nestedReview = recordValue(data.review);
+  const reviewComment = [
+    data.review_comment,
+    data.review_text,
+    data.review_message,
+    data.review_content,
+    data.comment,
+    nestedReview.comment,
+    nestedReview.review_text,
+    nestedReview.content,
+    nestedReview.text,
+  ].map(readNonEmptyString).find((value): value is string => value !== null) ?? null;
 
   return {
     learnerName,
     itemName,
-    itemType: module === "training" ? "Training" : module === "event" ? "Event" : null,
+    itemType: module === "training" ? "Training" : module === "event" ? "Event" : module === "product" ? "Product" : module === "service" ? "Service" : null,
     rating,
+    reviewComment,
+  };
+}
+
+/** Uses the review status metadata to avoid stale submission copy in older notifications. */
+export function formatReviewSubmissionNotification(
+  notification: Pick<RealtimeNotification, "notification_type" | "data"> & {
+    category?: string;
+    metadata?: Record<string, unknown>;
+    title?: string;
+    body?: string;
+  },
+): { title: string; message: string } | null {
+  const eventName = resolveNotificationEventName(notification);
+  if (!reviewSubmissionTypes.has(eventName)) return null;
+
+  const data = notificationData(notification);
+  const status = (readNonEmptyString(data.status) ?? readNonEmptyString(data.moderation_status))?.toLocaleLowerCase();
+  if (status !== "approved" && status !== "pending") return null;
+
+  const details = formatReviewNotificationDetails(notification);
+  const module = reviewModuleForRoute(notification, eventName);
+  const itemType = details.itemType ?? (module === "training" ? "Training" : module === "event" ? "Event" : module === "product" ? "Product" : module === "service" ? "Service" : null);
+  if (!itemType) return null;
+
+  const learnerName = details.learnerName ?? (module === "product" || module === "service" ? "A customer" : null);
+  const itemName = details.itemName;
+  const rating = details.rating === null ? "" : `${details.rating}-star `;
+  const reviewComment = details.reviewComment ? ` Review: "${details.reviewComment.replace(/\s+/g, " ")}"` : "";
+  if (status === "approved") {
+    return {
+      title: `${itemType} review published`,
+      message: `${learnerName ?? "A learner"} posted a ${rating}review${itemName ? ` on \"${itemName}\"` : ""}.${reviewComment}`,
+    };
+  }
+
+  const verb = data.resubmitted === true ? "resubmitted" : "submitted";
+  return {
+    title: `${itemType} review ${verb}`,
+    message: `${learnerName ?? "A learner"} ${verb} a review${itemName ? ` of \"${itemName}\"` : ""}.${reviewComment}`,
   };
 }

@@ -302,7 +302,9 @@ location_id: isVenue ? values.location_id.trim() || null : null,
     recurring: values.recurring.trim() || null,
     schedule_exceptions: (() => { try { return values.schedule_exceptions.trim() ? JSON.parse(values.schedule_exceptions) : null; } catch { return values.schedule_exceptions.trim() || null; } })(),
     meeting_provider: isLive ? values.meeting_provider.trim() || null : null,
-    instructor: values.instructor_role.trim() ? { id: values.instructor_id.trim() || null, name: values.instructor_name.trim() || null, bio: values.instructor_bio.trim() || null, role: values.instructor_role.trim() || null } : null,
+    instructor: values.instructor_id.trim() || values.instructor_name.trim() || values.instructor_role.trim()
+      ? { id: values.instructor_id.trim() || null, name: values.instructor_name.trim() || null, bio: values.instructor_bio.trim() || null, role: values.instructor_role.trim() || null }
+      : null,
     instructor_notes: values.instructor_notes.length ? values.instructor_notes.map((url, idx) => ({ id: `note-${idx}`, title: `Note ${idx+1}`, url })) : null,
     notes_pdf_url: values.notes_pdf_url.trim() || null,
     target_audience: values.target_audience.trim() || null,
@@ -382,7 +384,9 @@ export function buildUpdateTrainingPayload(values: CreateTrainingFormValues): Up
 recurring: values.recurring.trim() || null,
     schedule_exceptions: (() => { try { return values.schedule_exceptions.trim() ? JSON.parse(values.schedule_exceptions) : null; } catch { return values.schedule_exceptions.trim() || null; } })(),
     meeting_provider: isLive ? values.meeting_provider.trim() || null : null,
-    instructor: values.instructor_role.trim() ? { id: values.instructor_id.trim() || null, name: values.instructor_name.trim() || null, bio: values.instructor_bio.trim() || null, role: values.instructor_role.trim() || null } : null,
+    instructor: values.instructor_id.trim() || values.instructor_name.trim() || values.instructor_role.trim()
+      ? { id: values.instructor_id.trim() || null, name: values.instructor_name.trim() || null, bio: values.instructor_bio.trim() || null, role: values.instructor_role.trim() || null }
+      : null,
     instructor_notes: values.instructor_notes.length ? values.instructor_notes.map((url, idx) => ({ id: `note-${idx}`, title: `Note ${idx+1}`, url })) : null,
     notes_pdf_url: values.notes_pdf_url.trim() || null,
     target_audience: values.target_audience.trim() || null,

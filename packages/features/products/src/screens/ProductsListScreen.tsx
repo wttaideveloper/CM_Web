@@ -141,6 +141,8 @@ function mapProductToListItem(
     enterprise: enterpriseNameMap[product.enterprise_id] || "N/A",
     stock: product.stock_quantity !== undefined ? String(product.stock_quantity) : "N/A",
     sales: "—",
+    rating: typeof product.rating === "number" && Number.isFinite(product.rating) ? product.rating : null,
+    reviewsCount: typeof product.reviews_count === "number" ? product.reviews_count : undefined,
   };
 }
 
@@ -317,6 +319,7 @@ export default function ProductsListScreen({
                           {product.name}
                         </span>
                       </div>
+                      {product.reviewsCount !== undefined ? <p className="ml-[46px] text-[11px] font-semibold text-[#805900]">{product.reviewsCount > 0 ? `${product.rating?.toFixed(1) ?? "No rating"} ★ (${product.reviewsCount})` : "No ratings yet"}</p> : null}
                     </td>
                     <td className="truncate px-3 text-[#52736a]">{product.enterprise}</td>
                     <td className="truncate px-3 text-[#52736a]">{product.category}</td>
@@ -401,6 +404,7 @@ export default function ProductsListScreen({
                   </div>
                   <div className="p-4">
                     <h3 className="text-sm font-bold text-[#06201c]">{product.name}</h3>
+                    {product.reviewsCount !== undefined ? <p className="mt-1 text-xs font-semibold text-[#805900]">{product.reviewsCount > 0 ? `${product.rating?.toFixed(1) ?? "No rating"} ★ · ${product.reviewsCount} ${product.reviewsCount === 1 ? "review" : "reviews"}` : "No ratings yet"}</p> : null}
                     <p className="mt-1 text-sm text-[#52736a]">{product.enterprise}</p>
                     <div className="mt-3 flex items-center justify-between">
                       <span className="text-sm font-bold text-[#06201c]">{product.price}</span>

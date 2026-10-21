@@ -2,7 +2,7 @@ import { authenticatedFetch } from "@ihp/auth";
 import { mediaItemUrl, mediaUrlsFromUnknown, normalizeDocumentEntries, type EventDocumentEntry } from "./event-media";
 import { parseEventOrdersResponse, type EventOrder } from "./event-orders-parser";
 import { parseEventReview, parseManagedEventReviews, normalizeUtcDate } from "./event-reviews.service";
-import type { EnterpriseEventReviewsParams, EventReview, EventReviewAuditEntry, EventReviewsManageResponse, ReviewModerationStatus } from "./event-reviews.types";
+import type { EnterpriseEventReviewsParams, EventFeedbackAnswer, EventFeedbackItem, EventFeedbackReportResponse, EventReview, EventReviewAuditEntry, EventReviewsManageResponse, EventStarRating, ReviewModerationStatus } from "./event-reviews.types";
 import { normalizeEventVenue } from "./event-location";
 
 export type { EventOrder } from "./event-orders-parser";
@@ -516,9 +516,6 @@ export interface UpdateEventTemplatePayload {
 export interface DeleteEventTemplateResponse {
   message: string;
 }
-
-/** Swagger defines GET /feedback with an empty response schema; preserve it as unknown. */
-export type EventFeedbackResponse = unknown;
 
 /** Runtime-confirmed JSON response for the registration Event report. */
 export interface EventRegistrationReportResponse {
@@ -1440,8 +1437,83 @@ export async function getEventTypes(): Promise<EventTypeDefinition[]> {
   return value;
 }
 
-/** Reads submitted Event feedback through the authenticated same-origin Events proxy. */
-export async function getEventFeedback(eventId: string): Promise<EventFeedbackResponse> {
+function isEventStarRating(value: unknown): value is EventStarRating {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 5;
+}
+
+function parseEventFeedbackAnswer(value: unknown, index: number): EventFeedbackAnswer {
+  if (isRecord(value)) {
+    return {
+      ...(typeof value.question === "string" || value.question === null ? { question: value.question } : {}),
+      ...(typeof value.question_id === "string" || value.question_id === null ? { question_id: value.question_id } : {}),
+      ...(typeof value.label === "string" || value.label === null ? { label: value.label } : {}),
+      ...(typeof value.key === "string" || value.key === null ? { key: value.key } : {}),
+      ...(Object.prototype.hasOwnProperty.call(value, "value") ? { value: value.value } : {}),
+      ...(Object.prototype.hasOwnProperty.call(value, "answer") ? { answer: value.answer } : {}),
+    };
+  }
+  return { label: `Question ${index + 1}`, value };
+}
+
+function parseEventFeedbackItems(value: unknown, eventId: string): EventFeedbackItem[] {
+  const envelope = isRecord(value) ? value : null;
+  const rows: unknown = Array.isArray(value)
+    ? value
+    : (envelope && [envelope.items, envelope.feedback, envelope.feedbacks, envelope.submissions, envelope.data].find((candidate): candidate is unknown[] => Array.isArray(candidate)))
+      ?? (envelope && isRecord(envelope.data) ? [envelope.data.items, envelope.data.feedback, envelope.data.feedbacks, envelope.data.submissions].find((candidate): candidate is unknown[] => Array.isArray(candidate)) : undefined);
+  if (!Array.isArray(rows)) throw new EventsApiError("Events API returned invalid attendee feedback.", 200);
+  return rows.flatMap((candidate, index) => {
+    const id = isRecord(candidate) ? candidate.id ?? candidate.feedback_id : null;
+    if (!isRecord(candidate) || typeof id !== "string" || !id.trim()) return [];
+    const rawRating = candidate.rating;
+    const numericRating = typeof rawRating === "string" && /^[1-5](?:\.0+)?$/.test(rawRating.trim()) ? Number(rawRating) : rawRating;
+    const rating = isEventStarRating(numericRating) ? numericRating : null;
+    const name = candidate.participant_name ?? candidate.attendee_name ?? candidate.name;
+    const email = candidate.participant_email ?? candidate.attendee_email ?? candidate.email;
+    const eventValue = candidate.event_id ?? eventId;
+    const rawAnswers = candidate.answers;
+    const answers = Array.isArray(rawAnswers)
+      ? rawAnswers.map(parseEventFeedbackAnswer)
+      : isRecord(rawAnswers)
+        ? rawAnswers
+        : {};
+    return [{
+      id,
+      event_id: typeof eventValue === "string" ? eventValue : eventId,
+      participant_name: typeof name === "string" && name.trim() ? name.trim() : "Attendee",
+      participant_email: typeof email === "string" && email.trim() ? email.trim() : null,
+      rating,
+      comment: typeof candidate.comment === "string" && candidate.comment.trim() ? candidate.comment : null,
+      form_id: typeof candidate.form_id === "string" ? candidate.form_id : null,
+      answers,
+      created_at: typeof candidate.created_at === "string" ? normalizeUtcDate(candidate.created_at) : null,
+    }];
+  });
+}
+
+function parseEventFeedbackReport(value: unknown, eventId: string): EventFeedbackReportResponse {
+  if (!isRecord(value) || !isRecord(value.data)) throw new EventsApiError("Events API returned an invalid feedback report.", 200);
+  const { total_feedbacks, total_reviews, approved_reviews, average_rating } = value.data;
+  const validCount = (count: unknown): count is number => typeof count === "number" && Number.isInteger(count) && count >= 0;
+  if (!validCount(total_feedbacks) || !validCount(total_reviews) || !validCount(approved_reviews)
+    || (average_rating !== null && (typeof average_rating !== "number" || !Number.isFinite(average_rating) || average_rating < 0 || average_rating > 5))) {
+    throw new EventsApiError("Events API returned an invalid feedback report.", 200);
+  }
+  return {
+    event_id: typeof value.event_id === "string" ? value.event_id : eventId,
+    type: "feedback",
+    data: {
+      total_feedbacks,
+      total_reviews,
+      approved_reviews,
+      average_rating,
+      ...(Array.isArray(value.data.feedbacks) ? { feedbacks: parseEventFeedbackItems(value.data.feedbacks, eventId) } : {}),
+    },
+  };
+}
+
+/** Reads private attendee feedback through the authenticated same-origin Events proxy. */
+export async function getEventFeedback(eventId: string): Promise<EventFeedbackItem[]> {
   const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/feedback`, {
     credentials: "include",
     cache: "no-store",
@@ -1451,8 +1523,18 @@ export async function getEventFeedback(eventId: string): Promise<EventFeedbackRe
     throw await createEventsApiError(response, "load event feedback");
   }
 
-  const contentType = response.headers.get("content-type") ?? "";
-  return contentType.includes("application/json") ? response.json() : response.text();
+  return parseEventFeedbackItems(await response.json() as unknown, eventId);
+}
+
+/** Loads feedback and public review aggregates for an Event. */
+export async function getEventFeedbackReport(eventId: string): Promise<EventFeedbackReportResponse> {
+  const searchParams = new URLSearchParams({ type: "feedback", format: "json" });
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/reports?${searchParams.toString()}`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (!response.ok) throw await createEventsApiError(response, "load the Event feedback report");
+  return parseEventFeedbackReport(await response.json() as unknown, eventId);
 }
 
 /** Loads the authenticated Enterprise's paginated Event review queue. */
@@ -1510,6 +1592,12 @@ function isEventReviewAuditEntry(value: unknown): value is EventReviewAuditEntry
     && (value.actor_name === undefined || value.actor_name === null || typeof value.actor_name === "string")
     && (value.actor_user_id === undefined || value.actor_user_id === null || typeof value.actor_user_id === "string")
     && (value.actor_role === undefined || value.actor_role === null || typeof value.actor_role === "string")
+    && (value.customer_name === undefined || value.customer_name === null || typeof value.customer_name === "string")
+    && (value.rating === undefined || value.rating === null || (typeof value.rating === "number" && value.rating >= 1 && value.rating <= 5))
+    && (value.comment === undefined || value.comment === null || typeof value.comment === "string")
+    && (value.reason === undefined || value.reason === null || typeof value.reason === "string")
+    && (value.rejection_reason === undefined || value.rejection_reason === null || typeof value.rejection_reason === "string")
+    && (value.moderation_reason === undefined || value.moderation_reason === null || typeof value.moderation_reason === "string")
     && (value.created_at === undefined || value.created_at === null || typeof value.created_at === "string");
 }
 

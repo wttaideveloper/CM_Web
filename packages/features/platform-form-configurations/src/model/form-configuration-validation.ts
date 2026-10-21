@@ -14,7 +14,7 @@ export type PersistedAssignmentState = {
 /** A client-detectable publish issue tied to the configuration, a section, or a field. */
 export type FormConfigurationValidationIssue = {
   severity?: "error" | "warning";
-  code: "domain-required" | "missing-domain-required" | "invalid-renderer" | "invalid-composite-required-fields" | "missing-core-registry-entry" | "selective-tenant-required" | "selective-assignments-dirty" | "selective-assignments-loading" | "duplicate-core-key" | "invalid-delivery-bundle" | "subcategory-requires-category" | "paid-pricing-input-missing" | "invalid-training-visibility" | "invalid-training-upload-settings" | "missing-section-name" | "missing-field-label" | "invalid-field-validation" | "invalid-field-options";
+  code: "domain-required" | "missing-domain-required" | "invalid-renderer" | "invalid-composite-required-fields" | "missing-core-registry-entry" | "selective-tenant-required" | "selective-assignments-dirty" | "selective-assignments-loading" | "duplicate-core-key" | "invalid-delivery-bundle" | "subcategory-requires-category" | "paid-pricing-input-missing" | "invalid-training-visibility" | "invalid-training-upload-settings" | "missing-section-name" | "empty-section" | "missing-field-label" | "invalid-field-validation" | "invalid-field-options";
   message: string;
   sectionLocalId?: string;
   fieldLocalId?: string;
@@ -33,7 +33,10 @@ export function validateFormConfiguration(configuration: FormConfiguration, regi
   const requiredSectionIssues = configuration.sections.flatMap((section) => section.enabled && !section.name.trim()
     ? [{ code: "missing-section-name" as const, message: "Give every enabled section a name before saving or publishing.", sectionLocalId: section.localId }]
     : []);
-  return [...scopeIssues, ...duplicateCoreKeyIssues, ...trainingSettingsIssues, ...deliveryIssues, ...eventIssues, ...requiredFieldIssues, ...requiredSectionIssues, ...configuration.fields.flatMap((field) => {
+  const emptySectionIssues = configuration.sections.flatMap((section) => configuration.fields.some((field) => field.sectionLocalId === section.localId)
+    ? []
+    : [{ severity: "error" as const, code: "empty-section" as const, message: `Add at least one field to “${section.name.trim() || "Untitled section"}” before saving. Sections cannot be empty.`, sectionLocalId: section.localId }]);
+  return [...scopeIssues, ...duplicateCoreKeyIssues, ...trainingSettingsIssues, ...deliveryIssues, ...eventIssues, ...requiredFieldIssues, ...requiredSectionIssues, ...emptySectionIssues, ...configuration.fields.flatMap((field) => {
     const runtimeSourced = field.source === "core" && Boolean(registry.find((item) => item.key === field.coreKey)?.valueSource || registry.find((item) => item.key === field.coreKey)?.sourceEndpoint);
     const commonIssues = validateFieldSettings(field, runtimeSourced, configuration.type);
     if (field.enabled && !field.label.trim()) commonIssues.push({ code: "missing-field-label", message: "Give every enabled field a label before saving or publishing.", sectionLocalId: field.sectionLocalId, fieldLocalId: field.localId });

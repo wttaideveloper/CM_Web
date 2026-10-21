@@ -241,6 +241,7 @@ function mapSimpleTrainingFormSections(rawSections: Array<Record<string, unknown
     id: typeof sec.id === "string" ? sec.id : `sec-${sIdx}`,
     title: resolveTrainingSectionTitle(sec, sIdx),
     description: typeof sec.description === "string" && sec.description.trim() ? sec.description : undefined,
+    enabled: sec.is_enabled !== false && sec.enabled !== false,
     order: typeof sec.position === "number" ? sec.position : typeof sec.order === "number" ? sec.order as number : sIdx,
     fields: mapTrainingFormFields(sec.fields),
   }));
@@ -315,6 +316,7 @@ export interface TrainingFormSection {
   id: string;
   title: string;
   description?: string;
+  enabled?: boolean;
   order: number;
   fields: TrainingFormField[];
 }
@@ -399,6 +401,7 @@ export async function getTrainingHistoricalFormConfiguration(trainingId: string)
           id: typeof sec.id === "string" ? sec.id : `sec-${sIdx}`,
           title,
           description: typeof sec.description === "string" && sec.description.trim() ? sec.description : null,
+          enabled: sec.is_enabled !== false && sec.enabled !== false,
           order: typeof sec.position === "number" ? sec.position : sIdx,
               fields: Array.isArray(sec.fields) ? (sec.fields as Array<Record<string, unknown>>).map((fld, fIdx) => ({
                 id: typeof fld.id === "string" ? fld.id : `fld-${fIdx}`,
@@ -520,6 +523,7 @@ export async function getTrainingFormConfigActive(): Promise<TrainingFormConfig 
             id: typeof sec.id === "string" ? sec.id : `sec-${sIdx}`,
             title: t,
             description: typeof sec.description === "string" && sec.description.trim() ? sec.description : undefined,
+            enabled: sec.is_enabled !== false && sec.enabled !== false,
             order: typeof sec.position === "number" ? sec.position : typeof (sec as Record<string, unknown>).order === "number" ? (sec as Record<string, unknown>).order as number : sIdx,
             fields: Array.isArray(sec.fields) ? (sec.fields as Array<Record<string, unknown>>).map((fld, fIdx) => ({
               id: typeof fld.id === "string" ? fld.id : `fld-${fIdx}`,
@@ -585,6 +589,7 @@ export async function getTrainingFormConfigActive(): Promise<TrainingFormConfig 
                 id: typeof sec.id === "string" ? sec.id : `sec-${sIdx}`,
                 title: t2,
                 description: typeof sec.description === "string" && sec.description.trim() ? sec.description : null,
+                enabled: sec.is_enabled !== false && sec.enabled !== false,
                 order: typeof sec.position === "number" ? sec.position : typeof sec.order === "number" ? sec.order : sIdx,
               fields: Array.isArray(sec.fields) ? (sec.fields as Array<Record<string, unknown>>).map((fld, fIdx) => ({
                 id: typeof fld.id === "string" ? fld.id : `fld-${fIdx}`,

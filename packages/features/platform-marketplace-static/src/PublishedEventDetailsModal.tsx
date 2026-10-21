@@ -10,7 +10,7 @@ import { PlatformModuleReviewsTab } from "./PlatformModuleReviewsTab";
 type PublishedEventDetailsModalProps = {
   eventId: string;
   reviewId?: string | null;
-  reviewStatus?: "pending" | "approved" | "rejected" | "all";
+  reviewStatus?: "pending" | "approved" | "rejected" | "deleted" | "all";
   openReviewAudit?: boolean;
   onClose: () => void;
 };

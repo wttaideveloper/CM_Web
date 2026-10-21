@@ -38,6 +38,8 @@ export function useEnterpriseWorkflowNotifications() {
     queryKey: enterpriseWorkflowNotificationsKey,
     queryFn: () => client.list(1, MAX_PAGE_SIZE),
     staleTime: 15_000,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
     refetchInterval: 15_000,
   });
 

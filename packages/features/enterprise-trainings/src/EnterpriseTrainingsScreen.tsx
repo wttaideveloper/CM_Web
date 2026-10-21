@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useCurrentEnterprise, useTenant } from "@ihp/enterprise-runtime";
-import { isInternalUserRole, useAuth } from "@ihp/auth";
 import Link from "next/link";
 import { useTranslation } from "react-i18next";
 
@@ -289,8 +288,6 @@ export default function EnterpriseTrainingsScreen() {
 
   const { tenantId } = useTenant();
   const { enterpriseId } = useCurrentEnterprise();
-  const { roles } = useAuth();
-  const canModerateReviews = Boolean(roles && !isInternalUserRole(roles.tenantRole));
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -393,7 +390,7 @@ export default function EnterpriseTrainingsScreen() {
         <button type="button" role="tab" aria-selected={activeView === "reviews"} onClick={() => setActiveView("reviews")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${activeView === "reviews" ? "border-[#1f6a58] bg-[#effaf4] text-[#1f6a58]" : "border-transparent text-[#52736a] hover:bg-[#f4faf7]"}`}>Reviews ({pendingReviewsQuery.data?.counts.pending ?? 0})</button>
       </nav>
 
-      {activeView === "reviews" ? <EnterpriseTrainingsReviewsTab canModerate={canModerateReviews} /> : <>
+      {activeView === "reviews" ? <EnterpriseTrainingsReviewsTab /> : <>
 
       {statusFeedback ? (
         <div role="status" className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">
@@ -401,8 +398,6 @@ export default function EnterpriseTrainingsScreen() {
           <button type="button" onClick={() => setStatusFeedback(null)} className="shrink-0 rounded px-2 py-1 text-[#167550] underline underline-offset-2 hover:bg-[#dff4e8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#167550]" aria-label="Dismiss notification">Dismiss</button>
         </div>
       ) : null}
-
-      <TrainingsSummaryCard summary={summaryQuery.data} isLoading={summaryQuery.isLoading} isError={summaryQuery.isError} />
 
       <section className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm">
         <div className="grid gap-3 xl:grid-cols-[1fr_auto]">
@@ -536,6 +531,7 @@ export default function EnterpriseTrainingsScreen() {
           </nav>
         </>
       )}
+      <TrainingsSummaryCard summary={summaryQuery.data} isLoading={summaryQuery.isLoading} isError={summaryQuery.isError} />
       </>}
     </div>
   );

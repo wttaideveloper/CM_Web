@@ -39,6 +39,7 @@ export interface TrainingListItem {
   id: string;
   tenant_id: string | null;
   enterprise_id: string;
+  enterprise_name?: string | null;
   location_id: string | null;
   primary_image?: string | null;
   title: string;
@@ -576,6 +577,7 @@ function isTrainingListItem(value: unknown): value is TrainingListItem {
     typeof rec.category === "string" &&
     typeof rec.status === "string" &&
     (rec.tenant_id === undefined || rec.tenant_id === null || typeof rec.tenant_id === "string") &&
+    (rec.enterprise_name === undefined || rec.enterprise_name === null || typeof rec.enterprise_name === "string") &&
     (rec.description === undefined || rec.description === null || typeof rec.description === "string") &&
     (rec.created_at === undefined || rec.created_at === null || typeof rec.created_at === "string") &&
     (rec.updated_at === undefined || rec.updated_at === null || typeof rec.updated_at === "string") &&
@@ -2017,6 +2019,10 @@ export async function getTrainingReviewsAudit(trainingId?: string): Promise<Trai
     actor_user_id: typeof row.actor_user_id === "string" ? row.actor_user_id : null,
     actor_role: typeof row.actor_role === "string" ? row.actor_role : null,
     created_at: typeof row.created_at === "string" ? row.created_at : null,
+    customer_name: typeof row.customer_name === "string" ? row.customer_name : null,
+    rating: typeof row.rating === "number" && row.rating >= 1 && row.rating <= 5 ? row.rating as TrainingStarRating : null,
+    comment: typeof row.comment === "string" ? row.comment : null,
+    reason: typeof (row.reason ?? row.rejection_reason ?? row.moderation_reason) === "string" ? String(row.reason ?? row.rejection_reason ?? row.moderation_reason) : null,
   })).filter((entry) => entry.item_id && entry.review_id);
 }
 

@@ -91,7 +91,14 @@ function normalizeHistory(response: unknown, page: number, pageSize: number): Wo
         : {};
   const items = rows
     .map(normalizeWorkflowNotification)
-    .filter((item): item is WorkflowNotification => item !== null);
+    .filter((item): item is WorkflowNotification => item !== null)
+    .map((item, index) => ({ item, index, timestamp: Date.parse(item.created_at) }))
+    .sort((left, right) => {
+      const leftTime = Number.isFinite(left.timestamp) ? left.timestamp : Number.NEGATIVE_INFINITY;
+      const rightTime = Number.isFinite(right.timestamp) ? right.timestamp : Number.NEGATIVE_INFINITY;
+      return rightTime - leftTime || left.index - right.index;
+    })
+    .map(({ item }) => item);
 
   return {
     items,

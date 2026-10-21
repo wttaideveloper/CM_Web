@@ -2714,4 +2714,4 @@ export function TrainingAssignmentsTab({ trainingId }: { trainingId: string }) {
   );
 }
 
-export { TrainingReviewsTab } from "./TrainingReviewsTab";
+export { TrainingReviewsTab, type ReviewStatusFilter as TrainingReviewStatusFilter, REVIEW_STATUS_OPTIONS as TRAINING_REVIEW_STATUS_OPTIONS } from "./TrainingReviewsTab";

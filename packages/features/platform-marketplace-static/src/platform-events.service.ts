@@ -12,10 +12,14 @@ export type EventItem = {
   time_zone?: string | null;
   primary_image?: string | null;
   delivery_mode?: string | null;
+  average_rating?: number | null;
+  reviews_count?: number | null;
   venue?: EventVenue | null;
   capacity?: string | null;
   status: "published";
 };
+
+export type PlatformEventFeedbackSource = Pick<EventItem, "id" | "title">;
 
 export type EventsResponse = {
   items: EventItem[];
@@ -27,6 +31,23 @@ export type EventDocument = string | { url: string; name?: string | null };
 export type EventTicketType = { id?: string; name: string; price?: string | null; currency?: string | null; capacity?: string | null };
 export type EventSession = { id?: string; session_date?: string | null; title: string; description?: string | null; speaker?: string | null; speaker_bio?: string | null; start_time?: string | null; end_time?: string | null; location?: string | null; meeting_link?: string | null };
 export type EventModuleState = Record<string, boolean>;
+
+export type PlatformEventFeedbackItem = {
+  id: string;
+  event_id: string;
+  participant_name: string;
+  participant_email: string | null;
+  rating: number | null;
+  comment: string | null;
+  form_id: string | null;
+  answers: Record<string, unknown>;
+  created_at: string | null;
+};
+
+export type PlatformEventFeedbackReport = {
+  event_id: string;
+  data: { total_feedbacks: number; total_reviews: number; approved_reviews: number; average_rating: number | null; feedbacks?: PlatformEventFeedbackItem[] };
+};
 
 export type PublishedEventDetails = {
   id: string;
@@ -209,7 +230,13 @@ function parseEvents(value: unknown): EventsResponse {
   const items = value.items.map((item) => {
     const enterprise = isRecord(item.enterprise) ? item.enterprise : null;
     const enterpriseName = typeof item.enterprise_name === "string" ? item.enterprise_name : enterprise && (typeof enterprise.business_legal_name === "string" ? enterprise.business_legal_name : typeof enterprise.business_short_name === "string" ? enterprise.business_short_name : typeof enterprise.name === "string" ? enterprise.name : null);
-    return { ...item, enterprise_name: enterpriseName, primary_image: optionalMediaUrl(item.primary_image) } as EventItem;
+    return {
+      ...item,
+      enterprise_name: enterpriseName,
+      primary_image: optionalMediaUrl(item.primary_image),
+      average_rating: typeof item.average_rating === "number" && Number.isFinite(item.average_rating) ? item.average_rating : null,
+      reviews_count: typeof item.reviews_count === "number" && Number.isFinite(item.reviews_count) ? item.reviews_count : null,
+    } as EventItem;
   });
   return { ...value, items } as EventsResponse;
 }
@@ -230,10 +257,68 @@ export async function getPublishedEvents(page: number, search: string): Promise<
   return parseEvents(await response.json());
 }
 
+/** Lists all Events for the Super Admin feedback inbox, including non-published Events. */
+export async function getPlatformEventsForFeedback(): Promise<PlatformEventFeedbackSource[]> {
+  const pageSize = 100;
+  const firstResponse = await fetchPlatformEventsPage(1, pageSize);
+  const events = [...firstResponse.items];
+  for (let page = 2; page <= firstResponse.totalPages; page += 1) {
+    const response = await fetchPlatformEventsPage(page, pageSize);
+    events.push(...response.items);
+  }
+  return events;
+}
+
+async function fetchPlatformEventsPage(page: number, pageSize: number): Promise<{ items: PlatformEventFeedbackSource[]; totalPages: number }> {
+  const query = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  const response = await fetch("/api/platform-super-admin/events?" + query.toString(), { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw await createPlatformEventsApiError(response, "Unable to load Events for attendee feedback.");
+  const payload: unknown = await response.json();
+  if (!isRecord(payload) || !Array.isArray(payload.items) || !isRecord(payload.pagination) || typeof payload.pagination.total_pages !== "number") throw new Error("The Events response for attendee feedback is invalid.");
+  const items = payload.items.flatMap((item): PlatformEventFeedbackSource[] => isRecord(item) && typeof item.id === "string" && typeof item.title === "string" ? [{ id: item.id, title: item.title }] : []);
+  return { items, totalPages: payload.pagination.total_pages };
+}
+
 export async function getPublishedEventDetails(eventId: string): Promise<PublishedEventDetails> {
   const response = await fetch(`/api/platform-super-admin/events/${encodeURIComponent(eventId)}`, { credentials: "include" });
   if (!response.ok) throw await createPlatformEventsApiError(response, "Unable to load Event details.");
   return parsePublishedEventDetails(await response.json());
+}
+
+/** Loads private attendee feedback from the authenticated Super Admin BFF. */
+export async function getPlatformEventFeedback(eventId: string): Promise<PlatformEventFeedbackItem[]> {
+  const response = await fetch(`/api/platform-super-admin/events/${encodeURIComponent(eventId)}/feedback`, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw await createPlatformEventsApiError(response, "Unable to load attendee feedback.");
+  const payload: unknown = await response.json();
+  const rows: unknown = Array.isArray(payload) ? payload : isRecord(payload) && Array.isArray(payload.items) ? payload.items : null;
+  if (!Array.isArray(rows)) throw new Error("The attendee feedback response is invalid.");
+  return parsePlatformEventFeedbackRows(rows, eventId);
+}
+
+function parsePlatformEventFeedbackRows(rows: unknown[], eventId: string): PlatformEventFeedbackItem[] {
+  return rows.flatMap((row): PlatformEventFeedbackItem[] => {
+    const id = isRecord(row) ? row.id ?? row.feedback_id : null;
+    if (!isRecord(row) || typeof id !== "string") return [];
+    const name = row.participant_name ?? row.attendee_name ?? row.name;
+    const answers = isRecord(row.answers) ? row.answers : {};
+    const rawRating = row.rating ?? row.overall_rating ?? row.event_rating ?? row.star_rating;
+    const numericRating = typeof rawRating === "string" && /^[1-5](?:\.0+)?$/.test(rawRating.trim()) ? Number(rawRating) : rawRating;
+    const rating = typeof numericRating === "number" && Number.isFinite(numericRating) && numericRating >= 1 && numericRating <= 5 ? numericRating : null;
+    return [{ id, event_id: typeof row.event_id === "string" ? row.event_id : eventId, participant_name: typeof name === "string" && name.trim() ? name.trim() : "Attendee", participant_email: optionalString(row.participant_email ?? row.attendee_email) ?? null, rating, comment: optionalString(row.comment) ?? null, form_id: optionalString(row.form_id) ?? null, answers, created_at: optionalString(row.created_at) ?? null }];
+  });
+}
+
+/** Loads aggregate attendee feedback and approved review metrics for a Super Admin. */
+export async function getPlatformEventFeedbackReport(eventId: string): Promise<PlatformEventFeedbackReport> {
+  const response = await fetch(`/api/platform-super-admin/events/${encodeURIComponent(eventId)}/reports?type=feedback&format=json`, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw await createPlatformEventsApiError(response, "Unable to load the feedback report.");
+  const payload: unknown = await response.json();
+  if (!isRecord(payload) || !isRecord(payload.data)) throw new Error("The feedback report response is invalid.");
+  const data = payload.data;
+  const count = (value: unknown): value is number => typeof value === "number" && Number.isInteger(value) && value >= 0;
+  if (!count(data.total_feedbacks) || !count(data.total_reviews) || !count(data.approved_reviews) || !(data.average_rating === null || (typeof data.average_rating === "number" && Number.isFinite(data.average_rating) && data.average_rating >= 0 && data.average_rating <= 5))) throw new Error("The feedback report response is invalid.");
+  const feedbacks = Array.isArray(data.feedbacks) ? parsePlatformEventFeedbackRows(data.feedbacks, eventId) : undefined;
+  return { event_id: typeof payload.event_id === "string" ? payload.event_id : eventId, data: { total_feedbacks: data.total_feedbacks, total_reviews: data.total_reviews, approved_reviews: data.approved_reviews, average_rating: data.average_rating, ...(feedbacks ? { feedbacks } : {}) } };
 }
 
 export function dateLabel(value: string | null | undefined): string {

@@ -11,6 +11,7 @@ import { formatCurrency } from "@ihp/shared";
 import { activateProduct, deactivateProduct, getProductById } from "../services/product.service";
 import type { ProductDto } from "../types/product.types";
 import type { ProductDetailsScreenProps } from "../types/product-screen-config.types";
+import { ProductReviewsSummary } from "./ProductReviewsSummary";
 
 function statusLabel(status: boolean) {
   return status === false ? "Inactive" : "Active";
@@ -196,6 +197,14 @@ export default function ProductDetailsScreen({
   useEffect(() => {
     void fetchProduct();
   }, [params.id]);
+
+  useEffect(() => {
+    if (!product || window.location.hash !== "#product-reviews") return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById("product-reviews")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [product]);
 
   async function handleDeactivate() {
     if (!product || isTogglingStatus) {
@@ -407,6 +416,8 @@ export default function ProductDetailsScreen({
             {product.product_description || "N/A"}
           </p>
         </div>
+
+        <ProductReviewsSummary product={product} />
 
         <div className="mt-4">
           <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">

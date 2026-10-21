@@ -102,6 +102,8 @@ function mapServiceToListItem(
     status: service.service_status === false ? "Inactive" : "Active",
     enterprise: enterpriseNameMap[service.enterprise_id] || "Unknown Enterprise",
     bookings: "—",
+    rating: typeof service.rating === "number" && Number.isFinite(service.rating) ? service.rating : null,
+    reviewsCount: typeof service.reviews_count === "number" ? service.reviews_count : undefined,
   };
 }
 
@@ -257,6 +259,7 @@ export default function ServicesListScreen({
                           {service.name}
                         </span>
                       </div>
+                      {service.reviewsCount !== undefined ? <p className="ml-[46px] text-[11px] font-semibold text-[#805900]">{service.reviewsCount > 0 ? `${service.rating?.toFixed(1) ?? "No rating"} ★ (${service.reviewsCount})` : "No ratings yet"}</p> : null}
                     </td>
                     <td className="truncate px-3 text-[#52736a]">{service.enterprise}</td>
                     <td className="truncate px-3 text-[#52736a]">{service.category}</td>

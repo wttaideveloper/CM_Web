@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useCurrentEnterprise, useTenant } from "@ihp/enterprise-runtime";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 import EventActionsMenu from "./EventActionsMenu";
 import { PRODUCT_EVENT_STATUSES, getEventStatusBadgeClass, getEventStatusLabel } from "./event-status";
@@ -180,15 +181,26 @@ function EventCard({ event, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess
   );
 }
 
-/** Renders the authenticated enterprise's paginated Events list. */
-export default function EnterpriseEventsScreen() {
-  const [view, setView] = useState<EventsView>("events");
+function EnterpriseEventsScreenContent() {
+  const searchParams = useSearchParams();
+  const requestedView: EventsView = searchParams.get("tab") === "reviews" || searchParams.get("view") === "reviews" ? "reviews" : "events";
+  const [view, setView] = useState<EventsView>(requestedView);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [sort, setSort] = useState<SortOption>("newest");
   const [eventFilter, setEventFilter] = useState<EventFilter>("all");
   const [page, setPage] = useState(1);
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    const viewParam = searchParams.get("view");
+    if (tab === "reviews" || viewParam === "reviews") {
+      setView("reviews");
+    } else if (tab === "events" || viewParam === "events") {
+      setView("events");
+    }
+  }, [searchParams]);
 
   const { tenantId } = useTenant();
   const { enterpriseId } = useCurrentEnterprise();
@@ -381,6 +393,15 @@ export default function EnterpriseEventsScreen() {
       )}
       </>}
     </div>
+  );
+}
+
+/** Renders the authenticated enterprise's paginated Events list. */
+export default function EnterpriseEventsScreen() {
+  return (
+    <Suspense fallback={null}>
+      <EnterpriseEventsScreenContent />
+    </Suspense>
   );
 }
 

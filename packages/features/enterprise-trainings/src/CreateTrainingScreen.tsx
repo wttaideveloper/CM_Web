@@ -305,7 +305,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
     ? activeFormQ.data ?? null
     : applyActiveListRenderersToHistoricalForm(historicalFormQ.data ?? null, activeFormQ.data ?? null),
   [mode, activeFormQ.data, historicalFormQ.data]);
-  const trainingFormSections = useMemo(() => activeForm?.sections.map((section) => ({
+  const trainingFormSections = useMemo(() => activeForm?.sections.filter((section) => section.enabled !== false).map((section) => ({
     ...section,
     fields: section.fields.filter((field) => !isTrainingScheduleTimeField(field)),
   })).filter((section) => section.fields.length > 0) ?? [], [activeForm]);
@@ -329,7 +329,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
     setCustomValues((current) => ({ ...hydratedCustomValues, ...current }));
 
     const scheduleKeys = new Set(["start_date", "end_date", "start_time", "end_time", "enrolment_start", "enrolment_end"]);
-    const customScheduleValues = activeForm.sections.flatMap((section) => section.fields).flatMap((field) => {
+    const customScheduleValues = activeForm.sections.filter((section) => section.enabled !== false).flatMap((section) => section.fields).flatMap((field) => {
       const aliases = [...getTrainingFieldAliases(field), field.id, field.label]
         .map(normalizeTrainingFieldKey);
       const scheduleKey = aliases.find((alias) => scheduleKeys.has(alias));
@@ -374,7 +374,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
       "instructor_credentials", "badges",
     ]);
     const canonicalFieldKeys = new Map<string, string>();
-    for (const section of activeForm?.sections ?? []) {
+    for (const section of trainingFormSections) {
       for (const field of section.fields) {
         const aliases = getTrainingFieldIdentityAliases(field).map(normalizeTrainingFieldKey).filter(Boolean);
         const preferred = normalizeTrainingFieldKey(field.apiKey ?? field.key);
@@ -387,7 +387,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
         for (const alias of aliases) canonicalFieldKeys.set(alias, canonicalKey);
       }
     }
-    const formKeys = new Set((activeForm?.sections ?? []).flatMap((sec) => sec.fields.flatMap((fld) => [fld.key, fld.apiKey, fld.stable_key].filter((key): key is string => Boolean(key)))));
+    const formKeys = new Set(trainingFormSections.flatMap((sec) => sec.fields.flatMap((fld) => [fld.key, fld.apiKey, fld.stable_key].filter((key): key is string => Boolean(key)))));
     const selected = new Map<string, unknown>();
     for (const [key, value] of Object.entries(raw)) {
       const rawNormalizedKey = normalizeTrainingFieldKey(key);
@@ -404,9 +404,9 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   };
   const getConfiguredCustomValues = (): Record<string, unknown> => {
     if (!activeForm) return {};
-    const allFields = activeForm.sections.flatMap((section) => section.fields);
+    const allFields = trainingFormSections.flatMap((section) => section.fields);
     return Object.fromEntries(
-      activeForm.sections
+      trainingFormSections
         .flatMap((section) => section.fields)
         .filter((field) => field.source === "custom" && isTrainingFormFieldVisible(field, allFields, values, customValues))
         .map((field) => {
@@ -442,7 +442,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   };
   const getVisibleCustomValues = (): Record<string, unknown> => {
     if (!activeForm) return customValues;
-    const allFields = activeForm.sections.flatMap((section) => section.fields);
+    const allFields = trainingFormSections.flatMap((section) => section.fields);
     const visibleCustomKeys = new Set(allFields
       .filter((field) => field.source === "custom" && isTrainingFormFieldVisible(field, allFields, values, customValues))
       .flatMap((field) => [field.key, field.apiKey, field.stable_key].filter((key): key is string => Boolean(key))));
@@ -450,7 +450,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   };
   const applyConfiguredPayload = <T extends Record<string, unknown>>(payload: T): T => {
     if (!activeForm) return payload;
-    const allFields = activeForm.sections.flatMap((section) => section.fields);
+    const allFields = trainingFormSections.flatMap((section) => section.fields);
     const configuredKeys = new Set(allFields
       .filter((field) => isTrainingFormFieldVisible(field, allFields, values, customValues))
       .flatMap((field) => {
@@ -475,6 +475,8 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
       "meeting_link",
       "delivery_instructions",
       "meeting_provider",
+      "instructor_id",
+      "instructor",
       "price",
       "currency",
       "promo_price",
@@ -521,7 +523,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
     },
     onError: (error) => {
       if (error instanceof TrainingsApiError) {
-        const configuredFields = activeForm?.sections.flatMap((section) => section.fields) ?? [];
+        const configuredFields = trainingFormSections.flatMap((section) => section.fields);
         const readableFieldErrors = Object.fromEntries(Object.entries(error.fieldErrors).map(([key, messages]) => {
           const configuredField = configuredFields.find((field) => getTrainingFieldAliases(field).some((alias) =>
             alias === key || normalizeTrainingFieldKey(alias) === normalizeTrainingFieldKey(key),
@@ -545,7 +547,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   const updateCustomValues = (next: Record<string, unknown>) => setCustomValues(next);
   useEffect(() => {
     if (!pendingFocusField) return;
-    const configuredField = activeForm?.sections
+    const configuredField = trainingFormSections
       .flatMap((section) => section.fields)
       .find((field) => getTrainingFieldAliases(field).some((alias) =>
         alias === pendingFocusField || normalizeTrainingFieldKey(alias) === normalizeTrainingFieldKey(pendingFocusField),
@@ -568,7 +570,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   }, [activeForm, activeStep, pendingFocusField]);
 
   const allErrors = useMemo(() => {
-    const allFields = activeForm?.sections.flatMap((section) => section.fields) ?? [];
+    const allFields = trainingFormSections.flatMap((section) => section.fields);
     const configuredRequiredKeys = activeForm
       ? new Set(allFields.filter((field) => field.enabled !== false && !isTrainingAccessInformationField(field) && isTrainingFormFieldVisible(field, allFields, values, customValues)).flatMap((field) => [
         ...(field.required ? getTrainingFieldAliases(field) : []),
@@ -660,7 +662,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
     if (activeForm) {
       const currentSection = configuredSections[activeStep];
       if (currentSection) {
-        const allFields = activeForm.sections.flatMap((section) => section.fields);
+        const allFields = trainingFormSections.flatMap((section) => section.fields);
         const configuredErrors = validateConfiguredSection(currentSection, values, customValues, allFields, (field) => getTrainingFormatError(field, t));
         const currentErrors = Object.fromEntries(
           Object.entries({ ...allErrors, ...configuredErrors }).filter(([field]) =>
@@ -822,7 +824,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
         <main className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm sm:p-7">
           {activeForm ? (
             activeStep < configuredSections.length ? (
-              <ConfiguredCreateTrainingSection key={`${activeForm.id}:${activeForm.version_id ?? activeForm.updated_at ?? "current"}:${configuredSections[activeStep].id}`} section={configuredSections[activeStep]} allFields={activeForm.sections.flatMap((section) => section.fields)} values={values} update={update} errors={errors} customValues={customValues} setCustomValues={updateCustomValues} trainingCategories={trainingCategories} categoriesLoading={trainingCategoriesQuery.isLoading} categoriesError={trainingCategoriesQuery.isError} retryCategories={() => { void trainingCategoriesQuery.refetch(); }} preserveLegacyCategoryValues={mode === "edit"} />
+              <ConfiguredCreateTrainingSection key={`${activeForm.id}:${activeForm.version_id ?? activeForm.updated_at ?? "current"}:${configuredSections[activeStep].id}`} section={configuredSections[activeStep]} allFields={trainingFormSections.flatMap((section) => section.fields)} tenantId={tenantId} values={values} update={update} errors={errors} customValues={customValues} setCustomValues={updateCustomValues} trainingCategories={trainingCategories} categoriesLoading={trainingCategoriesQuery.isLoading} categoriesError={trainingCategoriesQuery.isError} retryCategories={() => { void trainingCategoriesQuery.refetch(); }} preserveLegacyCategoryValues={mode === "edit"} />
             ) : (
               <section className="space-y-4">
                 <h2 className="text-xl font-bold text-[#06201c]">Review & Submit</h2>
@@ -832,7 +834,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
                     <div key={sec.id} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] px-4 py-3">
                       <p className="text-sm font-bold text-[#06201c]">{sec.title}</p>
                       <div className="mt-2 space-y-1 text-sm text-[#52736a]">
-                        {sec.fields.filter((field) => !isTrainingAccessInformationField(field) && isConfiguredTrainingFieldApplicable(field, values.delivery_mode, values.pricing_type) && isTrainingFormFieldVisible(field, activeForm.sections.flatMap((section) => section.fields), values, customValues)).map((field) => {
+                        {sec.fields.filter((field) => !isTrainingAccessInformationField(field) && isConfiguredTrainingFieldApplicable(field, values.delivery_mode, values.pricing_type) && isTrainingFormFieldVisible(field, trainingFormSections.flatMap((section) => section.fields), values, customValues)).map((field) => {
                           const raw = field.key in values ? values[field.key as keyof CreateTrainingFormValues] : customValues[field.key];
                           const displayValue = Array.isArray(raw) ? raw.join(", ") : typeof raw === "boolean" ? (raw ? "Yes" : "No") : raw === null || raw === undefined || raw === "" ? "Not provided" : String(raw);
                           return <p key={field.id}><span className="font-semibold text-[#06201c]">{field.label}:</span> {displayValue}</p>;

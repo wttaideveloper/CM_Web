@@ -4,7 +4,7 @@ import { protectedMediaPreviewUrl } from "@ihp/shared";
 import { getPlatformEnterpriseById } from "@ihp/platform-enterprises";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslation } from "react-i18next";
 
 import PublishedEventDetailsModal from "./PublishedEventDetailsModal";
@@ -20,19 +20,27 @@ export default function PlatformEventsScreen() {
 
 function PublishedEvents() {
   const { t } = useTranslation("platform");
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [view, setView] = useState<"events" | "reviews">("events");
-  const [reviewItemId, setReviewItemId] = useState<string | null>(null);
-  const [reviewId, setReviewId] = useState<string | null>(null);
-  const [reviewStatus, setReviewStatus] = useState<"pending" | "approved" | "rejected" | "all">("pending");
-  const [showReviewAudit, setShowReviewAudit] = useState(false);
+  const [view, setView] = useState<"events" | "reviews">(() => searchParams.get("view") === "reviews" ? "reviews" : "events");
+  const [reviewItemId, setReviewItemId] = useState<string | null>(() => searchParams.get("item_id"));
+  const [reviewSubview, setReviewSubview] = useState<"reviews" | "feedback">(() => searchParams.get("subview") === "feedback" ? "feedback" : "reviews");
+  const [reviewId, setReviewId] = useState<string | null>(() => searchParams.get("review_id"));
+  const [reviewStatus, setReviewStatus] = useState<"pending" | "approved" | "rejected" | "deleted" | "all">(() => {
+    const requested = searchParams.get("status");
+    if (requested === "pending" || requested === "approved" || requested === "rejected" || requested === "deleted") return requested;
+    return "all";
+  });
+  const [showReviewAudit, setShowReviewAudit] = useState(() => searchParams.get("show_audit") === "true");
+  const skipNextSearchParamsSync = useRef(false);
   const [input, setInput] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<TemporalFilter>("all");
   const [page, setPage] = useState(1);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [selectedReviewId, setSelectedReviewId] = useState<string | null>(null);
-  const [selectedReviewStatus, setSelectedReviewStatus] = useState<"pending" | "approved" | "rejected" | "all">("all");
+  const [selectedReviewStatus, setSelectedReviewStatus] = useState<"pending" | "approved" | "rejected" | "deleted" | "all">("all");
   const [showSelectedReviewAudit, setShowSelectedReviewAudit] = useState(false);
   const triggerRef = useRef<HTMLElement | null>(null);
 
@@ -44,28 +52,42 @@ function PublishedEvents() {
   const openDetails = (eventId: string, trigger: HTMLElement) => { triggerRef.current = trigger; setSelectedReviewId(null); setSelectedReviewStatus("all"); setShowSelectedReviewAudit(false); setSelectedEventId(eventId); };
   const closeDetails = () => { setSelectedEventId(null); setSelectedReviewId(null); setShowSelectedReviewAudit(false); const trigger = triggerRef.current; window.setTimeout(() => trigger?.focus(), 0); };
   useEffect(() => {
+    if (skipNextSearchParamsSync.current) {
+      skipNextSearchParamsSync.current = false;
+      return;
+    }
     const reviewItem = searchParams.get("reviewItem");
     if (reviewItem) {
       setView("events");
       setSelectedEventId(reviewItem);
       setSelectedReviewId(searchParams.get("review_id"));
       const requestedReviewStatus = searchParams.get("status");
-      setSelectedReviewStatus(requestedReviewStatus === "pending" || requestedReviewStatus === "approved" || requestedReviewStatus === "rejected" ? requestedReviewStatus : "all");
+      setSelectedReviewStatus(requestedReviewStatus === "pending" || requestedReviewStatus === "approved" || requestedReviewStatus === "rejected" || requestedReviewStatus === "deleted" ? requestedReviewStatus : "all");
       setShowSelectedReviewAudit(searchParams.get("show_audit") === "true");
     }
     if (searchParams.get("view") !== "reviews") return;
     setView("reviews");
     setReviewItemId(searchParams.get("item_id"));
+    setReviewSubview(searchParams.get("subview") === "feedback" ? "feedback" : "reviews");
     setReviewId(searchParams.get("review_id"));
     const requestedStatus = searchParams.get("status");
-    if (requestedStatus === "pending" || requestedStatus === "approved" || requestedStatus === "rejected" || requestedStatus === "all") setReviewStatus(requestedStatus);
+    if (requestedStatus === "pending" || requestedStatus === "approved" || requestedStatus === "rejected" || requestedStatus === "deleted") setReviewStatus(requestedStatus);
+    else setReviewStatus("all");
     setShowReviewAudit(searchParams.get("show_audit") === "true");
   }, [searchParams]);
 
+  useEffect(() => {
+    if (searchParams.get("view") !== "reviews" || !["item_id", "review_id", "status", "show_audit", "subview"].some((key) => searchParams.has(key))) return;
+    const cleanParams = new URLSearchParams(searchParams.toString());
+    for (const key of ["item_id", "review_id", "status", "show_audit", "subview"]) cleanParams.delete(key);
+    skipNextSearchParamsSync.current = true;
+    router.replace(`${pathname}?${cleanParams.toString()}`, { scroll: false });
+  }, [pathname, router, searchParams]);
+
   return <>
     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-2xl font-bold text-[#06201c]">Event Management</h2><p className="mt-1 text-sm text-[#52736a]">Browse published events across all enterprises.</p></div></div>
-    <div className="mt-5 flex gap-2 border-b border-[#e1ebe6]" role="tablist" aria-label={t("reviews.filterStatus")}><button type="button" role="tab" aria-selected={view === "events"} onClick={() => setView("events")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === "events" ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#52736a]"}`}>{t("reviews.tabs.events")}</button><button type="button" role="tab" aria-selected={view === "reviews"} onClick={() => setView("reviews")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === "reviews" ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#52736a]"}`}>{t("reviews.tabs.received", { count: pendingReviewsQuery.data?.counts.pending ?? 0 })}</button></div>
-    {view === "reviews" ? <PlatformModuleReviewsTab module="event" itemId={reviewItemId} reviewId={reviewId} initialStatus={reviewStatus} openAuditOnLoad={showReviewAudit} /> : <>
+    <div className="mt-5 flex gap-2 border-b border-[#e1ebe6]" role="tablist" aria-label={t("reviews.filterStatus")}><button type="button" role="tab" aria-selected={view === "events"} onClick={() => { setView("events"); setReviewItemId(null); setReviewId(null); setReviewStatus("all"); setShowReviewAudit(false); }} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === "events" ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#52736a]"}`}>{t("reviews.tabs.events")}</button><button type="button" role="tab" aria-selected={view === "reviews"} onClick={() => setView("reviews")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === "reviews" ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#52736a]"}`}>{t("reviews.tabs.eventReviewsFeedback", { count: pendingReviewsQuery.data?.counts.pending ?? 0 })}</button></div>
+    {view === "reviews" ? <PlatformModuleReviewsTab module="event" itemId={reviewItemId} reviewId={reviewId} initialStatus={reviewStatus} openAuditOnLoad={showReviewAudit} initialSubview={reviewSubview} onShowAllFeedback={() => { setReviewItemId(null); setReviewId(null); setReviewStatus("all"); setShowReviewAudit(false); }} /> : <>
     <div className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><label className="w-full lg:max-w-sm"><span className="sr-only">Search published events and enterprises</span><input type="search" value={input} onChange={(event) => setInput(event.target.value)} placeholder="Search events or enterprises..." className="h-12 w-full rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm text-[#06201c] outline-none placeholder:text-[#8ca69e] focus:border-[#1f6a58]" /></label><div className="flex flex-wrap gap-2">{(["all", "upcoming", "ongoing", "finished"] as const).map((item) => <button key={item} type="button" aria-pressed={filter === item} onClick={() => setFilter(item)} className={filter === item ? "h-10 rounded-full bg-[#e8f6ee] px-4 text-sm font-semibold text-[#1f6a58]" : "h-10 rounded-full border border-[#d7e5df] px-4 text-sm font-semibold text-[#52736a]"}>{item[0].toUpperCase() + item.slice(1)}</button>)}</div></div></div>
     {eventsQuery.isLoading ? <div role="status" className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{[1, 2, 3].map((item) => <div key={item} className="h-[290px] animate-pulse rounded-2xl bg-[#edf3f0]" />)}</div> : eventsQuery.isError ? <div className="mt-5 rounded-2xl bg-white p-6 shadow-sm"><p role="alert" className="font-semibold text-[#b42318]">{eventsQuery.error instanceof Error ? eventsQuery.error.message : "Unable to load published events."}</p><button type="button" onClick={() => void eventsQuery.refetch()} className="mt-3 font-semibold text-[#1f6a58] underline">Retry</button></div> : visible.length === 0 ? <div className="mt-5 rounded-2xl bg-white p-10 text-center shadow-sm"><p className="font-bold">{emptyTitle}</p><p className="mt-2 text-sm text-[#52736a]">{filter === "all" ? "Published events will appear here once they have been approved and published." : "Try another temporal filter."}</p></div> : <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{visible.map((event) => <PublishedEventCard key={event.id} event={event} onOpen={(trigger) => openDetails(event.id, trigger)} />)}</div>}
     {eventsQuery.data && eventsQuery.data.pagination.total_pages > 1 ? <nav aria-label="Published Event pages" className="mt-6 flex justify-between"><button type="button" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>Previous</button><span>Page {eventsQuery.data.pagination.page} of {eventsQuery.data.pagination.total_pages}</span><button type="button" disabled={page >= eventsQuery.data.pagination.total_pages} onClick={() => setPage((current) => current + 1)}>Next</button></nav> : null}
@@ -83,7 +105,7 @@ function PublishedEventCard({ event, onOpen }: { event: EventItem; onOpen: (trig
   const venueLines = locationLines(event);
   const open = (trigger: HTMLElement) => onOpen(trigger);
   return <article role="button" tabIndex={0} aria-label={`View details for ${event.title}`} onClick={(clickEvent) => open(clickEvent.currentTarget)} onKeyDown={(keyEvent) => { if (keyEvent.key === "Enter" || keyEvent.key === " ") { keyEvent.preventDefault(); open(keyEvent.currentTarget); } }} className="group overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-sm outline-none transition-all duration-200 ease-out hover:-translate-y-1 hover:scale-[1.01] hover:border-[#4f9f76] hover:shadow-lg focus-visible:border-[#1f6a58] focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2">
-    <div className="relative h-[180px] bg-gradient-to-br from-[#1f6a58] via-[#37836c] to-[#8ac7a7] p-5 text-white">{image && !imageFailed ? <><img src={protectedMediaPreviewUrl(image, "/api/platform-super-admin/event-media")} alt="" aria-hidden="true" onError={() => setImageFailed(true)} className="absolute inset-0 h-full w-full object-cover object-center transition-transform duration-500 ease-out group-hover:scale-[1.03]" /><div aria-hidden="true" className="absolute inset-0 bg-gradient-to-br from-[#06201c]/78 via-[#0c382e]/68 to-[#1f6a58]/55" /></> : <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(255,255,255,0.26)_0_1px,transparent_1px)] bg-[length:28px_28px]" />}<span className="absolute right-4 top-4 rounded-full bg-white/20 px-3 py-1 text-xs font-bold backdrop-blur">{temporalLabel(state)}</span><div className="absolute bottom-5 left-5 right-5"><p className="text-sm font-bold text-white/80">{dateLabel(event.start_date)}</p><h3 className="mt-1 text-xl font-bold leading-tight">{event.title}</h3></div></div><div className="space-y-3 p-5 text-sm text-[#52736a]"><PublishedEnterpriseName enterpriseId={event.enterprise_id} fallback={event.enterprise_name} />{organiser ? <p><span className="font-semibold text-[#31594d]">Organiser: </span>{organiser}</p> : null}<div><p className="font-medium text-[#31594d]">{venueLines[0]}</p>{venueLines.slice(1).map((line) => <p key={line} className="mt-0.5">{line}</p>)}</div>{capacity !== null ? <p><span className="font-semibold text-[#31594d]">Capacity: </span>{capacity}</p> : null}</div>
+    <div className="relative h-[180px] bg-gradient-to-br from-[#1f6a58] via-[#37836c] to-[#8ac7a7] p-5 text-white">{image && !imageFailed ? <><img src={protectedMediaPreviewUrl(image, "/api/platform-super-admin/event-media")} alt="" aria-hidden="true" onError={() => setImageFailed(true)} className="absolute inset-0 h-full w-full object-cover object-center transition-transform duration-500 ease-out group-hover:scale-[1.03]" /><div aria-hidden="true" className="absolute inset-0 bg-gradient-to-br from-[#06201c]/78 via-[#0c382e]/68 to-[#1f6a58]/55" /></> : <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(255,255,255,0.26)_0_1px,transparent_1px)] bg-[length:28px_28px]" />}<span className="absolute right-4 top-4 rounded-full bg-white/20 px-3 py-1 text-xs font-bold backdrop-blur">{temporalLabel(state)}</span><div className="absolute bottom-5 left-5 right-5"><p className="text-sm font-bold text-white/80">{dateLabel(event.start_date)}</p><h3 className="mt-1 text-xl font-bold leading-tight">{event.title}</h3></div></div><div className="space-y-3 p-5 text-sm text-[#52736a]"><PublishedEnterpriseName enterpriseId={event.enterprise_id} fallback={event.enterprise_name} />{typeof event.reviews_count === "number" && event.reviews_count > 0 && typeof event.average_rating === "number" && Number.isFinite(event.average_rating) ? <p><span className="inline-flex items-center gap-1 rounded-full bg-[#fff8e8] px-3 py-1 font-semibold text-[#805900]" aria-label={`Average rating ${event.average_rating.toFixed(1)} out of 5 from ${event.reviews_count} reviews`}>{event.average_rating.toFixed(1)} <span aria-hidden="true">?</span><span className="text-xs font-medium">({event.reviews_count})</span></span></p> : null}{organiser ? <p><span className="font-semibold text-[#31594d]">Organiser: </span>{organiser}</p> : null}<div><p className="font-medium text-[#31594d]">{venueLines[0]}</p>{venueLines.slice(1).map((line) => <p key={line} className="mt-0.5">{line}</p>)}</div>{capacity !== null ? <p><span className="font-semibold text-[#31594d]">Capacity: </span>{capacity}</p> : null}</div>
   </article>;
 }
 

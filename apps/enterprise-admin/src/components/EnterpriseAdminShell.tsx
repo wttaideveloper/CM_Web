@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
 
 import { useAuth } from "@ihp/auth";
 import { EnterpriseAdminLayout } from "@ihp/enterprise-layout";
@@ -15,7 +14,6 @@ import { enterpriseWorkflowNotificationsKey, useEnterpriseWorkflowNotifications 
 function EnterpriseAdminShellContent({ children }: { children: ReactNode }) {
   const { logout, user } = useAuth();
   const realtime = useRealtime();
-  const router = useRouter();
   const workflow = useEnterpriseWorkflowNotifications();
   const queryClient = useQueryClient();
   const latestRealtimeNotificationId = realtime.notifications[0]?.id;

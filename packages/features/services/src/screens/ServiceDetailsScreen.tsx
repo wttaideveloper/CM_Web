@@ -11,6 +11,7 @@ import { formatCurrency } from "@ihp/shared";
 import { activateService, deactivateService, getServiceById } from "../services/service.service";
 import type { ServiceDto } from "../types/service.types";
 import type { ServiceDetailsScreenProps } from "../types/service-screen-config.types";
+import { ServiceReviewsSummary } from "./ServiceReviewsSummary";
 
 function resolveEnterpriseName(enterprise: EnterpriseDto) {
   return (
@@ -153,6 +154,14 @@ export default function ServiceDetailsScreen({
   useEffect(() => {
     void fetchService();
   }, [params.id]);
+
+  useEffect(() => {
+    if (!service || window.location.hash !== "#service-reviews") return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById("service-reviews")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [service]);
 
 
   async function handleDeactivate() {
@@ -370,6 +379,7 @@ export default function ServiceDetailsScreen({
             {service.service_description || "N/A"}
           </p>
         </div>
+        <ServiceReviewsSummary service={service} />
       </section>
 
       <section className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">

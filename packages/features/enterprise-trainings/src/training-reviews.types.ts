@@ -50,6 +50,10 @@ export interface TrainingReviewAuditEntry {
   actor_user_id: string | null;
   actor_role: string | null;
   created_at: string | null;
+  customer_name?: string | null;
+  rating?: TrainingStarRating | null;
+  comment?: string | null;
+  reason?: string | null;
 }
 
 /** Filters accepted by the Enterprise review manager. */

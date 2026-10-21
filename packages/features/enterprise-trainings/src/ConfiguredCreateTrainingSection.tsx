@@ -1,5 +1,7 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
+import { getTenantMembers } from "@ihp/enterprise-runtime";
 import { useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -228,6 +230,7 @@ function getTrainingSectionTip(title: string): string | null {
 export default function ConfiguredCreateTrainingSection({
   section,
   allFields,
+  tenantId,
   values,
   update,
   errors,
@@ -241,6 +244,7 @@ export default function ConfiguredCreateTrainingSection({
 }: {
   section: TrainingFormSection;
   allFields: readonly TrainingFormField[];
+  tenantId: string | null;
   values: CreateTrainingFormValues;
   update: UpdateForm;
   errors: Record<string, string[]>;
@@ -288,6 +292,7 @@ export default function ConfiguredCreateTrainingSection({
           <div key={field.id} className="min-w-0 break-words" data-training-field={field.key}>
             <ConfiguredField
               field={field}
+              tenantId={tenantId}
               values={values}
               update={update}
               errors={errors}
@@ -308,6 +313,7 @@ export default function ConfiguredCreateTrainingSection({
 
 function ConfiguredField({
   field,
+  tenantId,
   values,
   update,
   errors,
@@ -320,6 +326,7 @@ function ConfiguredField({
   preserveLegacyCategoryValues,
 }: {
   field: TrainingFormField;
+  tenantId: string | null;
   values: CreateTrainingFormValues;
   update: UpdateForm;
   errors: Record<string, string[]>;
@@ -453,6 +460,21 @@ function ConfiguredField({
           helpText={field.helpText}
           placeholder={field.placeholder}
           includeOther
+        />
+      );
+    }
+    if (coreField === "instructor_name") {
+      return (
+        <TrainingInstructorField
+          field={field}
+          tenantId={tenantId}
+          instructorId={values.instructor_id}
+          instructorName={values.instructor_name}
+          error={error}
+          onSelect={(member) => {
+            update("instructor_id", member?.userId ?? "");
+            update("instructor_name", member?.fullName ?? "");
+          }}
         />
       );
     }
@@ -780,4 +802,80 @@ function ConfiguredField({
       ? <DateLocalInput id={inputId} value={value} placeholder={field.placeholder} min={minimum} max={field.validation?.max == null ? undefined : String(field.validation.max)} aria-invalid={displayedError ? true : undefined} aria-describedby={displayedError ? `${field.id}-error` : undefined} onChange={setValue} className={inputClass} />
     : <input id={inputId} type={inputType} value={value} placeholder={field.placeholder} min={minimum} max={field.validation?.max ?? undefined} step={isNumber ? "any" : undefined} minLength={field.validation?.minLength ?? undefined} pattern={field.validation?.pattern ?? undefined} aria-invalid={displayedError ? true : undefined} aria-describedby={displayedError ? `${field.id}-error` : undefined} onChange={(e) => { if (!isNumber) { setValue(e.target.value); return; } const adjusted = clampNumberToRange(e.target.value, field.validation?.min, field.validation?.max); setRangeAdjustment(adjusted.bound); setValue(adjusted.value === "" ? null : Number(adjusted.value)); }} className={inputClass} />;
   return <div className="block text-sm font-semibold text-[#06201c]"><label htmlFor={inputId}>{field.label}{required}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}</label>{input}{isNumber ? <p className="mt-1 text-xs font-normal text-[#7f9d94]">{getNumberInputHint(t, field.validation?.min, field.validation?.max)}</p> : null}{!isNumber && field.validation?.maxLength != null ? <p className="mt-1 text-xs text-[#7f9d94]">{value.length}/{field.validation?.maxLength} characters</p> : null}{displayedError ? <p id={`${field.id}-error`} role="alert" className="mt-1 text-xs text-[#b42318]">{displayedError}</p> : null}{rangeAdjustment ? <p role="status" className="mt-1 text-xs text-[#52736a]">{t(`numberRange.adjustedTo${rangeAdjustment === "minimum" ? "Minimum" : "Maximum"}`, { value: rangeAdjustment === "minimum" ? field.validation?.min : field.validation?.max })}</p> : null}</div>;
+}
+
+/** Selects an active internal tenant member as the Training instructor. */
+function TrainingInstructorField({
+  field,
+  tenantId,
+  instructorId,
+  instructorName,
+  error,
+  onSelect,
+}: {
+  field: TrainingFormField;
+  tenantId: string | null;
+  instructorId: string;
+  instructorName: string;
+  error?: string;
+  onSelect: (member: { userId: string; fullName: string } | null) => void;
+}) {
+  const { t } = useTranslation("enterpriseTrainings");
+  const membersQuery = useQuery({
+    queryKey: ["tenant", tenantId ?? "unavailable", "members"],
+    queryFn: () => getTenantMembers(),
+    enabled: Boolean(tenantId),
+    staleTime: 30_000,
+    retry: 1,
+  });
+  const members = (membersQuery.data ?? []).filter(
+    (member) => member.status.trim().toLowerCase() === "active"
+      && member.role.trim().toLowerCase() === "internal_user",
+  );
+  const placeholder = field.placeholder?.trim();
+  const selectedMemberIsAvailable = members.some((member) => member.userId === instructorId);
+  const prompt = !tenantId
+    ? t("instructor.tenantUnavailable")
+    : membersQuery.isLoading
+    ? t("instructor.loading")
+    : membersQuery.isError
+      ? t("instructor.loadFailed")
+      : members.length === 0
+        ? t("instructor.noMembers")
+        : placeholder && placeholder !== "Display name"
+          ? placeholder
+          : t("instructor.select");
+
+  return (
+    <label className="block text-sm font-semibold text-[#06201c]">
+      {field.label}{field.required ? " *" : ""}{field.helpText ? <span className="ml-1 font-normal text-[#52736a]">{field.helpText}</span> : null}
+      <select
+        id={`training-field-${field.id}`}
+        value={instructorId}
+        required={field.required}
+        aria-invalid={Boolean(error) || undefined}
+        aria-describedby={error ? `${field.id}-error` : undefined}
+        onChange={(event) => {
+          const selected = members.find((member) => member.userId === event.target.value);
+          onSelect(selected ? { userId: selected.userId, fullName: selected.fullName } : null);
+        }}
+        disabled={!tenantId || membersQuery.isLoading || membersQuery.isError || members.length === 0}
+        className={inputClass}
+      >
+        <option value="">{prompt}</option>
+        {instructorId && instructorName && !selectedMemberIsAvailable ? (
+          <option value={instructorId}>{instructorName}</option>
+        ) : null}
+        {members.map((member) => (
+          <option key={member.id} value={member.userId}>{member.fullName}</option>
+        ))}
+      </select>
+      {membersQuery.isError ? (
+        <button type="button" onClick={() => void membersQuery.refetch()} className="mt-1 text-xs font-semibold text-[#1f6a58] underline">
+          {t("instructor.retry")}
+        </button>
+      ) : null}
+      {error ? <p id={`${field.id}-error`} role="alert" className="mt-1 text-xs text-[#b42318]">{error}</p> : null}
+    </label>
+  );
 }

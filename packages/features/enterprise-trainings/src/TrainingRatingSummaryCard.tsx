@@ -31,7 +31,6 @@ export function TrainingRatingSummaryCard({ reviews, pendingCount }: { reviews: 
           );
         })}
       </div>
-      {pendingReviewsCount > 0 ? <p role="status" className="mt-3 rounded-lg border border-[#f0d28d] bg-[#fff8e1] px-3 py-2 text-sm font-medium text-[#7a5200]">Reviews are waiting for your moderation.</p> : null}
     </section>
   );
 }

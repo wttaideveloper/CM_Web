@@ -22,7 +22,19 @@ export type ProductDto = {
   stock_management?: string;
   currency?: string;
   publish_status?: string;
+  rating?: number | null;
+  reviews_count?: number;
+  reviews?: ProductReviewPreview[];
 };
+
+/** Approved review preview included with Product detail responses. */
+export interface ProductReviewPreview {
+  id: string;
+  rating: number;
+  comment: string | null;
+  reviewer_name: string | null;
+  created_at: string | null;
+}
 
 export type CreateProductPayload = {
   tenant_id?: string;
@@ -87,4 +99,6 @@ export type ProductListItem = {
   enterprise: string;
   stock: string;
   sales: string;
+  rating?: number | null;
+  reviewsCount?: number;
 };

@@ -119,7 +119,7 @@ function TrainingNotificationDetails({ notification }: { notification: Notificat
       {senderName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">From: {senderName}</span> : null}
       {learnerName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">Learner: {learnerName}</span> : null}
       {enrollmentStatus ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">Enrollment status: {enrollmentStatus.replace(/[_-]+/g, " ")}</span> : null}
-      {review.learnerName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">Learner: {review.learnerName}</span> : null}
+      {review.learnerName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">Reviewer: {review.learnerName}</span> : null}
       {review.rating !== null ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">Rating: {review.rating} ★</span> : null}
       {review.itemName ? <span className="mt-1 block truncate text-[11px] font-semibold text-[#1f6a58]">{review.itemType}: {review.itemName}</span> : trainingTitle ? <span className="mt-1 block truncate text-[11px] font-semibold text-[#1f6a58]">Training: {trainingTitle}</span> : null}
     </>

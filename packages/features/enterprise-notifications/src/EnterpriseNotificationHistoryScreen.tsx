@@ -7,10 +7,14 @@ import { useRouter } from "next/navigation";
 import {
   browserWorkflowRequest,
   createWorkflowNotificationClient,
+  formatNotificationDateTime,
   formatRelativeBackendTimestamp,
+  formatEventFeedbackNotificationDetails,
   formatReviewModerationNotificationTitle,
   formatReviewNotificationDetails,
+  formatReviewSubmissionNotification,
   formatTrainingNotificationDetails,
+  notificationReason,
   resolveNotificationTarget,
   type WorkflowNotification,
 } from "@ihp/realtime";
@@ -172,6 +176,9 @@ export default function EnterpriseNotificationHistoryScreen({ audience, messages
                   }) ?? notification.title
                 : notification.title;
               const review = formatReviewNotificationDetails({ notification_type: notification.notification_type, category: notification.category, metadata: notification.metadata, data: notification.metadata });
+              const reviewSubmission = formatReviewSubmissionNotification({ notification_type: notification.notification_type, category: notification.category, metadata: notification.metadata, data: notification.metadata, title: notification.title, body: notification.message });
+              const feedbackDetails = formatEventFeedbackNotificationDetails({ notification_type: notification.notification_type, category: notification.category, metadata: notification.metadata, data: notification.metadata, title: notification.title, body: notification.message });
+              const reason = notificationReason({ data: notification.metadata, metadata: notification.metadata, body: notification.message });
               const training = formatTrainingNotificationDetails({
                 notification_type: notification.notification_type,
                 title: notification.title,
@@ -188,19 +195,24 @@ export default function EnterpriseNotificationHistoryScreen({ audience, messages
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-start justify-between gap-3">
                     <span className="min-w-0">
-                      <span className="block text-sm font-bold text-[#06201c]">{notificationTitle}</span>
-                      <span className="mt-1 block text-sm leading-6 text-[#52736a]">{notification.message}</span>
+                      <span className="block text-sm font-bold text-[#06201c]">{reviewSubmission?.title ?? notificationTitle}</span>
+                      <span className="mt-1 block text-sm leading-6 text-[#52736a]">{reviewSubmission?.message ?? notification.message}</span>
                     </span>
-                    <span className="shrink-0 text-xs font-semibold text-[#7f9d94]">
-                      {formatRelativeBackendTimestamp(notification.created_at)}
+                    <span className="shrink-0 text-right text-xs font-semibold text-[#7f9d94]">
+                      <span>{formatRelativeBackendTimestamp(notification.created_at)}</span>
+                      {notification.created_at ? <span className="mt-0.5 block text-[11px] font-normal text-[#8ca69e]">{formatNotificationDateTime(notification.created_at)}</span> : null}
                     </span>
                   </span>
                   <span className="mt-2 block text-xs font-semibold uppercase tracking-[0.12em] text-[#7f9d94]">
                     {notification.category || notification.notification_type}
                   </span>
+                  {audience === "enterprise" && feedbackDetails?.attendeeName ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">Attendee: {feedbackDetails.attendeeName}</span> : null}
+                  {audience === "enterprise" && feedbackDetails?.eventTitle ? <span className="mt-1 block text-xs font-semibold text-[#1f6a58]">Event: {feedbackDetails.eventTitle}</span> : null}
+                  {audience === "enterprise" && feedbackDetails?.comment ? <span className="mt-2 block whitespace-pre-wrap rounded-lg bg-[#f4faf7] p-3 text-sm text-[#31594d]">{feedbackDetails.comment}</span> : null}
                   {review.learnerName ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">Learner: {review.learnerName}</span> : null}
                   {review.rating !== null ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">Rating: {review.rating} ★</span> : null}
                   {review.itemName ? <span className="mt-1 block text-xs font-semibold text-[#1f6a58]">{review.itemType ?? "Item"}: {review.itemName}</span> : null}
+                  {reason ? <span className="mt-1 block text-xs text-[#8a5a00]">Reason: {reason}</span> : null}
                   {audience === "enterprise" && training.learnerName ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">Learner: {training.learnerName}</span> : null}
                   {audience === "enterprise" && !review.itemName && training.trainingTitle ? <span className="mt-1 block text-xs font-semibold text-[#1f6a58]">Training: {training.trainingTitle}</span> : null}
                   {audience === "enterprise" && training.enrollmentStatus ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">Enrollment status: {training.enrollmentStatus.replace(/[_-]+/g, " ")}</span> : null}

@@ -4,13 +4,14 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
 import { getTrainingById, type TrainingDetail } from "@ihp/enterprise-trainings";
+import { getPlatformEnterpriseById } from "@ihp/platform-enterprises";
 import { PlatformModuleReviewsTab } from "./PlatformModuleReviewsTab";
 import PlatformTrainingLessonContent from "./PlatformTrainingLessonContent";
 
 type Props = {
   trainingId: string;
   reviewId?: string | null;
-  reviewStatus?: "pending" | "approved" | "rejected" | "all";
+  reviewStatus?: "pending" | "approved" | "rejected" | "deleted" | "all";
   openReviewAudit?: boolean;
   onClose: () => void;
 };
@@ -56,6 +57,65 @@ function stringValue(record: Record<string, unknown>, ...keys: string[]): string
     if (typeof value === "string" && value.trim()) return value.trim();
   }
   return "";
+}
+
+function trainingCreator(record: Record<string, unknown>, enterprise?: Record<string, unknown> | null): string {
+  const directName = stringValue(
+    record,
+    "created_by_name",
+    "created_by_display_name",
+    "creator_name",
+    "creator_display_name",
+    "enterprise_admin_name",
+    "admin_name",
+    "author_name",
+    "submitted_by_name",
+    "contact_name",
+    "contact_person",
+    "user_name",
+    "created_by_email",
+  );
+  if (directName) return directName;
+
+  for (const key of ["created_by", "created_by_user", "created_by_details", "creator", "creator_user", "enterprise_admin", "admin", "author", "owner"]) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim())) {
+        return value.trim();
+      }
+    }
+    if (!isRecord(value)) continue;
+
+    const nestedName = stringValue(value, "display_name", "full_name", "name", "contact_name", "primary_contact_name", "username", "email");
+    if (nestedName) return nestedName;
+  }
+
+  if (Array.isArray(record.moderation_history)) {
+    for (const entry of record.moderation_history) {
+      if (isRecord(entry)) {
+        const actor = stringValue(entry, "actor_name", "performed_by_name", "performed_by", "admin_name", "user_name");
+        if (actor && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(actor)) {
+          return actor;
+        }
+      }
+    }
+  }
+
+  if (isRecord(record.enterprise)) {
+    const enterpriseContact = stringValue(record.enterprise, "primary_contact_name", "contact_name", "admin_name", "owner_name", "contact_person");
+    if (enterpriseContact) return enterpriseContact;
+  }
+
+  if (enterprise && isRecord(enterprise)) {
+    const contact = stringValue(enterprise, "primary_contact_name", "contact_name", "admin_name", "owner_name", "contact_person");
+    if (contact) return contact;
+  }
+
+  const enterpriseName = stringValue(record, "enterprise_name") || (enterprise && isRecord(enterprise) ? stringValue(enterprise, "name", "business_short_name", "business_legal_name", "enterprise_name") : "");
+  if (enterpriseName) return `${enterpriseName} Admin`;
+
+  const creatorId = stringValue(record, "created_by_user_id", "created_by_id", "creator_id");
+  return creatorId ? `Account ID: ${creatorId}` : "Not provided";
 }
 
 function normalizedKey(value: string): string {
@@ -176,6 +236,14 @@ function TrainingDetailContent({ training }: { training: TrainingDetail }) {
 export default function PlatformTrainingDetailsModal({ trainingId, reviewId, reviewStatus = "all", openReviewAudit = false, onClose }: Props) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const query = useQuery({ queryKey: ["trainings", "platform-detail", trainingId], queryFn: () => getTrainingById(trainingId, "/api/platform-super-admin/training-approvals/"), enabled: Boolean(trainingId), staleTime: 30_000, retry: 1 });
+  const enterpriseId = query.data?.enterprise_id;
+  const enterpriseQuery = useQuery({
+    queryKey: ["platform", "training-modal-enterprise", enterpriseId],
+    queryFn: () => getPlatformEnterpriseById(enterpriseId!),
+    enabled: Boolean(enterpriseId),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
 
   useEffect(() => {
     closeButtonRef.current?.focus();
@@ -193,7 +261,7 @@ export default function PlatformTrainingDetailsModal({ trainingId, reviewId, rev
   };
 
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#06201c]/55 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="platform-training-details-title" onKeyDown={trapTab}>
-    <div className="flex items-start justify-between gap-4 border-b border-[#e1ebe6] p-5"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6a8a80]">Training details</p><h2 id="platform-training-details-title" className="mt-1 text-2xl font-bold text-[#06201c]">{query.data?.title ?? "Training"}</h2></div><button ref={closeButtonRef} type="button" onClick={onClose} aria-label="Close Training details" className="rounded-full border border-[#d7e5df] px-3 py-2 text-sm font-semibold text-[#31594d] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1f6a58]">Close</button></div>
+    <div className="flex items-start justify-between gap-4 border-b border-[#e1ebe6] p-5"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6a8a80]">Training details</p><h2 id="platform-training-details-title" className="mt-1 text-2xl font-bold text-[#06201c]">{query.data?.title ?? "Training"}</h2>{query.data ? <p className="mt-2 flex flex-wrap items-center gap-x-2 text-sm text-[#52736a]"><span><span className="font-semibold text-[#31594d]">Created by</span> {trainingCreator(query.data as unknown as Record<string, unknown>, enterpriseQuery.data as unknown as Record<string, unknown>)}</span>{query.data.enterprise_name?.trim() ? <><span aria-hidden="true">·</span><span><span className="font-semibold text-[#31594d]">Enterprise</span> {query.data.enterprise_name.trim()}</span></> : null}</p> : null}</div><button ref={closeButtonRef} type="button" onClick={onClose} aria-label="Close Training details" className="rounded-full border border-[#d7e5df] px-3 py-2 text-sm font-semibold text-[#31594d] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1f6a58]">Close</button></div>
     <div className="overflow-y-auto p-5">{query.isPending ? <div role="status" className="space-y-3"><div className="h-8 animate-pulse rounded bg-[#edf3f0]" /><div className="h-40 animate-pulse rounded-2xl bg-[#edf3f0]" /><p className="text-sm text-[#52736a]">Loading complete Training details…</p></div> : query.isError ? <div className="rounded-2xl border border-[#f2c7c2] bg-[#fff7f5] p-5"><p role="alert" className="font-semibold text-[#b42318]">{query.error instanceof Error ? query.error.message : "Unable to load Training details."}</p><button type="button" onClick={() => void query.refetch()} className="mt-3 font-semibold text-[#1f6a58] underline">Retry</button></div> : query.data ? <div className="space-y-4"><TrainingDetailContent training={query.data} /><PlatformModuleReviewsTab module="training" itemId={trainingId} reviewId={reviewId} initialStatus={reviewStatus} openAuditOnLoad={openReviewAudit} /></div> : <p className="text-sm text-[#52736a]">No Training details were returned.</p>}</div>
   </div></div>;
 }

@@ -15,6 +15,14 @@ export const enterpriseTrainingsEnglish = {
     selectTimeZone: "Select a time zone",
     selectCurrency: "Select a currency",
   },
+  instructor: {
+    loading: "Loading providers...",
+    loadFailed: "Unable to load instructors",
+    noMembers: "No internal users available",
+    select: "Select provider/instructor",
+    retry: "Retry loading instructors",
+    tenantUnavailable: "Tenant unavailable",
+  },
   numberRange: {
     adjustedToMinimum: "Adjusted to the minimum allowed value ({{value}}).",
     adjustedToMaximum: "Adjusted to the maximum allowed value ({{value}}).",

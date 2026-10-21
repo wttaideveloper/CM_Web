@@ -14,3 +14,21 @@ export function formatRelativeBackendTimestamp(value: string | null): string {
   if (elapsedSeconds < 172800) return "Yesterday";
   return date.toLocaleDateString([], { month: "short", day: "numeric" });
 }
+
+export function formatNotificationDateTime(value: string | null | undefined): string {
+  if (!value) return "";
+  const date = parseBackendTimestamp(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+export function formatNotificationTimestamp(value: string | null | undefined): string {
+  if (!value) return "";
+  const relative = formatRelativeBackendTimestamp(value);
+  const exact = formatNotificationDateTime(value);
+  if (!exact) return relative;
+  return `${relative} · ${exact}`;
+}

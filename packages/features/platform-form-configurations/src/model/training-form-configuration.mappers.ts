@@ -89,6 +89,7 @@ const HIDDEN_TRAINING_FIELD_LABELS = new Set([
 ]);
 const isHiddenTrainingField = (field: { stable_key?: string | null; core_key?: string | null; label?: string | null }) => {
   const keys = [field.stable_key, field.core_key].map((key) => key?.replace(/^(core_|custom_)/, "").trim().toLowerCase().replace(/[\s-]+/g, "_") ?? "");
+  if (keys.includes("instructor_name")) return false;
   const label = field.label?.trim().toLowerCase().replace(/[\s-]+/g, " ").replace(/\s*\(\s*/g, " (").replace(/\s*\)\s*/g, ")") ?? "";
   return keys.some((key) => HIDDEN_TRAINING_FIELD_KEYS.has(key)) || HIDDEN_TRAINING_FIELD_LABELS.has(label);
 };

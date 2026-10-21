@@ -19,7 +19,7 @@ import { mediaItemUrl, type EventMediaItem } from "./event-media";
 import EventOrdersSection from "./EventOrdersSection";
 import EventOverviewSection from "./EventOverviewSection";
 import EventReportsSection from "./EventReportsSection";
-import { EventReviewsTab } from "./EventReviewsTab";
+import { EventReviewsTab, type ReviewStatusFilter, STATUSES as EVENT_REVIEW_STATUSES } from "./EventReviewsTab";
 import SessionAttendancePanel from "./SessionAttendancePanel";
 import {
   displayValue,
@@ -140,7 +140,7 @@ const eventDetailsTabs: ReadonlyArray<{ id: EventDetailsTab; label: string }> =
     { id: "sessions", label: "Sessions" },
     { id: "registrations", label: "Registrations" },
     { id: "attendance", label: "Attendance" },
-    { id: "reviews", label: "Reviews" },
+    { id: "reviews", label: "Reviews & Feedback" },
     { id: "reports", label: "Reports" },
     { id: "orders", label: "Orders" },
     { id: "fulfilment", label: "Fulfilment" },
@@ -192,9 +192,12 @@ function EventDetailsContent() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<EventDetailsTab>("overview");
-  const [notificationReviewId, setNotificationReviewId] = useState<string | undefined>();
-  const [openReviewAudit, setOpenReviewAudit] = useState(false);
+  const requestedInitialTab = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState<EventDetailsTab>(
+    () => (eventDetailsTabs.some((tab) => tab.id === requestedInitialTab) ? (requestedInitialTab as EventDetailsTab) : "overview"),
+  );
+  const [notificationReviewId, setNotificationReviewId] = useState<string | undefined>(() => searchParams.get("review_id") ?? undefined);
+  const [openReviewAudit, setOpenReviewAudit] = useState(() => searchParams.get("show_audit") === "true");
   useEffect(() => {
     const requestedTab = searchParams.get("tab");
     if (eventDetailsTabs.some((tab) => tab.id === requestedTab)) setActiveTab(requestedTab as EventDetailsTab);
@@ -534,7 +537,16 @@ function EventDetailsContent() {
       ) : null}
       {effectiveActiveTab === "reviews" ? (
         <section id="event-reviews-panel" role="tabpanel" aria-labelledby="event-reviews-tab" className="mt-6">
-        <EventReviewsTab eventId={event.id} reviewId={notificationReviewId} openAuditOnLoad={openReviewAudit} />
+        <EventReviewsTab
+          eventId={event.id}
+          reviewId={notificationReviewId}
+          openAuditOnLoad={openReviewAudit}
+          initialSubview={searchParams.get("subview") === "feedback" ? "feedback" : "reviews"}
+          initialStatus={(() => {
+            const rawStatus = searchParams.get("status");
+            return rawStatus && EVENT_REVIEW_STATUSES.includes(rawStatus as ReviewStatusFilter) ? (rawStatus as ReviewStatusFilter) : null;
+          })()}
+        />
         </section>
       ) : null}
       {effectiveActiveTab === "reports" ? (

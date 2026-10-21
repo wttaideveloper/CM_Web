@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 const SESSION_COOKIE_NAME = "ihp_super_admin_refresh";
 const REMEMBER_ME_COOKIE_NAME = "ihp_super_admin_remember_me";
 const REMEMBER_ME_MAX_AGE = 60 * 60 * 24 * 30;
-const SUPER_ADMIN_AUTH_API_BASE_URL = process.env.SUPER_ADMIN_AUTH_API_BASE_URL;
+const SUPER_ADMIN_AUTH_API_BASE_URL = process.env.SUPER_ADMIN_AUTH_API_BASE_URL?.replace(/\/+$/, "");
 
 type SuperAdminIdentity = {
   id: string;

@@ -7,6 +7,7 @@ import { isTrainingDeliveryModeField, TRAINING_DELIVERY_MODE_OPTIONS } from "../
 import { getEventCoreFieldSemantic, isEventCoreFieldRuntimeSourced } from "../model/event-core-field-semantics";
 import type { ConfiguredField, CoreFieldRegistryItem, FormConfiguration, FormFieldOption } from "../model/form-configuration.types";
 import { useState } from "react";
+import { isTrainingInstructorField } from "../model/training-instructor-field";
 
 function previewOptionKey(option: FormFieldOption, index: number): string {
   return `${option.value}\u001f${option.label}\u001f${option.position}\u001f${index}`;
@@ -26,6 +27,7 @@ function PreviewField({ field, registry, isTraining }: { field: ConfiguredField;
   const isLegacyLearningObjectives = isTraining && !inputMode && field.label.trim().toLowerCase() === "learning objectives";
   const registryField = field.coreKey ? registry.find((item) => item.key === field.coreKey) : undefined;
   const registryRuntimeSourced = Boolean(registryField?.valueSource || registryField?.sourceEndpoint);
+  if (isTraining && isTrainingInstructorField(field)) return <div><select aria-label={field.label} disabled className={base}><option value="">{field.placeholder || "Select an instructor"}</option></select><span className="mt-1 block text-xs font-normal text-[#52736a]">Active team members are loaded from the tenant members API.</span></div>;
   if (isTraining && (inputMode === "tags" || isLegacyLearningObjectives)) return <div aria-label={`${field.label} tags input`} className="mt-1.5 flex min-h-11 flex-wrap items-center gap-2 rounded-lg border border-[#cfe0d8] bg-white p-2"><span className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">Example item <span aria-hidden="true">×</span></span><span className="text-xs font-normal text-[#7f9d94]">{field.placeholder || "Type an item and press Enter"}</span></div>;
   if (compositeDefinition) {
     const enabledFields = field.compositeConfig?.enabled_fields ?? compositeDefinition.subfields.map((subfield) => subfield.key);

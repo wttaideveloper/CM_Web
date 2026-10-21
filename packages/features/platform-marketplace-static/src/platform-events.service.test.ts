@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getPublishedEventDetails, getPublishedEvents, parsePublishedEventDetails } from "./platform-events.service.ts";
+import { getPlatformEventFeedback, getPlatformEventFeedbackReport, getPublishedEventDetails, getPublishedEvents, parsePublishedEventDetails } from "./platform-events.service.ts";
 
 test("normalizes the complete Event detail payload and preserves ownership fields", () => {
   const event = parsePublishedEventDetails({
@@ -81,6 +81,32 @@ test("normalizes a nested enterprise name from the published Event list", async 
   try {
     const response = await getPublishedEvents(1, "");
     assert.equal(response.items[0]?.enterprise_name, "Acme Health");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("normalizes numeric-string attendee ratings returned by the feedback API", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify([{ id: "feedback-1", event_id: "event-1", participant_name: "Asha Rao", rating: "4", comment: "Useful session", answers: {} }]), { status: 200, headers: { "Content-Type": "application/json" } });
+
+  try {
+    const feedback = await getPlatformEventFeedback("event-1");
+    assert.equal(feedback[0]?.rating, 4);
+    assert.equal(feedback[0]?.participant_name, "Asha Rao");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("parses report feedback ratings so Super Admin feedback cards can fill missing list ratings", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ event_id: "event-1", type: "feedback", data: { total_feedbacks: 1, total_reviews: 1, approved_reviews: 1, average_rating: 4, feedbacks: [{ feedback_id: "feedback-1", participant_name: "Asha Rao", rating: "4" }] } }), { status: 200, headers: { "Content-Type": "application/json" } });
+
+  try {
+    const report = await getPlatformEventFeedbackReport("event-1");
+    assert.equal(report.data.feedbacks?.[0]?.id, "feedback-1");
+    assert.equal(report.data.feedbacks?.[0]?.rating, 4);
   } finally {
     globalThis.fetch = originalFetch;
   }

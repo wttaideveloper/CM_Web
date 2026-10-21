@@ -7,7 +7,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 
 import TrainingActionsMenu from "./TrainingActionsMenu";
 import { ParticipantDashboardCard, ProviderDashboardCard } from "./dashboard-cards";
-import { TrainingAssessmentsTab, TrainingAttendanceTab, TrainingContentTab, TrainingEnrolmentsTab, TrainingLiveTab, TrainingReviewsTab, TrainingSectionsTab } from "./TrainingDetailsSections";
+import { TrainingAssessmentsTab, TrainingAttendanceTab, TrainingContentTab, TrainingEnrolmentsTab, TrainingLiveTab, TrainingReviewsTab, type TrainingReviewStatusFilter, TRAINING_REVIEW_STATUS_OPTIONS, TrainingSectionsTab } from "./TrainingDetailsSections";
 import { displayValue, formatTrainingDate, formatTrainingDateTime, formatTrainingPrice, formatTrainingScheduleDate, formatTrainingScheduleTime, getTrainingModerationTimestamp, humanizeLabel } from "./detail-formatters";
 import { getTrainingStatusBadgeClass, getTrainingStatusLabel } from "./training-status";
 import { getTrainingAdminNotes, getTrainingById, downloadTrainingNotesPdf, getTrainingMeetingLink, getTrainingModerationHistory, publishTrainingEnterprise, getTrainingParticipantDashboard, getTrainingProviderDashboard, TrainingsApiError } from "./trainings.service";
@@ -302,10 +302,13 @@ function TrainingDetailsContent({
   const { trainingId } = useParams<{ trainingId: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [activeTab, setActiveTab] = useState<TrainingDetailsTab>("details");
-  const [notificationReviewId, setNotificationReviewId] = useState<string | undefined>();
-  const [openReviewAudit, setOpenReviewAudit] = useState(false);
-  const [discussionId, setDiscussionId] = useState<string | undefined>();
+  const requestedInitialTab = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState<TrainingDetailsTab>(
+    () => (trainingDetailsTabs.some((tab) => tab.id === requestedInitialTab) ? (requestedInitialTab as TrainingDetailsTab) : "details"),
+  );
+  const [notificationReviewId, setNotificationReviewId] = useState<string | undefined>(() => searchParams.get("review_id") ?? undefined);
+  const [openReviewAudit, setOpenReviewAudit] = useState(() => searchParams.get("show_audit") === "true");
+  const [discussionId, setDiscussionId] = useState<string | undefined>(() => searchParams.get("discussion_id") ?? undefined);
 
   useEffect(() => {
     const requestedTab = searchParams.get("tab");
@@ -611,7 +614,10 @@ function TrainingDetailsContent({
       {activeTab === "enrolments" ? <div className="mt-6"><TrainingEnrolmentsTab trainingId={trainingId} /></div> : null}
       {activeTab === "attendance" ? <div className="mt-6"><TrainingAttendanceTab trainingId={trainingId} /></div> : null}
       {activeTab === "assessments" ? <div className="mt-6"><TrainingAssessmentsTab trainingId={trainingId} /></div> : null}
-      {activeTab === "reviews" ? <div className="mt-6"><TrainingReviewsTab trainingId={trainingId} reviewId={notificationReviewId} openAuditOnLoad={openReviewAudit} /></div> : null}
+      {activeTab === "reviews" ? <div className="mt-6"><TrainingReviewsTab trainingId={trainingId} reviewId={notificationReviewId} openAuditOnLoad={openReviewAudit} initialStatus={(() => {
+        const rawStatus = searchParams.get("status");
+        return rawStatus && TRAINING_REVIEW_STATUS_OPTIONS.includes(rawStatus as TrainingReviewStatusFilter) ? (rawStatus as TrainingReviewStatusFilter) : null;
+      })()} /></div> : null}
       {activeTab === "live" ? <div className="mt-6"><TrainingLiveTab trainingId={trainingId} discussionId={discussionId} /></div> : null}
       {activeTab === "dashboards" ? <div className="mt-6"><TrainingDashboardsTab trainingId={trainingId} /></div> : null}
     </div>

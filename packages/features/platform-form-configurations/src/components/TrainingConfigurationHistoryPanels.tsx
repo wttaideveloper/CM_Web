@@ -6,10 +6,18 @@ import { toBuilderTrainingFormConfiguration } from "../model/training-form-confi
 import type { TrainingFormConfiguration } from "../model/training-form-configuration-api.types";
 import { ConfigurationPreview } from "./ConfigurationPreview";
 
+function formatTrainingVersionDate(value: string | null): string {
+  if (!value) return "Date unavailable";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "Date unavailable"
+    : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
 /** Displays immutable versions for a persisted Training configuration. */
 export function TrainingConfigurationHistoryPanels({ configuration }: { configuration: TrainingFormConfiguration }) {
   const [selectedVersionId, setSelectedVersionId] = useState<string>();
   const versions = useTrainingFormConfigurationVersions(configuration.id);
   const version = useTrainingFormConfigurationVersion(configuration.id, selectedVersionId);
-  return <div className="mt-6"><section className="rounded-2xl border border-[#dfe9e4] bg-white p-5"><h2 className="text-lg font-bold text-[#06201c]">Versions</h2>{versions.isLoading ? <p className="mt-3 text-sm text-[#52736a]">Loading versions…</p> : versions.isError ? <button type="button" onClick={() => void versions.refetch()} className="mt-3 text-sm font-semibold text-[#1f6a58]">Unable to load versions. Retry</button> : <div className="mt-3 space-y-2">{versions.data?.length ? versions.data.map((item) => <button key={item.id} type="button" onClick={() => setSelectedVersionId(item.id)} className="block w-full rounded-xl border border-[#edf3f0] p-3 text-left text-sm hover:bg-[#f4faf7]"><span className="font-bold text-[#06201c]">v{item.version}</span><span className="ml-2 text-[#52736a]">{item.status}</span><span className="mt-1 block text-xs text-[#52736a]">Created {item.created_at ?? "—"}{item.published_at ? ` · Published ${item.published_at}` : ""}</span></button>) : <p className="text-sm text-[#52736a]">No versions have been published.</p>}</div>}{selectedVersionId ? <div className="mt-4">{version.isLoading ? <p className="text-sm text-[#52736a]">Loading version…</p> : version.data ? <ConfigurationPreview configuration={toBuilderTrainingFormConfiguration(configuration, version.data)} /> : null}</div> : null}</section></div>;
+  return <div className="mt-6"><section className="rounded-2xl border border-[#dfe9e4] bg-white p-5"><h2 className="text-lg font-bold text-[#06201c]">Versions</h2>{versions.isLoading ? <p className="mt-3 text-sm text-[#52736a]">Loading versions…</p> : versions.isError ? <button type="button" onClick={() => void versions.refetch()} className="mt-3 text-sm font-semibold text-[#1f6a58]">Unable to load versions. Retry</button> : <div className="mt-3 space-y-2">{versions.data?.length ? versions.data.map((item) => <button key={item.id} type="button" onClick={() => setSelectedVersionId(item.id)} className="block w-full rounded-xl border border-[#edf3f0] p-3 text-left text-sm hover:bg-[#f4faf7]"><span className="font-bold text-[#06201c]">v{item.version}</span><span className="ml-2 text-[#52736a]">{item.status}</span><span className="mt-1 block text-xs text-[#52736a]">Created {formatTrainingVersionDate(item.created_at)}{item.published_at ? <> · Published {formatTrainingVersionDate(item.published_at)}</> : ""}</span></button>) : <p className="text-sm text-[#52736a]">No versions have been published.</p>}</div>}{selectedVersionId ? <div className="mt-4">{version.isLoading ? <p className="text-sm text-[#52736a]">Loading version…</p> : version.data ? <ConfigurationPreview configuration={toBuilderTrainingFormConfiguration(configuration, version.data)} /> : null}</div> : null}</section></div>;
 }

@@ -31,12 +31,14 @@ function marketplaceUrl(path: string, request: NextRequest): URL | null {
 
 function validQueueQuery(request: NextRequest, audit: boolean): boolean {
   const query = request.nextUrl.searchParams;
-  const allowed = audit ? ["module", "item_id"] : ["module", "item_id", "status", "rating", "q", "page", "page_size"];
+  const allowed = audit ? ["module", "item_id", "tenant_id"] : ["module", "item_id", "tenant_id", "status", "rating", "q", "page", "page_size"];
   if ([...query.keys()].some((key) => !allowed.includes(key))) return false;
   const moduleParam = query.get("module");
   if (!moduleParam || !MODULES.has(moduleParam)) return false;
   const itemId = query.get("item_id");
   if (itemId && !UUID.test(itemId)) return false;
+  const tenantId = query.get("tenant_id");
+  if (tenantId && !UUID.test(tenantId)) return false;
   if (!audit) {
     const status = query.get("status");
     if (status && !REVIEW_ACTIONS.has(status)) return false;
@@ -62,6 +64,11 @@ export async function proxyPlatformReviewsRequest(request: NextRequest, path: st
     upstreamPath = path.join("/");
   } else if (path.length >= 2 && MODULES.has(path[0]) && UUID.test(path[1])) {
     if (method === "DELETE" && path.length === 2) {
+      let payload: unknown;
+      try { payload = await request.json(); } catch { return errorResponse(400, "A deletion reason is required."); }
+      const isCatalogReview = path[0] === "product" || path[0] === "service";
+      if (typeof payload !== "object" || payload === null || !("reason" in payload) || typeof payload.reason !== "string" || payload.reason.trim().length < (isCatalogReview ? 3 : 1) || payload.reason.trim().length > (isCatalogReview ? 500 : 1000)) return errorResponse(isCatalogReview ? 422 : 400, isCatalogReview ? "A deletion reason of 3 to 500 characters is required." : "A deletion reason is required (maximum 1000 characters).");
+      body = JSON.stringify({ reason: payload.reason.trim() });
       upstreamPath = path.map(encodeURIComponent).join("/");
     } else if (method === "PATCH" && path.length === 3 && path[2] === "moderate") {
       let payload: unknown;
@@ -73,7 +80,11 @@ export async function proxyPlatformReviewsRequest(request: NextRequest, path: st
       if (typeof payload !== "object" || payload === null || !("action" in payload) || typeof payload.action !== "string" || !REVIEW_ACTIONS.has(payload.action)) {
         return errorResponse(400, "A valid moderation action is required.");
       }
-      body = JSON.stringify({ action: payload.action });
+      const reason = "reason" in payload && typeof payload.reason === "string" ? payload.reason.trim() : "";
+      const isCatalogReview = path[0] === "product" || path[0] === "service";
+      if (isCatalogReview && (payload.action === "rejected" || payload.action === "pending") && (reason.length < 3 || reason.length > 500)) return errorResponse(422, "A reason of 3 to 500 characters is required for this action.");
+      if (payload.action === "rejected" && (!reason || reason.length > 1000)) return errorResponse(400, "A rejection reason is required (maximum 1000 characters).");
+      body = JSON.stringify({ action: payload.action, ...(reason ? { reason } : {}) });
       upstreamPath = path.map(encodeURIComponent).join("/");
     } else {
       return errorResponse(404, "Unknown review path.");

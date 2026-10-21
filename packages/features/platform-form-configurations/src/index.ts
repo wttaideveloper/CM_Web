@@ -2,6 +2,7 @@ export { FormConfigurationsScreen } from "./screens/FormConfigurationsScreen";
 export { FormConfigurationEditorScreen } from "./screens/FormConfigurationEditorScreen";
 export { TrainingFormConfigurationsScreen } from "./screens/TrainingFormConfigurationsScreen";
 export { TrainingFormConfigurationEditorScreen } from "./screens/TrainingFormConfigurationEditorScreen";
+export { NewTrainingFormBuilderScreen } from "./screens/NewTrainingFormBuilderScreen";
 export * from "./form-configurations.queries";
 export * from "./screens/EventTypesScreen";
 export * from "./training-form-configurations.queries";

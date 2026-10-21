@@ -39,12 +39,17 @@ export interface PlatformReviewAuditEntry {
   review_id: string;
   item_id: string;
   item_name: string | null;
+  business_name: string | null;
+  customer_name: string | null;
+  rating: StarRating | null;
+  comment: string | null;
   from_status: string | null;
   to_status: string;
   actor_name: string | null;
   actor_user_id: string | null;
   actor_role: string | null;
   created_at: string | null;
+  reason?: string | null;
 }
 
 /** Search and pagination arguments for platform review management. */
@@ -54,6 +59,7 @@ export interface PlatformReviewsParams {
   rating?: StarRating | "all";
   q?: string;
   itemId?: string;
+  tenantId?: string;
   page?: number;
   pageSize?: number;
 }

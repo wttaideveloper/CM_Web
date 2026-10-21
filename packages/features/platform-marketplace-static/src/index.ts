@@ -3,3 +3,4 @@ export { default as PlatformIntegrationsScreen } from "./PlatformIntegrationsScr
 export { default as PlatformTrainingsScreen } from "./PlatformTrainingsScreen";
 export { default as PlatformTrainingDetailsScreen } from "./PlatformTrainingDetailsScreen";
 export { default as PlatformProgramsScreen } from "./PlatformProgramsScreen";
+export { PlatformModuleReviewsTab } from "./PlatformModuleReviewsTab";

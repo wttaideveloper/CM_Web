@@ -25,5 +25,6 @@ export * from "./training-categories.queries";
 export { default as TrainingFormBuilderScreen } from "./TrainingFormBuilderScreen";
 export { default as TrainingBookingFlow } from "./TrainingBookingFlow";
 export { default as WishlistScreen } from "./WishlistScreen";
+export { EnterpriseCatalogReviewsTab } from "./EnterpriseCatalogReviewsTab";
 export * from "./wishlist-storage";
 export { default as enterpriseTrainingsEnglish } from "./locales/en";

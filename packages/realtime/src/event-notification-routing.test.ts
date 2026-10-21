@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import test from "node:test";
 
-import { formatTrainingNotificationDetails, handleNotificationClick, resolveNotificationTarget } from "./event-notification-routing.ts";
+import { formatEventFeedbackNotificationDetails, formatTrainingNotificationDetails, handleNotificationClick, resolveNotificationTarget } from "./event-notification-routing.ts";
 
 const resubmittedEventId = "6784cc71-f2c7-4712-a732-29bcffdb849f";
 
@@ -164,6 +164,27 @@ test("training discussion and review notifications open the matching Enterprise 
   );
 });
 
+test("Event attendee feedback notifications show context and open the matching Event views", () => {
+  assert.equal(
+    resolveNotificationTarget({ notification_type: "event_feedback", data: { event_id: "event-feedback-1" } }, "enterprise"),
+    "/admin/events/event-feedback-1?tab=reviews&subview=feedback",
+  );
+  assert.equal(
+    resolveNotificationTarget({ notification_type: "automatic", category: "event_feedback_submitted", metadata: { entity_type: "event", event_id: "event-feedback-2" }, data: {} }, "enterprise"),
+    "/admin/events/event-feedback-2?tab=reviews&subview=feedback",
+  );
+  assert.equal(
+    resolveNotificationTarget({ notification_type: "event_feedback_submitted", data: { event_id: "event-feedback-2" } }, "platform"),
+    "/events?view=reviews&item_id=event-feedback-2&subview=feedback",
+  );
+  assert.deepEqual(formatEventFeedbackNotificationDetails({
+    notification_type: "automatic",
+    category: "event_feedback_submitted",
+    metadata: { event_id: "event-feedback-2", attendee_name: "Asha Rao", event_title: "Clinical Summit" },
+    data: {},
+  }), { attendeeName: "Asha Rao", eventTitle: "Clinical Summit", comment: null });
+});
+
 test("review moderation and deletion notifications open the matching Super Admin queue", () => {
   assert.equal(
     resolveNotificationTarget({ notification_type: "automatic", category: "review_moderated", metadata: { entity_type: "training", training_id: "training-1", review_id: "review-1", new_status: "approved" }, data: {} }, "platform"),
@@ -171,7 +192,11 @@ test("review moderation and deletion notifications open the matching Super Admin
   );
   assert.equal(
     resolveNotificationTarget({ notification_type: "automatic", category: "review_deleted", metadata: { entity_type: "event", event_id: "event-1", review_id: "review-2", new_status: "deleted" }, data: {} }, "platform"),
-    "/events?view=reviews&item_id=event-1&review_id=review-2&show_audit=true",
+    "/events?view=reviews&item_id=event-1&review_id=review-2&status=deleted&show_audit=true",
+  );
+  assert.equal(
+    resolveNotificationTarget({ notification_type: "automatic", category: "review_deleted", metadata: { entity_type: "review", module: "training", review_id: "review-3", status: "deleted" }, data: {} }, "platform"),
+    "/trainings?view=reviews&review_id=review-3&status=deleted&show_audit=true",
   );
 });
 
@@ -182,7 +207,11 @@ test("Enterprise review notifications open the exact review and deletion history
   );
   assert.equal(
     resolveNotificationTarget({ notification_type: "automatic", category: "review_deleted", metadata: { entity_type: "event", event_id: "event-5", review_id: "review-5", action: "deleted" }, data: {} }, "enterprise"),
-    "/admin/events/event-5?tab=reviews&review_id=review-5&show_audit=true",
+    "/admin/events/event-5?tab=reviews&review_id=review-5&status=deleted&show_audit=true",
+  );
+  assert.equal(
+    resolveNotificationTarget({ notification_type: "automatic", category: "review_deleted", metadata: { entity_type: "review", module: "training", review_id: "review-6", action: "deleted" }, data: {} }, "enterprise"),
+    "/admin/trainings?tab=reviews&review_id=review-6&status=deleted&show_audit=true",
   );
 });
 
