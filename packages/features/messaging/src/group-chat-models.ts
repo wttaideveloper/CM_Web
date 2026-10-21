@@ -1,6 +1,6 @@
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
 import type { TenantMember } from "@ihp/enterprise-runtime";
-import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageHistoryResponse, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
+import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
 export type GroupRole = "Owner" | "Admin" | "Member";
@@ -348,6 +348,7 @@ export function normalizeGroupChatMessage(value: unknown): GroupChatMessage | nu
   if (!id || !conversationId || !senderId || !senderName.trim() || !senderKind || !messageType || !status || !createdAt) return null;
   const content = typeof value.content === "string" ? value.content : null;
   const attachmentId = typeof value.attachment_id === "string" && value.attachment_id.trim() ? value.attachment_id.trim() : null;
+  const attachment = normalizeGroupChatMessageAttachment(value.attachment);
   const placeholder = typeof value.placeholder === "string" && value.placeholder.trim() ? value.placeholder.trim() : null;
   const replyTo = isRecord(value.reply_to) ? value.reply_to : null;
   const mentions = Array.isArray(value.mentions) ? value.mentions.filter((item): item is string => typeof item === "string") : [];
@@ -362,6 +363,12 @@ export function normalizeGroupChatMessage(value: unknown): GroupChatMessage | nu
     message_type: messageType,
     content,
     attachment_id: attachmentId,
+    file_name: readString(value, "file_name"),
+    filename: readString(value, "filename"),
+    download_url: readString(value, "download_url"),
+    file_size: typeof value.file_size === "number" && Number.isFinite(value.file_size) ? value.file_size : null,
+    mime_type: readString(value, "mime_type"),
+    attachment,
     status,
     placeholder,
     reply_to: replyTo,
@@ -376,6 +383,63 @@ export function normalizeGroupChatMessage(value: unknown): GroupChatMessage | nu
     read_by: readBy,
     created_at: createdAt,
   };
+}
+
+function normalizeGroupChatMessageAttachment(value: unknown): GroupChatMessageAttachment | null {
+  if (!isRecord(value)) return null;
+  const attachmentId = readString(value, "attachment_id");
+  const id = readString(value, "id");
+  const fileName = readString(value, "file_name");
+  const filename = readString(value, "filename");
+  const attachmentType = readString(value, "attachment_type");
+  const downloadUrl = readString(value, "download_url");
+  const fileSize = typeof value.file_size === "number" && Number.isFinite(value.file_size) ? value.file_size : null;
+  const mimeType = readString(value, "mime_type");
+  if (!attachmentId && !id && !fileName && !filename && !attachmentType && !downloadUrl && fileSize === null && !mimeType) return null;
+  return { id, attachment_id: attachmentId, file_name: fileName, filename, attachment_type: attachmentType, download_url: downloadUrl, file_size: fileSize, mime_type: mimeType };
+}
+
+function isGroupChatAttachmentType(value: string | null): value is GroupChatAttachmentType {
+  return value === "image" || value === "document" || value === "audio" || value === "video";
+}
+
+/** Normalizes the existing Chat attachment upload response without accepting undocumented fields. */
+export function normalizeGroupChatAttachmentUploadResponse(value: unknown, fallbackType: GroupChatAttachmentType, fallbackFileName: string): GroupChatAttachment | null {
+  const candidates = [value, isRecord(value) ? value.data : null, isRecord(value) ? value.item : null].filter(isRecord);
+  for (const candidate of candidates) {
+    const id = readString(candidate, "id") || readString(candidate, "attachment_id");
+    if (!id) continue;
+    const fileName = readString(candidate, "file_name") || readString(candidate, "filename") || fallbackFileName.trim();
+    const responseType = readString(candidate, "attachment_type");
+    const attachmentType = isGroupChatAttachmentType(responseType) ? responseType : fallbackType;
+    return {
+      id,
+      file_name: fileName || fallbackFileName,
+      attachment_type: attachmentType,
+      download_url: readString(candidate, "download_url"),
+      file_size: typeof candidate.file_size === "number" && Number.isFinite(candidate.file_size) ? candidate.file_size : null,
+      mime_type: readString(candidate, "mime_type"),
+    };
+  }
+  return null;
+}
+
+/** Builds the existing Chat attachment multipart fields for a Group conversation. */
+export function buildGroupChatAttachmentUploadFormData(groupId: string, file: File, attachmentType: GroupChatAttachmentType): FormData | null {
+  const normalizedGroupId = groupId.trim();
+  if (!normalizedGroupId || !file || !isGroupChatAttachmentType(attachmentType)) return null;
+  const formData = new FormData();
+  formData.append("conversation_id", normalizedGroupId);
+  formData.append("file", file);
+  formData.append("attachment_type", attachmentType);
+  return formData;
+}
+
+/** Builds the documented Group Chat attachment message body. */
+export function buildGroupChatAttachmentMessagePayload(attachmentType: GroupChatAttachmentType, attachmentId: string): SendGroupChatAttachmentMessagePayload | null {
+  const normalizedAttachmentId = attachmentId.trim();
+  if (!normalizedAttachmentId || !isGroupChatAttachmentType(attachmentType)) return null;
+  return { message_type: attachmentType, attachment_id: normalizedAttachmentId };
 }
 
 /** Normalizes the documented cursor response without inventing message fields. */
@@ -447,7 +511,9 @@ export function canEditGroupChatMessage(message: GroupChatMessage, currentUserId
 
 /** Returns true when the current user may retract this visible text message. */
 export function canRetractGroupChatMessage(message: GroupChatMessage, currentUserId: string | null | undefined): boolean {
-  return Boolean(currentUserId?.trim()) && message.sender_id === currentUserId?.trim() && message.status.trim().toLowerCase() === "visible" && message.message_type.trim().toLowerCase() === "text";
+  if (!currentUserId?.trim() || message.sender_id !== currentUserId.trim() || message.status.trim().toLowerCase() !== "visible") return false;
+  const messageType = message.message_type.trim().toLowerCase();
+  return messageType === "text" || messageType === "image" || messageType === "document" || messageType === "audio" || messageType === "video";
 }
 
 /** Returns true when a visible non-system message may be moderated by an authorized active member. */
@@ -466,6 +532,66 @@ export function getGroupChatMessageDisplayText(message: GroupChatMessage): strin
   if (status === "retracted" || status === "removed_by_admin") return message.placeholder?.trim() || "This message is no longer available.";
   if (message.content !== null) return message.content;
   return message.placeholder?.trim() || "Message content unavailable.";
+}
+
+/** Resolves persisted attachment metadata without treating an attachment ID as a public URL or name. */
+export function resolveGroupChatAttachmentMetadata(
+  message: GroupChatMessage,
+  retrieved?: { fileName: string | null; mimeType: string | null; fileSize: number | null },
+): GroupChatAttachmentDisplayMetadata {
+  return {
+    file_name: retrieved?.fileName?.trim() || message.file_name?.trim() || message.filename?.trim() || message.attachment?.file_name?.trim() || message.attachment?.filename?.trim() || "Attachment",
+    mime_type: retrieved?.mimeType?.trim() || message.mime_type?.trim() || message.attachment?.mime_type?.trim() || null,
+    file_size: retrieved?.fileSize ?? message.file_size ?? message.attachment?.file_size ?? null,
+  };
+}
+
+/** Formats the authorized attachment response metadata for a compact Group Chat card. */
+export function formatGroupChatAttachmentSummary(metadata: GroupChatAttachmentDisplayMetadata): string {
+  const mimeType = metadata.mime_type?.toLowerCase() || "";
+  const subtype = mimeType.split("/")[1]?.split(";")[0]?.trim();
+  let label = "Protected file";
+  if (mimeType === "application/pdf") label = "PDF document";
+  else if (mimeType.startsWith("image/") && subtype) label = `${subtype.toUpperCase()} image`;
+  else if (mimeType.startsWith("audio/") && subtype) label = `${subtype.toUpperCase()} audio`;
+  else if (mimeType.startsWith("video/") && subtype) label = `${subtype.toUpperCase()} video`;
+  else if (subtype) label = `${subtype.toUpperCase()} file`;
+
+  const size = metadata.file_size;
+  if (size === null || !Number.isFinite(size) || size < 0) return label;
+  if (size < 1024) return `${label} · ${size} B`;
+  if (size < 1024 * 1024) return `${label} · ${(size / 1024).toFixed(size < 10 * 1024 ? 2 : 0).replace(/\.00$/, "")} KB`;
+  return `${label} · ${(size / (1024 * 1024)).toFixed(size < 10 * 1024 * 1024 ? 2 : 1).replace(/\.0$/, "")} MB`;
+}
+
+/** Extracts a safe attachment filename from standard Content-Disposition parameters. */
+export function parseGroupChatAttachmentFileName(contentDisposition: string | null): string | null {
+  if (!contentDisposition) return null;
+  const parameterPattern = /(?:^|;)\s*(filename\*|filename)\s*=\s*(?:"([^"]*)"|([^;]*))/gi;
+  let fallbackName: string | null = null;
+  let extendedName: string | null = null;
+  let match: RegExpExecArray | null;
+  while ((match = parameterPattern.exec(contentDisposition)) !== null) {
+    const parameterName = match[1].toLowerCase();
+    const rawValue = (match[2] ?? match[3] ?? "").trim();
+    if (parameterName === "filename*") {
+      const encodedValue = /^([^']*)'[^']*'(.*)$/.exec(rawValue);
+      if (!encodedValue || encodedValue[1].toLowerCase() !== "utf-8") continue;
+      try {
+        extendedName = normalizeAttachmentFileName(decodeURIComponent(encodedValue[2])) ?? extendedName;
+      } catch {
+        // Malformed percent-encoding falls back to filename, when supplied.
+      }
+      continue;
+    }
+    fallbackName = normalizeAttachmentFileName(rawValue) ?? fallbackName;
+  }
+  return extendedName || fallbackName;
+}
+
+function normalizeAttachmentFileName(value: string): string | null {
+  const normalized = value.trim().replace(/^.*[\\/]/, "");
+  return normalized && normalized !== "." && normalized !== ".." && !normalized.includes("\0") ? normalized : null;
 }
 
 /** Merges cursor pages from newest-to-oldest while restoring chronological order and removing duplicates. */

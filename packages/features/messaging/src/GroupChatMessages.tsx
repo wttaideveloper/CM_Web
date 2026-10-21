@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { useAuth } from "@ihp/auth";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { editGroupChatMessage, hideGroupChatMessage, listGroupChatMessages, markGroupChatRead, retractGroupChatMessage, sendGroupChatTextMessage } from "./group-chat/group-chat.service";
-import { buildEditGroupChatMessagePayload, canEditGroupChatMessage, canHideGroupChatMessage, canRetractGroupChatMessage, canSendGroupChatMessage, getGroupChatMessageDisplayText, getGroupChatPostingRestrictionMessage, mergeGroupChatMessagePages } from "./group-chat-models";
-import type { GroupChatMessage } from "./group-chat/group-chat.types";
+import { downloadGroupChatAttachment, editGroupChatMessage, hideGroupChatMessage, listGroupChatMessages, markGroupChatRead, retractGroupChatMessage, sendGroupChatAttachmentMessage, sendGroupChatTextMessage, uploadGroupChatAttachment } from "./group-chat/group-chat.service";
+import { buildEditGroupChatMessagePayload, canEditGroupChatMessage, canHideGroupChatMessage, canRetractGroupChatMessage, canSendGroupChatMessage, formatGroupChatAttachmentSummary, getGroupChatMessageDisplayText, getGroupChatPostingRestrictionMessage, mergeGroupChatMessagePages, resolveGroupChatAttachmentMetadata } from "./group-chat-models";
+import type { GroupChatAttachment, GroupChatAttachmentType, GroupChatMessage } from "./group-chat/group-chat.types";
 
 type Props = {
   groupId: string;
@@ -21,10 +21,92 @@ const messageKey = (groupId: string) => ["group-chat", "messages", groupId];
 type EditVariables = { groupId: string; messageId: string; content: string };
 type MessageActionVariables = { groupId: string; messageId: string };
 type HideVariables = MessageActionVariables & { reason: string };
+type AttachmentUploadVariables = { groupId: string; file: File; attachmentType: GroupChatAttachmentType };
+type AttachmentSendVariables = { groupId: string; attachment: GroupChatAttachment };
 
 function formatMessageTime(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function getGroupChatAttachmentType(file: File): GroupChatAttachmentType {
+  if (file.type.startsWith("image/")) return "image";
+  if (file.type.startsWith("audio/")) return "audio";
+  if (file.type.startsWith("video/")) return "video";
+  return "document";
+}
+
+function getMessageAttachmentFileName(message: GroupChatMessage): string {
+  return message.file_name?.trim() || message.filename?.trim() || message.attachment?.file_name?.trim() || message.attachment?.filename?.trim() || "Attachment";
+}
+
+function getMessageAttachmentType(message: GroupChatMessage): string {
+  return message.attachment?.attachment_type?.trim().toLowerCase() || message.message_type.trim().toLowerCase();
+}
+
+function GroupChatAttachmentMessage({ message }: { message: GroupChatMessage }) {
+  const attachmentId = message.attachment_id;
+  const attachmentType = getMessageAttachmentType(message);
+  const isImage = attachmentType === "image" || message.mime_type?.toLowerCase().startsWith("image/") || message.attachment?.mime_type?.toLowerCase().startsWith("image/");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [metadata, setMetadata] = useState(() => resolveGroupChatAttachmentMetadata(message));
+
+  useEffect(() => {
+    let active = true;
+    let objectUrl: string | null = null;
+    if (!attachmentId) return undefined;
+
+    void downloadGroupChatAttachment(attachmentId).then((response) => {
+      if (!active) return;
+      setMetadata(resolveGroupChatAttachmentMetadata(message, response));
+      if (!isImage) return;
+      if (response.blob.size === 0) throw new Error("empty attachment");
+      objectUrl = window.URL.createObjectURL(response.blob);
+      setPreviewUrl(objectUrl);
+    }).catch(() => {
+      if (active && isImage) setPreviewError("Image preview unavailable");
+    });
+
+    return () => {
+      active = false;
+      if (objectUrl) window.URL.revokeObjectURL(objectUrl);
+    };
+  }, [attachmentId, isImage, message]);
+
+  const openAttachment = async (download: boolean) => {
+    if (!attachmentId) return;
+    try {
+      const response = await downloadGroupChatAttachment(attachmentId);
+      setMetadata(resolveGroupChatAttachmentMetadata(message, response));
+      const objectUrl = window.URL.createObjectURL(response.blob);
+      if (download) {
+        const anchor = document.createElement("a");
+        anchor.href = objectUrl;
+        anchor.download = response.fileName || getMessageAttachmentFileName(message);
+        anchor.rel = "noreferrer";
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+      } else {
+        window.open(objectUrl, "_blank", "noopener,noreferrer");
+      }
+      window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 1500);
+    } catch {
+      setPreviewError("Attachment could not be opened right now");
+    }
+  };
+
+  return <div className="mt-1 max-w-[320px] rounded-xl border border-[#d7e5df] bg-[#f8fbf9] p-2 text-[#16332b]">
+    {isImage && previewUrl ? <img src={previewUrl} alt={getMessageAttachmentFileName(message)} className="max-h-56 w-full rounded-lg object-contain" onError={() => { setPreviewUrl(null); setPreviewError("Image preview unavailable"); }} /> : null}
+    {isImage && !previewUrl && !previewError ? <p className="px-1 py-3 text-xs text-[#52736a]">Loading image preview...</p> : null}
+    {previewError ? <p className="px-1 py-1 text-xs text-[#8f3b2f]">{previewError}</p> : null}
+    <div className="mt-1 flex items-center justify-between gap-2">
+      <div className="min-w-0"><p className="truncate text-xs font-semibold">{metadata.file_name}</p><p className="text-[11px] text-[#52736a]">{attachmentId ? formatGroupChatAttachmentSummary(metadata) : "File unavailable"}</p></div>
+      <div className="flex shrink-0 gap-1.5"><button type="button" disabled={!attachmentId} onClick={() => void openAttachment(false)} className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-[#1f6a58] shadow-sm disabled:opacity-50">Open</button><button type="button" disabled={!attachmentId} onClick={() => void openAttachment(true)} className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-[#1f6a58] shadow-sm disabled:opacity-50">Download</button></div>
+    </div>
+    {message.content?.trim() ? <p className="mt-2 whitespace-pre-wrap break-words text-[13px]">{message.content}</p> : null}
+  </div>;
 }
 
 type MessageAction = "edit" | "retract" | "hide";
@@ -82,7 +164,7 @@ function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen
           <time dateTime={message.created_at}>{formatMessageTime(message.created_at)}</time>
           {message.is_edited ? <span className="italic">Edited</span> : null}
         </div>
-        {editMode ? <div><label className="sr-only" htmlFor={`edit-group-message-${message.id}`}>Edit message</label><textarea id={`edit-group-message-${message.id}`} value={editDraft} onChange={(event) => onEditDraftChange(event.target.value)} disabled={mutationPending} className="min-h-20 w-full resize-y rounded-lg border border-[#b7dfc7] bg-white p-2 text-sm text-[#16332b] outline-none focus:border-[#1f6a58]" />{editError ? <p className="mt-1 text-xs text-[#b42318]" role="alert">{editError}</p> : null}<div className="mt-2 flex gap-2"><button type="button" disabled={mutationPending || !editDraft.trim()} onClick={onSaveEdit} className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#1f6a58] disabled:opacity-50">{mutationPending ? "Saving..." : "Save"}</button><button type="button" disabled={mutationPending} onClick={onCancelEdit} className="rounded-full border border-white/70 px-3 py-1.5 text-xs font-semibold text-current">Cancel</button></div></div> : <p className={unavailable ? "italic opacity-80" : "whitespace-pre-wrap break-words"}>{getGroupChatMessageDisplayText(message)}</p>}
+        {editMode ? <div><label className="sr-only" htmlFor={`edit-group-message-${message.id}`}>Edit message</label><textarea id={`edit-group-message-${message.id}`} value={editDraft} onChange={(event) => onEditDraftChange(event.target.value)} disabled={mutationPending} className="min-h-20 w-full resize-y rounded-lg border border-[#b7dfc7] bg-white p-2 text-sm text-[#16332b] outline-none focus:border-[#1f6a58]" />{editError ? <p className="mt-1 text-xs text-[#b42318]" role="alert">{editError}</p> : null}<div className="mt-2 flex gap-2"><button type="button" disabled={mutationPending || !editDraft.trim()} onClick={onSaveEdit} className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#1f6a58] disabled:opacity-50">{mutationPending ? "Saving..." : "Save"}</button><button type="button" disabled={mutationPending} onClick={onCancelEdit} className="rounded-full border border-white/70 px-3 py-1.5 text-xs font-semibold text-current">Cancel</button></div></div> : unavailable ? <p className="italic opacity-80">{getGroupChatMessageDisplayText(message)}</p> : message.attachment_id ? <GroupChatAttachmentMessage message={message} /> : <p className="whitespace-pre-wrap break-words">{getGroupChatMessageDisplayText(message)}</p>}
       </article>
     </div> : null}
   </div>;
@@ -96,6 +178,7 @@ export default function GroupChatMessages({ groupId, groupStatus, canPost, posti
   const [readError, setReadError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
   const initialScrollDone = useRef(false);
   const scrollToBottomOnNextUpdate = useRef(false);
   const previousScroll = useRef<{ height: number; top: number } | null>(null);
@@ -106,6 +189,10 @@ export default function GroupChatMessages({ groupId, groupStatus, canPost, posti
   const [editError, setEditError] = useState<string | null>(null);
   const [hideReason, setHideReason] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState<string | null>(null);
+  const [pendingAttachment, setPendingAttachment] = useState<GroupChatAttachment | null>(null);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const groupIsClosed = groupStatus?.trim().toLowerCase() === "closed";
   const historyQuery = useInfiniteQuery({
     queryKey: messageKey(groupId),
@@ -124,6 +211,36 @@ export default function GroupChatMessages({ groupId, groupStatus, canPost, posti
       setDraft("");
       scrollToBottomOnNextUpdate.current = true;
       await queryClient.invalidateQueries({ queryKey: messageKey(groupId) });
+    },
+  });
+  const attachmentUploadMutation = useMutation({
+    mutationFn: ({ groupId: targetGroupId, file, attachmentType }: AttachmentUploadVariables) => uploadGroupChatAttachment(targetGroupId, file, attachmentType),
+    retry: false,
+    onSuccess: (attachment, variables) => {
+      if (variables.groupId !== groupId) return;
+      setPendingAttachment(attachment);
+      setAttachmentError(null);
+    },
+    onError: (error: Error, variables) => {
+      if (variables.groupId === groupId) {
+        setPendingAttachment(null);
+        setAttachmentError(error.message);
+      }
+    },
+  });
+  const attachmentSendMutation = useMutation({
+    mutationFn: ({ groupId: targetGroupId, attachment }: AttachmentSendVariables) => sendGroupChatAttachmentMessage(targetGroupId, attachment.attachment_type, attachment.id),
+    retry: false,
+    onSuccess: async (_message, variables) => {
+      if (variables.groupId !== groupId) return;
+      setAttachmentFile(null);
+      setPendingAttachment(null);
+      setAttachmentError(null);
+      scrollToBottomOnNextUpdate.current = true;
+      await queryClient.invalidateQueries({ queryKey: messageKey(groupId) });
+    },
+    onError: (error: Error, variables) => {
+      if (variables.groupId === groupId) setAttachmentError(`Attachment uploaded, but the message could not be sent: ${error.message}`);
     },
   });
   const refreshMessages = async () => {
@@ -188,7 +305,22 @@ export default function GroupChatMessages({ groupId, groupStatus, canPost, posti
     setEditError(null);
     setHideReason("");
     setActionError(null);
+    setAttachmentFile(null);
+    setPendingAttachment(null);
+    setAttachmentError(null);
+    attachmentUploadMutation.reset();
+    attachmentSendMutation.reset();
   }, [groupId]);
+
+  useEffect(() => {
+    if (!attachmentFile || !attachmentFile.type.startsWith("image/")) {
+      setAttachmentPreviewUrl(null);
+      return undefined;
+    }
+    const objectUrl = window.URL.createObjectURL(attachmentFile);
+    setAttachmentPreviewUrl(objectUrl);
+    return () => window.URL.revokeObjectURL(objectUrl);
+  }, [attachmentFile]);
 
   useEffect(() => {
     if (!openMenuId) return undefined;
@@ -247,14 +379,48 @@ export default function GroupChatMessages({ groupId, groupStatus, canPost, posti
     if (node) previousScroll.current = { height: node.scrollHeight, top: node.scrollTop };
     void historyQuery.fetchNextPage();
   };
+  const clearAttachment = () => {
+    setAttachmentFile(null);
+    setPendingAttachment(null);
+    setAttachmentError(null);
+    attachmentUploadMutation.reset();
+    attachmentSendMutation.reset();
+  };
+
+  const handleAttachmentSelected = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    if (!file) return;
+    if (!canSendGroupChatMessage(groupStatus, canPost, postingMuted === true)) {
+      setAttachmentError(getGroupChatPostingRestrictionMessage(groupStatus, canPost, postingMuted) ?? "Attachments are unavailable in this group.");
+      return;
+    }
+    const attachmentType = getGroupChatAttachmentType(file);
+    setAttachmentFile(file);
+    setPendingAttachment(null);
+    setAttachmentError(null);
+    attachmentUploadMutation.mutate({ groupId, file, attachmentType });
+  };
+
+  const retryAttachmentUpload = () => {
+    if (!attachmentFile || !canSendGroupChatMessage(groupStatus, canPost, postingMuted === true)) return;
+    setAttachmentError(null);
+    attachmentUploadMutation.mutate({ groupId, file: attachmentFile, attachmentType: getGroupChatAttachmentType(attachmentFile) });
+  };
+
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (sendMutation.isPending || !draft.trim() || groupIsClosed || canPost !== true || postingMuted === true) return;
+    if (sendMutation.isPending || attachmentUploadMutation.isPending || attachmentSendMutation.isPending || groupIsClosed || canPost !== true || postingMuted === true) return;
+    if (pendingAttachment) {
+      attachmentSendMutation.mutate({ groupId, attachment: pendingAttachment });
+      return;
+    }
+    if (!draft.trim()) return;
     sendMutation.mutate(draft);
   };
   const postingDisabled = !canSendGroupChatMessage(groupStatus, canPost, postingMuted === true);
   const restrictionMessage = getGroupChatPostingRestrictionMessage(groupStatus, canPost, postingMuted);
-  const mutationPending = editMutation.isPending || retractMutation.isPending || hideMutation.isPending;
+  const mutationPending = editMutation.isPending || retractMutation.isPending || hideMutation.isPending || attachmentUploadMutation.isPending || attachmentSendMutation.isPending;
   const getMessageActions = (message: GroupChatMessage): readonly MessageAction[] => {
     const actions: MessageAction[] = [];
     if (canEditGroupChatMessage(message, userId)) actions.push("edit");
@@ -282,10 +448,17 @@ export default function GroupChatMessages({ groupId, groupStatus, canPost, posti
       </div>
       </div>}
     </>}
+    {attachmentFile ? <div className="mt-2 flex items-center gap-2 rounded-xl border border-[#d7e5df] bg-[#f8fbf9] p-2 text-xs text-[#52736a]">
+      {attachmentPreviewUrl ? <img src={attachmentPreviewUrl} alt="Selected attachment preview" className="h-12 w-12 rounded-lg object-cover" /> : <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-[#e8f6ee] text-[10px] font-bold uppercase text-[#1f6a58]">{getGroupChatAttachmentType(attachmentFile)}</span>}
+      <div className="min-w-0 flex-1"><p className="truncate font-semibold text-[#16332b]">{pendingAttachment?.file_name || attachmentFile.name}</p><p>{attachmentUploadMutation.isPending ? "Uploading..." : pendingAttachment ? "Ready to send" : attachmentError ? "Upload failed" : "Preparing attachment..."}</p>{attachmentError ? <p className="mt-1 text-[#8f3b2f]" role="alert">{attachmentError}</p> : null}</div>
+      <div className="flex shrink-0 gap-1.5">{attachmentError && !attachmentUploadMutation.isPending ? <button type="button" onClick={retryAttachmentUpload} disabled={postingDisabled} className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-[#1f6a58] shadow-sm disabled:opacity-50">Retry</button> : null}<button type="button" onClick={clearAttachment} disabled={attachmentUploadMutation.isPending || attachmentSendMutation.isPending} className="rounded-full border border-[#d7e5df] bg-white px-2 py-1 text-[10px] font-semibold text-[#52736a] disabled:opacity-50">Remove</button></div>
+    </div> : null}
     <form className="mt-2 flex shrink-0 items-end gap-2" onSubmit={submit}>
       <label className="sr-only" htmlFor={`group-message-${groupId}`}>Message</label>
-      <textarea ref={composerRef} id={`group-message-${groupId}`} value={draft} onChange={(event) => setDraft(event.target.value)} disabled={postingDisabled || sendMutation.isPending} placeholder={postingDisabled ? "Messaging is unavailable" : "Write a message..."} rows={1} className="min-h-11 max-h-32 min-w-0 flex-1 resize-none overflow-hidden rounded-xl border border-[#d7e5df] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f6a58] disabled:cursor-not-allowed disabled:bg-[#f4faf7]" />
-      <button type="submit" disabled={postingDisabled || sendMutation.isPending || !draft.trim()} className="self-end rounded-full bg-[#1f6a58] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{sendMutation.isPending ? "Sending..." : "Send"}</button>
+      <button type="button" onClick={() => attachmentInputRef.current?.click()} disabled={postingDisabled || attachmentUploadMutation.isPending || attachmentSendMutation.isPending || Boolean(attachmentFile)} aria-label="Attach file" title="Attach file" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#d7e5df] bg-[#f8fbf9] text-[#52736a] transition hover:border-[#1f6a58] hover:text-[#1f6a58] disabled:cursor-not-allowed disabled:opacity-50">+</button>
+      <input ref={attachmentInputRef} type="file" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,audio/*,video/*" className="hidden" onChange={handleAttachmentSelected} />
+      <textarea ref={composerRef} id={`group-message-${groupId}`} value={draft} onChange={(event) => setDraft(event.target.value)} disabled={postingDisabled || sendMutation.isPending || attachmentUploadMutation.isPending || attachmentSendMutation.isPending || Boolean(attachmentFile)} placeholder={postingDisabled ? "Messaging is unavailable" : attachmentFile ? "Remove attachment to write a message" : "Write a message..."} rows={1} className="min-h-11 max-h-32 min-w-0 flex-1 resize-none overflow-hidden rounded-xl border border-[#d7e5df] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f6a58] disabled:cursor-not-allowed disabled:bg-[#f4faf7]" />
+      <button type="submit" disabled={postingDisabled || sendMutation.isPending || attachmentUploadMutation.isPending || attachmentSendMutation.isPending || (!pendingAttachment && !draft.trim())} className="self-end rounded-full bg-[#1f6a58] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{attachmentSendMutation.isPending ? "Sending..." : sendMutation.isPending ? "Sending..." : pendingAttachment ? "Send file" : "Send"}</button>
     </form>
     {sendMutation.isError ? <p className="mt-2 text-sm text-[#b42318]" role="alert">{sendMutation.error.message}</p> : null}
   </div>;

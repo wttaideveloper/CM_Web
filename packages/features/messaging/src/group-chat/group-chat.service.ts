@@ -6,6 +6,9 @@ import type {
   CreateGroupPayload,
   EditGroupChatMessagePayload,
   GroupChatDetails,
+  GroupChatAttachment,
+  GroupChatAttachmentDownloadResponse,
+  GroupChatAttachmentType,
   GroupAvatarUploadResponse,
   GroupChatInvitation,
   GroupChatInvitationDetails,
@@ -48,7 +51,7 @@ import type {
   UpdateGroupDetailsPayload,
   UpdateGroupSettingsPayload,
 } from "./group-chat.types";
-import { buildChangeGroupMemberRolePayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatProviderVerificationCandidateQuery, buildGroupChatTextMessagePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildHideGroupChatMessagePayload, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatPermissions, normalizeGroupChatProviderVerificationCandidate, getGroupChatReopenReasonError, normalizeGroupChatMessageMutationResponse, resolveGroupChatOwnerName } from "../group-chat-models";
+import { buildChangeGroupMemberRolePayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatProviderVerificationCandidateQuery, buildGroupChatTextMessagePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildHideGroupChatMessagePayload, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatPermissions, normalizeGroupChatProviderVerificationCandidate, getGroupChatReopenReasonError, normalizeGroupChatMessageMutationResponse, parseGroupChatAttachmentFileName, resolveGroupChatOwnerName } from "../group-chat-models";
 export { buildCreateGroupPayload, buildGroupMemberInvitePayload } from "../group-chat-models";
 
 const GROUP_CHAT_API_PATH = "/groups";
@@ -81,6 +84,46 @@ export async function uploadGroupAvatar(file: File): Promise<string> {
     if (error instanceof Error && error.name === "AbortError") throw error;
     throw new GroupChatApiError(0, "Unable to upload the Group Chat avatar.");
   }
+}
+
+/** Uploads a Group Chat attachment through the existing authenticated Chat attachment endpoint. */
+export async function uploadGroupChatAttachment(groupId: string, file: File, attachmentType: GroupChatAttachmentType): Promise<GroupChatAttachment> {
+  const normalizedGroupId = groupId.trim();
+  const formData = buildGroupChatAttachmentUploadFormData(normalizedGroupId, file, attachmentType);
+  if (!formData) throw new GroupChatApiError(422, "A Group Chat and attachment are required.");
+
+  try {
+    const response = await chatRequestResponse("/attachments/upload", { method: "POST", body: formData }, false);
+    if (!response.ok) throw new GroupChatApiError(response.status, await backendErrorMessage(response));
+    const parsed = normalizeGroupChatAttachmentUploadResponse(await response.json(), attachmentType, file.name);
+    if (!parsed) throw new GroupChatApiError(502, "The attachment service did not return an attachment ID.");
+    return parsed;
+  } catch (error: unknown) {
+    if (error instanceof GroupChatApiError) throw error;
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    throw new GroupChatApiError(0, "Unable to upload the Group Chat attachment.");
+  }
+}
+
+/** Downloads a Group Chat attachment through the existing authorized binary endpoint. */
+export async function downloadGroupChatAttachment(attachmentId: string): Promise<GroupChatAttachmentDownloadResponse> {
+  const normalizedAttachmentId = attachmentId.trim();
+  if (!normalizedAttachmentId) throw new GroupChatApiError(422, "An attachment identifier is required.");
+
+  const response = await chatRequestResponse(`/attachments/${encodeURIComponent(normalizedAttachmentId)}?download=true`, { method: "GET" }, false);
+  if (!response.ok) throw new GroupChatApiError(response.status, await backendErrorMessage(response));
+  const contentType = response.headers.get("content-type");
+  if (contentType?.toLowerCase().includes("application/json")) {
+    await response.text().catch(() => "");
+    throw new GroupChatApiError(502, "The attachment service returned an invalid file response.");
+  }
+  const blob = await response.blob();
+  return {
+    blob,
+    fileName: parseGroupChatAttachmentFileName(response.headers.get("content-disposition")),
+    mimeType: contentType,
+    fileSize: blob.size,
+  };
 }
 
 type RequestOptions = {
@@ -464,6 +507,15 @@ export async function sendGroupChatTextMessage(groupId: string, content: string,
   if (!normalizedGroupId || !payload) throw new GroupChatApiError(422, "A Group Chat and non-empty message are required.");
   const response = normalizeGroupChatMessage(await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/messages`, new URLSearchParams(), { method: "POST", body: payload }));
   return requireParsed(response, "The Group Chat send response was invalid.");
+}
+
+/** Sends one Group Chat attachment message after the attachment upload succeeds. */
+export async function sendGroupChatAttachmentMessage(groupId: string, attachmentType: GroupChatAttachmentType, attachmentId: string): Promise<GroupChatMessage> {
+  const normalizedGroupId = groupId.trim();
+  const payload = buildGroupChatAttachmentMessagePayload(attachmentType, attachmentId);
+  if (!normalizedGroupId || !payload) throw new GroupChatApiError(422, "A Group Chat and attachment are required.");
+  const response = normalizeGroupChatMessage(await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/messages`, new URLSearchParams(), { method: "POST", body: payload }));
+  return requireParsed(response, "The Group Chat attachment message response was invalid.");
 }
 
 /** Edits one Group Chat message and returns a complete backend message when supplied. */

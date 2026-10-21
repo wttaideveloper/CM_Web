@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatTextMessagePayload, buildHideGroupChatMessagePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canEditGroupChatMessage, canHideGroupChatMessage, canReopenGroupChat, canRetractGroupChatMessage, canSendGroupChatMessage, canUpdateGroupChatSettings, getGroupChatMessageDisplayText, getGroupChatMemberDisplayName, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatPostingRestrictionMessage, getGroupChatReopenReasonError, getMemberManagementActions, isSupportedGroupAvatarFile, mergeGroupChatMessagePages, normalizeGroupAvatarUploadResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageMutationResponse, normalizeGroupChatPermissions, normalizeGroupLearner, normalizeGroupProvider, parseGroupChatMessageTimestamp, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
+import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatTextMessagePayload, buildHideGroupChatMessagePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canEditGroupChatMessage, canHideGroupChatMessage, canReopenGroupChat, canRetractGroupChatMessage, canSendGroupChatMessage, canUpdateGroupChatSettings, formatGroupChatAttachmentSummary, getGroupChatMessageDisplayText, getGroupChatMemberDisplayName, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatPostingRestrictionMessage, getGroupChatReopenReasonError, getMemberManagementActions, isSupportedGroupAvatarFile, mergeGroupChatMessagePages, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageMutationResponse, normalizeGroupChatPermissions, normalizeGroupLearner, normalizeGroupProvider, parseGroupChatAttachmentFileName, parseGroupChatMessageTimestamp, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAttachmentMetadata, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
 import type { GroupChatMember } from "./group-chat/group-chat.types";
 
 test("builds the documented Group Chat avatar multipart fields", () => {
@@ -56,6 +56,24 @@ test("preserves supported avatar URLs and rejects unsupported values", () => {
 test("accepts image avatars without inventing a size restriction", () => {
   assert.equal(isSupportedGroupAvatarFile(new File(["image"], "group.png", { type: "image/png" })), true);
   assert.equal(isSupportedGroupAvatarFile(new File(["text"], "notes.txt", { type: "text/plain" })), false);
+});
+
+test("builds the existing attachment upload contract for a Group conversation", () => {
+  const file = new File(["image"], "photo.png", { type: "image/png" });
+  const formData = buildGroupChatAttachmentUploadFormData(" group-1 ", file, "image");
+  assert.ok(formData);
+  assert.equal(formData.get("conversation_id"), "group-1");
+  assert.equal(formData.get("file"), file);
+  assert.equal(formData.get("attachment_type"), "image");
+  assert.equal(buildGroupChatAttachmentUploadFormData("", file, "image"), null);
+});
+
+test("normalizes the Direct Chat attachment response fields and builds the Group message body", () => {
+  const attachment = normalizeGroupChatAttachmentUploadResponse({ data: { attachment_id: "attachment-1", filename: "report.pdf", attachment_type: "document", download_url: "/attachments/attachment-1", file_size: 42, mime_type: "application/pdf" } }, "document", "fallback.pdf");
+  assert.deepEqual(attachment, { id: "attachment-1", file_name: "report.pdf", attachment_type: "document", download_url: "/attachments/attachment-1", file_size: 42, mime_type: "application/pdf" });
+  assert.deepEqual(buildGroupChatAttachmentMessagePayload("image", " attachment-2 "), { message_type: "image", attachment_id: "attachment-2" });
+  assert.equal(buildGroupChatAttachmentMessagePayload("image", " "), null);
+  assert.equal(normalizeGroupChatAttachmentUploadResponse({ data: {} }, "image", "photo.png"), null);
 });
 
 test("uses only the explicit backend close permission", () => {
@@ -309,6 +327,136 @@ test("normalizes the documented Group Chat message response", () => {
   assert.equal(message?.sender_name, "Provider One");
   assert.equal(message?.content, "Hello everyone");
   assert.equal(normalizeGroupChatMessage({ id: "missing-contract-fields" }), null);
+});
+
+test("preserves attachment metadata in Group Chat history", () => {
+  const message = normalizeGroupChatMessage({
+    id: "image-message",
+    conversation_id: "group-1",
+    sender_id: "user-1",
+    sender_name: "Provider One",
+    sender_kind: "provider",
+    message_type: "image",
+    content: null,
+    attachment_id: "attachment-1",
+    file_name: "photo.png",
+    mime_type: "image/png",
+    attachment: { attachment_id: "attachment-1", file_name: "photo.png", attachment_type: "image", mime_type: "image/png" },
+    status: "visible",
+    placeholder: null,
+    reply_to: null,
+    mentions: [],
+    mentions_all: false,
+    mentions_me: false,
+    is_edited: false,
+    edited_at: null,
+    pinned: false,
+    reactions: {},
+    my_reactions: [],
+    read_by: [],
+    created_at: "2026-10-19T09:00:00Z",
+  });
+  assert.equal(message?.attachment_id, "attachment-1");
+  assert.equal(message?.file_name, "photo.png");
+  assert.equal(message?.attachment?.attachment_type, "image");
+});
+
+test("allows an attachment author to retract without exposing edit", () => {
+  const message = normalizeGroupChatMessage({
+    id: "attachment-message",
+    conversation_id: "group-1",
+    sender_id: "user-1",
+    sender_name: "Provider One",
+    sender_kind: "provider",
+    message_type: "image",
+    content: null,
+    attachment_id: "attachment-1",
+    status: "visible",
+    placeholder: null,
+    reply_to: null,
+    mentions: [],
+    mentions_all: false,
+    mentions_me: false,
+    is_edited: false,
+    edited_at: null,
+    pinned: false,
+    reactions: {},
+    my_reactions: [],
+    read_by: [],
+    created_at: "2026-10-19T09:00:00Z",
+  })!;
+  assert.equal(canRetractGroupChatMessage(message, "user-1"), true);
+  assert.equal(canRetractGroupChatMessage(message, "user-2"), false);
+  assert.equal(canEditGroupChatMessage(message, "user-1"), false);
+  assert.equal(canRetractGroupChatMessage({ ...message, message_type: "system" }, "user-1"), false);
+  assert.equal(canRetractGroupChatMessage({ ...message, status: "removed_by_admin" }, "user-1"), false);
+});
+
+test("resolves authorized attachment metadata and keeps a safe fallback", () => {
+  const message = normalizeGroupChatMessage({
+    id: "attachment-metadata",
+    conversation_id: "group-1",
+    sender_id: "user-1",
+    sender_name: "Provider One",
+    sender_kind: "provider",
+    message_type: "image",
+    content: null,
+    attachment_id: "attachment-1",
+    status: "visible",
+    placeholder: null,
+    reply_to: null,
+    mentions: [],
+    mentions_all: false,
+    mentions_me: false,
+    is_edited: false,
+    edited_at: null,
+    pinned: false,
+    reactions: {},
+    my_reactions: [],
+    created_at: "2026-10-19T09:00:00Z",
+  })!;
+  assert.deepEqual(resolveGroupChatAttachmentMetadata(message, { fileName: "Castlevania_S4.webp", mimeType: "image/webp", fileSize: 893 * 1024 }), { file_name: "Castlevania_S4.webp", mime_type: "image/webp", file_size: 893 * 1024 });
+  assert.equal(formatGroupChatAttachmentSummary({ file_name: "report.pdf", mime_type: "application/pdf", file_size: Math.round(1.34 * 1024 * 1024) }), "PDF document · 1.34 MB");
+  assert.equal(formatGroupChatAttachmentSummary({ file_name: "Attachment", mime_type: null, file_size: null }), "Protected file");
+  assert.deepEqual(resolveGroupChatAttachmentMetadata(message), { file_name: "Attachment", mime_type: null, file_size: null });
+});
+
+test("parses standard Content-Disposition filename forms safely", () => {
+  assert.equal(parseGroupChatAttachmentFileName("attachment; filename*=UTF-8''Attachment%20%281%29.pdf"), "Attachment (1).pdf");
+  assert.equal(parseGroupChatAttachmentFileName('attachment; filename="spaces and (parentheses).pdf"'), "spaces and (parentheses).pdf");
+  assert.equal(parseGroupChatAttachmentFileName("attachment; filename=Events_User_Flow.pdf"), "Events_User_Flow.pdf");
+  assert.equal(parseGroupChatAttachmentFileName("attachment; filename=ordinary.pdf; filename*=UTF-8''preferred%20name.pdf"), "preferred name.pdf");
+  assert.equal(parseGroupChatAttachmentFileName(null), null);
+  assert.equal(parseGroupChatAttachmentFileName("attachment; filename*=UTF-8''bad%ZZ.pdf; filename=Fallback.pdf"), "Fallback.pdf");
+  assert.equal(parseGroupChatAttachmentFileName("attachment; filename*=UTF-16''ignored.pdf; filename=Fallback.pdf"), "Fallback.pdf");
+});
+
+test("keeps metadata resolution independent for multiple attachments", () => {
+  const createMessage = (id: string, attachmentId: string) => normalizeGroupChatMessage({
+    id,
+    conversation_id: "group-1",
+    sender_id: "user-1",
+    sender_name: "Provider One",
+    sender_kind: "provider",
+    message_type: "document",
+    content: null,
+    attachment_id: attachmentId,
+    status: "visible",
+    placeholder: null,
+    reply_to: null,
+    mentions: [],
+    mentions_all: false,
+    mentions_me: false,
+    is_edited: false,
+    edited_at: null,
+    pinned: false,
+    reactions: {},
+    created_at: "2026-10-19T09:00:00Z",
+  })!;
+  const first = resolveGroupChatAttachmentMetadata(createMessage("message-1", "attachment-1"), { fileName: "Attachment (1).pdf", mimeType: "application/pdf", fileSize: 1024 });
+  const second = resolveGroupChatAttachmentMetadata(createMessage("message-2", "attachment-2"), { fileName: "Events_User_Flow.pdf", mimeType: "application/pdf", fileSize: 2048 });
+  assert.equal(first.file_name, "Attachment (1).pdf");
+  assert.equal(second.file_name, "Events_User_Flow.pdf");
 });
 
 test("normalizes cursor history and preserves safe hidden-message placeholders", () => {

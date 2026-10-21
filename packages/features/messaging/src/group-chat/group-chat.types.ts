@@ -130,6 +130,44 @@ export interface GroupChatDetails extends GroupChatSummary {
   owner: GroupChatMember | null;
 }
 
+export type GroupChatAttachmentType = "image" | "document" | "audio" | "video";
+
+/** Attachment metadata returned by the existing Chat attachment infrastructure. */
+export interface GroupChatAttachment {
+  id: string;
+  file_name: string;
+  attachment_type: GroupChatAttachmentType;
+  download_url: string | null;
+  file_size: number | null;
+  mime_type: string | null;
+}
+
+/** Authorized binary response returned by the existing Chat attachment download endpoint. */
+export interface GroupChatAttachmentDownloadResponse {
+  blob: Blob;
+  fileName: string | null;
+  mimeType: string | null;
+  fileSize: number | null;
+}
+
+export interface GroupChatAttachmentDisplayMetadata {
+  file_name: string;
+  mime_type: string | null;
+  file_size: number | null;
+}
+
+/** Optional attachment metadata embedded in a Group Chat message response. */
+export interface GroupChatMessageAttachment {
+  id: string | null;
+  attachment_id: string | null;
+  file_name: string | null;
+  filename: string | null;
+  attachment_type: string | null;
+  download_url: string | null;
+  file_size: number | null;
+  mime_type: string | null;
+}
+
 /** Message returned by the Group Chat REST history and send endpoints. */
 export interface GroupChatMessage {
   id: string;
@@ -140,6 +178,12 @@ export interface GroupChatMessage {
   message_type: string;
   content: string | null;
   attachment_id: string | null;
+  file_name: string | null;
+  filename: string | null;
+  download_url: string | null;
+  file_size: number | null;
+  mime_type: string | null;
+  attachment: GroupChatMessageAttachment | null;
   status: string;
   placeholder: string | null;
   reply_to: Record<string, unknown> | null;
@@ -176,6 +220,12 @@ export interface GroupChatMessageListParams {
 export interface SendGroupChatMessagePayload {
   content: string;
   reply_to_id?: string;
+}
+
+/** Request body documented for a Group Chat attachment message. */
+export interface SendGroupChatAttachmentMessagePayload {
+  message_type: GroupChatAttachmentType;
+  attachment_id: string;
 }
 
 /** Request body accepted by PATCH /groups/{group_id}/messages/{message_id}. */
