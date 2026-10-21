@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { useAuth } from "@ihp/auth";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { addGroupChatMessageReaction, downloadGroupChatAttachment, editGroupChatMessage, getGroupChatReactions, hideGroupChatMessage, listGroupChatMessages, markGroupChatRead, removeGroupChatMessageReaction, retractGroupChatMessage, sendGroupChatAttachmentMessage, sendGroupChatTextMessage, uploadGroupChatAttachment } from "./group-chat/group-chat.service";
-import { buildEditGroupChatMessagePayload, canEditGroupChatMessage, canHideGroupChatMessage, canReactToGroupChatMessage, canReplyToGroupChatMessage, canRetractGroupChatMessage, canSendGroupChatMessage, formatGroupChatAttachmentSummary, getGroupChatMessageDisplayText, getGroupChatPostingRestrictionMessage, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, isGroupChatReactionSelected, mergeGroupChatMessagePages, normalizeGroupChatReactionCounts, resolveGroupChatAttachmentMetadata } from "./group-chat-models";
+import { addGroupChatMessageReaction, downloadGroupChatAttachment, editGroupChatMessage, getGroupChatReactions, hideGroupChatMessage, listGroupChatMessages, listGroupChatPinnedMessages, markGroupChatRead, pinGroupChatMessage, removeGroupChatMessageReaction, retractGroupChatMessage, sendGroupChatAttachmentMessage, sendGroupChatTextMessage, unpinGroupChatMessage, uploadGroupChatAttachment } from "./group-chat/group-chat.service";
+import { buildEditGroupChatMessagePayload, canEditGroupChatMessage, canHideGroupChatMessage, canPinGroupChatMessage, canReactToGroupChatMessage, canReplyToGroupChatMessage, canRetractGroupChatMessage, canSendGroupChatMessage, formatGroupChatAttachmentSummary, getGroupChatMessageDisplayText, getGroupChatPostingRestrictionMessage, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, isGroupChatReactionSelected, mergeGroupChatMessagePages, normalizeGroupChatReactionCounts, resolveGroupChatAttachmentMetadata } from "./group-chat-models";
 import type { GroupChatAttachment, GroupChatAttachmentType, GroupChatMessage, GroupChatReactionSettings } from "./group-chat/group-chat.types";
 
 type Props = {
@@ -13,10 +13,13 @@ type Props = {
   canPost: boolean | null;
   postingMuted: boolean | null;
   canHideMessages: boolean | null;
+  canPinMessages: boolean | null;
+  currentMemberKind: string | null;
   currentMemberStatus: string | null;
 };
 
 const messageKey = (groupId: string) => ["group-chat", "messages", groupId];
+const pinnedKey = (groupId: string) => ["group-chat", "pinned", groupId];
 
 type EditVariables = { groupId: string; messageId: string; content: string };
 type MessageActionVariables = { groupId: string; messageId: string };
@@ -25,6 +28,7 @@ type SendVariables = { content: string; replyToId?: string };
 type AttachmentUploadVariables = { groupId: string; file: File; attachmentType: GroupChatAttachmentType };
 type AttachmentSendVariables = { groupId: string; attachment: GroupChatAttachment };
 type ReactionVariables = { groupId: string; messageId: string; emoji: string; remove: boolean };
+type PinVariables = { groupId: string; messageId: string; pinned: boolean };
 
 function formatMessageTime(value: string): string {
   const date = new Date(value);
@@ -111,7 +115,16 @@ function GroupChatAttachmentMessage({ message }: { message: GroupChatMessage }) 
   </div>;
 }
 
-type MessageAction = "reply" | "edit" | "retract" | "hide";
+type MessageAction = "reply" | "edit" | "retract" | "hide" | "pin" | "unpin";
+
+function getPinnedMessagePreview(message: GroupChatMessage): string {
+  if (message.status.trim().toLowerCase() !== "visible") return "Original message unavailable.";
+  if (message.attachment_id) {
+    const type = getMessageAttachmentType(message);
+    return `${type.charAt(0).toUpperCase()}${type.slice(1)} attachment`;
+  }
+  return getGroupChatMessageDisplayText(message);
+}
 
 type ReactionControlsProps = {
   message: GroupChatMessage;
@@ -193,7 +206,7 @@ function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen
         {actions.length > 0 ? <div className="absolute right-1 top-1 z-10">
           <button type="button" aria-label={`Message actions for ${message.sender_name}`} aria-haspopup="menu" aria-expanded={menuOpen} title="Message actions" disabled={mutationPending} onClick={onToggleMenu} className="flex h-7 w-7 items-center justify-center rounded-full bg-white/80 text-sm font-bold text-[#52736a] opacity-0 shadow-sm transition-opacity hover:bg-white focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-50">⋯</button>
           {menuOpen ? <div role="menu" aria-label="Message actions" className="absolute right-0 top-8 z-30 w-56 rounded-xl border border-[#d7e5df] bg-white p-2 text-sm text-[#16332b] shadow-lg">
-            {pendingAction === null ? actions.map((action) => <button key={action} type="button" role="menuitem" onClick={() => onSelectAction(action)} className="block w-full rounded-lg px-3 py-2 text-left font-semibold hover:bg-[#e8f6ee] focus-visible:bg-[#e8f6ee] focus-visible:outline-none">{action === "reply" ? "Reply to message" : action === "edit" ? "Edit message" : action === "retract" ? "Retract message" : "Hide message"}</button>) : <div>
+            {pendingAction === null ? actions.map((action) => <button key={action} type="button" role="menuitem" onClick={() => onSelectAction(action)} className="block w-full rounded-lg px-3 py-2 text-left font-semibold hover:bg-[#e8f6ee] focus-visible:bg-[#e8f6ee] focus-visible:outline-none">{action === "reply" ? "Reply to message" : action === "edit" ? "Edit message" : action === "retract" ? "Retract message" : action === "hide" ? "Hide message" : action === "pin" ? "Pin message" : "Unpin message"}</button>) : <div>
               <p className="px-2 py-1 font-semibold">{menuLabel}</p>
               {pendingAction === "retract" ? <p className="px-2 py-1 text-xs text-[#52736a]">The original message will remain available for audit and will no longer be visible here.</p> : <label className="mt-2 block px-2 text-xs font-semibold text-[#52736a]">Reason<textarea value={hideReason} maxLength={255} onChange={(event) => onHideReasonChange(event.target.value)} disabled={mutationPending} className="mt-1 min-h-20 w-full rounded-lg border border-[#d7e5df] p-2 text-sm font-normal text-[#16332b] outline-none focus:border-[#1f6a58]" /></label>}
               <div className="mt-2 flex gap-2 px-2 pb-1"><button type="button" disabled={mutationPending || (pendingAction === "hide" && !hideReason.trim())} onClick={onConfirmAction} className="rounded-full bg-[#1f6a58] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{mutationPending ? pendingAction === "retract" ? "Retracting..." : "Hiding..." : "Confirm"}</button><button type="button" disabled={mutationPending} onClick={onCancelAction} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-xs font-semibold text-[#16332b]">Cancel</button></div>
@@ -204,6 +217,7 @@ function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen
           <span className="font-semibold">{message.sender_name}</span>
           <time dateTime={message.created_at}>{formatMessageTime(message.created_at)}</time>
           {message.is_edited ? <span className="italic">Edited</span> : null}
+          {message.pinned && !unavailable ? <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${isOwnMessage ? "bg-[#d8f3e4] text-[#16332b]" : "bg-[#e8f6ee] text-[#1f6a58]"}`}>Pinned</span> : null}
         </div>
         {!unavailable && message.reply_to ? <div className={`mb-2 border-l-2 pl-2 text-xs ${isOwnMessage ? "border-[#d8f3e4] text-[#e5f8eb]" : "border-[#8ccaa2] text-[#52736a]"}`}>
           {replyTarget ? <button type="button" onClick={() => onReplyReference(message.reply_to!.id)} className="block max-w-full text-left hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d8f3e4]"><span className={`block truncate font-semibold ${isOwnMessage ? "text-white" : "text-[#1f6a58]"}`}>{message.reply_to.sender_name}</span><span className="block truncate">{getGroupChatReplyReferencePreview(message.reply_to, replyTarget)}</span></button> : <div><span className={`block truncate font-semibold ${isOwnMessage ? "text-white" : "text-[#1f6a58]"}`}>{message.reply_to.sender_name}</span><span className="block truncate">{getGroupChatReplyReferencePreview(message.reply_to)}</span></div>}
@@ -216,7 +230,7 @@ function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen
 }
 
 /** Renders REST-only Group Chat history and text messaging without using Direct Chat or Socket.IO. */
-export default function GroupChatMessages({ groupId, groupStatus, canPost, postingMuted, canHideMessages, currentMemberStatus }: Props) {
+export default function GroupChatMessages({ groupId, groupStatus, canPost, postingMuted, canHideMessages, canPinMessages, currentMemberKind, currentMemberStatus }: Props) {
   const { userId } = useAuth();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState("");
@@ -242,6 +256,7 @@ export default function GroupChatMessages({ groupId, groupStatus, canPost, posti
   const [replyingTo, setReplyingTo] = useState<GroupChatMessage | null>(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const [openReactionPickerId, setOpenReactionPickerId] = useState<string | null>(null);
+  const [pinnedPanelOpen, setPinnedPanelOpen] = useState(false);
   const groupIsClosed = groupStatus?.trim().toLowerCase() === "closed";
   const historyQuery = useInfiniteQuery({
     queryKey: messageKey(groupId),
@@ -253,6 +268,12 @@ export default function GroupChatMessages({ groupId, groupStatus, canPost, posti
   const reactionQuery = useQuery({
     queryKey: ["group-chat", "reactions", groupId],
     queryFn: ({ signal }) => getGroupChatReactions(groupId, signal),
+    enabled: Boolean(groupId.trim()),
+    retry: false,
+  });
+  const pinnedQuery = useQuery({
+    queryKey: pinnedKey(groupId),
+    queryFn: ({ signal }) => listGroupChatPinnedMessages(groupId, signal),
     enabled: Boolean(groupId.trim()),
     retry: false,
   });
@@ -359,6 +380,22 @@ export default function GroupChatMessages({ groupId, groupStatus, canPost, posti
       if (variables.groupId === groupId) setActionError(`Unable to update reaction: ${error.message}`);
     },
   });
+  const pinMutation = useMutation({
+    mutationFn: ({ groupId: targetGroupId, messageId, pinned }: PinVariables) => pinned ? pinGroupChatMessage(targetGroupId, messageId) : unpinGroupChatMessage(targetGroupId, messageId),
+    retry: false,
+    onSuccess: async (_message, variables) => {
+      if (variables.groupId !== groupId) return;
+      setOpenMenuId(null);
+      setActionError(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: messageKey(groupId) }),
+        queryClient.invalidateQueries({ queryKey: pinnedKey(groupId) }),
+      ]);
+    },
+    onError: (error: Error, variables) => {
+      if (variables.groupId === groupId) setActionError(`Unable to ${variables.pinned ? "pin" : "unpin"} message: ${error.message}`);
+    },
+  });
   const hasLoadedHistory = pages.length > 0;
 
   useEffect(() => {
@@ -380,9 +417,11 @@ export default function GroupChatMessages({ groupId, groupStatus, canPost, posti
     setReplyingTo(null);
     setHighlightedMessageId(null);
     setOpenReactionPickerId(null);
+    setPinnedPanelOpen(false);
     attachmentUploadMutation.reset();
     attachmentSendMutation.reset();
     reactionMutation.reset();
+    pinMutation.reset();
   }, [groupId]);
 
   useEffect(() => {
@@ -512,24 +551,33 @@ export default function GroupChatMessages({ groupId, groupStatus, canPost, posti
   };
   const postingDisabled = !canSendGroupChatMessage(groupStatus, canPost, postingMuted === true);
   const restrictionMessage = getGroupChatPostingRestrictionMessage(groupStatus, canPost, postingMuted);
-  const mutationPending = editMutation.isPending || retractMutation.isPending || hideMutation.isPending || attachmentUploadMutation.isPending || attachmentSendMutation.isPending;
+  const mutationPending = editMutation.isPending || retractMutation.isPending || hideMutation.isPending || attachmentUploadMutation.isPending || attachmentSendMutation.isPending || pinMutation.isPending;
   const reactionSettings = reactionQuery.data ?? null;
   const reactionMutationPending = reactionMutation.isPending;
   const toggleReaction = (message: GroupChatMessage, emoji: string) => {
     if (!reactionSettings?.enabled || !reactionSettings.emojis.includes(emoji) || !canReactToGroupChatMessage(message) || reactionMutation.isPending) return;
     reactionMutation.mutate({ groupId, messageId: message.id, emoji, remove: isGroupChatReactionSelected(message, emoji) });
   };
+  const pinnedMessages = pinnedQuery.data?.items ?? [];
+  const pinnedCount = pages[0]?.pinned_count ?? pinnedQuery.data?.pinned_count ?? 0;
   const getMessageActions = (message: GroupChatMessage): readonly MessageAction[] => {
     const actions: MessageAction[] = [];
     if (!attachmentFile && canReplyToGroupChatMessage(message, groupStatus, canPost, postingMuted === true)) actions.push("reply");
     if (canEditGroupChatMessage(message, userId)) actions.push("edit");
     if (canRetractGroupChatMessage(message, userId)) actions.push("retract");
     if (canHideGroupChatMessage(message, canHideMessages, currentMemberStatus)) actions.push("hide");
+    if (canPinGroupChatMessage(message, canPinMessages, currentMemberKind)) actions.push(message.pinned ? "unpin" : "pin");
     return actions;
   };
 
   return <div className="flex min-h-0 flex-1 flex-col" aria-label="Group conversation">
     {pages[0]?.unread_count ? <div className="flex shrink-0 justify-end"><span className="rounded-full bg-[#e8f6ee] px-2.5 py-1 text-xs font-semibold text-[#1f6a58]">{pages[0].unread_count} unread</span></div> : null}
+    <div className="mt-2 shrink-0">
+      <button type="button" aria-expanded={pinnedPanelOpen} onClick={() => setPinnedPanelOpen((open) => !open)} className="rounded-full border border-[#d7e5df] bg-[#f8fbf9] px-3 py-1.5 text-xs font-semibold text-[#1f6a58] hover:border-[#1f6a58]">Pinned messages ({pinnedCount})</button>
+      {pinnedPanelOpen ? <section className="mt-2 rounded-xl border border-[#d7e5df] bg-[#f8fbf9] p-2" aria-label="Pinned messages">
+        {pinnedQuery.isPending ? <p className="p-2 text-xs text-[#52736a]">Loading pinned messages...</p> : pinnedQuery.isError ? <div className="p-2 text-xs text-[#7a271a]" role="alert"><p>Pinned messages are unavailable right now.</p><button type="button" onClick={() => void pinnedQuery.refetch()} className="mt-1 font-semibold underline">Try again</button></div> : pinnedMessages.length === 0 ? <p className="p-2 text-xs text-[#52736a]">No pinned messages.</p> : <div className="space-y-1">{pinnedMessages.map((message) => { const loaded = messages.some((candidate) => candidate.id === message.id); return <div key={message.id} className="flex items-center gap-2 rounded-lg bg-white px-2 py-1.5"><button type="button" disabled={!loaded} onClick={() => locateReplyTarget(message.id)} className="min-w-0 flex-1 text-left disabled:cursor-default disabled:opacity-70"><span className="block truncate text-xs font-semibold text-[#16332b]">{message.sender_name}</span><span className="block truncate text-xs text-[#52736a]">{getPinnedMessagePreview(message)}</span></button>{loaded ? <span className="text-[10px] font-semibold text-[#1f6a58]">Jump</span> : <span className="text-[10px] text-[#7f9d94]">Not loaded</span>}</div>; })}</div>}
+      </section> : null}
+    </div>
     {restrictionMessage ? <p className={`mt-2 shrink-0 rounded-lg p-2 text-xs ${groupIsClosed ? "border border-[#f1d8ad] bg-[#fffaf0] text-[#8b5e00]" : "border border-[#d7e5df] bg-white text-[#52736a]"}`} role="status">{restrictionMessage}</p> : null}
     {readError ? <p className="mt-2 shrink-0 rounded-lg border border-[#f3d5d1] bg-[#fff7f6] p-2 text-xs text-[#7a271a]" role="alert">{readError}</p> : null}
     {actionError ? <p className="mt-2 shrink-0 rounded-lg border border-[#f3d5d1] bg-[#fff7f6] p-2 text-xs text-[#7a271a]" role="alert">{actionError}</p> : null}
@@ -544,7 +592,7 @@ export default function GroupChatMessages({ groupId, groupStatus, canPost, posti
         const actions = getMessageActions(message);
         const messagePendingAction = pendingAction?.messageId === message.id ? pendingAction.action : null;
         const messageIsEditing = editingMessageId === message.id;
-        return <MessageBubble key={message.id} message={message} isOwnMessage={message.sender_id === userId} isFirstUnread={message.id === firstUnreadMessageId} actions={actions} menuOpen={openMenuId === message.id} pendingAction={messagePendingAction} editMode={messageIsEditing} editDraft={editDraft} editError={messageIsEditing ? editError : null} hideReason={hideReason} mutationPending={mutationPending} replyTarget={message.reply_to ? messages.find((candidate) => candidate.id === message.reply_to?.id) ?? null : null} highlighted={highlightedMessageId === message.id} reactionSettings={reactionSettings} reactionPickerOpen={openReactionPickerId === message.id} reactionMutationPending={reactionMutationPending} onToggleReactionPicker={() => { if (!reactionMutationPending && reactionSettings?.enabled) setOpenReactionPickerId((current) => current === message.id ? null : message.id); }} onToggleReaction={(emoji) => toggleReaction(message, emoji)} onToggleMenu={() => { if (!mutationPending) { setOpenMenuId((current) => current === message.id ? null : message.id); setPendingAction(null); setActionError(null); } }} onReplyReference={locateReplyTarget} onSelectAction={(action) => { setActionError(null); if (action === "reply") { setReplyingTo(message); setOpenMenuId(null); setPendingAction(null); return; } if (action === "edit") { setEditingMessageId(message.id); setEditDraft(message.content ?? ""); setEditError(null); setPendingAction(null); setOpenMenuId(null); } else { setPendingAction({ messageId: message.id, action }); setOpenMenuId(message.id); if (action === "hide") setHideReason(""); } }} onEditDraftChange={(value) => { setEditDraft(value); setEditError(null); }} onSaveEdit={() => { const payload = buildEditGroupChatMessagePayload(editDraft); if (!payload) { setEditError("Message content cannot be empty."); return; } editMutation.mutate({ groupId, messageId: message.id, content: payload.content }); }} onCancelEdit={() => { setEditingMessageId(null); setEditDraft(""); setEditError(null); setActionError(null); }} onHideReasonChange={(value) => { setHideReason(value); setActionError(null); }} onConfirmAction={() => { if (messagePendingAction === "retract") retractMutation.mutate({ groupId, messageId: message.id }); if (messagePendingAction === "hide" && hideReason.trim()) hideMutation.mutate({ groupId, messageId: message.id, reason: hideReason }); }} onCancelAction={() => { setOpenMenuId(null); setPendingAction(null); setHideReason(""); setActionError(null); }} />;
+        return <MessageBubble key={message.id} message={message} isOwnMessage={message.sender_id === userId} isFirstUnread={message.id === firstUnreadMessageId} actions={actions} menuOpen={openMenuId === message.id} pendingAction={messagePendingAction} editMode={messageIsEditing} editDraft={editDraft} editError={messageIsEditing ? editError : null} hideReason={hideReason} mutationPending={mutationPending} replyTarget={message.reply_to ? messages.find((candidate) => candidate.id === message.reply_to?.id) ?? null : null} highlighted={highlightedMessageId === message.id} reactionSettings={reactionSettings} reactionPickerOpen={openReactionPickerId === message.id} reactionMutationPending={reactionMutationPending} onToggleReactionPicker={() => { if (!reactionMutationPending && reactionSettings?.enabled) setOpenReactionPickerId((current) => current === message.id ? null : message.id); }} onToggleReaction={(emoji) => toggleReaction(message, emoji)} onToggleMenu={() => { if (!mutationPending) { setOpenMenuId((current) => current === message.id ? null : message.id); setPendingAction(null); setActionError(null); } }} onReplyReference={locateReplyTarget} onSelectAction={(action) => { setActionError(null); if (action === "reply") { setReplyingTo(message); setOpenMenuId(null); setPendingAction(null); return; } if (action === "edit") { setEditingMessageId(message.id); setEditDraft(message.content ?? ""); setEditError(null); setPendingAction(null); setOpenMenuId(null); return; } if (action === "pin" || action === "unpin") { setOpenMenuId(null); setPendingAction(null); pinMutation.mutate({ groupId, messageId: message.id, pinned: action === "pin" }); return; } setPendingAction({ messageId: message.id, action }); setOpenMenuId(message.id); if (action === "hide") setHideReason(""); }} onEditDraftChange={(value) => { setEditDraft(value); setEditError(null); }} onSaveEdit={() => { const payload = buildEditGroupChatMessagePayload(editDraft); if (!payload) { setEditError("Message content cannot be empty."); return; } editMutation.mutate({ groupId, messageId: message.id, content: payload.content }); }} onCancelEdit={() => { setEditingMessageId(null); setEditDraft(""); setEditError(null); setActionError(null); }} onHideReasonChange={(value) => { setHideReason(value); setActionError(null); }} onConfirmAction={() => { if (messagePendingAction === "retract") retractMutation.mutate({ groupId, messageId: message.id }); if (messagePendingAction === "hide" && hideReason.trim()) hideMutation.mutate({ groupId, messageId: message.id, reason: hideReason }); }} onCancelAction={() => { setOpenMenuId(null); setPendingAction(null); setHideReason(""); setActionError(null); }} />;
       })}
       </div>
       </div>}

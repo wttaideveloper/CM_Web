@@ -282,7 +282,7 @@ export default function GroupChatWorkspace({ groupId, onClose }: Props) {
         </div>
       </div>
       <div className="mt-2 min-h-0 flex-1 flex flex-col">
-        <GroupChatMessages groupId={group.id} groupStatus={group.status} canPost={group.permissions.can_post} postingMuted={currentMember?.posting_muted ?? null} canHideMessages={group.permissions.can_hide_messages} currentMemberStatus={currentMember?.membership_status ?? null} />
+        <GroupChatMessages groupId={group.id} groupStatus={group.status} canPost={group.permissions.can_post} postingMuted={currentMember?.posting_muted ?? null} canHideMessages={group.permissions.can_hide_messages} canPinMessages={group.permissions.can_pin_messages} currentMemberKind={currentMember?.member_kind ?? null} currentMemberStatus={currentMember?.membership_status ?? null} />
       </div>
     </div>
     {detailsOpen ? <GroupDetailsPanel group={group} groupId={groupId} canViewMembers={canViewMembers} canInviteMembers={canInviteMembers} onClose={() => setDetailsOpen(false)} /> : null}

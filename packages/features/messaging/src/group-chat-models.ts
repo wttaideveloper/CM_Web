@@ -520,6 +520,11 @@ export function normalizeGroupChatMessageHistory(value: unknown): GroupChatMessa
   };
 }
 
+/** Normalizes the pinned-message list using the same privacy and pagination contract as history. */
+export function normalizeGroupChatPinnedMessageHistory(value: unknown): GroupChatMessageHistoryResponse | null {
+  return normalizeGroupChatMessageHistory(value);
+}
+
 /** Builds the documented text-message body and rejects blank content. */
 export function buildGroupChatTextMessagePayload(content: string, replyToId = ""): SendGroupChatMessagePayload | null {
   const normalizedContent = content.trim();
@@ -581,6 +586,12 @@ export function canReplyToGroupChatMessage(message: GroupChatMessage, groupStatu
   if (!canSendGroupChatMessage(groupStatus, canPost, postingMuted)) return false;
   const status = message.status.trim().toLowerCase();
   return status === "visible" && message.message_type.trim().toLowerCase() !== "system";
+}
+
+/** Allows pin controls only when the backend grants them to a known Provider member. */
+export function canPinGroupChatMessage(message: GroupChatMessage, canPinMessages: boolean | null, memberKind: string | null | undefined): boolean {
+  if (canPinMessages !== true || memberKind?.trim().toLowerCase() !== "provider") return false;
+  return message.status.trim().toLowerCase() === "visible" && message.message_type.trim().toLowerCase() !== "system";
 }
 
 /** Returns true when a visible non-system message may be moderated by an authorized active member. */

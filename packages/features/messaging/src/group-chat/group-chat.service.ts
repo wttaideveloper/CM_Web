@@ -52,7 +52,7 @@ import type {
   UpdateGroupDetailsPayload,
   UpdateGroupSettingsPayload,
 } from "./group-chat.types";
-import { buildChangeGroupMemberRolePayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatProviderVerificationCandidateQuery, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatTextMessagePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildHideGroupChatMessagePayload, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatPermissions, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatReactionSettings, getGroupChatReopenReasonError, normalizeGroupChatMessageMutationResponse, parseGroupChatAttachmentFileName, resolveGroupChatOwnerName } from "../group-chat-models";
+import { buildChangeGroupMemberRolePayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatProviderVerificationCandidateQuery, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatTextMessagePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildHideGroupChatMessagePayload, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPermissions, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatReactionSettings, getGroupChatReopenReasonError, normalizeGroupChatMessageMutationResponse, parseGroupChatAttachmentFileName, resolveGroupChatOwnerName } from "../group-chat-models";
 export { buildCreateGroupPayload, buildGroupMemberInvitePayload } from "../group-chat-models";
 
 const GROUP_CHAT_API_PATH = "/groups";
@@ -517,6 +517,32 @@ export async function removeGroupChatMessageReaction(groupId: string, messageId:
   const query = buildGroupChatReactionQuery(emoji);
   if (!normalizedGroupId || !normalizedMessageId || !query) throw new GroupChatApiError(422, "A Group Chat, message, and valid reaction are required.");
   await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/messages/${encodeURIComponent(normalizedMessageId)}/reactions`, query, { method: "DELETE" });
+}
+
+/** Loads the authorized pinned-message list for one Group Chat. */
+export async function listGroupChatPinnedMessages(groupId: string, signal?: AbortSignal): Promise<GroupChatMessageHistoryResponse> {
+  const normalizedGroupId = groupId.trim();
+  if (!normalizedGroupId) throw new GroupChatApiError(422, "The Group Chat identifier is required.");
+  const response = normalizeGroupChatPinnedMessageHistory(await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/pinned`, new URLSearchParams(), { signal }));
+  return requireParsed(response, "The pinned Group Chat message response was invalid.");
+}
+
+/** Pins one Group Chat message; the backend response is normalized when it contains a complete message. */
+export async function pinGroupChatMessage(groupId: string, messageId: string): Promise<GroupChatMessage | null> {
+  const normalizedGroupId = groupId.trim();
+  const normalizedMessageId = messageId.trim();
+  if (!normalizedGroupId || !normalizedMessageId) throw new GroupChatApiError(422, "A Group Chat and message are required.");
+  const response = await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/messages/${encodeURIComponent(normalizedMessageId)}/pin`, new URLSearchParams(), { method: "PUT" });
+  return normalizeGroupChatMessageMutationResponse(response);
+}
+
+/** Unpins one Group Chat message; the backend response is normalized when it contains a complete message. */
+export async function unpinGroupChatMessage(groupId: string, messageId: string): Promise<GroupChatMessage | null> {
+  const normalizedGroupId = groupId.trim();
+  const normalizedMessageId = messageId.trim();
+  if (!normalizedGroupId || !normalizedMessageId) throw new GroupChatApiError(422, "A Group Chat and message are required.");
+  const response = await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/messages/${encodeURIComponent(normalizedMessageId)}/pin`, new URLSearchParams(), { method: "DELETE" });
+  return normalizeGroupChatMessageMutationResponse(response);
 }
 
 /** Loads oldest-first Group Chat history using the documented cursor contract. */
