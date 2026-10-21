@@ -1,6 +1,6 @@
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
 import type { TenantMember } from "@ihp/enterprise-runtime";
-import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
+import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReplyReference, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
 export type GroupRole = "Owner" | "Admin" | "Member";
@@ -350,7 +350,7 @@ export function normalizeGroupChatMessage(value: unknown): GroupChatMessage | nu
   const attachmentId = typeof value.attachment_id === "string" && value.attachment_id.trim() ? value.attachment_id.trim() : null;
   const attachment = normalizeGroupChatMessageAttachment(value.attachment);
   const placeholder = typeof value.placeholder === "string" && value.placeholder.trim() ? value.placeholder.trim() : null;
-  const replyTo = isRecord(value.reply_to) ? value.reply_to : null;
+  const replyTo = normalizeGroupChatReplyReference(value.reply_to);
   const mentions = Array.isArray(value.mentions) ? value.mentions.filter((item): item is string => typeof item === "string") : [];
   const myReactions = Array.isArray(value.my_reactions) ? value.my_reactions.filter((item): item is string => typeof item === "string") : [];
   const readBy = Array.isArray(value.read_by) ? value.read_by.filter((item): item is string => typeof item === "string") : null;
@@ -397,6 +397,20 @@ function normalizeGroupChatMessageAttachment(value: unknown): GroupChatMessageAt
   const mimeType = readString(value, "mime_type");
   if (!attachmentId && !id && !fileName && !filename && !attachmentType && !downloadUrl && fileSize === null && !mimeType) return null;
   return { id, attachment_id: attachmentId, file_name: fileName, filename, attachment_type: attachmentType, download_url: downloadUrl, file_size: fileSize, mime_type: mimeType };
+}
+
+/** Normalizes backend reply references without exposing hidden original content. */
+export function normalizeGroupChatReplyReference(value: unknown): GroupChatReplyReference | null {
+  if (!isRecord(value)) return null;
+  const id = readString(value, "id");
+  if (!id) return null;
+  const isHidden = value.is_hidden === true;
+  return {
+    id,
+    sender_name: readString(value, "sender_name") || "Group member",
+    preview: isHidden ? "Original message unavailable." : readString(value, "preview") || "Original message unavailable.",
+    is_hidden: isHidden,
+  };
 }
 
 function isGroupChatAttachmentType(value: string | null): value is GroupChatAttachmentType {
@@ -516,6 +530,13 @@ export function canRetractGroupChatMessage(message: GroupChatMessage, currentUse
   return messageType === "text" || messageType === "image" || messageType === "document" || messageType === "audio" || messageType === "video";
 }
 
+/** Returns true only when a visible non-system message can be selected as a reply target. */
+export function canReplyToGroupChatMessage(message: GroupChatMessage, groupStatus: string | null, canPost: boolean | null, postingMuted = false): boolean {
+  if (!canSendGroupChatMessage(groupStatus, canPost, postingMuted)) return false;
+  const status = message.status.trim().toLowerCase();
+  return status === "visible" && message.message_type.trim().toLowerCase() !== "system";
+}
+
 /** Returns true when a visible non-system message may be moderated by an authorized active member. */
 export function canHideGroupChatMessage(message: GroupChatMessage, canHideMessages: boolean | null, membershipStatus: string | null): boolean {
   return canHideMessages === true && membershipStatus?.trim().toLowerCase() === "active" && message.status.trim().toLowerCase() === "visible" && message.message_type.trim().toLowerCase() !== "system";
@@ -532,6 +553,29 @@ export function getGroupChatMessageDisplayText(message: GroupChatMessage): strin
   if (status === "retracted" || status === "removed_by_admin") return message.placeholder?.trim() || "This message is no longer available.";
   if (message.content !== null) return message.content;
   return message.placeholder?.trim() || "Message content unavailable.";
+}
+
+/** Creates a safe local reply preview for a loaded message. */
+export function getGroupChatReplyPreview(message: GroupChatMessage): string {
+  const status = message.status.trim().toLowerCase();
+  if (status === "retracted" || status === "removed_by_admin") return "Original message unavailable.";
+  const messageType = message.attachment?.attachment_type?.trim().toLowerCase() || message.message_type.trim().toLowerCase();
+  if (messageType === "image") return "Image";
+  if (messageType === "document") return "Document";
+  if (messageType === "audio") return "Audio";
+  if (messageType === "video") return "Video";
+  return message.content?.trim() || "Original message unavailable.";
+}
+
+/** Resolves a reply reference using backend privacy state and, when loaded, the current original message type. */
+export function getGroupChatReplyReferencePreview(replyTo: GroupChatReplyReference, loadedTarget?: GroupChatMessage | null): string {
+  if (replyTo.is_hidden) return "Original message unavailable.";
+  if (loadedTarget) {
+    if (loadedTarget.status.trim().toLowerCase() !== "visible") return "Original message unavailable.";
+    const messageType = loadedTarget.attachment?.attachment_type?.trim().toLowerCase() || loadedTarget.message_type.trim().toLowerCase();
+    if (messageType === "image" || messageType === "document" || messageType === "audio" || messageType === "video") return getGroupChatReplyPreview(loadedTarget);
+  }
+  return replyTo.preview.trim() || "Original message unavailable.";
 }
 
 /** Resolves persisted attachment metadata without treating an attachment ID as a public URL or name. */

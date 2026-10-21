@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatTextMessagePayload, buildHideGroupChatMessagePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canEditGroupChatMessage, canHideGroupChatMessage, canReopenGroupChat, canRetractGroupChatMessage, canSendGroupChatMessage, canUpdateGroupChatSettings, formatGroupChatAttachmentSummary, getGroupChatMessageDisplayText, getGroupChatMemberDisplayName, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatPostingRestrictionMessage, getGroupChatReopenReasonError, getMemberManagementActions, isSupportedGroupAvatarFile, mergeGroupChatMessagePages, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageMutationResponse, normalizeGroupChatPermissions, normalizeGroupLearner, normalizeGroupProvider, parseGroupChatAttachmentFileName, parseGroupChatMessageTimestamp, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAttachmentMetadata, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
+import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatTextMessagePayload, buildHideGroupChatMessagePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canEditGroupChatMessage, canHideGroupChatMessage, canReplyToGroupChatMessage, canReopenGroupChat, canRetractGroupChatMessage, canSendGroupChatMessage, canUpdateGroupChatSettings, formatGroupChatAttachmentSummary, getGroupChatMessageDisplayText, getGroupChatMemberDisplayName, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatPostingRestrictionMessage, getGroupChatReopenReasonError, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, getMemberManagementActions, isSupportedGroupAvatarFile, mergeGroupChatMessagePages, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageMutationResponse, normalizeGroupChatPermissions, normalizeGroupChatReplyReference, normalizeGroupLearner, normalizeGroupProvider, parseGroupChatAttachmentFileName, parseGroupChatMessageTimestamp, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAttachmentMetadata, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
 import type { GroupChatMember } from "./group-chat/group-chat.types";
 
 test("builds the documented Group Chat avatar multipart fields", () => {
@@ -419,6 +419,60 @@ test("resolves authorized attachment metadata and keeps a safe fallback", () => 
   assert.equal(formatGroupChatAttachmentSummary({ file_name: "report.pdf", mime_type: "application/pdf", file_size: Math.round(1.34 * 1024 * 1024) }), "PDF document · 1.34 MB");
   assert.equal(formatGroupChatAttachmentSummary({ file_name: "Attachment", mime_type: null, file_size: null }), "Protected file");
   assert.deepEqual(resolveGroupChatAttachmentMetadata(message), { file_name: "Attachment", mime_type: null, file_size: null });
+});
+
+test("normalizes safe reply references and hides backend content when marked hidden", () => {
+  assert.deepEqual(normalizeGroupChatReplyReference({ id: "message-1", sender_name: "Provider One", preview: "See you then", is_hidden: false }), { id: "message-1", sender_name: "Provider One", preview: "See you then", is_hidden: false });
+  assert.deepEqual(normalizeGroupChatReplyReference({ id: "message-2", sender_name: "Provider Two", preview: "Private content", is_hidden: true }), { id: "message-2", sender_name: "Provider Two", preview: "Original message unavailable.", is_hidden: true });
+  assert.equal(normalizeGroupChatReplyReference({ preview: "No identifier" }), null);
+});
+
+test("allows replies only for visible non-system messages when posting is allowed", () => {
+  const message = normalizeGroupChatMessage({ id: "reply-target", conversation_id: "group-1", sender_id: "user-1", sender_name: "Provider One", sender_kind: "provider", message_type: "text", content: "See you then", attachment_id: null, status: "visible", placeholder: null, reply_to: null, mentions: [], mentions_all: false, mentions_me: false, is_edited: false, edited_at: null, pinned: false, reactions: {}, my_reactions: [], created_at: "2026-10-19T09:00:00Z" })!;
+  assert.equal(canReplyToGroupChatMessage(message, "open", true, false), true);
+  assert.equal(canReplyToGroupChatMessage(message, "closed", true, false), false);
+  assert.equal(canReplyToGroupChatMessage(message, "open", false, false), false);
+  assert.equal(canReplyToGroupChatMessage(message, "open", true, true), false);
+  assert.equal(canReplyToGroupChatMessage({ ...message, message_type: "system" }, "open", true, false), false);
+  assert.equal(getGroupChatReplyPreview(message), "See you then");
+  assert.equal(getGroupChatReplyPreview({ ...message, message_type: "image", content: null }), "Image");
+  assert.equal(getGroupChatReplyPreview({ ...message, status: "removed_by_admin", content: "Private content" }), "Original message unavailable.");
+});
+
+test("uses loaded visible attachment types without overriding backend privacy", () => {
+  const base = {
+    id: "attachment-target",
+    conversation_id: "group-1",
+    sender_id: "user-1",
+    sender_name: "Provider One",
+    sender_kind: "provider",
+    content: null,
+    attachment_id: "attachment-1",
+    status: "visible",
+    placeholder: null,
+    reply_to: null,
+    mentions: [],
+    mentions_all: false,
+    mentions_me: false,
+    is_edited: false,
+    edited_at: null,
+    pinned: false,
+    reactions: {},
+    read_by: [],
+    created_at: "2026-10-19T09:00:00Z",
+  };
+  const visibleImage = normalizeGroupChatMessage({ ...base, message_type: "image" })!;
+  const visibleDocument = normalizeGroupChatMessage({ ...base, id: "document-target", message_type: "document" })!;
+  const visibleAudio = normalizeGroupChatMessage({ ...base, id: "audio-target", message_type: "audio" })!;
+  const visibleVideo = normalizeGroupChatMessage({ ...base, id: "video-target", message_type: "video" })!;
+  const reply = normalizeGroupChatReplyReference({ id: "attachment-target", sender_name: "Provider One", preview: "Original message unavailable.", is_hidden: false })!;
+  assert.equal(getGroupChatReplyReferencePreview(reply, visibleImage), "Image");
+  assert.equal(getGroupChatReplyReferencePreview(reply, visibleDocument), "Document");
+  assert.equal(getGroupChatReplyReferencePreview(reply, visibleAudio), "Audio");
+  assert.equal(getGroupChatReplyReferencePreview(reply, visibleVideo), "Video");
+  assert.equal(getGroupChatReplyReferencePreview({ ...reply, is_hidden: true }, visibleImage), "Original message unavailable.");
+  assert.equal(getGroupChatReplyReferencePreview(reply, { ...visibleImage, status: "retracted" }), "Original message unavailable.");
+  assert.equal(getGroupChatReplyReferencePreview(normalizeGroupChatReplyReference({ id: "text-target", sender_name: "Provider One", preview: "Thanks", is_hidden: false })!, normalizeGroupChatMessage({ ...base, id: "text-target", message_type: "text", content: "Thanks" })!), "Thanks");
 });
 
 test("parses standard Content-Disposition filename forms safely", () => {

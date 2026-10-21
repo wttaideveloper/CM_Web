@@ -168,6 +168,13 @@ export interface GroupChatMessageAttachment {
   mime_type: string | null;
 }
 
+export interface GroupChatReplyReference {
+  id: string;
+  sender_name: string;
+  preview: string;
+  is_hidden: boolean;
+}
+
 /** Message returned by the Group Chat REST history and send endpoints. */
 export interface GroupChatMessage {
   id: string;
@@ -186,7 +193,7 @@ export interface GroupChatMessage {
   attachment: GroupChatMessageAttachment | null;
   status: string;
   placeholder: string | null;
-  reply_to: Record<string, unknown> | null;
+  reply_to: GroupChatReplyReference | null;
   mentions: string[];
   mentions_all: boolean;
   mentions_me: boolean;
