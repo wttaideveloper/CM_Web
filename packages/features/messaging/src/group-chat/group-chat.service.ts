@@ -4,6 +4,7 @@ import type {
   AcceptGroupInvitationPayload,
   ChangeGroupMemberRolePayload,
   CreateGroupPayload,
+  EditGroupChatMessagePayload,
   GroupChatDetails,
   GroupAvatarUploadResponse,
   GroupChatInvitation,
@@ -36,6 +37,7 @@ import type {
   GroupChatTrainingListResponse,
   GroupChatInvitee,
   GroupChatVerifiedProvider,
+  HideGroupChatMessagePayload,
   GroupChatVerifiedProviderListParams,
   GroupChatVerifiedProviderListResponse,
   RegisterGroupChatVerifiedProviderPayload,
@@ -46,7 +48,7 @@ import type {
   UpdateGroupDetailsPayload,
   UpdateGroupSettingsPayload,
 } from "./group-chat.types";
-import { buildChangeGroupMemberRolePayload, buildGroupAvatarUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatProviderVerificationCandidateQuery, buildGroupChatTextMessagePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatPermissions, normalizeGroupChatProviderVerificationCandidate, getGroupChatReopenReasonError, resolveGroupChatOwnerName } from "../group-chat-models";
+import { buildChangeGroupMemberRolePayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatProviderVerificationCandidateQuery, buildGroupChatTextMessagePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildHideGroupChatMessagePayload, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatPermissions, normalizeGroupChatProviderVerificationCandidate, getGroupChatReopenReasonError, normalizeGroupChatMessageMutationResponse, resolveGroupChatOwnerName } from "../group-chat-models";
 export { buildCreateGroupPayload, buildGroupMemberInvitePayload } from "../group-chat-models";
 
 const GROUP_CHAT_API_PATH = "/groups";
@@ -169,7 +171,13 @@ async function request<T>(path: string, params = new URLSearchParams(), options:
     const response = await chatRequestResponse(url, init);
     if (!response.ok) throw new GroupChatApiError(response.status, await backendErrorMessage(response));
     if (response.status === 204) return undefined as T;
-    return (await response.json()) as T;
+    const text = await response.text();
+    if (!text.trim()) return undefined as T;
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      return undefined as T;
+    }
   } catch (error: unknown) {
     if (error instanceof GroupChatApiError) throw error;
     if (error instanceof Error && error.name === "AbortError") throw error;
@@ -456,6 +464,35 @@ export async function sendGroupChatTextMessage(groupId: string, content: string,
   if (!normalizedGroupId || !payload) throw new GroupChatApiError(422, "A Group Chat and non-empty message are required.");
   const response = normalizeGroupChatMessage(await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/messages`, new URLSearchParams(), { method: "POST", body: payload }));
   return requireParsed(response, "The Group Chat send response was invalid.");
+}
+
+/** Edits one Group Chat message and returns a complete backend message when supplied. */
+export async function editGroupChatMessage(groupId: string, messageId: string, content: string): Promise<GroupChatMessage | null> {
+  const normalizedGroupId = groupId.trim();
+  const normalizedMessageId = messageId.trim();
+  const payload: EditGroupChatMessagePayload | null = buildEditGroupChatMessagePayload(content);
+  if (!normalizedGroupId || !normalizedMessageId || !payload) throw new GroupChatApiError(422, "A Group Chat, message, and non-empty replacement are required.");
+  const response = await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/messages/${encodeURIComponent(normalizedMessageId)}`, new URLSearchParams(), { method: "PATCH", body: payload });
+  return normalizeGroupChatMessageMutationResponse(response);
+}
+
+/** Retracts one Group Chat message and returns a complete backend message when supplied. */
+export async function retractGroupChatMessage(groupId: string, messageId: string): Promise<GroupChatMessage | null> {
+  const normalizedGroupId = groupId.trim();
+  const normalizedMessageId = messageId.trim();
+  if (!normalizedGroupId || !normalizedMessageId) throw new GroupChatApiError(422, "A Group Chat and message are required.");
+  const response = await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/messages/${encodeURIComponent(normalizedMessageId)}/retract`, new URLSearchParams(), { method: "POST" });
+  return normalizeGroupChatMessageMutationResponse(response);
+}
+
+/** Hides one Group Chat message with the required audit reason. */
+export async function hideGroupChatMessage(groupId: string, messageId: string, reason: string): Promise<GroupChatMessage | null> {
+  const normalizedGroupId = groupId.trim();
+  const normalizedMessageId = messageId.trim();
+  const payload: HideGroupChatMessagePayload | null = buildHideGroupChatMessagePayload(reason);
+  if (!normalizedGroupId || !normalizedMessageId || !payload) throw new GroupChatApiError(422, "A Group Chat, message, and moderation reason are required.");
+  const response = await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/messages/${encodeURIComponent(normalizedMessageId)}/hide`, new URLSearchParams(), { method: "POST", body: payload });
+  return normalizeGroupChatMessageMutationResponse(response);
 }
 
 /** Marks the authenticated member's Group Chat messages as read. */

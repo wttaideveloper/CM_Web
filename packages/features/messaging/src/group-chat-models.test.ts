@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildGroupAvatarUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatTextMessagePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canReopenGroupChat, canSendGroupChatMessage, canUpdateGroupChatSettings, getGroupChatMessageDisplayText, getGroupChatMemberDisplayName, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatPostingRestrictionMessage, getGroupChatReopenReasonError, getMemberManagementActions, isSupportedGroupAvatarFile, mergeGroupChatMessagePages, normalizeGroupAvatarUploadResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatPermissions, normalizeGroupLearner, normalizeGroupProvider, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
+import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatTextMessagePayload, buildHideGroupChatMessagePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canEditGroupChatMessage, canHideGroupChatMessage, canReopenGroupChat, canRetractGroupChatMessage, canSendGroupChatMessage, canUpdateGroupChatSettings, getGroupChatMessageDisplayText, getGroupChatMemberDisplayName, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatPostingRestrictionMessage, getGroupChatReopenReasonError, getMemberManagementActions, isSupportedGroupAvatarFile, mergeGroupChatMessagePages, normalizeGroupAvatarUploadResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageMutationResponse, normalizeGroupChatPermissions, normalizeGroupLearner, normalizeGroupProvider, parseGroupChatMessageTimestamp, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
 import type { GroupChatMember } from "./group-chat/group-chat.types";
 
 test("builds the documented Group Chat avatar multipart fields", () => {
@@ -334,6 +334,54 @@ test("builds text-message payloads and restores chronological order without dupl
   ];
   assert.deepEqual(mergeGroupChatMessagePages(pages).map((message) => message.id), ["first", "second"]);
   assert.equal(mergeGroupChatMessagePages(pages)[0].content, "Updated first");
+});
+
+test("validates message edit and moderation payloads", () => {
+  assert.deepEqual(buildEditGroupChatMessagePayload(" Updated text "), { content: "Updated text" });
+  assert.equal(buildEditGroupChatMessagePayload("   "), null);
+  assert.deepEqual(buildHideGroupChatMessagePayload(" Shared private contact information "), { reason: "Shared private contact information" });
+  assert.equal(buildHideGroupChatMessagePayload("   "), null);
+});
+
+test("enforces message author, type, status, and edit-window eligibility", () => {
+  const createdAt = "2026-10-21T09:00:00.000Z";
+  const message = normalizeGroupChatMessage({ id: "message-1", conversation_id: "group-1", sender_id: "user-1", sender_name: "User", sender_kind: "provider", message_type: "text", content: "Original", attachment_id: null, status: "visible", placeholder: null, reply_to: null, mentions: [], mentions_all: false, mentions_me: false, is_edited: false, edited_at: null, pinned: false, reactions: {}, my_reactions: [], read_by: null, created_at: createdAt })!;
+  const atFifteenMinutes = Date.parse(createdAt) + 15 * 60 * 1000;
+  assert.equal(canEditGroupChatMessage(message, "user-1", atFifteenMinutes), true);
+  assert.equal(canEditGroupChatMessage(message, "user-1", atFifteenMinutes + 1), false);
+  assert.equal(canEditGroupChatMessage(message, "user-2", atFifteenMinutes), false);
+  assert.equal(canEditGroupChatMessage({ ...message, status: "retracted" }, "user-1", atFifteenMinutes), false);
+  assert.equal(canEditGroupChatMessage({ ...message, status: "removed_by_admin" }, "user-1", atFifteenMinutes), false);
+  assert.equal(canRetractGroupChatMessage(message, "user-1"), true);
+  assert.equal(canRetractGroupChatMessage({ ...message, status: "retracted" }, "user-1"), false);
+  assert.equal(canEditGroupChatMessage({ ...message, message_type: "system" }, "user-1", atFifteenMinutes), false);
+  assert.equal(canHideGroupChatMessage(message, true, "active"), true);
+  assert.equal(canHideGroupChatMessage(message, false, "active"), false);
+  assert.equal(canHideGroupChatMessage(message, true, "invited"), false);
+  assert.equal(canHideGroupChatMessage({ ...message, message_type: "system" }, true, "active"), false);
+});
+
+test("treats timezone-less backend message timestamps as UTC for edit eligibility", () => {
+  const createdAt = "2026-10-21T07:25:45.000000";
+  const message = normalizeGroupChatMessage({ id: "message-utc", conversation_id: "group-1", sender_id: "user-1", sender_name: "User", sender_kind: "provider", message_type: "text", content: "Recent", attachment_id: null, status: "visible", placeholder: null, reply_to: null, mentions: [], mentions_all: false, mentions_me: false, is_edited: false, edited_at: null, pinned: false, reactions: {}, my_reactions: [], created_at: createdAt })!;
+  const oneMinuteLater = Date.parse("2026-10-21T07:26:45.000Z");
+
+  assert.equal(parseGroupChatMessageTimestamp(createdAt), Date.parse("2026-10-21T07:25:45.000Z"));
+  assert.equal(parseGroupChatMessageTimestamp("2026-10-21T07:25:45.000000+05:30"), Date.parse("2026-10-21T01:55:45.000Z"));
+  assert.equal(canEditGroupChatMessage(message, "user-1", oneMinuteLater), true);
+  assert.equal(canEditGroupChatMessage(message, "user-1", Date.parse("2026-10-21T07:40:45.000Z")), true);
+  assert.equal(canEditGroupChatMessage(message, "user-1", Date.parse("2026-10-21T07:40:45.001Z")), false);
+});
+
+test("normalizes complete mutation messages and treats acknowledgements as refresh-required", () => {
+  const edited = normalizeGroupChatMessageMutationResponse({ id: "message-1", conversation_id: "group-1", sender_id: "user-1", sender_name: "User", sender_kind: "provider", message_type: "text", content: "Updated", attachment_id: null, status: "visible", placeholder: null, reply_to: null, mentions: [], mentions_all: false, mentions_me: false, is_edited: true, edited_at: "2026-10-21T09:05:00Z", pinned: false, reactions: {}, my_reactions: [], read_by: null, created_at: "2026-10-21T09:00:00Z" });
+  assert.equal(edited?.is_edited, true);
+  assert.equal(edited?.content, "Updated");
+  assert.equal(normalizeGroupChatMessageMutationResponse(undefined), null);
+  assert.equal(normalizeGroupChatMessageMutationResponse({ ok: true }), null);
+  const retracted = normalizeGroupChatMessageMutationResponse({ id: "message-1", conversation_id: "group-1", sender_id: "user-1", sender_name: "User", sender_kind: "provider", message_type: "text", content: "Original", attachment_id: null, status: "retracted", placeholder: "Message retracted", reply_to: null, mentions: [], mentions_all: false, mentions_me: false, is_edited: false, edited_at: null, pinned: false, reactions: {}, my_reactions: [], read_by: null, created_at: "2026-10-21T09:00:00Z" });
+  assert.equal(getGroupChatMessageDisplayText(retracted!), "Message retracted");
+  assert.notEqual(getGroupChatMessageDisplayText(retracted!), "Original");
 });
 
 test("uses only documented history pagination and backend posting permission", () => {

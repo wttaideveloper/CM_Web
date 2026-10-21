@@ -1,6 +1,6 @@
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
 import type { TenantMember } from "@ihp/enterprise-runtime";
-import type { ChangeGroupMemberRolePayload, CreateGroupPayload, GroupAvatarUploadResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageHistoryResponse, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatVerifiedProvider, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
+import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageHistoryResponse, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
 export type GroupRole = "Owner" | "Admin" | "Member";
@@ -405,6 +405,59 @@ export function buildGroupChatTextMessagePayload(content: string, replyToId = ""
     content: normalizedContent,
     ...(normalizedReplyToId ? { reply_to_id: normalizedReplyToId } : {}),
   };
+}
+
+/** Builds the documented edit body and rejects blank replacement text. */
+export function buildEditGroupChatMessagePayload(content: string): EditGroupChatMessagePayload | null {
+  const normalizedContent = content.trim();
+  return normalizedContent ? { content: normalizedContent } : null;
+}
+
+/** Builds the documented moderation body and requires a meaningful reason. */
+export function buildHideGroupChatMessagePayload(reason: string): HideGroupChatMessagePayload | null {
+  const normalizedReason = reason.trim();
+  return normalizedReason ? { reason: normalizedReason } : null;
+}
+
+/** Parses the Group Chat API's UTC-naive ISO timestamps without changing explicit offsets. */
+export function parseGroupChatMessageTimestamp(value: string): number {
+  const timestamp = value.trim();
+  const timezoneLessMatch = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?$/.exec(timestamp);
+
+  // The Group Chat backend emits timezone-less ISO timestamps as UTC. Restrict
+  // this interpretation to that exact response shape; timestamps with an
+  // explicit offset continue to use the platform's standard ISO parser.
+  if (timezoneLessMatch) {
+    const milliseconds = (timezoneLessMatch[2] ?? "").slice(0, 3).padEnd(3, "0");
+    return Date.parse(`${timezoneLessMatch[1]}.${milliseconds}Z`);
+  }
+
+  return Date.parse(timestamp);
+}
+
+/** Returns true when the current user may edit this visible text message within the 15-minute convenience window. */
+export function canEditGroupChatMessage(message: GroupChatMessage, currentUserId: string | null | undefined, now = Date.now()): boolean {
+  if (!currentUserId?.trim() || message.sender_id !== currentUserId.trim()) return false;
+  if (message.status.trim().toLowerCase() !== "visible" || message.message_type.trim().toLowerCase() !== "text") return false;
+  const createdAt = parseGroupChatMessageTimestamp(message.created_at);
+  if (!Number.isFinite(createdAt)) return false;
+  const elapsed = now - createdAt;
+  return elapsed >= 0 && elapsed <= 15 * 60 * 1000;
+}
+
+/** Returns true when the current user may retract this visible text message. */
+export function canRetractGroupChatMessage(message: GroupChatMessage, currentUserId: string | null | undefined): boolean {
+  return Boolean(currentUserId?.trim()) && message.sender_id === currentUserId?.trim() && message.status.trim().toLowerCase() === "visible" && message.message_type.trim().toLowerCase() === "text";
+}
+
+/** Returns true when a visible non-system message may be moderated by an authorized active member. */
+export function canHideGroupChatMessage(message: GroupChatMessage, canHideMessages: boolean | null, membershipStatus: string | null): boolean {
+  return canHideMessages === true && membershipStatus?.trim().toLowerCase() === "active" && message.status.trim().toLowerCase() === "visible" && message.message_type.trim().toLowerCase() !== "system";
+}
+
+/** Normalizes only a complete mutation message; acknowledgements and empty responses require history refresh. */
+export function normalizeGroupChatMessageMutationResponse(value: unknown): GroupChatMessage | null {
+  return normalizeGroupChatMessage(value);
 }
 
 /** Returns the safe display text for visible, system, and removed messages. */

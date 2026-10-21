@@ -178,6 +178,16 @@ export interface SendGroupChatMessagePayload {
   reply_to_id?: string;
 }
 
+/** Request body accepted by PATCH /groups/{group_id}/messages/{message_id}. */
+export interface EditGroupChatMessagePayload {
+  content: string;
+}
+
+/** Request body accepted by POST /groups/{group_id}/messages/{message_id}/hide. */
+export interface HideGroupChatMessagePayload {
+  reason: string;
+}
+
 /** A member returned by the Group Chat membership endpoint. */
 export interface GroupChatMember {
   id: string;
