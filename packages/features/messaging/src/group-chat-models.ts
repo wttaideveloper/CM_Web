@@ -1,6 +1,6 @@
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
 import type { TenantMember } from "@ihp/enterprise-runtime";
-import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatMessageReadStatus, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReplyReference, GroupChatSharedFile, GroupChatSharedFilesResponse, GroupChatSummary, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupPreferencesPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
+import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatConsentListResponse, GroupChatConsentNotice, GroupChatConsentRecord, GroupChatConsentWithdrawalResponse, GroupChatLeaveResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatMessageReadStatus, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReplyReference, GroupChatSharedFile, GroupChatSharedFilesResponse, GroupChatSummary, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupPreferencesPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
 export type GroupRole = "Owner" | "Admin" | "Member";
@@ -956,6 +956,13 @@ export function canCloseGroupChat(input: { status: string | null; permissions: P
   return input.status?.trim().toLowerCase() !== "closed" && input.permissions.can_close === true;
 }
 
+/** Keeps owner explanation separate from the backend-authoritative leave permission. */
+export function getGroupChatLeaveAction(input: { myRole: string | null; ownerUserId: string | null; currentUserId: string; canLeave: boolean }): "enabled" | "disabled-owner" | "hidden" {
+  if (input.canLeave) return "enabled";
+  const isCurrentOwner = input.myRole?.trim().toLowerCase() === "owner" || (Boolean(input.currentUserId) && input.ownerUserId === input.currentUserId);
+  return isCurrentOwner ? "disabled-owner" : "hidden";
+}
+
 /** Returns whether the backend authorizes editing open Group Chat details. */
 export function canEditGroupChat(input: { status: string | null; permissions: Pick<GroupChatPermissions, "can_edit_group"> }): boolean {
   return input.status?.trim().toLowerCase() !== "closed" && input.permissions.can_edit_group === true;
@@ -1023,6 +1030,97 @@ export function getGroupChatPersonalPreferenceIndicators(group: Pick<GroupChatSu
 /** Places personally pinned groups first while preserving the backend order within each category. */
 export function orderGroupChatSummariesByPersonalPin(groups: readonly GroupChatSummary[]): GroupChatSummary[] {
   return [...groups.filter((group) => group.pinned === true), ...groups.filter((group) => group.pinned !== true)];
+}
+
+/** Normalizes one personal consent record without exposing undocumented notice fields. */
+export function normalizeGroupChatConsentRecord(value: unknown): GroupChatConsentRecord | null {
+  if (!isRecord(value)) return null;
+  const conversationId = readString(value, "conversation_id");
+  if (!conversationId) return null;
+  const notice = isRecord(value.notice) ? value.notice : {};
+  return {
+    record_id: readString(value, "id", "consent_id", "record_id") || null,
+    conversation_id: conversationId,
+    group_name: readString(value, "group_name") || null,
+    granted_at: readString(value, "granted_at") || null,
+    withdrawn_at: readString(value, "withdrawn_at") || null,
+    is_minor: typeof value.is_minor === "boolean" ? value.is_minor : null,
+    guardian_name: readString(value, "guardian_name") || null,
+    guardian_relationship: readString(value, "guardian_relationship") || null,
+    notice,
+  };
+}
+
+/** Projects only the documented display-safe consent notice fields. */
+export function normalizeGroupChatConsentNotice(value: unknown): GroupChatConsentNotice {
+  if (!isRecord(value)) {
+    return { name: null, kind: null, purpose: null, invited_at: null, description: null, member_count: null, provider_names: [], invited_by_name: null, visibility_notice: null, what_members_can_see: null, emergency_notice: null, requires_guardian_consent: null };
+  }
+  const emergency = isRecord(value.emergency_notice) ? value.emergency_notice : null;
+  const providerNames = Array.isArray(value.provider_names) ? value.provider_names.filter((name): name is string => typeof name === "string" && Boolean(name.trim())).map((name) => name.trim()) : [];
+  const memberCount = typeof value.member_count === "number" && Number.isFinite(value.member_count) && value.member_count >= 0 ? value.member_count : null;
+  return {
+    name: readString(value, "name") || null,
+    kind: readString(value, "kind") || null,
+    purpose: readString(value, "purpose") || null,
+    invited_at: readString(value, "invited_at") || null,
+    description: readString(value, "description") || null,
+    member_count: memberCount,
+    provider_names: providerNames,
+    invited_by_name: readString(value, "invited_by_name") || null,
+    visibility_notice: readString(value, "visibility_notice") || null,
+    what_members_can_see: readString(value, "what_members_can_see") || null,
+    emergency_notice: emergency ? { text: readString(emergency, "text") || null, number: readString(emergency, "number") || null } : null,
+    requires_guardian_consent: typeof value.requires_guardian_consent === "boolean" ? value.requires_guardian_consent : null,
+  };
+}
+
+/** Normalizes the authenticated user's personal consent-history response. */
+export function normalizeGroupChatConsentList(value: unknown): GroupChatConsentListResponse {
+  const source = isRecord(value) && Array.isArray(value.items) ? value.items : [];
+  return { items: source.map(normalizeGroupChatConsentRecord).filter((item): item is GroupChatConsentRecord => item !== null) };
+}
+
+/** Provides stable keys without collapsing historical records for one conversation. */
+export function getGroupChatConsentRecordKey(record: GroupChatConsentRecord, index: number): string {
+  return record.record_id?.trim() || `${record.conversation_id}:${record.granted_at || "unknown"}:${record.withdrawn_at || "active"}:${index}`;
+}
+
+/** Labels consent history without inferring current Group membership. */
+export function getGroupChatConsentStatusLabel(record: GroupChatConsentRecord): "Withdrawn" | "Consent recorded" {
+  return record.withdrawn_at ? "Withdrawn" : "Consent recorded";
+}
+
+/** Keeps the backend emergency wording intact and avoids repeating an included number. */
+export function getGroupChatEmergencyNoticeDisplay(notice: GroupChatConsentNotice): { text: string | null; number: string | null } {
+  const text = notice.emergency_notice?.text?.trim() || null;
+  const number = notice.emergency_notice?.number?.trim() || null;
+  if (!text || !number) return { text, number };
+  const numberDigits = number.replace(/\D/g, "");
+  if (!numberDigits) return { text, number };
+  const numberTokens = text.match(/\+?\d(?:[\d\s().-]*\d)?/g) ?? [];
+  const alreadyIncluded = numberTokens.some((token) => token.replace(/\D/g, "") === numberDigits);
+  return { text, number: alreadyIncluded ? null : number };
+}
+
+/** Accepts only the documented string or the observed, group-matching withdrawal response. */
+export function normalizeGroupChatConsentWithdrawalResponse(value: unknown, expectedGroupId: string): string | GroupChatConsentWithdrawalResponse | null {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (!isRecord(value)) return null;
+  const conversationId = readString(value, "conversation_id");
+  const status = readString(value, "status");
+  if (!conversationId || conversationId !== expectedGroupId.trim() || status !== "withdrawn") return null;
+  return { conversation_id: conversationId, status: "withdrawn" };
+}
+
+/** Accepts only the documented string or the observed, group-matching leave response. */
+export function normalizeGroupChatLeaveResponse(value: unknown, expectedGroupId: string): string | GroupChatLeaveResponse | null {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (!isRecord(value)) return null;
+  const conversationId = readString(value, "conversation_id");
+  const status = readString(value, "status");
+  if (!conversationId || conversationId !== expectedGroupId.trim() || status !== "left") return null;
+  return { conversation_id: conversationId, status: "left" };
 }
 
 /** Builds the server-owned Training Group creation payload from selected user IDs. */

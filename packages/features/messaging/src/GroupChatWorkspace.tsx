@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@ihp/auth";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { changeGroupMemberRole, closeGroupChat, downloadGroupChatAttachment, getGroupChat, inviteEnrolledLearners, inviteGroupMembers, listGroupChatFiles, listGroupChatLearners, listGroupChatMembers, listGroupChatProviders, muteGroupMemberPosting, removeGroupMember, reopenGroupChat, searchGroupChatMessages, transferGroupOwnership, unmuteGroupMemberPosting, updateGroupDetails, updateGroupPreferences, updateGroupSettings, uploadGroupAvatar } from "./group-chat/group-chat.service";
-import { buildReopenGroupPayload, canCloseGroupChat, canEditGroupChat, canReopenGroupChat, canUpdateGroupChatSettings, formatGroupChatInvitationFeedback, formatGroupChatSharedFileSize, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatReopenReasonError, getGroupChatSafeMessagePreview, getGroupChatSearchViewState, isGroupChatProviderUnavailableInCurrentGroup, isSupportedGroupAvatarFile, splitGroupChatMembers, type GroupChatMemberAction, type GroupChatMemberRoleAction } from "./group-chat-models";
+import { changeGroupMemberRole, closeGroupChat, downloadGroupChatAttachment, getGroupChat, inviteEnrolledLearners, inviteGroupMembers, leaveGroupChat, listGroupChatFiles, listGroupChatLearners, listGroupChatMembers, listGroupChatProviders, muteGroupMemberPosting, removeGroupMember, reopenGroupChat, searchGroupChatMessages, transferGroupOwnership, unmuteGroupMemberPosting, updateGroupDetails, updateGroupPreferences, updateGroupSettings, uploadGroupAvatar, withdrawGroupChatConsent } from "./group-chat/group-chat.service";
+import { buildReopenGroupPayload, canCloseGroupChat, canEditGroupChat, canReopenGroupChat, canUpdateGroupChatSettings, formatGroupChatInvitationFeedback, formatGroupChatSharedFileSize, getGroupChatLeaveAction, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatReopenReasonError, getGroupChatSafeMessagePreview, getGroupChatSearchViewState, isGroupChatProviderUnavailableInCurrentGroup, isSupportedGroupAvatarFile, splitGroupChatMembers, type GroupChatMemberAction, type GroupChatMemberRoleAction } from "./group-chat-models";
 import { GroupChatApiError } from "./group-chat/group-chat.service";
 import type { GroupChatDetails, GroupChatLearner, GroupChatListResponse, GroupChatMember, GroupChatPermissions, GroupChatProvider, GroupChatSharedFile } from "./group-chat/group-chat.types";
 import { GroupAvatarDisplay, GroupAvatarPicker, useGroupAvatarPreview } from "./GroupChatAvatar";
@@ -204,7 +204,7 @@ function SearchMessages({ groupId, onNavigateToLoadedMessage }: { groupId: strin
 }
 
 type GroupDetailsTab = "overview" | "members" | "invite" | "search" | "files" | "settings";
-function GroupDetailsPanel({ group, groupId, canViewMembers, canInviteMembers, onClose, onNavigateToLoadedMessage }: { group: GroupChatDetails; groupId: string; canViewMembers: boolean; canInviteMembers: boolean; onClose: () => void; onNavigateToLoadedMessage: (messageId: string) => void }) {
+function GroupDetailsPanel({ group, groupId, userScope, canViewMembers, canInviteMembers, onClose, onLeave, onNavigateToLoadedMessage }: { group: GroupChatDetails; groupId: string; userScope: string; canViewMembers: boolean; canInviteMembers: boolean; onClose: () => void; onLeave: () => void; onNavigateToLoadedMessage: (messageId: string) => void }) {
   const [tab, setTab] = useState<GroupDetailsTab>("overview");
   const groupIsClosed = group.status?.trim().toLowerCase() === "closed";
   return <section className="flex min-h-0 h-full flex-col bg-white" aria-label="Group details">
@@ -223,6 +223,9 @@ function GroupDetailsPanel({ group, groupId, canViewMembers, canInviteMembers, o
         <p className="mt-2 line-clamp-2 text-sm text-[#52736a]">{group.description || "No description provided."}</p>
         <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${groupIsClosed ? "bg-[#fff3d6] text-[#8b5e00]" : "bg-[#e8f6ee] text-[#1f6a58]"}`}>{groupIsClosed ? "Closed" : group.status || "Active"}</span>
       </div>
+    </div>
+    <div className="shrink-0 px-3 pt-3 sm:px-4">
+      <PersonalMembershipActions group={group} groupId={groupId} userScope={userScope} onLeave={onLeave} />
     </div>
     <div className="flex shrink-0 flex-wrap gap-1.5 border-b border-[#e1ebe6] px-3 py-2 sm:px-4" role="tablist" aria-label="Group management">
       {([["overview", "Overview"], ["members", "Members"], ["invite", "Invite members"], ["search", "Search"], ["files", "Shared Files"], ["settings", "Settings"]] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={tab === value ? "rounded-full bg-[#1f6a58] px-3 py-1.5 text-xs font-semibold text-white" : "rounded-full bg-[#f4faf7] px-3 py-1.5 text-xs font-semibold text-[#52736a]"}>{label}</button>)}
@@ -372,6 +375,79 @@ function GroupPreferenceActions({ group, groupId, userScope }: { group: GroupCha
   </div>;
 }
 
+function PersonalMembershipActions({ group, groupId, userScope, onLeave }: { group: GroupChatDetails; groupId: string; userScope: string; onLeave: () => void }) {
+  const queryClient = useQueryClient();
+  const [confirmation, setConfirmation] = useState<"leave" | "withdraw" | null>(null);
+  const isProgramGroup = group.kind?.trim().toLowerCase() === "program";
+  const canLeave = group.permissions.can_leave === true;
+  const leaveAction = getGroupChatLeaveAction({ myRole: group.my_role, ownerUserId: group.owner_user_id, currentUserId: userScope, canLeave });
+  const leaveMutation = useMutation({
+    mutationFn: () => leaveGroupChat(groupId),
+    retry: false,
+    onSuccess: async () => {
+      setConfirmation(null);
+      await clearPrivateGroupState();
+      onLeave();
+    },
+  });
+  const withdrawMutation = useMutation({
+    mutationFn: () => withdrawGroupChatConsent(groupId),
+    retry: false,
+    onSuccess: async () => {
+      setConfirmation(null);
+      await clearPrivateGroupState();
+      onLeave();
+    },
+  });
+  const pending = leaveMutation.isPending || withdrawMutation.isPending;
+  const leaveErrorMessage = leaveMutation.error instanceof GroupChatApiError && leaveMutation.error.status === 409 ? "Transfer group ownership before leaving." : leaveMutation.error?.message;
+  const errorMessage = leaveErrorMessage ?? withdrawMutation.error?.message;
+
+  async function clearPrivateGroupState() {
+    await Promise.all([
+      queryClient.cancelQueries({ queryKey: groupKey(groupId, userScope) }),
+      queryClient.cancelQueries({ queryKey: ["group-chat", "messages", groupId] }),
+      queryClient.cancelQueries({ queryKey: ["group-chat", "read-status", groupId] }),
+      queryClient.cancelQueries({ queryKey: ["group-chat", "reactions", groupId] }),
+      queryClient.cancelQueries({ queryKey: ["group-chat", "pinned", groupId] }),
+      queryClient.cancelQueries({ queryKey: ["group-chat", "members", groupId] }),
+      queryClient.cancelQueries({ queryKey: ["group-chat", "current-member", groupId] }),
+    ]);
+    queryClient.removeQueries({ queryKey: groupKey(groupId, userScope) });
+    queryClient.removeQueries({ queryKey: ["group-chat", "messages", groupId] });
+    queryClient.removeQueries({ queryKey: ["group-chat", "read-status", groupId] });
+    queryClient.removeQueries({ queryKey: ["group-chat", "reactions", groupId] });
+    queryClient.removeQueries({ queryKey: ["group-chat", "pinned", groupId] });
+    queryClient.removeQueries({ queryKey: ["group-chat", "members", groupId] });
+    queryClient.removeQueries({ queryKey: ["group-chat", "current-member", groupId] });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: groupsKey }),
+      queryClient.invalidateQueries({ queryKey: ["group-chat", "invitations"] }),
+      queryClient.invalidateQueries({ queryKey: ["group-chat", "consents", userScope] }),
+    ]);
+  }
+
+  if (leaveAction === "hidden" && !isProgramGroup) return null;
+  return <section className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-4" aria-labelledby="personal-membership-heading">
+    <h3 id="personal-membership-heading" className="text-base font-bold text-[#16332b]">Your membership</h3>
+    <p className="mt-1 text-sm text-[#52736a]">These actions affect only your access to this Group Chat.</p>
+    {errorMessage ? <p className="mt-3 rounded-lg border border-[#f3d5d1] bg-[#fff7f6] p-3 text-sm text-[#7a271a]" role="alert">{errorMessage}</p> : null}
+    <div className="mt-3 flex flex-wrap gap-2">
+      {leaveAction !== "hidden" ? <button type="button" disabled={pending || leaveAction !== "enabled"} onClick={() => setConfirmation("leave")} className="rounded-full border border-[#b54708] px-3 py-1.5 text-xs font-semibold text-[#b54708] disabled:cursor-not-allowed disabled:opacity-50">Leave Group</button> : null}
+      {leaveAction === "disabled-owner" ? <p className="basis-full text-sm text-[#8b5e00]">Transfer group ownership to another eligible provider before you can leave this group.</p> : null}
+      {isProgramGroup ? <button type="button" disabled={pending} onClick={() => setConfirmation("withdraw")} className="rounded-full border border-[#7a271a] px-3 py-1.5 text-xs font-semibold text-[#7a271a] disabled:opacity-50">Withdraw consent</button> : null}
+    </div>
+    {confirmation ? <div className="mt-3 rounded-lg border border-[#f1d8ad] bg-[#fffaf0] p-3 text-sm" role="alertdialog" aria-label={confirmation === "leave" ? "Confirm leaving group" : "Confirm withdrawing consent"}>
+      <p className="font-semibold text-[#8b5e00]">{confirmation === "leave" ? "Leave this Group Chat?" : "Withdraw Group Chat consent?"}</p>
+      <p className="mt-1 text-[#8b5e00]">{confirmation === "leave" ? "You will lose access to this group. Group Owners must transfer ownership before leaving." : "Withdrawal takes effect immediately, ends your access to this group, and keeps the consent record with its withdrawal time."}</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button type="button" disabled={pending} onClick={() => confirmation === "leave" ? leaveMutation.mutate() : withdrawMutation.mutate()} className="rounded-full bg-[#b54708] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{pending ? "Updating..." : confirmation === "leave" ? "Confirm leave" : "Confirm withdrawal"}</button>
+        <button type="button" disabled={pending} onClick={() => setConfirmation(null)} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-xs font-semibold text-[#16332b]">Cancel</button>
+      </div>
+    </div> : null}
+  </section>;
+}
+
 export default function GroupChatWorkspace({ groupId, onClose }: Props) {
   const { user } = useAuth();
   const userScope = user?.userId ?? user?.id ?? "";
@@ -430,7 +506,7 @@ export default function GroupChatWorkspace({ groupId, onClose }: Props) {
         <GroupChatMessages groupId={group.id} groupStatus={group.status} groupKind={group.kind} memberDirectory={currentMemberQuery.data ?? []} canPost={group.permissions.can_post} postingMuted={currentMember?.posting_muted ?? null} canHideMessages={group.permissions.can_hide_messages} canPinMessages={group.permissions.can_pin_messages} currentMemberKind={currentMember?.member_kind ?? null} currentMemberStatus={currentMember?.membership_status ?? null} />
       </div>
     </div>
-    {detailsOpen ? <GroupDetailsPanel group={group} groupId={groupId} canViewMembers={canViewMembers} canInviteMembers={canInviteMembers} onClose={() => setDetailsOpen(false)} onNavigateToLoadedMessage={navigateToLoadedMessage} /> : null}
+    {detailsOpen ? <GroupDetailsPanel group={group} groupId={groupId} userScope={userScope} canViewMembers={canViewMembers} canInviteMembers={canInviteMembers} onClose={() => setDetailsOpen(false)} onLeave={() => { setDetailsOpen(false); onClose?.(); }} onNavigateToLoadedMessage={navigateToLoadedMessage} /> : null}
   </section>;
 }
 function SearchInput({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatMessageReadStatusPath, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildHideGroupChatMessagePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupPreferencesPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canEditGroupChatMessage, canHideGroupChatMessage, canPinGroupChatMessage, canReactToGroupChatMessage, canReplyToGroupChatMessage, canReopenGroupChat, canRetractGroupChatMessage, canSendGroupChatMessage, canShowGroupChatReadStatusIndicator, canUpdateGroupChatSettings, canViewGroupChatReadStatus, formatGroupChatAttachmentSummary, formatGroupChatSharedFileSize, getGroupChatMessageDisplayText, getGroupChatMemberDisplayName, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatPersonalPreferenceIndicators, getGroupChatPostingRestrictionMessage, getGroupChatReadStatusMemberNames, getGroupChatReadStatusTickState, getGroupChatReopenReasonError, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, getGroupChatSafeMessagePreview, getGroupChatSearchViewState, getMemberManagementActions, isGroupChatReactionSelected, isSupportedGroupAvatarFile, mergeGroupChatMessagePages, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageMutationResponse, normalizeGroupChatMessageReadStatus, normalizeGroupChatPermissions, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPreferences, normalizeGroupChatReactionCounts, normalizeGroupChatReactionSettings, normalizeGroupChatReplyReference, normalizeGroupChatSharedFilesResponse, normalizeGroupLearner, normalizeGroupProvider, orderGroupChatSummariesByPersonalPin, parseGroupChatAttachmentFileName, parseGroupChatMessageTimestamp, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAttachmentMetadata, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
+import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatMessageReadStatusPath, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildHideGroupChatMessagePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupPreferencesPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canEditGroupChatMessage, canHideGroupChatMessage, canPinGroupChatMessage, canReactToGroupChatMessage, canReplyToGroupChatMessage, canReopenGroupChat, canRetractGroupChatMessage, canSendGroupChatMessage, canShowGroupChatReadStatusIndicator, canUpdateGroupChatSettings, canViewGroupChatReadStatus, formatGroupChatAttachmentSummary, formatGroupChatSharedFileSize, getGroupChatConsentRecordKey, getGroupChatConsentStatusLabel, getGroupChatEmergencyNoticeDisplay, getGroupChatMessageDisplayText, getGroupChatMemberDisplayName, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatPersonalPreferenceIndicators, getGroupChatPostingRestrictionMessage, getGroupChatReadStatusMemberNames, getGroupChatReadStatusTickState, getGroupChatReopenReasonError, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, getGroupChatSafeMessagePreview, getGroupChatSearchViewState, getMemberManagementActions, isGroupChatReactionSelected, isSupportedGroupAvatarFile, mergeGroupChatMessagePages, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatConsentList, normalizeGroupChatConsentNotice, normalizeGroupChatConsentRecord, normalizeGroupChatConsentWithdrawalResponse, normalizeGroupChatLeaveResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageMutationResponse, normalizeGroupChatMessageReadStatus, normalizeGroupChatPermissions, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPreferences, normalizeGroupChatReactionCounts, normalizeGroupChatReactionSettings, normalizeGroupChatReplyReference, normalizeGroupChatSharedFilesResponse, normalizeGroupLearner, normalizeGroupProvider, orderGroupChatSummariesByPersonalPin, parseGroupChatAttachmentFileName, parseGroupChatMessageTimestamp, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAttachmentMetadata, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
 import type { GroupChatMember, GroupChatMessage } from "./group-chat/group-chat.types";
+import { getGroupChatLeaveAction } from "./group-chat-models.ts";
 
 test("builds the documented Group Chat avatar multipart fields", () => {
   const file = new File(["image"], "group.png", { type: "image/png" });
@@ -795,4 +796,113 @@ test("derives read ticks only from authoritative counts", () => {
   assert.equal(getGroupChatReadStatusTickState({ seen_by_count: 3, recipient_count: 3 }), "double-blue");
   assert.equal(getGroupChatReadStatusTickState({ seen_by_count: 4, recipient_count: 3 }), "double-blue");
   assert.equal(getGroupChatReadStatusTickState({ seen_by_count: 1, recipient_count: 0 }), "single");
+});
+
+test("normalizes personal consent records and preserves only safe backend notice data", () => {
+  assert.deepEqual(normalizeGroupChatConsentRecord({
+    id: "consent-1",
+    conversation_id: "group-1",
+    group_name: "Training Group",
+    granted_at: "2026-10-21T07:00:00Z",
+    withdrawn_at: null,
+    is_minor: false,
+    guardian_name: null,
+    guardian_relationship: null,
+    notice: { version: 2, text: "backend supplied" },
+  }), {
+    record_id: "consent-1",
+    conversation_id: "group-1",
+    group_name: "Training Group",
+    granted_at: "2026-10-21T07:00:00Z",
+    withdrawn_at: null,
+    is_minor: false,
+    guardian_name: null,
+    guardian_relationship: null,
+    notice: { version: 2, text: "backend supplied" },
+  });
+  assert.deepEqual(normalizeGroupChatConsentList({
+    items: [
+      { conversation_id: "group-1", group_name: null, granted_at: null, withdrawn_at: "2026-10-21T08:00:00Z", is_minor: true, guardian_name: "Guardian", guardian_relationship: "Parent", notice: null },
+      { group_name: "Missing id" },
+    ],
+  }), {
+    items: [{
+      record_id: null,
+      conversation_id: "group-1",
+      group_name: null,
+      granted_at: null,
+      withdrawn_at: "2026-10-21T08:00:00Z",
+      is_minor: true,
+      guardian_name: "Guardian",
+      guardian_relationship: "Parent",
+      notice: {},
+    }],
+  });
+  assert.deepEqual(normalizeGroupChatConsentNotice({
+    name: "Historical group",
+    kind: "program",
+    purpose: "Care coordination",
+    invited_at: "2026-10-20T09:00:00Z",
+    description: "Snapshot description",
+    member_count: 3,
+    provider_names: ["Provider One", "", 4],
+    invited_by_name: "Admin",
+    visibility_notice: "Members can see shared group messages.",
+    what_members_can_see: "Training updates",
+    emergency_notice: { text: "Call support", number: "555-0100", internal_id: "do-not-display" },
+    requires_guardian_consent: true,
+    private_identifier: "do-not-display",
+  }), {
+    name: "Historical group",
+    kind: "program",
+    purpose: "Care coordination",
+    invited_at: "2026-10-20T09:00:00Z",
+    description: "Snapshot description",
+    member_count: 3,
+    provider_names: ["Provider One"],
+    invited_by_name: "Admin",
+    visibility_notice: "Members can see shared group messages.",
+    what_members_can_see: "Training updates",
+    emergency_notice: { text: "Call support", number: "555-0100" },
+    requires_guardian_consent: true,
+  });
+  const emergencyNotice = normalizeGroupChatConsentNotice({ emergency_notice: { text: "Not for emergencies. In an emergency call 112.", number: "112" } });
+  assert.deepEqual(getGroupChatEmergencyNoticeDisplay(emergencyNotice), { text: "Not for emergencies. In an emergency call 112.", number: null });
+  assert.deepEqual(getGroupChatEmergencyNoticeDisplay(normalizeGroupChatConsentNotice({ emergency_notice: { text: "Call support.", number: "112" } })), { text: "Call support.", number: "112" });
+  assert.deepEqual(getGroupChatEmergencyNoticeDisplay(normalizeGroupChatConsentNotice({ emergency_notice: { text: "Call support." } })), { text: "Call support.", number: null });
+  assert.deepEqual(getGroupChatEmergencyNoticeDisplay(normalizeGroupChatConsentNotice({ emergency_notice: { number: "112" } })), { text: null, number: "112" });
+  assert.deepEqual(getGroupChatEmergencyNoticeDisplay(normalizeGroupChatConsentNotice({ emergency_notice: null })), { text: null, number: null });
+  assert.deepEqual(getGroupChatEmergencyNoticeDisplay(normalizeGroupChatConsentNotice({ emergency_notice: { text: "Call 1122.", number: "112" } })), { text: "Call 1122.", number: "112" });
+  const historicalRecords = normalizeGroupChatConsentList({ items: [
+    { conversation_id: "group-1", granted_at: "2026-10-20T09:00:00Z", withdrawn_at: "2026-10-21T09:00:00Z", notice: {} },
+    { conversation_id: "group-1", granted_at: "2026-10-22T09:00:00Z", withdrawn_at: null, notice: {} },
+  ] }).items;
+  assert.equal(getGroupChatConsentStatusLabel(historicalRecords[0]), "Withdrawn");
+  assert.equal(getGroupChatConsentStatusLabel(historicalRecords[1]), "Consent recorded");
+  assert.notEqual(getGroupChatConsentRecordKey(historicalRecords[0], 0), getGroupChatConsentRecordKey(historicalRecords[1], 1));
+  assert.notEqual(getGroupChatConsentRecordKey(historicalRecords[0], 0), getGroupChatConsentRecordKey(historicalRecords[0], 1));
+});
+
+test("accepts the observed consent withdrawal response only for the requested Group Chat", () => {
+  assert.deepEqual(normalizeGroupChatConsentWithdrawalResponse({ conversation_id: "group-1", status: "withdrawn" }, "group-1"), { conversation_id: "group-1", status: "withdrawn" });
+  assert.equal(normalizeGroupChatConsentWithdrawalResponse("Consent withdrawn", "group-1"), "Consent withdrawn");
+  assert.equal(normalizeGroupChatConsentWithdrawalResponse({ conversation_id: "group-2", status: "withdrawn" }, "group-1"), null);
+  assert.equal(normalizeGroupChatConsentWithdrawalResponse({ conversation_id: "group-1", status: "active" }, "group-1"), null);
+  assert.equal(normalizeGroupChatConsentWithdrawalResponse({ conversation_id: "group-1" }, "group-1"), null);
+  assert.equal(normalizeGroupChatConsentWithdrawalResponse({ conversation_id: "group-1", status: "withdrawn", private_field: "ignored" }, "group-1")?.toString().includes("private_field"), false);
+});
+
+test("accepts the observed leave response only for the requested Group Chat", () => {
+  assert.deepEqual(normalizeGroupChatLeaveResponse({ conversation_id: "group-1", status: "left" }, "group-1"), { conversation_id: "group-1", status: "left" });
+  assert.equal(normalizeGroupChatLeaveResponse("Left group", "group-1"), "Left group");
+  assert.equal(normalizeGroupChatLeaveResponse({ conversation_id: "group-2", status: "left" }, "group-1"), null);
+  assert.equal(normalizeGroupChatLeaveResponse({ conversation_id: "group-1", status: "withdrawn" }, "group-1"), null);
+  assert.equal(normalizeGroupChatLeaveResponse({ conversation_id: "group-1" }, "group-1"), null);
+});
+
+test("shows the owner leave explanation without granting leave permission", () => {
+  assert.equal(getGroupChatLeaveAction({ myRole: "owner", ownerUserId: "owner-1", currentUserId: "owner-1", canLeave: false }), "disabled-owner");
+  assert.equal(getGroupChatLeaveAction({ myRole: "member", ownerUserId: "owner-1", currentUserId: "member-1", canLeave: true }), "enabled");
+  assert.equal(getGroupChatLeaveAction({ myRole: "member", ownerUserId: "owner-1", currentUserId: "member-1", canLeave: false }), "hidden");
+  assert.equal(getGroupChatLeaveAction({ myRole: "owner", ownerUserId: "owner-1", currentUserId: "owner-1", canLeave: true }), "enabled");
 });

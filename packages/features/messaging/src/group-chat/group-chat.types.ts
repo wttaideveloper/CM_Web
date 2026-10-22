@@ -491,6 +491,55 @@ export interface UpdateGroupPreferencesPayload {
   pinned: boolean | null;
 }
 
+/** A personal Group Chat consent record returned by GET /groups/consents/me. */
+export interface GroupChatConsentRecord {
+  record_id: string | null;
+  conversation_id: string;
+  group_name: string | null;
+  granted_at: string | null;
+  withdrawn_at: string | null;
+  is_minor: boolean | null;
+  guardian_name: string | null;
+  guardian_relationship: string | null;
+  notice: Record<string, unknown>;
+}
+
+/** Known display-safe fields from the backend consent notice snapshot. */
+export interface GroupChatConsentNotice {
+  name: string | null;
+  kind: string | null;
+  purpose: string | null;
+  invited_at: string | null;
+  description: string | null;
+  member_count: number | null;
+  provider_names: string[];
+  invited_by_name: string | null;
+  visibility_notice: string | null;
+  what_members_can_see: string | null;
+  emergency_notice: {
+    text: string | null;
+    number: string | null;
+  } | null;
+  requires_guardian_consent: boolean | null;
+}
+
+/** Personal consent records for the authenticated Group Chat user. */
+export interface GroupChatConsentListResponse {
+  items: GroupChatConsentRecord[];
+}
+
+/** Observed successful response from POST /groups/{group_id}/consent/withdraw. */
+export interface GroupChatConsentWithdrawalResponse {
+  conversation_id: string;
+  status: "withdrawn";
+}
+
+/** Observed successful response from POST /groups/{group_id}/leave. */
+export interface GroupChatLeaveResponse {
+  conversation_id: string;
+  status: "left";
+}
+
 /** Payload accepted by POST /groups/{group_id}/reopen. */
 export interface ReopenGroupPayload {
   reason: string;
