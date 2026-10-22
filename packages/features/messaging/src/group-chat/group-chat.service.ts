@@ -26,6 +26,7 @@ import type {
   GroupChatMemberRole,
   GroupChatMessage,
   GroupChatMessageHistoryResponse,
+  GroupChatMessageReadStatus,
   GroupChatMessageListParams,
   GroupChatMemberListParams,
   GroupChatMemberListResponse,
@@ -55,7 +56,7 @@ import type {
   UpdateGroupDetailsPayload,
   UpdateGroupSettingsPayload,
 } from "./group-chat.types";
-import { buildChangeGroupMemberRolePayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatProviderVerificationCandidateQuery, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildHideGroupChatMessagePayload, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPermissions, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatReactionSettings, getGroupChatReopenReasonError, normalizeGroupChatMessageMutationResponse, normalizeGroupChatSharedFilesResponse, parseGroupChatAttachmentFileName, resolveGroupChatOwnerName } from "../group-chat-models";
+import { buildChangeGroupMemberRolePayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatMessageReadStatusPath, buildGroupChatProviderVerificationCandidateQuery, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildHideGroupChatMessagePayload, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageReadStatus, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPermissions, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatReactionSettings, getGroupChatReopenReasonError, normalizeGroupChatMessageMutationResponse, normalizeGroupChatSharedFilesResponse, parseGroupChatAttachmentFileName, resolveGroupChatOwnerName } from "../group-chat-models";
 export { buildCreateGroupPayload, buildGroupMemberInvitePayload } from "../group-chat-models";
 
 const GROUP_CHAT_API_PATH = "/groups";
@@ -627,6 +628,17 @@ export async function markGroupChatRead(groupId: string): Promise<void> {
   const normalizedGroupId = groupId.trim();
   if (!normalizedGroupId) throw new GroupChatApiError(422, "The Group Chat identifier is required.");
   await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/read`, new URLSearchParams(), { method: "POST" });
+}
+
+/** Loads read status for one Group Chat message on explicit user action. */
+export async function getGroupChatMessageReadStatus(groupId: string, messageId: string, signal?: AbortSignal): Promise<GroupChatMessageReadStatus> {
+  const normalizedGroupId = groupId.trim();
+  const normalizedMessageId = messageId.trim();
+  if (!normalizedGroupId || !normalizedMessageId) throw new GroupChatApiError(422, "A Group Chat and message are required.");
+  const path = buildGroupChatMessageReadStatusPath(normalizedGroupId, normalizedMessageId);
+  if (!path) throw new GroupChatApiError(422, "A Group Chat and message are required.");
+  const response = normalizeGroupChatMessageReadStatus(await request<unknown>(path, new URLSearchParams(), { signal }));
+  return requireParsed(response, "The Group Chat read-status response was invalid.");
 }
 
 /** Updates only the editable Group Chat identity fields. */

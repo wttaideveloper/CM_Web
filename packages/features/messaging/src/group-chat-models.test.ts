@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildHideGroupChatMessagePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canEditGroupChatMessage, canHideGroupChatMessage, canPinGroupChatMessage, canReactToGroupChatMessage, canReplyToGroupChatMessage, canReopenGroupChat, canRetractGroupChatMessage, canSendGroupChatMessage, canUpdateGroupChatSettings, formatGroupChatAttachmentSummary, formatGroupChatSharedFileSize, getGroupChatMessageDisplayText, getGroupChatMemberDisplayName, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatPostingRestrictionMessage, getGroupChatReopenReasonError, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, getGroupChatSafeMessagePreview, getGroupChatSearchViewState, getMemberManagementActions, isGroupChatReactionSelected, isSupportedGroupAvatarFile, mergeGroupChatMessagePages, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageMutationResponse, normalizeGroupChatPermissions, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatReactionCounts, normalizeGroupChatReactionSettings, normalizeGroupChatReplyReference, normalizeGroupChatSharedFilesResponse, normalizeGroupLearner, normalizeGroupProvider, parseGroupChatAttachmentFileName, parseGroupChatMessageTimestamp, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAttachmentMetadata, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
-import type { GroupChatMember } from "./group-chat/group-chat.types";
+import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatMessageReadStatusPath, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildHideGroupChatMessagePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canEditGroupChatMessage, canHideGroupChatMessage, canPinGroupChatMessage, canReactToGroupChatMessage, canReplyToGroupChatMessage, canReopenGroupChat, canRetractGroupChatMessage, canSendGroupChatMessage, canShowGroupChatReadStatusIndicator, canUpdateGroupChatSettings, canViewGroupChatReadStatus, formatGroupChatAttachmentSummary, formatGroupChatSharedFileSize, getGroupChatMessageDisplayText, getGroupChatMemberDisplayName, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatPostingRestrictionMessage, getGroupChatReadStatusMemberNames, getGroupChatReadStatusTickState, getGroupChatReopenReasonError, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, getGroupChatSafeMessagePreview, getGroupChatSearchViewState, getMemberManagementActions, isGroupChatReactionSelected, isSupportedGroupAvatarFile, mergeGroupChatMessagePages, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageMutationResponse, normalizeGroupChatMessageReadStatus, normalizeGroupChatPermissions, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatReactionCounts, normalizeGroupChatReactionSettings, normalizeGroupChatReplyReference, normalizeGroupChatSharedFilesResponse, normalizeGroupLearner, normalizeGroupProvider, parseGroupChatAttachmentFileName, parseGroupChatMessageTimestamp, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAttachmentMetadata, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
+import type { GroupChatMember, GroupChatMessage } from "./group-chat/group-chat.types";
 
 test("builds the documented Group Chat avatar multipart fields", () => {
   const file = new File(["image"], "group.png", { type: "image/png" });
@@ -718,4 +718,56 @@ test("creates privacy-safe search previews for text, attachments and unavailable
   assert.equal(getGroupChatSafeMessagePreview(image), "Image attachment");
   const hidden = normalizeGroupChatMessage({ ...base, status: "hidden", content: "secret" })!;
   assert.equal(getGroupChatSafeMessagePreview(hidden), "Message unavailable.");
+});
+
+test("normalizes read status and resolves only authorized member names", () => {
+  assert.equal(buildGroupChatMessageReadStatusPath("group/1", "message/1"), "/group%2F1/messages/message%2F1/read-status");
+  assert.equal(buildGroupChatMessageReadStatusPath(" ", "message-1"), null);
+  const status = normalizeGroupChatMessageReadStatus({
+    message_id: "message-1",
+    seen_by_count: 2,
+    recipient_count: 3,
+    label: "Seen by 2 members",
+    seen_by: ["provider-1", "unknown-user", "provider-1"],
+  });
+  assert.deepEqual(status, {
+    message_id: "message-1",
+    seen_by_count: 2,
+    recipient_count: 3,
+    label: "Seen by 2 members",
+    seen_by: ["provider-1", "unknown-user"],
+  });
+  assert.deepEqual(getGroupChatReadStatusMemberNames(status!, [{ user_id: "provider-1", name: "Provider One" }]), ["Provider One", "Group member"]);
+  assert.deepEqual(normalizeGroupChatMessageReadStatus({ message_id: "message-1", seen_by_count: 0, recipient_count: 0, label: "Not seen", seen_by: [] })?.seen_by, []);
+  assert.equal(normalizeGroupChatMessageReadStatus({ items: [] }), null);
+});
+
+test("enforces Group read-status eligibility and privacy restrictions", () => {
+  const visible = { message_type: "text", status: "visible" } as const;
+  assert.equal(canViewGroupChatReadStatus(visible, "program", "provider", "active"), true);
+  assert.equal(canViewGroupChatReadStatus(visible, "program", "patient", "active"), false);
+  assert.equal(canViewGroupChatReadStatus(visible, "program", "learner", "active"), false);
+  assert.equal(canViewGroupChatReadStatus(visible, "care", "patient", "active"), true);
+  assert.equal(canViewGroupChatReadStatus(visible, "care", "provider", "active"), true);
+  assert.equal(canViewGroupChatReadStatus(visible, "unknown", "provider", "active"), false);
+  assert.equal(canViewGroupChatReadStatus({ message_type: "system", status: "visible" }, "program", "provider", "active"), false);
+  assert.equal(canViewGroupChatReadStatus({ message_type: "text", status: "retracted" }, "program", "provider", "active"), false);
+  assert.equal(canViewGroupChatReadStatus(visible, "program", "provider", "invited"), false);
+});
+
+test("shows the read-status indicator only for eligible outgoing messages", () => {
+  const message = { id: "message-1", sender_id: "provider-1", message_type: "text", status: "visible" } as GroupChatMessage;
+  assert.equal(canShowGroupChatReadStatusIndicator(message, "provider-1", "program", "provider", "active"), true);
+  assert.equal(canShowGroupChatReadStatusIndicator(message, "other-user", "program", "provider", "active"), false);
+  assert.equal(canShowGroupChatReadStatusIndicator(message, "provider-1", "program", "patient", "active"), false);
+  assert.equal(canShowGroupChatReadStatusIndicator({ ...message, status: "retracted" }, "provider-1", "program", "provider", "active"), false);
+});
+
+test("derives read ticks only from authoritative counts", () => {
+  assert.equal(getGroupChatReadStatusTickState(null), "single");
+  assert.equal(getGroupChatReadStatusTickState({ seen_by_count: 0, recipient_count: 1 }), "single");
+  assert.equal(getGroupChatReadStatusTickState({ seen_by_count: 1, recipient_count: 3 }), "double-neutral");
+  assert.equal(getGroupChatReadStatusTickState({ seen_by_count: 3, recipient_count: 3 }), "double-blue");
+  assert.equal(getGroupChatReadStatusTickState({ seen_by_count: 4, recipient_count: 3 }), "double-blue");
+  assert.equal(getGroupChatReadStatusTickState({ seen_by_count: 1, recipient_count: 0 }), "single");
 });

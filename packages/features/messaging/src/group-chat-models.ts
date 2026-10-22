@@ -1,6 +1,6 @@
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
 import type { TenantMember } from "@ihp/enterprise-runtime";
-import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReplyReference, GroupChatSharedFile, GroupChatSharedFilesResponse, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
+import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatMessageReadStatus, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReplyReference, GroupChatSharedFile, GroupChatSharedFilesResponse, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
 export type GroupRole = "Owner" | "Admin" | "Member";
@@ -661,6 +661,78 @@ export function canReplyToGroupChatMessage(message: GroupChatMessage, groupStatu
 export function canPinGroupChatMessage(message: GroupChatMessage, canPinMessages: boolean | null, memberKind: string | null | undefined): boolean {
   if (canPinMessages !== true || memberKind?.trim().toLowerCase() !== "provider") return false;
   return message.status.trim().toLowerCase() === "visible" && message.message_type.trim().toLowerCase() !== "system";
+}
+
+/** Normalizes the read-status response without exposing untrusted identifiers as names. */
+export function normalizeGroupChatMessageReadStatus(value: unknown): GroupChatMessageReadStatus | null {
+  if (!isRecord(value) || !Array.isArray(value.seen_by)) return null;
+  const messageId = readString(value, "message_id");
+  const label = readString(value, "label");
+  const seenByCount = typeof value.seen_by_count === "number" && Number.isFinite(value.seen_by_count) && value.seen_by_count >= 0 ? value.seen_by_count : null;
+  const recipientCount = typeof value.recipient_count === "number" && Number.isFinite(value.recipient_count) && value.recipient_count >= 0 ? value.recipient_count : null;
+  if (!messageId || !label || seenByCount === null || recipientCount === null) return null;
+  return {
+    message_id: messageId,
+    seen_by_count: seenByCount,
+    recipient_count: recipientCount,
+    label,
+    seen_by: Array.from(new Set(value.seen_by.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean))),
+  };
+}
+
+/** Builds the bodyless read-status path for one Group Chat message. */
+export function buildGroupChatMessageReadStatusPath(groupId: string, messageId: string): string | null {
+  const normalizedGroupId = groupId.trim();
+  const normalizedMessageId = messageId.trim();
+  if (!normalizedGroupId || !normalizedMessageId) return null;
+  return `/${encodeURIComponent(normalizedGroupId)}/messages/${encodeURIComponent(normalizedMessageId)}/read-status`;
+}
+
+/** Allows read-status actions only for active members covered by the Group kind contract. */
+export function canViewGroupChatReadStatus(
+  message: Pick<GroupChatMessage, "message_type" | "status">,
+  groupKind: string | null,
+  memberKind: string | null,
+  membershipStatus: string | null,
+): boolean {
+  if (message.status.trim().toLowerCase() !== "visible" || message.message_type.trim().toLowerCase() === "system") return false;
+  if (membershipStatus?.trim().toLowerCase() !== "active") return false;
+  const normalizedGroupKind = groupKind?.trim().toLowerCase();
+  const normalizedMemberKind = memberKind?.trim().toLowerCase();
+  if (!["provider", "learner", "patient"].includes(normalizedMemberKind ?? "")) return false;
+  if (normalizedGroupKind === "program") return normalizedMemberKind === "provider";
+  return normalizedGroupKind === "care";
+}
+
+/** Allows the compact read-status indicator only on the current user's outgoing messages. */
+export function canShowGroupChatReadStatusIndicator(
+  message: GroupChatMessage,
+  currentUserId: string | null | undefined,
+  groupKind: string | null,
+  memberKind: string | null,
+  membershipStatus: string | null,
+): boolean {
+  return Boolean(currentUserId?.trim()) && message.sender_id === currentUserId!.trim() && canViewGroupChatReadStatus(message, groupKind, memberKind, membershipStatus);
+}
+
+/** Derives neutral or confirmed read ticks only from fetched backend read-status counts. */
+export function getGroupChatReadStatusTickState(readStatus: Pick<GroupChatMessageReadStatus, "seen_by_count" | "recipient_count"> | null | undefined): "single" | "double-neutral" | "double-blue" {
+  if (!readStatus || readStatus.recipient_count <= 0 || readStatus.seen_by_count <= 0) return "single";
+  if (readStatus.seen_by_count < readStatus.recipient_count) return "double-neutral";
+  return "double-blue";
+}
+
+/** Resolves seen-by IDs only through the authorized Group member directory. */
+export function getGroupChatReadStatusMemberNames(
+  readStatus: GroupChatMessageReadStatus,
+  members: readonly Pick<GroupChatMember, "user_id" | "name">[],
+): string[] {
+  const namesByUserId = new Map(
+    members
+      .filter((member) => Boolean(member.user_id?.trim()) && Boolean(member.name?.trim()))
+      .map((member) => [member.user_id!.trim(), member.name.trim()]),
+  );
+  return readStatus.seen_by.map((userId) => namesByUserId.get(userId) ?? "Group member");
 }
 
 /** Returns true when a visible non-system message may be moderated by an authorized active member. */

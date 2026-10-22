@@ -216,6 +216,15 @@ export interface GroupChatMessageHistoryResponse {
   pinned_count: number;
 }
 
+/** Read status returned for one authorized Group Chat message. */
+export interface GroupChatMessageReadStatus {
+  message_id: string;
+  seen_by_count: number;
+  recipient_count: number;
+  label: string;
+  seen_by: string[];
+}
+
 /** Allowed reaction configuration returned for an eligible Group Chat. */
 export interface GroupChatReactionSettings {
   enabled: boolean;
