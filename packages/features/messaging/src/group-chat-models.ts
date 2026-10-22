@@ -2,9 +2,20 @@ import type { TrainingListItem } from "@ihp/enterprise-trainings";
 import type { TenantMember } from "@ihp/enterprise-runtime";
 import type { GroupChatDataRequest } from "./group-chat/group-chat.types";
 import type { CreateGroupChatDataRequestPayload } from "./group-chat/group-chat.types";
+import type { CreateGroupChatReportPayload, GroupChatGrievanceOfficer, GroupChatReport, GroupChatReportReason } from "./group-chat/group-chat.types";
 import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatConsentListResponse, GroupChatConsentNotice, GroupChatConsentRecord, GroupChatConsentWithdrawalResponse, GroupChatLeaveResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatMessageReadStatus, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReplyReference, GroupChatSharedFile, GroupChatSharedFilesResponse, GroupChatSummary, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupPreferencesPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
+
+export const GROUP_CHAT_REPORT_REASONS: readonly { value: GroupChatReportReason; label: string }[] = [
+  { value: "harassment", label: "Harassment" },
+  { value: "privacy", label: "Privacy concern" },
+  { value: "health_information", label: "Health information" },
+  { value: "spam", label: "Spam" },
+  { value: "inappropriate", label: "Inappropriate content" },
+  { value: "safety", label: "Safety concern" },
+  { value: "other", label: "Other" },
+];
 export type GroupRole = "Owner" | "Admin" | "Member";
 export type MembershipStatus = "active" | "invited" | "pending" | "removed" | "left" | "declined";
 export type ProviderVerificationStatus = "verified" | "unverified" | "unavailable";
@@ -742,6 +753,12 @@ export function canHideGroupChatMessage(message: GroupChatMessage, canHideMessag
   return canHideMessages === true && membershipStatus?.trim().toLowerCase() === "active" && message.status.trim().toLowerCase() === "visible" && message.message_type.trim().toLowerCase() !== "system";
 }
 
+/** Returns whether the backend authorizes an active member to report a visible Group Chat message. */
+export function canReportGroupChatMessage(message: GroupChatMessage, canReport: boolean | null, membershipStatus: string | null): boolean {
+  const status = message.status.trim().toLowerCase();
+  return canReport === true && membershipStatus?.trim().toLowerCase() === "active" && status === "visible" && message.message_type.trim().toLowerCase() !== "system";
+}
+
 /** Normalizes only a complete mutation message; acknowledgements and empty responses require history refresh. */
 export function normalizeGroupChatMessageMutationResponse(value: unknown): GroupChatMessage | null {
   return normalizeGroupChatMessage(value);
@@ -1004,6 +1021,38 @@ export function buildUpdateGroupDetailsPayload(name: string, description: string
 /** Builds the minimal PATCH payload for Group Chat posting permissions. */
 export function buildUpdateGroupSettingsPayload(adminsOnlyPosting: boolean): UpdateGroupSettingsPayload {
   return { admins_only_posting: adminsOnlyPosting };
+}
+
+/** Builds the report body while requiring a trimmed reason and preserving nullable fields. */
+export function buildGroupChatReportPayload(messageId: string | null, reason: string, details: string): CreateGroupChatReportPayload | null {
+  const normalizedReason = reason.trim();
+  if (!GROUP_CHAT_REPORT_REASONS.some((option) => option.value === normalizedReason)) return null;
+  return { message_id: messageId?.trim() || null, reason: normalizedReason as GroupChatReportReason, details: details.trim() || null };
+}
+
+/** Normalizes the strict Group Chat report response without exposing unsupported fields. */
+export function normalizeGroupChatReport(value: unknown): GroupChatReport | null {
+  if (!isRecord(value)) return null;
+  const id = readString(value, "id");
+  const conversationId = readString(value, "conversation_id");
+  const messageId = value.message_id === null || value.message_id === undefined ? null : readString(value, "message_id");
+  const reporterId = readString(value, "reporter_id");
+  const reason = readString(value, "reason");
+  const details = value.details === null || value.details === undefined ? null : readString(value, "details");
+  const status = readString(value, "status");
+  const resolutionNote = value.resolution_note === null || value.resolution_note === undefined ? null : readString(value, "resolution_note");
+  const resolvedBy = value.resolved_by === null || value.resolved_by === undefined ? null : readString(value, "resolved_by");
+  const resolvedAt = value.resolved_at === null || value.resolved_at === undefined ? null : readString(value, "resolved_at");
+  const createdAt = readString(value, "created_at");
+  if (!id || !conversationId || (value.message_id !== null && value.message_id !== undefined && !messageId) || !reporterId || !reason || (value.details !== null && value.details !== undefined && !details) || !status || (value.resolution_note !== null && value.resolution_note !== undefined && !resolutionNote) || (value.resolved_by !== null && value.resolved_by !== undefined && !resolvedBy) || (value.resolved_at !== null && value.resolved_at !== undefined && !resolvedAt) || !createdAt) return null;
+  return { id, conversation_id: conversationId, message_id: messageId, reporter_id: reporterId, reason, details, status, resolution_note: resolutionNote, resolved_by: resolvedBy, resolved_at: resolvedAt, created_at: createdAt };
+}
+
+/** Normalizes the clinic Grievance Officer response with default-deny configuration handling. */
+export function normalizeGroupChatGrievanceOfficer(value: unknown): GroupChatGrievanceOfficer | null {
+  if (!isRecord(value) || typeof value.configured !== "boolean") return null;
+  const optional = (key: string): string | null => value[key] === null || value[key] === undefined ? null : readString(value, key);
+  return { name: optional("name"), email: optional("email"), phone: optional("phone"), configured: value.configured };
 }
 
 /** Builds a personal preference update without exposing timed muting controls. */

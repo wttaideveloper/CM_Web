@@ -6,6 +6,7 @@ import { getGroupChatLeaveAction } from "./group-chat-models.ts";
 import { normalizeGroupChatDataRequestList } from "./group-chat-models.ts";
 import { buildCreateGroupChatDataRequestPayload } from "./group-chat-models.ts";
 import { canSubmitGroupChatDataRequest, mergeGroupChatDataRequestsForDisplay } from "./group-chat-models.ts";
+import { buildGroupChatReportPayload, canReportGroupChatMessage, GROUP_CHAT_REPORT_REASONS, normalizeGroupChatGrievanceOfficer, normalizeGroupChatReport } from "./group-chat-models.ts";
 
 test("builds the documented Group Chat avatar multipart fields", () => {
   const file = new File(["image"], "group.png", { type: "image/png" });
@@ -949,4 +950,42 @@ test("preserves three distinct backend data-request IDs", () => {
 test("allows only one data-request submission while a mutation is pending", () => {
   assert.equal(canSubmitGroupChatDataRequest(false), true);
   assert.equal(canSubmitGroupChatDataRequest(true), false);
+});
+
+test("builds and normalizes Group Chat reports", () => {
+  assert.deepEqual(buildGroupChatReportPayload(null, "  safety ", "  Details "), { message_id: null, reason: "safety", details: "Details" });
+  assert.deepEqual(buildGroupChatReportPayload(" message-1 ", "safety", ""), { message_id: "message-1", reason: "safety", details: null });
+  assert.equal(buildGroupChatReportPayload(null, "  ", ""), null);
+  assert.deepEqual(GROUP_CHAT_REPORT_REASONS.map((option) => [option.value, option.label]), [
+    ["harassment", "Harassment"],
+    ["privacy", "Privacy concern"],
+    ["health_information", "Health information"],
+    ["spam", "Spam"],
+    ["inappropriate", "Inappropriate content"],
+    ["safety", "Safety concern"],
+    ["other", "Other"],
+  ]);
+  for (const reason of ["harassment", "privacy", "health_information", "spam", "inappropriate", "safety", "other"]) {
+    assert.equal(buildGroupChatReportPayload(null, reason, "")?.reason, reason);
+  }
+  assert.equal(buildGroupChatReportPayload(null, "unknown", ""), null);
+  const report = normalizeGroupChatReport({ id: "report-1", conversation_id: "group-1", message_id: null, reporter_id: "user-1", reason: "safety", details: null, status: "open", resolution_note: null, resolved_by: null, resolved_at: null, created_at: "2026-10-22T10:00:00Z" });
+  assert.equal(report?.message_id, null);
+  assert.equal(report?.status, "open");
+  assert.equal(normalizeGroupChatReport({ id: "report-1" }), null);
+});
+
+test("normalizes Grievance Officer configuration and nullable contacts", () => {
+  assert.deepEqual(normalizeGroupChatGrievanceOfficer({ configured: true, name: "Officer", email: null, phone: "123" }), { configured: true, name: "Officer", email: null, phone: "123" });
+  assert.deepEqual(normalizeGroupChatGrievanceOfficer({ configured: false, name: null, email: null, phone: null }), { configured: false, name: null, email: null, phone: null });
+  assert.equal(normalizeGroupChatGrievanceOfficer({ configured: "true" }), null);
+});
+
+test("report actions require backend permission and active visible non-system messages", () => {
+  const base = { id: "message-1", conversation_id: "group-1", sender_id: "user-1", sender_name: "User", sender_kind: "provider", message_type: "text", content: "Hi", attachment_id: null, file_name: null, filename: null, download_url: null, file_size: null, mime_type: null, attachment: null, status: "visible", placeholder: null, reply_to: null, mentions: [], mentions_all: false, mentions_me: false, is_edited: false, edited_at: null, pinned: false, reactions: {}, my_reactions: [], read_by: null, created_at: "2026-10-22T10:00:00Z" } as GroupChatMessage;
+  assert.equal(canReportGroupChatMessage(base, true, "active"), true);
+  assert.equal(canReportGroupChatMessage(base, false, "active"), false);
+  assert.equal(canReportGroupChatMessage({ ...base, status: "hidden" }, true, "active"), false);
+  assert.equal(canReportGroupChatMessage({ ...base, message_type: "system" }, true, "active"), false);
+  assert.equal(canReportGroupChatMessage(base, true, "removed"), false);
 });

@@ -133,6 +133,38 @@ export interface GroupChatDetails extends GroupChatSummary {
   owner: GroupChatMember | null;
 }
 
+/** Request body accepted by POST /groups/{group_id}/reports. */
+export type GroupChatReportReason = "harassment" | "privacy" | "health_information" | "spam" | "inappropriate" | "safety" | "other";
+
+export interface CreateGroupChatReportPayload {
+  message_id: string | null;
+  reason: GroupChatReportReason;
+  details: string | null;
+}
+
+/** Report record returned by the Group Chat reporting endpoint. */
+export interface GroupChatReport {
+  id: string;
+  conversation_id: string;
+  message_id: string | null;
+  reporter_id: string;
+  reason: string;
+  details: string | null;
+  status: string;
+  resolution_note: string | null;
+  resolved_by: string | null;
+  resolved_at: string | null;
+  created_at: string;
+}
+
+/** Clinic Grievance Officer contact returned for the authenticated Group Chat context. */
+export interface GroupChatGrievanceOfficer {
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  configured: boolean;
+}
+
 export type GroupChatAttachmentType = "image" | "document" | "audio" | "video";
 
 /** Attachment metadata returned by the existing Chat attachment infrastructure. */

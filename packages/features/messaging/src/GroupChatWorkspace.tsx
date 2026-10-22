@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@ihp/auth";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { changeGroupMemberRole, closeGroupChat, downloadGroupChatAttachment, getGroupChat, inviteEnrolledLearners, inviteGroupMembers, leaveGroupChat, listGroupChatFiles, listGroupChatLearners, listGroupChatMembers, listGroupChatProviders, muteGroupMemberPosting, removeGroupMember, reopenGroupChat, searchGroupChatMessages, transferGroupOwnership, unmuteGroupMemberPosting, updateGroupDetails, updateGroupPreferences, updateGroupSettings, uploadGroupAvatar, withdrawGroupChatConsent } from "./group-chat/group-chat.service";
-import { buildReopenGroupPayload, canCloseGroupChat, canEditGroupChat, canReopenGroupChat, canUpdateGroupChatSettings, formatGroupChatInvitationFeedback, formatGroupChatSharedFileSize, getGroupChatLeaveAction, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatReopenReasonError, getGroupChatSafeMessagePreview, getGroupChatSearchViewState, isGroupChatProviderUnavailableInCurrentGroup, isSupportedGroupAvatarFile, splitGroupChatMembers, type GroupChatMemberAction, type GroupChatMemberRoleAction } from "./group-chat-models";
+import { changeGroupMemberRole, closeGroupChat, createGroupChatReport, downloadGroupChatAttachment, getGroupChat, getGroupChatGrievanceOfficer, inviteEnrolledLearners, inviteGroupMembers, leaveGroupChat, listGroupChatFiles, listGroupChatLearners, listGroupChatMembers, listGroupChatProviders, muteGroupMemberPosting, removeGroupMember, reopenGroupChat, searchGroupChatMessages, transferGroupOwnership, unmuteGroupMemberPosting, updateGroupDetails, updateGroupPreferences, updateGroupSettings, uploadGroupAvatar, withdrawGroupChatConsent } from "./group-chat/group-chat.service";
+import { buildGroupChatReportPayload, buildReopenGroupPayload, canCloseGroupChat, canEditGroupChat, canReopenGroupChat, canUpdateGroupChatSettings, formatGroupChatInvitationFeedback, formatGroupChatSharedFileSize, getGroupChatLeaveAction, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatReopenReasonError, getGroupChatSafeMessagePreview, getGroupChatSearchViewState, GROUP_CHAT_REPORT_REASONS, isGroupChatProviderUnavailableInCurrentGroup, isSupportedGroupAvatarFile, splitGroupChatMembers, type GroupChatMemberAction, type GroupChatMemberRoleAction } from "./group-chat-models";
 import { GroupChatApiError } from "./group-chat/group-chat.service";
 import type { GroupChatDetails, GroupChatLearner, GroupChatListResponse, GroupChatMember, GroupChatPermissions, GroupChatProvider, GroupChatSharedFile } from "./group-chat/group-chat.types";
 import { GroupAvatarDisplay, GroupAvatarPicker, useGroupAvatarPreview } from "./GroupChatAvatar";
@@ -79,7 +79,51 @@ function MemberRow({ member, actions, menuOpen, pendingAction, reason, disabled,
   );
 }
 
-function GroupDetailsOverview({ group }: { group: GroupChatDetails }) {
+function GroupChatReportForm({ groupId, messageId, title }: { groupId: string; messageId: string | null; title: string }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [details, setDetails] = useState("");
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const mutation = useMutation({
+    mutationFn: () => {
+      const payload = buildGroupChatReportPayload(messageId, reason, details);
+      if (!payload) throw new GroupChatApiError(422, "A non-empty report reason is required.");
+      return createGroupChatReport(groupId, payload);
+    },
+    retry: false,
+    onSuccess: () => { setOpen(false); setReason(""); setDetails(""); setFeedback("Report submitted. It has not been resolved yet."); },
+    onError: (error: Error) => setFeedback(error.message),
+  });
+  useEffect(() => {
+    setOpen(false);
+    setReason("");
+    setDetails("");
+    setFeedback(null);
+    mutation.reset();
+  }, [groupId, messageId]);
+  return <section className="rounded-xl border border-[#e1ebe6] p-3">
+    <h4 className="text-sm font-bold text-[#16332b]">{title}</h4>
+    <p className="mt-1 text-xs text-[#52736a]">Reports are sent to your clinic's Compliance team and the platform's Super Admin team for review.</p>
+    {feedback ? <p className="mt-3 rounded-lg border border-[#b7dfc7] bg-[#e8f6ee] p-2 text-xs font-semibold text-[#1f6a58]" role="status">{feedback}</p> : null}
+    {open ? <form className="mt-3 space-y-2" onSubmit={(event) => { event.preventDefault(); if (!mutation.isPending) mutation.mutate(); }}>
+      <label className="block text-xs font-semibold text-[#16332b]">Reason<select required value={reason} onChange={(event) => { setReason(event.target.value); setFeedback(null); }} disabled={mutation.isPending} className="mt-1 h-9 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-sm font-normal"><option value="">Select a reason</option>{GROUP_CHAT_REPORT_REASONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+      <label className="block text-xs font-semibold text-[#16332b]">Details<span className="font-normal text-[#52736a]"> (optional)</span><textarea value={details} onChange={(event) => setDetails(event.target.value)} disabled={mutation.isPending} rows={3} className="mt-1 w-full rounded-lg border border-[#d7e5df] p-2 text-sm font-normal" /></label>
+      {mutation.error ? <p className="text-xs text-[#7a271a]" role="alert">{mutation.error.message}</p> : null}
+      <div className="flex gap-2"><button type="submit" disabled={mutation.isPending || !reason.trim()} className="rounded-full bg-[#1f6a58] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{mutation.isPending ? "Submitting..." : "Submit report"}</button><button type="button" disabled={mutation.isPending} onClick={() => { setOpen(false); setFeedback(null); }} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-xs font-semibold text-[#16332b]">Cancel</button></div>
+    </form> : <button type="button" onClick={() => { setOpen(true); setFeedback(null); }} className="mt-3 rounded-full border border-[#7a271a] px-3 py-1.5 text-xs font-semibold text-[#7a271a]">{messageId ? "Report message" : "Report Group"}</button>}
+  </section>;
+}
+
+function GrievanceOfficer({ userScope }: { userScope: string }) {
+  const query = useQuery({ queryKey: ["group-chat", "grievance-officer", userScope], queryFn: ({ signal }) => getGroupChatGrievanceOfficer(signal), enabled: Boolean(userScope), retry: false });
+  if (query.isPending) return <section className="rounded-xl border border-[#e1ebe6] p-3"><h4 className="text-sm font-bold text-[#16332b]">Grievance Officer</h4><p className="mt-2 text-xs text-[#52736a]" aria-live="polite">Loading Grievance Officer details...</p></section>;
+  if (query.isError) return <section className="rounded-xl border border-[#f3d5d1] bg-[#fff7f6] p-3"><h4 className="text-sm font-bold text-[#16332b]">Grievance Officer</h4><p className="mt-2 text-xs text-[#7a271a]" role="alert">{query.error.message}</p><button type="button" onClick={() => void query.refetch()} className="mt-2 text-xs font-semibold underline">Try again</button></section>;
+  const officer = query.data;
+  if (!officer?.configured) return <section className="rounded-xl border border-[#e1ebe6] p-3"><h4 className="text-sm font-bold text-[#16332b]">Grievance Officer</h4><p className="mt-2 text-xs text-[#52736a]">Grievance officer details have not been configured.</p></section>;
+  return <section className="rounded-xl border border-[#e1ebe6] p-3"><h4 className="text-sm font-bold text-[#16332b]">Grievance Officer</h4>{officer.name || officer.email || officer.phone ? <dl className="mt-2 grid gap-2 text-xs text-[#16332b] sm:grid-cols-3">{officer.name ? <div><dt className="font-semibold text-[#52736a]">Name</dt><dd>{officer.name}</dd></div> : null}{officer.email ? <div><dt className="font-semibold text-[#52736a]">Email</dt><dd className="break-words">{officer.email}</dd></div> : null}{officer.phone ? <div><dt className="font-semibold text-[#52736a]">Phone</dt><dd>{officer.phone}</dd></div> : null}</dl> : <p className="mt-2 text-xs text-[#52736a]">No contact details are available.</p>}</section>;
+}
+
+function GroupDetailsOverview({ group, groupId, userScope }: { group: GroupChatDetails; groupId: string; userScope: string }) {
   const groupIsClosed = group.status?.trim().toLowerCase() === "closed";
   return <div className="space-y-3">
     {groupIsClosed ? <div className="rounded-xl border border-[#f1d8ad] bg-[#fffaf0] p-3 text-sm text-[#8b5e00]" role="status">This group is closed. It is read-only.</div> : null}
@@ -94,6 +138,8 @@ function GroupDetailsOverview({ group }: { group: GroupChatDetails }) {
     </section>
     {group.visibility_notice ? <p className="rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-3 text-xs text-[#52736a]">{group.visibility_notice}</p> : null}
     {group.emergency_notice ? <p className="rounded-xl border border-[#f1d8ad] bg-[#fffaf0] p-3 text-xs text-[#8b5e00]">{group.emergency_notice}</p> : null}
+    {group.permissions.can_report === true ? <GroupChatReportForm groupId={groupId} messageId={null} title="Report Group" /> : null}
+    <GrievanceOfficer userScope={userScope} />
   </div>;
 }
 function isLoadedGroupMessage(messageId: string): boolean {
@@ -231,7 +277,7 @@ function GroupDetailsPanel({ group, groupId, userScope, canViewMembers, canInvit
       {([["overview", "Overview"], ["members", "Members"], ["invite", "Invite members"], ["search", "Search"], ["files", "Shared Files"], ["settings", "Settings"]] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={tab === value ? "rounded-full bg-[#1f6a58] px-3 py-1.5 text-xs font-semibold text-white" : "rounded-full bg-[#f4faf7] px-3 py-1.5 text-xs font-semibold text-[#52736a]"}>{label}</button>)}
     </div>
     <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
-      {tab === "overview" ? <GroupDetailsOverview group={group} /> : tab === "members" ? <Members groupId={groupId} ownerUserId={group.owner_user_id} groupStatus={group.status} permissions={group.permissions} canViewMembers={canViewMembers} /> : tab === "invite" ? <Invite group={group} groupId={groupId} canInviteMembers={canInviteMembers} /> : tab === "search" ? <SearchMessages key={groupId} groupId={groupId} onNavigateToLoadedMessage={onNavigateToLoadedMessage} /> : tab === "files" ? <SharedFiles key={groupId} groupId={groupId} /> : <Settings group={group} groupId={groupId} />}
+      {tab === "overview" ? <GroupDetailsOverview group={group} groupId={groupId} userScope={userScope} /> : tab === "members" ? <Members groupId={groupId} ownerUserId={group.owner_user_id} groupStatus={group.status} permissions={group.permissions} canViewMembers={canViewMembers} /> : tab === "invite" ? <Invite group={group} groupId={groupId} canInviteMembers={canInviteMembers} /> : tab === "search" ? <SearchMessages key={groupId} groupId={groupId} onNavigateToLoadedMessage={onNavigateToLoadedMessage} /> : tab === "files" ? <SharedFiles key={groupId} groupId={groupId} /> : <Settings group={group} groupId={groupId} />}
     </div>
   </section>;
 }
@@ -503,7 +549,7 @@ export default function GroupChatWorkspace({ groupId, onClose }: Props) {
       </div>
       <GroupPreferenceActions key={`${groupId}:${userScope}`} group={group} groupId={groupId} userScope={userScope} />
       <div className="mt-2 min-h-0 flex-1 flex flex-col">
-        <GroupChatMessages groupId={group.id} groupStatus={group.status} groupKind={group.kind} memberDirectory={currentMemberQuery.data ?? []} canPost={group.permissions.can_post} postingMuted={currentMember?.posting_muted ?? null} canHideMessages={group.permissions.can_hide_messages} canPinMessages={group.permissions.can_pin_messages} currentMemberKind={currentMember?.member_kind ?? null} currentMemberStatus={currentMember?.membership_status ?? null} />
+        <GroupChatMessages groupId={group.id} groupStatus={group.status} groupKind={group.kind} memberDirectory={currentMemberQuery.data ?? []} canPost={group.permissions.can_post} postingMuted={currentMember?.posting_muted ?? null} canHideMessages={group.permissions.can_hide_messages} canPinMessages={group.permissions.can_pin_messages} canReport={group.permissions.can_report} currentMemberKind={currentMember?.member_kind ?? null} currentMemberStatus={currentMember?.membership_status ?? null} />
       </div>
     </div>
     {detailsOpen ? <GroupDetailsPanel group={group} groupId={groupId} userScope={userScope} canViewMembers={canViewMembers} canInviteMembers={canInviteMembers} onClose={() => setDetailsOpen(false)} onLeave={() => { setDetailsOpen(false); onClose?.(); }} onNavigateToLoadedMessage={navigateToLoadedMessage} /> : null}

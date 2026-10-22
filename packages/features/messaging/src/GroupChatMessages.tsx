@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { useAuth } from "@ihp/auth";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { addGroupChatMessageReaction, downloadGroupChatAttachment, editGroupChatMessage, getGroupChatMessageReadStatus, getGroupChatReactions, hideGroupChatMessage, listGroupChatMessages, listGroupChatPinnedMessages, markGroupChatRead, pinGroupChatMessage, removeGroupChatMessageReaction, retractGroupChatMessage, sendGroupChatAttachmentMessage, sendGroupChatTextMessage, unpinGroupChatMessage, uploadGroupChatAttachment } from "./group-chat/group-chat.service";
-import { buildEditGroupChatMessagePayload, canEditGroupChatMessage, canHideGroupChatMessage, canPinGroupChatMessage, canReactToGroupChatMessage, canReplyToGroupChatMessage, canRetractGroupChatMessage, canSendGroupChatMessage, canShowGroupChatReadStatusIndicator, canViewGroupChatReadStatus, formatGroupChatAttachmentSummary, getGroupChatMessageDisplayText, getGroupChatPostingRestrictionMessage, getGroupChatReadStatusMemberNames, getGroupChatReadStatusTickState, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, isGroupChatReactionSelected, mergeGroupChatMessagePages, normalizeGroupChatReactionCounts, resolveGroupChatAttachmentMetadata } from "./group-chat-models";
+import { addGroupChatMessageReaction, createGroupChatReport, downloadGroupChatAttachment, editGroupChatMessage, getGroupChatMessageReadStatus, getGroupChatReactions, hideGroupChatMessage, listGroupChatMessages, listGroupChatPinnedMessages, markGroupChatRead, pinGroupChatMessage, removeGroupChatMessageReaction, retractGroupChatMessage, sendGroupChatAttachmentMessage, sendGroupChatTextMessage, unpinGroupChatMessage, uploadGroupChatAttachment } from "./group-chat/group-chat.service";
+import { buildEditGroupChatMessagePayload, buildGroupChatReportPayload, canEditGroupChatMessage, canHideGroupChatMessage, canPinGroupChatMessage, canReactToGroupChatMessage, canReplyToGroupChatMessage, canReportGroupChatMessage, canRetractGroupChatMessage, canSendGroupChatMessage, canShowGroupChatReadStatusIndicator, canViewGroupChatReadStatus, formatGroupChatAttachmentSummary, getGroupChatMessageDisplayText, getGroupChatPostingRestrictionMessage, getGroupChatReadStatusMemberNames, getGroupChatReadStatusTickState, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, GROUP_CHAT_REPORT_REASONS, isGroupChatReactionSelected, mergeGroupChatMessagePages, normalizeGroupChatReactionCounts, resolveGroupChatAttachmentMetadata } from "./group-chat-models";
 import type { GroupChatAttachment, GroupChatAttachmentType, GroupChatMember, GroupChatMessage, GroupChatMessageReadStatus, GroupChatReactionSettings } from "./group-chat/group-chat.types";
 
 type Props = {
@@ -16,6 +16,7 @@ type Props = {
   postingMuted: boolean | null;
   canHideMessages: boolean | null;
   canPinMessages: boolean | null;
+  canReport: boolean | null;
   currentMemberKind: string | null;
   currentMemberStatus: string | null;
 };
@@ -28,6 +29,7 @@ const READ_STATUS_AUTO_CONCURRENCY = 2;
 type EditVariables = { groupId: string; messageId: string; content: string };
 type MessageActionVariables = { groupId: string; messageId: string };
 type HideVariables = MessageActionVariables & { reason: string };
+type ReportVariables = MessageActionVariables & { reason: string; details: string };
 type SendVariables = { content: string; replyToId?: string };
 type AttachmentUploadVariables = { groupId: string; file: File; attachmentType: GroupChatAttachmentType };
 type AttachmentSendVariables = { groupId: string; attachment: GroupChatAttachment };
@@ -119,7 +121,7 @@ function GroupChatAttachmentMessage({ message }: { message: GroupChatMessage }) 
   </div>;
 }
 
-type MessageAction = "reply" | "edit" | "retract" | "hide" | "pin" | "unpin" | "read-status";
+type MessageAction = "reply" | "edit" | "retract" | "hide" | "report" | "pin" | "unpin" | "read-status";
 
 function getPinnedMessagePreview(message: GroupChatMessage): string {
   if (message.status.trim().toLowerCase() !== "visible") return "Original message unavailable.";
@@ -209,7 +211,7 @@ function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen
   const readStatusTick = readStatusTickState === "single" ? "✓" : "✓✓";
   const readStatusTickClass = readStatusTickState === "double-blue" ? "text-[#7dd3fc]" : readStatusTickState === "double-neutral" ? "text-[#cbd5d1]" : "text-[#d8f3e4]";
   const messageClasses = `max-w-[85%] rounded-2xl px-3 py-2 text-sm shadow-sm ${actions.length > 0 ? "pr-12" : ""} ${highlighted ? "ring-2 ring-[#f0b429]" : ""} ${isOwnMessage ? "bg-[#1f6a58] text-white" : "border border-[#e1ebe6] bg-white text-[#16332b]"}`;
-  const menuLabel = pendingAction === "retract" ? "Retract this message?" : pendingAction === "hide" ? "Hide this message?" : null;
+  const menuLabel = pendingAction === "retract" ? "Retract this message?" : pendingAction === "hide" ? "Hide this message?" : pendingAction === "report" ? "Report this message?" : null;
   return <div className="group">
     {isFirstUnread ? <div className="my-3 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-[#1f6a58]"><span className="h-px flex-1 bg-[#b7dfc7]" />Unread messages<span className="h-px flex-1 bg-[#b7dfc7]" /></div> : null}
     {isSystemMessage ? <div className="flex justify-center py-1">
@@ -223,10 +225,10 @@ function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen
         {actions.length > 0 ? <div className="absolute right-1 top-1 z-10">
           <button type="button" aria-label={`Message actions for ${message.sender_name}`} aria-haspopup="menu" aria-expanded={menuOpen} title="Message actions" disabled={mutationPending} onClick={onToggleMenu} className="flex h-7 w-7 items-center justify-center rounded-full bg-white/80 text-sm font-bold text-[#52736a] opacity-0 shadow-sm transition-opacity hover:bg-white focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-50">⋯</button>
           {menuOpen ? <div role="menu" aria-label="Message actions" className="absolute right-0 top-8 z-30 w-56 rounded-xl border border-[#d7e5df] bg-white p-2 text-sm text-[#16332b] shadow-lg">
-            {pendingAction === null ? actions.map((action) => <button key={action} type="button" role="menuitem" onClick={() => onSelectAction(action)} className="block w-full rounded-lg px-3 py-2 text-left font-semibold hover:bg-[#e8f6ee] focus-visible:bg-[#e8f6ee] focus-visible:outline-none">{action === "reply" ? "Reply to message" : action === "edit" ? "Edit message" : action === "retract" ? "Retract message" : action === "hide" ? "Hide message" : action === "pin" ? "Pin message" : action === "unpin" ? "Unpin message" : "Read status"}</button>) : <div>
+            {pendingAction === null ? actions.map((action) => <button key={action} type="button" role="menuitem" onClick={() => onSelectAction(action)} className="block w-full rounded-lg px-3 py-2 text-left font-semibold hover:bg-[#e8f6ee] focus-visible:bg-[#e8f6ee] focus-visible:outline-none">{action === "reply" ? "Reply to message" : action === "edit" ? "Edit message" : action === "retract" ? "Retract message" : action === "hide" ? "Hide message" : action === "report" ? "Report message" : action === "pin" ? "Pin message" : action === "unpin" ? "Unpin message" : "Read status"}</button>) : <div>
               <p className="px-2 py-1 font-semibold">{menuLabel}</p>
-              {pendingAction === "retract" ? <p className="px-2 py-1 text-xs text-[#52736a]">The original message will remain available for audit and will no longer be visible here.</p> : <label className="mt-2 block px-2 text-xs font-semibold text-[#52736a]">Reason<textarea value={hideReason} maxLength={255} onChange={(event) => onHideReasonChange(event.target.value)} disabled={mutationPending} className="mt-1 min-h-20 w-full rounded-lg border border-[#d7e5df] p-2 text-sm font-normal text-[#16332b] outline-none focus:border-[#1f6a58]" /></label>}
-              <div className="mt-2 flex gap-2 px-2 pb-1"><button type="button" disabled={mutationPending || (pendingAction === "hide" && !hideReason.trim())} onClick={onConfirmAction} className="rounded-full bg-[#1f6a58] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{mutationPending ? pendingAction === "retract" ? "Retracting..." : "Hiding..." : "Confirm"}</button><button type="button" disabled={mutationPending} onClick={onCancelAction} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-xs font-semibold text-[#16332b]">Cancel</button></div>
+              {pendingAction === "retract" ? <p className="px-2 py-1 text-xs text-[#52736a]">The original message will remain available for audit and will no longer be visible here.</p> : pendingAction === "report" ? <label className="mt-2 block px-2 text-xs font-semibold text-[#52736a]">Reason<select required value={hideReason} onChange={(event) => onHideReasonChange(event.target.value)} disabled={mutationPending} className="mt-1 h-9 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-sm font-normal text-[#16332b] outline-none focus:border-[#1f6a58]"><option value="">Select a reason</option>{GROUP_CHAT_REPORT_REASONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label> : <label className="mt-2 block px-2 text-xs font-semibold text-[#52736a]">Reason<textarea value={hideReason} maxLength={255} onChange={(event) => onHideReasonChange(event.target.value)} disabled={mutationPending} className="mt-1 min-h-20 w-full rounded-lg border border-[#d7e5df] p-2 text-sm font-normal text-[#16332b] outline-none focus:border-[#1f6a58]" /></label>}
+              <div className="mt-2 flex gap-2 px-2 pb-1"><button type="button" disabled={mutationPending || ((pendingAction === "hide" || pendingAction === "report") && !hideReason.trim())} onClick={onConfirmAction} className="rounded-full bg-[#1f6a58] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{mutationPending ? pendingAction === "retract" ? "Retracting..." : pendingAction === "hide" ? "Hiding..." : "Submitting..." : "Confirm"}</button><button type="button" disabled={mutationPending} onClick={onCancelAction} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-xs font-semibold text-[#16332b]">Cancel</button></div>
             </div>}
           </div> : null}
         </div> : null}
@@ -254,7 +256,7 @@ function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen
 }
 
 /** Renders REST-only Group Chat history and text messaging without using Direct Chat or Socket.IO. */
-export default function GroupChatMessages({ groupId, groupStatus, groupKind, memberDirectory, canPost, postingMuted, canHideMessages, canPinMessages, currentMemberKind, currentMemberStatus }: Props) {
+export default function GroupChatMessages({ groupId, groupStatus, groupKind, memberDirectory, canPost, postingMuted, canHideMessages, canPinMessages, canReport, currentMemberKind, currentMemberStatus }: Props) {
   const { userId } = useAuth();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState("");
@@ -267,7 +269,7 @@ export default function GroupChatMessages({ groupId, groupStatus, groupKind, mem
   const previousScroll = useRef<{ height: number; top: number } | null>(null);
   const replyHighlightTimer = useRef<number | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const [pendingAction, setPendingAction] = useState<{ messageId: string; action: "retract" | "hide" } | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ messageId: string; action: "retract" | "hide" | "report" } | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
@@ -448,6 +450,24 @@ export default function GroupChatMessages({ groupId, groupStatus, groupKind, mem
       setHideReason("");
       setActionError(null);
       await refreshMessages();
+    },
+    onError: (error: Error, variables) => {
+      if (variables.groupId === groupId) setActionError(error.message);
+    },
+  });
+  const reportMutation = useMutation({
+    mutationFn: ({ groupId: targetGroupId, messageId, reason, details }: ReportVariables) => {
+      const payload = buildGroupChatReportPayload(messageId, reason, details);
+      if (!payload) throw new Error("A non-empty report reason is required.");
+      return createGroupChatReport(targetGroupId, payload);
+    },
+    retry: false,
+    onSuccess: (_report, variables) => {
+      if (variables.groupId !== groupId) return;
+      setOpenMenuId(null);
+      setPendingAction(null);
+      setHideReason("");
+      setActionError("Report submitted. It has not been resolved yet.");
     },
     onError: (error: Error, variables) => {
       if (variables.groupId === groupId) setActionError(error.message);
@@ -713,7 +733,7 @@ export default function GroupChatMessages({ groupId, groupStatus, groupKind, mem
   };
   const postingDisabled = !canSendGroupChatMessage(groupStatus, canPost, postingMuted === true);
   const restrictionMessage = getGroupChatPostingRestrictionMessage(groupStatus, canPost, postingMuted);
-  const mutationPending = editMutation.isPending || retractMutation.isPending || hideMutation.isPending || attachmentUploadMutation.isPending || attachmentSendMutation.isPending || pinMutation.isPending;
+  const mutationPending = editMutation.isPending || retractMutation.isPending || hideMutation.isPending || reportMutation.isPending || attachmentUploadMutation.isPending || attachmentSendMutation.isPending || pinMutation.isPending;
   const reactionSettings = reactionQuery.data ?? null;
   const reactionMutationPending = reactionMutation.isPending;
   const toggleReaction = (message: GroupChatMessage, emoji: string) => {
@@ -728,6 +748,7 @@ export default function GroupChatMessages({ groupId, groupStatus, groupKind, mem
     if (canEditGroupChatMessage(message, userId)) actions.push("edit");
     if (canRetractGroupChatMessage(message, userId)) actions.push("retract");
     if (canHideGroupChatMessage(message, canHideMessages, currentMemberStatus)) actions.push("hide");
+    if (canReportGroupChatMessage(message, canReport, currentMemberStatus)) actions.push("report");
     if (canPinGroupChatMessage(message, canPinMessages, currentMemberKind)) actions.push(message.pinned ? "unpin" : "pin");
     if (canViewGroupChatReadStatus(message, groupKind, currentMemberKind, currentMemberStatus)) actions.push("read-status");
     return actions;
@@ -759,7 +780,7 @@ export default function GroupChatMessages({ groupId, groupStatus, groupKind, mem
         const readStatusOpen = readStatusMessageId === message.id && selectedReadStatusMessage !== null && readStatusAllowed;
         const messageReadStatus = (readStatusOpen && readStatusQuery.data?.message_id === message.id ? readStatusQuery.data : null) ?? readStatusByMessage[readStatusKey(groupId, message.id)] ?? null;
         const messageReadStatusNames = messageReadStatus ? getGroupChatReadStatusMemberNames(messageReadStatus, memberDirectory) : [];
-        return <MessageBubble key={message.id} message={message} messageRef={(node) => registerReadStatusElement(message.id, node)} isOwnMessage={message.sender_id === userId} isFirstUnread={message.id === firstUnreadMessageId} actions={actions} menuOpen={openMenuId === message.id} pendingAction={messagePendingAction} editMode={messageIsEditing} editDraft={editDraft} editError={messageIsEditing ? editError : null} hideReason={hideReason} mutationPending={mutationPending} replyTarget={message.reply_to ? messages.find((candidate) => candidate.id === message.reply_to?.id) ?? null : null} highlighted={highlightedMessageId === message.id} reactionSettings={reactionSettings} reactionPickerOpen={openReactionPickerId === message.id} reactionMutationPending={reactionMutationPending} onToggleReactionPicker={() => { if (!reactionMutationPending && reactionSettings?.enabled) setOpenReactionPickerId((current) => current === message.id ? null : message.id); }} onToggleReaction={(emoji) => toggleReaction(message, emoji)} onToggleMenu={() => { if (!mutationPending) { setOpenMenuId((current) => current === message.id ? null : message.id); setPendingAction(null); setActionError(null); } }} onReplyReference={locateReplyTarget} onSelectAction={(action) => { setActionError(null); if (action === "reply") { setReplyingTo(message); setOpenMenuId(null); setPendingAction(null); return; } if (action === "edit") { setEditingMessageId(message.id); setEditDraft(message.content ?? ""); setEditError(null); setPendingAction(null); setOpenMenuId(null); return; } if (action === "read-status") { setReadStatusSelection({ groupId, messageId: message.id }); setOpenMenuId(null); setPendingAction(null); return; } if (action === "pin" || action === "unpin") { setOpenMenuId(null); setPendingAction(null); pinMutation.mutate({ groupId, messageId: message.id, pinned: action === "pin" }); return; } setPendingAction({ messageId: message.id, action }); setOpenMenuId(message.id); if (action === "hide") setHideReason(""); }} onEditDraftChange={(value) => { setEditDraft(value); setEditError(null); }} onSaveEdit={() => { const payload = buildEditGroupChatMessagePayload(editDraft); if (!payload) { setEditError("Message content cannot be empty."); return; } editMutation.mutate({ groupId, messageId: message.id, content: payload.content }); }} onCancelEdit={() => { setEditingMessageId(null); setEditDraft(""); setEditError(null); setActionError(null); }} onHideReasonChange={(value) => { setHideReason(value); setActionError(null); }} onConfirmAction={() => { if (messagePendingAction === "retract") retractMutation.mutate({ groupId, messageId: message.id }); if (messagePendingAction === "hide" && hideReason.trim()) hideMutation.mutate({ groupId, messageId: message.id, reason: hideReason }); }} onCancelAction={() => { setOpenMenuId(null); setPendingAction(null); setHideReason(""); setActionError(null); }} readStatusEligible={readStatusIndicatorEligible} readStatusOpen={readStatusOpen} readStatus={messageReadStatus} readStatusLoading={readStatusOpen && readStatusQuery.isPending && !messageReadStatus} readStatusError={readStatusOpen && readStatusQuery.isError} readStatusNames={messageReadStatusNames} onToggleReadStatus={() => { setReadStatusSelection((current) => current?.groupId === groupId && current.messageId === message.id ? null : { groupId, messageId: message.id }); setOpenMenuId(null); setPendingAction(null); }} onRetryReadStatus={() => void readStatusQuery.refetch()} onCloseReadStatus={() => setReadStatusSelection(null)} />;
+        return <MessageBubble key={message.id} message={message} messageRef={(node) => registerReadStatusElement(message.id, node)} isOwnMessage={message.sender_id === userId} isFirstUnread={message.id === firstUnreadMessageId} actions={actions} menuOpen={openMenuId === message.id} pendingAction={messagePendingAction} editMode={messageIsEditing} editDraft={editDraft} editError={messageIsEditing ? editError : null} hideReason={hideReason} mutationPending={mutationPending} replyTarget={message.reply_to ? messages.find((candidate) => candidate.id === message.reply_to?.id) ?? null : null} highlighted={highlightedMessageId === message.id} reactionSettings={reactionSettings} reactionPickerOpen={openReactionPickerId === message.id} reactionMutationPending={reactionMutationPending} onToggleReactionPicker={() => { if (!reactionMutationPending && reactionSettings?.enabled) setOpenReactionPickerId((current) => current === message.id ? null : message.id); }} onToggleReaction={(emoji) => toggleReaction(message, emoji)} onToggleMenu={() => { if (!mutationPending) { setOpenMenuId((current) => current === message.id ? null : message.id); setPendingAction(null); setActionError(null); } }} onReplyReference={locateReplyTarget} onSelectAction={(action) => { setActionError(null); if (action === "reply") { setReplyingTo(message); setOpenMenuId(null); setPendingAction(null); return; } if (action === "edit") { setEditingMessageId(message.id); setEditDraft(message.content ?? ""); setEditError(null); setPendingAction(null); setOpenMenuId(null); return; } if (action === "read-status") { setReadStatusSelection({ groupId, messageId: message.id }); setOpenMenuId(null); setPendingAction(null); return; } if (action === "pin" || action === "unpin") { setOpenMenuId(null); setPendingAction(null); pinMutation.mutate({ groupId, messageId: message.id, pinned: action === "pin" }); return; } setPendingAction({ messageId: message.id, action }); setOpenMenuId(message.id); if (action === "hide" || action === "report") setHideReason(""); }} onEditDraftChange={(value) => { setEditDraft(value); setEditError(null); }} onSaveEdit={() => { const payload = buildEditGroupChatMessagePayload(editDraft); if (!payload) { setEditError("Message content cannot be empty."); return; } editMutation.mutate({ groupId, messageId: message.id, content: payload.content }); }} onCancelEdit={() => { setEditingMessageId(null); setEditDraft(""); setEditError(null); setActionError(null); }} onHideReasonChange={(value) => { setHideReason(value); setActionError(null); }} onConfirmAction={() => { if (messagePendingAction === "retract") retractMutation.mutate({ groupId, messageId: message.id }); if (messagePendingAction === "hide" && hideReason.trim()) hideMutation.mutate({ groupId, messageId: message.id, reason: hideReason }); if (messagePendingAction === "report" && hideReason.trim()) reportMutation.mutate({ groupId, messageId: message.id, reason: hideReason, details: "" }); }} onCancelAction={() => { setOpenMenuId(null); setPendingAction(null); setHideReason(""); setActionError(null); }} readStatusEligible={readStatusIndicatorEligible} readStatusOpen={readStatusOpen} readStatus={messageReadStatus} readStatusLoading={readStatusOpen && readStatusQuery.isPending && !messageReadStatus} readStatusError={readStatusOpen && readStatusQuery.isError} readStatusNames={messageReadStatusNames} onToggleReadStatus={() => { setReadStatusSelection((current) => current?.groupId === groupId && current.messageId === message.id ? null : { groupId, messageId: message.id }); setOpenMenuId(null); setPendingAction(null); }} onRetryReadStatus={() => void readStatusQuery.refetch()} onCloseReadStatus={() => setReadStatusSelection(null)} />;
       })}
       </div>
       </div>}
