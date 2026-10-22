@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatMessageReadStatusPath, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildHideGroupChatMessagePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canEditGroupChatMessage, canHideGroupChatMessage, canPinGroupChatMessage, canReactToGroupChatMessage, canReplyToGroupChatMessage, canReopenGroupChat, canRetractGroupChatMessage, canSendGroupChatMessage, canShowGroupChatReadStatusIndicator, canUpdateGroupChatSettings, canViewGroupChatReadStatus, formatGroupChatAttachmentSummary, formatGroupChatSharedFileSize, getGroupChatMessageDisplayText, getGroupChatMemberDisplayName, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatPostingRestrictionMessage, getGroupChatReadStatusMemberNames, getGroupChatReadStatusTickState, getGroupChatReopenReasonError, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, getGroupChatSafeMessagePreview, getGroupChatSearchViewState, getMemberManagementActions, isGroupChatReactionSelected, isSupportedGroupAvatarFile, mergeGroupChatMessagePages, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageMutationResponse, normalizeGroupChatMessageReadStatus, normalizeGroupChatPermissions, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatReactionCounts, normalizeGroupChatReactionSettings, normalizeGroupChatReplyReference, normalizeGroupChatSharedFilesResponse, normalizeGroupLearner, normalizeGroupProvider, parseGroupChatAttachmentFileName, parseGroupChatMessageTimestamp, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAttachmentMetadata, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
+import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatMessageReadStatusPath, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildHideGroupChatMessagePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupPreferencesPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canEditGroupChatMessage, canHideGroupChatMessage, canPinGroupChatMessage, canReactToGroupChatMessage, canReplyToGroupChatMessage, canReopenGroupChat, canRetractGroupChatMessage, canSendGroupChatMessage, canShowGroupChatReadStatusIndicator, canUpdateGroupChatSettings, canViewGroupChatReadStatus, formatGroupChatAttachmentSummary, formatGroupChatSharedFileSize, getGroupChatMessageDisplayText, getGroupChatMemberDisplayName, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatPersonalPreferenceIndicators, getGroupChatPostingRestrictionMessage, getGroupChatReadStatusMemberNames, getGroupChatReadStatusTickState, getGroupChatReopenReasonError, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, getGroupChatSafeMessagePreview, getGroupChatSearchViewState, getMemberManagementActions, isGroupChatReactionSelected, isSupportedGroupAvatarFile, mergeGroupChatMessagePages, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageMutationResponse, normalizeGroupChatMessageReadStatus, normalizeGroupChatPermissions, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPreferences, normalizeGroupChatReactionCounts, normalizeGroupChatReactionSettings, normalizeGroupChatReplyReference, normalizeGroupChatSharedFilesResponse, normalizeGroupLearner, normalizeGroupProvider, orderGroupChatSummariesByPersonalPin, parseGroupChatAttachmentFileName, parseGroupChatMessageTimestamp, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAttachmentMetadata, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
 import type { GroupChatMember, GroupChatMessage } from "./group-chat/group-chat.types";
 
 test("builds the documented Group Chat avatar multipart fields", () => {
@@ -298,6 +298,31 @@ test("builds minimal Group Chat update payloads", () => {
   assert.deepEqual(buildUpdateGroupDetailsPayload(" Group name ", " Description "), { name: "Group name", description: "Description" });
   assert.deepEqual(buildUpdateGroupSettingsPayload(true), { admins_only_posting: true });
   assert.deepEqual(buildUpdateGroupSettingsPayload(false), { admins_only_posting: false });
+  assert.deepEqual(buildUpdateGroupPreferencesPayload(true, false), { muted: true, pinned: false });
+  assert.deepEqual(buildUpdateGroupPreferencesPayload(false, true), { muted: false, pinned: true });
+  assert.deepEqual(buildUpdateGroupPreferencesPayload(null, true), { muted: null, pinned: true });
+});
+
+test("normalizes authoritative personal Group preferences and fails closed when absent", () => {
+  assert.deepEqual(normalizeGroupChatPreferences({ muted: true, pinned: false, is_archived: false }), { muted: true, pinned: false, is_archived: false });
+  assert.deepEqual(normalizeGroupChatPreferences({ muted: "true", pinned: null, is_archived: 0 }), { muted: null, pinned: null, is_archived: null });
+});
+
+test("returns only the enabled personal Group preference indicators", () => {
+  assert.deepEqual(getGroupChatPersonalPreferenceIndicators({ muted: false, pinned: false }), []);
+  assert.deepEqual(getGroupChatPersonalPreferenceIndicators({ muted: false, pinned: true }), ["pinned"]);
+  assert.deepEqual(getGroupChatPersonalPreferenceIndicators({ muted: true, pinned: false }), ["muted"]);
+  assert.deepEqual(getGroupChatPersonalPreferenceIndicators({ muted: true, pinned: true }), ["pinned", "muted"]);
+});
+
+test("orders pinned groups first without changing activity order within either category", () => {
+  const groups = [
+    { id: "unpinned-old", pinned: false, last_message_at: "2026-10-20T08:00:00Z" },
+    { id: "pinned-old", pinned: true, last_message_at: "2026-10-19T08:00:00Z" },
+    { id: "unpinned-new", pinned: false, last_message_at: "2026-10-21T08:00:00Z" },
+    { id: "pinned-new", pinned: true, last_message_at: "2026-10-21T09:00:00Z" },
+  ] as GroupChatSummary[];
+  assert.deepEqual(orderGroupChatSummariesByPersonalPin(groups).map((group) => group.id), ["pinned-old", "pinned-new", "unpinned-old", "unpinned-new"]);
 });
 
 test("normalizes the documented Group Chat message response", () => {

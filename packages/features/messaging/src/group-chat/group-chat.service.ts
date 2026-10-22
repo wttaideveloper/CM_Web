@@ -54,9 +54,10 @@ import type {
   InviteMembersPayload,
   InviteEnrolledLearnersPayload,
   UpdateGroupDetailsPayload,
+  UpdateGroupPreferencesPayload,
   UpdateGroupSettingsPayload,
 } from "./group-chat.types";
-import { buildChangeGroupMemberRolePayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatMessageReadStatusPath, buildGroupChatProviderVerificationCandidateQuery, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildHideGroupChatMessagePayload, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageReadStatus, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPermissions, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatReactionSettings, getGroupChatReopenReasonError, normalizeGroupChatMessageMutationResponse, normalizeGroupChatSharedFilesResponse, parseGroupChatAttachmentFileName, resolveGroupChatOwnerName } from "../group-chat-models";
+import { buildChangeGroupMemberRolePayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatMessageReadStatusPath, buildGroupChatProviderVerificationCandidateQuery, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildHideGroupChatMessagePayload, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupPreferencesPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageReadStatus, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPermissions, normalizeGroupChatPreferences, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatReactionSettings, getGroupChatReopenReasonError, normalizeGroupChatMessageMutationResponse, normalizeGroupChatSharedFilesResponse, parseGroupChatAttachmentFileName, resolveGroupChatOwnerName } from "../group-chat-models";
 export { buildCreateGroupPayload, buildGroupMemberInvitePayload } from "../group-chat-models";
 
 const GROUP_CHAT_API_PATH = "/groups";
@@ -357,6 +358,7 @@ function parseGroup(value: unknown): GroupChatSummary | null {
     owner_user_id: readString(value.owner_user_id),
     avatar_url: readString(value.avatar_url),
     admins_only_posting: readNullableBoolean(value.admins_only_posting),
+    ...normalizeGroupChatPreferences(value),
     visibility_notice: readString(value.visibility_notice),
     emergency_notice: readString(value.emergency_notice),
     my_role: readString(value.my_role ?? value.current_user_role),
@@ -437,7 +439,8 @@ function parseProviderVerificationCandidateList(value: unknown, page: number, pa
 
 function parseGroupDetails(value: unknown): GroupChatDetails | null {
   const source = unwrapData(value);
-  const group = parseGroup(source.group ?? source);
+  const nestedGroup = isRecord(source.group) ? source.group : null;
+  const group = parseGroup(nestedGroup ? { ...nestedGroup, muted: source.muted ?? nestedGroup.muted, pinned: source.pinned ?? nestedGroup.pinned, is_archived: source.is_archived ?? nestedGroup.is_archived } : source);
   if (!group) return null;
   const owner = parseMember(source.owner);
   const ownerName = resolveGroupChatOwnerName(group.owner_name, owner?.name);
@@ -649,6 +652,14 @@ export async function updateGroupDetails(groupId: string, payload: UpdateGroupDe
 /** Updates only the Group Chat posting permission. */
 export async function updateGroupSettings(groupId: string, payload: UpdateGroupSettingsPayload): Promise<void> {
   await request<unknown>(`/${encodeURIComponent(groupId)}/settings`, new URLSearchParams(), { method: "PATCH", body: buildUpdateGroupSettingsPayload(payload.admins_only_posting) });
+}
+
+/** Updates personal Group preferences and returns the authoritative GroupResponse. */
+export async function updateGroupPreferences(groupId: string, payload: UpdateGroupPreferencesPayload): Promise<GroupChatDetails> {
+  const normalizedGroupId = groupId.trim();
+  if (!normalizedGroupId) throw new GroupChatApiError(422, "The Group Chat identifier is required.");
+  const response = await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/preferences`, new URLSearchParams(), { method: "PATCH", body: buildUpdateGroupPreferencesPayload(payload.muted, payload.pinned) });
+  return requireParsed(parseGroupDetails(response), "The Group Chat preferences response was invalid.");
 }
 
 /** Closes a Group Chat through the documented no-body action endpoint. */

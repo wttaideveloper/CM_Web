@@ -112,6 +112,9 @@ export interface GroupChatSummary {
   owner_user_id: string | null;
   avatar_url: string | null;
   admins_only_posting: boolean | null;
+  muted: boolean | null;
+  pinned: boolean | null;
+  is_archived: boolean | null;
   visibility_notice: string | null;
   emergency_notice: string | null;
   my_role: string | null;
@@ -479,6 +482,13 @@ export interface UpdateGroupDetailsPayload {
 /** Payload accepted by PATCH /groups/{group_id}/settings. */
 export interface UpdateGroupSettingsPayload {
   admins_only_posting: boolean;
+}
+
+/** Request body accepted by PATCH /groups/{group_id}/preferences. */
+export interface UpdateGroupPreferencesPayload {
+  muted: boolean | null;
+  muted_until?: string | null;
+  pinned: boolean | null;
 }
 
 /** Payload accepted by POST /groups/{group_id}/reopen. */

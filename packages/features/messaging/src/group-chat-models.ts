@@ -1,6 +1,6 @@
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
 import type { TenantMember } from "@ihp/enterprise-runtime";
-import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatMessageReadStatus, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReplyReference, GroupChatSharedFile, GroupChatSharedFilesResponse, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
+import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatMessageReadStatus, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReplyReference, GroupChatSharedFile, GroupChatSharedFilesResponse, GroupChatSummary, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupPreferencesPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
 export type GroupRole = "Owner" | "Admin" | "Member";
@@ -995,6 +995,34 @@ export function buildUpdateGroupDetailsPayload(name: string, description: string
 /** Builds the minimal PATCH payload for Group Chat posting permissions. */
 export function buildUpdateGroupSettingsPayload(adminsOnlyPosting: boolean): UpdateGroupSettingsPayload {
   return { admins_only_posting: adminsOnlyPosting };
+}
+
+/** Builds a personal preference update without exposing timed muting controls. */
+export function buildUpdateGroupPreferencesPayload(muted: boolean | null, pinned: boolean | null): UpdateGroupPreferencesPayload {
+  return { muted, pinned };
+}
+
+/** Normalizes the personal preference fields returned by GroupResponse. */
+export function normalizeGroupChatPreferences(value: unknown): Pick<UpdateGroupPreferencesPayload, "muted" | "pinned"> & { is_archived: boolean | null } {
+  if (!isRecord(value)) return { muted: null, pinned: null, is_archived: null };
+  return {
+    muted: typeof value.muted === "boolean" ? value.muted : null,
+    pinned: typeof value.pinned === "boolean" ? value.pinned : null,
+    is_archived: typeof value.is_archived === "boolean" ? value.is_archived : null,
+  };
+}
+
+/** Returns only personal preference indicators that are explicitly enabled. */
+export function getGroupChatPersonalPreferenceIndicators(group: Pick<GroupChatSummary, "muted" | "pinned">): Array<"muted" | "pinned"> {
+  const indicators: Array<"muted" | "pinned"> = [];
+  if (group.pinned === true) indicators.push("pinned");
+  if (group.muted === true) indicators.push("muted");
+  return indicators;
+}
+
+/** Places personally pinned groups first while preserving the backend order within each category. */
+export function orderGroupChatSummariesByPersonalPin(groups: readonly GroupChatSummary[]): GroupChatSummary[] {
+  return [...groups.filter((group) => group.pinned === true), ...groups.filter((group) => group.pinned !== true)];
 }
 
 /** Builds the server-owned Training Group creation payload from selected user IDs. */

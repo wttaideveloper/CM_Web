@@ -1,16 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useAuth } from "@ihp/auth";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { changeGroupMemberRole, closeGroupChat, downloadGroupChatAttachment, getGroupChat, inviteEnrolledLearners, inviteGroupMembers, listGroupChatFiles, listGroupChatLearners, listGroupChatMembers, listGroupChatProviders, muteGroupMemberPosting, removeGroupMember, reopenGroupChat, searchGroupChatMessages, transferGroupOwnership, unmuteGroupMemberPosting, updateGroupDetails, updateGroupSettings, uploadGroupAvatar } from "./group-chat/group-chat.service";
+import { changeGroupMemberRole, closeGroupChat, downloadGroupChatAttachment, getGroupChat, inviteEnrolledLearners, inviteGroupMembers, listGroupChatFiles, listGroupChatLearners, listGroupChatMembers, listGroupChatProviders, muteGroupMemberPosting, removeGroupMember, reopenGroupChat, searchGroupChatMessages, transferGroupOwnership, unmuteGroupMemberPosting, updateGroupDetails, updateGroupPreferences, updateGroupSettings, uploadGroupAvatar } from "./group-chat/group-chat.service";
 import { buildReopenGroupPayload, canCloseGroupChat, canEditGroupChat, canReopenGroupChat, canUpdateGroupChatSettings, formatGroupChatInvitationFeedback, formatGroupChatSharedFileSize, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatReopenReasonError, getGroupChatSafeMessagePreview, getGroupChatSearchViewState, isGroupChatProviderUnavailableInCurrentGroup, isSupportedGroupAvatarFile, splitGroupChatMembers, type GroupChatMemberAction, type GroupChatMemberRoleAction } from "./group-chat-models";
 import { GroupChatApiError } from "./group-chat/group-chat.service";
-import type { GroupChatDetails, GroupChatLearner, GroupChatMember, GroupChatPermissions, GroupChatProvider, GroupChatSharedFile } from "./group-chat/group-chat.types";
+import type { GroupChatDetails, GroupChatLearner, GroupChatListResponse, GroupChatMember, GroupChatPermissions, GroupChatProvider, GroupChatSharedFile } from "./group-chat/group-chat.types";
 import { GroupAvatarDisplay, GroupAvatarPicker, useGroupAvatarPreview } from "./GroupChatAvatar";
 import GroupChatMessages from "./GroupChatMessages";
 
 type Props = { groupId: string; onClose?: () => void };
-const groupKey = (groupId: string) => ["group-chat", "group", groupId];
+const groupKey = (groupId: string, userScope?: string) => userScope ? ["group-chat", "group", groupId, userScope] : ["group-chat", "group", groupId];
 const memberKey = (groupId: string, search: string) => ["group-chat", "members", groupId, search];
 const inviteMemberKey = (groupId: string) => ["group-chat", "invite-members", groupId];
 const groupsKey = ["group-chat", "groups"];
@@ -346,10 +347,37 @@ function Settings({ group, groupId }: { group: GroupChatDetails; groupId: string
   return <div className="space-y-4">{feedback ? <p className="rounded-xl border border-[#b7dfc7] bg-[#e8f6ee] p-3 text-sm font-semibold text-[#1f6a58]" role="status">{feedback}</p> : null}{canEdit ? <section className="rounded-xl border border-[#e1ebe6] p-4"><h3 className="text-base font-bold text-[#16332b]">Group details</h3><label className="mt-3 block text-sm font-semibold text-[#16332b]">Name<input required value={name} onChange={(event) => setName(event.target.value)} disabled={detailsMutation.isPending} className="mt-1 h-10 w-full rounded-xl border border-[#d7e5df] px-3 font-normal" /></label><label className="mt-3 block text-sm font-semibold text-[#16332b]">Description<textarea value={description} onChange={(event) => setDescription(event.target.value)} disabled={detailsMutation.isPending} className="mt-1 min-h-24 w-full rounded-xl border border-[#d7e5df] p-3 font-normal" /></label><GroupAvatarPicker name={group.name} currentUrl={group.avatar_url} previewUrl={replacementAvatarPreviewUrl} fileName={replacementAvatarFile?.name ?? null} error={avatarError} disabled={detailsMutation.isPending} onSelect={(file) => { if (file && !isSupportedGroupAvatarFile(file)) { setReplacementAvatarFile(null); setAvatarError("Select an image file for the Group Chat avatar."); return; } setAvatarError(null); setReplacementAvatarFile(file); }} onClear={() => { setReplacementAvatarFile(null); setAvatarError(null); }} /><button type="button" disabled={!name.trim() || Boolean(avatarError) || detailsMutation.isPending} onClick={() => detailsMutation.mutate()} className="mt-3 rounded-full bg-[#1f6a58] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{detailsMutation.isPending ? "Saving..." : "Save details"}</button><p className="mt-2 text-xs text-[#7f9d94]">Training context and Group type cannot be changed here.</p></section> : null}{canUpdatePosting ? <section className="rounded-xl border border-[#e1ebe6] p-4"><h3 className="text-base font-bold text-[#16332b]">Messaging permissions</h3><fieldset disabled={settingsMutation.isPending || adminsOnlyPosting === null} className="mt-3 space-y-2 text-sm text-[#16332b]"><legend className="sr-only">Who can send messages</legend><label className="flex items-center gap-2"><input type="radio" name={`posting-permission-${groupId}`} checked={adminsOnlyPosting === true} onChange={() => setAdminsOnlyPosting(true)} /> Only Admins can send messages</label><label className="flex items-center gap-2"><input type="radio" name={`posting-permission-${groupId}`} checked={adminsOnlyPosting === false} onChange={() => setAdminsOnlyPosting(false)} /> All Members can send messages</label></fieldset><button type="button" disabled={adminsOnlyPosting === null || settingsMutation.isPending} onClick={() => settingsMutation.mutate()} className="mt-3 rounded-full bg-[#1f6a58] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{settingsMutation.isPending ? "Saving..." : "Save permissions"}</button></section> : null}{canClose ? <section className="rounded-xl border border-[#efc4bd] bg-[#fff7f6] p-4" aria-labelledby="group-management-heading"><h3 id="group-management-heading" className="text-base font-bold text-[#16332b]">Group Management</h3><p className="mt-1 text-sm text-[#7a271a]">Closing this group makes it read-only and starts the retention period.</p>{closeConfirmation ? <div className="mt-3 rounded-lg border border-[#efc4bd] bg-white p-3 text-sm"><p className="font-semibold text-[#16332b]">Close this group?</p><p className="mt-1 text-[#52736a]">Closing this group makes it read-only and starts the retention period. Members will no longer be able to send messages.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={closeMutation.isPending} onClick={() => closeMutation.mutate()} className="rounded-full bg-[#b54708] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{closeMutation.isPending ? "Closing..." : "Close Group"}</button><button type="button" disabled={closeMutation.isPending} onClick={() => setCloseConfirmation(false)} className="rounded-full border border-[#d7e5df] px-4 py-2 text-sm font-semibold text-[#16332b]">Cancel</button></div></div> : <button type="button" onClick={() => setCloseConfirmation(true)} className="mt-3 rounded-full border border-[#b54708] px-4 py-2 text-sm font-semibold text-[#b54708]">Close Group</button>}</section> : null}</div>;
 }
 
+function GroupPreferenceActions({ group, groupId, userScope }: { group: GroupChatDetails; groupId: string; userScope: string }) {
+  const queryClient = useQueryClient();
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const preferenceMutation = useMutation({
+    mutationFn: (next: { muted: boolean; pinned: boolean }) => updateGroupPreferences(groupId, next),
+    retry: false,
+    onSuccess: async (updated) => {
+      queryClient.setQueryData(groupKey(groupId, userScope), updated);
+      queryClient.setQueriesData<GroupChatListResponse>({ queryKey: groupsKey }, (current) => current ? { ...current, items: current.items.map((item) => item.id === updated.id ? { ...item, muted: updated.muted, pinned: updated.pinned, is_archived: updated.is_archived } : item) } : current);
+      await queryClient.invalidateQueries({ queryKey: groupsKey });
+      setFeedback("Group preferences updated.");
+    },
+    onError: (error: Error) => setFeedback(error.message),
+  });
+  const isProgramGroup = group.kind?.trim().toLowerCase() === "program";
+  const stateKnown = typeof group.muted === "boolean" && typeof group.pinned === "boolean";
+  if (!isProgramGroup) return null;
+  return <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] px-3 py-2" aria-label="Personal group preferences">
+    <span className="mr-1 text-xs font-semibold text-[#52736a]">For you</span>
+    <button type="button" disabled={!stateKnown || preferenceMutation.isPending} onClick={() => preferenceMutation.mutate({ muted: !group.muted, pinned: group.pinned === true })} className="rounded-full border border-[#d7e5df] bg-white px-2.5 py-1 text-xs font-semibold text-[#1f6a58] hover:bg-[#e8f6ee] disabled:cursor-not-allowed disabled:opacity-50">{group.muted ? "Unmute Group" : "Mute Group"}</button>
+    <button type="button" disabled={!stateKnown || preferenceMutation.isPending} onClick={() => preferenceMutation.mutate({ muted: group.muted === true, pinned: !group.pinned })} className="rounded-full border border-[#d7e5df] bg-white px-2.5 py-1 text-xs font-semibold text-[#1f6a58] hover:bg-[#e8f6ee] disabled:cursor-not-allowed disabled:opacity-50">{group.pinned ? "Unpin Group" : "Pin Group"}</button>
+    {preferenceMutation.isPending ? <span className="text-xs text-[#52736a]" role="status">Saving...</span> : feedback ? <span className="text-xs text-[#52736a]" role="status">{feedback}</span> : null}
+  </div>;
+}
+
 export default function GroupChatWorkspace({ groupId, onClose }: Props) {
+  const { user } = useAuth();
+  const userScope = user?.userId ?? user?.id ?? "";
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const query = useQuery({ queryKey: groupKey(groupId), queryFn: ({ signal }) => getGroupChat(groupId, signal), staleTime: 15000, retry: false });
-  const currentMemberQuery = useQuery({ queryKey: ["group-chat", "current-member", groupId], queryFn: ({ signal }) => listAllGroupChatMembers(groupId, signal), enabled: query.data?.permissions.can_view_members === true, staleTime: 15000, retry: false });
+  const query = useQuery({ queryKey: groupKey(groupId, userScope), queryFn: ({ signal }) => getGroupChat(groupId, signal), enabled: Boolean(userScope), staleTime: 15000, retry: false });
+  const currentMemberQuery = useQuery({ queryKey: ["group-chat", "current-member", groupId, userScope], queryFn: ({ signal }) => listAllGroupChatMembers(groupId, signal), enabled: Boolean(userScope) && query.data?.permissions.can_view_members === true, staleTime: 15000, retry: false });
 
   useEffect(() => {
     if (!detailsOpen) return undefined;
@@ -397,6 +425,7 @@ export default function GroupChatWorkspace({ groupId, onClose }: Props) {
           </button> : null}
         </div>
       </div>
+      <GroupPreferenceActions key={`${groupId}:${userScope}`} group={group} groupId={groupId} userScope={userScope} />
       <div className="mt-2 min-h-0 flex-1 flex flex-col">
         <GroupChatMessages groupId={group.id} groupStatus={group.status} groupKind={group.kind} memberDirectory={currentMemberQuery.data ?? []} canPost={group.permissions.can_post} postingMuted={currentMember?.posting_muted ?? null} canHideMessages={group.permissions.can_hide_messages} canPinMessages={group.permissions.can_pin_messages} currentMemberKind={currentMember?.member_kind ?? null} currentMemberStatus={currentMember?.membership_status ?? null} />
       </div>
