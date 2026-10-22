@@ -11,6 +11,9 @@ import type {
   GroupChatAttachmentType,
   GroupAvatarUploadResponse,
   GroupChatConsentListResponse,
+  GroupChatComplianceReport,
+  GroupChatComplianceReportListParams,
+  GroupChatComplianceReportListResponse,
   CreateGroupChatDataRequestPayload,
   GroupChatDataRequest,
   GroupChatInvitation,
@@ -60,9 +63,9 @@ import type {
   UpdateGroupPreferencesPayload,
   UpdateGroupSettingsPayload,
 } from "./group-chat.types";
-import type { CreateGroupChatReportPayload, GroupChatGrievanceOfficer, GroupChatReport } from "./group-chat.types";
+import type { CreateGroupChatReportPayload, GroupChatGrievanceOfficer, GroupChatReport, UpdateGroupChatComplianceReportPayload } from "./group-chat.types";
 import { buildCreateGroupChatDataRequestPayload, normalizeGroupChatConsentList, normalizeGroupChatDataRequestList } from "../group-chat-models";
-import { buildGroupChatReportPayload, normalizeGroupChatGrievanceOfficer, normalizeGroupChatReport } from "../group-chat-models";
+import { buildGroupChatComplianceReportUpdatePayload, buildGroupChatComplianceReportsQuery, buildGroupChatReportPayload, isValidGroupChatUuid, normalizeGroupChatComplianceReport, normalizeGroupChatComplianceReportList, normalizeGroupChatGrievanceOfficer, normalizeGroupChatReport } from "../group-chat-models";
 import { buildChangeGroupMemberRolePayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatMessageReadStatusPath, buildGroupChatProviderVerificationCandidateQuery, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildHideGroupChatMessagePayload, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupPreferencesPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageReadStatus, normalizeGroupChatMessageMutationResponse, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPermissions, normalizeGroupChatPreferences, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatReactionSettings, normalizeGroupChatSharedFilesResponse, normalizeGroupChatConsentWithdrawalResponse, normalizeGroupChatLeaveResponse, getGroupChatReopenReasonError, parseGroupChatAttachmentFileName, resolveGroupChatOwnerName } from "../group-chat-models";
 export { buildCreateGroupPayload, buildGroupMemberInvitePayload } from "../group-chat-models";
 
@@ -513,6 +516,23 @@ export async function createGroupChatReport(groupId: string, payload: CreateGrou
   if (!normalizedGroupId || !reportPayload) throw new GroupChatApiError(422, "A Group Chat and non-empty report reason are required.");
   const response = normalizeGroupChatReport(await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/reports`, new URLSearchParams(), { method: "POST", body: reportPayload }));
   return requireParsed(response, "The Group Chat report response was invalid.");
+}
+
+/** Loads clinic-scoped Compliance reports using only the documented filters. */
+export async function listGroupChatComplianceReports(params: GroupChatComplianceReportListParams = {}): Promise<GroupChatComplianceReportListResponse> {
+  const query = buildGroupChatComplianceReportsQuery(params);
+  if (!query) throw new GroupChatApiError(422, "The Compliance report filters are invalid.");
+  const parsed = normalizeGroupChatComplianceReportList(await request<unknown>("/reports", query, { signal: params.signal }));
+  return requireParsed(parsed, "The Compliance reports response was invalid.");
+}
+
+/** Updates one Compliance report after the backend validates the requested transition. */
+export async function updateGroupChatComplianceReport(reportId: string, payload: UpdateGroupChatComplianceReportPayload): Promise<GroupChatComplianceReport> {
+  const normalizedReportId = reportId.trim();
+  const normalizedPayload = buildGroupChatComplianceReportUpdatePayload(payload.status, payload.note ?? "");
+  if (!isValidGroupChatUuid(normalizedReportId) || !normalizedPayload) throw new GroupChatApiError(422, "A valid Compliance report and review status are required.");
+  const parsed = normalizeGroupChatComplianceReport(await request<unknown>(`/reports/${encodeURIComponent(normalizedReportId)}`, new URLSearchParams(), { method: "PATCH", body: normalizedPayload }));
+  return requireParsed(parsed, "The updated Compliance report response was invalid.");
 }
 
 /** Loads the clinic's configured Grievance Officer contact for the authenticated Group Chat member. */

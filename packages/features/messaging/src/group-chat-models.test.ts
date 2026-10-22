@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatMessageReadStatusPath, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildHideGroupChatMessagePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupPreferencesPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canEditGroupChatMessage, canHideGroupChatMessage, canPinGroupChatMessage, canReactToGroupChatMessage, canReplyToGroupChatMessage, canReopenGroupChat, canRetractGroupChatMessage, canSendGroupChatMessage, canShowGroupChatReadStatusIndicator, canUpdateGroupChatSettings, canViewGroupChatReadStatus, formatGroupChatAttachmentSummary, formatGroupChatSharedFileSize, getGroupChatConsentRecordKey, getGroupChatConsentStatusLabel, getGroupChatEmergencyNoticeDisplay, getGroupChatMessageDisplayText, getGroupChatMemberDisplayName, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatPersonalPreferenceIndicators, getGroupChatPostingRestrictionMessage, getGroupChatReadStatusMemberNames, getGroupChatReadStatusTickState, getGroupChatReopenReasonError, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, getGroupChatSafeMessagePreview, getGroupChatSearchViewState, getMemberManagementActions, isGroupChatReactionSelected, isSupportedGroupAvatarFile, mergeGroupChatMessagePages, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatConsentList, normalizeGroupChatConsentNotice, normalizeGroupChatConsentRecord, normalizeGroupChatConsentWithdrawalResponse, normalizeGroupChatLeaveResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageMutationResponse, normalizeGroupChatMessageReadStatus, normalizeGroupChatPermissions, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPreferences, normalizeGroupChatReactionCounts, normalizeGroupChatReactionSettings, normalizeGroupChatReplyReference, normalizeGroupChatSharedFilesResponse, normalizeGroupLearner, normalizeGroupProvider, orderGroupChatSummariesByPersonalPin, parseGroupChatAttachmentFileName, parseGroupChatMessageTimestamp, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAttachmentMetadata, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
+import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatComplianceReportUpdatePayload, buildGroupChatComplianceReportsQuery, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatMessageReadStatusPath, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildHideGroupChatMessagePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupPreferencesPayload, buildUpdateGroupSettingsPayload, canAccessGroupChatComplianceReports, canCloseGroupChat, canEditGroupChat, canEditGroupChatMessage, canHideGroupChatMessage, canPinGroupChatMessage, canReactToGroupChatMessage, canReplyToGroupChatMessage, canReopenGroupChat, canRetractGroupChatMessage, canSendGroupChatMessage, canShowGroupChatReadStatusIndicator, canUpdateGroupChatSettings, canViewGroupChatReadStatus, formatGroupChatAttachmentSummary, formatGroupChatSharedFileSize, getGroupChatConsentRecordKey, getGroupChatConsentStatusLabel, getGroupChatEmergencyNoticeDisplay, getGroupChatMessageDisplayText, getGroupChatMemberDisplayName, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatPersonalPreferenceIndicators, getGroupChatPostingRestrictionMessage, getGroupChatReadStatusMemberNames, getGroupChatReadStatusTickState, getGroupChatReopenReasonError, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, getGroupChatSafeMessagePreview, getGroupChatSearchViewState, getMemberManagementActions, isGroupChatReactionSelected, isSupportedGroupAvatarFile, isValidGroupChatUuid, mergeGroupChatMessagePages, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatComplianceReport, normalizeGroupChatComplianceReportList, normalizeGroupChatConsentList, normalizeGroupChatConsentNotice, normalizeGroupChatConsentRecord, normalizeGroupChatConsentWithdrawalResponse, normalizeGroupChatLeaveResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageMutationResponse, normalizeGroupChatMessageReadStatus, normalizeGroupChatPermissions, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPreferences, normalizeGroupChatReactionCounts, normalizeGroupChatReactionSettings, normalizeGroupChatReplyReference, normalizeGroupChatSharedFilesResponse, normalizeGroupLearner, normalizeGroupProvider, orderGroupChatSummariesByPersonalPin, parseGroupChatAttachmentFileName, parseGroupChatMessageTimestamp, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAttachmentMetadata, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
+import type { AuthRoles } from "@ihp/auth";
 import type { GroupChatMember, GroupChatMessage } from "./group-chat/group-chat.types";
 import { getGroupChatLeaveAction } from "./group-chat-models.ts";
 import { normalizeGroupChatDataRequestList } from "./group-chat-models.ts";
@@ -988,4 +989,49 @@ test("report actions require backend permission and active visible non-system me
   assert.equal(canReportGroupChatMessage({ ...base, status: "hidden" }, true, "active"), false);
   assert.equal(canReportGroupChatMessage({ ...base, message_type: "system" }, true, "active"), false);
   assert.equal(canReportGroupChatMessage(base, true, "removed"), false);
+});
+
+const complianceReportFixture = {
+  id: "253b5556-eed4-4093-a3e6-d4fdf5f0bd5d",
+  conversation_id: "02b34821-c6cc-4589-bb8e-9f0780b64d66",
+  message_id: null,
+  reporter_id: "24444513-e398-4d0c-9a6d-ee9da7fa19da",
+  reason: "safety",
+  details: null,
+  status: "open",
+  resolution_note: null,
+  resolved_by: null,
+  resolved_at: null,
+  created_at: "2026-10-22T10:00:00Z",
+};
+
+test("builds strict Compliance report filters and review payloads", () => {
+  const query = buildGroupChatComplianceReportsQuery({ status: "reviewing", groupId: complianceReportFixture.conversation_id, page: 2, pageSize: 100 });
+  assert.equal(query?.toString(), "page=2&page_size=100&status=reviewing&group_id=02b34821-c6cc-4589-bb8e-9f0780b64d66");
+  assert.equal(buildGroupChatComplianceReportsQuery({ page: 1, pageSize: 10 })?.get("page_size"), "10");
+  assert.equal(buildGroupChatComplianceReportsQuery({ page: 1, pageSize: 50 })?.get("page_size"), "50");
+  assert.equal(buildGroupChatComplianceReportsQuery({ pageSize: 101 }), null);
+  assert.equal(buildGroupChatComplianceReportsQuery({ groupId: "not-a-uuid" }), null);
+  for (const status of ["open", "reviewing", "resolved", "dismissed"] as const) assert.equal(buildGroupChatComplianceReportsQuery({ status })?.get("status"), status);
+  assert.deepEqual(buildGroupChatComplianceReportUpdatePayload("resolved", "  Reviewed by Compliance  "), { status: "resolved", note: "Reviewed by Compliance" });
+  assert.deepEqual(buildGroupChatComplianceReportUpdatePayload("dismissed", ""), { status: "dismissed", note: null });
+  assert.equal(buildGroupChatComplianceReportUpdatePayload("open" as never, ""), null);
+});
+
+test("normalizes valid, empty and malformed Compliance report responses distinctly", () => {
+  assert.deepEqual(normalizeGroupChatComplianceReport(complianceReportFixture), { ...complianceReportFixture });
+  assert.deepEqual(normalizeGroupChatComplianceReportList({ items: [], total: 0 }), { items: [], total: 0 });
+  assert.deepEqual(normalizeGroupChatComplianceReportList({ items: [complianceReportFixture], total: 1 })?.items[0], complianceReportFixture);
+  assert.equal(normalizeGroupChatComplianceReportList({ items: [complianceReportFixture], total: 0 }), null);
+  assert.equal(normalizeGroupChatComplianceReportList({ items: "not-an-array", total: 0 }), null);
+  assert.equal(normalizeGroupChatComplianceReport({ ...complianceReportFixture, status: "unknown" }), null);
+  assert.equal(normalizeGroupChatComplianceReport({ ...complianceReportFixture, conversation_id: "group-1" }), null);
+});
+
+test("Compliance navigation follows the existing tenant admin convention", () => {
+  const adminRoles: AuthRoles = { tenantRole: "tenant_admin", tenantSlug: "clinic", tenantName: "Clinic", userRole: "", tenantRbacRoles: [], tenantPermissions: [], knowledgeRoles: [], canInviteUsers: false };
+  const internalRoles: AuthRoles = { ...adminRoles, tenantRole: "internal_user" };
+  assert.equal(canAccessGroupChatComplianceReports(adminRoles), true);
+  assert.equal(canAccessGroupChatComplianceReports(internalRoles), false);
+  assert.equal(canAccessGroupChatComplianceReports(null), false);
 });

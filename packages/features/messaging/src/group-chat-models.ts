@@ -1,8 +1,9 @@
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
 import type { TenantMember } from "@ihp/enterprise-runtime";
+import type { AuthRoles } from "@ihp/auth";
 import type { GroupChatDataRequest } from "./group-chat/group-chat.types";
 import type { CreateGroupChatDataRequestPayload } from "./group-chat/group-chat.types";
-import type { CreateGroupChatReportPayload, GroupChatGrievanceOfficer, GroupChatReport, GroupChatReportReason } from "./group-chat/group-chat.types";
+import type { CreateGroupChatReportPayload, GroupChatComplianceReport, GroupChatComplianceReportListParams, GroupChatComplianceReportListResponse, GroupChatComplianceReportStatus, GroupChatComplianceReportUpdateStatus, GroupChatGrievanceOfficer, GroupChatReport, GroupChatReportReason, UpdateGroupChatComplianceReportPayload } from "./group-chat/group-chat.types";
 import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatConsentListResponse, GroupChatConsentNotice, GroupChatConsentRecord, GroupChatConsentWithdrawalResponse, GroupChatLeaveResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatMessageReadStatus, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReplyReference, GroupChatSharedFile, GroupChatSharedFilesResponse, GroupChatSummary, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupPreferencesPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
@@ -1028,6 +1029,78 @@ export function buildGroupChatReportPayload(messageId: string | null, reason: st
   const normalizedReason = reason.trim();
   if (!GROUP_CHAT_REPORT_REASONS.some((option) => option.value === normalizedReason)) return null;
   return { message_id: messageId?.trim() || null, reason: normalizedReason as GroupChatReportReason, details: details.trim() || null };
+}
+
+const GROUP_CHAT_COMPLIANCE_REPORT_STATUSES: readonly GroupChatComplianceReportStatus[] = ["open", "reviewing", "resolved", "dismissed"];
+const GROUP_CHAT_COMPLIANCE_REPORT_UPDATE_STATUSES: readonly GroupChatComplianceReportUpdateStatus[] = ["reviewing", "resolved", "dismissed"];
+
+/** Validates a UUID before it is used as a Compliance report or Group filter. */
+export function isValidGroupChatUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
+}
+
+/** Keeps Compliance navigation limited to the existing Enterprise tenant-admin convention. */
+export function canAccessGroupChatComplianceReports(roles: AuthRoles | null | undefined): boolean {
+  if (!roles) return false;
+  const values = [roles.tenantRole, ...roles.tenantRbacRoles].map((role) => role.trim().toLowerCase());
+  if (values.includes("internal_user")) return false;
+  return values.includes("tenant_admin") || values.includes("tenant_owner");
+}
+
+/** Builds the validated GET /groups/reports query without adding undocumented parameters. */
+export function buildGroupChatComplianceReportsQuery(params: GroupChatComplianceReportListParams = {}): URLSearchParams | null {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? 25;
+  if (!Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) return null;
+  if (params.status !== undefined && !GROUP_CHAT_COMPLIANCE_REPORT_STATUSES.includes(params.status)) return null;
+  const groupId = params.groupId?.trim() ?? "";
+  if (groupId && !isValidGroupChatUuid(groupId)) return null;
+  const query = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  if (params.status) query.set("status", params.status);
+  if (groupId) query.set("group_id", groupId);
+  return query;
+}
+
+/** Builds the exact PATCH /groups/reports/{report_id} request body. */
+export function buildGroupChatComplianceReportUpdatePayload(status: GroupChatComplianceReportUpdateStatus, note: string): UpdateGroupChatComplianceReportPayload | null {
+  if (!GROUP_CHAT_COMPLIANCE_REPORT_UPDATE_STATUSES.includes(status)) return null;
+  return { status, note: note.trim() || null };
+}
+
+function readNullableComplianceText(value: Record<string, unknown>, key: string): string | null {
+  if (value[key] === null || value[key] === undefined) return null;
+  return typeof value[key] === "string" && value[key].trim() ? value[key].trim() : null;
+}
+
+/** Normalizes one strict Compliance report while preserving documented nullable fields. */
+export function normalizeGroupChatComplianceReport(value: unknown): GroupChatComplianceReport | null {
+  if (!isRecord(value)) return null;
+  const id = readString(value, "id");
+  const conversationId = readString(value, "conversation_id");
+  const messageId = value.message_id === null || value.message_id === undefined ? null : readString(value, "message_id") || null;
+  const reporterId = readString(value, "reporter_id");
+  const reason = readString(value, "reason");
+  const status = readString(value, "status") as GroupChatComplianceReportStatus;
+  const details = readNullableComplianceText(value, "details");
+  const resolutionNote = readNullableComplianceText(value, "resolution_note");
+  const resolvedBy = value.resolved_by === null || value.resolved_by === undefined ? null : readString(value, "resolved_by") || null;
+  const resolvedAt = value.resolved_at === null || value.resolved_at === undefined ? null : readString(value, "resolved_at") || null;
+  const createdAt = readString(value, "created_at");
+  if (!isValidGroupChatUuid(id) || !isValidGroupChatUuid(conversationId) || (value.message_id !== null && value.message_id !== undefined && (messageId === null || !isValidGroupChatUuid(messageId))) || !isValidGroupChatUuid(reporterId) || !reason || !GROUP_CHAT_COMPLIANCE_REPORT_STATUSES.includes(status) || (value.details !== null && value.details !== undefined && details === null) || (value.resolution_note !== null && value.resolution_note !== undefined && resolutionNote === null) || (value.resolved_by !== null && value.resolved_by !== undefined && (resolvedBy === null || !isValidGroupChatUuid(resolvedBy))) || (value.resolved_at !== null && value.resolved_at !== undefined && (resolvedAt === null || Number.isNaN(Date.parse(resolvedAt)))) || !createdAt || Number.isNaN(Date.parse(createdAt))) return null;
+  return { id, conversation_id: conversationId, message_id: messageId, reporter_id: reporterId, reason, details, status, resolution_note: resolutionNote, resolved_by: resolvedBy, resolved_at: resolvedAt, created_at: createdAt };
+}
+
+/** Normalizes the strict `{ items, total }` Compliance report response. */
+export function normalizeGroupChatComplianceReportList(value: unknown): GroupChatComplianceReportListResponse | null {
+  if (!isRecord(value) || !Array.isArray(value.items) || typeof value.total !== "number" || !Number.isInteger(value.total) || value.total < 0) return null;
+  const items: GroupChatComplianceReport[] = [];
+  for (const item of value.items) {
+    const report = normalizeGroupChatComplianceReport(item);
+    if (!report) return null;
+    items.push(report);
+  }
+  if (value.total < items.length) return null;
+  return { items, total: value.total };
 }
 
 /** Normalizes the strict Group Chat report response without exposing unsupported fields. */

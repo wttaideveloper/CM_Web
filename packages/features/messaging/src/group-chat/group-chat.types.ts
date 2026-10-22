@@ -157,6 +157,48 @@ export interface GroupChatReport {
   created_at: string;
 }
 
+/** Status values accepted by the Compliance report list and review endpoints. */
+export type GroupChatComplianceReportStatus = "open" | "reviewing" | "resolved" | "dismissed";
+
+/** Status values accepted when updating a Compliance report. */
+export type GroupChatComplianceReportUpdateStatus = Exclude<GroupChatComplianceReportStatus, "open">;
+
+/** A clinic-scoped report record returned by the Compliance reports endpoints. */
+export interface GroupChatComplianceReport {
+  id: string;
+  conversation_id: string;
+  message_id: string | null;
+  reporter_id: string;
+  reason: string;
+  details: string | null;
+  status: GroupChatComplianceReportStatus;
+  resolution_note: string | null;
+  resolved_by: string | null;
+  resolved_at: string | null;
+  created_at: string;
+}
+
+/** Response returned by GET /groups/reports. */
+export interface GroupChatComplianceReportListResponse {
+  items: GroupChatComplianceReport[];
+  total: number;
+}
+
+/** Filters accepted by GET /groups/reports. */
+export interface GroupChatComplianceReportListParams {
+  status?: GroupChatComplianceReportStatus;
+  groupId?: string;
+  page?: number;
+  pageSize?: number;
+  signal?: AbortSignal;
+}
+
+/** Request body accepted by PATCH /groups/reports/{report_id}. */
+export interface UpdateGroupChatComplianceReportPayload {
+  status: GroupChatComplianceReportUpdateStatus;
+  note: string | null;
+}
+
 /** Clinic Grievance Officer contact returned for the authenticated Group Chat context. */
 export interface GroupChatGrievanceOfficer {
   name: string | null;
