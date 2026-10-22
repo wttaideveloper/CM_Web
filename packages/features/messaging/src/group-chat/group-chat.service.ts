@@ -11,6 +11,8 @@ import type {
   GroupChatAttachmentType,
   GroupAvatarUploadResponse,
   GroupChatConsentListResponse,
+  CreateGroupChatDataRequestPayload,
+  GroupChatDataRequest,
   GroupChatInvitation,
   GroupChatInvitationDetails,
   GroupChatInvitationListParams,
@@ -58,7 +60,7 @@ import type {
   UpdateGroupPreferencesPayload,
   UpdateGroupSettingsPayload,
 } from "./group-chat.types";
-import { normalizeGroupChatConsentList } from "../group-chat-models";
+import { buildCreateGroupChatDataRequestPayload, normalizeGroupChatConsentList, normalizeGroupChatDataRequestList } from "../group-chat-models";
 import { buildChangeGroupMemberRolePayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatMessageReadStatusPath, buildGroupChatProviderVerificationCandidateQuery, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildHideGroupChatMessagePayload, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupPreferencesPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageReadStatus, normalizeGroupChatMessageMutationResponse, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPermissions, normalizeGroupChatPreferences, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatReactionSettings, normalizeGroupChatSharedFilesResponse, normalizeGroupChatConsentWithdrawalResponse, normalizeGroupChatLeaveResponse, getGroupChatReopenReasonError, parseGroupChatAttachmentFileName, resolveGroupChatOwnerName } from "../group-chat-models";
 export { buildCreateGroupPayload, buildGroupMemberInvitePayload } from "../group-chat-models";
 
@@ -685,6 +687,20 @@ export async function withdrawGroupChatConsent(groupId: string): Promise<string>
 /** Lists only the authenticated member's Group Chat consent records. */
 export async function listMyGroupChatConsents(signal?: AbortSignal): Promise<GroupChatConsentListResponse> {
   return normalizeGroupChatConsentList(await request<unknown>("/consents/me", new URLSearchParams(), { signal }));
+}
+
+/** Lists only the authenticated member's personal Group Chat data requests. */
+export async function listMyGroupChatDataRequests(signal?: AbortSignal): Promise<GroupChatDataRequest[]> {
+  const response = normalizeGroupChatDataRequestList(await request<unknown>("/data-requests/me", new URLSearchParams(), { signal }));
+  if (!response) throw new GroupChatApiError(0, "The Group Chat data request list response was invalid.");
+  return response;
+}
+
+/** Creates one personal Group Chat data request using the confirmed payload contract. */
+export async function createGroupChatDataRequest(payload: CreateGroupChatDataRequestPayload): Promise<GroupChatDataRequest> {
+  const response = normalizeGroupChatDataRequestList([await request<unknown>("/data-requests", new URLSearchParams(), { method: "POST", body: buildCreateGroupChatDataRequestPayload(payload.conversation_id, payload.note) })]);
+  if (!response?.[0]) throw new GroupChatApiError(0, "The Group Chat data request response was invalid.");
+  return response[0];
 }
 
 /** Closes a Group Chat through the documented no-body action endpoint. */

@@ -528,6 +528,23 @@ export interface GroupChatConsentListResponse {
   items: GroupChatConsentRecord[];
 }
 
+/** Personal data request returned by the confirmed Group Chat history endpoint. */
+export interface GroupChatDataRequest {
+  id: string;
+  conversation_id: string | null;
+  request_type: string;
+  status: string;
+  note: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+/** Request body accepted by POST /groups/data-requests. */
+export interface CreateGroupChatDataRequestPayload {
+  conversation_id: string | null;
+  note: string | null;
+}
+
 /** Observed successful response from POST /groups/{group_id}/consent/withdraw. */
 export interface GroupChatConsentWithdrawalResponse {
   conversation_id: string;

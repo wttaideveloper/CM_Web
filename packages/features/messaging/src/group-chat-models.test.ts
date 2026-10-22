@@ -3,6 +3,9 @@ import test from "node:test";
 import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatMessageReadStatusPath, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildHideGroupChatMessagePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupPreferencesPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canEditGroupChatMessage, canHideGroupChatMessage, canPinGroupChatMessage, canReactToGroupChatMessage, canReplyToGroupChatMessage, canReopenGroupChat, canRetractGroupChatMessage, canSendGroupChatMessage, canShowGroupChatReadStatusIndicator, canUpdateGroupChatSettings, canViewGroupChatReadStatus, formatGroupChatAttachmentSummary, formatGroupChatSharedFileSize, getGroupChatConsentRecordKey, getGroupChatConsentStatusLabel, getGroupChatEmergencyNoticeDisplay, getGroupChatMessageDisplayText, getGroupChatMemberDisplayName, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatPersonalPreferenceIndicators, getGroupChatPostingRestrictionMessage, getGroupChatReadStatusMemberNames, getGroupChatReadStatusTickState, getGroupChatReopenReasonError, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, getGroupChatSafeMessagePreview, getGroupChatSearchViewState, getMemberManagementActions, isGroupChatReactionSelected, isSupportedGroupAvatarFile, mergeGroupChatMessagePages, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatConsentList, normalizeGroupChatConsentNotice, normalizeGroupChatConsentRecord, normalizeGroupChatConsentWithdrawalResponse, normalizeGroupChatLeaveResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageMutationResponse, normalizeGroupChatMessageReadStatus, normalizeGroupChatPermissions, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPreferences, normalizeGroupChatReactionCounts, normalizeGroupChatReactionSettings, normalizeGroupChatReplyReference, normalizeGroupChatSharedFilesResponse, normalizeGroupLearner, normalizeGroupProvider, orderGroupChatSummariesByPersonalPin, parseGroupChatAttachmentFileName, parseGroupChatMessageTimestamp, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAttachmentMetadata, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
 import type { GroupChatMember, GroupChatMessage } from "./group-chat/group-chat.types";
 import { getGroupChatLeaveAction } from "./group-chat-models.ts";
+import { normalizeGroupChatDataRequestList } from "./group-chat-models.ts";
+import { buildCreateGroupChatDataRequestPayload } from "./group-chat-models.ts";
+import { canSubmitGroupChatDataRequest, mergeGroupChatDataRequestsForDisplay } from "./group-chat-models.ts";
 
 test("builds the documented Group Chat avatar multipart fields", () => {
   const file = new File(["image"], "group.png", { type: "image/png" });
@@ -905,4 +908,45 @@ test("shows the owner leave explanation without granting leave permission", () =
   assert.equal(getGroupChatLeaveAction({ myRole: "member", ownerUserId: "owner-1", currentUserId: "member-1", canLeave: true }), "enabled");
   assert.equal(getGroupChatLeaveAction({ myRole: "member", ownerUserId: "owner-1", currentUserId: "member-1", canLeave: false }), "hidden");
   assert.equal(getGroupChatLeaveAction({ myRole: "owner", ownerUserId: "owner-1", currentUserId: "owner-1", canLeave: true }), "enabled");
+});
+
+test("normalizes only complete personal data request records", () => {
+  assert.deepEqual(normalizeGroupChatDataRequestList([
+    { id: "253b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: null, request_type: "copy", status: "received", note: null, created_at: "2026-10-22T10:20:06.641856", completed_at: null },
+    { id: "753b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: "6aa9169e-6abf-407d-bd21-091a250e26d6", request_type: "export", status: "completed", note: "Please review", created_at: "2026-10-22T08:00:00Z", completed_at: "2026-10-22T09:00:00Z" },
+  ]), [
+    { id: "253b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: null, request_type: "copy", status: "received", note: null, created_at: "2026-10-22T10:20:06.641856", completed_at: null },
+    { id: "753b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: "6aa9169e-6abf-407d-bd21-091a250e26d6", request_type: "export", status: "completed", note: "Please review", created_at: "2026-10-22T08:00:00Z", completed_at: "2026-10-22T09:00:00Z" },
+  ]);
+  assert.deepEqual(normalizeGroupChatDataRequestList([]), []);
+  assert.equal(normalizeGroupChatDataRequestList({ items: [] }), null);
+  assert.equal(normalizeGroupChatDataRequestList([{ id: "253b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: null, request_type: "copy", status: "received", note: null, created_at: "invalid", completed_at: null }]), null);
+  assert.equal(normalizeGroupChatDataRequestList([{ id: "not-a-uuid", conversation_id: null, request_type: "copy", status: "received", note: null, created_at: "2026-10-22T10:20:06Z", completed_at: null }]), null);
+});
+
+test("builds the confirmed data request payload without request_type", () => {
+  assert.deepEqual(buildCreateGroupChatDataRequestPayload(null, "  Please include my records  "), { conversation_id: null, note: "Please include my records" });
+  assert.deepEqual(buildCreateGroupChatDataRequestPayload(" group-1 ", ""), { conversation_id: "group-1", note: null });
+});
+
+test("renders a POST result once when refreshed history contains the same backend ID", () => {
+  const created = { id: "253b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: null, request_type: "copy", status: "received", note: null, created_at: "2026-10-22T10:20:06.641856", completed_at: null };
+  const other = { ...created, id: "753b5556-eed4-4093-a3e6-d4fdf5f0bd5d", status: "completed" };
+  assert.deepEqual(mergeGroupChatDataRequestsForDisplay([created, other], created), [created, other]);
+  assert.deepEqual(mergeGroupChatDataRequestsForDisplay([created, created, other], created).map((request) => request.id), [created.id, other.id]);
+  assert.deepEqual(mergeGroupChatDataRequestsForDisplay([], created), [created]);
+});
+
+test("preserves three distinct backend data-request IDs", () => {
+  const requests = [
+    { id: "253b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: null, request_type: "copy", status: "received", note: null, created_at: "2026-10-22T10:20:06.641856", completed_at: null },
+    { id: "753b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: null, request_type: "copy", status: "received", note: null, created_at: "2026-10-22T10:21:06.641856", completed_at: null },
+    { id: "853b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: null, request_type: "copy", status: "received", note: null, created_at: "2026-10-22T10:22:06.641856", completed_at: null },
+  ];
+  assert.deepEqual(mergeGroupChatDataRequestsForDisplay(requests, null).map((request) => request.id), requests.map((request) => request.id));
+});
+
+test("allows only one data-request submission while a mutation is pending", () => {
+  assert.equal(canSubmitGroupChatDataRequest(false), true);
+  assert.equal(canSubmitGroupChatDataRequest(true), false);
 });

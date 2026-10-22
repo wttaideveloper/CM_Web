@@ -1,5 +1,7 @@
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
 import type { TenantMember } from "@ihp/enterprise-runtime";
+import type { GroupChatDataRequest } from "./group-chat/group-chat.types";
+import type { CreateGroupChatDataRequestPayload } from "./group-chat/group-chat.types";
 import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatConsentListResponse, GroupChatConsentNotice, GroupChatConsentRecord, GroupChatConsentWithdrawalResponse, GroupChatLeaveResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatMessageReadStatus, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReplyReference, GroupChatSharedFile, GroupChatSharedFilesResponse, GroupChatSummary, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupPreferencesPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
@@ -1079,6 +1081,46 @@ export function normalizeGroupChatConsentNotice(value: unknown): GroupChatConsen
 export function normalizeGroupChatConsentList(value: unknown): GroupChatConsentListResponse {
   const source = isRecord(value) && Array.isArray(value.items) ? value.items : [];
   return { items: source.map(normalizeGroupChatConsentRecord).filter((item): item is GroupChatConsentRecord => item !== null) };
+}
+
+/** Normalizes only complete personal data-request records returned by the backend. */
+export function normalizeGroupChatDataRequestList(value: unknown): GroupChatDataRequest[] | null {
+  if (!Array.isArray(value)) return null;
+  const isUuid = (candidate: string | null): candidate is string => Boolean(candidate && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(candidate));
+  const records: GroupChatDataRequest[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) return null;
+    const id = readString(item, "id");
+    const conversationId = item.conversation_id === null ? null : readString(item, "conversation_id");
+    const requestType = readString(item, "request_type");
+    const status = readString(item, "status");
+    const note = item.note === null ? null : readString(item, "note");
+    const createdAt = readString(item, "created_at");
+    const completedAt = item.completed_at === null ? null : readString(item, "completed_at");
+    if (!isUuid(id) || (conversationId !== null && !isUuid(conversationId)) || (conversationId === null && item.conversation_id !== null) || !requestType || !status || (item.note !== null && note === null) || !createdAt || Number.isNaN(Date.parse(createdAt)) || (item.completed_at !== null && (completedAt === null || Number.isNaN(Date.parse(completedAt))))) return null;
+    records.push({ id, conversation_id: conversationId, request_type: requestType, status, note, created_at: createdAt, completed_at: completedAt });
+  }
+  return records;
+}
+
+/** Builds the confirmed personal data-request payload without adding unsupported fields. */
+export function buildCreateGroupChatDataRequestPayload(conversationId: string | null, note: string | null): CreateGroupChatDataRequestPayload {
+  return { conversation_id: conversationId?.trim() || null, note: note?.trim() || null };
+}
+
+/** Keeps each distinct backend data-request ID visible once while refreshed history catches up. */
+export function mergeGroupChatDataRequestsForDisplay(requests: readonly GroupChatDataRequest[], createdRequest: GroupChatDataRequest | null): GroupChatDataRequest[] {
+  const seen = new Set<string>();
+  return [...requests, ...(createdRequest ? [createdRequest] : [])].filter((request) => {
+    if (seen.has(request.id)) return false;
+    seen.add(request.id);
+    return true;
+  });
+}
+
+/** Keeps the data-request form from submitting again while its request is pending. */
+export function canSubmitGroupChatDataRequest(isPending: boolean): boolean {
+  return !isPending;
 }
 
 /** Provides stable keys without collapsing historical records for one conversation. */
