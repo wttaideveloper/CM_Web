@@ -234,6 +234,35 @@ export interface GroupChatMessageListParams {
   signal?: AbortSignal;
 }
 
+/** Query options for the Group Chat message search endpoint. */
+export interface GroupChatSearchParams {
+  limit?: number;
+  signal?: AbortSignal;
+}
+
+/** Query options for the confirmed Shared Files response. */
+export interface GroupChatFilesListParams {
+  limit?: number;
+  signal?: AbortSignal;
+}
+
+/** One authorized file metadata record returned by GET /groups/{group_id}/files. */
+export interface GroupChatSharedFile {
+  attachment_id: string;
+  message_id: string;
+  sender_id: string;
+  file_name: string;
+  mime_type: string;
+  file_size: number;
+  attachment_type: GroupChatAttachmentType;
+  created_at: string;
+}
+
+/** Confirmed response envelope returned by GET /groups/{group_id}/files. */
+export interface GroupChatSharedFilesResponse {
+  items: GroupChatSharedFile[];
+}
+
 /** Request body accepted by the Group Chat text-message endpoint. */
 export interface SendGroupChatMessagePayload {
   content: string;

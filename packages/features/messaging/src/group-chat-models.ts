@@ -1,6 +1,6 @@
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
 import type { TenantMember } from "@ihp/enterprise-runtime";
-import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReplyReference, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
+import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReplyReference, GroupChatSharedFile, GroupChatSharedFilesResponse, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
 export type GroupRole = "Owner" | "Admin" | "Member";
@@ -523,6 +523,75 @@ export function normalizeGroupChatMessageHistory(value: unknown): GroupChatMessa
 /** Normalizes the pinned-message list using the same privacy and pagination contract as history. */
 export function normalizeGroupChatPinnedMessageHistory(value: unknown): GroupChatMessageHistoryResponse | null {
   return normalizeGroupChatMessageHistory(value);
+}
+
+/** Builds the confirmed Group Chat search query and rejects unsupported input lengths. */
+export function buildGroupChatSearchQuery(queryText: string, limit = 50): URLSearchParams | null {
+  const query = queryText.trim();
+  if (query.length < 2 || !Number.isInteger(limit) || limit < 1 || limit > 100) return null;
+  const params = new URLSearchParams();
+  params.set("q", query);
+  params.set("limit", String(limit));
+  return params;
+}
+
+/** Builds the Shared Files request query without assuming its response shape. */
+export function buildGroupChatFilesQuery(limit = 100): URLSearchParams | null {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 200) return null;
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  return params;
+}
+
+/** Normalizes the confirmed Shared Files envelope and rejects malformed records. */
+export function normalizeGroupChatSharedFilesResponse(value: unknown): GroupChatSharedFilesResponse | null {
+  if (!isRecord(value) || !Array.isArray(value.items)) return null;
+  const items = value.items.map((item) => {
+    if (!isRecord(item)) return null;
+    const attachmentId = readString(item, "attachment_id");
+    const messageId = readString(item, "message_id");
+    const senderId = readString(item, "sender_id");
+    const fileName = readString(item, "file_name");
+    const mimeType = readString(item, "mime_type");
+    const attachmentType = readString(item, "attachment_type");
+    const createdAt = readString(item, "created_at");
+    const fileSize = typeof item.file_size === "number" && Number.isFinite(item.file_size) && item.file_size >= 0 ? item.file_size : null;
+    if (!attachmentId || !messageId || !senderId || !fileName || !mimeType || !createdAt || !isGroupChatAttachmentType(attachmentType) || fileSize === null) return null;
+    return { attachment_id: attachmentId, message_id: messageId, sender_id: senderId, file_name: fileName, mime_type: mimeType, file_size: fileSize, attachment_type: attachmentType, created_at: createdAt } satisfies GroupChatSharedFile;
+  }).filter((item): item is GroupChatSharedFile => item !== null);
+  return { items };
+}
+
+/** Formats a confirmed Shared Files byte count for the metadata list. */
+export function formatGroupChatSharedFileSize(size: number): string {
+  if (!Number.isFinite(size) || size < 0) return "Size unavailable";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(size < 10 * 1024 ? 2 : 0).replace(/\.00$/, "")} KB`;
+  return `${(size / (1024 * 1024)).toFixed(size < 10 * 1024 * 1024 ? 2 : 1).replace(/\.0$/, "")} MB`;
+}
+
+export type GroupChatSearchViewState = "idle" | "loading" | "results" | "empty" | "error";
+
+/** Separates an unsubmitted search from an active request and completed result states. */
+export function getGroupChatSearchViewState(queryText: string, submittedQuery: string, isFetching: boolean, isError: boolean, resultCount: number | null): GroupChatSearchViewState {
+  const currentQuery = queryText.trim();
+  const activeQuery = submittedQuery.trim();
+  if (currentQuery.length < 2 || currentQuery !== activeQuery) return "idle";
+  if (isFetching) return "loading";
+  if (isError) return "error";
+  if (resultCount === null) return "idle";
+  return resultCount > 0 ? "results" : "empty";
+}
+
+/** Produces a privacy-safe search/pinned preview without exposing hidden message content. */
+export function getGroupChatSafeMessagePreview(message: GroupChatMessage): string {
+  if (message.status.trim().toLowerCase() !== "visible") return "Message unavailable.";
+  if (message.attachment_id) {
+    const type = message.message_type.trim().toLowerCase();
+    const label = type === "image" || type === "document" || type === "audio" || type === "video" ? type : "file";
+    return `${label.charAt(0).toUpperCase()}${label.slice(1)} attachment`;
+  }
+  return getGroupChatMessageDisplayText(message);
 }
 
 /** Builds the documented text-message body and rejects blank content. */

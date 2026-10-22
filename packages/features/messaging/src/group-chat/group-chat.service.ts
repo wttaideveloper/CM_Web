@@ -15,6 +15,7 @@ import type {
   GroupChatInvitationListParams,
   GroupChatInvitationListResponse,
   GroupChatInvitationResult,
+  GroupChatFilesListParams,
   GroupChatLearner,
   GroupChatLearnerListParams,
   GroupChatLearnerListResponse,
@@ -35,6 +36,8 @@ import type {
   GroupChatProviderListResponse,
   GroupChatProviderVerificationCandidateListParams,
   GroupChatProviderVerificationCandidateListResponse,
+  GroupChatSearchParams,
+  GroupChatSharedFilesResponse,
   GroupChatSummary,
   GroupChatTraining,
   GroupChatTrainingListParams,
@@ -52,7 +55,7 @@ import type {
   UpdateGroupDetailsPayload,
   UpdateGroupSettingsPayload,
 } from "./group-chat.types";
-import { buildChangeGroupMemberRolePayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatProviderVerificationCandidateQuery, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatTextMessagePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildHideGroupChatMessagePayload, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPermissions, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatReactionSettings, getGroupChatReopenReasonError, normalizeGroupChatMessageMutationResponse, parseGroupChatAttachmentFileName, resolveGroupChatOwnerName } from "../group-chat-models";
+import { buildChangeGroupMemberRolePayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatProviderVerificationCandidateQuery, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildHideGroupChatMessagePayload, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPermissions, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatReactionSettings, getGroupChatReopenReasonError, normalizeGroupChatMessageMutationResponse, normalizeGroupChatSharedFilesResponse, parseGroupChatAttachmentFileName, resolveGroupChatOwnerName } from "../group-chat-models";
 export { buildCreateGroupPayload, buildGroupMemberInvitePayload } from "../group-chat-models";
 
 const GROUP_CHAT_API_PATH = "/groups";
@@ -543,6 +546,24 @@ export async function unpinGroupChatMessage(groupId: string, messageId: string):
   if (!normalizedGroupId || !normalizedMessageId) throw new GroupChatApiError(422, "A Group Chat and message are required.");
   const response = await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/messages/${encodeURIComponent(normalizedMessageId)}/pin`, new URLSearchParams(), { method: "DELETE" });
   return normalizeGroupChatMessageMutationResponse(response);
+}
+
+/** Searches only the active Group Chat using the backend message-list contract. */
+export async function searchGroupChatMessages(groupId: string, queryText: string, params: GroupChatSearchParams = {}): Promise<GroupChatMessageHistoryResponse> {
+  const normalizedGroupId = groupId.trim();
+  const query = buildGroupChatSearchQuery(queryText, params.limit ?? 50);
+  if (!normalizedGroupId || !query) throw new GroupChatApiError(422, "A Group Chat and a search of at least 2 characters are required.");
+  const response = normalizeGroupChatMessageHistory(await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/search`, query, { signal: params.signal }));
+  return requireParsed(response, "The Group Chat search response was invalid.");
+}
+
+/** Loads the confirmed Shared Files response through the authenticated Group Chat client. */
+export async function listGroupChatFiles(groupId: string, params: GroupChatFilesListParams = {}): Promise<GroupChatSharedFilesResponse> {
+  const normalizedGroupId = groupId.trim();
+  const query = buildGroupChatFilesQuery(params.limit ?? 100);
+  if (!normalizedGroupId || !query) throw new GroupChatApiError(422, "A Group Chat and valid files limit are required.");
+  const response = normalizeGroupChatSharedFilesResponse(await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/files`, query, { signal: params.signal }));
+  return requireParsed(response, "The Shared Files response was invalid.");
 }
 
 /** Loads oldest-first Group Chat history using the documented cursor contract. */

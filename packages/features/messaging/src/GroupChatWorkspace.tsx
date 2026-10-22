@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { changeGroupMemberRole, closeGroupChat, getGroupChat, inviteEnrolledLearners, inviteGroupMembers, listGroupChatLearners, listGroupChatMembers, listGroupChatProviders, muteGroupMemberPosting, removeGroupMember, reopenGroupChat, transferGroupOwnership, unmuteGroupMemberPosting, updateGroupDetails, updateGroupSettings, uploadGroupAvatar } from "./group-chat/group-chat.service";
-import { buildReopenGroupPayload, canCloseGroupChat, canEditGroupChat, canReopenGroupChat, canUpdateGroupChatSettings, formatGroupChatInvitationFeedback, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatReopenReasonError, isGroupChatProviderUnavailableInCurrentGroup, isSupportedGroupAvatarFile, splitGroupChatMembers, type GroupChatMemberAction, type GroupChatMemberRoleAction } from "./group-chat-models";
-import type { GroupChatDetails, GroupChatLearner, GroupChatMember, GroupChatPermissions, GroupChatProvider } from "./group-chat/group-chat.types";
+import { changeGroupMemberRole, closeGroupChat, downloadGroupChatAttachment, getGroupChat, inviteEnrolledLearners, inviteGroupMembers, listGroupChatFiles, listGroupChatLearners, listGroupChatMembers, listGroupChatProviders, muteGroupMemberPosting, removeGroupMember, reopenGroupChat, searchGroupChatMessages, transferGroupOwnership, unmuteGroupMemberPosting, updateGroupDetails, updateGroupSettings, uploadGroupAvatar } from "./group-chat/group-chat.service";
+import { buildReopenGroupPayload, canCloseGroupChat, canEditGroupChat, canReopenGroupChat, canUpdateGroupChatSettings, formatGroupChatInvitationFeedback, formatGroupChatSharedFileSize, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatReopenReasonError, getGroupChatSafeMessagePreview, getGroupChatSearchViewState, isGroupChatProviderUnavailableInCurrentGroup, isSupportedGroupAvatarFile, splitGroupChatMembers, type GroupChatMemberAction, type GroupChatMemberRoleAction } from "./group-chat-models";
+import { GroupChatApiError } from "./group-chat/group-chat.service";
+import type { GroupChatDetails, GroupChatLearner, GroupChatMember, GroupChatPermissions, GroupChatProvider, GroupChatSharedFile } from "./group-chat/group-chat.types";
 import { GroupAvatarDisplay, GroupAvatarPicker, useGroupAvatarPreview } from "./GroupChatAvatar";
 import GroupChatMessages from "./GroupChatMessages";
 
@@ -94,8 +95,115 @@ function GroupDetailsOverview({ group }: { group: GroupChatDetails }) {
     {group.emergency_notice ? <p className="rounded-xl border border-[#f1d8ad] bg-[#fffaf0] p-3 text-xs text-[#8b5e00]">{group.emergency_notice}</p> : null}
   </div>;
 }
-type GroupDetailsTab = "overview" | "members" | "invite" | "settings";
-function GroupDetailsPanel({ group, groupId, canViewMembers, canInviteMembers, onClose }: { group: GroupChatDetails; groupId: string; canViewMembers: boolean; canInviteMembers: boolean; onClose: () => void }) {
+function isLoadedGroupMessage(messageId: string): boolean {
+  return Array.from(document.querySelectorAll<HTMLElement>("[data-group-message-id]")).some((element) => element.dataset.groupMessageId === messageId);
+}
+
+function sharedFileIcon(type: GroupChatSharedFile["attachment_type"]): string {
+  if (type === "image") return "▧";
+  if (type === "audio") return "♫";
+  if (type === "video") return "▶";
+  return "▤";
+}
+
+function sharedFileDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Date unavailable" : date.toLocaleString();
+}
+
+function sharedFileError(error: unknown): string {
+  if (error instanceof GroupChatApiError && error.status === 403) return "This file is unavailable or access is denied.";
+  if (error instanceof GroupChatApiError && error.status === 404) return "This file is no longer available.";
+  return "The file could not be opened right now.";
+}
+
+function SharedFileRow({ file }: { file: GroupChatSharedFile }) {
+  const [pendingAction, setPendingAction] = useState<"open" | "download" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const category = file.attachment_type.charAt(0).toUpperCase() + file.attachment_type.slice(1);
+  const openFile = async (download: boolean) => {
+    if (pendingAction) return;
+    setPendingAction(download ? "download" : "open");
+    setError(null);
+    try {
+      const response = await downloadGroupChatAttachment(file.attachment_id);
+      const objectUrl = window.URL.createObjectURL(response.blob);
+      if (download) {
+        const anchor = document.createElement("a");
+        anchor.href = objectUrl;
+        anchor.download = response.fileName || file.file_name;
+        anchor.rel = "noreferrer";
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+      } else {
+        window.open(objectUrl, "_blank", "noopener,noreferrer");
+      }
+      window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 1500);
+    } catch (requestError: unknown) {
+      setError(sharedFileError(requestError));
+    } finally {
+      setPendingAction(null);
+    }
+  };
+  return <article className="rounded-xl border border-[#e1ebe6] bg-white p-3">
+    <div className="flex items-start gap-3">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#e8f6ee] text-lg font-bold text-[#1f6a58]" aria-hidden="true">{sharedFileIcon(file.attachment_type)}</span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-[#16332b]" title={file.file_name}>{file.file_name}</p>
+        <p className="mt-1 text-xs text-[#52736a]">{category} · {formatGroupChatSharedFileSize(file.file_size)} · {sharedFileDate(file.created_at)}</p>
+        {error ? <p className="mt-1 text-xs text-[#8f3b2f]" role="alert">{error}</p> : null}
+      </div>
+      <div className="flex shrink-0 gap-1.5">
+        <button type="button" disabled={pendingAction !== null} onClick={() => void openFile(false)} className="rounded-full border border-[#d7e5df] px-2.5 py-1 text-[11px] font-semibold text-[#1f6a58] hover:bg-[#f4faf7] disabled:opacity-50">{pendingAction === "open" ? "Opening..." : "Open"}</button>
+        <button type="button" disabled={pendingAction !== null} onClick={() => void openFile(true)} className="rounded-full border border-[#d7e5df] px-2.5 py-1 text-[11px] font-semibold text-[#1f6a58] hover:bg-[#f4faf7] disabled:opacity-50">{pendingAction === "download" ? "Downloading..." : "Download"}</button>
+      </div>
+    </div>
+  </article>;
+}
+
+function SharedFiles({ groupId }: { groupId: string }) {
+  const query = useQuery({
+    queryKey: ["group-chat", "files", groupId],
+    queryFn: ({ signal }) => listGroupChatFiles(groupId, { signal }),
+    refetchOnMount: "always",
+    retry: false,
+  });
+  if (query.isPending) return <p className="text-sm text-[#52736a]">Loading shared files...</p>;
+  if (query.isError) return <Retry message="Shared files could not be loaded." onRetry={() => void query.refetch()} />;
+  if (!query.data?.items.length) return <p className="rounded-xl bg-[#f9fcfa] p-4 text-sm text-[#52736a]">No shared files yet.</p>;
+  return <div className="space-y-2">{query.data.items.map((file) => <SharedFileRow key={`${file.attachment_id}-${file.message_id}`} file={file} />)}</div>;
+}
+
+function SearchMessages({ groupId, onNavigateToLoadedMessage }: { groupId: string; onNavigateToLoadedMessage: (messageId: string) => void }) {
+  const [queryText, setQueryText] = useState("");
+  const [submittedQuery, setSubmittedQuery] = useState("");
+  const searchQuery = useQuery({
+    queryKey: ["group-chat", "search", groupId, submittedQuery],
+    queryFn: ({ signal }) => searchGroupChatMessages(groupId, submittedQuery, { signal }),
+    enabled: submittedQuery.length >= 2,
+    retry: false,
+  });
+  useEffect(() => {
+    setQueryText("");
+    setSubmittedQuery("");
+  }, [groupId]);
+  const trimmedQuery = queryText.trim();
+  const queryError = trimmedQuery.length > 0 && trimmedQuery.length < 2 ? "Enter at least 2 characters to search." : null;
+  const searchState = getGroupChatSearchViewState(trimmedQuery, submittedQuery, searchQuery.isFetching, searchQuery.isError, searchQuery.data?.items.length ?? null);
+  return <div className="space-y-3">
+    <div className="flex gap-2"><label className="sr-only" htmlFor={`group-message-search-${groupId}`}>Search messages</label><input id={`group-message-search-${groupId}`} value={queryText} onChange={(event) => setQueryText(event.target.value)} placeholder="Search messages" className="h-10 min-w-0 flex-1 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm outline-none focus:border-[#1f6a58]" /><button type="button" disabled={trimmedQuery.length < 2 || searchQuery.isFetching} onClick={() => setSubmittedQuery(trimmedQuery)} className="rounded-full bg-[#1f6a58] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{searchQuery.isFetching ? "Searching..." : "Search"}</button></div>
+    {queryError ? <p className="text-xs text-[#b42318]" role="alert">{queryError}</p> : null}
+    {searchState === "idle" ? <p className="rounded-xl bg-[#f9fcfa] p-4 text-sm text-[#52736a]">Enter at least 2 characters, then select Search.</p> : null}
+    {searchState === "error" ? <div className="rounded-xl border border-[#f3d5d1] bg-[#fff7f6] p-3 text-sm text-[#7a271a]" role="alert"><p>{searchQuery.error instanceof Error ? searchQuery.error.message : "Unable to search messages."}</p><button type="button" onClick={() => void searchQuery.refetch()} className="mt-1 font-semibold underline">Try again</button></div> : null}
+    {searchState === "loading" ? <p className="text-sm text-[#52736a]">Searching messages...</p> : null}
+    {searchState === "empty" ? <p className="rounded-xl bg-[#f9fcfa] p-4 text-sm text-[#52736a]">No messages found.</p> : null}
+    {searchQuery.data?.items.length && trimmedQuery === submittedQuery.trim() ? <div className="space-y-2">{searchQuery.data.items.map((message) => { const loaded = isLoadedGroupMessage(message.id); return <div key={message.id} className="rounded-xl border border-[#e1ebe6] bg-white p-3"><div className="flex items-start gap-2"><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-[#16332b]">{message.sender_name}</p><p className="mt-1 line-clamp-2 text-sm text-[#52736a]">{getGroupChatSafeMessagePreview(message)}</p></div><button type="button" disabled={!loaded} onClick={() => onNavigateToLoadedMessage(message.id)} className="shrink-0 rounded-full border border-[#d7e5df] px-2.5 py-1 text-[11px] font-semibold text-[#1f6a58] disabled:cursor-default disabled:opacity-50">{loaded ? "Open" : "Not loaded"}</button></div></div>; })}</div> : null}
+  </div>;
+}
+
+type GroupDetailsTab = "overview" | "members" | "invite" | "search" | "files" | "settings";
+function GroupDetailsPanel({ group, groupId, canViewMembers, canInviteMembers, onClose, onNavigateToLoadedMessage }: { group: GroupChatDetails; groupId: string; canViewMembers: boolean; canInviteMembers: boolean; onClose: () => void; onNavigateToLoadedMessage: (messageId: string) => void }) {
   const [tab, setTab] = useState<GroupDetailsTab>("overview");
   const groupIsClosed = group.status?.trim().toLowerCase() === "closed";
   return <section className="flex min-h-0 h-full flex-col bg-white" aria-label="Group details">
@@ -116,10 +224,10 @@ function GroupDetailsPanel({ group, groupId, canViewMembers, canInviteMembers, o
       </div>
     </div>
     <div className="flex shrink-0 flex-wrap gap-1.5 border-b border-[#e1ebe6] px-3 py-2 sm:px-4" role="tablist" aria-label="Group management">
-      {([["overview", "Overview"], ["members", "Members"], ["invite", "Invite members"], ["settings", "Settings"]] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={tab === value ? "rounded-full bg-[#1f6a58] px-3 py-1.5 text-xs font-semibold text-white" : "rounded-full bg-[#f4faf7] px-3 py-1.5 text-xs font-semibold text-[#52736a]"}>{label}</button>)}
+      {([["overview", "Overview"], ["members", "Members"], ["invite", "Invite members"], ["search", "Search"], ["files", "Shared Files"], ["settings", "Settings"]] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={tab === value ? "rounded-full bg-[#1f6a58] px-3 py-1.5 text-xs font-semibold text-white" : "rounded-full bg-[#f4faf7] px-3 py-1.5 text-xs font-semibold text-[#52736a]"}>{label}</button>)}
     </div>
     <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
-      {tab === "overview" ? <GroupDetailsOverview group={group} /> : tab === "members" ? <Members groupId={groupId} ownerUserId={group.owner_user_id} groupStatus={group.status} permissions={group.permissions} canViewMembers={canViewMembers} /> : tab === "invite" ? <Invite group={group} groupId={groupId} canInviteMembers={canInviteMembers} /> : <Settings group={group} groupId={groupId} />}
+      {tab === "overview" ? <GroupDetailsOverview group={group} /> : tab === "members" ? <Members groupId={groupId} ownerUserId={group.owner_user_id} groupStatus={group.status} permissions={group.permissions} canViewMembers={canViewMembers} /> : tab === "invite" ? <Invite group={group} groupId={groupId} canInviteMembers={canInviteMembers} /> : tab === "search" ? <SearchMessages key={groupId} groupId={groupId} onNavigateToLoadedMessage={onNavigateToLoadedMessage} /> : tab === "files" ? <SharedFiles key={groupId} groupId={groupId} /> : <Settings group={group} groupId={groupId} />}
     </div>
   </section>;
 }
@@ -263,6 +371,14 @@ export default function GroupChatWorkspace({ groupId, onClose }: Props) {
   const canViewMembers = group.permissions.can_view_members === true;
   const canInviteMembers = group.status?.trim().toLowerCase() !== "closed" && group.permissions.can_invite === true;
   const currentMember = currentMemberQuery.data?.find((member) => member.is_current_user);
+  const navigateToLoadedMessage = (messageId: string) => {
+    if (!isLoadedGroupMessage(messageId)) return;
+    setDetailsOpen(false);
+    window.setTimeout(() => {
+      const element = Array.from(document.querySelectorAll<HTMLElement>("[data-group-message-id]")).find((candidate) => candidate.dataset.groupMessageId === messageId);
+      element?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 0);
+  };
   const conversationClass = detailsOpen ? "hidden" : "flex";
   return <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white p-3 shadow-sm sm:p-4">
     <div className={`${conversationClass} min-h-0 flex-1 flex-col`} aria-hidden={detailsOpen}>
@@ -285,7 +401,7 @@ export default function GroupChatWorkspace({ groupId, onClose }: Props) {
         <GroupChatMessages groupId={group.id} groupStatus={group.status} canPost={group.permissions.can_post} postingMuted={currentMember?.posting_muted ?? null} canHideMessages={group.permissions.can_hide_messages} canPinMessages={group.permissions.can_pin_messages} currentMemberKind={currentMember?.member_kind ?? null} currentMemberStatus={currentMember?.membership_status ?? null} />
       </div>
     </div>
-    {detailsOpen ? <GroupDetailsPanel group={group} groupId={groupId} canViewMembers={canViewMembers} canInviteMembers={canInviteMembers} onClose={() => setDetailsOpen(false)} /> : null}
+    {detailsOpen ? <GroupDetailsPanel group={group} groupId={groupId} canViewMembers={canViewMembers} canInviteMembers={canInviteMembers} onClose={() => setDetailsOpen(false)} onNavigateToLoadedMessage={navigateToLoadedMessage} /> : null}
   </section>;
 }
 function SearchInput({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {

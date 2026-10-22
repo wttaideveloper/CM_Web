@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatTextMessagePayload, buildHideGroupChatMessagePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canEditGroupChatMessage, canHideGroupChatMessage, canPinGroupChatMessage, canReactToGroupChatMessage, canReplyToGroupChatMessage, canReopenGroupChat, canRetractGroupChatMessage, canSendGroupChatMessage, canUpdateGroupChatSettings, formatGroupChatAttachmentSummary, getGroupChatMessageDisplayText, getGroupChatMemberDisplayName, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatPostingRestrictionMessage, getGroupChatReopenReasonError, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, getMemberManagementActions, isGroupChatReactionSelected, isSupportedGroupAvatarFile, mergeGroupChatMessagePages, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageMutationResponse, normalizeGroupChatPermissions, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatReactionCounts, normalizeGroupChatReactionSettings, normalizeGroupChatReplyReference, normalizeGroupLearner, normalizeGroupProvider, parseGroupChatAttachmentFileName, parseGroupChatMessageTimestamp, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAttachmentMetadata, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
+import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildHideGroupChatMessagePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupSettingsPayload, canCloseGroupChat, canEditGroupChat, canEditGroupChatMessage, canHideGroupChatMessage, canPinGroupChatMessage, canReactToGroupChatMessage, canReplyToGroupChatMessage, canReopenGroupChat, canRetractGroupChatMessage, canSendGroupChatMessage, canUpdateGroupChatSettings, formatGroupChatAttachmentSummary, formatGroupChatSharedFileSize, getGroupChatMessageDisplayText, getGroupChatMemberDisplayName, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatPostingRestrictionMessage, getGroupChatReopenReasonError, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, getGroupChatSafeMessagePreview, getGroupChatSearchViewState, getMemberManagementActions, isGroupChatReactionSelected, isSupportedGroupAvatarFile, mergeGroupChatMessagePages, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageMutationResponse, normalizeGroupChatPermissions, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatReactionCounts, normalizeGroupChatReactionSettings, normalizeGroupChatReplyReference, normalizeGroupChatSharedFilesResponse, normalizeGroupLearner, normalizeGroupProvider, parseGroupChatAttachmentFileName, parseGroupChatMessageTimestamp, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAttachmentMetadata, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
 import type { GroupChatMember } from "./group-chat/group-chat.types";
 
 test("builds the documented Group Chat avatar multipart fields", () => {
@@ -644,4 +644,78 @@ test("normalizes the pinned-message list with existing privacy-safe message fiel
   assert.equal(response?.pinned_count, 1);
   assert.equal(response?.items[0]?.pinned, true);
   assert.equal(normalizeGroupChatPinnedMessageHistory({ items: [], has_more: false }), null);
+});
+
+test("builds confirmed message-search and Shared Files queries", () => {
+  assert.equal(buildGroupChatSearchQuery(" x "), null);
+  assert.equal(buildGroupChatSearchQuery("  blood pressure  ")?.toString(), "q=blood+pressure&limit=50");
+  assert.equal(buildGroupChatSearchQuery("term", 100)?.get("limit"), "100");
+  assert.equal(buildGroupChatSearchQuery("term", 0), null);
+  assert.equal(buildGroupChatSearchQuery("term", 101), null);
+  assert.equal(buildGroupChatFilesQuery().toString(), "limit=100");
+  assert.equal(buildGroupChatFilesQuery(200)?.get("limit"), "200");
+  assert.equal(buildGroupChatFilesQuery(0), null);
+  assert.equal(buildGroupChatFilesQuery(201), null);
+});
+
+test("keeps search idle until a valid query is submitted", () => {
+  assert.equal(getGroupChatSearchViewState("", "", false, false, null), "idle");
+  assert.equal(getGroupChatSearchViewState("x", "", false, false, null), "idle");
+  assert.equal(getGroupChatSearchViewState("term", "", false, false, null), "idle");
+  assert.equal(getGroupChatSearchViewState("term", "term", true, false, null), "loading");
+  assert.equal(getGroupChatSearchViewState("term", "term", false, false, 0), "empty");
+  assert.equal(getGroupChatSearchViewState("term", "term", false, false, 2), "results");
+  assert.equal(getGroupChatSearchViewState("term", "term", false, true, null), "error");
+});
+
+test("does not leave cancelled or stale searches in a loading state", () => {
+  assert.equal(getGroupChatSearchViewState("term", "term", false, false, null), "idle");
+  assert.equal(getGroupChatSearchViewState("new term", "old term", false, false, 1), "idle");
+  assert.equal(getGroupChatSearchViewState("new term", "new term", true, false, null), "loading");
+});
+
+test("normalizes the confirmed Shared Files response and rejects malformed records", () => {
+  const item = { attachment_id: "attachment-1", message_id: "message-1", sender_id: "sender-1", file_name: "report.pdf", mime_type: "application/pdf", file_size: 123, attachment_type: "document", created_at: "2026-10-21T09:00:00Z" };
+  const response = normalizeGroupChatSharedFilesResponse({ items: [item, { ...item, attachment_id: "attachment-2", file_name: "photo.webp", mime_type: "image/webp", attachment_type: "image" }, { ...item, attachment_id: "attachment-3", file_name: "meeting.mp4", mime_type: "video/mp4", attachment_type: "video" }] });
+  assert.equal(response?.items.length, 3);
+  assert.deepEqual(response?.items[0], item);
+  assert.equal(response?.items[1]?.file_name, "photo.webp");
+  assert.equal(response?.items[2]?.attachment_type, "video");
+  assert.deepEqual(normalizeGroupChatSharedFilesResponse({ items: [item, { ...item, file_size: -1 }, null] }), { items: [item] });
+  assert.deepEqual(normalizeGroupChatSharedFilesResponse({ items: [] }), { items: [] });
+  assert.equal(normalizeGroupChatSharedFilesResponse([]), null);
+  assert.equal(formatGroupChatSharedFileSize(123), "123 B");
+  assert.equal(formatGroupChatSharedFileSize(1.34 * 1024 * 1024), "1.34 MB");
+});
+
+test("creates privacy-safe search previews for text, attachments and unavailable messages", () => {
+  const base = {
+    id: "search-message",
+    conversation_id: "group-1",
+    sender_id: "user-1",
+    sender_name: "Provider",
+    sender_kind: "provider",
+    message_type: "text",
+    content: "Visible text",
+    attachment_id: null,
+    status: "visible",
+    placeholder: null,
+    reply_to: null,
+    mentions: [],
+    mentions_all: false,
+    mentions_me: false,
+    is_edited: false,
+    edited_at: null,
+    pinned: false,
+    reactions: {},
+    my_reactions: [],
+    read_by: null,
+    created_at: "2026-10-21T09:00:00Z",
+  };
+  const text = normalizeGroupChatMessage(base)!;
+  assert.equal(getGroupChatSafeMessagePreview(text), "Visible text");
+  const image = normalizeGroupChatMessage({ ...base, message_type: "image", content: null, attachment_id: "attachment-1" })!;
+  assert.equal(getGroupChatSafeMessagePreview(image), "Image attachment");
+  const hidden = normalizeGroupChatMessage({ ...base, status: "hidden", content: "secret" })!;
+  assert.equal(getGroupChatSafeMessagePreview(hidden), "Message unavailable.");
 });
