@@ -3,7 +3,7 @@ import type { TenantMember } from "@ihp/enterprise-runtime";
 import type { AuthRoles } from "@ihp/auth";
 import type { GroupChatDataRequest, GroupChatDataRequestStatus } from "./group-chat/group-chat.types";
 import type { CreateGroupChatDataRequestPayload } from "./group-chat/group-chat.types";
-import type { CreateGroupChatReportPayload, GroupChatComplianceReport, GroupChatComplianceReportListParams, GroupChatComplianceReportListResponse, GroupChatComplianceReportStatus, GroupChatComplianceReportUpdateStatus, GroupChatGrievanceOfficer, GroupChatReport, GroupChatReportReason, UpdateGroupChatComplianceReportPayload } from "./group-chat/group-chat.types";
+import type { CreateGroupChatReportPayload, GroupChatAuditDetailsValue, GroupChatAuditEntry, GroupChatAuditListParams, GroupChatAuditListResponse, GroupChatComplianceReport, GroupChatComplianceReportListParams, GroupChatComplianceReportListResponse, GroupChatComplianceReportStatus, GroupChatComplianceReportUpdateStatus, GroupChatGrievanceOfficer, GroupChatReport, GroupChatReportReason, UpdateGroupChatComplianceReportPayload } from "./group-chat/group-chat.types";
 import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatConsentListResponse, GroupChatConsentNotice, GroupChatConsentRecord, GroupChatConsentWithdrawalResponse, GroupChatLeaveResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatMessageReadStatus, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReplyReference, GroupChatSharedFile, GroupChatSharedFilesResponse, GroupChatSummary, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReassignGroupOwnerPayload, ReassignGroupOwnerResponse, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupPreferencesPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
@@ -1127,6 +1127,118 @@ export function canAccessGroupChatComplianceReports(roles: AuthRoles | null | un
   return values.includes("tenant_admin") || values.includes("tenant_owner");
 }
 
+/** Returns true only when the selected Group's backend permission authorizes audit reads. */
+export function canViewGroupChatAudit(permissions: Pick<GroupChatPermissions, "can_view_audit">): boolean {
+  return permissions.can_view_audit === true;
+}
+
+/** Backend action values supported by the Group Audit Trail filter. */
+export const GROUP_CHAT_AUDIT_ACTION_OPTIONS: readonly { value: string; label: string }[] = [
+  { value: "group_created", label: "Group created" },
+  { value: "group_updated", label: "Group updated" },
+  { value: "member_invited", label: "Member invited" },
+  { value: "consent_granted", label: "Consent granted" },
+  { value: "ownership_transferred", label: "Ownership transferred" },
+  { value: "owner_reassigned", label: "Owner reassigned" },
+  { value: "message_edited", label: "Message edited" },
+  { value: "message_retracted", label: "Message retracted" },
+  { value: "message_hidden", label: "Message hidden" },
+  { value: "message_pinned", label: "Message pinned" },
+  { value: "message_unpinned", label: "Message unpinned" },
+  { value: "posting_muted", label: "Posting muted" },
+  { value: "posting_unmuted", label: "Posting unmuted" },
+  { value: "report_filed", label: "Report filed" },
+];
+
+export interface GroupChatAuditFilterState {
+  groupId: string;
+  action: string;
+  targetUserId: string;
+  page: number;
+  pageSize: number;
+}
+
+/** Clears only audit filters and pagination while preserving the selected Group. */
+export function clearGroupChatAuditFilters(state: GroupChatAuditFilterState): GroupChatAuditFilterState {
+  return { ...state, action: "", targetUserId: "", page: 1, pageSize: 25 };
+}
+
+/** Changes page size while preserving the selected Group and filters and returning to page one. */
+export function changeGroupChatAuditPageSize(state: GroupChatAuditFilterState, pageSize: number): GroupChatAuditFilterState {
+  return { ...state, page: 1, pageSize };
+}
+
+/** Reports whether the Audit Trail has any non-default filter or pagination state. */
+export function hasNonDefaultGroupChatAuditFilters(state: GroupChatAuditFilterState): boolean {
+  return Boolean(state.action.trim() || state.targetUserId.trim() || state.page !== 1 || state.pageSize !== 25);
+}
+
+/** Calculates Audit Trail pages from the backend total and selected page size. */
+export function getGroupChatAuditTotalPages(total: number, pageSize: number): number {
+  if (!Number.isFinite(total) || total < 0 || !Number.isFinite(pageSize) || pageSize < 1) return 1;
+  return Math.max(1, Math.ceil(total / pageSize));
+}
+
+/** Maps known audit action codes while keeping unknown future codes readable. */
+export function getGroupChatAuditActionLabel(action: string): string {
+  const normalized = action.trim();
+  const known = GROUP_CHAT_AUDIT_ACTION_OPTIONS.find((option) => option.value === normalized);
+  if (known) return known.label;
+  if (!normalized) return "Unknown action";
+  return normalized.replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+/** Resolves only an active member name from the authorized Group roster. */
+export function resolveGroupChatAuditMemberName(userId: string | null, members: readonly Pick<GroupChatMember, "user_id" | "name" | "membership_status">[]): string | null {
+  const normalizedUserId = userId?.trim() ?? "";
+  if (!normalizedUserId) return null;
+  const member = members.find((candidate) => candidate.user_id === normalizedUserId && candidate.membership_status.trim().toLowerCase() === "active");
+  const name = member?.name.trim();
+  return name || null;
+}
+
+export interface GroupChatAuditKnownDetail {
+  label: string;
+  value: string;
+}
+
+function readAuditDetailScalar(details: { [key: string]: GroupChatAuditDetailsValue } | null, keys: readonly string[]): string | null {
+  if (!details) return null;
+  for (const key of keys) {
+    const value = details[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+  }
+  return null;
+}
+
+/** Selects only known, scalar audit metadata for display; arbitrary nested details remain undisclosed. */
+export function getGroupChatAuditKnownDetails(entry: Pick<GroupChatAuditEntry, "action" | "details">): readonly GroupChatAuditKnownDetail[] {
+  const action = entry.action.trim();
+  if (action === "ownership_transferred" || action === "owner_reassigned") {
+    const details: GroupChatAuditKnownDetail[] = [];
+    const from = readAuditDetailScalar(entry.details, ["from", "from_user_id", "previous_owner_id"]);
+    const to = readAuditDetailScalar(entry.details, ["to", "to_user_id", "new_owner_id"]);
+    if (from) details.push({ label: "From", value: from });
+    if (to) details.push({ label: "To", value: to });
+    return details;
+  }
+  if (action === "posting_muted") {
+    const until = readAuditDetailScalar(entry.details, ["until", "muted_until"]);
+    return until ? [{ label: "Muted until", value: until }] : [];
+  }
+  if (action === "message_edited") {
+    const version = readAuditDetailScalar(entry.details, ["version"]);
+    return version ? [{ label: "Version", value: version }] : [];
+  }
+  if (action === "report_filed") {
+    const reason = readAuditDetailScalar(entry.details, ["reason"]);
+    return reason ? [{ label: "Report reason", value: reason }] : [];
+  }
+  return [];
+}
+
 /** Builds the validated GET /groups/reports query without adding undocumented parameters. */
 export function buildGroupChatComplianceReportsQuery(params: GroupChatComplianceReportListParams = {}): URLSearchParams | null {
   const page = params.page ?? 1;
@@ -1141,10 +1253,103 @@ export function buildGroupChatComplianceReportsQuery(params: GroupChatCompliance
   return query;
 }
 
+/** Builds the deployed page-based Group Chat audit query within the Swagger bounds. */
+export function buildGroupChatAuditQuery(params: GroupChatAuditListParams = {}): URLSearchParams | null {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? 25;
+  const action = params.action?.trim() ?? "";
+  const targetUserId = params.targetUserId?.trim() ?? "";
+  if (!Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 200 || (targetUserId && !isValidGroupChatUuid(targetUserId))) return null;
+  const query = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  if (action) query.set("action", action);
+  if (targetUserId) query.set("target_user_id", targetUserId);
+  return query;
+}
+
+/** Builds the encoded Group Chat audit path only for a valid group UUID. */
+export function buildGroupChatAuditPath(groupId: string): string | null {
+  const normalizedGroupId = groupId.trim();
+  return isValidGroupChatUuid(normalizedGroupId) ? `/${encodeURIComponent(normalizedGroupId)}/audit` : null;
+}
+
 /** Builds the exact PATCH /groups/reports/{report_id} request body. */
 export function buildGroupChatComplianceReportUpdatePayload(status: GroupChatComplianceReportUpdateStatus, note: string): UpdateGroupChatComplianceReportPayload | null {
   if (!GROUP_CHAT_COMPLIANCE_REPORT_UPDATE_STATUSES.includes(status)) return null;
   return { status, note: note.trim() || null };
+}
+
+function normalizeGroupChatAuditDetailsValue(value: unknown): GroupChatAuditDetailsValue | undefined {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (Array.isArray(value)) {
+    const normalized: GroupChatAuditDetailsValue[] = [];
+    for (const item of value) {
+      const parsed = normalizeGroupChatAuditDetailsValue(item);
+      if (parsed === undefined) return undefined;
+      normalized.push(parsed);
+    }
+    return normalized;
+  }
+  if (!isRecord(value)) return undefined;
+  const normalized: { [key: string]: GroupChatAuditDetailsValue } = {};
+  for (const [key, item] of Object.entries(value)) {
+    const parsed = normalizeGroupChatAuditDetailsValue(item);
+    if (parsed === undefined) return undefined;
+    normalized[key] = parsed;
+  }
+  return normalized;
+}
+
+function normalizeGroupChatAuditDetails(value: unknown): { [key: string]: GroupChatAuditDetailsValue } | null | undefined {
+  if (value === null) return null;
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) return undefined;
+  const normalized = normalizeGroupChatAuditDetailsValue(value);
+  return normalized && isRecord(normalized) ? normalized : undefined;
+}
+
+function readNullableAuditUuid(value: Record<string, unknown>, key: string): string | null | undefined {
+  if (value[key] === null) return null;
+  if (value[key] === undefined) return undefined;
+  const parsed = readString(value, key);
+  return parsed && isValidGroupChatUuid(parsed) ? parsed : undefined;
+}
+
+function readNullableAuditText(value: Record<string, unknown>, key: string): string | null | undefined {
+  if (value[key] === null) return null;
+  if (value[key] === undefined) return undefined;
+  return typeof value[key] === "string" ? value[key].trim() : undefined;
+}
+
+/** Strictly normalizes one Group Chat audit entry and enforces its group boundary. */
+export function normalizeGroupChatAuditEntry(value: unknown, expectedConversationId: string): GroupChatAuditEntry | null {
+  if (!isRecord(value)) return null;
+  const requiredKeys = ["id", "conversation_id", "actor_id", "actor_role", "action", "target_user_id", "message_id", "reason", "details", "created_at"] as const;
+  if (!requiredKeys.every((key) => Object.prototype.hasOwnProperty.call(value, key))) return null;
+  const id = readString(value, "id");
+  const conversationId = readString(value, "conversation_id");
+  const actorId = readNullableAuditUuid(value, "actor_id");
+  const targetUserId = readNullableAuditUuid(value, "target_user_id");
+  const messageId = readNullableAuditUuid(value, "message_id");
+  const actorRole = readNullableAuditText(value, "actor_role");
+  const action = readString(value, "action");
+  const reason = readNullableAuditText(value, "reason");
+  const details = normalizeGroupChatAuditDetails(value.details);
+  const createdAt = readString(value, "created_at");
+  if (!isValidGroupChatUuid(id) || !isValidGroupChatUuid(conversationId) || conversationId.toLowerCase() !== expectedConversationId.trim().toLowerCase() || actorId === undefined || targetUserId === undefined || messageId === undefined || actorRole === undefined || !action || reason === undefined || details === undefined || !createdAt || Number.isNaN(Date.parse(createdAt))) return null;
+  return { id, conversation_id: conversationId, actor_id: actorId, actor_role: actorRole, action, target_user_id: targetUserId, message_id: messageId, reason, details, created_at: createdAt };
+}
+
+/** Strictly normalizes the `{ items, total }` Group Chat audit response. */
+export function normalizeGroupChatAuditList(value: unknown, expectedConversationId: string): GroupChatAuditListResponse | null {
+  if (!isRecord(value) || !Array.isArray(value.items) || typeof value.total !== "number" || !Number.isInteger(value.total) || value.total < 0 || value.total < value.items.length || !isValidGroupChatUuid(expectedConversationId)) return null;
+  const items: GroupChatAuditEntry[] = [];
+  for (const item of value.items) {
+    const normalized = normalizeGroupChatAuditEntry(item, expectedConversationId);
+    if (!normalized) return null;
+    items.push(normalized);
+  }
+  return { items, total: value.total };
 }
 
 function readNullableComplianceText(value: Record<string, unknown>, key: string): string | null {

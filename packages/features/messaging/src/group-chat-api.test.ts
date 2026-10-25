@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCreateGroupPayload, buildGroupChatProviderVerificationCandidateQuery, buildGroupMemberInvitePayload, buildReassignGroupOwnerPayload, buildTransferGroupOwnershipPayload, canSubmitGroupChatOwnerReassignment, getGroupChatOwnerReassignmentRefreshKeys, buildVerifiedProviderPayload, formatGroupChatInvitationFeedback, isEligibleGroupChatOwnerReassignmentCandidate, isGroupChatLearnerSelectable, isGroupChatProviderDirectoryCandidate, isGroupChatProviderRegistrationCandidate, isGroupChatProviderSelectable, isGroupChatProviderUnavailableInCurrentGroup, isGroupChatProviderVerificationCandidate, isGroupChatTrainingSearchResultStale, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatVerifiedProvider, normalizeReassignGroupOwnerResponse, remainingGroupChatMemberSlots, resolveGroupChatOwnerDisplay, resolveGroupChatOwnerName, resolveGroupChatVerifiedProviderName } from "./group-chat-models.ts";
+import { buildCreateGroupPayload, buildGroupChatAuditPath, buildGroupChatAuditQuery, buildGroupChatProviderVerificationCandidateQuery, buildGroupMemberInvitePayload, buildReassignGroupOwnerPayload, buildTransferGroupOwnershipPayload, canSubmitGroupChatOwnerReassignment, canViewGroupChatAudit, changeGroupChatAuditPageSize, clearGroupChatAuditFilters, getGroupChatAuditActionLabel, getGroupChatAuditKnownDetails, getGroupChatAuditTotalPages, getGroupChatOwnerReassignmentRefreshKeys, GROUP_CHAT_AUDIT_ACTION_OPTIONS, hasNonDefaultGroupChatAuditFilters, buildVerifiedProviderPayload, formatGroupChatInvitationFeedback, isEligibleGroupChatOwnerReassignmentCandidate, isGroupChatLearnerSelectable, isGroupChatProviderDirectoryCandidate, isGroupChatProviderRegistrationCandidate, isGroupChatProviderSelectable, isGroupChatProviderUnavailableInCurrentGroup, isGroupChatProviderVerificationCandidate, isGroupChatTrainingSearchResultStale, normalizeGroupChatAuditEntry, normalizeGroupChatAuditList, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatVerifiedProvider, normalizeReassignGroupOwnerResponse, remainingGroupChatMemberSlots, resolveGroupChatAuditMemberName, resolveGroupChatOwnerDisplay, resolveGroupChatOwnerName, resolveGroupChatVerifiedProviderName } from "./group-chat-models.ts";
 import type { GroupChatLearner, GroupChatProvider } from "./group-chat/group-chat.types";
 
 const learner = (overrides: Partial<GroupChatLearner> = {}): GroupChatLearner => ({
@@ -390,4 +390,89 @@ test("owner reassignment candidates require active backend eligibility", () => {
   assert.equal(isEligibleGroupChatOwnerReassignmentCandidate({ ...base, is_verified_provider: false }), false);
   assert.equal(isEligibleGroupChatOwnerReassignmentCandidate({ ...base, membership_status: "invited" }), false);
   assert.equal(isEligibleGroupChatOwnerReassignmentCandidate({ ...base, role: "owner" }), false);
+});
+
+test("Group Audit Trail builds the deployed path and bounded page filters", () => {
+  const groupId = "ebf4aaab-6d70-4aa1-8faa-bca7dfb9b867";
+  const targetUserId = "24444513-e398-4d0c-9a6d-ee9da7fa19da";
+  assert.equal(buildGroupChatAuditPath(` ${groupId} `), `/${groupId}/audit`);
+  assert.equal(buildGroupChatAuditPath("not-a-uuid"), null);
+  const query = buildGroupChatAuditQuery({ action: " owner-reassigned ", targetUserId, page: 2, pageSize: 200 });
+  assert.equal(query?.get("action"), "owner-reassigned");
+  assert.equal(query?.get("target_user_id"), targetUserId);
+  assert.equal(query?.get("page"), "2");
+  assert.equal(query?.get("page_size"), "200");
+  assert.equal(buildGroupChatAuditQuery({ page: 0 }), null);
+  assert.equal(buildGroupChatAuditQuery({ pageSize: 201 }), null);
+  assert.equal(buildGroupChatAuditQuery({ targetUserId: "not-a-uuid" }), null);
+  assert.equal(buildGroupChatAuditQuery({ page: 1, pageSize: 5 })?.get("page_size"), "5");
+  assert.equal(buildGroupChatAuditQuery({ page: 1, pageSize: 10 })?.get("page_size"), "10");
+});
+
+test("Group Audit Trail normalization preserves nullable fields and structured details", () => {
+  const groupId = "ebf4aaab-6d70-4aa1-8faa-bca7dfb9b867";
+  const auditId = "7bf2bd3e-0d0c-4a5e-8f8a-1db24a9b4c11";
+  const actorId = "24444513-e398-4d0c-9a6d-ee9da7fa19da";
+  const messageId = "7bf2bd3e-0d0c-4a5e-8f8a-1db24a9b4c11";
+  const entry = { id: auditId, conversation_id: groupId, actor_id: actorId, actor_role: "owner", action: "owner-reassigned", target_user_id: null, message_id: messageId, reason: "Compliance review", details: { source: "manual", nested: { count: 1 }, tags: ["review"] }, created_at: "2026-10-25T10:00:00Z" };
+  assert.deepEqual(normalizeGroupChatAuditEntry(entry, groupId), entry);
+  assert.deepEqual(normalizeGroupChatAuditList({ items: [], total: 0 }, groupId), { items: [], total: 0 });
+  assert.equal(normalizeGroupChatAuditList({ items: [entry], total: 0 }, groupId), null);
+  assert.equal(normalizeGroupChatAuditEntry({ ...entry, conversation_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }, groupId), null);
+  assert.equal(normalizeGroupChatAuditEntry({ ...entry, details: "raw metadata" }, groupId), null);
+  assert.equal(normalizeGroupChatAuditEntry({ ...entry, actor_id: "not-a-uuid" }, groupId), null);
+  assert.equal(normalizeGroupChatAuditEntry({ ...entry, reason: undefined }, groupId), null);
+  assert.equal(normalizeGroupChatAuditList({ items: "not-an-array", total: 0 }, groupId), null);
+});
+
+test("Group Audit Trail access follows the selected Group permission only", () => {
+  assert.equal(canViewGroupChatAudit({ can_view_audit: true }), true);
+  assert.equal(canViewGroupChatAudit({ can_view_audit: false }), false);
+  assert.equal(canViewGroupChatAudit({ can_view_audit: null }), false);
+});
+
+test("Group Audit Trail action options use backend values and preserve unknown actions", () => {
+  assert.deepEqual(GROUP_CHAT_AUDIT_ACTION_OPTIONS.map((option) => option.value), [
+    "group_created", "group_updated", "member_invited", "consent_granted", "ownership_transferred", "owner_reassigned", "message_edited", "message_retracted", "message_hidden", "message_pinned", "message_unpinned", "posting_muted", "posting_unmuted", "report_filed",
+  ]);
+  assert.equal(getGroupChatAuditActionLabel("owner_reassigned"), "Owner reassigned");
+  assert.equal(getGroupChatAuditActionLabel("future_action_code"), "Future Action Code");
+  assert.equal(buildGroupChatAuditQuery({}).has("action"), false);
+});
+
+test("Group Audit Trail clears filters and pagination without changing the selected Group", () => {
+  const filtered = { groupId: "ebf4aaab-6d70-4aa1-8faa-bca7dfb9b867", action: "owner_reassigned", targetUserId: "24444513-e398-4d0c-9a6d-ee9da7fa19da", page: 4, pageSize: 100 };
+  assert.equal(hasNonDefaultGroupChatAuditFilters(filtered), true);
+  assert.deepEqual(changeGroupChatAuditPageSize(filtered, 5), { ...filtered, page: 1, pageSize: 5 });
+  assert.deepEqual(changeGroupChatAuditPageSize(filtered, 10), { ...filtered, page: 1, pageSize: 10 });
+  assert.deepEqual(clearGroupChatAuditFilters(filtered), { groupId: filtered.groupId, action: "", targetUserId: "", page: 1, pageSize: 25 });
+  assert.equal(hasNonDefaultGroupChatAuditFilters(clearGroupChatAuditFilters(filtered)), false);
+  const clearedQuery = buildGroupChatAuditQuery({ action: "", targetUserId: "", page: 1, pageSize: 25 });
+  assert.equal(clearedQuery?.has("action"), false);
+  assert.equal(clearedQuery?.has("target_user_id"), false);
+  assert.equal(clearedQuery?.get("page"), "1");
+  assert.equal(clearedQuery?.get("page_size"), "25");
+  assert.equal(getGroupChatAuditTotalPages(0, 5), 1);
+  assert.equal(getGroupChatAuditTotalPages(11, 5), 3);
+  assert.equal(getGroupChatAuditTotalPages(11, 10), 2);
+  assert.equal(getGroupChatAuditTotalPages(201, 200), 2);
+});
+
+test("Group Audit Trail resolves only active authorized member names", () => {
+  const userId = "24444513-e398-4d0c-9a6d-ee9da7fa19da";
+  const members = [
+    { user_id: userId, name: "Provider One", membership_status: "active" },
+    { user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Pending Person", membership_status: "pending" },
+    { user_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: " ", membership_status: "active" },
+  ] as const;
+  assert.equal(resolveGroupChatAuditMemberName(userId, members), "Provider One");
+  assert.equal(resolveGroupChatAuditMemberName(members[1].user_id, members), null);
+  assert.equal(resolveGroupChatAuditMemberName(members[2].user_id, members), null);
+  assert.equal(resolveGroupChatAuditMemberName("not-a-uuid", members), null);
+});
+
+test("Group Audit Trail formats known metadata without exposing arbitrary details", () => {
+  assert.deepEqual(getGroupChatAuditKnownDetails({ action: "owner_reassigned", details: { from: "old-owner", to: "new-owner", unsafe: { nested: true } } }), [{ label: "From", value: "old-owner" }, { label: "To", value: "new-owner" }]);
+  assert.deepEqual(getGroupChatAuditKnownDetails({ action: "message_edited", details: { version: 2 } }), [{ label: "Version", value: "2" }]);
+  assert.deepEqual(getGroupChatAuditKnownDetails({ action: "future_action", details: { unsafe: "not rendered" } }), []);
 });

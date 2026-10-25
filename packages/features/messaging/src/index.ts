@@ -5,6 +5,7 @@ export { default as EnterpriseMessagingHubScreen } from "./EnterpriseMessagingHu
 export { default as EnterpriseGroupChatScreen } from "./EnterpriseGroupChatScreen";
 export { default as EnterpriseGroupComplianceReportsScreen } from "./EnterpriseGroupComplianceReportsScreen";
 export { default as EnterpriseGroupOwnerReassignmentScreen } from "./EnterpriseGroupOwnerReassignmentScreen";
+export { default as EnterpriseGroupAuditTrailScreen } from "./EnterpriseGroupAuditTrailScreen";
 export { default as GroupChatWorkspace } from "./GroupChatWorkspace";
 export * from "./group-chat/group-chat.service";
 export * from "./group-chat/group-chat.types";

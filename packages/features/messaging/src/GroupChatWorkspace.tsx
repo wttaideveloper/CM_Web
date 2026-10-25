@@ -10,7 +10,7 @@ import type { GroupChatDetails, GroupChatLearner, GroupChatListResponse, GroupCh
 import { GroupAvatarDisplay, GroupAvatarPicker, useGroupAvatarPreview } from "./GroupChatAvatar";
 import GroupChatMessages from "./GroupChatMessages";
 
-type Props = { groupId: string; onClose?: () => void };
+type Props = { groupId: string; onClose?: () => void; onOpenAudit?: () => void };
 const groupKey = (groupId: string, userScope?: string) => userScope ? ["group-chat", "group", groupId, userScope] : ["group-chat", "group", groupId];
 const memberKey = (groupId: string, search: string) => ["group-chat", "members", groupId, search];
 const inviteMemberKey = (groupId: string) => ["group-chat", "invite-members", groupId];
@@ -133,7 +133,7 @@ function GroupOwnerValue({ resolution, rosterState }: { resolution: GroupChatOwn
   return <span>Group Owner unavailable.</span>;
 }
 
-function GroupDetailsOverview({ group, groupId, userScope, ownerResolution, ownerRosterState }: { group: GroupChatDetails; groupId: string; userScope: string; ownerResolution: GroupChatOwnerResolution; ownerRosterState: OwnerRosterState }) {
+function GroupDetailsOverview({ group, groupId, userScope, ownerResolution, ownerRosterState, onOpenAudit }: { group: GroupChatDetails; groupId: string; userScope: string; ownerResolution: GroupChatOwnerResolution; ownerRosterState: OwnerRosterState; onOpenAudit?: () => void }) {
   const groupIsClosed = group.status?.trim().toLowerCase() === "closed";
   return <div className="space-y-3">
     {groupIsClosed ? <div className="rounded-xl border border-[#f1d8ad] bg-[#fffaf0] p-3 text-sm text-[#8b5e00]" role="status">This group is closed. It is read-only.</div> : null}
@@ -145,6 +145,7 @@ function GroupDetailsOverview({ group, groupId, userScope, ownerResolution, owne
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">Member count</dt><dd className="mt-1 text-[#16332b]">{group.member_count ?? "Unavailable"}</dd></div>
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">Owner</dt><dd className="mt-1 text-[#16332b]"><GroupOwnerValue resolution={ownerResolution} rosterState={ownerRosterState} /></dd></div>
       </dl>
+      {group.permissions.can_view_audit === true && onOpenAudit ? <button type="button" onClick={onOpenAudit} className="mt-3 rounded-full border border-[#1f6a58] px-3 py-1.5 text-xs font-semibold text-[#1f6a58] hover:bg-[#e8f6ee]">View Group Audit Trail</button> : null}
     </section>
     {group.visibility_notice ? <p className="rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-3 text-xs text-[#52736a]">{group.visibility_notice}</p> : null}
     {group.emergency_notice ? <p className="rounded-xl border border-[#f1d8ad] bg-[#fffaf0] p-3 text-xs text-[#8b5e00]">{group.emergency_notice}</p> : null}
@@ -260,7 +261,7 @@ function SearchMessages({ groupId, onNavigateToLoadedMessage }: { groupId: strin
 }
 
 type GroupDetailsTab = "overview" | "members" | "invite" | "search" | "files" | "settings";
-function GroupDetailsPanel({ group, groupId, userScope, canViewMembers, canInviteMembers, ownerResolution, ownerRosterState, onClose, onLeave, onNavigateToLoadedMessage }: { group: GroupChatDetails; groupId: string; userScope: string; canViewMembers: boolean; canInviteMembers: boolean; ownerResolution: GroupChatOwnerResolution; ownerRosterState: OwnerRosterState; onClose: () => void; onLeave: () => void; onNavigateToLoadedMessage: (messageId: string) => void }) {
+function GroupDetailsPanel({ group, groupId, userScope, canViewMembers, canInviteMembers, ownerResolution, ownerRosterState, onClose, onLeave, onNavigateToLoadedMessage, onOpenAudit }: { group: GroupChatDetails; groupId: string; userScope: string; canViewMembers: boolean; canInviteMembers: boolean; ownerResolution: GroupChatOwnerResolution; ownerRosterState: OwnerRosterState; onClose: () => void; onLeave: () => void; onNavigateToLoadedMessage: (messageId: string) => void; onOpenAudit?: () => void }) {
   const [tab, setTab] = useState<GroupDetailsTab>("overview");
   const groupIsClosed = group.status?.trim().toLowerCase() === "closed";
   return <section className="flex min-h-0 h-full flex-col bg-white" aria-label="Group details">
@@ -287,7 +288,7 @@ function GroupDetailsPanel({ group, groupId, userScope, canViewMembers, canInvit
       {([["overview", "Overview"], ["members", "Members"], ["invite", "Invite members"], ["search", "Search"], ["files", "Shared Files"], ["settings", "Settings"]] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={tab === value ? "rounded-full bg-[#1f6a58] px-3 py-1.5 text-xs font-semibold text-white" : "rounded-full bg-[#f4faf7] px-3 py-1.5 text-xs font-semibold text-[#52736a]"}>{label}</button>)}
     </div>
     <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
-      {tab === "overview" ? <GroupDetailsOverview group={group} groupId={groupId} userScope={userScope} ownerResolution={ownerResolution} ownerRosterState={ownerRosterState} /> : tab === "members" ? <Members groupId={groupId} ownerUserId={ownerResolution.state === "resolved" ? ownerResolution.userId : group.owner_user_id} currentUserRole={group.my_role} groupStatus={group.status} permissions={group.permissions} canViewMembers={canViewMembers} /> : tab === "invite" ? <Invite group={group} groupId={groupId} canInviteMembers={canInviteMembers} /> : tab === "search" ? <SearchMessages key={groupId} groupId={groupId} onNavigateToLoadedMessage={onNavigateToLoadedMessage} /> : tab === "files" ? <SharedFiles key={groupId} groupId={groupId} /> : <Settings group={group} groupId={groupId} />}
+      {tab === "overview" ? <GroupDetailsOverview group={group} groupId={groupId} userScope={userScope} ownerResolution={ownerResolution} ownerRosterState={ownerRosterState} onOpenAudit={onOpenAudit} /> : tab === "members" ? <Members groupId={groupId} ownerUserId={ownerResolution.state === "resolved" ? ownerResolution.userId : group.owner_user_id} currentUserRole={group.my_role} groupStatus={group.status} permissions={group.permissions} canViewMembers={canViewMembers} /> : tab === "invite" ? <Invite group={group} groupId={groupId} canInviteMembers={canInviteMembers} /> : tab === "search" ? <SearchMessages key={groupId} groupId={groupId} onNavigateToLoadedMessage={onNavigateToLoadedMessage} /> : tab === "files" ? <SharedFiles key={groupId} groupId={groupId} /> : <Settings group={group} groupId={groupId} />}
     </div>
   </section>;
 }
@@ -504,7 +505,7 @@ function PersonalMembershipActions({ group, groupId, userScope, onLeave }: { gro
   </section>;
 }
 
-export default function GroupChatWorkspace({ groupId, onClose }: Props) {
+export default function GroupChatWorkspace({ groupId, onClose, onOpenAudit }: Props) {
   const { user } = useAuth();
   const userScope = user?.userId ?? user?.id ?? "";
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -564,7 +565,7 @@ export default function GroupChatWorkspace({ groupId, onClose }: Props) {
         <GroupChatMessages groupId={group.id} groupStatus={group.status} groupKind={group.kind} memberDirectory={currentMemberQuery.data ?? []} canPost={group.permissions.can_post} postingMuted={currentMember?.posting_muted ?? null} canHideMessages={group.permissions.can_hide_messages} canPinMessages={group.permissions.can_pin_messages} canReport={group.permissions.can_report} currentMemberKind={currentMember?.member_kind ?? null} currentMemberStatus={currentMember?.membership_status ?? null} />
       </div>
     </div>
-    {detailsOpen ? <GroupDetailsPanel key={groupId} group={group} groupId={groupId} userScope={userScope} canViewMembers={canViewMembers} canInviteMembers={canInviteMembers} ownerResolution={ownerResolution} ownerRosterState={ownerRosterState} onClose={() => setDetailsOpen(false)} onLeave={() => { setDetailsOpen(false); onClose?.(); }} onNavigateToLoadedMessage={navigateToLoadedMessage} /> : null}
+    {detailsOpen ? <GroupDetailsPanel key={groupId} group={group} groupId={groupId} userScope={userScope} canViewMembers={canViewMembers} canInviteMembers={canInviteMembers} ownerResolution={ownerResolution} ownerRosterState={ownerRosterState} onClose={() => setDetailsOpen(false)} onLeave={() => { setDetailsOpen(false); onClose?.(); }} onNavigateToLoadedMessage={navigateToLoadedMessage} onOpenAudit={onOpenAudit} /> : null}
   </section>;
 }
 function SearchInput({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {

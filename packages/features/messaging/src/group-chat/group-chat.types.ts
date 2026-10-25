@@ -193,6 +193,38 @@ export interface GroupChatComplianceReportListParams {
   signal?: AbortSignal;
 }
 
+/** JSON-safe metadata attached to a read-only Group Chat audit entry. */
+export type GroupChatAuditDetailsValue = string | number | boolean | null | GroupChatAuditDetailsValue[] | { [key: string]: GroupChatAuditDetailsValue };
+
+/** One immutable audit event returned for an authorized Group Chat. */
+export interface GroupChatAuditEntry {
+  id: string;
+  conversation_id: string;
+  actor_id: string | null;
+  actor_role: string | null;
+  action: string;
+  target_user_id: string | null;
+  message_id: string | null;
+  reason: string | null;
+  details: { [key: string]: GroupChatAuditDetailsValue } | null;
+  created_at: string;
+}
+
+/** Response returned by GET /groups/{group_id}/audit. */
+export interface GroupChatAuditListResponse {
+  items: GroupChatAuditEntry[];
+  total: number;
+}
+
+/** Page and filter parameters accepted by the Group Chat audit endpoint. */
+export interface GroupChatAuditListParams {
+  action?: string;
+  targetUserId?: string;
+  page?: number;
+  pageSize?: number;
+  signal?: AbortSignal;
+}
+
 /** Request body accepted by PATCH /groups/reports/{report_id}. */
 export interface UpdateGroupChatComplianceReportPayload {
   status: GroupChatComplianceReportUpdateStatus;

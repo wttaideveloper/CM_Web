@@ -9,6 +9,8 @@ import type {
   GroupChatAttachment,
   GroupChatAttachmentDownloadResponse,
   GroupChatAttachmentType,
+  GroupChatAuditListParams,
+  GroupChatAuditListResponse,
   GroupAvatarUploadResponse,
   GroupChatConsentListResponse,
   GroupChatDataRequestDownloadResponse,
@@ -68,8 +70,8 @@ import type {
 } from "./group-chat.types";
 import type { CreateGroupChatReportPayload, GroupChatGrievanceOfficer, GroupChatReport, UpdateGroupChatComplianceReportPayload } from "./group-chat.types";
 import { buildCreateGroupChatDataRequestPayload, buildGroupChatDataRequestDownloadPath, buildGroupChatDataRequestRetryPath, getGroupChatDataRequestDownloadFileName, normalizeGroupChatConsentList, normalizeGroupChatDataRequestList } from "../group-chat-models";
-import { buildGroupChatComplianceReportUpdatePayload, buildGroupChatComplianceReportsQuery, buildGroupChatReportPayload, normalizeGroupChatComplianceReport, normalizeGroupChatComplianceReportList, normalizeGroupChatGrievanceOfficer, normalizeGroupChatReport } from "../group-chat-models";
-import { buildChangeGroupMemberRolePayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatMessageReadStatusPath, buildGroupChatProviderVerificationCandidateQuery, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildHideGroupChatMessagePayload, buildReassignGroupOwnerPayload, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupPreferencesPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, isValidGroupChatUuid, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageReadStatus, normalizeGroupChatMessageMutationResponse, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPermissions, normalizeGroupChatPreferences, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatReactionSettings, normalizeGroupChatSharedFilesResponse, normalizeGroupChatConsentWithdrawalResponse, normalizeGroupChatLeaveResponse, normalizeReassignGroupOwnerResponse, getGroupChatReopenReasonError, parseGroupChatAttachmentFileName, resolveGroupChatOwnerName } from "../group-chat-models";
+import { buildGroupChatAuditPath, buildGroupChatAuditQuery, buildGroupChatComplianceReportUpdatePayload, buildGroupChatComplianceReportsQuery, buildGroupChatReportPayload, isValidGroupChatUuid, normalizeGroupChatAuditList, normalizeGroupChatComplianceReport, normalizeGroupChatComplianceReportList, normalizeGroupChatGrievanceOfficer, normalizeGroupChatReport } from "../group-chat-models";
+import { buildChangeGroupMemberRolePayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatMessageReadStatusPath, buildGroupChatProviderVerificationCandidateQuery, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildHideGroupChatMessagePayload, buildReassignGroupOwnerPayload, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupPreferencesPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageReadStatus, normalizeGroupChatMessageMutationResponse, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPermissions, normalizeGroupChatPreferences, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatReactionSettings, normalizeGroupChatSharedFilesResponse, normalizeGroupChatConsentWithdrawalResponse, normalizeGroupChatLeaveResponse, normalizeReassignGroupOwnerResponse, getGroupChatReopenReasonError, parseGroupChatAttachmentFileName, resolveGroupChatOwnerName } from "../group-chat-models";
 export { buildCreateGroupPayload, buildGroupMemberInvitePayload } from "../group-chat-models";
 
 const GROUP_CHAT_API_PATH = "/groups";
@@ -537,6 +539,16 @@ export async function listGroupChatComplianceGroups(signal?: AbortSignal): Promi
 /** Loads one Group Chat's server-provided details. */
 export async function getGroupChat(groupId: string, signal?: AbortSignal): Promise<GroupChatDetails> {
   return requireParsed(parseGroupDetails(await request<unknown>(`/${encodeURIComponent(groupId)}`, new URLSearchParams(), { signal })), "The Group Chat details response was invalid.");
+}
+
+/** Loads the read-only audit trail for a backend-authorized Group Chat. */
+export async function listGroupChatAudit(groupId: string, params: GroupChatAuditListParams = {}): Promise<GroupChatAuditListResponse> {
+  const normalizedGroupId = groupId.trim();
+  const path = buildGroupChatAuditPath(normalizedGroupId);
+  const query = buildGroupChatAuditQuery(params);
+  if (!path || !isValidGroupChatUuid(normalizedGroupId) || !query) throw new GroupChatApiError(422, "A valid Group Chat and audit filters are required.");
+  const parsed = normalizeGroupChatAuditList(await request<unknown>(path, query, { signal: params.signal }), normalizedGroupId);
+  return requireParsed(parsed, "The Group Chat audit response was invalid.");
 }
 
 /** Submits a Group Chat or message report using the authenticated member's access. */
