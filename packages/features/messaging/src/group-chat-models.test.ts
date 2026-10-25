@@ -7,6 +7,9 @@ import { getGroupChatLeaveAction } from "./group-chat-models.ts";
 import { normalizeGroupChatDataRequestList } from "./group-chat-models.ts";
 import { buildCreateGroupChatDataRequestPayload } from "./group-chat-models.ts";
 import { canSubmitGroupChatDataRequest, mergeGroupChatDataRequestsForDisplay } from "./group-chat-models.ts";
+import { canDownloadGroupChatDataRequest, canRetryGroupChatDataRequest, getGroupChatDataRequestDownloadFileName, getGroupChatDataRequestExpiry, hasPendingGroupChatDataRequests } from "./group-chat-models.ts";
+import { buildGroupChatDataRequestDownloadPath, buildGroupChatDataRequestRetryPath } from "./group-chat-models.ts";
+import type { GroupChatDataRequest } from "./group-chat/group-chat.types";
 import { buildGroupChatReportPayload, canReportGroupChatMessage, GROUP_CHAT_REPORT_REASONS, normalizeGroupChatGrievanceOfficer, normalizeGroupChatReport } from "./group-chat-models.ts";
 
 test("builds the documented Group Chat avatar multipart fields", () => {
@@ -946,6 +949,12 @@ test("renders a POST result once when refreshed history contains the same backen
   assert.deepEqual(mergeGroupChatDataRequestsForDisplay([], created), [created]);
 });
 
+test("lets a validated retry response replace stale history for the same ID", () => {
+  const failed = { id: "253b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: null, request_type: "copy", status: "failed" as const, note: null, created_at: "2026-10-22T10:20:06Z", completed_at: null, expires_at: null, error_code: "generation_failed" };
+  const received = { ...failed, status: "received" as const, error_code: null };
+  assert.deepEqual(mergeGroupChatDataRequestsForDisplay([failed], received), [received]);
+});
+
 test("preserves three distinct backend data-request IDs", () => {
   const requests = [
     { id: "253b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: null, request_type: "copy", status: "received", note: null, created_at: "2026-10-22T10:20:06.641856", completed_at: null },
@@ -958,6 +967,47 @@ test("preserves three distinct backend data-request IDs", () => {
 test("allows only one data-request submission while a mutation is pending", () => {
   assert.equal(canSubmitGroupChatDataRequest(false), true);
   assert.equal(canSubmitGroupChatDataRequest(true), false);
+});
+
+test("normalizes only the four backend data-request statuses", () => {
+  const base = { id: "253b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: null, request_type: "copy", note: null, created_at: "2026-10-22T10:20:06Z", completed_at: null, expires_at: null, error_code: null };
+  for (const status of ["received", "in_progress", "completed", "failed"]) {
+    assert.equal(normalizeGroupChatDataRequestList([{ ...base, status }])?.[0].status, status);
+  }
+  assert.equal(normalizeGroupChatDataRequestList([{ ...base, status: "expired" }]), null);
+});
+
+test("enforces seven-day expiry, completed-only download, and failed-only retry", () => {
+  const completed: GroupChatDataRequest = { id: "253b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: null, request_type: "copy", status: "completed", note: null, created_at: "2026-10-22T10:20:06Z", completed_at: "2026-10-22T10:20:06Z", expires_at: null, error_code: null };
+  const failed: GroupChatDataRequest = { ...completed, status: "failed", error_code: "generation_failed" };
+  assert.equal(getGroupChatDataRequestExpiry(completed), "2026-10-29T10:20:06.000Z");
+  assert.equal(canDownloadGroupChatDataRequest(completed, new Date("2026-10-29T10:20:05Z")), true);
+  assert.equal(canDownloadGroupChatDataRequest(completed, new Date("2026-10-29T10:20:06Z")), false);
+  assert.equal(canDownloadGroupChatDataRequest({ ...completed, status: "received" }, new Date("2026-10-23T10:20:06Z")), false);
+  assert.equal(canRetryGroupChatDataRequest(failed), true);
+  assert.equal(canRetryGroupChatDataRequest(failed, true), false);
+  assert.equal(canRetryGroupChatDataRequest(completed), false);
+});
+
+test("keeps data-export filenames safe and falls back to the request ID", () => {
+  const requestId = "253b5556-eed4-4093-a3e6-d4fdf5f0bd5d";
+  assert.equal(getGroupChatDataRequestDownloadFileName(`attachment; filename="group-data-${requestId}.json"`, requestId), `group-data-${requestId}.json`);
+  assert.equal(getGroupChatDataRequestDownloadFileName(`attachment; filename="..\\private.txt"`, requestId), `group-data-${requestId}.json`);
+  assert.equal(getGroupChatDataRequestDownloadFileName(null, requestId), `group-data-${requestId}.json`);
+});
+
+test("uses the existing Group Chat route for download and retry actions", () => {
+  const requestId = "253b5556-eed4-4093-a3e6-d4fdf5f0bd5d";
+  assert.equal(buildGroupChatDataRequestDownloadPath(requestId), `/groups/data-requests/${requestId}/download`);
+  assert.equal(buildGroupChatDataRequestRetryPath(requestId), `/groups/data-requests/${requestId}/retry`);
+  assert.equal(buildGroupChatDataRequestDownloadPath("request/id"), "/groups/data-requests/request%2Fid/download");
+});
+
+test("polls only while received or in-progress requests remain", () => {
+  const base: GroupChatDataRequest = { id: "253b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: null, request_type: "copy", status: "completed", note: null, created_at: "2026-10-22T10:20:06Z", completed_at: "2026-10-22T10:20:06Z", expires_at: null, error_code: null };
+  assert.equal(hasPendingGroupChatDataRequests([{ ...base, status: "received", completed_at: null }]), true);
+  assert.equal(hasPendingGroupChatDataRequests([{ ...base, status: "in_progress", completed_at: null }]), true);
+  assert.equal(hasPendingGroupChatDataRequests([base, { ...base, id: "753b5556-eed4-4093-a3e6-d4fdf5f0bd5d", status: "failed", error_code: "generation_failed" }]), false);
 });
 
 test("builds and normalizes Group Chat reports", () => {

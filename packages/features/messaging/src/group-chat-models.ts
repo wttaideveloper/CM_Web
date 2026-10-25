@@ -1,7 +1,7 @@
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
 import type { TenantMember } from "@ihp/enterprise-runtime";
 import type { AuthRoles } from "@ihp/auth";
-import type { GroupChatDataRequest } from "./group-chat/group-chat.types";
+import type { GroupChatDataRequest, GroupChatDataRequestStatus } from "./group-chat/group-chat.types";
 import type { CreateGroupChatDataRequestPayload } from "./group-chat/group-chat.types";
 import type { CreateGroupChatReportPayload, GroupChatComplianceReport, GroupChatComplianceReportListParams, GroupChatComplianceReportListResponse, GroupChatComplianceReportStatus, GroupChatComplianceReportUpdateStatus, GroupChatGrievanceOfficer, GroupChatReport, GroupChatReportReason, UpdateGroupChatComplianceReportPayload } from "./group-chat/group-chat.types";
 import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatConsentListResponse, GroupChatConsentNotice, GroupChatConsentRecord, GroupChatConsentWithdrawalResponse, GroupChatLeaveResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatMessageReadStatus, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReplyReference, GroupChatSharedFile, GroupChatSharedFilesResponse, GroupChatSummary, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReassignGroupOwnerPayload, ReassignGroupOwnerResponse, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupPreferencesPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
@@ -1289,6 +1289,7 @@ export function normalizeGroupChatConsentList(value: unknown): GroupChatConsentL
 export function normalizeGroupChatDataRequestList(value: unknown): GroupChatDataRequest[] | null {
   if (!Array.isArray(value)) return null;
   const isUuid = (candidate: string | null): candidate is string => Boolean(candidate && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(candidate));
+  const isStatus = (candidate: string | null): candidate is GroupChatDataRequestStatus => candidate === "received" || candidate === "in_progress" || candidate === "completed" || candidate === "failed";
   const records: GroupChatDataRequest[] = [];
   for (const item of value) {
     if (!isRecord(item)) return null;
@@ -1296,12 +1297,12 @@ export function normalizeGroupChatDataRequestList(value: unknown): GroupChatData
     const conversationId = item.conversation_id === null ? null : readString(item, "conversation_id");
     const requestType = readString(item, "request_type");
     const status = readString(item, "status");
-    const note = item.note === null ? null : readString(item, "note");
+    const note = item.note == null ? null : readString(item, "note");
     const createdAt = readString(item, "created_at");
-    const completedAt = item.completed_at === null ? null : readString(item, "completed_at");
+    const completedAt = item.completed_at == null ? null : readString(item, "completed_at");
     const expiresAt = item.expires_at == null ? null : readString(item, "expires_at");
     const errorCode = item.error_code == null ? null : readString(item, "error_code");
-    if (!isUuid(id) || (conversationId !== null && !isUuid(conversationId)) || (conversationId === null && item.conversation_id !== null) || !requestType || !status || (item.note !== null && note === null) || !createdAt || Number.isNaN(Date.parse(createdAt)) || (item.completed_at !== null && (completedAt === null || Number.isNaN(Date.parse(completedAt)))) || (item.expires_at != null && (!expiresAt || Number.isNaN(Date.parse(expiresAt)))) || (item.error_code != null && !errorCode)) return null;
+    if (!isUuid(id) || (conversationId !== null && !isUuid(conversationId)) || (conversationId === null && item.conversation_id !== null) || !requestType || !isStatus(status) || (item.note != null && note === null) || !createdAt || Number.isNaN(Date.parse(createdAt)) || (item.completed_at != null && (completedAt === null || Number.isNaN(Date.parse(completedAt)))) || (item.expires_at != null && (!expiresAt || Number.isNaN(Date.parse(expiresAt)))) || (item.error_code != null && !errorCode)) return null;
     records.push({ id, conversation_id: conversationId, request_type: requestType, status, note, created_at: createdAt, completed_at: completedAt, expires_at: expiresAt, error_code: errorCode });
   }
   return records;
@@ -1314,17 +1315,65 @@ export function buildCreateGroupChatDataRequestPayload(conversationId: string | 
 
 /** Keeps each distinct backend data-request ID visible once while refreshed history catches up. */
 export function mergeGroupChatDataRequestsForDisplay(requests: readonly GroupChatDataRequest[], createdRequest: GroupChatDataRequest | null): GroupChatDataRequest[] {
-  const seen = new Set<string>();
-  return [...requests, ...(createdRequest ? [createdRequest] : [])].filter((request) => {
-    if (seen.has(request.id)) return false;
-    seen.add(request.id);
-    return true;
-  });
+  const records = new Map(requests.map((request) => [request.id, request]));
+  if (createdRequest) records.set(createdRequest.id, createdRequest);
+  return [...records.values()];
 }
 
 /** Keeps the data-request form from submitting again while its request is pending. */
 export function canSubmitGroupChatDataRequest(isPending: boolean): boolean {
   return !isPending;
+}
+
+/** Computes the contract's seven-day expiry when older records do not include expires_at. */
+export function getGroupChatDataRequestExpiry(request: GroupChatDataRequest): string | null {
+  if (request.expires_at) return request.expires_at;
+  if (!request.completed_at) return null;
+  const completedAt = Date.parse(request.completed_at);
+  return Number.isNaN(completedAt) ? null : new Date(completedAt + 7 * 24 * 60 * 60 * 1000).toISOString();
+}
+
+/** Allows downloads only for completed exports that have not reached their expiry. */
+export function canDownloadGroupChatDataRequest(request: GroupChatDataRequest, now = new Date()): boolean {
+  const expiry = getGroupChatDataRequestExpiry(request);
+  return request.status === "completed" && Boolean(expiry) && Date.parse(expiry as string) > now.getTime();
+}
+
+/** Retry is a failed-request action only; the mutation layer also prevents duplicate clicks. */
+export function canRetryGroupChatDataRequest(request: GroupChatDataRequest, isPending = false): boolean {
+  return request.status === "failed" && !isPending;
+}
+
+/** Identifies the records that should keep the history query polling. */
+export function hasPendingGroupChatDataRequests(requests: readonly GroupChatDataRequest[]): boolean {
+  return requests.some((request) => request.status === "received" || request.status === "in_progress");
+}
+
+/** Keeps status copy stable and limited to the backend contract. */
+export function getGroupChatDataRequestStatusLabel(status: GroupChatDataRequestStatus): string {
+  if (status === "in_progress") return "In progress";
+  if (status === "received") return "Received";
+  if (status === "completed") return "Completed";
+  return "Failed";
+}
+
+/** Returns a constrained JSON filename and never trusts an unsafe server-provided path. */
+export function getGroupChatDataRequestDownloadFileName(contentDisposition: string | null, requestId: string): string {
+  const fallback = `group-data-${requestId}.json`;
+  const candidate = parseGroupChatAttachmentFileName(contentDisposition);
+  if (!candidate) return fallback;
+  const safe = candidate.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").replace(/\.\./g, "_");
+  return safe && safe !== "." && safe !== ".." && /\.json$/i.test(safe) ? safe.slice(0, 180) : fallback;
+}
+
+/** Builds the authenticated Group Chat route for a data-export download. */
+export function buildGroupChatDataRequestDownloadPath(requestId: string): string {
+  return `/groups/data-requests/${encodeURIComponent(requestId)}/download`;
+}
+
+/** Builds the authenticated Group Chat route for a failed data-export retry. */
+export function buildGroupChatDataRequestRetryPath(requestId: string): string {
+  return `/groups/data-requests/${encodeURIComponent(requestId)}/retry`;
 }
 
 /** Provides stable keys without collapsing historical records for one conversation. */

@@ -619,16 +619,26 @@ export interface GroupChatConsentListResponse {
 }
 
 /** Personal data request returned by the confirmed Group Chat history endpoint. */
+export type GroupChatDataRequestStatus = "received" | "in_progress" | "completed" | "failed";
+
 export interface GroupChatDataRequest {
   id: string;
   conversation_id: string | null;
   request_type: string;
-  status: string;
+  status: GroupChatDataRequestStatus;
   note: string | null;
   created_at: string;
   completed_at: string | null;
   expires_at: string | null;
   error_code: string | null;
+}
+
+/** Browser-safe result for the authenticated data-export attachment endpoint. */
+export interface GroupChatDataRequestDownloadResponse {
+  blob: Blob;
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
 }
 
 /** Request body accepted by POST /groups/data-requests. */

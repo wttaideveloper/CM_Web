@@ -11,6 +11,7 @@ import type {
   GroupChatAttachmentType,
   GroupAvatarUploadResponse,
   GroupChatConsentListResponse,
+  GroupChatDataRequestDownloadResponse,
   GroupChatComplianceReport,
   GroupChatComplianceReportListParams,
   GroupChatComplianceReportListResponse,
@@ -66,7 +67,7 @@ import type {
   UpdateGroupSettingsPayload,
 } from "./group-chat.types";
 import type { CreateGroupChatReportPayload, GroupChatGrievanceOfficer, GroupChatReport, UpdateGroupChatComplianceReportPayload } from "./group-chat.types";
-import { buildCreateGroupChatDataRequestPayload, normalizeGroupChatConsentList, normalizeGroupChatDataRequestList } from "../group-chat-models";
+import { buildCreateGroupChatDataRequestPayload, buildGroupChatDataRequestDownloadPath, buildGroupChatDataRequestRetryPath, getGroupChatDataRequestDownloadFileName, normalizeGroupChatConsentList, normalizeGroupChatDataRequestList } from "../group-chat-models";
 import { buildGroupChatComplianceReportUpdatePayload, buildGroupChatComplianceReportsQuery, buildGroupChatReportPayload, normalizeGroupChatComplianceReport, normalizeGroupChatComplianceReportList, normalizeGroupChatGrievanceOfficer, normalizeGroupChatReport } from "../group-chat-models";
 import { buildChangeGroupMemberRolePayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatMessageReadStatusPath, buildGroupChatProviderVerificationCandidateQuery, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildHideGroupChatMessagePayload, buildReassignGroupOwnerPayload, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupPreferencesPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, isValidGroupChatUuid, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageReadStatus, normalizeGroupChatMessageMutationResponse, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPermissions, normalizeGroupChatPreferences, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatReactionSettings, normalizeGroupChatSharedFilesResponse, normalizeGroupChatConsentWithdrawalResponse, normalizeGroupChatLeaveResponse, normalizeReassignGroupOwnerResponse, getGroupChatReopenReasonError, parseGroupChatAttachmentFileName, resolveGroupChatOwnerName } from "../group-chat-models";
 export { buildCreateGroupPayload, buildGroupMemberInvitePayload } from "../group-chat-models";
@@ -150,6 +151,7 @@ type RequestOptions = {
   body?: unknown;
   headers?: HeadersInit;
   signal?: AbortSignal;
+  errorMessage?: (response: Response) => Promise<string>;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -211,6 +213,7 @@ function safeApiMessage(status: number): string {
   if (status === 403) return "You do not have access to this Group Chat action.";
   if (status === 404) return "The requested Group Chat data was not found.";
   if (status === 409) return "This Group Chat changed or has reached its member capacity.";
+  if (status === 410) return "This data export has expired or is no longer available.";
   if (status === 422) return "The Group Chat request was invalid.";
   if (status === 429) return "Too many requests. Try again shortly.";
   if (status >= 500) return "Group Chat data is temporarily unavailable.";
@@ -231,6 +234,14 @@ async function backendErrorMessage(response: Response): Promise<string> {
   return safeApiMessage(response.status);
 }
 
+async function dataRequestErrorMessage(response: Response): Promise<string> {
+  const message = await backendErrorMessage(response);
+  if (response.status === 404) return "This data export was not found or is not available to your account.";
+  if (response.status === 409) return "This data export is not completed or cannot be retried in its current state.";
+  if (response.status === 410) return "This data export has expired or is no longer available.";
+  return message;
+}
+
 async function request<T>(path: string, params = new URLSearchParams(), options: RequestOptions = {}): Promise<T> {
   const query = params.toString();
   const url = `${GROUP_CHAT_API_PATH}${path}${query ? `?${query}` : ""}`;
@@ -239,7 +250,7 @@ async function request<T>(path: string, params = new URLSearchParams(), options:
 
   try {
     const response = await chatRequestResponse(url, init);
-    if (!response.ok) throw new GroupChatApiError(response.status, await backendErrorMessage(response));
+    if (!response.ok) throw new GroupChatApiError(response.status, await (options.errorMessage?.(response) ?? backendErrorMessage(response)));
     if (response.status === 204) return undefined as T;
     const text = await response.text();
     if (!text.trim()) return undefined as T;
@@ -757,6 +768,40 @@ export async function createGroupChatDataRequest(payload: CreateGroupChatDataReq
   const response = normalizeGroupChatDataRequestList([await request<unknown>("/data-requests", new URLSearchParams(), { method: "POST", body: buildCreateGroupChatDataRequestPayload(payload.conversation_id, payload.note) })]);
   if (!response?.[0]) throw new GroupChatApiError(0, "The Group Chat data request response was invalid.");
   return response[0];
+}
+
+/** Downloads only the authenticated user's completed JSON export as a browser blob. */
+export async function downloadGroupChatDataRequest(requestId: string): Promise<GroupChatDataRequestDownloadResponse> {
+  const normalizedRequestId = requestId.trim();
+  if (!isValidGroupChatUuid(normalizedRequestId)) throw new GroupChatApiError(422, "A valid data request identifier is required.");
+  const response = await chatRequestResponse(buildGroupChatDataRequestDownloadPath(normalizedRequestId), { method: "GET" });
+  if (!response.ok) throw new GroupChatApiError(response.status, await dataRequestErrorMessage(response));
+  const rawContentType = response.headers.get("content-type") ?? "";
+  const mimeType = rawContentType.split(";", 1)[0].trim().toLowerCase();
+  if (mimeType !== "application/json") {
+    await response.arrayBuffer().catch(() => new ArrayBuffer(0));
+    throw new GroupChatApiError(502, "The data export service returned an invalid file response.");
+  }
+  const blob = await response.blob();
+  if (blob.size === 0) throw new GroupChatApiError(502, "The data export service returned an empty file.");
+  return {
+    blob,
+    fileName: getGroupChatDataRequestDownloadFileName(response.headers.get("content-disposition"), normalizedRequestId),
+    mimeType,
+    fileSize: blob.size,
+  };
+}
+
+/** Retries a failed request without creating a second request ID or sending a request body. */
+export async function retryGroupChatDataRequest(requestId: string): Promise<GroupChatDataRequest> {
+  const normalizedRequestId = requestId.trim();
+  if (!isValidGroupChatUuid(normalizedRequestId)) throw new GroupChatApiError(422, "A valid data request identifier is required.");
+  const response = normalizeGroupChatDataRequestList([await request<unknown>(buildGroupChatDataRequestRetryPath(normalizedRequestId), new URLSearchParams(), { method: "POST", errorMessage: dataRequestErrorMessage })]);
+  const updatedRequest = response?.[0];
+  if (!updatedRequest || updatedRequest.id !== normalizedRequestId || updatedRequest.status !== "received" || updatedRequest.error_code !== null) {
+    throw new GroupChatApiError(502, "The data request retry response was invalid.");
+  }
+  return updatedRequest;
 }
 
 /** Closes a Group Chat through the documented no-body action endpoint. */
