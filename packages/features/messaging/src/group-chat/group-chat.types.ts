@@ -50,7 +50,7 @@ export interface GroupChatLearnerListResponse {
   max_members: number;
 }
 
-/** An authorized, verified Provider candidate for a Training group. */
+/** An authorized, verified Provider returned for Training invitations; this is not a Group membership or ownership-eligibility record. */
 export interface GroupChatProvider {
   user_id: string;
   name: string;
@@ -59,7 +59,7 @@ export interface GroupChatProvider {
   is_me: boolean;
 }
 
-/** Provider candidates returned for a Training. */
+/** Provider candidates returned by the Training invitation lookup. Ownership eligibility comes only from active Group members. */
 export interface GroupChatProviderListResponse {
   training_id: string;
   instructor_name: string | null;
@@ -403,6 +403,21 @@ export interface TransferGroupOwnershipPayload {
   user_id: string;
 }
 
+/** Request body accepted by POST /groups/{group_id}/reassign-owner. */
+export interface ReassignGroupOwnerPayload {
+  user_id: string;
+  reason: string;
+}
+
+/** Confirmed live success response returned by POST /groups/{group_id}/reassign-owner. */
+export interface ReassignGroupOwnerObjectResponse {
+  conversation_id: string;
+  owner_id: string;
+}
+
+/** Success responses accepted from the documented and deployed Group Chat APIs. */
+export type ReassignGroupOwnerResponse = string | ReassignGroupOwnerObjectResponse;
+
 /** Optional fields accepted by the backend mute request; timed mute is not enabled yet. */
 export interface GroupChatMemberPostingMutePayload {
   until?: string | null;
@@ -430,6 +445,7 @@ export interface GroupChatMemberListResponse {
   items: GroupChatMember[];
   pending_invitations: GroupChatInvitation[];
   pagination: GroupChatPagination;
+  malformed: boolean;
 }
 
 /** Paginated pending invitations for the authenticated user. */

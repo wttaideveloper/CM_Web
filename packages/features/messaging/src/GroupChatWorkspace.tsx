@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@ihp/auth";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { changeGroupMemberRole, closeGroupChat, createGroupChatReport, downloadGroupChatAttachment, getGroupChat, getGroupChatGrievanceOfficer, inviteEnrolledLearners, inviteGroupMembers, leaveGroupChat, listGroupChatFiles, listGroupChatLearners, listGroupChatMembers, listGroupChatProviders, muteGroupMemberPosting, removeGroupMember, reopenGroupChat, searchGroupChatMessages, transferGroupOwnership, unmuteGroupMemberPosting, updateGroupDetails, updateGroupPreferences, updateGroupSettings, uploadGroupAvatar, withdrawGroupChatConsent } from "./group-chat/group-chat.service";
-import { buildGroupChatReportPayload, buildReopenGroupPayload, canCloseGroupChat, canEditGroupChat, canReopenGroupChat, canUpdateGroupChatSettings, formatGroupChatInvitationFeedback, formatGroupChatSharedFileSize, getGroupChatLeaveAction, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatReopenReasonError, getGroupChatSafeMessagePreview, getGroupChatSearchViewState, GROUP_CHAT_REPORT_REASONS, isGroupChatProviderUnavailableInCurrentGroup, isSupportedGroupAvatarFile, splitGroupChatMembers, type GroupChatMemberAction, type GroupChatMemberRoleAction } from "./group-chat-models";
+import { buildGroupChatReportPayload, buildReopenGroupPayload, canCloseGroupChat, canEditGroupChat, canReopenGroupChat, canUpdateGroupChatSettings, formatGroupChatInvitationFeedback, formatGroupChatSharedFileSize, getGroupChatLeaveAction, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatReopenReasonError, getGroupChatSafeMessagePreview, getGroupChatSearchViewState, GROUP_CHAT_REPORT_REASONS, isGroupChatProviderUnavailableInCurrentGroup, isSupportedGroupAvatarFile, resolveGroupChatOwnerDisplay, splitGroupChatMembers, type GroupChatMemberAction, type GroupChatMemberRoleAction, type GroupChatOwnerResolution } from "./group-chat-models";
 import { GroupChatApiError } from "./group-chat/group-chat.service";
 import type { GroupChatDetails, GroupChatLearner, GroupChatListResponse, GroupChatMember, GroupChatPermissions, GroupChatProvider, GroupChatSharedFile } from "./group-chat/group-chat.types";
 import { GroupAvatarDisplay, GroupAvatarPicker, useGroupAvatarPreview } from "./GroupChatAvatar";
@@ -123,7 +123,17 @@ function GrievanceOfficer({ userScope }: { userScope: string }) {
   return <section className="rounded-xl border border-[#e1ebe6] p-3"><h4 className="text-sm font-bold text-[#16332b]">Grievance Officer</h4>{officer.name || officer.email || officer.phone ? <dl className="mt-2 grid gap-2 text-xs text-[#16332b] sm:grid-cols-3">{officer.name ? <div><dt className="font-semibold text-[#52736a]">Name</dt><dd>{officer.name}</dd></div> : null}{officer.email ? <div><dt className="font-semibold text-[#52736a]">Email</dt><dd className="break-words">{officer.email}</dd></div> : null}{officer.phone ? <div><dt className="font-semibold text-[#52736a]">Phone</dt><dd>{officer.phone}</dd></div> : null}</dl> : <p className="mt-2 text-xs text-[#52736a]">No contact details are available.</p>}</section>;
 }
 
-function GroupDetailsOverview({ group, groupId, userScope }: { group: GroupChatDetails; groupId: string; userScope: string }) {
+type OwnerRosterState = "loading" | "error" | "malformed" | "loaded" | "unavailable";
+
+function GroupOwnerValue({ resolution, rosterState }: { resolution: GroupChatOwnerResolution; rosterState: OwnerRosterState }) {
+  if (resolution.state === "resolved") return <span>{resolution.label}</span>;
+  if (rosterState === "loading") return <span>Loading Group Owner...</span>;
+  if (rosterState === "malformed") return <span>Group Owner unavailable (member data was malformed).</span>;
+  if (rosterState === "error") return <span>Group Owner unavailable (members could not be loaded).</span>;
+  return <span>Group Owner unavailable.</span>;
+}
+
+function GroupDetailsOverview({ group, groupId, userScope, ownerResolution, ownerRosterState }: { group: GroupChatDetails; groupId: string; userScope: string; ownerResolution: GroupChatOwnerResolution; ownerRosterState: OwnerRosterState }) {
   const groupIsClosed = group.status?.trim().toLowerCase() === "closed";
   return <div className="space-y-3">
     {groupIsClosed ? <div className="rounded-xl border border-[#f1d8ad] bg-[#fffaf0] p-3 text-sm text-[#8b5e00]" role="status">This group is closed. It is read-only.</div> : null}
@@ -133,7 +143,7 @@ function GroupDetailsOverview({ group, groupId, userScope }: { group: GroupChatD
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">Status</dt><dd className="mt-1 text-[#16332b]">{groupIsClosed ? "Closed" : group.status || "Active"}</dd></div>
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">Posting</dt><dd className="mt-1 text-[#16332b]">{groupIsClosed ? "Read-only" : group.permissions.can_post === true ? group.admins_only_posting === true ? "Providers and admins only" : "All members" : "Posting unavailable"}</dd></div>
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">Member count</dt><dd className="mt-1 text-[#16332b]">{group.member_count ?? "Unavailable"}</dd></div>
-        {group.owner || group.owner_name ? <div><dt className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">Owner</dt><dd className="mt-1 text-[#16332b]">{group.owner?.name || group.owner_name}</dd></div> : null}
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">Owner</dt><dd className="mt-1 text-[#16332b]"><GroupOwnerValue resolution={ownerResolution} rosterState={ownerRosterState} /></dd></div>
       </dl>
     </section>
     {group.visibility_notice ? <p className="rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-3 text-xs text-[#52736a]">{group.visibility_notice}</p> : null}
@@ -250,7 +260,7 @@ function SearchMessages({ groupId, onNavigateToLoadedMessage }: { groupId: strin
 }
 
 type GroupDetailsTab = "overview" | "members" | "invite" | "search" | "files" | "settings";
-function GroupDetailsPanel({ group, groupId, userScope, canViewMembers, canInviteMembers, onClose, onLeave, onNavigateToLoadedMessage }: { group: GroupChatDetails; groupId: string; userScope: string; canViewMembers: boolean; canInviteMembers: boolean; onClose: () => void; onLeave: () => void; onNavigateToLoadedMessage: (messageId: string) => void }) {
+function GroupDetailsPanel({ group, groupId, userScope, canViewMembers, canInviteMembers, ownerResolution, ownerRosterState, onClose, onLeave, onNavigateToLoadedMessage }: { group: GroupChatDetails; groupId: string; userScope: string; canViewMembers: boolean; canInviteMembers: boolean; ownerResolution: GroupChatOwnerResolution; ownerRosterState: OwnerRosterState; onClose: () => void; onLeave: () => void; onNavigateToLoadedMessage: (messageId: string) => void }) {
   const [tab, setTab] = useState<GroupDetailsTab>("overview");
   const groupIsClosed = group.status?.trim().toLowerCase() === "closed";
   return <section className="flex min-h-0 h-full flex-col bg-white" aria-label="Group details">
@@ -277,11 +287,11 @@ function GroupDetailsPanel({ group, groupId, userScope, canViewMembers, canInvit
       {([["overview", "Overview"], ["members", "Members"], ["invite", "Invite members"], ["search", "Search"], ["files", "Shared Files"], ["settings", "Settings"]] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={tab === value ? "rounded-full bg-[#1f6a58] px-3 py-1.5 text-xs font-semibold text-white" : "rounded-full bg-[#f4faf7] px-3 py-1.5 text-xs font-semibold text-[#52736a]"}>{label}</button>)}
     </div>
     <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
-      {tab === "overview" ? <GroupDetailsOverview group={group} groupId={groupId} userScope={userScope} /> : tab === "members" ? <Members groupId={groupId} ownerUserId={group.owner_user_id} groupStatus={group.status} permissions={group.permissions} canViewMembers={canViewMembers} /> : tab === "invite" ? <Invite group={group} groupId={groupId} canInviteMembers={canInviteMembers} /> : tab === "search" ? <SearchMessages key={groupId} groupId={groupId} onNavigateToLoadedMessage={onNavigateToLoadedMessage} /> : tab === "files" ? <SharedFiles key={groupId} groupId={groupId} /> : <Settings group={group} groupId={groupId} />}
+      {tab === "overview" ? <GroupDetailsOverview group={group} groupId={groupId} userScope={userScope} ownerResolution={ownerResolution} ownerRosterState={ownerRosterState} /> : tab === "members" ? <Members groupId={groupId} ownerUserId={ownerResolution.state === "resolved" ? ownerResolution.userId : group.owner_user_id} currentUserRole={group.my_role} groupStatus={group.status} permissions={group.permissions} canViewMembers={canViewMembers} /> : tab === "invite" ? <Invite group={group} groupId={groupId} canInviteMembers={canInviteMembers} /> : tab === "search" ? <SearchMessages key={groupId} groupId={groupId} onNavigateToLoadedMessage={onNavigateToLoadedMessage} /> : tab === "files" ? <SharedFiles key={groupId} groupId={groupId} /> : <Settings group={group} groupId={groupId} />}
     </div>
   </section>;
 }
-function Members({ groupId, ownerUserId, groupStatus, permissions, canViewMembers }: { groupId: string; ownerUserId: string | null; groupStatus: string | null; permissions: GroupChatPermissions; canViewMembers: boolean }) {
+function Members({ groupId, ownerUserId, currentUserRole, groupStatus, permissions, canViewMembers }: { groupId: string; ownerUserId: string | null; currentUserRole: string | null; groupStatus: string | null; permissions: GroupChatPermissions; canViewMembers: boolean }) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [openMemberMenuId, setOpenMemberMenuId] = useState<string | null>(null);
@@ -325,7 +335,7 @@ function Members({ groupId, ownerUserId, groupStatus, permissions, canViewMember
   };
   const memberActions = (member: GroupChatMember): readonly GroupChatMemberAction[] => {
     const actions: GroupChatMemberAction[] = [...roleActions(member)];
-    const ownershipAction = getGroupChatMemberOwnershipAction(member, permissions, ownerUserId, groupStatus);
+    const ownershipAction = getGroupChatMemberOwnershipAction(member, permissions, ownerUserId, groupStatus, currentUserRole);
     if (ownershipAction) actions.push(ownershipAction);
     const removal = removalAction(member);
     if (removal) actions.push(removal);
@@ -521,6 +531,8 @@ export default function GroupChatWorkspace({ groupId, onClose }: Props) {
   const canViewMembers = group.permissions.can_view_members === true;
   const canInviteMembers = group.status?.trim().toLowerCase() !== "closed" && group.permissions.can_invite === true;
   const currentMember = currentMemberQuery.data?.find((member) => member.is_current_user);
+  const ownerResolution = resolveGroupChatOwnerDisplay({ members: currentMemberQuery.data ?? [], authoritativeOwner: group.owner, ownerUserId: group.owner_user_id, ownerName: group.owner_name, currentUserId: userScope });
+  const ownerRosterState: OwnerRosterState = !canViewMembers ? "unavailable" : currentMemberQuery.isPending ? "loading" : currentMemberQuery.isError ? currentMemberQuery.error instanceof GroupChatApiError && currentMemberQuery.error.code === "malformed_member_response" ? "malformed" : "error" : "loaded";
   const navigateToLoadedMessage = (messageId: string) => {
     if (!isLoadedGroupMessage(messageId)) return;
     setDetailsOpen(false);
@@ -552,7 +564,7 @@ export default function GroupChatWorkspace({ groupId, onClose }: Props) {
         <GroupChatMessages groupId={group.id} groupStatus={group.status} groupKind={group.kind} memberDirectory={currentMemberQuery.data ?? []} canPost={group.permissions.can_post} postingMuted={currentMember?.posting_muted ?? null} canHideMessages={group.permissions.can_hide_messages} canPinMessages={group.permissions.can_pin_messages} canReport={group.permissions.can_report} currentMemberKind={currentMember?.member_kind ?? null} currentMemberStatus={currentMember?.membership_status ?? null} />
       </div>
     </div>
-    {detailsOpen ? <GroupDetailsPanel group={group} groupId={groupId} userScope={userScope} canViewMembers={canViewMembers} canInviteMembers={canInviteMembers} onClose={() => setDetailsOpen(false)} onLeave={() => { setDetailsOpen(false); onClose?.(); }} onNavigateToLoadedMessage={navigateToLoadedMessage} /> : null}
+    {detailsOpen ? <GroupDetailsPanel key={groupId} group={group} groupId={groupId} userScope={userScope} canViewMembers={canViewMembers} canInviteMembers={canInviteMembers} ownerResolution={ownerResolution} ownerRosterState={ownerRosterState} onClose={() => setDetailsOpen(false)} onLeave={() => { setDetailsOpen(false); onClose?.(); }} onNavigateToLoadedMessage={navigateToLoadedMessage} /> : null}
   </section>;
 }
 function SearchInput({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {

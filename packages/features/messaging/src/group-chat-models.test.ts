@@ -229,6 +229,8 @@ test("ownership transfer is limited to an active verified Provider in an open gr
   assert.equal(getGroupChatMemberOwnershipAction({ ...provider, can_receive_ownership: null }, permissions, "owner-user", "open"), null);
   assert.equal(getGroupChatMemberOwnershipAction({ ...provider, user_id: "owner-user", role: "owner" }, permissions, "owner-user", "open"), null);
   assert.equal(getGroupChatMemberOwnershipAction({ ...provider, user_id: null }, permissions, "owner-user", "open"), null);
+  assert.equal(getGroupChatMemberOwnershipAction({ ...provider, is_verified_provider: false }, permissions, "owner-user", "open"), null);
+  assert.equal(getGroupChatMemberOwnershipAction(provider, permissions, "owner-user", "open", "member"), null);
 });
 
 test("ownership transfer payload trims and requires the target user ID", () => {

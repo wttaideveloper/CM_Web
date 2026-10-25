@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCreateGroupPayload, buildGroupChatProviderVerificationCandidateQuery, buildGroupMemberInvitePayload, buildTransferGroupOwnershipPayload, buildVerifiedProviderPayload, formatGroupChatInvitationFeedback, isGroupChatLearnerSelectable, isGroupChatProviderDirectoryCandidate, isGroupChatProviderRegistrationCandidate, isGroupChatProviderSelectable, isGroupChatProviderUnavailableInCurrentGroup, isGroupChatProviderVerificationCandidate, isGroupChatTrainingSearchResultStale, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatVerifiedProvider, remainingGroupChatMemberSlots, resolveGroupChatOwnerName, resolveGroupChatVerifiedProviderName } from "./group-chat-models.ts";
+import { buildCreateGroupPayload, buildGroupChatProviderVerificationCandidateQuery, buildGroupMemberInvitePayload, buildReassignGroupOwnerPayload, buildTransferGroupOwnershipPayload, canSubmitGroupChatOwnerReassignment, getGroupChatOwnerReassignmentRefreshKeys, buildVerifiedProviderPayload, formatGroupChatInvitationFeedback, isEligibleGroupChatOwnerReassignmentCandidate, isGroupChatLearnerSelectable, isGroupChatProviderDirectoryCandidate, isGroupChatProviderRegistrationCandidate, isGroupChatProviderSelectable, isGroupChatProviderUnavailableInCurrentGroup, isGroupChatProviderVerificationCandidate, isGroupChatTrainingSearchResultStale, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatVerifiedProvider, normalizeReassignGroupOwnerResponse, remainingGroupChatMemberSlots, resolveGroupChatOwnerDisplay, resolveGroupChatOwnerName, resolveGroupChatVerifiedProviderName } from "./group-chat-models.ts";
 import type { GroupChatLearner, GroupChatProvider } from "./group-chat/group-chat.types";
 
 const learner = (overrides: Partial<GroupChatLearner> = {}): GroupChatLearner => ({
@@ -203,6 +203,31 @@ test("owner name resolution prefers genuine stored names over generic placeholde
   assert.equal(resolveGroupChatOwnerName("  ", null), null);
 });
 
+test("owner display resolves role owner, self identity, authoritative names, and safe fallback", () => {
+  const owner = (overrides: Record<string, unknown> = {}) => ({ user_id: "owner-user", name: "Backend Owner", role: "owner", membership_status: "active", is_current_user: false, ...overrides }) as never;
+  assert.deepEqual(resolveGroupChatOwnerDisplay({ members: [owner({ is_current_user: true })], authoritativeOwner: null, ownerUserId: null, ownerName: null, currentUserId: "owner-user" }), { state: "resolved", label: "You (Owner)", userId: "owner-user", isCurrentUser: true, source: "member-roster" });
+  assert.deepEqual(resolveGroupChatOwnerDisplay({ members: [owner()], authoritativeOwner: null, ownerUserId: null, ownerName: null, currentUserId: "viewer-user" }), { state: "resolved", label: "Backend Owner", userId: "owner-user", isCurrentUser: false, source: "member-roster" });
+  assert.deepEqual(resolveGroupChatOwnerDisplay({ members: [owner({ name: "Group member" })], authoritativeOwner: null, ownerUserId: null, ownerName: null, currentUserId: "viewer-user" }), { state: "resolved", label: "Group Owner", userId: "owner-user", isCurrentUser: false, source: "member-roster" });
+  assert.deepEqual(resolveGroupChatOwnerDisplay({ members: [owner({ user_id: "new-owner", name: "New Owner" })], authoritativeOwner: null, ownerUserId: "new-owner", ownerName: "New Owner", currentUserId: "viewer-user" }), { state: "resolved", label: "New Owner", userId: "new-owner", isCurrentUser: false, source: "group-response" });
+  assert.deepEqual(resolveGroupChatOwnerDisplay({ members: [], authoritativeOwner: null, ownerUserId: null, ownerName: null, currentUserId: "viewer-user" }), { state: "unavailable" });
+});
+
+test("owner display does not leak identity across Group Chat switches", () => {
+  const firstOwner = { user_id: "first-owner", name: "First Owner", role: "owner", membership_status: "active", is_current_user: false } as never;
+  const secondOwner = { user_id: "second-owner", name: "Second Owner", role: "owner", membership_status: "active", is_current_user: false } as never;
+  const first = resolveGroupChatOwnerDisplay({ members: [firstOwner], authoritativeOwner: null, ownerUserId: null, ownerName: null, currentUserId: "viewer" });
+  const second = resolveGroupChatOwnerDisplay({ members: [secondOwner], authoritativeOwner: null, ownerUserId: null, ownerName: null, currentUserId: "viewer" });
+  assert.equal(first.state === "resolved" ? first.label : "", "First Owner");
+  assert.equal(second.state === "resolved" ? second.label : "", "Second Owner");
+});
+
+test("owner display follows the refreshed authoritative owner identity", () => {
+  const initial = resolveGroupChatOwnerDisplay({ members: [], authoritativeOwner: { user_id: "owner-1", name: "First Owner", is_current_user: false }, ownerUserId: "owner-1", ownerName: "First Owner", currentUserId: "viewer" });
+  const refreshed = resolveGroupChatOwnerDisplay({ members: [], authoritativeOwner: { user_id: "owner-2", name: "Second Owner", is_current_user: false }, ownerUserId: "owner-2", ownerName: "Second Owner", currentUserId: "viewer" });
+  assert.equal(initial.state === "resolved" ? initial.label : "", "First Owner");
+  assert.equal(refreshed.state === "resolved" ? refreshed.label : "", "Second Owner");
+});
+
 test("Provider verification always accepts user_id and omits blank optional details", () => {
   assert.deepEqual(buildVerifiedProviderPayload(" provider-1 "), { user_id: "provider-1" });
   assert.deepEqual(buildVerifiedProviderPayload(" provider-1 ", " REG-123 ", " Medical Council "), {
@@ -316,4 +341,53 @@ test("invitation feedback uses actual learner and Provider outcomes", () => {
 test("ownership transfer uses the documented target user payload", () => {
   assert.deepEqual(buildTransferGroupOwnershipPayload(" provider-user "), { user_id: "provider-user" });
   assert.equal(buildTransferGroupOwnershipPayload(""), null);
+});
+
+test("owner reassignment validates UUID, reason length, and both success response contracts", () => {
+  const target = "24444513-e398-4d0c-9a6d-ee9da7fa19da";
+  const groupId = "ebf4aaab-6d70-4aa1-8faa-bca7dfb9b867";
+  assert.deepEqual(buildReassignGroupOwnerPayload(` ${target} `, "  Ownership unavailable  "), { user_id: target, reason: "Ownership unavailable" });
+  assert.equal(buildReassignGroupOwnerPayload("not-a-uuid", "Valid reason"), null);
+  assert.equal(buildReassignGroupOwnerPayload(target, "no"), null);
+  assert.equal(buildReassignGroupOwnerPayload(target, "x".repeat(256)), null);
+  assert.equal(normalizeReassignGroupOwnerResponse(" Reassignment completed "), "Reassignment completed");
+  assert.deepEqual(normalizeReassignGroupOwnerResponse({ conversation_id: groupId, owner_id: target }, groupId, target), { conversation_id: groupId, owner_id: target });
+  assert.deepEqual(normalizeReassignGroupOwnerResponse({ conversation_id: groupId.toUpperCase(), owner_id: target.toUpperCase() }, groupId, target), { conversation_id: groupId.toUpperCase(), owner_id: target.toUpperCase() });
+  assert.equal(normalizeReassignGroupOwnerResponse({ conversation_id: groupId, owner_id: target, status: "ok" }, groupId, target), null);
+  assert.equal(normalizeReassignGroupOwnerResponse({ status: "ok" }), null);
+  assert.equal(normalizeReassignGroupOwnerResponse({ conversation_id: "not-a-uuid", owner_id: target }, groupId, target), null);
+  assert.equal(normalizeReassignGroupOwnerResponse({ conversation_id: groupId, owner_id: "not-a-uuid" }, groupId, target), null);
+  assert.equal(normalizeReassignGroupOwnerResponse({ conversation_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", owner_id: target }, groupId, target), null);
+  assert.equal(normalizeReassignGroupOwnerResponse({ conversation_id: groupId, owner_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" }, groupId, target), null);
+  assert.equal(normalizeReassignGroupOwnerResponse({ detail: "The backend rejected the reassignment." }, groupId, target), null);
+});
+
+test("owner reassignment refreshes authoritative group, member, eligibility, and list caches", () => {
+  assert.deepEqual(getGroupChatOwnerReassignmentRefreshKeys("group-1", "viewer-1|tenant"), [
+    ["group-chat", "compliance-groups", "viewer-1|tenant"],
+    ["group-chat", "group", "group-1", "viewer-1|tenant"],
+    ["group-chat", "members", "group-1"],
+    ["group-chat", "compliance-owner-members", "group-1", "viewer-1|tenant"],
+    ["group-chat", "member-role-roster", "group-1"],
+    ["group-chat", "current-member", "group-1"],
+    ["group-chat", "groups"],
+  ]);
+});
+
+test("owner reassignment prevents duplicate or stale submissions", () => {
+  const target = "24444513-e398-4d0c-9a6d-ee9da7fa19da";
+  assert.equal(canSubmitGroupChatOwnerReassignment(target, [target], "Valid reason", false), true);
+  assert.equal(canSubmitGroupChatOwnerReassignment(target, [target], "Valid reason", true), false);
+  assert.equal(canSubmitGroupChatOwnerReassignment(target, [], "Valid reason", false), false);
+  assert.equal(canSubmitGroupChatOwnerReassignment(target, [target], " no ", false), false);
+});
+
+test("owner reassignment candidates require active backend eligibility", () => {
+  const base = { user_id: "candidate-1", role: "member", membership_status: "active", can_receive_ownership: true, is_verified_provider: true } as const;
+  assert.equal(isEligibleGroupChatOwnerReassignmentCandidate(base), true);
+  assert.equal(isEligibleGroupChatOwnerReassignmentCandidate({ ...base, can_be_admin: false } as never), true);
+  assert.equal(isEligibleGroupChatOwnerReassignmentCandidate({ ...base, can_receive_ownership: null }), false);
+  assert.equal(isEligibleGroupChatOwnerReassignmentCandidate({ ...base, is_verified_provider: false }), false);
+  assert.equal(isEligibleGroupChatOwnerReassignmentCandidate({ ...base, membership_status: "invited" }), false);
+  assert.equal(isEligibleGroupChatOwnerReassignmentCandidate({ ...base, role: "owner" }), false);
 });

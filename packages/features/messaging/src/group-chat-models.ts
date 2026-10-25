@@ -4,7 +4,7 @@ import type { AuthRoles } from "@ihp/auth";
 import type { GroupChatDataRequest } from "./group-chat/group-chat.types";
 import type { CreateGroupChatDataRequestPayload } from "./group-chat/group-chat.types";
 import type { CreateGroupChatReportPayload, GroupChatComplianceReport, GroupChatComplianceReportListParams, GroupChatComplianceReportListResponse, GroupChatComplianceReportStatus, GroupChatComplianceReportUpdateStatus, GroupChatGrievanceOfficer, GroupChatReport, GroupChatReportReason, UpdateGroupChatComplianceReportPayload } from "./group-chat/group-chat.types";
-import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatConsentListResponse, GroupChatConsentNotice, GroupChatConsentRecord, GroupChatConsentWithdrawalResponse, GroupChatLeaveResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatMessageReadStatus, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReplyReference, GroupChatSharedFile, GroupChatSharedFilesResponse, GroupChatSummary, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupPreferencesPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
+import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatConsentListResponse, GroupChatConsentNotice, GroupChatConsentRecord, GroupChatConsentWithdrawalResponse, GroupChatLeaveResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatMessageReadStatus, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReplyReference, GroupChatSharedFile, GroupChatSharedFilesResponse, GroupChatSummary, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReassignGroupOwnerPayload, ReassignGroupOwnerResponse, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupPreferencesPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
 
@@ -165,12 +165,14 @@ export function getGroupChatMemberOwnershipAction(
   permissions: Pick<GroupChatPermissions, "can_transfer_ownership">,
   ownerUserId: string | null,
   groupStatus: string | null,
+  currentUserRole?: string | null,
 ): "transfer-ownership" | null {
   const status = member.membership_status.trim().toLowerCase();
   const role = member.role.trim().toLowerCase();
   const isOwner = role === "owner" || (Boolean(member.user_id) && member.user_id === ownerUserId);
   const userId = member.user_id;
-  if (permissions.can_transfer_ownership !== true || groupStatus?.trim().toLowerCase() !== "open" || status !== "active" || isOwner || !userId || member.can_receive_ownership !== true) return null;
+  const actorIsOwner = currentUserRole === undefined || currentUserRole?.trim().toLowerCase() === "owner";
+  if (permissions.can_transfer_ownership !== true || !actorIsOwner || groupStatus?.trim().toLowerCase() !== "open" || status !== "active" || isOwner || !userId || member.can_receive_ownership !== true || member.is_verified_provider === false) return null;
   return "transfer-ownership";
 }
 
@@ -239,6 +241,84 @@ export function buildChangeGroupMemberRolePayload(role: GroupChatMemberRole, rea
 export function buildTransferGroupOwnershipPayload(userId: string): TransferGroupOwnershipPayload | null {
   const normalizedUserId = userId.trim();
   return normalizedUserId ? { user_id: normalizedUserId } : null;
+}
+
+/** Builds the validated Compliance owner-reassignment body. */
+export function buildReassignGroupOwnerPayload(userId: string, reason: string): ReassignGroupOwnerPayload | null {
+  const normalizedUserId = userId.trim();
+  const normalizedReason = reason.trim();
+  if (!isValidGroupChatUuid(normalizedUserId) || normalizedReason.length < 3 || normalizedReason.length > 255) return null;
+  return { user_id: normalizedUserId, reason: normalizedReason };
+}
+
+/** Prevents reassignment submission unless the selected candidate is still eligible and no request is pending. */
+export function canSubmitGroupChatOwnerReassignment(selectedUserId: string, eligibleUserIds: readonly string[], reason: string, isPending: boolean): boolean {
+  const normalizedUserId = selectedUserId.trim();
+  const normalizedReason = reason.trim();
+  return !isPending && isValidGroupChatUuid(normalizedUserId) && eligibleUserIds.some((userId) => userId.trim() === normalizedUserId) && normalizedReason.length >= 3 && normalizedReason.length <= 255;
+}
+
+/** Accepts the documented string or the confirmed live object success response. */
+export function normalizeReassignGroupOwnerResponse(value: unknown, expectedConversationId?: string, expectedOwnerId?: string): ReassignGroupOwnerResponse | null {
+  if (typeof value === "string") return value.trim() ? value.trim() : null;
+  if (!isRecord(value) || Object.keys(value).length !== 2 || !Object.prototype.hasOwnProperty.call(value, "conversation_id") || !Object.prototype.hasOwnProperty.call(value, "owner_id")) return null;
+  const conversationId = typeof value.conversation_id === "string" ? value.conversation_id.trim() : "";
+  const ownerId = typeof value.owner_id === "string" ? value.owner_id.trim() : "";
+  if (!isValidGroupChatUuid(conversationId) || !isValidGroupChatUuid(ownerId)) return null;
+  if (expectedConversationId?.trim() && conversationId.toLowerCase() !== expectedConversationId.trim().toLowerCase()) return null;
+  if (expectedOwnerId?.trim() && ownerId.toLowerCase() !== expectedOwnerId.trim().toLowerCase()) return null;
+  return { conversation_id: conversationId, owner_id: ownerId };
+}
+
+/** Returns the authoritative caches that can change after owner reassignment. */
+export function getGroupChatOwnerReassignmentRefreshKeys(groupId: string, accessScope: string): readonly (readonly string[])[] {
+  return [
+    ["group-chat", "compliance-groups", accessScope],
+    ["group-chat", "group", groupId, accessScope],
+    ["group-chat", "members", groupId],
+    ["group-chat", "compliance-owner-members", groupId, accessScope],
+    ["group-chat", "member-role-roster", groupId],
+    ["group-chat", "current-member", groupId],
+    ["group-chat", "groups"],
+  ];
+}
+
+/** Allows only active, non-owner members explicitly marked eligible by the backend. */
+export function isEligibleGroupChatOwnerReassignmentCandidate(member: Pick<GroupChatMember, "user_id" | "role" | "membership_status" | "can_receive_ownership" | "is_verified_provider">): boolean {
+  const role = member.role.trim().toLowerCase();
+  const status = member.membership_status.trim().toLowerCase();
+  return Boolean(member.user_id) && status === "active" && role !== "owner" && member.can_receive_ownership === true && member.is_verified_provider !== false;
+}
+
+/** Describes the owner identity that can safely be shown to a Group Chat user. */
+export type GroupChatOwnerResolution =
+  | { state: "resolved"; label: string; userId: string | null; isCurrentUser: boolean; source: "group-response" | "member-roster" }
+  | { state: "unavailable" };
+
+/** Resolves ownership from the role owner while preserving server-provided identity fields. */
+export function resolveGroupChatOwnerDisplay(input: {
+  members: readonly GroupChatMember[];
+  authoritativeOwner: Pick<GroupChatMember, "user_id" | "name" | "is_current_user"> | null;
+  ownerUserId: string | null;
+  ownerName: string | null;
+  currentUserId: string;
+}): GroupChatOwnerResolution {
+  const rosterOwner = input.members.find((member) => member.role.trim().toLowerCase() === "owner") ?? null;
+  const ownerId = input.authoritativeOwner?.user_id?.trim() || input.ownerUserId?.trim() || rosterOwner?.user_id?.trim() || null;
+  const backendName = resolveGroupChatOwnerName(input.authoritativeOwner?.name, input.ownerName);
+  const rosterName = resolveGroupChatOwnerName(rosterOwner?.name, null);
+  const ownerName = backendName || rosterName;
+  const isCurrentUser = Boolean(input.currentUserId && ownerId === input.currentUserId)
+    || input.authoritativeOwner?.is_current_user === true
+    || rosterOwner?.is_current_user === true;
+  if (!ownerId && !ownerName && !rosterOwner) return { state: "unavailable" };
+  return {
+    state: "resolved",
+    label: isCurrentUser ? "You (Owner)" : ownerName || "Group Owner",
+    userId: ownerId,
+    isCurrentUser,
+    source: input.authoritativeOwner || input.ownerUserId || input.ownerName ? "group-response" : "member-roster",
+  };
 }
 
 /** Builds the optional, URL-encoded reason query for member removal or invitation cancellation. */

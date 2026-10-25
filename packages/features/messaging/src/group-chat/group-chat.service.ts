@@ -55,6 +55,8 @@ import type {
   GroupChatVerifiedProviderListParams,
   GroupChatVerifiedProviderListResponse,
   RegisterGroupChatVerifiedProviderPayload,
+  ReassignGroupOwnerPayload,
+  ReassignGroupOwnerResponse,
   ReopenGroupPayload,
   TransferGroupOwnershipPayload,
   InviteMembersPayload,
@@ -65,8 +67,8 @@ import type {
 } from "./group-chat.types";
 import type { CreateGroupChatReportPayload, GroupChatGrievanceOfficer, GroupChatReport, UpdateGroupChatComplianceReportPayload } from "./group-chat.types";
 import { buildCreateGroupChatDataRequestPayload, normalizeGroupChatConsentList, normalizeGroupChatDataRequestList } from "../group-chat-models";
-import { buildGroupChatComplianceReportUpdatePayload, buildGroupChatComplianceReportsQuery, buildGroupChatReportPayload, isValidGroupChatUuid, normalizeGroupChatComplianceReport, normalizeGroupChatComplianceReportList, normalizeGroupChatGrievanceOfficer, normalizeGroupChatReport } from "../group-chat-models";
-import { buildChangeGroupMemberRolePayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatMessageReadStatusPath, buildGroupChatProviderVerificationCandidateQuery, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildHideGroupChatMessagePayload, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupPreferencesPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageReadStatus, normalizeGroupChatMessageMutationResponse, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPermissions, normalizeGroupChatPreferences, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatReactionSettings, normalizeGroupChatSharedFilesResponse, normalizeGroupChatConsentWithdrawalResponse, normalizeGroupChatLeaveResponse, getGroupChatReopenReasonError, parseGroupChatAttachmentFileName, resolveGroupChatOwnerName } from "../group-chat-models";
+import { buildGroupChatComplianceReportUpdatePayload, buildGroupChatComplianceReportsQuery, buildGroupChatReportPayload, normalizeGroupChatComplianceReport, normalizeGroupChatComplianceReportList, normalizeGroupChatGrievanceOfficer, normalizeGroupChatReport } from "../group-chat-models";
+import { buildChangeGroupMemberRolePayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatMessageReadStatusPath, buildGroupChatProviderVerificationCandidateQuery, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildHideGroupChatMessagePayload, buildReassignGroupOwnerPayload, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupPreferencesPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, isValidGroupChatUuid, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageReadStatus, normalizeGroupChatMessageMutationResponse, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPermissions, normalizeGroupChatPreferences, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatReactionSettings, normalizeGroupChatSharedFilesResponse, normalizeGroupChatConsentWithdrawalResponse, normalizeGroupChatLeaveResponse, normalizeReassignGroupOwnerResponse, getGroupChatReopenReasonError, parseGroupChatAttachmentFileName, resolveGroupChatOwnerName } from "../group-chat-models";
 export { buildCreateGroupPayload, buildGroupMemberInvitePayload } from "../group-chat-models";
 
 const GROUP_CHAT_API_PATH = "/groups";
@@ -76,11 +78,13 @@ const DEFAULT_MAX_MEMBERS = 50;
 /** Safe, status-aware error exposed by the Group Chat API client. */
 export class GroupChatApiError extends Error {
   readonly status: number;
+  readonly code: "malformed_member_response" | null;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code: "malformed_member_response" | null = null) {
     super(message);
     this.name = "GroupChatApiError";
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -183,6 +187,13 @@ function readCollection(value: unknown, keys: readonly string[]): unknown[] {
     if (Array.isArray(source[key])) return source[key];
   }
   return [];
+}
+
+function hasCollection(value: unknown, keys: readonly string[]): boolean {
+  if (Array.isArray(value)) return true;
+  if (isRecord(value) && Array.isArray(value.data)) return true;
+  const source = unwrapData(value);
+  return keys.some((key) => Array.isArray(source[key]));
 }
 
 function readPagination(value: unknown, page: number, pageSize: number, totalFallback: number): GroupChatPagination {
@@ -403,9 +414,12 @@ function parseMember(value: unknown): GroupChatMember | null {
 
 function parseMemberList(value: unknown, groupId: string, page: number, pageSize: number): GroupChatMemberListResponse {
   const source = unwrapData(value);
-  const items = readCollection(value, ["items", "members"]).map(parseMember).filter((item): item is GroupChatMember => item !== null);
+  const rawItems = readCollection(value, ["items", "members"]);
+  const parsedItems = rawItems.map(parseMember);
+  const items = parsedItems.filter((item): item is GroupChatMember => item !== null);
   const pending = readCollection(value, ["pending_invitations", "invitations"]).map(normalizeGroupChatInvitation).filter((item): item is GroupChatInvitation => item !== null);
-  return { group_id: readString(source.group_id) ?? groupId, items, pending_invitations: pending, pagination: readPagination(value, page, pageSize, items.length) };
+  const malformed = !hasCollection(value, ["items", "members"]) || parsedItems.some((item) => item === null);
+  return { group_id: readString(source.group_id) ?? groupId, items, pending_invitations: pending, pagination: readPagination(value, page, pageSize, items.length), malformed };
 }
 
 function parseInvitationList(value: unknown, page: number, pageSize: number): GroupChatInvitationListResponse {
@@ -484,7 +498,7 @@ export async function listGroupChatLearners(trainingId: string, params: GroupCha
   return parseLearnerList(await request<unknown>(`/trainings/${encodeURIComponent(trainingId)}/learners`, query, { signal: params.signal }), trainingId, page, pageSize);
 }
 
-/** Loads authorized verified Provider candidates for one Training. */
+/** Loads verified Providers eligible for Training invitation; ownership eligibility is read only from active Group members. */
 export async function listGroupChatProviders(trainingId: string, params: GroupChatProviderListParams = {}): Promise<GroupChatProviderListResponse> {
   const page = params.page ?? 1;
   const pageSize = params.pageSize ?? DEFAULT_PAGE_SIZE;
@@ -502,6 +516,11 @@ export async function listGroupChatGroups(params: GroupChatListParams = {}): Pro
   if (params.q?.trim()) query.set("q", params.q.trim());
   if (params.status?.trim()) query.set("status", params.status.trim());
   return parseGroupList(await request<unknown>("", query, { signal: params.signal }), page, pageSize);
+}
+
+/** Loads Groups authorized for the authenticated Compliance actor. */
+export async function listGroupChatComplianceGroups(signal?: AbortSignal): Promise<GroupChatListResponse> {
+  return parseGroupList(await request<unknown>("/compliance/groups", new URLSearchParams(), { signal }), 1, 50);
 }
 
 /** Loads one Group Chat's server-provided details. */
@@ -772,7 +791,9 @@ export async function listGroupChatMembers(groupId: string, params: GroupChatMem
   const pageSize = params.pageSize ?? DEFAULT_PAGE_SIZE;
   const query = makeParams(page, pageSize);
   if (params.q?.trim()) query.set("q", params.q.trim());
-  return parseMemberList(await request<unknown>(`/${encodeURIComponent(groupId)}/members`, query, { signal: params.signal }), groupId, page, pageSize);
+  const response = parseMemberList(await request<unknown>(`/${encodeURIComponent(groupId)}/members`, query, { signal: params.signal }), groupId, page, pageSize);
+  if (response.malformed) throw new GroupChatApiError(502, "The Group Chat member response was malformed.", "malformed_member_response");
+  return response;
 }
 
 /** Changes an active Group Chat member's role through the authenticated role endpoint. */
@@ -791,6 +812,15 @@ export async function transferGroupOwnership(groupId: string, userId: string): P
   const payload: TransferGroupOwnershipPayload | null = buildTransferGroupOwnershipPayload(userId);
   if (!normalizedGroupId || !payload) throw new GroupChatApiError(422, "The Group Chat and new owner identifiers are required.");
   await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/transfer-ownership`, new URLSearchParams(), { method: "POST", body: payload });
+}
+
+/** Reassigns a Group Owner through the Compliance endpoint after strict client validation. */
+export async function reassignGroupChatOwner(groupId: string, userId: string, reason: string): Promise<ReassignGroupOwnerResponse> {
+  const normalizedGroupId = groupId.trim();
+  const payload: ReassignGroupOwnerPayload | null = buildReassignGroupOwnerPayload(userId, reason);
+  if (!isValidGroupChatUuid(normalizedGroupId) || !payload) throw new GroupChatApiError(422, "Select an eligible replacement owner and provide a reason from 3 to 255 characters.");
+  const response = normalizeReassignGroupOwnerResponse(await request<unknown>(`/${encodeURIComponent(normalizedGroupId)}/reassign-owner`, new URLSearchParams(), { method: "POST", body: payload }), normalizedGroupId, payload.user_id);
+  return requireParsed(response, "The Group Chat owner reassignment response was invalid.");
 }
 
 /** Removes an active member or cancels a pending invitation without sending a request body. */
