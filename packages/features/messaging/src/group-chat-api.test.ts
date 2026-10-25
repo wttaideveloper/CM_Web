@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCreateGroupPayload, buildGroupChatAuditPath, buildGroupChatAuditQuery, buildGroupChatProviderVerificationCandidateQuery, buildGroupMemberInvitePayload, buildReassignGroupOwnerPayload, buildTransferGroupOwnershipPayload, canSubmitGroupChatOwnerReassignment, canViewGroupChatAudit, changeGroupChatAuditPageSize, clearGroupChatAuditFilters, getGroupChatAuditActionLabel, getGroupChatAuditKnownDetails, getGroupChatAuditTotalPages, getGroupChatOwnerReassignmentRefreshKeys, GROUP_CHAT_AUDIT_ACTION_OPTIONS, hasNonDefaultGroupChatAuditFilters, buildVerifiedProviderPayload, formatGroupChatInvitationFeedback, isEligibleGroupChatOwnerReassignmentCandidate, isGroupChatLearnerSelectable, isGroupChatProviderDirectoryCandidate, isGroupChatProviderRegistrationCandidate, isGroupChatProviderSelectable, isGroupChatProviderUnavailableInCurrentGroup, isGroupChatProviderVerificationCandidate, isGroupChatTrainingSearchResultStale, normalizeGroupChatAuditEntry, normalizeGroupChatAuditList, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatVerifiedProvider, normalizeReassignGroupOwnerResponse, remainingGroupChatMemberSlots, resolveGroupChatAuditMemberName, resolveGroupChatOwnerDisplay, resolveGroupChatOwnerName, resolveGroupChatVerifiedProviderName } from "./group-chat-models.ts";
+import { buildCreateGroupPayload, buildGroupChatAuditPath, buildGroupChatAuditQuery, buildGroupChatOriginalMessagePath, buildGroupChatOriginalMessageReviewTarget, buildGroupChatProviderVerificationCandidateQuery, buildGroupMemberInvitePayload, buildReassignGroupOwnerPayload, buildTransferGroupOwnershipPayload, canShowGroupChatOriginalMessageReview, canSubmitGroupChatOriginalMessageReview, canSubmitGroupChatOwnerReassignment, canViewGroupChatAudit, changeGroupChatAuditPageSize, clearGroupChatAuditFilters, getGroupChatAuditActionLabel, getGroupChatAuditKnownDetails, getGroupChatAuditTotalPages, getGroupChatOwnerReassignmentRefreshKeys, GROUP_CHAT_AUDIT_ACTION_OPTIONS, hasNonDefaultGroupChatAuditFilters, buildVerifiedProviderPayload, formatGroupChatInvitationFeedback, isEligibleGroupChatOwnerReassignmentCandidate, isGroupChatLearnerSelectable, isGroupChatProviderDirectoryCandidate, isGroupChatProviderRegistrationCandidate, isGroupChatProviderSelectable, isGroupChatProviderUnavailableInCurrentGroup, isGroupChatProviderVerificationCandidate, isGroupChatTrainingSearchResultStale, normalizeGroupChatAuditEntry, normalizeGroupChatAuditList, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatOriginalMessage, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatVerifiedProvider, normalizeReassignGroupOwnerResponse, remainingGroupChatMemberSlots, resolveGroupChatAuditMemberName, resolveGroupChatOwnerDisplay, resolveGroupChatOwnerName, resolveGroupChatVerifiedProviderName } from "./group-chat-models.ts";
 import type { GroupChatLearner, GroupChatProvider } from "./group-chat/group-chat.types";
 
 const learner = (overrides: Partial<GroupChatLearner> = {}): GroupChatLearner => ({
@@ -423,6 +423,44 @@ test("Group Audit Trail normalization preserves nullable fields and structured d
   assert.equal(normalizeGroupChatAuditEntry({ ...entry, actor_id: "not-a-uuid" }, groupId), null);
   assert.equal(normalizeGroupChatAuditEntry({ ...entry, reason: undefined }, groupId), null);
   assert.equal(normalizeGroupChatAuditList({ items: "not-an-array", total: 0 }, groupId), null);
+});
+
+test("Secure original-message route uses exactly one Group Chat prefix", () => {
+  const groupId = "ebf4aaab-6d70-4aa1-8faa-bca7dfb9b867";
+  const messageId = "7bf2bd3e-0d0c-4a5e-8f8a-1db24a9b4c11";
+  const path = buildGroupChatOriginalMessagePath(` ${groupId} `, ` ${messageId} `);
+  assert.equal(path, `/${groupId}/messages/${messageId}/original`);
+  assert.equal(`/groups${path}`.match(/\/groups\//g)?.length, 1);
+  assert.equal(buildGroupChatOriginalMessagePath("not-a-uuid", messageId), null);
+  assert.equal(buildGroupChatOriginalMessagePath(groupId, "not-a-uuid"), null);
+  assert.equal(canSubmitGroupChatOriginalMessageReview(groupId, messageId, true, false), true);
+  assert.equal(canSubmitGroupChatOriginalMessageReview(groupId, messageId, false, false), false);
+  assert.equal(canSubmitGroupChatOriginalMessageReview(groupId, messageId, true, true), false);
+  assert.deepEqual(buildGroupChatOriginalMessageReviewTarget(` ${groupId} `, ` ${messageId} `), { groupId, messageId });
+  assert.equal(buildGroupChatOriginalMessageReviewTarget(groupId, "missing"), null);
+  assert.equal(canShowGroupChatOriginalMessageReview(groupId, messageId, true), true);
+  assert.equal(canShowGroupChatOriginalMessageReview(groupId, messageId, false), false);
+});
+
+test("Compliance Message hidden audit navigation exposes the exact observed review target", () => {
+  const groupId = "ebf4aaab-6d70-4aa1-8faa-bca7dfb9b867";
+  const messageId = "ab493052-352b-4278-bdca-315f0067bea7";
+  const hiddenFilter = buildGroupChatAuditQuery({ action: "message_hidden", page: 1, pageSize: 25 });
+  assert.equal(hiddenFilter?.get("action"), "message_hidden");
+  assert.deepEqual(buildGroupChatOriginalMessageReviewTarget(groupId, messageId), { groupId, messageId });
+  assert.equal(canShowGroupChatOriginalMessageReview(groupId, messageId, true), true);
+});
+
+test("Secure original-message normalization preserves nullable fields and ordered version objects", () => {
+  const messageId = "7bf2bd3e-0d0c-4a5e-8f8a-1db24a9b4c11";
+  const senderId = "24444513-e398-4d0c-9a6d-ee9da7fa19da";
+  const response = { message_id: messageId, sender_id: senderId, status: "hidden", content: "Original", versions: [{ version: 1, created_at: "2026-10-25T10:00:00Z" }, { version: 2, edited: true }], current_content: null, hidden_by: null, hidden_reason: null, hidden_at: null, created_at: "2026-10-25T10:00:00Z" };
+  assert.deepEqual(normalizeGroupChatOriginalMessage(response, messageId), response);
+  assert.equal(normalizeGroupChatOriginalMessage({ ...response, message_id: senderId }, messageId), null);
+  assert.equal(normalizeGroupChatOriginalMessage({ ...response, versions: ["content"] }, messageId), null);
+  assert.equal(normalizeGroupChatOriginalMessage({ ...response, hidden_by: "not-a-uuid" }, messageId), null);
+  assert.equal(normalizeGroupChatOriginalMessage({ ...response, created_at: "not-a-date" }, messageId), null);
+  assert.equal(normalizeGroupChatOriginalMessage({ ...response, current_content: undefined }, messageId), null);
 });
 
 test("Group Audit Trail access follows the selected Group permission only", () => {

@@ -3,7 +3,7 @@ import type { TenantMember } from "@ihp/enterprise-runtime";
 import type { AuthRoles } from "@ihp/auth";
 import type { GroupChatDataRequest, GroupChatDataRequestStatus } from "./group-chat/group-chat.types";
 import type { CreateGroupChatDataRequestPayload } from "./group-chat/group-chat.types";
-import type { CreateGroupChatReportPayload, GroupChatAuditDetailsValue, GroupChatAuditEntry, GroupChatAuditListParams, GroupChatAuditListResponse, GroupChatComplianceReport, GroupChatComplianceReportListParams, GroupChatComplianceReportListResponse, GroupChatComplianceReportStatus, GroupChatComplianceReportUpdateStatus, GroupChatGrievanceOfficer, GroupChatReport, GroupChatReportReason, UpdateGroupChatComplianceReportPayload } from "./group-chat/group-chat.types";
+import type { CreateGroupChatReportPayload, GroupChatAuditDetailsValue, GroupChatAuditEntry, GroupChatAuditListParams, GroupChatAuditListResponse, GroupChatComplianceReport, GroupChatComplianceReportListParams, GroupChatComplianceReportListResponse, GroupChatComplianceReportStatus, GroupChatComplianceReportUpdateStatus, GroupChatGrievanceOfficer, GroupChatOriginalMessage, GroupChatReport, GroupChatReportReason, UpdateGroupChatComplianceReportPayload } from "./group-chat/group-chat.types";
 import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatConsentListResponse, GroupChatConsentNotice, GroupChatConsentRecord, GroupChatConsentWithdrawalResponse, GroupChatLeaveResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatMessageReadStatus, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReplyReference, GroupChatSharedFile, GroupChatSharedFilesResponse, GroupChatSummary, GroupChatVerifiedProvider, GroupChatLegalHoldPayload, GroupChatLegalHoldRequest, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReassignGroupOwnerPayload, ReassignGroupOwnerResponse, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupPreferencesPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
@@ -1308,6 +1308,32 @@ export function buildGroupChatAuditPath(groupId: string): string | null {
   return isValidGroupChatUuid(normalizedGroupId) ? `/${encodeURIComponent(normalizedGroupId)}/audit` : null;
 }
 
+/** Builds the secure original-message route relative to the service's /groups base path. */
+export function buildGroupChatOriginalMessagePath(groupId: string, messageId: string): string | null {
+  const normalizedGroupId = groupId.trim();
+  const normalizedMessageId = messageId.trim();
+  return isValidGroupChatUuid(normalizedGroupId) && isValidGroupChatUuid(normalizedMessageId)
+    ? `/${encodeURIComponent(normalizedGroupId)}/messages/${encodeURIComponent(normalizedMessageId)}/original`
+    : null;
+}
+
+/** Allows only one explicit secure-original request for a valid authorized selection. */
+export function canSubmitGroupChatOriginalMessageReview(groupId: string, messageId: string, authorized: boolean, pending: boolean): boolean {
+  return authorized && !pending && buildGroupChatOriginalMessagePath(groupId, messageId) !== null;
+}
+
+/** Keeps navigation limited to the two non-sensitive identifiers accepted by the review screen. */
+export function buildGroupChatOriginalMessageReviewTarget(groupId: string, messageId: string): { groupId: string; messageId: string } | null {
+  const normalizedGroupId = groupId.trim();
+  const normalizedMessageId = messageId.trim();
+  return buildGroupChatOriginalMessagePath(normalizedGroupId, normalizedMessageId) ? { groupId: normalizedGroupId, messageId: normalizedMessageId } : null;
+}
+
+/** Controls the visible Audit Trail review action without granting backend access. */
+export function canShowGroupChatOriginalMessageReview(groupId: string, messageId: string, hasNavigationHandler: boolean): boolean {
+  return hasNavigationHandler && buildGroupChatOriginalMessageReviewTarget(groupId, messageId) !== null;
+}
+
 /** Builds the exact PATCH /groups/reports/{report_id} request body. */
 export function buildGroupChatComplianceReportUpdatePayload(status: GroupChatComplianceReportUpdateStatus, note: string): UpdateGroupChatComplianceReportPayload | null {
   if (!GROUP_CHAT_COMPLIANCE_REPORT_UPDATE_STATUSES.includes(status)) return null;
@@ -1386,6 +1412,40 @@ export function normalizeGroupChatAuditList(value: unknown, expectedConversation
     items.push(normalized);
   }
   return { items, total: value.total };
+}
+
+function readRequiredOriginalString(value: Record<string, unknown>, key: string): string | undefined {
+  return typeof value[key] === "string" ? value[key] as string : undefined;
+}
+
+function readNullableOriginalString(value: Record<string, unknown>, key: string): string | null | undefined {
+  if (!Object.prototype.hasOwnProperty.call(value, key)) return undefined;
+  return value[key] === null ? null : typeof value[key] === "string" ? value[key] as string : undefined;
+}
+
+function readNullableOriginalUuid(value: Record<string, unknown>, key: string): string | null | undefined {
+  const parsed = readNullableOriginalString(value, key);
+  if (parsed === null || parsed === undefined) return parsed;
+  return isValidGroupChatUuid(parsed) ? parsed : undefined;
+}
+
+/** Strictly normalizes the documented secure original-message response. */
+export function normalizeGroupChatOriginalMessage(value: unknown, expectedMessageId: string): GroupChatOriginalMessage | null {
+  if (!isRecord(value) || !isValidGroupChatUuid(expectedMessageId)) return null;
+  const requiredKeys = ["message_id", "sender_id", "status", "content", "versions", "current_content", "hidden_by", "hidden_reason", "hidden_at", "created_at"] as const;
+  if (!requiredKeys.every((key) => Object.prototype.hasOwnProperty.call(value, key))) return null;
+  const messageId = readRequiredOriginalString(value, "message_id");
+  const senderId = readRequiredOriginalString(value, "sender_id");
+  const status = readRequiredOriginalString(value, "status");
+  const content = readNullableOriginalString(value, "content");
+  const currentContent = readNullableOriginalString(value, "current_content");
+  const hiddenBy = readNullableOriginalUuid(value, "hidden_by");
+  const hiddenReason = readNullableOriginalString(value, "hidden_reason");
+  const hiddenAt = readNullableOriginalString(value, "hidden_at");
+  const createdAt = readRequiredOriginalString(value, "created_at");
+  const versions = value.versions;
+  if (!messageId || !isValidGroupChatUuid(messageId) || messageId.toLowerCase() !== expectedMessageId.trim().toLowerCase() || !senderId || !isValidGroupChatUuid(senderId) || !status?.trim() || content === undefined || currentContent === undefined || hiddenBy === undefined || hiddenReason === undefined || hiddenAt === undefined || !createdAt || Number.isNaN(Date.parse(createdAt)) || (hiddenAt !== null && Number.isNaN(Date.parse(hiddenAt))) || !Array.isArray(versions) || !versions.every((version) => isRecord(version))) return null;
+  return { message_id: messageId, sender_id: senderId, status, content, versions: versions as Record<string, unknown>[], current_content: currentContent, hidden_by: hiddenBy, hidden_reason: hiddenReason, hidden_at: hiddenAt, created_at: createdAt };
 }
 
 function readNullableComplianceText(value: Record<string, unknown>, key: string): string | null {

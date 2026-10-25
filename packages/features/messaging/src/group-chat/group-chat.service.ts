@@ -35,6 +35,7 @@ import type {
   GroupChatMemberRole,
   GroupChatMessage,
   GroupChatMessageHistoryResponse,
+  GroupChatOriginalMessage,
   GroupChatMessageReadStatus,
   GroupChatMessageListParams,
   GroupChatMemberListParams,
@@ -70,7 +71,7 @@ import type {
 } from "./group-chat.types";
 import type { CreateGroupChatReportPayload, GroupChatGrievanceOfficer, GroupChatReport, UpdateGroupChatComplianceReportPayload } from "./group-chat.types";
 import { buildCreateGroupChatDataRequestPayload, buildGroupChatDataRequestDownloadPath, buildGroupChatDataRequestRetryPath, getGroupChatDataRequestDownloadFileName, normalizeGroupChatConsentList, normalizeGroupChatDataRequestList } from "../group-chat-models";
-import { buildGroupChatAuditPath, buildGroupChatAuditQuery, buildGroupChatComplianceReportUpdatePayload, buildGroupChatComplianceReportsQuery, buildGroupChatLegalHoldRequest, buildGroupChatReportPayload, isValidGroupChatUuid, normalizeGroupChatAuditList, normalizeGroupChatComplianceReport, normalizeGroupChatComplianceReportList, normalizeGroupChatGrievanceOfficer, normalizeGroupChatLegalHoldState, normalizeGroupChatReport } from "../group-chat-models";
+import { buildGroupChatAuditPath, buildGroupChatAuditQuery, buildGroupChatComplianceReportUpdatePayload, buildGroupChatComplianceReportsQuery, buildGroupChatLegalHoldRequest, buildGroupChatOriginalMessagePath, buildGroupChatReportPayload, isValidGroupChatUuid, normalizeGroupChatAuditList, normalizeGroupChatComplianceReport, normalizeGroupChatComplianceReportList, normalizeGroupChatGrievanceOfficer, normalizeGroupChatLegalHoldState, normalizeGroupChatOriginalMessage, normalizeGroupChatReport } from "../group-chat-models";
 import { buildChangeGroupMemberRolePayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatMessageReadStatusPath, buildGroupChatProviderVerificationCandidateQuery, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildHideGroupChatMessagePayload, buildReassignGroupOwnerPayload, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupPreferencesPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageReadStatus, normalizeGroupChatMessageMutationResponse, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPermissions, normalizeGroupChatPreferences, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatReactionSettings, normalizeGroupChatSharedFilesResponse, normalizeGroupChatConsentWithdrawalResponse, normalizeGroupChatLeaveResponse, normalizeReassignGroupOwnerResponse, getGroupChatReopenReasonError, parseGroupChatAttachmentFileName, resolveGroupChatOwnerName } from "../group-chat-models";
 export { buildCreateGroupPayload, buildGroupMemberInvitePayload } from "../group-chat-models";
 
@@ -566,6 +567,16 @@ export async function listGroupChatAudit(groupId: string, params: GroupChatAudit
   if (!path || !isValidGroupChatUuid(normalizedGroupId) || !query) throw new GroupChatApiError(422, "A valid Group Chat and audit filters are required.");
   const parsed = normalizeGroupChatAuditList(await request<unknown>(path, query, { signal: params.signal }), normalizedGroupId);
   return requireParsed(parsed, "The Group Chat audit response was invalid.");
+}
+
+/** Retrieves one secure original message only after an explicit authorized review action. */
+export async function getGroupChatOriginalMessage(groupId: string, messageId: string): Promise<GroupChatOriginalMessage> {
+  const normalizedGroupId = groupId.trim();
+  const normalizedMessageId = messageId.trim();
+  const path = buildGroupChatOriginalMessagePath(normalizedGroupId, normalizedMessageId);
+  if (!path || !isValidGroupChatUuid(normalizedGroupId) || !isValidGroupChatUuid(normalizedMessageId)) throw new GroupChatApiError(422, "A valid Group Chat and message identifier are required.");
+  const parsed = normalizeGroupChatOriginalMessage(await request<unknown>(path), normalizedMessageId);
+  return requireParsed(parsed, "The secure original message response was invalid.");
 }
 
 /** Submits a Group Chat or message report using the authenticated member's access. */

@@ -337,6 +337,20 @@ export interface GroupChatMessageHistoryResponse {
   pinned_count: number;
 }
 
+/** Secure-record response for an explicitly requested original Group Chat message. */
+export interface GroupChatOriginalMessage {
+  message_id: string;
+  sender_id: string;
+  status: string;
+  content: string | null;
+  versions: Record<string, unknown>[];
+  current_content: string | null;
+  hidden_by: string | null;
+  hidden_reason: string | null;
+  hidden_at: string | null;
+  created_at: string;
+}
+
 /** Read status returned for one authorized Group Chat message. */
 export interface GroupChatMessageReadStatus {
   message_id: string;

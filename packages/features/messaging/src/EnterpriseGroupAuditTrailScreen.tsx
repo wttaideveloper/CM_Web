@@ -4,13 +4,13 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@ihp/auth";
 import { useQuery } from "@tanstack/react-query";
 import { GroupChatApiError, getGroupChat, listGroupChatAudit, listGroupChatComplianceGroups, listGroupChatMembers } from "./group-chat/group-chat.service";
-import { canAccessGroupChatComplianceReports, canViewGroupChatAudit, changeGroupChatAuditPageSize, clearGroupChatAuditFilters, getGroupChatAuditActionLabel, getGroupChatAuditKnownDetails, getGroupChatAuditTotalPages, GROUP_CHAT_AUDIT_ACTION_OPTIONS, hasNonDefaultGroupChatAuditFilters, isValidGroupChatUuid, resolveGroupChatAuditMemberName } from "./group-chat-models";
+import { canShowGroupChatOriginalMessageReview, canAccessGroupChatComplianceReports, canViewGroupChatAudit, changeGroupChatAuditPageSize, clearGroupChatAuditFilters, getGroupChatAuditActionLabel, getGroupChatAuditKnownDetails, getGroupChatAuditTotalPages, GROUP_CHAT_AUDIT_ACTION_OPTIONS, hasNonDefaultGroupChatAuditFilters, isValidGroupChatUuid, resolveGroupChatAuditMemberName } from "./group-chat-models";
 import type { GroupChatAuditEntry, GroupChatMember } from "./group-chat/group-chat.types";
 
 const DEFAULT_PAGE_SIZE = 25;
 const PAGE_SIZE_OPTIONS = [5, 10, 25, 50, 100, 200] as const;
 
-type Props = { initialGroupId?: string; onBack?: () => void };
+type Props = { initialGroupId?: string; initialAction?: string; ownerEntry?: boolean; onBack?: () => void; onOpenSecureReview?: (groupId: string, messageId: string) => void };
 
 function formatAuditDate(value: string): string {
   const date = new Date(value);
@@ -45,7 +45,7 @@ function formatKnownDetailValue(value: string, members: readonly GroupChatMember
   return resolveGroupChatAuditMemberName(value, members) ?? value;
 }
 
-function AuditEvent({ entry, members, currentUserId, currentUserName }: { entry: GroupChatAuditEntry; members: readonly GroupChatMember[]; currentUserId: string; currentUserName: string }) {
+function AuditEvent({ entry, members, currentUserId, currentUserName, onOpenSecureReview }: { entry: GroupChatAuditEntry; members: readonly GroupChatMember[]; currentUserId: string; currentUserName: string; onOpenSecureReview?: (messageId: string) => void }) {
   const actorName = entry.actor_id === currentUserId ? `${currentUserName || "You"} (You)` : resolveGroupChatAuditMemberName(entry.actor_id, members);
   const targetName = resolveGroupChatAuditMemberName(entry.target_user_id, members);
   const knownDetails = getGroupChatAuditKnownDetails(entry).map((detail) => ({ ...detail, value: formatKnownDetailValue(detail.value, members) }));
@@ -62,17 +62,17 @@ function AuditEvent({ entry, members, currentUserId, currentUserName }: { entry:
       {entry.target_user_id ? <div><dt className="font-semibold text-[#52736a]">Affected member</dt><dd>{targetName ?? "Member name unavailable"}</dd></div> : null}
       {entry.reason ? <div className="sm:col-span-2"><dt className="font-semibold text-[#52736a]">Recorded reason</dt><dd className="mt-1 whitespace-pre-wrap">{entry.reason}</dd></div> : null}
       {knownDetails.length > 0 ? <div className="sm:col-span-2"><dt className="font-semibold text-[#52736a]">Additional details</dt><dd className="mt-1 grid gap-1 sm:grid-cols-2">{knownDetails.map((detail) => <span key={detail.label}><span className="font-semibold">{detail.label}:</span> {detail.value}</span>)}</dd></div> : null}
-      {entry.actor_id || entry.target_user_id || entry.message_id ? <div className="sm:col-span-2"><details><summary className="cursor-pointer font-semibold text-[#52736a]">Technical references</summary><dl className="mt-2 grid gap-1 text-[#52736a] sm:grid-cols-3">{entry.actor_id ? <div><dt>Actor ID</dt><dd className="break-all">{entry.actor_id}</dd></div> : null}{entry.target_user_id ? <div><dt>Target ID</dt><dd className="break-all">{entry.target_user_id}</dd></div> : null}{entry.message_id ? <div><dt>Message ID</dt><dd className="break-all">{entry.message_id}</dd></div> : null}</dl></details></div> : null}
+      {entry.actor_id || entry.target_user_id || entry.message_id ? <div className="sm:col-span-2"><details><summary className="cursor-pointer font-semibold text-[#52736a]">Technical references</summary><dl className="mt-2 grid gap-1 text-[#52736a] sm:grid-cols-3">{entry.actor_id ? <div><dt>Actor ID</dt><dd className="break-all">{entry.actor_id}</dd></div> : null}{entry.target_user_id ? <div><dt>Target ID</dt><dd className="break-all">{entry.target_user_id}</dd></div> : null}{entry.message_id ? <div><dt>Message ID</dt><dd className="break-all">{entry.message_id}</dd></div> : null}</dl></details>{canShowGroupChatOriginalMessageReview(entry.conversation_id, entry.message_id ?? "", Boolean(onOpenSecureReview)) ? <button type="button" onClick={() => onOpenSecureReview?.(entry.message_id!)} className="mt-3 rounded-full border border-[#1f6a58] px-3 py-1.5 text-xs font-semibold text-[#1f6a58]">Review Original Message</button> : null}</div> : null}
     </dl>
   </article>;
 }
 
 /** Renders the authenticated, read-only Group Audit Trail without retrieving message content. */
-export default function EnterpriseGroupAuditTrailScreen({ initialGroupId, onBack }: Props) {
+export default function EnterpriseGroupAuditTrailScreen({ initialGroupId, initialAction, ownerEntry: ownerEntryProp, onBack, onOpenSecureReview }: Props) {
   const { roles, user } = useAuth();
   const userScope = user?.userId ?? user?.id ?? "";
   const accessScope = [userScope, roles?.tenantSlug ?? "", roles?.tenantRole ?? "", ...(roles?.tenantRbacRoles ?? [])].join("|");
-  const ownerEntry = Boolean(initialGroupId?.trim());
+  const ownerEntry = ownerEntryProp ?? Boolean(initialGroupId?.trim());
   const canAccessCompliance = canAccessGroupChatComplianceReports(roles);
   const [selectedGroupId, setSelectedGroupId] = useState(initialGroupId?.trim() ?? "");
   const [action, setAction] = useState("");
@@ -82,11 +82,11 @@ export default function EnterpriseGroupAuditTrailScreen({ initialGroupId, onBack
 
   useEffect(() => {
     setSelectedGroupId(initialGroupId?.trim() ?? "");
-    setAction("");
+    setAction(initialAction?.trim() ?? "");
     setTargetUserId("");
     setPage(1);
     setPageSize(DEFAULT_PAGE_SIZE);
-  }, [accessScope, initialGroupId]);
+  }, [accessScope, initialAction, initialGroupId]);
 
   const groupsQuery = useQuery({
     queryKey: ["group-chat", "compliance-groups", accessScope],
@@ -159,7 +159,7 @@ export default function EnterpriseGroupAuditTrailScreen({ initialGroupId, onBack
         <label className="text-sm font-semibold text-[#16332b]">Page size<select value={pageSize} onChange={(event) => changePageSize(Number(event.target.value))} className="mt-1 h-10 w-full rounded-xl border border-[#d7e5df] bg-white px-3 font-normal">{PAGE_SIZE_OPTIONS.map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
         <button type="button" disabled={clearFiltersDisabled} onClick={clearFilters} className="self-end rounded-xl border border-[#1f6a58] px-3 py-2 text-sm font-semibold text-[#1f6a58] disabled:cursor-not-allowed disabled:opacity-40">Clear Filters</button>
       </section>
-      {auditQuery.isPending ? <p className="text-sm text-[#52736a]" aria-live="polite">Loading audit events...</p> : auditQuery.isError ? isForbidden(auditError) ? <AuditForbidden /> : <AuditError error={auditError} onRetry={() => void auditQuery.refetch()} /> : auditQuery.data?.items.length === 0 ? <p className="rounded-xl border border-dashed border-[#d7e5df] bg-[#f9fcfa] p-6 text-sm text-[#52736a]">No audit events match these filters.</p> : <><div className="flex items-center justify-between text-sm text-[#52736a]"><span>{auditQuery.data?.total ?? 0} total events{selectedGroup ? ` · ${selectedGroup.name}` : ""}</span><span>Page {page} of {totalPages}</span></div><div className="space-y-3">{auditQuery.data?.items.map((entry) => <AuditEvent key={entry.id} entry={entry} members={auditMembers} currentUserId={userScope} currentUserName={currentUserName} />)}</div><nav aria-label="Group Audit Trail pagination" className="flex justify-between gap-2"><button type="button" disabled={page <= 1 || auditQuery.isFetching} onClick={() => setPage((current) => current - 1)} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-sm font-semibold disabled:opacity-40">Previous</button><button type="button" disabled={page >= totalPages || auditQuery.isFetching} onClick={() => setPage((current) => current + 1)} className="rounded-full border border-[#1f6a58] px-3 py-1.5 text-sm font-semibold text-[#1f6a58] disabled:opacity-40">Next</button></nav></>}
+      {auditQuery.isPending ? <p className="text-sm text-[#52736a]" aria-live="polite">Loading audit events...</p> : auditQuery.isError ? isForbidden(auditError) ? <AuditForbidden /> : <AuditError error={auditError} onRetry={() => void auditQuery.refetch()} /> : auditQuery.data?.items.length === 0 ? <p className="rounded-xl border border-dashed border-[#d7e5df] bg-[#f9fcfa] p-6 text-sm text-[#52736a]">No audit events match these filters.</p> : <><div className="flex items-center justify-between text-sm text-[#52736a]"><span>{auditQuery.data?.total ?? 0} total events{selectedGroup ? ` · ${selectedGroup.name}` : ""}</span><span>Page {page} of {totalPages}</span></div><div className="space-y-3">{auditQuery.data?.items.map((entry) => <AuditEvent key={entry.id} entry={entry} members={auditMembers} currentUserId={userScope} currentUserName={currentUserName} onOpenSecureReview={onOpenSecureReview ? (messageId) => onOpenSecureReview(selectedGroupId, messageId) : undefined} />)}</div><nav aria-label="Group Audit Trail pagination" className="flex justify-between gap-2"><button type="button" disabled={page <= 1 || auditQuery.isFetching} onClick={() => setPage((current) => current - 1)} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-sm font-semibold disabled:opacity-40">Previous</button><button type="button" disabled={page >= totalPages || auditQuery.isFetching} onClick={() => setPage((current) => current + 1)} className="rounded-full border border-[#1f6a58] px-3 py-1.5 text-sm font-semibold text-[#1f6a58] disabled:opacity-40">Next</button></nav></>}
     </> : null}
   </section>;
 }
