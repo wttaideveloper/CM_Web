@@ -4,7 +4,7 @@ import type { AuthRoles } from "@ihp/auth";
 import type { GroupChatDataRequest, GroupChatDataRequestStatus } from "./group-chat/group-chat.types";
 import type { CreateGroupChatDataRequestPayload } from "./group-chat/group-chat.types";
 import type { CreateGroupChatReportPayload, GroupChatAuditDetailsValue, GroupChatAuditEntry, GroupChatAuditListParams, GroupChatAuditListResponse, GroupChatComplianceReport, GroupChatComplianceReportListParams, GroupChatComplianceReportListResponse, GroupChatComplianceReportStatus, GroupChatComplianceReportUpdateStatus, GroupChatGrievanceOfficer, GroupChatReport, GroupChatReportReason, UpdateGroupChatComplianceReportPayload } from "./group-chat/group-chat.types";
-import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatConsentListResponse, GroupChatConsentNotice, GroupChatConsentRecord, GroupChatConsentWithdrawalResponse, GroupChatLeaveResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatMessageReadStatus, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReplyReference, GroupChatSharedFile, GroupChatSharedFilesResponse, GroupChatSummary, GroupChatVerifiedProvider, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReassignGroupOwnerPayload, ReassignGroupOwnerResponse, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupPreferencesPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
+import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatConsentListResponse, GroupChatConsentNotice, GroupChatConsentRecord, GroupChatConsentWithdrawalResponse, GroupChatLeaveResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatMessageReadStatus, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReplyReference, GroupChatSharedFile, GroupChatSharedFilesResponse, GroupChatSummary, GroupChatVerifiedProvider, GroupChatLegalHoldPayload, GroupChatLegalHoldRequest, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReassignGroupOwnerPayload, ReassignGroupOwnerResponse, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupPreferencesPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
 
@@ -1130,6 +1130,42 @@ export function canAccessGroupChatComplianceReports(roles: AuthRoles | null | un
 /** Returns true only when the selected Group's backend permission authorizes audit reads. */
 export function canViewGroupChatAudit(permissions: Pick<GroupChatPermissions, "can_view_audit">): boolean {
   return permissions.can_view_audit === true;
+}
+
+/** Preserves only a backend boolean Legal Hold value; absent or malformed data remains unknown. */
+export function normalizeGroupChatLegalHoldState(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+/** Shows the workspace notice only for an authoritative active Legal Hold. */
+export function shouldShowGroupChatLegalHoldNotice(legalHold: boolean | null): boolean {
+  return legalHold === true;
+}
+
+/** Allows a Legal Hold mutation only with explicit backend permission and known state. */
+export function canManageGroupChatLegalHold(permissions: Pick<GroupChatPermissions, "can_set_legal_hold">, legalHold: boolean | null, mutationPending: boolean): boolean {
+  return permissions.can_set_legal_hold === true && typeof legalHold === "boolean" && !mutationPending;
+}
+
+/** Builds the Legal Hold route relative to the Group Chat service's /groups base path. */
+export function buildGroupChatLegalHoldPath(groupId: string): string | null {
+  const normalizedGroupId = groupId.trim();
+  return isValidGroupChatUuid(normalizedGroupId) ? `/${encodeURIComponent(normalizedGroupId)}/legal-hold` : null;
+}
+
+/** Builds the documented Legal Hold reason body after trimming and boundary validation. */
+export function buildGroupChatLegalHoldPayload(reason: string): GroupChatLegalHoldPayload | null {
+  const normalizedReason = reason.trim();
+  return normalizedReason.length >= 3 && normalizedReason.length <= 500 ? { reason: normalizedReason } : null;
+}
+
+/** Builds either documented Legal Hold request without inventing a DELETE body. */
+export function buildGroupChatLegalHoldRequest(groupId: string, method: "POST" | "DELETE", reason = ""): GroupChatLegalHoldRequest | null {
+  const path = buildGroupChatLegalHoldPath(groupId);
+  if (!path) return null;
+  if (method === "DELETE") return { path, method };
+  const body = buildGroupChatLegalHoldPayload(reason);
+  return body ? { path, method, body } : null;
 }
 
 /** Backend action values supported by the Group Audit Trail filter. */

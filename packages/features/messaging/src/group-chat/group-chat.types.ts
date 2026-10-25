@@ -115,6 +115,8 @@ export interface GroupChatSummary {
   muted: boolean | null;
   pinned: boolean | null;
   is_archived: boolean | null;
+  /** Server-authoritative Legal Hold state; null means the field was absent or malformed. */
+  legal_hold: boolean | null;
   visibility_notice: string | null;
   emergency_notice: string | null;
   my_role: string | null;
@@ -132,6 +134,16 @@ export interface GroupChatDetails extends GroupChatSummary {
   training_title: string | null;
   owner: GroupChatMember | null;
 }
+
+/** Request body required by the documented Legal Hold placement endpoint. */
+export interface GroupChatLegalHoldPayload {
+  reason: string;
+}
+
+/** Request descriptors used to keep Legal Hold methods and bodies explicit. */
+export type GroupChatLegalHoldRequest =
+  | { path: string; method: "POST"; body: GroupChatLegalHoldPayload }
+  | { path: string; method: "DELETE" };
 
 /** Request body accepted by POST /groups/{group_id}/reports. */
 export type GroupChatReportReason = "harassment" | "privacy" | "health_information" | "spam" | "inappropriate" | "safety" | "other";

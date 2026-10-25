@@ -70,7 +70,7 @@ import type {
 } from "./group-chat.types";
 import type { CreateGroupChatReportPayload, GroupChatGrievanceOfficer, GroupChatReport, UpdateGroupChatComplianceReportPayload } from "./group-chat.types";
 import { buildCreateGroupChatDataRequestPayload, buildGroupChatDataRequestDownloadPath, buildGroupChatDataRequestRetryPath, getGroupChatDataRequestDownloadFileName, normalizeGroupChatConsentList, normalizeGroupChatDataRequestList } from "../group-chat-models";
-import { buildGroupChatAuditPath, buildGroupChatAuditQuery, buildGroupChatComplianceReportUpdatePayload, buildGroupChatComplianceReportsQuery, buildGroupChatReportPayload, isValidGroupChatUuid, normalizeGroupChatAuditList, normalizeGroupChatComplianceReport, normalizeGroupChatComplianceReportList, normalizeGroupChatGrievanceOfficer, normalizeGroupChatReport } from "../group-chat-models";
+import { buildGroupChatAuditPath, buildGroupChatAuditQuery, buildGroupChatComplianceReportUpdatePayload, buildGroupChatComplianceReportsQuery, buildGroupChatLegalHoldRequest, buildGroupChatReportPayload, isValidGroupChatUuid, normalizeGroupChatAuditList, normalizeGroupChatComplianceReport, normalizeGroupChatComplianceReportList, normalizeGroupChatGrievanceOfficer, normalizeGroupChatLegalHoldState, normalizeGroupChatReport } from "../group-chat-models";
 import { buildChangeGroupMemberRolePayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatMessageReadStatusPath, buildGroupChatProviderVerificationCandidateQuery, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildGroupMemberInvitePayload, buildGroupMemberRemovalQuery, buildHideGroupChatMessagePayload, buildReassignGroupOwnerPayload, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupPreferencesPayload, buildUpdateGroupSettingsPayload, buildVerifiedProviderPayload, getGroupChatMemberDisplayName, isSupportedGroupAvatarFile, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageReadStatus, normalizeGroupChatMessageMutationResponse, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPermissions, normalizeGroupChatPreferences, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatReactionSettings, normalizeGroupChatSharedFilesResponse, normalizeGroupChatConsentWithdrawalResponse, normalizeGroupChatLeaveResponse, normalizeReassignGroupOwnerResponse, getGroupChatReopenReasonError, parseGroupChatAttachmentFileName, resolveGroupChatOwnerName } from "../group-chat-models";
 export { buildCreateGroupPayload, buildGroupMemberInvitePayload } from "../group-chat-models";
 
@@ -153,6 +153,7 @@ type RequestOptions = {
   body?: unknown;
   headers?: HeadersInit;
   signal?: AbortSignal;
+  expectedStatus?: number;
   errorMessage?: (response: Response) => Promise<string>;
 };
 
@@ -253,6 +254,7 @@ async function request<T>(path: string, params = new URLSearchParams(), options:
   try {
     const response = await chatRequestResponse(url, init);
     if (!response.ok) throw new GroupChatApiError(response.status, await (options.errorMessage?.(response) ?? backendErrorMessage(response)));
+    if (options.expectedStatus !== undefined && response.status !== options.expectedStatus) throw new GroupChatApiError(502, `The Group Chat service returned an unexpected success status (${response.status}).`);
     if (response.status === 204) return undefined as T;
     const text = await response.text();
     if (!text.trim()) return undefined as T;
@@ -392,6 +394,7 @@ function parseGroup(value: unknown): GroupChatSummary | null {
     avatar_url: readString(value.avatar_url),
     admins_only_posting: readNullableBoolean(value.admins_only_posting),
     ...normalizeGroupChatPreferences(value),
+    legal_hold: normalizeGroupChatLegalHoldState(value.legal_hold),
     visibility_notice: readString(value.visibility_notice),
     emergency_notice: readString(value.emergency_notice),
     my_role: readString(value.my_role ?? value.current_user_role),
@@ -476,7 +479,7 @@ function parseProviderVerificationCandidateList(value: unknown, page: number, pa
 function parseGroupDetails(value: unknown): GroupChatDetails | null {
   const source = unwrapData(value);
   const nestedGroup = isRecord(source.group) ? source.group : null;
-  const group = parseGroup(nestedGroup ? { ...nestedGroup, muted: source.muted ?? nestedGroup.muted, pinned: source.pinned ?? nestedGroup.pinned, is_archived: source.is_archived ?? nestedGroup.is_archived } : source);
+  const group = parseGroup(nestedGroup ? { ...nestedGroup, muted: source.muted ?? nestedGroup.muted, pinned: source.pinned ?? nestedGroup.pinned, is_archived: source.is_archived ?? nestedGroup.is_archived, legal_hold: source.legal_hold ?? nestedGroup.legal_hold } : source);
   if (!group) return null;
   const owner = parseMember(source.owner);
   const ownerName = resolveGroupChatOwnerName(group.owner_name, owner?.name);
@@ -539,6 +542,20 @@ export async function listGroupChatComplianceGroups(signal?: AbortSignal): Promi
 /** Loads one Group Chat's server-provided details. */
 export async function getGroupChat(groupId: string, signal?: AbortSignal): Promise<GroupChatDetails> {
   return requireParsed(parseGroupDetails(await request<unknown>(`/${encodeURIComponent(groupId)}`, new URLSearchParams(), { signal })), "The Group Chat details response was invalid.");
+}
+
+/** Places a Legal Hold through the documented Compliance endpoint after reason validation. */
+export async function setGroupChatLegalHold(groupId: string, reason: string): Promise<void> {
+  const operation = buildGroupChatLegalHoldRequest(groupId, "POST", reason);
+  if (!operation || operation.method !== "POST") throw new GroupChatApiError(422, "A valid Group Chat identifier and a reason from 3 to 500 characters are required.");
+  await request<unknown>(operation.path, new URLSearchParams(), { method: operation.method, body: operation.body, expectedStatus: 200 });
+}
+
+/** Lifts a Legal Hold through the documented bodyless Compliance endpoint. */
+export async function clearGroupChatLegalHold(groupId: string): Promise<void> {
+  const operation = buildGroupChatLegalHoldRequest(groupId, "DELETE");
+  if (!operation || operation.method !== "DELETE") throw new GroupChatApiError(422, "A valid Group Chat identifier is required.");
+  await request<unknown>(operation.path, new URLSearchParams(), { method: operation.method, expectedStatus: 200 });
 }
 
 /** Loads the read-only audit trail for a backend-authorized Group Chat. */

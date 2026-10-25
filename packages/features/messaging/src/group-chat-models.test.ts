@@ -6,6 +6,7 @@ import type { GroupChatMember, GroupChatMessage } from "./group-chat/group-chat.
 import { getGroupChatLeaveAction } from "./group-chat-models.ts";
 import { normalizeGroupChatDataRequestList } from "./group-chat-models.ts";
 import { buildCreateGroupChatDataRequestPayload } from "./group-chat-models.ts";
+import { buildGroupChatLegalHoldPayload, buildGroupChatLegalHoldPath, buildGroupChatLegalHoldRequest, canManageGroupChatLegalHold, normalizeGroupChatLegalHoldState, shouldShowGroupChatLegalHoldNotice } from "./group-chat-models.ts";
 import { canSubmitGroupChatDataRequest, mergeGroupChatDataRequestsForDisplay } from "./group-chat-models.ts";
 import { canDownloadGroupChatDataRequest, canRetryGroupChatDataRequest, getGroupChatDataRequestDownloadFileName, getGroupChatDataRequestExpiry, hasPendingGroupChatDataRequests } from "./group-chat-models.ts";
 import { buildGroupChatDataRequestDownloadPath, buildGroupChatDataRequestRetryPath } from "./group-chat-models.ts";
@@ -1091,4 +1092,46 @@ test("Compliance navigation follows the existing tenant admin convention", () =>
   assert.equal(canAccessGroupChatComplianceReports(adminRoles), true);
   assert.equal(canAccessGroupChatComplianceReports(internalRoles), false);
   assert.equal(canAccessGroupChatComplianceReports(null), false);
+});
+
+test("Legal Hold state preserves booleans and keeps malformed values unknown", () => {
+  assert.equal(normalizeGroupChatLegalHoldState(true), true);
+  assert.equal(normalizeGroupChatLegalHoldState(false), false);
+  assert.equal(normalizeGroupChatLegalHoldState(undefined), null);
+  assert.equal(normalizeGroupChatLegalHoldState("false"), null);
+  assert.equal(normalizeGroupChatLegalHoldState({ value: true }), null);
+  assert.equal(canManageGroupChatLegalHold({ can_set_legal_hold: true }, false, false), true);
+  assert.equal(canManageGroupChatLegalHold({ can_set_legal_hold: false }, false, false), false);
+  assert.equal(canManageGroupChatLegalHold({ can_set_legal_hold: null }, false, false), false);
+  assert.equal(canManageGroupChatLegalHold({ can_set_legal_hold: true }, null, false), false);
+  assert.equal(canManageGroupChatLegalHold({ can_set_legal_hold: true }, true, true), false);
+  assert.equal(shouldShowGroupChatLegalHoldNotice(true), true);
+  assert.equal(shouldShowGroupChatLegalHoldNotice(false), false);
+  assert.equal(shouldShowGroupChatLegalHoldNotice(null), false);
+  assert.equal(canSendGroupChatMessage("open", true), true);
+  assert.equal(canSendGroupChatMessage("open", false), false);
+});
+
+test("Legal Hold request builders enforce the reason boundaries and documented methods", () => {
+  const groupId = "253b5556-eed4-4093-a3e6-d4fdf5f0bd5d";
+  assert.equal(buildGroupChatLegalHoldPath(` ${groupId} `), `/${groupId}/legal-hold`);
+  assert.equal(buildGroupChatLegalHoldPath("not-a-uuid"), null);
+  assert.equal(buildGroupChatLegalHoldPath(`${groupId}/other`), null);
+  assert.equal(buildGroupChatLegalHoldPayload("ab"), null);
+  assert.deepEqual(buildGroupChatLegalHoldPayload("abc"), { reason: "abc" });
+  assert.deepEqual(buildGroupChatLegalHoldPayload("  valid reason  "), { reason: "valid reason" });
+  assert.equal(buildGroupChatLegalHoldPayload("x".repeat(500))?.reason.length, 500);
+  assert.equal(buildGroupChatLegalHoldPayload("x".repeat(501)), null);
+  const postRequest = buildGroupChatLegalHoldRequest(groupId, "POST", "Preserve records");
+  const deleteRequest = buildGroupChatLegalHoldRequest(groupId, "DELETE");
+  assert.deepEqual(postRequest, { path: `/${groupId}/legal-hold`, method: "POST", body: { reason: "Preserve records" } });
+  assert.deepEqual(deleteRequest, { path: `/${groupId}/legal-hold`, method: "DELETE" });
+  assert.equal("body" in deleteRequest!, false);
+  const resolvedPostPath = `/groups${postRequest!.path}`;
+  const resolvedDeletePath = `/groups${deleteRequest!.path}`;
+  assert.equal(resolvedPostPath, `/groups/${groupId}/legal-hold`);
+  assert.equal(resolvedDeletePath, `/groups/${groupId}/legal-hold`);
+  assert.equal((resolvedPostPath.match(/\/groups\//g) ?? []).length, 1);
+  assert.equal((resolvedDeletePath.match(/\/groups\//g) ?? []).length, 1);
+  assert.equal(buildGroupChatLegalHoldRequest("not-a-uuid", "POST", "Preserve records"), null);
 });
