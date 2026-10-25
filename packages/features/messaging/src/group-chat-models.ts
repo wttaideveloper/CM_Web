@@ -1219,8 +1219,10 @@ export function normalizeGroupChatDataRequestList(value: unknown): GroupChatData
     const note = item.note === null ? null : readString(item, "note");
     const createdAt = readString(item, "created_at");
     const completedAt = item.completed_at === null ? null : readString(item, "completed_at");
-    if (!isUuid(id) || (conversationId !== null && !isUuid(conversationId)) || (conversationId === null && item.conversation_id !== null) || !requestType || !status || (item.note !== null && note === null) || !createdAt || Number.isNaN(Date.parse(createdAt)) || (item.completed_at !== null && (completedAt === null || Number.isNaN(Date.parse(completedAt))))) return null;
-    records.push({ id, conversation_id: conversationId, request_type: requestType, status, note, created_at: createdAt, completed_at: completedAt });
+    const expiresAt = item.expires_at == null ? null : readString(item, "expires_at");
+    const errorCode = item.error_code == null ? null : readString(item, "error_code");
+    if (!isUuid(id) || (conversationId !== null && !isUuid(conversationId)) || (conversationId === null && item.conversation_id !== null) || !requestType || !status || (item.note !== null && note === null) || !createdAt || Number.isNaN(Date.parse(createdAt)) || (item.completed_at !== null && (completedAt === null || Number.isNaN(Date.parse(completedAt)))) || (item.expires_at != null && (!expiresAt || Number.isNaN(Date.parse(expiresAt)))) || (item.error_code != null && !errorCode)) return null;
+    records.push({ id, conversation_id: conversationId, request_type: requestType, status, note, created_at: createdAt, completed_at: completedAt, expires_at: expiresAt, error_code: errorCode });
   }
   return records;
 }

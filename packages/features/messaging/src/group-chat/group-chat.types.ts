@@ -611,6 +611,8 @@ export interface GroupChatDataRequest {
   note: string | null;
   created_at: string;
   completed_at: string | null;
+  expires_at: string | null;
+  error_code: string | null;
 }
 
 /** Request body accepted by POST /groups/data-requests. */

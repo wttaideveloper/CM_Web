@@ -914,16 +914,21 @@ test("shows the owner leave explanation without granting leave permission", () =
 
 test("normalizes only complete personal data request records", () => {
   assert.deepEqual(normalizeGroupChatDataRequestList([
-    { id: "253b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: null, request_type: "copy", status: "received", note: null, created_at: "2026-10-22T10:20:06.641856", completed_at: null },
-    { id: "753b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: "6aa9169e-6abf-407d-bd21-091a250e26d6", request_type: "export", status: "completed", note: "Please review", created_at: "2026-10-22T08:00:00Z", completed_at: "2026-10-22T09:00:00Z" },
+    { id: "253b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: null, request_type: "copy", status: "received", note: null, created_at: "2026-10-22T10:20:06.641856", completed_at: null, expires_at: "2026-10-29T10:20:06Z", error_code: null },
+    { id: "753b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: "6aa9169e-6abf-407d-bd21-091a250e26d6", request_type: "export", status: "completed", note: "Please review", created_at: "2026-10-22T08:00:00Z", completed_at: "2026-10-22T09:00:00Z", expires_at: null, error_code: "DELIVERY_PENDING" },
   ]), [
-    { id: "253b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: null, request_type: "copy", status: "received", note: null, created_at: "2026-10-22T10:20:06.641856", completed_at: null },
-    { id: "753b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: "6aa9169e-6abf-407d-bd21-091a250e26d6", request_type: "export", status: "completed", note: "Please review", created_at: "2026-10-22T08:00:00Z", completed_at: "2026-10-22T09:00:00Z" },
+    { id: "253b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: null, request_type: "copy", status: "received", note: null, created_at: "2026-10-22T10:20:06.641856", completed_at: null, expires_at: "2026-10-29T10:20:06Z", error_code: null },
+    { id: "753b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: "6aa9169e-6abf-407d-bd21-091a250e26d6", request_type: "export", status: "completed", note: "Please review", created_at: "2026-10-22T08:00:00Z", completed_at: "2026-10-22T09:00:00Z", expires_at: null, error_code: "DELIVERY_PENDING" },
   ]);
+  assert.deepEqual(normalizeGroupChatDataRequestList([
+    { id: "853b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: null, request_type: "copy", status: "received", note: null, created_at: "2026-10-22T10:20:06Z", completed_at: null },
+  ]), [{ id: "853b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: null, request_type: "copy", status: "received", note: null, created_at: "2026-10-22T10:20:06Z", completed_at: null, expires_at: null, error_code: null }]);
   assert.deepEqual(normalizeGroupChatDataRequestList([]), []);
   assert.equal(normalizeGroupChatDataRequestList({ items: [] }), null);
-  assert.equal(normalizeGroupChatDataRequestList([{ id: "253b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: null, request_type: "copy", status: "received", note: null, created_at: "invalid", completed_at: null }]), null);
-  assert.equal(normalizeGroupChatDataRequestList([{ id: "not-a-uuid", conversation_id: null, request_type: "copy", status: "received", note: null, created_at: "2026-10-22T10:20:06Z", completed_at: null }]), null);
+  assert.equal(normalizeGroupChatDataRequestList([{ id: "253b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: null, request_type: "copy", status: "received", note: null, created_at: "invalid", completed_at: null, expires_at: null, error_code: null }]), null);
+  assert.equal(normalizeGroupChatDataRequestList([{ id: "not-a-uuid", conversation_id: null, request_type: "copy", status: "received", note: null, created_at: "2026-10-22T10:20:06Z", completed_at: null, expires_at: null, error_code: null }]), null);
+  assert.equal(normalizeGroupChatDataRequestList([{ id: "253b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: null, request_type: "copy", status: "received", note: null, created_at: "2026-10-22T10:20:06Z", completed_at: null, expires_at: "not-a-date", error_code: null }]), null);
+  assert.equal(normalizeGroupChatDataRequestList([{ id: "253b5556-eed4-4093-a3e6-d4fdf5f0bd5d", conversation_id: null, request_type: "copy", status: "received", note: null, created_at: "2026-10-22T10:20:06Z", completed_at: null, expires_at: null, error_code: 42 }]), null);
 });
 
 test("builds the confirmed data request payload without request_type", () => {
