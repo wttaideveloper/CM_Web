@@ -11,3 +11,4 @@ export { default as EnterpriseGroupOriginalMessageReviewScreen } from "./Enterpr
 export { default as GroupChatWorkspace } from "./GroupChatWorkspace";
 export * from "./group-chat/group-chat.service";
 export * from "./group-chat/group-chat.types";
+export * from "./group-chat/group-chat-socket";
