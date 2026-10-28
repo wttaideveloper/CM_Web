@@ -4,7 +4,7 @@ import type { AuthRoles } from "@ihp/auth";
 import type { GroupChatDataRequest, GroupChatDataRequestStatus } from "./group-chat/group-chat.types";
 import type { CreateGroupChatDataRequestPayload } from "./group-chat/group-chat.types";
 import type { CreateGroupChatReportPayload, GroupChatAuditDetailsValue, GroupChatAuditEntry, GroupChatAuditListParams, GroupChatAuditListResponse, GroupChatComplianceReport, GroupChatComplianceReportListParams, GroupChatComplianceReportListResponse, GroupChatComplianceReportStatus, GroupChatComplianceReportUpdateStatus, GroupChatGrievanceOfficer, GroupChatOriginalMessage, GroupChatReport, GroupChatReportReason, UpdateGroupChatComplianceReportPayload } from "./group-chat/group-chat.types";
-import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatConsentListResponse, GroupChatConsentNotice, GroupChatConsentRecord, GroupChatConsentWithdrawalResponse, GroupChatLeaveResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatMessageReadStatus, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReplyReference, GroupChatSharedFile, GroupChatSharedFilesResponse, GroupChatSummary, GroupChatVerifiedProvider, GroupChatLegalHoldPayload, GroupChatLegalHoldRequest, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReassignGroupOwnerPayload, ReassignGroupOwnerResponse, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupPreferencesPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
+import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatConsentListResponse, GroupChatConsentNotice, GroupChatConsentRecord, GroupChatConsentWithdrawalResponse, GroupChatLeaveResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatMessageReadStatus, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReadSummary, GroupChatReplyReference, GroupChatSharedFile, GroupChatSharedFilesResponse, GroupChatSummary, GroupChatVerifiedProvider, GroupChatLegalHoldPayload, GroupChatLegalHoldRequest, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReassignGroupOwnerPayload, ReassignGroupOwnerResponse, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupPreferencesPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
 
@@ -337,6 +337,17 @@ export function isGroupChatProviderUnavailableInCurrentGroup(providerUserId: str
   });
 }
 
+/** Returns whether a membership revalidation status is authoritative evidence that the Group is no longer accessible. */
+export function isConfirmedGroupChatRemovalStatus(status: number): boolean {
+  return status === 403 || status === 404;
+}
+
+/** Builds the privacy-safe one-time notice shown after confirmed Group removal. */
+export function buildGroupChatRemovalNotice(groupName: string): string {
+  const normalizedName = groupName.trim();
+  return `You have been removed from ${normalizedName || "this Group Chat"}.`;
+}
+
 /** Returns an authorized name or a status-specific privacy-safe fallback. */
 export function getGroupChatMemberDisplayName(name: string | null | undefined, membershipStatus: string, memberKind: string | null | undefined): string {
   if (name?.trim()) return name.trim();
@@ -494,6 +505,7 @@ export function normalizeGroupChatMessage(value: unknown): GroupChatMessage | nu
   const mentions = Array.isArray(value.mentions) ? value.mentions.filter((item): item is string => typeof item === "string") : [];
   const myReactions = Array.from(new Set(Array.isArray(value.my_reactions) ? value.my_reactions.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter((item) => item.length > 0 && item.length <= 16) : []));
   const readBy = Array.isArray(value.read_by) ? value.read_by.filter((item): item is string => typeof item === "string") : null;
+  const readSummary = normalizeGroupChatReadSummary(value.read_summary);
   return {
     id,
     conversation_id: conversationId,
@@ -521,8 +533,24 @@ export function normalizeGroupChatMessage(value: unknown): GroupChatMessage | nu
     reactions: normalizeGroupChatReactionCounts(value.reactions),
     my_reactions: myReactions,
     read_by: readBy,
+    ...(readSummary ? { read_summary: readSummary } : {}),
     created_at: createdAt,
   };
+}
+
+const GROUP_CHAT_READ_SUMMARY_UNAVAILABLE_REASONS: readonly GroupChatReadSummary["reason"][] = ["not_your_message", "hidden", "system_message"];
+
+/** Strictly normalizes the optional aggregate read contract without weakening message validation. */
+export function normalizeGroupChatReadSummary(value: unknown): GroupChatReadSummary | null {
+  if (!isRecord(value) || typeof value.available !== "boolean") return null;
+  if (value.available) {
+    const readCount = typeof value.read_count === "number" && Number.isInteger(value.read_count) && value.read_count >= 0 ? value.read_count : null;
+    const recipientCount = typeof value.recipient_count === "number" && Number.isInteger(value.recipient_count) && value.recipient_count >= 0 ? value.recipient_count : null;
+    if (readCount === null || recipientCount === null || typeof value.all_read !== "boolean" || value.reason !== null) return null;
+    return { available: true, read_count: readCount, recipient_count: recipientCount, all_read: value.all_read, reason: null };
+  }
+  if (value.read_count !== null || value.recipient_count !== null || value.all_read !== null || !GROUP_CHAT_READ_SUMMARY_UNAVAILABLE_REASONS.includes(value.reason as GroupChatReadSummary["reason"])) return null;
+  return { available: false, read_count: null, recipient_count: null, all_read: null, reason: value.reason as Exclude<GroupChatReadSummary["reason"], null> };
 }
 
 function normalizeGroupChatMessageAttachment(value: unknown): GroupChatMessageAttachment | null {
@@ -809,11 +837,24 @@ export function canShowGroupChatReadStatusIndicator(
   return Boolean(currentUserId?.trim()) && message.sender_id === currentUserId!.trim() && canViewGroupChatReadStatus(message, groupKind, memberKind, membershipStatus);
 }
 
-/** Derives neutral or confirmed read ticks only from fetched backend read-status counts. */
-export function getGroupChatReadStatusTickState(readStatus: Pick<GroupChatMessageReadStatus, "seen_by_count" | "recipient_count"> | null | undefined): "single" | "double-neutral" | "double-blue" {
-  if (!readStatus || readStatus.recipient_count <= 0 || readStatus.seen_by_count <= 0) return "single";
+/** Derives pending, neutral, or confirmed read ticks only from fetched backend read-status counts. */
+export function getGroupChatReadStatusTickState(readStatus: Pick<GroupChatMessageReadStatus, "seen_by_count" | "recipient_count"> | null | undefined): "unknown" | "single" | "double-neutral" | "double-blue" {
+  if (!readStatus) return "unknown";
+  if (readStatus.recipient_count <= 0 || readStatus.seen_by_count <= 0) return "single";
   if (readStatus.seen_by_count < readStatus.recipient_count) return "double-neutral";
   return "double-blue";
+}
+
+/** Derives the outgoing receipt tick from an eligible history read summary. */
+export function getGroupChatReadSummaryTickState(readSummary: GroupChatReadSummary | null | undefined): "unknown" | "single" | "double-neutral" | "double-blue" {
+  if (!readSummary?.available || readSummary.recipient_count === null || readSummary.all_read === null) return "unknown";
+  if (readSummary.recipient_count <= 0) return "single";
+  return readSummary.all_read ? "double-blue" : "double-neutral";
+}
+
+/** Uses the authoritative history summary instead of issuing a redundant per-message read-status request. */
+export function shouldFetchGroupChatMessageReadStatus(readSummary: GroupChatReadSummary | undefined): boolean {
+  return readSummary === undefined;
 }
 
 /** Resolves seen-by IDs only through the authorized Group member directory. */
@@ -949,9 +990,33 @@ export function canSendGroupChatMessage(groupStatus: string | null, canPost: boo
 /** Returns the highest-priority read-only notice for the current Group Chat member. */
 export function getGroupChatPostingRestrictionMessage(groupStatus: string | null, canPost: boolean | null, postingMuted: boolean | null): string | null {
   if (groupStatus?.trim().toLowerCase() === "closed") return "This group is closed. It is read-only.";
-  if (postingMuted === true) return "You have been muted by the Group Owner.";
+  if (postingMuted === true) return "An admin has muted you in this group. You can read but not post.";
   if (canPost !== true) return "You cannot send messages in this group.";
   return null;
+}
+
+export type GroupChatPostingRestrictionReason = "permission-refresh" | "closed" | "muted" | "permission" | null;
+
+export type GroupChatPostingRestrictionState = {
+  blocked: boolean;
+  message: string | null;
+  reason: GroupChatPostingRestrictionReason;
+};
+
+/** Keeps the composer disabled state and its visible Group restriction notice derived from one source. */
+export function getGroupChatPostingRestrictionState(groupStatus: string | null, canPost: boolean | null, postingMuted: boolean | null, permissionRefreshPending = false): GroupChatPostingRestrictionState {
+  if (permissionRefreshPending) {
+    return {
+      blocked: true,
+      message: "Group posting permission is being verified. Posting is temporarily paused.",
+      reason: "permission-refresh",
+    };
+  }
+  const message = getGroupChatPostingRestrictionMessage(groupStatus, canPost, postingMuted);
+  if (!message) return { blocked: false, message: null, reason: null };
+  if (groupStatus?.trim().toLowerCase() === "closed") return { blocked: true, message, reason: "closed" };
+  if (postingMuted === true) return { blocked: true, message, reason: "muted" };
+  return { blocked: true, message, reason: "permission" };
 }
 
 /** Builds the documented Group Chat message-history query without adding unsupported filters. */

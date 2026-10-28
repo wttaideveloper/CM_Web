@@ -296,6 +296,18 @@ export interface GroupChatReplyReference {
   is_hidden: boolean;
 }
 
+/** Reasons the backend intentionally withholds an outgoing message read summary. */
+export type GroupChatReadSummaryUnavailableReason = "not_your_message" | "hidden" | "system_message";
+
+/** Server-authoritative aggregate read state included on eligible Group messages. */
+export interface GroupChatReadSummary {
+  available: boolean;
+  read_count: number | null;
+  recipient_count: number | null;
+  all_read: boolean | null;
+  reason: GroupChatReadSummaryUnavailableReason | null;
+}
+
 /** Message returned by the Group Chat REST history and send endpoints. */
 export interface GroupChatMessage {
   id: string;
@@ -324,6 +336,7 @@ export interface GroupChatMessage {
   reactions: Record<string, unknown>;
   my_reactions: string[];
   read_by: string[] | null;
+  read_summary?: GroupChatReadSummary;
   created_at: string;
 }
 

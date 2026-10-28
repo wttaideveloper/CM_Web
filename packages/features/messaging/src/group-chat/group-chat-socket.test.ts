@@ -2,9 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   deduplicateGroupChatSocketMessages,
+  getGroupChatLifecycleQueryKeys,
+  getGroupChatMembershipQueryKeys,
   getGroupChatSocketInvalidationTargets,
+  getGroupChatSocketQueryKeys,
+  isGroupChatCurrentUserRemoval,
+  isGroupChatLifecycleEvent,
+  isGroupChatMembershipEvent,
   isGroupChatSocketEventForGroup,
+  normalizeGroupChatJoinedRoomAcknowledgement,
   normalizeGroupChatSocketEvent,
+  shouldProcessGroupChatLifecycleEvent,
 } from "./group-chat-socket.ts";
 import type { GroupChatSocketMessage } from "./group-chat-socket.ts";
 
@@ -22,6 +30,20 @@ test("normalizes documented new-message payloads without requiring sender_name",
   assert.equal(event?.event, "new_message");
   assert.equal(event && "message" in event ? event.message.sender_name : undefined, undefined);
   assert.equal(event && "message" in event ? event.message.sender_id : undefined, senderId);
+});
+
+test("normalizes only a valid Group read event for the selected Group", () => {
+  const event = normalizeGroupChatSocketEvent("group_read", envelope({ user_id: userId, read_at: "2026-10-26T10:05:00.000Z" }), groupId);
+  assert.deepEqual(event, { event: "group_read", conversation_type: "group", conversation_id: groupId, user_id: userId, read_at: "2026-10-26T10:05:00.000Z" });
+  const withBoundary = normalizeGroupChatSocketEvent("group_read", envelope({ user_id: userId, read_at: "2026-10-27T06:06:27.713816", read_through_message_id: messageId }), groupId);
+  assert.equal(withBoundary && "read_through_message_id" in withBoundary ? withBoundary.read_through_message_id : undefined, messageId);
+  const withNullBoundary = normalizeGroupChatSocketEvent("group_read", envelope({ user_id: userId, read_at: "2026-10-27T06:06:27.713816", read_through_message_id: null }), groupId);
+  assert.equal(withNullBoundary && "read_through_message_id" in withNullBoundary ? withNullBoundary.read_through_message_id : undefined, null);
+  assert.equal(normalizeGroupChatSocketEvent("group_read", envelope({ user_id: "not-a-uuid", read_at: "2026-10-26T10:05:00.000Z" }), groupId), null);
+  assert.equal(normalizeGroupChatSocketEvent("group_read", envelope({ user_id: userId, read_at: "not-a-date" }), groupId), null);
+  assert.equal(normalizeGroupChatSocketEvent("group_read", envelope({ user_id: userId, read_at: "2026-10-27T06:06:27.713816", read_through_message_id: "not-a-uuid" }), groupId), null);
+  assert.equal(normalizeGroupChatSocketEvent("group_read", { ...envelope({ user_id: userId, read_at: "2026-10-26T10:05:00.000Z" }), conversation_type: "direct" }, groupId), null);
+  assert.equal(normalizeGroupChatSocketEvent("group_read", envelope({ conversation_id: secondGroupId, user_id: userId, read_at: "2026-10-26T10:05:00.000Z" }), groupId), null);
 });
 
 test("rejects missing or wrong conversation_type and wrong group envelopes", () => {
@@ -54,17 +76,46 @@ test("validates reaction counts and rejects unsupported values", () => {
 
 test("normalizes membership, group, invitation and posting events", () => {
   assert.deepEqual(normalizeGroupChatSocketEvent("member_joined", envelope({ user_id: userId, role: "member", kind: "learner" }), groupId)?.event, "member_joined");
+  assert.deepEqual(normalizeGroupChatSocketEvent("member_left", envelope({ user_id: userId }), groupId)?.event, "member_left");
+  assert.deepEqual(normalizeGroupChatSocketEvent("member_removed", envelope({ user_id: userId }), groupId)?.event, "member_removed");
+  assert.deepEqual(normalizeGroupChatSocketEvent("member_role_changed", envelope({ user_id: userId, role: "admin" }), groupId)?.event, "member_role_changed");
   assert.deepEqual(normalizeGroupChatSocketEvent("group_updated", envelope({ changed_fields: { name: "Updated Group" } }), groupId), { event: "group_updated", conversation_type: "group", conversation_id: groupId, changed_fields: { name: "Updated Group" } });
   assert.equal(normalizeGroupChatSocketEvent("group_closed", envelope({ closed_at: "2026-10-26T10:00:00.000Z" }), groupId)?.event, "group_closed");
   assert.equal(normalizeGroupChatSocketEvent("posting_muted", envelope({ until: "2026-10-26T11:00:00.000Z" }), groupId)?.event, "posting_muted");
+  assert.deepEqual(normalizeGroupChatSocketEvent("posting_muted", envelope({ until: null }), groupId), { event: "posting_muted", conversation_type: "group", conversation_id: groupId, until: null });
   assert.equal(normalizeGroupChatSocketEvent("group_invitation", envelope(), groupId)?.event, "group_invitation");
+});
+
+test("accepts the deployed group_updated packet without changed_fields and keeps socket fields untrusted", () => {
+  const event = normalizeGroupChatSocketEvent("group_updated", {
+    conversation_id: groupId,
+    conversation_type: "group",
+    name: "gcroup 422 new one",
+    description: "invite from prov to adm and leave withdr",
+    avatar_url: "/api/v1/uploads/group-avatars/55009a01c8b2473fb2619ba567ea192e.jpg",
+  }, groupId);
+  assert.deepEqual(event, { event: "group_updated", conversation_type: "group", conversation_id: groupId });
+});
+
+test("identifies only a validated current-user removal", () => {
+  const removed = normalizeGroupChatSocketEvent("member_removed", envelope({ user_id: userId }), groupId);
+  const left = normalizeGroupChatSocketEvent("member_left", envelope({ user_id: userId }), groupId);
+  assert.ok(removed && isGroupChatMembershipEvent(removed));
+  assert.equal(removed && isGroupChatMembershipEvent(removed) ? isGroupChatCurrentUserRemoval(removed, userId) : false, true);
+  assert.equal(removed && isGroupChatMembershipEvent(removed) ? isGroupChatCurrentUserRemoval(removed, secondGroupId) : false, false);
+  assert.equal(left && isGroupChatMembershipEvent(left) ? isGroupChatCurrentUserRemoval(left, userId) : false, false);
 });
 
 test("rejects unknown events and malformed event-specific fields", () => {
   assert.equal(normalizeGroupChatSocketEvent("unknown_event", envelope(), groupId), null);
   assert.equal(normalizeGroupChatSocketEvent("group_updated", envelope({ changed_fields: [] }), groupId), null);
+  assert.equal(normalizeGroupChatSocketEvent("group_updated", envelope({ changed_fields: null }), groupId), null);
+  assert.equal(normalizeGroupChatSocketEvent("group_updated", envelope({ changed_fields: "invalid" }), groupId), null);
+  assert.equal(normalizeGroupChatSocketEvent("group_updated", { conversation_id: groupId, changed_fields: { name: "Missing type" } }, groupId), null);
+  assert.equal(normalizeGroupChatSocketEvent("group_updated", envelope({ conversation_id: secondGroupId }), groupId), null);
   assert.equal(normalizeGroupChatSocketEvent("group_closed", envelope({ closed_at: "not-a-date" }), groupId), null);
-  assert.equal(normalizeGroupChatSocketEvent("posting_muted", envelope({ until: null }), groupId), null);
+  assert.equal(normalizeGroupChatSocketEvent("posting_muted", envelope({ until: "not-a-date" }), groupId), null);
+  assert.equal(normalizeGroupChatSocketEvent("posting_muted", envelope({ until: 42 }), groupId), null);
 });
 
 test("matches validated events to a group and keeps message deduplication stable", () => {
@@ -79,7 +130,53 @@ test("matches validated events to a group and keeps message deduplication stable
 
 test("maps validated event kinds to conservative REST invalidation areas", () => {
   assert.deepEqual(getGroupChatSocketInvalidationTargets("new_message"), ["messages", "groups"]);
-  assert.deepEqual(getGroupChatSocketInvalidationTargets("member_removed"), ["members", "group", "groups"]);
+  assert.deepEqual(getGroupChatSocketInvalidationTargets("member_joined"), ["members", "group", "groups", "read-status"]);
+  assert.deepEqual(getGroupChatSocketInvalidationTargets("member_left"), ["members", "group", "groups", "read-status"]);
+  assert.deepEqual(getGroupChatSocketInvalidationTargets("member_removed"), ["members", "group", "groups", "read-status"]);
+  assert.deepEqual(getGroupChatSocketInvalidationTargets("member_role_changed"), ["members", "group", "groups"]);
   assert.deepEqual(getGroupChatSocketInvalidationTargets("message_hidden"), ["messages"]);
   assert.deepEqual(getGroupChatSocketInvalidationTargets("posting_muted"), ["group", "members", "messages"]);
+  assert.deepEqual(getGroupChatSocketInvalidationTargets("group_read"), ["read-status"]);
+});
+
+test("maps live message events to only the selected Group message and pinned queries", () => {
+  assert.deepEqual(getGroupChatSocketQueryKeys("message_updated", groupId), [["group-chat", "messages", groupId]]);
+  assert.deepEqual(getGroupChatSocketQueryKeys("message_hidden", groupId), [["group-chat", "messages", groupId]]);
+  assert.deepEqual(getGroupChatSocketQueryKeys("reaction_updated", groupId), [["group-chat", "messages", groupId]]);
+  assert.deepEqual(getGroupChatSocketQueryKeys("message_pinned", groupId), [["group-chat", "messages", groupId], ["group-chat", "pinned", groupId]]);
+});
+
+test("maps membership events that can create system messages to the selected Group history", () => {
+  assert.deepEqual(getGroupChatMembershipQueryKeys("member_joined", groupId), [["group-chat", "messages", groupId]]);
+  assert.deepEqual(getGroupChatMembershipQueryKeys("member_left", groupId), [["group-chat", "messages", groupId]]);
+  assert.deepEqual(getGroupChatMembershipQueryKeys("member_removed", groupId), [["group-chat", "messages", groupId]]);
+  assert.deepEqual(getGroupChatMembershipQueryKeys("member_role_changed", groupId), []);
+});
+
+test("maps lifecycle events to only selected Group details, membership, and scoped list queries", () => {
+  assert.deepEqual(getGroupChatLifecycleQueryKeys(groupId, userId), [
+    ["group-chat", "group", groupId, userId],
+    ["group-chat", "members", groupId],
+    ["group-chat", "current-member", groupId, userId],
+    ["group-chat", "groups", userId],
+  ]);
+});
+
+test("coalesces identical lifecycle events but accepts changed lifecycle payloads", () => {
+  const signatures = new Set<string>();
+  const updated = normalizeGroupChatSocketEvent("group_updated", envelope({ changed_fields: { name: "Updated" } }), groupId);
+  const changed = normalizeGroupChatSocketEvent("group_updated", envelope({ changed_fields: { name: "Changed" } }), groupId);
+  assert.ok(updated && isGroupChatLifecycleEvent(updated));
+  assert.ok(changed && isGroupChatLifecycleEvent(changed));
+  if (!updated || !changed || !isGroupChatLifecycleEvent(updated) || !isGroupChatLifecycleEvent(changed)) return;
+  assert.equal(shouldProcessGroupChatLifecycleEvent(signatures, updated), true);
+  assert.equal(shouldProcessGroupChatLifecycleEvent(signatures, updated), false);
+  assert.equal(shouldProcessGroupChatLifecycleEvent(signatures, changed), true);
+});
+
+test("accepts only the selected Group's authorized joined_room acknowledgement", () => {
+  assert.deepEqual(normalizeGroupChatJoinedRoomAcknowledgement({ conversation_id: groupId, room: `conversation:${groupId}`, authorized: true }, groupId), { conversation_id: groupId, room: `conversation:${groupId}`, authorized: true });
+  assert.equal(normalizeGroupChatJoinedRoomAcknowledgement({ conversation_id: groupId, room: `conversation:${groupId}`, authorized: false }, groupId), null);
+  assert.equal(normalizeGroupChatJoinedRoomAcknowledgement({ conversation_id: groupId, room: "conversation:wrong", authorized: true }, groupId), null);
+  assert.equal(normalizeGroupChatJoinedRoomAcknowledgement({ conversation_id: "22222222-2222-4222-8222-222222222222", room: "conversation:22222222-2222-4222-8222-222222222222", authorized: true }, groupId), null);
 });

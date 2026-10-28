@@ -1,17 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@ihp/auth";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { changeGroupMemberRole, closeGroupChat, createGroupChatReport, downloadGroupChatAttachment, getGroupChat, getGroupChatGrievanceOfficer, inviteEnrolledLearners, inviteGroupMembers, leaveGroupChat, listGroupChatFiles, listGroupChatLearners, listGroupChatMembers, listGroupChatProviders, muteGroupMemberPosting, removeGroupMember, reopenGroupChat, searchGroupChatMessages, transferGroupOwnership, unmuteGroupMemberPosting, updateGroupDetails, updateGroupPreferences, updateGroupSettings, uploadGroupAvatar, withdrawGroupChatConsent } from "./group-chat/group-chat.service";
-import { buildGroupChatReportPayload, buildReopenGroupPayload, canCloseGroupChat, canEditGroupChat, canReopenGroupChat, canUpdateGroupChatSettings, formatGroupChatInvitationFeedback, formatGroupChatSharedFileSize, getGroupChatLeaveAction, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatReopenReasonError, getGroupChatSafeMessagePreview, getGroupChatSearchViewState, GROUP_CHAT_REPORT_REASONS, isGroupChatProviderUnavailableInCurrentGroup, isSupportedGroupAvatarFile, resolveGroupChatOwnerDisplay, shouldShowGroupChatLegalHoldNotice, splitGroupChatMembers, type GroupChatMemberAction, type GroupChatMemberRoleAction, type GroupChatOwnerResolution } from "./group-chat-models";
+import { buildGroupChatReportPayload, buildGroupChatRemovalNotice, buildReopenGroupPayload, canCloseGroupChat, canEditGroupChat, canReopenGroupChat, canUpdateGroupChatSettings, formatGroupChatInvitationFeedback, formatGroupChatSharedFileSize, getGroupChatLeaveAction, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatReopenReasonError, getGroupChatSafeMessagePreview, getGroupChatSearchViewState, GROUP_CHAT_REPORT_REASONS, isConfirmedGroupChatRemovalStatus, isGroupChatProviderUnavailableInCurrentGroup, isSupportedGroupAvatarFile, resolveGroupChatOwnerDisplay, shouldShowGroupChatLegalHoldNotice, splitGroupChatMembers, type GroupChatMemberAction, type GroupChatMemberRoleAction, type GroupChatOwnerResolution } from "./group-chat-models";
 import { GroupChatApiError } from "./group-chat/group-chat.service";
 import type { GroupChatDetails, GroupChatLearner, GroupChatListResponse, GroupChatMember, GroupChatPermissions, GroupChatProvider, GroupChatSharedFile } from "./group-chat/group-chat.types";
+import { isGroupChatCurrentUserRemoval, type GroupChatLifecycleEvent, type GroupChatMembershipEvent } from "./group-chat/group-chat-socket";
+import type { GroupChatNormalizedReadEvent } from "./group-chat/group-chat-socket-controller";
 import { GroupAvatarDisplay, GroupAvatarPicker, useGroupAvatarPreview } from "./GroupChatAvatar";
 import GroupChatMessages from "./GroupChatMessages";
+import { useGroupChatRealtimeSubscription } from "./GroupChatRealtimeSubscription";
+import { groupChatReadStatusQueryKey } from "./group-chat/group-chat-read-state";
+import { groupChatMembershipRemovalRefreshQueryKey, groupChatPostingRefreshQueryKey } from "./group-chat/group-chat-notification";
 
-type Props = { groupId: string; onClose?: () => void; onOpenAudit?: () => void; onOpenSecureReview?: (groupId: string) => void };
+type GroupChatLayoutMode = "conversation" | "management";
+type Props = { groupId: string; onClose?: () => void; onGroupRemoved?: (groupName: string) => void; onOpenAudit?: () => void; onOpenSecureReview?: (groupId: string) => void; onLayoutModeChange?: (mode: GroupChatLayoutMode) => void };
 const groupKey = (groupId: string, userScope?: string) => userScope ? ["group-chat", "group", groupId, userScope] : ["group-chat", "group", groupId];
+const currentMemberKey = (groupId: string, userScope: string) => ["group-chat", "current-member", groupId, userScope] as const;
 const memberKey = (groupId: string, search: string) => ["group-chat", "members", groupId, search];
 const inviteMemberKey = (groupId: string) => ["group-chat", "invite-members", groupId];
 const groupsKey = ["group-chat", "groups"];
@@ -263,10 +270,10 @@ function SearchMessages({ groupId, onNavigateToLoadedMessage }: { groupId: strin
 }
 
 type GroupDetailsTab = "overview" | "members" | "invite" | "search" | "files" | "settings";
-function GroupDetailsPanel({ group, groupId, userScope, canViewMembers, canInviteMembers, ownerResolution, ownerRosterState, onClose, onLeave, onNavigateToLoadedMessage, onOpenAudit, onOpenSecureReview }: { group: GroupChatDetails; groupId: string; userScope: string; canViewMembers: boolean; canInviteMembers: boolean; ownerResolution: GroupChatOwnerResolution; ownerRosterState: OwnerRosterState; onClose: () => void; onLeave: () => void; onNavigateToLoadedMessage: (messageId: string) => void; onOpenAudit?: () => void; onOpenSecureReview?: (groupId: string) => void }) {
+function GroupDetailsPanel({ group, groupId, userScope, tenantScope, canViewMembers, canInviteMembers, ownerResolution, ownerRosterState, onClose, onLeave, onNavigateToLoadedMessage, onOpenAudit, onOpenSecureReview }: { group: GroupChatDetails; groupId: string; userScope: string; tenantScope: string; canViewMembers: boolean; canInviteMembers: boolean; ownerResolution: GroupChatOwnerResolution; ownerRosterState: OwnerRosterState; onClose: () => void; onLeave: () => void; onNavigateToLoadedMessage: (messageId: string) => void; onOpenAudit?: () => void; onOpenSecureReview?: (groupId: string) => void }) {
   const [tab, setTab] = useState<GroupDetailsTab>("overview");
   const groupIsClosed = group.status?.trim().toLowerCase() === "closed";
-  return <section className="flex min-h-0 h-full flex-col bg-white" aria-label="Group details">
+  return <section className="flex flex-col bg-white" aria-label="Group details">
     <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[#e1ebe6] px-3 py-2.5 sm:px-4">
       <div className="min-w-0">
         <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Group details</p>
@@ -284,12 +291,12 @@ function GroupDetailsPanel({ group, groupId, userScope, canViewMembers, canInvit
       </div>
     </div>
     <div className="shrink-0 px-3 pt-3 sm:px-4">
-      <PersonalMembershipActions group={group} groupId={groupId} userScope={userScope} onLeave={onLeave} />
+      <PersonalMembershipActions group={group} groupId={groupId} userScope={userScope} tenantScope={tenantScope} onLeave={onLeave} />
     </div>
     <div className="flex shrink-0 flex-wrap gap-1.5 border-b border-[#e1ebe6] px-3 py-2 sm:px-4" role="tablist" aria-label="Group management">
       {([["overview", "Overview"], ["members", "Members"], ["invite", "Invite members"], ["search", "Search"], ["files", "Shared Files"], ["settings", "Settings"]] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={tab === value ? "rounded-full bg-[#1f6a58] px-3 py-1.5 text-xs font-semibold text-white" : "rounded-full bg-[#f4faf7] px-3 py-1.5 text-xs font-semibold text-[#52736a]"}>{label}</button>)}
     </div>
-    <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+    <div className="p-3 sm:p-4">
       {tab === "overview" ? <GroupDetailsOverview group={group} groupId={groupId} userScope={userScope} ownerResolution={ownerResolution} ownerRosterState={ownerRosterState} onOpenAudit={onOpenAudit} onOpenSecureReview={onOpenSecureReview} /> : tab === "members" ? <Members groupId={groupId} ownerUserId={ownerResolution.state === "resolved" ? ownerResolution.userId : group.owner_user_id} currentUserRole={group.my_role} groupStatus={group.status} permissions={group.permissions} canViewMembers={canViewMembers} /> : tab === "invite" ? <Invite group={group} groupId={groupId} canInviteMembers={canInviteMembers} /> : tab === "search" ? <SearchMessages key={groupId} groupId={groupId} onNavigateToLoadedMessage={onNavigateToLoadedMessage} /> : tab === "files" ? <SharedFiles key={groupId} groupId={groupId} /> : <Settings group={group} groupId={groupId} />}
     </div>
   </section>;
@@ -426,15 +433,15 @@ function GroupPreferenceActions({ group, groupId, userScope }: { group: GroupCha
   const isProgramGroup = group.kind?.trim().toLowerCase() === "program";
   const stateKnown = typeof group.muted === "boolean" && typeof group.pinned === "boolean";
   if (!isProgramGroup) return null;
-  return <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] px-3 py-2" aria-label="Personal group preferences">
-    <span className="mr-1 text-xs font-semibold text-[#52736a]">For you</span>
-    <button type="button" disabled={!stateKnown || preferenceMutation.isPending} onClick={() => preferenceMutation.mutate({ muted: !group.muted, pinned: group.pinned === true })} className="rounded-full border border-[#d7e5df] bg-white px-2.5 py-1 text-xs font-semibold text-[#1f6a58] hover:bg-[#e8f6ee] disabled:cursor-not-allowed disabled:opacity-50">{group.muted ? "Unmute Group" : "Mute Group"}</button>
-    <button type="button" disabled={!stateKnown || preferenceMutation.isPending} onClick={() => preferenceMutation.mutate({ muted: group.muted === true, pinned: !group.pinned })} className="rounded-full border border-[#d7e5df] bg-white px-2.5 py-1 text-xs font-semibold text-[#1f6a58] hover:bg-[#e8f6ee] disabled:cursor-not-allowed disabled:opacity-50">{group.pinned ? "Unpin Group" : "Pin Group"}</button>
+  return <div className="flex flex-wrap items-center gap-1" aria-label="Personal group preferences">
+    <span className="mr-0.5 text-[11px] font-semibold text-[#52736a]">For you</span>
+    <button type="button" disabled={!stateKnown || preferenceMutation.isPending} onClick={() => preferenceMutation.mutate({ muted: !group.muted, pinned: group.pinned === true })} className="rounded-full border border-[#d7e5df] bg-white px-2 py-0.5 text-[11px] font-semibold text-[#1f6a58] hover:bg-[#e8f6ee] disabled:cursor-not-allowed disabled:opacity-50">{group.muted ? "Unmute Group" : "Mute Group"}</button>
+    <button type="button" disabled={!stateKnown || preferenceMutation.isPending} onClick={() => preferenceMutation.mutate({ muted: group.muted === true, pinned: !group.pinned })} className="rounded-full border border-[#d7e5df] bg-white px-2 py-0.5 text-[11px] font-semibold text-[#1f6a58] hover:bg-[#e8f6ee] disabled:cursor-not-allowed disabled:opacity-50">{group.pinned ? "Unpin Group" : "Pin Group"}</button>
     {preferenceMutation.isPending ? <span className="text-xs text-[#52736a]" role="status">Saving...</span> : feedback ? <span className="text-xs text-[#52736a]" role="status">{feedback}</span> : null}
   </div>;
 }
 
-function PersonalMembershipActions({ group, groupId, userScope, onLeave }: { group: GroupChatDetails; groupId: string; userScope: string; onLeave: () => void }) {
+function PersonalMembershipActions({ group, groupId, userScope, tenantScope, onLeave }: { group: GroupChatDetails; groupId: string; userScope: string; tenantScope: string; onLeave: () => void }) {
   const queryClient = useQueryClient();
   const [confirmation, setConfirmation] = useState<"leave" | "withdraw" | null>(null);
   const isProgramGroup = group.kind?.trim().toLowerCase() === "program";
@@ -466,7 +473,7 @@ function PersonalMembershipActions({ group, groupId, userScope, onLeave }: { gro
     await Promise.all([
       queryClient.cancelQueries({ queryKey: groupKey(groupId, userScope) }),
       queryClient.cancelQueries({ queryKey: ["group-chat", "messages", groupId] }),
-      queryClient.cancelQueries({ queryKey: ["group-chat", "read-status", groupId] }),
+      queryClient.cancelQueries({ queryKey: groupChatReadStatusQueryKey(groupId, userScope, tenantScope) }),
       queryClient.cancelQueries({ queryKey: ["group-chat", "reactions", groupId] }),
       queryClient.cancelQueries({ queryKey: ["group-chat", "pinned", groupId] }),
       queryClient.cancelQueries({ queryKey: ["group-chat", "members", groupId] }),
@@ -474,7 +481,7 @@ function PersonalMembershipActions({ group, groupId, userScope, onLeave }: { gro
     ]);
     queryClient.removeQueries({ queryKey: groupKey(groupId, userScope) });
     queryClient.removeQueries({ queryKey: ["group-chat", "messages", groupId] });
-    queryClient.removeQueries({ queryKey: ["group-chat", "read-status", groupId] });
+    queryClient.removeQueries({ queryKey: groupChatReadStatusQueryKey(groupId, userScope, tenantScope) });
     queryClient.removeQueries({ queryKey: ["group-chat", "reactions", groupId] });
     queryClient.removeQueries({ queryKey: ["group-chat", "pinned", groupId] });
     queryClient.removeQueries({ queryKey: ["group-chat", "members", groupId] });
@@ -507,25 +514,188 @@ function PersonalMembershipActions({ group, groupId, userScope, onLeave }: { gro
   </section>;
 }
 
-export default function GroupChatWorkspace({ groupId, onClose, onOpenAudit, onOpenSecureReview }: Props) {
+export default function GroupChatWorkspace({ groupId, onClose, onGroupRemoved, onOpenAudit, onOpenSecureReview, onLayoutModeChange }: Props) {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const userScope = user?.userId ?? user?.id ?? "";
+  const tenantScope = user?.membership?.tenantSlug ?? user?.membership?.tenantName ?? "";
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [conversationEntryKey, setConversationEntryKey] = useState(0);
+  const [readStatusRefreshKey, setReadStatusRefreshKey] = useState(0);
+  const [reconnectRefreshKey, setReconnectRefreshKey] = useState(0);
+  const [readThroughState, setReadThroughState] = useState<{ groupId: string; userScope: string; tenantScope: string; messageId: string | null }>({ groupId: "", userScope: "", tenantScope: "", messageId: null });
+  const [membershipSuspendedAt, setMembershipSuspendedAt] = useState<number | null>(null);
+  const [lifecycleRefreshPending, setLifecycleRefreshPending] = useState(false);
+  const lifecycleFetchObservedRef = useRef(false);
+  const [membershipRevalidationError, setMembershipRevalidationError] = useState<string | null>(null);
+  const removalVerificationKeyRef = useRef<string | null>(null);
+  const removalGroupNameRef = useRef<string | null>(null);
+  const removalHandledRef = useRef(false);
+  const removalCompletedRef = useRef(false);
   const query = useQuery({ queryKey: groupKey(groupId, userScope), queryFn: ({ signal }) => getGroupChat(groupId, signal), enabled: Boolean(userScope), staleTime: 15000, retry: false });
-  const currentMemberQuery = useQuery({ queryKey: ["group-chat", "current-member", groupId, userScope], queryFn: ({ signal }) => listAllGroupChatMembers(groupId, signal), enabled: Boolean(userScope) && query.data?.permissions.can_view_members === true, staleTime: 15000, retry: false });
+  const currentMemberQuery = useQuery({ queryKey: currentMemberKey(groupId, userScope), queryFn: ({ signal }) => listAllGroupChatMembers(groupId, signal), enabled: Boolean(userScope) && query.data?.permissions.can_view_members === true, staleTime: 15000, retry: false });
+  const postingRefreshQuery = useQuery({ queryKey: groupChatPostingRefreshQueryKey(groupId, userScope, tenantScope), queryFn: async () => false, enabled: Boolean(userScope), initialData: false, staleTime: Infinity, gcTime: Infinity, retry: false });
+  const membershipRemovalRefreshQuery = useQuery({ queryKey: groupChatMembershipRemovalRefreshQueryKey(groupId, userScope, tenantScope), queryFn: async () => false, enabled: Boolean(userScope), initialData: false, staleTime: Infinity, gcTime: Infinity, retry: false });
+  const currentMember = currentMemberQuery.data?.find((member) => member.is_current_user);
+  useEffect(() => {
+    if (membershipSuspendedAt !== null || currentMemberQuery.isFetching || !currentMemberQuery.isError) return;
+    const error = currentMemberQuery.error;
+    if (!(error instanceof GroupChatApiError) || !isConfirmedGroupChatRemovalStatus(error.status)) return;
+    // A reconnect can miss member_removed. A confirmed membership endpoint
+    // denial is the authoritative equivalent and must enter the same private
+    // content suspension path without waiting for another UI interaction.
+    removalHandledRef.current = true;
+    removalCompletedRef.current = false;
+    removalVerificationKeyRef.current = `${groupId}:${tenantScope}:${userScope}`;
+    removalGroupNameRef.current = query.data?.name?.trim() || null;
+    setMembershipRevalidationError(null);
+    setMembershipSuspendedAt(Date.now());
+  }, [currentMemberQuery.error, currentMemberQuery.isError, currentMemberQuery.isFetching, groupId, membershipSuspendedAt, query.data?.name, tenantScope, userScope]);
+  const handleGroupRead = useCallback((event: GroupChatNormalizedReadEvent) => {
+    setReadThroughState({ groupId, userScope, tenantScope, messageId: event.readThroughMessageId ?? null });
+    setReadStatusRefreshKey((current) => current + 1);
+  }, [groupId, tenantScope, userScope]);
+  const handleGroupLifecycleEvent = useCallback((_event: GroupChatLifecycleEvent) => {
+    // Keep the room alive while REST confirms closure or reopening; only authoritative details restore posting.
+    setLifecycleRefreshPending(true);
+  }, []);
+  const readThroughMessageId = readThroughState.groupId === groupId && readThroughState.userScope === userScope && readThroughState.tenantScope === tenantScope ? readThroughState.messageId : null;
+  const clearPrivateGroupQueries = useCallback(async (removeAccessQueries = false) => {
+    const privateQueryKeys: (readonly unknown[])[] = [
+      ["group-chat", "messages", groupId],
+      groupChatReadStatusQueryKey(groupId, userScope, tenantScope),
+      ["group-chat", "reactions", groupId],
+      ["group-chat", "pinned", groupId],
+      ["group-chat", "members", groupId],
+      ["group-chat", "files", groupId],
+      ["group-chat", "search", groupId],
+      ["group-chat", "member-role-roster", groupId],
+      ["group-chat", "invite-members", groupId],
+      ["group-chat", "invite-learners", groupId],
+      ["group-chat", "invite-providers", groupId],
+    ];
+    if (removeAccessQueries) {
+      privateQueryKeys.push(groupKey(groupId, userScope), currentMemberKey(groupId, userScope));
+    }
+    await Promise.all(privateQueryKeys.map((queryKey) => queryClient.cancelQueries({ queryKey })));
+    privateQueryKeys.forEach((queryKey) => queryClient.removeQueries({ queryKey }));
+  }, [groupId, queryClient, tenantScope, userScope]);
+  const handleMembershipEvent = useCallback((event: GroupChatMembershipEvent) => {
+    if (!isGroupChatCurrentUserRemoval(event, userScope) || removalHandledRef.current) return;
+    removalHandledRef.current = true;
+    removalCompletedRef.current = false;
+    removalVerificationKeyRef.current = `${groupId}:${tenantScope}:${userScope}`;
+    removalGroupNameRef.current = query.data?.name?.trim() || null;
+    setMembershipRevalidationError(null);
+    setDetailsOpen(false);
+    setMembershipSuspendedAt(Date.now());
+    void clearPrivateGroupQueries();
+    void Promise.all([
+      queryClient.invalidateQueries({ queryKey: currentMemberKey(groupId, userScope) }),
+      queryClient.invalidateQueries({ queryKey: groupKey(groupId, userScope) }),
+      queryClient.invalidateQueries({ queryKey: ["group-chat", "groups", userScope] }),
+    ]);
+  }, [clearPrivateGroupQueries, groupId, query.data?.name, queryClient, tenantScope, userScope]);
+  useEffect(() => {
+    if (membershipRemovalRefreshQuery.data !== true) return;
+    queryClient.setQueryData(groupChatMembershipRemovalRefreshQueryKey(groupId, userScope, tenantScope), false);
+    handleMembershipEvent({ event: "member_removed", conversation_type: "group", conversation_id: groupId, user_id: userScope });
+  }, [groupId, handleMembershipEvent, membershipRemovalRefreshQuery.data, queryClient, tenantScope, userScope]);
+  const handleReconnectReadStatusRefresh = useCallback(() => setReadStatusRefreshKey((current) => current + 1), []);
+  const handleReconnectReadState = useCallback(() => setReconnectRefreshKey((current) => current + 1), []);
+  useGroupChatRealtimeSubscription({ groupId, userScope, tenantScope, groupStatus: query.data?.status ?? null, detailsReady: query.isSuccess, membershipAuthorized: membershipSuspendedAt === null && currentMemberQuery.isSuccess && currentMember?.membership_status.trim().toLowerCase() === "active", onGroupRead: handleGroupRead, onReadStatusRefresh: handleReconnectReadStatusRefresh, onReconnectReadState: handleReconnectReadState, onGroupMembershipEvent: handleMembershipEvent, onGroupLifecycleEvent: handleGroupLifecycleEvent });
+
+  useEffect(() => {
+    removalVerificationKeyRef.current = null;
+    removalGroupNameRef.current = null;
+    removalHandledRef.current = false;
+    removalCompletedRef.current = false;
+    setMembershipRevalidationError(null);
+    setMembershipSuspendedAt(null);
+    setLifecycleRefreshPending(false);
+    lifecycleFetchObservedRef.current = false;
+  }, [groupId, tenantScope, userScope]);
+
+  useEffect(() => {
+    const permissionRefreshing = postingRefreshQuery.data === true || query.isRefetching || currentMemberQuery.isRefetching;
+    if (!lifecycleRefreshPending) {
+      if (permissionRefreshing) {
+        lifecycleFetchObservedRef.current = true;
+        setLifecycleRefreshPending(true);
+      } else {
+        lifecycleFetchObservedRef.current = false;
+      }
+      return;
+    }
+    if (permissionRefreshing) {
+      lifecycleFetchObservedRef.current = true;
+      return;
+    }
+    if (lifecycleFetchObservedRef.current && query.isSuccess && !currentMemberQuery.isError) {
+      lifecycleFetchObservedRef.current = false;
+      setLifecycleRefreshPending(false);
+    }
+  }, [currentMemberQuery.isError, currentMemberQuery.isRefetching, lifecycleRefreshPending, postingRefreshQuery.data, query.isRefetching, query.isSuccess]);
+
+  useEffect(() => {
+    if (membershipSuspendedAt === null || removalVerificationKeyRef.current !== `${groupId}:${tenantScope}:${userScope}` || currentMemberQuery.isFetching) return;
+    if (currentMemberQuery.isError) {
+      const error = currentMemberQuery.error;
+      if (error instanceof GroupChatApiError && isConfirmedGroupChatRemovalStatus(error.status)) {
+        if (removalCompletedRef.current) return;
+        removalCompletedRef.current = true;
+        void clearPrivateGroupQueries(true).then(() => {
+          if (removalVerificationKeyRef.current !== `${groupId}:${tenantScope}:${userScope}`) return;
+          onGroupRemoved?.(buildGroupChatRemovalNotice(removalGroupNameRef.current ?? query.data?.name ?? ""));
+          onClose?.();
+        });
+      } else {
+        setMembershipRevalidationError("We couldn't confirm your Group membership. Private Group access remains paused. Try the membership check again.");
+      }
+      return;
+    }
+    if (!currentMemberQuery.isSuccess) return;
+    if (currentMemberQuery.dataUpdatedAt < membershipSuspendedAt) return;
+    const refreshedMember = currentMemberQuery.data.find((member) => member.is_current_user);
+    if (refreshedMember?.membership_status.trim().toLowerCase() !== "active") {
+      if (removalCompletedRef.current) return;
+      removalCompletedRef.current = true;
+      void clearPrivateGroupQueries(true).then(() => {
+        if (removalVerificationKeyRef.current !== `${groupId}:${tenantScope}:${userScope}`) return;
+        onGroupRemoved?.(buildGroupChatRemovalNotice(removalGroupNameRef.current ?? query.data?.name ?? ""));
+        onClose?.();
+      });
+      return;
+    }
+    removalHandledRef.current = false;
+    removalVerificationKeyRef.current = null;
+    removalGroupNameRef.current = null;
+    setMembershipRevalidationError(null);
+    setMembershipSuspendedAt(null);
+  }, [clearPrivateGroupQueries, currentMemberQuery.data, currentMemberQuery.dataUpdatedAt, currentMemberQuery.error, currentMemberQuery.isError, currentMemberQuery.isFetching, currentMemberQuery.isSuccess, groupId, membershipSuspendedAt, onClose, onGroupRemoved, query.data?.name, tenantScope, userScope]);
+
+  const enterConversation = useCallback(() => {
+    onLayoutModeChange?.("conversation");
+    setDetailsOpen(false);
+    setConversationEntryKey((current) => current + 1);
+  }, [onLayoutModeChange]);
 
   useEffect(() => {
     if (!detailsOpen) return undefined;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setDetailsOpen(false);
+      if (event.key === "Escape") enterConversation();
     };
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [detailsOpen]);
+  }, [detailsOpen, enterConversation]);
 
   useEffect(() => {
     setDetailsOpen(false);
   }, [groupId]);
+
+  useEffect(() => {
+    onLayoutModeChange?.(detailsOpen ? "management" : "conversation");
+  }, [detailsOpen, onLayoutModeChange]);
 
   if (query.isPending) return <section className="flex min-h-0 flex-1 items-center rounded-2xl border border-[#e1ebe6] bg-white p-4 text-sm text-[#52736a]">Loading Group Chat details...</section>;
   if (query.isError) return <Retry message={query.error.message} onRetry={() => void query.refetch()} />;
@@ -533,11 +703,11 @@ export default function GroupChatWorkspace({ groupId, onClose, onOpenAudit, onOp
   const groupIsClosed = group.status?.trim().toLowerCase() === "closed";
   const canViewMembers = group.permissions.can_view_members === true;
   const canInviteMembers = group.status?.trim().toLowerCase() !== "closed" && group.permissions.can_invite === true;
-  const currentMember = currentMemberQuery.data?.find((member) => member.is_current_user);
   const ownerResolution = resolveGroupChatOwnerDisplay({ members: currentMemberQuery.data ?? [], authoritativeOwner: group.owner, ownerUserId: group.owner_user_id, ownerName: group.owner_name, currentUserId: userScope });
   const ownerRosterState: OwnerRosterState = !canViewMembers ? "unavailable" : currentMemberQuery.isPending ? "loading" : currentMemberQuery.isError ? currentMemberQuery.error instanceof GroupChatApiError && currentMemberQuery.error.code === "malformed_member_response" ? "malformed" : "error" : "loaded";
   const navigateToLoadedMessage = (messageId: string) => {
     if (!isLoadedGroupMessage(messageId)) return;
+    onLayoutModeChange?.("conversation");
     setDetailsOpen(false);
     window.setTimeout(() => {
       const element = Array.from(document.querySelectorAll<HTMLElement>("[data-group-message-id]")).find((candidate) => candidate.dataset.groupMessageId === messageId);
@@ -545,9 +715,12 @@ export default function GroupChatWorkspace({ groupId, onClose, onOpenAudit, onOp
     }, 0);
   };
   const conversationClass = detailsOpen ? "hidden" : "flex";
-  return <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white p-3 shadow-sm sm:p-4">
-    <div className={`${conversationClass} min-h-0 flex-1 flex-col`} aria-hidden={detailsOpen}>
-      <div className="flex shrink-0 items-center justify-between gap-3">
+  const workspaceClass = detailsOpen
+    ? "relative flex flex-col rounded-2xl border border-[#e1ebe6] bg-white shadow-sm"
+    : "relative flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white p-1.5 shadow-sm sm:p-2 [@media(max-height:800px)]:p-1";
+  return <section className={workspaceClass}>
+    <div className={`${conversationClass} h-full min-h-0 flex-1 flex-col`} aria-hidden={detailsOpen}>
+      <div className="flex shrink-0 items-center justify-between gap-2 [@media(min-height:801px)]:gap-3">
         <button type="button" onClick={() => setDetailsOpen(true)} aria-label={`Open group details for ${group.name}`} className="flex min-w-0 items-center gap-3 rounded-xl text-left hover:bg-[#f9fcfa] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2">
           <GroupAvatarDisplay name={group.name} url={group.avatar_url} size="medium" />
           <span className="min-w-0">
@@ -555,19 +728,19 @@ export default function GroupChatWorkspace({ groupId, onClose, onOpenAudit, onOp
             <span className="mt-0.5 block text-xs text-[#52736a]">{group.member_count ?? "—"} members</span>
           </span>
         </button>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-1.5">
           <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${groupIsClosed ? "bg-[#fff3d6] text-[#8b5e00]" : "bg-[#e8f6ee] text-[#1f6a58]"}`}>{groupIsClosed ? "Closed" : group.status || "Active"}</span>
+          {membershipSuspendedAt === null ? <GroupPreferenceActions key={`${groupId}:${userScope}`} group={group} groupId={groupId} userScope={userScope} /> : null}
           {onClose ? <button type="button" aria-label="Close group view" title="Close conversation" onClick={onClose} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#b7dfc7] bg-[#e8f6ee] text-[#1f6a58] shadow-sm transition-colors hover:bg-[#d7efe1] hover:text-[#16332b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2">
             <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="m7 7 10 10M17 7 7 17" /></svg>
           </button> : null}
         </div>
       </div>
-      <GroupPreferenceActions key={`${groupId}:${userScope}`} group={group} groupId={groupId} userScope={userScope} />
-      <div className="mt-2 min-h-0 flex-1 flex flex-col">
-        <GroupChatMessages groupId={group.id} groupStatus={group.status} groupKind={group.kind} memberDirectory={currentMemberQuery.data ?? []} canPost={group.permissions.can_post} postingMuted={currentMember?.posting_muted ?? null} canHideMessages={group.permissions.can_hide_messages} canPinMessages={group.permissions.can_pin_messages} canReport={group.permissions.can_report} currentMemberKind={currentMember?.member_kind ?? null} currentMemberStatus={currentMember?.membership_status ?? null} />
+      <div className="mt-1 min-h-0 flex-1 flex flex-col [@media(min-height:801px)]:mt-2">
+        {membershipSuspendedAt !== null ? <div className="flex min-h-0 flex-1 items-center justify-center rounded-xl border border-[#f1d8ad] bg-[#fffaf0] p-5 text-center text-sm text-[#8b5e00]" role={membershipRevalidationError ? "alert" : "status"}><p>{membershipRevalidationError ?? "Group membership changed. Access is being revalidated before private messages can be shown."}</p>{membershipRevalidationError ? <button type="button" onClick={() => { setMembershipRevalidationError(null); void currentMemberQuery.refetch(); }} className="ml-2 font-semibold underline">Try again</button> : null}</div> : <GroupChatMessages key={`${group.id}:${userScope}:${tenantScope}`} groupId={group.id} userScope={userScope} tenantScope={tenantScope} groupStatus={group.status} groupKind={group.kind} memberDirectory={currentMemberQuery.data ?? []} canPost={group.permissions.can_post} postingMuted={currentMember?.posting_muted ?? null} canHideMessages={group.permissions.can_hide_messages} canPinMessages={group.permissions.can_pin_messages} canReport={group.permissions.can_report} currentMemberKind={currentMember?.member_kind ?? null} currentMemberStatus={currentMember?.membership_status ?? null} lifecycleRefreshPending={lifecycleRefreshPending} readStatusRefreshKey={readStatusRefreshKey} reconnectRefreshKey={reconnectRefreshKey} readThroughMessageId={readThroughMessageId} conversationEntryKey={conversationEntryKey} />}
       </div>
     </div>
-    {detailsOpen ? <GroupDetailsPanel key={groupId} group={group} groupId={groupId} userScope={userScope} canViewMembers={canViewMembers} canInviteMembers={canInviteMembers} ownerResolution={ownerResolution} ownerRosterState={ownerRosterState} onClose={() => setDetailsOpen(false)} onLeave={() => { setDetailsOpen(false); onClose?.(); }} onNavigateToLoadedMessage={navigateToLoadedMessage} onOpenAudit={onOpenAudit} onOpenSecureReview={onOpenSecureReview} /> : null}
+    {detailsOpen ? <GroupDetailsPanel key={groupId} group={group} groupId={groupId} userScope={userScope} tenantScope={tenantScope} canViewMembers={canViewMembers} canInviteMembers={canInviteMembers} ownerResolution={ownerResolution} ownerRosterState={ownerRosterState} onClose={enterConversation} onLeave={() => { onLayoutModeChange?.("conversation"); setDetailsOpen(false); onClose?.(); }} onNavigateToLoadedMessage={navigateToLoadedMessage} onOpenAudit={onOpenAudit} onOpenSecureReview={onOpenSecureReview} /> : null}
   </section>;
 }
 function SearchInput({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {

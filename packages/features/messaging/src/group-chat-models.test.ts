@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatComplianceReportUpdatePayload, buildGroupChatComplianceReportsQuery, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatMessageReadStatusPath, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildHideGroupChatMessagePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupPreferencesPayload, buildUpdateGroupSettingsPayload, canAccessGroupChatComplianceReports, canCloseGroupChat, canEditGroupChat, canEditGroupChatMessage, canHideGroupChatMessage, canPinGroupChatMessage, canReactToGroupChatMessage, canReplyToGroupChatMessage, canReopenGroupChat, canRetractGroupChatMessage, canSendGroupChatMessage, canShowGroupChatReadStatusIndicator, canUpdateGroupChatSettings, canViewGroupChatReadStatus, formatGroupChatAttachmentSummary, formatGroupChatSharedFileSize, getGroupChatConsentRecordKey, getGroupChatConsentStatusLabel, getGroupChatEmergencyNoticeDisplay, getGroupChatMessageDisplayText, getGroupChatMemberDisplayName, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatPersonalPreferenceIndicators, getGroupChatPostingRestrictionMessage, getGroupChatReadStatusMemberNames, getGroupChatReadStatusTickState, getGroupChatReopenReasonError, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, getGroupChatSafeMessagePreview, getGroupChatSearchViewState, getMemberManagementActions, isGroupChatReactionSelected, isSupportedGroupAvatarFile, isValidGroupChatUuid, mergeGroupChatMessagePages, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatComplianceReport, normalizeGroupChatComplianceReportList, normalizeGroupChatConsentList, normalizeGroupChatConsentNotice, normalizeGroupChatConsentRecord, normalizeGroupChatConsentWithdrawalResponse, normalizeGroupChatLeaveResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageMutationResponse, normalizeGroupChatMessageReadStatus, normalizeGroupChatPermissions, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPreferences, normalizeGroupChatReactionCounts, normalizeGroupChatReactionSettings, normalizeGroupChatReplyReference, normalizeGroupChatSharedFilesResponse, normalizeGroupLearner, normalizeGroupProvider, orderGroupChatSummariesByPersonalPin, parseGroupChatAttachmentFileName, parseGroupChatMessageTimestamp, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAttachmentMetadata, resolveGroupChatAvatarUrl, splitGroupChatMembers } from "./group-chat-models.ts";
+import { applyPreviewMemberAction, buildChangeGroupMemberRolePayload, buildCreateGroupPayload, buildEditGroupChatMessagePayload, buildGroupAvatarUploadFormData, buildGroupChatAttachmentMessagePayload, buildGroupChatAttachmentUploadFormData, buildGroupChatComplianceReportUpdatePayload, buildGroupChatComplianceReportsQuery, buildGroupChatMemberMutePayload, buildGroupChatMessageHistoryQuery, buildGroupChatFilesQuery, buildGroupChatMessageReadStatusPath, buildGroupChatReactionPayload, buildGroupChatReactionQuery, buildGroupChatSearchQuery, buildGroupChatTextMessagePayload, buildHideGroupChatMessagePayload, buildGroupMemberRemovalQuery, buildReopenGroupPayload, buildTransferGroupOwnershipPayload, buildUpdateGroupDetailsPayload, buildUpdateGroupPreferencesPayload, buildUpdateGroupSettingsPayload, buildGroupChatRemovalNotice, canAccessGroupChatComplianceReports, canCloseGroupChat, canEditGroupChat, canEditGroupChatMessage, canHideGroupChatMessage, canPinGroupChatMessage, canReactToGroupChatMessage, canReplyToGroupChatMessage, canReopenGroupChat, canRetractGroupChatMessage, canSendGroupChatMessage, canShowGroupChatReadStatusIndicator, canUpdateGroupChatSettings, canViewGroupChatReadStatus, formatGroupChatAttachmentSummary, formatGroupChatSharedFileSize, getGroupChatConsentRecordKey, getGroupChatConsentStatusLabel, getGroupChatEmergencyNoticeDisplay, getGroupChatMessageDisplayText, getGroupChatMemberDisplayName, getGroupChatMemberOwnershipAction, getGroupChatMemberPostingAction, getGroupChatMemberRemovalAction, getGroupChatMemberRoleActions, getGroupChatPersonalPreferenceIndicators, getGroupChatPostingRestrictionMessage, getGroupChatReadStatusMemberNames, getGroupChatReadStatusTickState, getGroupChatReadSummaryTickState, getGroupChatReopenReasonError, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, getGroupChatSafeMessagePreview, getGroupChatSearchViewState, getMemberManagementActions, isConfirmedGroupChatRemovalStatus, isGroupChatReactionSelected, isSupportedGroupAvatarFile, isValidGroupChatUuid, mergeGroupChatMessagePages, normalizeGroupAvatarUploadResponse, normalizeGroupChatAttachmentUploadResponse, normalizeGroupChatComplianceReport, normalizeGroupChatComplianceReportList, normalizeGroupChatConsentList, normalizeGroupChatConsentNotice, normalizeGroupChatConsentRecord, normalizeGroupChatConsentWithdrawalResponse, normalizeGroupChatLeaveResponse, normalizeGroupChatMemberPostingMute, normalizeGroupChatMessage, normalizeGroupChatMessageHistory, normalizeGroupChatMessageMutationResponse, normalizeGroupChatMessageReadStatus, normalizeGroupChatPermissions, normalizeGroupChatPinnedMessageHistory, normalizeGroupChatPreferences, normalizeGroupChatReactionCounts, normalizeGroupChatReactionSettings, normalizeGroupChatReplyReference, normalizeGroupChatSharedFilesResponse, normalizeGroupLearner, normalizeGroupProvider, orderGroupChatSummariesByPersonalPin, parseGroupChatAttachmentFileName, parseGroupChatMessageTimestamp, PREVIEW_GROUP_MEMBERS, resolveGroupAvatarDisplayUrl, resolveGroupChatAttachmentMetadata, resolveGroupChatAvatarUrl, shouldFetchGroupChatMessageReadStatus, splitGroupChatMembers } from "./group-chat-models.ts";
 import type { AuthRoles } from "@ihp/auth";
+import { getGroupChatPostingRestrictionState } from "./group-chat-models.ts";
 import type { GroupChatMember, GroupChatMessage } from "./group-chat/group-chat.types";
 import { getGroupChatLeaveAction } from "./group-chat-models.ts";
 import { normalizeGroupChatDataRequestList } from "./group-chat-models.ts";
@@ -12,6 +13,15 @@ import { canDownloadGroupChatDataRequest, canRetryGroupChatDataRequest, getGroup
 import { buildGroupChatDataRequestDownloadPath, buildGroupChatDataRequestRetryPath } from "./group-chat-models.ts";
 import type { GroupChatDataRequest } from "./group-chat/group-chat.types";
 import { buildGroupChatReportPayload, canReportGroupChatMessage, GROUP_CHAT_REPORT_REASONS, normalizeGroupChatGrievanceOfficer, normalizeGroupChatReport } from "./group-chat-models.ts";
+
+test("confirmed Group removal status and notification stay distinct from temporary errors", () => {
+  assert.equal(isConfirmedGroupChatRemovalStatus(403), true);
+  assert.equal(isConfirmedGroupChatRemovalStatus(404), true);
+  assert.equal(isConfirmedGroupChatRemovalStatus(0), false);
+  assert.equal(isConfirmedGroupChatRemovalStatus(500), false);
+  assert.equal(buildGroupChatRemovalNotice("socket check 1"), "You have been removed from socket check 1.");
+  assert.equal(buildGroupChatRemovalNotice(" "), "You have been removed from this Group Chat.");
+});
 
 test("builds the documented Group Chat avatar multipart fields", () => {
   const file = new File(["image"], "group.png", { type: "image/png" });
@@ -366,6 +376,53 @@ test("normalizes the documented Group Chat message response", () => {
   assert.equal(normalizeGroupChatMessage({ id: "missing-contract-fields" }), null);
 });
 
+test("normalizes deployed read summaries and preserves them through history-shaped responses", () => {
+  const baseMessage = {
+    id: "message-summary",
+    conversation_id: "group-1",
+    sender_id: "user-1",
+    sender_name: "Provider One",
+    sender_kind: "provider",
+    message_type: "text",
+    content: "Hello",
+    attachment_id: null,
+    status: "visible",
+    placeholder: null,
+    reply_to: null,
+    mentions: [],
+    mentions_all: false,
+    mentions_me: false,
+    is_edited: false,
+    edited_at: null,
+    pinned: false,
+    reactions: {},
+    my_reactions: [],
+    read_by: null,
+    created_at: "2026-10-19T09:00:00Z",
+  };
+  const available = normalizeGroupChatMessage({ ...baseMessage, read_summary: { available: true, read_count: 1, recipient_count: 2, all_read: false, reason: null } });
+  assert.deepEqual(available?.read_summary, { available: true, read_count: 1, recipient_count: 2, all_read: false, reason: null });
+  const unavailable = normalizeGroupChatMessage({ ...baseMessage, id: "other-message", read_summary: { available: false, read_count: null, recipient_count: null, all_read: null, reason: "not_your_message" } });
+  assert.deepEqual(unavailable?.read_summary, { available: false, read_count: null, recipient_count: null, all_read: null, reason: "not_your_message" });
+  const history = normalizeGroupChatMessageHistory({ items: [{ ...baseMessage, read_summary: { available: true, read_count: 2, recipient_count: 2, all_read: true, reason: null } }], has_more: false, next_cursor: null, unread_count: 0, first_unread_message_id: null, pinned_count: 1 });
+  assert.equal(history?.items[0]?.read_summary?.all_read, true);
+  const pinned = normalizeGroupChatPinnedMessageHistory({ items: [{ ...baseMessage, read_summary: { available: false, read_count: null, recipient_count: null, all_read: null, reason: "system_message" } }], has_more: false, next_cursor: null, unread_count: 0, first_unread_message_id: null, pinned_count: 1 });
+  assert.equal(pinned?.items[0]?.read_summary?.reason, "system_message");
+  assert.equal(normalizeGroupChatMessageMutationResponse({ ...baseMessage, read_summary: { available: false, read_count: null, recipient_count: null, all_read: null, reason: "hidden" } })?.read_summary?.reason, "hidden");
+  assert.equal(normalizeGroupChatMessage({ ...baseMessage, read_summary: { available: true, read_count: 1, recipient_count: 2, all_read: false, reason: "hidden" } })?.read_summary, undefined);
+  assert.equal(normalizeGroupChatMessage({ ...baseMessage, read_summary: { available: false, read_count: 0, recipient_count: null, all_read: null, reason: "not_your_message" } })?.read_summary, undefined);
+});
+
+test("uses read-summary ticks for full, partial and zero-recipient states without per-message fallback", () => {
+  assert.equal(getGroupChatReadSummaryTickState({ available: true, read_count: 2, recipient_count: 2, all_read: true, reason: null }), "double-blue");
+  assert.equal(getGroupChatReadSummaryTickState({ available: true, read_count: 1, recipient_count: 2, all_read: false, reason: null }), "double-neutral");
+  assert.equal(getGroupChatReadSummaryTickState({ available: true, read_count: 0, recipient_count: 0, all_read: false, reason: null }), "single");
+  assert.equal(getGroupChatReadSummaryTickState({ available: false, read_count: null, recipient_count: null, all_read: null, reason: "hidden" }), "unknown");
+  assert.equal(shouldFetchGroupChatMessageReadStatus(undefined), true);
+  assert.equal(shouldFetchGroupChatMessageReadStatus({ available: true, read_count: 0, recipient_count: 1, all_read: false, reason: null }), false);
+  assert.equal(shouldFetchGroupChatMessageReadStatus({ available: false, read_count: null, recipient_count: null, all_read: null, reason: "system_message" }), false);
+});
+
 test("preserves attachment metadata in Group Chat history", () => {
   const message = normalizeGroupChatMessage({
     id: "image-message",
@@ -634,9 +691,28 @@ test("uses only documented history pagination and backend posting permission", (
 
 test("uses the correct Group Chat posting restriction priority", () => {
   assert.equal(getGroupChatPostingRestrictionMessage("closed", false, true), "This group is closed. It is read-only.");
-  assert.equal(getGroupChatPostingRestrictionMessage("open", true, true), "You have been muted by the Group Owner.");
+  assert.equal(getGroupChatPostingRestrictionMessage("open", true, true), "An admin has muted you in this group. You can read but not post.");
   assert.equal(getGroupChatPostingRestrictionMessage("open", false, false), "You cannot send messages in this group.");
   assert.equal(canSendGroupChatMessage("open", true, true), false);
+});
+
+test("keeps pending, muted, closed and permitted composer state aligned with its notice", () => {
+  assert.deepEqual(getGroupChatPostingRestrictionState("open", true, false, true), {
+    blocked: true,
+    message: "Group posting permission is being verified. Posting is temporarily paused.",
+    reason: "permission-refresh",
+  });
+  assert.deepEqual(getGroupChatPostingRestrictionState("open", true, true), {
+    blocked: true,
+    message: "An admin has muted you in this group. You can read but not post.",
+    reason: "muted",
+  });
+  assert.deepEqual(getGroupChatPostingRestrictionState("closed", true, false), {
+    blocked: true,
+    message: "This group is closed. It is read-only.",
+    reason: "closed",
+  });
+  assert.deepEqual(getGroupChatPostingRestrictionState("open", true, false), { blocked: false, message: null, reason: null });
 });
 
 test("normalizes backend reaction settings without inventing emojis", () => {
@@ -801,7 +877,7 @@ test("shows the read-status indicator only for eligible outgoing messages", () =
 });
 
 test("derives read ticks only from authoritative counts", () => {
-  assert.equal(getGroupChatReadStatusTickState(null), "single");
+  assert.equal(getGroupChatReadStatusTickState(null), "unknown");
   assert.equal(getGroupChatReadStatusTickState({ seen_by_count: 0, recipient_count: 1 }), "single");
   assert.equal(getGroupChatReadStatusTickState({ seen_by_count: 1, recipient_count: 3 }), "double-neutral");
   assert.equal(getGroupChatReadStatusTickState({ seen_by_count: 3, recipient_count: 3 }), "double-blue");
