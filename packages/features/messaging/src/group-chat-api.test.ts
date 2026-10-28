@@ -1,0 +1,516 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { buildCreateGroupPayload, buildGroupChatAuditPath, buildGroupChatAuditQuery, buildGroupChatOriginalMessagePath, buildGroupChatOriginalMessageReviewTarget, buildGroupChatProviderVerificationCandidateQuery, buildGroupMemberInvitePayload, buildReassignGroupOwnerPayload, buildTransferGroupOwnershipPayload, canShowGroupChatOriginalMessageReview, canSubmitGroupChatOriginalMessageReview, canSubmitGroupChatOwnerReassignment, canViewGroupChatAudit, changeGroupChatAuditPageSize, clearGroupChatAuditFilters, getGroupChatAuditActionLabel, getGroupChatAuditKnownDetails, getGroupChatAuditTotalPages, getGroupChatOwnerReassignmentRefreshKeys, GROUP_CHAT_AUDIT_ACTION_OPTIONS, hasNonDefaultGroupChatAuditFilters, buildVerifiedProviderPayload, formatGroupChatInvitationFeedback, isEligibleGroupChatOwnerReassignmentCandidate, isGroupChatLearnerSelectable, isGroupChatProviderDirectoryCandidate, isGroupChatProviderRegistrationCandidate, isGroupChatProviderSelectable, isGroupChatProviderUnavailableInCurrentGroup, isGroupChatProviderVerificationCandidate, isGroupChatTrainingSearchResultStale, normalizeGroupChatAuditEntry, normalizeGroupChatAuditList, normalizeGroupChatInvitation, normalizeGroupChatInvitationDetails, normalizeGroupChatMemberEligibility, normalizeGroupChatOriginalMessage, normalizeGroupChatProviderVerificationCandidate, normalizeGroupChatVerifiedProvider, normalizeReassignGroupOwnerResponse, remainingGroupChatMemberSlots, resolveGroupChatAuditMemberName, resolveGroupChatOwnerDisplay, resolveGroupChatOwnerName, resolveGroupChatVerifiedProviderName } from "./group-chat-models.ts";
+import type { GroupChatLearner, GroupChatProvider } from "./group-chat/group-chat.types";
+
+const learner = (overrides: Partial<GroupChatLearner> = {}): GroupChatLearner => ({
+  enrolment_id: "enrolment-1",
+  name: "Learner One",
+  email: "learner@example.test",
+  enrolment_status: "active",
+  user_id: "user-1",
+  can_invite: true,
+  reason: null,
+  group_state: null,
+  group_ids: [],
+  enrolled_at: null,
+  ...overrides,
+});
+
+const provider = (overrides: Partial<GroupChatProvider> = {}): GroupChatProvider => ({
+  user_id: "provider-1",
+  name: "Provider One",
+  registration_number: null,
+  is_training_instructor: false,
+  is_me: false,
+  ...overrides,
+});
+
+test("only learners with a backend user id and can_invite are selectable", () => {
+  assert.equal(isGroupChatLearnerSelectable(learner()), true);
+  assert.equal(isGroupChatLearnerSelectable(learner({ user_id: null })), false);
+  assert.equal(isGroupChatLearnerSelectable(learner({ can_invite: false })), false);
+});
+
+test("the current Provider is not selectable as an additional member", () => {
+  assert.equal(isGroupChatProviderSelectable(provider()), true);
+  assert.equal(isGroupChatProviderSelectable(provider({ is_me: true })), false);
+});
+
+test("capacity reserves one slot for the group owner", () => {
+  assert.equal(remainingGroupChatMemberSlots(50, 0), 49);
+  assert.equal(remainingGroupChatMemberSlots(50, 48), 1);
+  assert.equal(remainingGroupChatMemberSlots(50, 49), 0);
+  assert.equal(remainingGroupChatMemberSlots(50, 60), 0);
+});
+
+test("creation payload uses Training context and deduplicated user IDs", () => {
+  assert.deepEqual(buildCreateGroupPayload({
+    name: " Wellness cohort ",
+    contextId: "training-1",
+    description: " A group for the cohort ",
+    userIds: ["learner-1", "provider-1", "learner-1", ""],
+    adminsOnlyPosting: true,
+  }), {
+    name: "Wellness cohort",
+    kind: "program",
+    context_type: "training",
+    context_id: "training-1",
+    description: "A group for the cohort",
+    invitees: [{ user_id: "learner-1" }, { user_id: "provider-1" }],
+    admins_only_posting: true,
+  });
+});
+
+test("creation payload never invents an owner invitee", () => {
+  const payload = buildCreateGroupPayload({ name: "Group", contextId: "training-1", description: "", userIds: ["member-1"], adminsOnlyPosting: false });
+  assert.deepEqual(payload.invitees, [{ user_id: "member-1" }]);
+});
+
+test("additional member invitation matches the InviteMembers schema", () => {
+  assert.deepEqual(buildGroupMemberInvitePayload([
+    { user_id: " provider-1 ", display_name: " Verified Provider " },
+    { user_id: "provider-1", display_name: "Verified Provider (updated)" },
+    { user_id: "learner-1" },
+    { user_id: "" },
+  ]), {
+    invitees: [
+      { user_id: "provider-1", display_name: "Verified Provider (updated)" },
+      { user_id: "learner-1" },
+    ],
+  });
+});
+
+test("conversation_id-only invitations support detail lookup and group actions", () => {
+  assert.deepEqual(normalizeGroupChatInvitation({ conversation_id: "conversation-1", name: "groupchat1 Discuss", kind: "program", description: "description loaded", requires_guardian_consent: false }), {
+    id: "conversation-1",
+    group_id: "conversation-1",
+    group_name: "groupchat1 Discuss",
+    description: "description loaded",
+    invited_by_name: null,
+    status: "pending",
+    created_at: null,
+    member_names: [],
+    visibility_notice: null,
+    emergency_notice: null,
+    guardian_consent_required: false,
+  });
+});
+
+test("invitation parsing keeps explicit invitation and group identifiers separate", () => {
+  assert.deepEqual(normalizeGroupChatInvitation({ invitation_id: "invitation-1", group_id: "group-1", group_name: "Wellness cohort", status: "pending" }), {
+    id: "invitation-1",
+    group_id: "group-1",
+    group_name: "Wellness cohort",
+    description: null,
+    invited_by_name: null,
+    status: "pending",
+    created_at: null,
+    member_names: [],
+    visibility_notice: null,
+    emergency_notice: null,
+    guardian_consent_required: false,
+  });
+  assert.equal(normalizeGroupChatInvitation({ invitation_id: "invitation-without-group" }), null);
+  assert.equal(normalizeGroupChatInvitation({ group_id: "group-without-invitation" }), null);
+});
+
+test("nested invitation details can use the top-level group identifier", () => {
+  assert.deepEqual(normalizeGroupChatInvitationDetails({
+    group_id: "group-2",
+    invitation: { invitation_id: "invitation-2", group_name: "Provider cohort", requires_guardian_consent: true },
+    purpose: "Care coordination",
+    provider_names: ["Provider One"],
+  }), {
+    id: "invitation-2",
+    group_id: "group-2",
+    group_name: "Provider cohort",
+    description: null,
+    invited_by_name: null,
+    status: "pending",
+    created_at: null,
+    member_names: [],
+    visibility_notice: null,
+    emergency_notice: null,
+    guardian_consent_required: true,
+    purpose: "Care coordination",
+    provider_names: ["Provider One"],
+    what_members_can_see: null,
+    guardian_consent_text: null,
+  });
+});
+
+test("nested conversation_id remains the detail and group-action identifier when explicit IDs are absent", () => {
+  const result = normalizeGroupChatInvitationDetails({
+    invitation: { conversation_id: "conversation-2", name: "Provider cohort" },
+    requires_guardian_consent: false,
+  });
+  assert.equal(result?.id, "conversation-2");
+  assert.equal(result?.group_id, "conversation-2");
+});
+
+test("invitation details support the existing response envelope", () => {
+  const result = normalizeGroupChatInvitationDetails({
+    data: { invitation: { id: "invitation-3", group_id: "group-3", group_name: "Care cohort" } },
+  });
+  assert.equal(result?.id, "invitation-3");
+  assert.equal(result?.group_id, "group-3");
+});
+
+test("verified Provider registry entries preserve the real user ID and safe name handling", () => {
+  assert.deepEqual(normalizeGroupChatVerifiedProvider({ user_id: "provider-1", display_name: "Provider One", email: "provider@example.test" }), {
+    user_id: "provider-1",
+    display_name: "Provider One",
+    email: "provider@example.test",
+    verified_at: null,
+  });
+  assert.deepEqual(normalizeGroupChatVerifiedProvider({ user_id: "provider-2" }), {
+    user_id: "provider-2",
+    display_name: null,
+    email: null,
+    verified_at: null,
+  });
+  assert.equal(normalizeGroupChatVerifiedProvider({ display_name: "Missing ID" }), null);
+});
+
+test("backend verified Provider names take precedence over the authorized directory", () => {
+  const provider = normalizeGroupChatVerifiedProvider({ user_id: "provider-2" });
+  assert.ok(provider);
+  const members = [
+    { userId: "provider-1", fullName: "First Provider" },
+    { userId: "provider-2", fullName: "Enzo Provider" },
+  ];
+  assert.equal(resolveGroupChatVerifiedProviderName(provider, members as never), "Enzo Provider");
+  assert.equal(resolveGroupChatVerifiedProviderName({ ...provider, display_name: "Registry Name" }, members as never), "Registry Name");
+  assert.equal(resolveGroupChatVerifiedProviderName({ ...provider, display_name: null }, []), null);
+});
+
+test("verified Provider name resolution is safe while the directory is loading or incomplete", () => {
+  const provider = { user_id: "provider-1", display_name: "Registry Name", email: null, verified_at: null };
+  assert.equal(resolveGroupChatVerifiedProviderName(provider), "Registry Name");
+  assert.equal(resolveGroupChatVerifiedProviderName(provider, []), "Registry Name");
+  assert.equal(resolveGroupChatVerifiedProviderName({ ...provider, display_name: null }, [{ userId: "other", fullName: "Other Provider" }] as never), null);
+  assert.equal(resolveGroupChatVerifiedProviderName(provider, [{ userId: "provider-1", fullName: "   " }] as never), "Registry Name");
+  assert.equal(resolveGroupChatVerifiedProviderName(provider, [{ userId: "provider-1" }] as never), "Registry Name");
+  assert.equal(resolveGroupChatVerifiedProviderName(provider, [{ userId: "provider-1", fullName: "Loaded Provider" }] as never), "Registry Name");
+  assert.equal(resolveGroupChatVerifiedProviderName({ ...provider, display_name: null, email: "provider@example.test" }, []), null);
+});
+
+test("owner name resolution prefers genuine stored names over generic placeholders", () => {
+  assert.equal(resolveGroupChatOwnerName("Enterprise Owner", "Group member"), "Enterprise Owner");
+  assert.equal(resolveGroupChatOwnerName("Group member", "Directory Owner"), "Directory Owner");
+  assert.equal(resolveGroupChatOwnerName(null, "Group member"), null);
+  assert.equal(resolveGroupChatOwnerName("  ", null), null);
+});
+
+test("owner display resolves role owner, self identity, authoritative names, and safe fallback", () => {
+  const owner = (overrides: Record<string, unknown> = {}) => ({ user_id: "owner-user", name: "Backend Owner", role: "owner", membership_status: "active", is_current_user: false, ...overrides }) as never;
+  assert.deepEqual(resolveGroupChatOwnerDisplay({ members: [owner({ is_current_user: true })], authoritativeOwner: null, ownerUserId: null, ownerName: null, currentUserId: "owner-user" }), { state: "resolved", label: "You (Owner)", userId: "owner-user", isCurrentUser: true, source: "member-roster" });
+  assert.deepEqual(resolveGroupChatOwnerDisplay({ members: [owner()], authoritativeOwner: null, ownerUserId: null, ownerName: null, currentUserId: "viewer-user" }), { state: "resolved", label: "Backend Owner", userId: "owner-user", isCurrentUser: false, source: "member-roster" });
+  assert.deepEqual(resolveGroupChatOwnerDisplay({ members: [owner({ name: "Group member" })], authoritativeOwner: null, ownerUserId: null, ownerName: null, currentUserId: "viewer-user" }), { state: "resolved", label: "Group Owner", userId: "owner-user", isCurrentUser: false, source: "member-roster" });
+  assert.deepEqual(resolveGroupChatOwnerDisplay({ members: [owner({ user_id: "new-owner", name: "New Owner" })], authoritativeOwner: null, ownerUserId: "new-owner", ownerName: "New Owner", currentUserId: "viewer-user" }), { state: "resolved", label: "New Owner", userId: "new-owner", isCurrentUser: false, source: "group-response" });
+  assert.deepEqual(resolveGroupChatOwnerDisplay({ members: [], authoritativeOwner: null, ownerUserId: null, ownerName: null, currentUserId: "viewer-user" }), { state: "unavailable" });
+});
+
+test("owner display does not leak identity across Group Chat switches", () => {
+  const firstOwner = { user_id: "first-owner", name: "First Owner", role: "owner", membership_status: "active", is_current_user: false } as never;
+  const secondOwner = { user_id: "second-owner", name: "Second Owner", role: "owner", membership_status: "active", is_current_user: false } as never;
+  const first = resolveGroupChatOwnerDisplay({ members: [firstOwner], authoritativeOwner: null, ownerUserId: null, ownerName: null, currentUserId: "viewer" });
+  const second = resolveGroupChatOwnerDisplay({ members: [secondOwner], authoritativeOwner: null, ownerUserId: null, ownerName: null, currentUserId: "viewer" });
+  assert.equal(first.state === "resolved" ? first.label : "", "First Owner");
+  assert.equal(second.state === "resolved" ? second.label : "", "Second Owner");
+});
+
+test("owner display follows the refreshed authoritative owner identity", () => {
+  const initial = resolveGroupChatOwnerDisplay({ members: [], authoritativeOwner: { user_id: "owner-1", name: "First Owner", is_current_user: false }, ownerUserId: "owner-1", ownerName: "First Owner", currentUserId: "viewer" });
+  const refreshed = resolveGroupChatOwnerDisplay({ members: [], authoritativeOwner: { user_id: "owner-2", name: "Second Owner", is_current_user: false }, ownerUserId: "owner-2", ownerName: "Second Owner", currentUserId: "viewer" });
+  assert.equal(initial.state === "resolved" ? initial.label : "", "First Owner");
+  assert.equal(refreshed.state === "resolved" ? refreshed.label : "", "Second Owner");
+});
+
+test("Provider verification always accepts user_id and omits blank optional details", () => {
+  assert.deepEqual(buildVerifiedProviderPayload(" provider-1 "), { user_id: "provider-1" });
+  assert.deepEqual(buildVerifiedProviderPayload(" provider-1 ", " REG-123 ", " Medical Council "), {
+    user_id: "provider-1",
+    registration_number: "REG-123",
+    registration_council: "Medical Council",
+  });
+  assert.deepEqual(buildVerifiedProviderPayload("provider-1", " REG-123 ", ""), {
+    user_id: "provider-1",
+    registration_number: "REG-123",
+  });
+  assert.deepEqual(buildVerifiedProviderPayload("provider-1", "", " Medical Council "), {
+    user_id: "provider-1",
+    registration_council: "Medical Council",
+  });
+  assert.equal(buildVerifiedProviderPayload("   ", "REG-123", "Medical Council"), null);
+});
+
+test("Provider directory candidates include active internal, tenant admin, and tenant owner accounts without broad role fallback", () => {
+  const base = { status: "active", role: "internal_user", roleSlug: "internal_user", tenantRbacRoles: [] };
+  assert.equal(isGroupChatProviderDirectoryCandidate(base), true);
+  assert.equal(isGroupChatProviderDirectoryCandidate({ ...base, role: "tenant_admin", roleSlug: "tenant_admin" }), true);
+  assert.equal(isGroupChatProviderDirectoryCandidate({ ...base, role: "unknown_role", roleSlug: "unknown_role", tenantRbacRoles: ["tenant_admin"] }), true);
+  assert.equal(isGroupChatProviderDirectoryCandidate({ ...base, status: "inactive" }), false);
+  assert.equal(isGroupChatProviderDirectoryCandidate({ ...base, status: "removed", role: "tenant_admin", roleSlug: "tenant_admin" }), false);
+  assert.equal(isGroupChatProviderDirectoryCandidate({ ...base, role: "tenant_owner", roleSlug: "tenant_owner", tenantRbacRoles: ["enterprise_admin", "tenant_owner"] }), true);
+  assert.equal(isGroupChatProviderDirectoryCandidate({ ...base, status: "inactive", role: "tenant_owner", roleSlug: "tenant_owner" }), false);
+  assert.equal(isGroupChatProviderDirectoryCandidate({ ...base, role: "external_user", roleSlug: "external_user" }), false);
+  assert.equal(isGroupChatProviderDirectoryCandidate({ ...base, role: "unknown_role", roleSlug: "unknown_role", tenantRbacRoles: [] }), false);
+});
+
+test("Provider verification uses the tenant member global user ID", () => {
+  assert.deepEqual(buildVerifiedProviderPayload(" global-user-id "), { user_id: "global-user-id" });
+});
+
+test("Provider registration excludes already verified global user IDs", () => {
+  const member = { userId: "global-user-id", status: "active", role: "tenant_admin", roleSlug: "tenant_admin", tenantRbacRoles: [] };
+  assert.equal(isGroupChatProviderRegistrationCandidate(member, new Set()), true);
+  assert.equal(isGroupChatProviderRegistrationCandidate(member, new Set(["global-user-id"])), false);
+  assert.equal(isGroupChatProviderRegistrationCandidate({ ...member, userId: "membership-id" }, new Set(["global-user-id"])), true);
+});
+
+test("Group member eligibility flags preserve explicit backend values and fail closed", () => {
+  assert.deepEqual(normalizeGroupChatMemberEligibility({ is_verified_provider: true, can_be_admin: true, can_receive_ownership: false }), {
+    is_verified_provider: true,
+    can_be_admin: true,
+    can_receive_ownership: false,
+  });
+  assert.deepEqual(normalizeGroupChatMemberEligibility({ is_verified_provider: "true", can_be_admin: 1 }), {
+    is_verified_provider: null,
+    can_be_admin: null,
+    can_receive_ownership: null,
+  });
+});
+
+test("verification candidates require the explicit not_verified state", () => {
+  assert.equal(isGroupChatProviderVerificationCandidate({ verification: "not_verified" }), true);
+  assert.equal(isGroupChatProviderVerificationCandidate({ verification: "verified" }), false);
+  assert.equal(isGroupChatProviderVerificationCandidate({ verification: null }), false);
+});
+
+test("verification candidate normalization preserves roles and pagination fields", () => {
+  assert.deepEqual(normalizeGroupChatProviderVerificationCandidate({ user_id: "owner-user", name: "Enterprise Owner", roles: ["tenant_owner"], verification: "not_verified", registration_number: null }), {
+    user_id: "owner-user",
+    name: "Enterprise Owner",
+    roles: ["tenant_owner"],
+    verification: "not_verified",
+    registration_number: null,
+  });
+  assert.equal(normalizeGroupChatProviderVerificationCandidate({ name: "Missing user" }), null);
+});
+
+test("verification candidate requests include all_roles and pagination", () => {
+  assert.equal(buildGroupChatProviderVerificationCandidateQuery(2, 50).toString(), "all_roles=true&page=2&page_size=50");
+});
+
+test("Provider eligibility is scoped to the current Group Chat membership status", () => {
+  const members = [
+    { user_id: "active-provider", membership_status: "active" },
+    { user_id: "pending-provider", membership_status: "invited" },
+    { user_id: "declined-provider", membership_status: "declined" },
+    { user_id: "removed-provider", membership_status: "removed" },
+  ];
+  assert.equal(isGroupChatProviderUnavailableInCurrentGroup("active-provider", members), true);
+  assert.equal(isGroupChatProviderUnavailableInCurrentGroup("pending-provider", members), true);
+  assert.equal(isGroupChatProviderUnavailableInCurrentGroup("declined-provider", members), false);
+  assert.equal(isGroupChatProviderUnavailableInCurrentGroup("removed-provider", members), false);
+  assert.equal(isGroupChatProviderUnavailableInCurrentGroup("provider-in-another-group", members), false);
+});
+
+test("Training search marks previous results stale during debounce and background fetching", () => {
+  assert.equal(isGroupChatTrainingSearchResultStale("heal", "hea", true, false, false, false), true);
+  assert.equal(isGroupChatTrainingSearchResultStale("hea", "hea", true, true, true, false), true);
+  assert.equal(isGroupChatTrainingSearchResultStale("hea", "hea", true, false, false, false), false);
+});
+
+test("Training search keeps stale results unselectable after an error and handles empty searches safely", () => {
+  assert.equal(isGroupChatTrainingSearchResultStale("", "", true, false, false, false), false);
+  assert.equal(isGroupChatTrainingSearchResultStale("missing", "missing", true, false, false, true), true);
+  assert.equal(isGroupChatTrainingSearchResultStale("missing", "missing", false, false, false, true), false);
+});
+
+test("invitation feedback uses actual learner and Provider outcomes", () => {
+  assert.equal(formatGroupChatInvitationFeedback("learner", { invited: ["learner-1"], skipped: [] }), "1 learner invited successfully.");
+  assert.equal(formatGroupChatInvitationFeedback("Provider", { invited: ["provider-1", "provider-2"], skipped: [] }), "2 Providers invited successfully.");
+  assert.equal(formatGroupChatInvitationFeedback("learner", { invited: ["learner-1"], skipped: ["learner-2"] }), "1 learner invited successfully. 1 skipped.");
+  assert.equal(formatGroupChatInvitationFeedback("Provider", { invited: [], skipped: ["provider-1", "provider-2"] }), "No Providers were invited. 2 skipped.");
+  assert.equal(formatGroupChatInvitationFeedback("learner", { invited: [], skipped: [] }), null);
+});
+
+test("ownership transfer uses the documented target user payload", () => {
+  assert.deepEqual(buildTransferGroupOwnershipPayload(" provider-user "), { user_id: "provider-user" });
+  assert.equal(buildTransferGroupOwnershipPayload(""), null);
+});
+
+test("owner reassignment validates UUID, reason length, and both success response contracts", () => {
+  const target = "24444513-e398-4d0c-9a6d-ee9da7fa19da";
+  const groupId = "ebf4aaab-6d70-4aa1-8faa-bca7dfb9b867";
+  assert.deepEqual(buildReassignGroupOwnerPayload(` ${target} `, "  Ownership unavailable  "), { user_id: target, reason: "Ownership unavailable" });
+  assert.equal(buildReassignGroupOwnerPayload("not-a-uuid", "Valid reason"), null);
+  assert.equal(buildReassignGroupOwnerPayload(target, "no"), null);
+  assert.equal(buildReassignGroupOwnerPayload(target, "x".repeat(256)), null);
+  assert.equal(normalizeReassignGroupOwnerResponse(" Reassignment completed "), "Reassignment completed");
+  assert.deepEqual(normalizeReassignGroupOwnerResponse({ conversation_id: groupId, owner_id: target }, groupId, target), { conversation_id: groupId, owner_id: target });
+  assert.deepEqual(normalizeReassignGroupOwnerResponse({ conversation_id: groupId.toUpperCase(), owner_id: target.toUpperCase() }, groupId, target), { conversation_id: groupId.toUpperCase(), owner_id: target.toUpperCase() });
+  assert.equal(normalizeReassignGroupOwnerResponse({ conversation_id: groupId, owner_id: target, status: "ok" }, groupId, target), null);
+  assert.equal(normalizeReassignGroupOwnerResponse({ status: "ok" }), null);
+  assert.equal(normalizeReassignGroupOwnerResponse({ conversation_id: "not-a-uuid", owner_id: target }, groupId, target), null);
+  assert.equal(normalizeReassignGroupOwnerResponse({ conversation_id: groupId, owner_id: "not-a-uuid" }, groupId, target), null);
+  assert.equal(normalizeReassignGroupOwnerResponse({ conversation_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", owner_id: target }, groupId, target), null);
+  assert.equal(normalizeReassignGroupOwnerResponse({ conversation_id: groupId, owner_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" }, groupId, target), null);
+  assert.equal(normalizeReassignGroupOwnerResponse({ detail: "The backend rejected the reassignment." }, groupId, target), null);
+});
+
+test("owner reassignment refreshes authoritative group, member, eligibility, and list caches", () => {
+  assert.deepEqual(getGroupChatOwnerReassignmentRefreshKeys("group-1", "viewer-1|tenant"), [
+    ["group-chat", "compliance-groups", "viewer-1|tenant"],
+    ["group-chat", "group", "group-1", "viewer-1|tenant"],
+    ["group-chat", "members", "group-1"],
+    ["group-chat", "compliance-owner-members", "group-1", "viewer-1|tenant"],
+    ["group-chat", "member-role-roster", "group-1"],
+    ["group-chat", "current-member", "group-1"],
+    ["group-chat", "groups"],
+  ]);
+});
+
+test("owner reassignment prevents duplicate or stale submissions", () => {
+  const target = "24444513-e398-4d0c-9a6d-ee9da7fa19da";
+  assert.equal(canSubmitGroupChatOwnerReassignment(target, [target], "Valid reason", false), true);
+  assert.equal(canSubmitGroupChatOwnerReassignment(target, [target], "Valid reason", true), false);
+  assert.equal(canSubmitGroupChatOwnerReassignment(target, [], "Valid reason", false), false);
+  assert.equal(canSubmitGroupChatOwnerReassignment(target, [target], " no ", false), false);
+});
+
+test("owner reassignment candidates require active backend eligibility", () => {
+  const base = { user_id: "candidate-1", role: "member", membership_status: "active", can_receive_ownership: true, is_verified_provider: true } as const;
+  assert.equal(isEligibleGroupChatOwnerReassignmentCandidate(base), true);
+  assert.equal(isEligibleGroupChatOwnerReassignmentCandidate({ ...base, can_be_admin: false } as never), true);
+  assert.equal(isEligibleGroupChatOwnerReassignmentCandidate({ ...base, can_receive_ownership: null }), false);
+  assert.equal(isEligibleGroupChatOwnerReassignmentCandidate({ ...base, is_verified_provider: false }), false);
+  assert.equal(isEligibleGroupChatOwnerReassignmentCandidate({ ...base, membership_status: "invited" }), false);
+  assert.equal(isEligibleGroupChatOwnerReassignmentCandidate({ ...base, role: "owner" }), false);
+});
+
+test("Group Audit Trail builds the deployed path and bounded page filters", () => {
+  const groupId = "ebf4aaab-6d70-4aa1-8faa-bca7dfb9b867";
+  const targetUserId = "24444513-e398-4d0c-9a6d-ee9da7fa19da";
+  assert.equal(buildGroupChatAuditPath(` ${groupId} `), `/${groupId}/audit`);
+  assert.equal(buildGroupChatAuditPath("not-a-uuid"), null);
+  const query = buildGroupChatAuditQuery({ action: " owner-reassigned ", targetUserId, page: 2, pageSize: 200 });
+  assert.equal(query?.get("action"), "owner-reassigned");
+  assert.equal(query?.get("target_user_id"), targetUserId);
+  assert.equal(query?.get("page"), "2");
+  assert.equal(query?.get("page_size"), "200");
+  assert.equal(buildGroupChatAuditQuery({ page: 0 }), null);
+  assert.equal(buildGroupChatAuditQuery({ pageSize: 201 }), null);
+  assert.equal(buildGroupChatAuditQuery({ targetUserId: "not-a-uuid" }), null);
+  assert.equal(buildGroupChatAuditQuery({ page: 1, pageSize: 5 })?.get("page_size"), "5");
+  assert.equal(buildGroupChatAuditQuery({ page: 1, pageSize: 10 })?.get("page_size"), "10");
+});
+
+test("Group Audit Trail normalization preserves nullable fields and structured details", () => {
+  const groupId = "ebf4aaab-6d70-4aa1-8faa-bca7dfb9b867";
+  const auditId = "7bf2bd3e-0d0c-4a5e-8f8a-1db24a9b4c11";
+  const actorId = "24444513-e398-4d0c-9a6d-ee9da7fa19da";
+  const messageId = "7bf2bd3e-0d0c-4a5e-8f8a-1db24a9b4c11";
+  const entry = { id: auditId, conversation_id: groupId, actor_id: actorId, actor_role: "owner", action: "owner-reassigned", target_user_id: null, message_id: messageId, reason: "Compliance review", details: { source: "manual", nested: { count: 1 }, tags: ["review"] }, created_at: "2026-10-25T10:00:00Z" };
+  assert.deepEqual(normalizeGroupChatAuditEntry(entry, groupId), entry);
+  assert.deepEqual(normalizeGroupChatAuditList({ items: [], total: 0 }, groupId), { items: [], total: 0 });
+  assert.equal(normalizeGroupChatAuditList({ items: [entry], total: 0 }, groupId), null);
+  assert.equal(normalizeGroupChatAuditEntry({ ...entry, conversation_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }, groupId), null);
+  assert.equal(normalizeGroupChatAuditEntry({ ...entry, details: "raw metadata" }, groupId), null);
+  assert.equal(normalizeGroupChatAuditEntry({ ...entry, actor_id: "not-a-uuid" }, groupId), null);
+  assert.equal(normalizeGroupChatAuditEntry({ ...entry, reason: undefined }, groupId), null);
+  assert.equal(normalizeGroupChatAuditList({ items: "not-an-array", total: 0 }, groupId), null);
+});
+
+test("Secure original-message route uses exactly one Group Chat prefix", () => {
+  const groupId = "ebf4aaab-6d70-4aa1-8faa-bca7dfb9b867";
+  const messageId = "7bf2bd3e-0d0c-4a5e-8f8a-1db24a9b4c11";
+  const path = buildGroupChatOriginalMessagePath(` ${groupId} `, ` ${messageId} `);
+  assert.equal(path, `/${groupId}/messages/${messageId}/original`);
+  assert.equal(`/groups${path}`.match(/\/groups\//g)?.length, 1);
+  assert.equal(buildGroupChatOriginalMessagePath("not-a-uuid", messageId), null);
+  assert.equal(buildGroupChatOriginalMessagePath(groupId, "not-a-uuid"), null);
+  assert.equal(canSubmitGroupChatOriginalMessageReview(groupId, messageId, true, false), true);
+  assert.equal(canSubmitGroupChatOriginalMessageReview(groupId, messageId, false, false), false);
+  assert.equal(canSubmitGroupChatOriginalMessageReview(groupId, messageId, true, true), false);
+  assert.deepEqual(buildGroupChatOriginalMessageReviewTarget(` ${groupId} `, ` ${messageId} `), { groupId, messageId });
+  assert.equal(buildGroupChatOriginalMessageReviewTarget(groupId, "missing"), null);
+  assert.equal(canShowGroupChatOriginalMessageReview(groupId, messageId, true), true);
+  assert.equal(canShowGroupChatOriginalMessageReview(groupId, messageId, false), false);
+});
+
+test("Compliance Message hidden audit navigation exposes the exact observed review target", () => {
+  const groupId = "ebf4aaab-6d70-4aa1-8faa-bca7dfb9b867";
+  const messageId = "ab493052-352b-4278-bdca-315f0067bea7";
+  const hiddenFilter = buildGroupChatAuditQuery({ action: "message_hidden", page: 1, pageSize: 25 });
+  assert.equal(hiddenFilter?.get("action"), "message_hidden");
+  assert.deepEqual(buildGroupChatOriginalMessageReviewTarget(groupId, messageId), { groupId, messageId });
+  assert.equal(canShowGroupChatOriginalMessageReview(groupId, messageId, true), true);
+});
+
+test("Secure original-message normalization preserves nullable fields and ordered version objects", () => {
+  const messageId = "7bf2bd3e-0d0c-4a5e-8f8a-1db24a9b4c11";
+  const senderId = "24444513-e398-4d0c-9a6d-ee9da7fa19da";
+  const response = { message_id: messageId, sender_id: senderId, status: "hidden", content: "Original", versions: [{ version: 1, created_at: "2026-10-25T10:00:00Z" }, { version: 2, edited: true }], current_content: null, hidden_by: null, hidden_reason: null, hidden_at: null, created_at: "2026-10-25T10:00:00Z" };
+  assert.deepEqual(normalizeGroupChatOriginalMessage(response, messageId), response);
+  assert.equal(normalizeGroupChatOriginalMessage({ ...response, message_id: senderId }, messageId), null);
+  assert.equal(normalizeGroupChatOriginalMessage({ ...response, versions: ["content"] }, messageId), null);
+  assert.equal(normalizeGroupChatOriginalMessage({ ...response, hidden_by: "not-a-uuid" }, messageId), null);
+  assert.equal(normalizeGroupChatOriginalMessage({ ...response, created_at: "not-a-date" }, messageId), null);
+  assert.equal(normalizeGroupChatOriginalMessage({ ...response, current_content: undefined }, messageId), null);
+});
+
+test("Group Audit Trail access follows the selected Group permission only", () => {
+  assert.equal(canViewGroupChatAudit({ can_view_audit: true }), true);
+  assert.equal(canViewGroupChatAudit({ can_view_audit: false }), false);
+  assert.equal(canViewGroupChatAudit({ can_view_audit: null }), false);
+});
+
+test("Group Audit Trail action options use backend values and preserve unknown actions", () => {
+  assert.deepEqual(GROUP_CHAT_AUDIT_ACTION_OPTIONS.map((option) => option.value), [
+    "group_created", "group_updated", "member_invited", "consent_granted", "ownership_transferred", "owner_reassigned", "message_edited", "message_retracted", "message_hidden", "message_pinned", "message_unpinned", "posting_muted", "posting_unmuted", "report_filed",
+  ]);
+  assert.equal(getGroupChatAuditActionLabel("owner_reassigned"), "Owner reassigned");
+  assert.equal(getGroupChatAuditActionLabel("future_action_code"), "Future Action Code");
+  assert.equal(buildGroupChatAuditQuery({}).has("action"), false);
+});
+
+test("Group Audit Trail clears filters and pagination without changing the selected Group", () => {
+  const filtered = { groupId: "ebf4aaab-6d70-4aa1-8faa-bca7dfb9b867", action: "owner_reassigned", targetUserId: "24444513-e398-4d0c-9a6d-ee9da7fa19da", page: 4, pageSize: 100 };
+  assert.equal(hasNonDefaultGroupChatAuditFilters(filtered), true);
+  assert.deepEqual(changeGroupChatAuditPageSize(filtered, 5), { ...filtered, page: 1, pageSize: 5 });
+  assert.deepEqual(changeGroupChatAuditPageSize(filtered, 10), { ...filtered, page: 1, pageSize: 10 });
+  assert.deepEqual(clearGroupChatAuditFilters(filtered), { groupId: filtered.groupId, action: "", targetUserId: "", page: 1, pageSize: 25 });
+  assert.equal(hasNonDefaultGroupChatAuditFilters(clearGroupChatAuditFilters(filtered)), false);
+  const clearedQuery = buildGroupChatAuditQuery({ action: "", targetUserId: "", page: 1, pageSize: 25 });
+  assert.equal(clearedQuery?.has("action"), false);
+  assert.equal(clearedQuery?.has("target_user_id"), false);
+  assert.equal(clearedQuery?.get("page"), "1");
+  assert.equal(clearedQuery?.get("page_size"), "25");
+  assert.equal(getGroupChatAuditTotalPages(0, 5), 1);
+  assert.equal(getGroupChatAuditTotalPages(11, 5), 3);
+  assert.equal(getGroupChatAuditTotalPages(11, 10), 2);
+  assert.equal(getGroupChatAuditTotalPages(201, 200), 2);
+});
+
+test("Group Audit Trail resolves only active authorized member names", () => {
+  const userId = "24444513-e398-4d0c-9a6d-ee9da7fa19da";
+  const members = [
+    { user_id: userId, name: "Provider One", membership_status: "active" },
+    { user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Pending Person", membership_status: "pending" },
+    { user_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: " ", membership_status: "active" },
+  ] as const;
+  assert.equal(resolveGroupChatAuditMemberName(userId, members), "Provider One");
+  assert.equal(resolveGroupChatAuditMemberName(members[1].user_id, members), null);
+  assert.equal(resolveGroupChatAuditMemberName(members[2].user_id, members), null);
+  assert.equal(resolveGroupChatAuditMemberName("not-a-uuid", members), null);
+});
+
+test("Group Audit Trail formats known metadata without exposing arbitrary details", () => {
+  assert.deepEqual(getGroupChatAuditKnownDetails({ action: "owner_reassigned", details: { from: "old-owner", to: "new-owner", unsafe: { nested: true } } }), [{ label: "From", value: "old-owner" }, { label: "To", value: "new-owner" }]);
+  assert.deepEqual(getGroupChatAuditKnownDetails({ action: "message_edited", details: { version: 2 } }), [{ label: "Version", value: "2" }]);
+  assert.deepEqual(getGroupChatAuditKnownDetails({ action: "future_action", details: { unsafe: "not rendered" } }), []);
+});
