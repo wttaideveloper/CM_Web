@@ -2,6 +2,7 @@ import type { ConfiguredField, FormConfiguration, FormFieldValidation, FormSecti
 import type { CreateTrainingFormConfigurationRequest, TrainingFormConfiguration, TrainingFormConfigurationVersion, TrainingFormFieldInput, TrainingFormSectionInput, UpdateTrainingFormConfigurationRequest } from "./training-form-configuration-api.types";
 import { normalizeConfigurationOrder, normalizeOptionPositions } from "./form-configuration-ordering";
 import { isTrainingDeliveryModeField, TRAINING_DELIVERY_MODE_OPTIONS } from "./training-delivery-mode-options";
+import { isRemovedCreateEventField } from "./removed-form-fields";
 
 export type TrainingFormFieldCandidate = TrainingFormFieldInput;
 export type TrainingFormSectionCandidate = TrainingFormSectionInput;
@@ -98,7 +99,7 @@ const mapTrainingSections = (configuration: FormConfiguration, includeServerIds:
   if (configuration.type !== "training") return mappedSections;
   return mappedSections.map((section) => ({
     ...section,
-    fields: section.fields.filter((field) => !isHiddenTrainingField(field)),
+    fields: section.fields.filter((field) => !isHiddenTrainingField(field) && !isRemovedCreateEventField(field.core_key, field.label)),
   }));
 };
 /** Pure future create payload candidate. It intentionally excludes server IDs and write transport. */
@@ -112,7 +113,7 @@ export function toBuilderTrainingFormConfiguration(configuration: TrainingFormCo
   const sections = [...(selectedVersion?.sections ?? [])].sort((left, right) => left.position - right.position);
   const builderSections: FormSection[] = sections.map((section) => ({ localId: `section-${section.id}`, serverId: section.id, stableKey: section.stable_key, name: section.label, description: section.description ?? "", enabled: section.is_enabled, position: section.position }));
   const builderFields: ConfiguredField[] = sections.flatMap((section) => [...section.fields]
-    .filter((field) => !isHiddenTrainingField(field))
+    .filter((field) => !isHiddenTrainingField(field) && !isRemovedCreateEventField(field.core_key, field.label))
     .sort((left, right) => left.position - right.position)
     .map((field) => ({ localId: `field-${field.id}`, serverId: field.id, stableKey: field.stable_key, source: field.source, coreKey: field.core_key, label: field.label, sectionLocalId: `section-${section.id}`, position: field.position, valueType: field.value_type, required: field.required, renderer: mapTrainingRendererForBuilder(field.renderer), placeholder: field.placeholder ?? "", helpText: field.help_text ?? "", options: isTrainingDeliveryModeField({ source: field.source, coreKey: field.core_key, stableKey: field.stable_key, label: field.label }) ? [...TRAINING_DELIVERY_MODE_OPTIONS] : field.options, validation: { minLength: field.validation.min_length, maxLength: field.validation.max_length, min: field.validation.min, max: field.validation.max, pattern: field.validation.pattern }, compositeConfig: field.composite_config ?? null, enabled: field.is_enabled })));
   return { id: configuration.id, type: "training", name: configuration.name, description: configuration.description ?? "", scope: configuration.scope, status: configuration.status, active: configuration.is_active, version: selectedVersion?.version ?? configuration.current_version, tenantIds: [], updatedAt: configuration.updated_at ?? "", sections: builderSections, fields: builderFields };

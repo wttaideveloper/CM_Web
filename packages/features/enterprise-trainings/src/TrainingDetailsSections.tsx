@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { authenticatedFetch } from "@ihp/auth";
@@ -25,12 +25,14 @@ import {
   getAssessmentSubmissionReview,
   getTrainingCertificate,
   getTrainingContent,
+  getTrainingEbook,
   getTrainingLesson,
   getTrainingMeetingLink,
   getTrainingModerationHistory,
   getTrainingQuestionBank,
   getTrainingSections,
   gradeAssessmentSubmission,
+  publishTrainingEbook,
   gradeAssignmentSubmission,
   joinTrainingWaitlist,
   leaveTrainingWaitlist,
@@ -40,12 +42,17 @@ import {
   listTrainingDiscussions,
   listTrainingEnrolments,
   listTrainingOrders,
+  listTrainingAssessmentSubmissions,
   refundTrainingOrder,
   decideTrainingOrderRefund,
   patchTrainingOrderStatus,
   reorderTrainingLessons,
   reorderTrainingModules,
   reorderTrainingSections,
+  saveTrainingEbook,
+  submitTrainingEbookForApproval,
+  validateTrainingEbook,
+  withdrawTrainingEbookSubmission,
   submitTrainingAssessment,
   submitTrainingAssignment,
   updateTrainingAssessment,
@@ -56,12 +63,48 @@ import {
   TrainingsApiError,
   type CreateTrainingLessonPayload,
   type CreateTrainingSectionPayload,
+  type AssessmentSubmissionListItem,
+  type AssessmentSubmissionReview as AssessmentSubmissionReviewData,
 } from "./trainings.service";
 import { enrolInTraining, type TrainingCheckoutRequest } from "./trainings.service";
 import { formatDetailDateTime, formatTrainingDate, humanizeLabel } from "./detail-formatters";
 import TrainingLessonAttendance from "./TrainingLessonAttendance";
 import { LessonMediaPreview } from "./LessonMediaPreview";
 import { getYouTubeEmbedUrl } from "./youtube-video-url";
+import { useActiveTrainingFormConfiguration, useTrainingHistoricalFormConfiguration } from "./training-form-configuration.queries";
+import type { TrainingFormConfig, TrainingFormField } from "./training-form-config.service";
+
+const CORE_TRAINING_IMAGE_UPLOAD_KEYS = ["gallery_images", "primary_image"] as const;
+
+/** Finds enabled image upload fields in the Training form the API resolves for this record. */
+function getTrainingImageUploadFieldKeys(configurations: readonly (TrainingFormConfig | null | undefined)[]): string[] {
+  const keys = new Set<string>();
+  const addCandidate = (field: TrainingFormField) => {
+    if (field.enabled === false) return;
+    const normalizedKey = field.key.trim().toLowerCase().replace(/^(core_|custom_)/, "");
+    const valueType = (field.valueType ?? "").trim().toLowerCase();
+    const label = field.label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+    const isCoreImageField = CORE_TRAINING_IMAGE_UPLOAD_KEYS.some((key) => normalizedKey === key);
+    const configuredMimeTypes = field.frontendSettings?.upload?.allowed_mime_types ?? [];
+    const hasImageUploadPolicy = configuredMimeTypes.some((mimeType) => mimeType.toLowerCase().startsWith("image/"));
+    const isConfiguredImageField = valueType.includes("image") || valueType.includes("photo")
+      || label.includes("image") || label.includes("photo") || hasImageUploadPolicy;
+    if (!isCoreImageField && !isConfiguredImageField) return;
+    const candidates = isCoreImageField
+      ? [field.apiKey, field.stable_key, normalizedKey]
+      : [(field.stable_key && !field.stable_key.startsWith("field-custom-") ? field.stable_key : undefined), field.apiKey, field.key];
+    candidates.forEach((candidate) => {
+      if (candidate?.trim()) keys.add(candidate.trim());
+    });
+  };
+
+  configurations.forEach((configuration) => {
+    configuration?.sections
+      .filter((section) => section.enabled !== false)
+      .forEach((section) => section.fields.forEach(addCandidate));
+  });
+  return [...keys];
+}
 
 const LESSON_TYPE_OPTIONS = [
   { value: "text", label: "Topic" },
@@ -69,6 +112,7 @@ const LESSON_TYPE_OPTIONS = [
   { value: "youtube", label: "YouTube" },
   { value: "pdf", label: "PDF" },
   { value: "notes", label: "Notes" },
+  { value: "ebook", label: "eBook" },
   { value: "quiz", label: "Quiz" },
 ] as const;
 
@@ -137,6 +181,13 @@ function isOptionalIntegerInRange(value: string, minimum: number, maximum: numbe
   return Number.isInteger(parsed) && parsed >= minimum && parsed <= maximum;
 }
 
+function isOptionalPositiveInteger(value: string): boolean {
+  return isOptionalIntegerInRange(value, 1, Number.MAX_SAFE_INTEGER);
+}
+
+type TrainingAssessmentLevel = "pre_course" | "module" | "final" | "feedback";
+type TrainingAssessmentType = "quiz" | "exam";
+
 interface LessonTypeOption {
   value: string;
   label: string;
@@ -176,13 +227,13 @@ function LessonUrlList({ label, values, update, placeholder, previewKind }: { la
         {values.map((val, idx) => (
           <div key={idx}>
             <div className="flex gap-1">
-              <input value={val} onChange={(e) => update(values.map((c, i) => (i === idx ? e.target.value : c)))} placeholder={placeholder ?? "https://…"} className="h-8 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
+              <input value={val} onChange={(e) => update(values.map((c, i) => (i === idx ? e.target.value : c)))} placeholder={placeholder ?? "https://..."} className="h-8 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
               <button type="button" onClick={() => update(values.filter((_, i) => i !== idx))} className="shrink-0 rounded-lg px-2 text-[10px] font-semibold text-[#b42318] hover:bg-[#fff6f5]">Remove</button>
             </div>
             {val.trim() && previewKind ? <LessonMediaPreview url={val} name={val.split("/").pop() || label} kind={previewKind} /> : null}
           </div>
         ))}
-        {values.length === 0 ? <p className="text-xs text-[#7f9d94]">No {label.toLowerCase()} yet — click + Add.</p> : null}
+        {values.length === 0 ? <p className="text-xs text-[#7f9d94]">No {label.toLowerCase()} yet - click + Add.</p> : null}
       </div>
     </div>
   );
@@ -325,7 +376,7 @@ function LessonScheduleFields({
   const scheduledAtDefault = getTrainingScheduledAt(defaults);
   const scheduleDisplay = scheduledAtDefault
     ? formatLessonScheduledAt(scheduledAtDefault)
-    : [defaults.startDate, defaults.startTime].filter(Boolean).join(" · ");
+    : [defaults.startDate, defaults.startTime].filter(Boolean).join("  |  ");
   const isLive = type === "live";
   const lessonDateMinimum = getTrainingScheduleBound(defaults.startDate, defaults.startTime, "start");
   const lessonDateMaximum = getTrainingScheduleBound(defaults.endDate, defaults.endTime, "end");
@@ -508,14 +559,14 @@ function LessonDuration({ value }: { value: string }) {
 function LessonDocsList({ values, update, showPreview = true }: { values: Array<{ url: string; name: string; visibility: string; downloadable: boolean }>; update: (next: Array<{ url: string; name: string; visibility: string; downloadable: boolean }>) => void; showPreview?: boolean }) {
   return (
     <div>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e6efea] bg-[#f4faf6] px-5 py-4">
         <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Documents</p>
         <button type="button" onClick={() => update([...values, { url: "", name: "", visibility: "public", downloadable: true }])} className="text-[10px] font-bold text-[#1f6a58]">+ Add</button>
       </div>
       <div className="mt-1 space-y-2">
         {values.map((doc, idx) => (
           <div key={idx} className="space-y-1 rounded-lg border border-[#e1ebe6] bg-[#f9fcfa] p-2">
-            <input value={doc.url} onChange={(e) => update(values.map((d, i) => (i === idx ? { ...d, url: e.target.value } : d)))} placeholder="PDF URL https://…" className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
+            <input value={doc.url} onChange={(e) => update(values.map((d, i) => (i === idx ? { ...d, url: e.target.value } : d)))} placeholder="PDF URL https://..." className="h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58]" />
             {doc.url.trim() ? <LessonMediaPreview url={doc.url} name={doc.name || doc.url.split("/").pop() || "Lesson document"} kind="document" showPreview={showPreview} /> : null}
             <div className="flex flex-wrap items-center gap-2">
               <input value={doc.name} onChange={(e) => update(values.map((d, i) => (i === idx ? { ...d, name: e.target.value } : d)))} placeholder="Name (optional)" className="h-7 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]" />
@@ -528,7 +579,7 @@ function LessonDocsList({ values, update, showPreview = true }: { values: Array<
             </div>
           </div>
         ))}
-        {values.length === 0 ? <p className="text-xs text-[#7f9d94]">No documents yet — click + Add.</p> : null}
+        {values.length === 0 ? <p className="text-xs text-[#7f9d94]">No documents yet - click + Add.</p> : null}
       </div>
     </div>
   );
@@ -588,7 +639,7 @@ function LessonFileDrop({
   );
 }
 
-function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, trainingLessonDefaults, onClose }: { trainingId: string; sectionId: string; lessonId: string; trainingDeliveryMode: string; trainingLessonDefaults: TrainingLessonDefaults; onClose: () => void }) {
+function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, trainingLessonDefaults, imageUploadFieldKeys, onClose, canManage = true }: { trainingId: string; sectionId: string; lessonId: string; trainingDeliveryMode: string; trainingLessonDefaults: TrainingLessonDefaults; imageUploadFieldKeys: readonly string[]; onClose: () => void; canManage?: boolean }) {
   const { t } = useTranslation("enterpriseTrainings");
   const [editMode, setEditMode] = useState(false);
   const [title, setTitle] = useState("");
@@ -611,6 +662,8 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
   const [lessonVideos, setLessonVideos] = useState<string[]>([]);
   const [lessonDocs, setLessonDocs] = useState<Array<{ url: string; name: string; visibility: string; downloadable: boolean }>>([]);
   const [lessonNotes, setLessonNotes] = useState<string[]>([]);
+  const [ebookDraft, setEbookDraft] = useState<EbookDraft>(createEmptyEbookDraft());
+  const [ebookBaseVersion, setEbookBaseVersion] = useState(0);
   const [feedback, setFeedback] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const durationCacheKey = JSON.stringify([trainingId, sectionId, lessonId]);
@@ -620,6 +673,25 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
     queryFn: () => getTrainingLesson(trainingId, sectionId, lessonId),
     enabled: Boolean(trainingId && sectionId && lessonId),
   });
+
+  const ebookQuery = useQuery({
+    queryKey: ["trainings", trainingId, "ebook", sectionId, lessonId],
+    queryFn: () => getTrainingEbook(trainingId, sectionId, lessonId, true),
+    enabled: Boolean(trainingId && sectionId && lessonId && typeof lessonQuery.data === "object" && lessonQuery.data !== null && typeof (lessonQuery.data as Record<string, unknown>).type === "string" && toUiLessonType((lessonQuery.data as Record<string, unknown>).type as string) === "ebook"),
+  });
+
+  useEffect(() => {
+    if (editMode || lessonQuery.isLoading || !lessonQuery.data) return;
+    const lessonRecord = lessonQuery.data && typeof lessonQuery.data === "object" ? lessonQuery.data as Record<string, unknown> : {};
+    const lessonContent = typeof lessonRecord.content === "string" ? lessonRecord.content : "";
+    let lessonEbookContent: unknown = null;
+    try { lessonEbookContent = lessonContent.trim() ? JSON.parse(lessonContent) as unknown : null; } catch { lessonEbookContent = null; }
+    const hasPages = (value: unknown) => getEbookDocumentRecord(value).pages.length > 0;
+    if (hasPages(ebookQuery.data)) setEbookDraft(normaliseEbookDraft(mergeLocalEbookOrder(ebookQuery.data, lessonEbookContent)));
+    else if (hasPages(lessonEbookContent)) setEbookDraft(normaliseEbookDraft(lessonEbookContent));
+    const version = extractEbookVersion(ebookQuery.data);
+    if (version !== null) setEbookBaseVersion(version);
+  }, [ebookQuery.data, editMode, lessonQuery.data, lessonQuery.isLoading]);
 
   useEffect(() => {
     const cachedDuration = lessonVideoDurationCache.get(durationCacheKey);
@@ -655,7 +727,7 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
   }, [durationCacheKey, lessonQuery.data]);
 
   const updateMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const videos = lessonVideos.filter((v) => v.trim() !== "");
       const notes = lessonNotes.filter((n) => n.trim() !== "");
       const docs = lessonDocs.filter((d) => d.url.trim() !== "");
@@ -664,9 +736,9 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
         && !isLessonScheduleWithinTraining(scheduledAt, trainingLessonDefaults)) {
         throw new Error("Set the Training start and end dates first, then choose a lesson date and time within that range.");
       }
-      return updateTrainingLesson(trainingId, sectionId, lessonId, {
+      const lessonUpdate = await updateTrainingLesson(trainingId, sectionId, lessonId, {
         title: title.trim(),
-        content: content.trim(),
+        content: lessonTypeValue === "ebook" ? JSON.stringify(toEbookDocument(ebookDraft)) : content.trim(),
         type: lessonTypeValue.trim() ? toApiLessonType(lessonTypeValue.trim()) : undefined,
         duration: lessonTypeValue === "video" ? toDurationMinutesFromSeconds(durationSeconds) : undefined,
         duration_minutes: null,
@@ -691,6 +763,11 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
         notes: notes.length ? notes : undefined,
         documents: docs.length ? docs.map((d) => ({ url: d.url.trim(), name: d.name.trim() || d.url.trim().split("/").pop() || "document", visibility: d.visibility, downloadable: d.downloadable })) : undefined,
       } as unknown as Record<string, unknown>);
+      if (lessonTypeValue === "ebook") {
+        const savedEbook = await saveTrainingEbookDraft(trainingId, sectionId, lessonId, toEbookDocument(ebookDraft, ebookBaseVersion));
+        setEbookBaseVersion(savedEbook.version);
+      }
+      return lessonUpdate;
     },
     onSuccess: () => {
       const exactDuration = Number(durationSeconds);
@@ -710,6 +787,19 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
   const lessonContent = typeof lesson.content === "string" ? lesson.content : "";
   const lessonVideoUrl = typeof lesson.content_url === "string" && lesson.content_url.trim() ? lesson.content_url : typeof lesson.video_url === "string" ? lesson.video_url : "";
   const lessonType = typeof lesson.type === "string" && lesson.type.trim() ? toUiLessonType(lesson.type) : "";
+  const ebookContentRecord = (() => {
+    if (!lessonContent.trim()) return null;
+    try {
+      return JSON.parse(lessonContent) as unknown;
+    } catch {
+      return null;
+    }
+  })();
+  const ebookPreview = lessonType === "ebook" ? normaliseEbookDraft(mergeLocalEbookOrder(ebookQuery.data, ebookContentRecord)) : null;
+  const ebookRecord = ebookQuery.data && typeof ebookQuery.data === "object" ? ebookQuery.data as Record<string, unknown> : {};
+  const ebookNestedRecord = ebookRecord.ebook && typeof ebookRecord.ebook === "object" ? ebookRecord.ebook as Record<string, unknown> : {};
+  const ebookStatus = typeof ebookRecord.status === "string" ? ebookRecord.status : typeof ebookNestedRecord.status === "string" ? ebookNestedRecord.status : "draft";
+  const ebookIsPendingApproval = lessonType === "ebook" && ebookStatus === "pending_approval";
   const lessonScheduledAt = typeof lesson.scheduled_at === "string" ? lesson.scheduled_at : "";
   const lessonMeetingType = typeof lesson.meeting_type === "string" && lesson.meeting_type ? lesson.meeting_type : "google_meet";
   const lessonMeetingLink = typeof lesson.meeting_link === "string" ? lesson.meeting_link : "";
@@ -730,6 +820,10 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
     availableLessonTypes.push({ value: "document", label: "Document (existing)" });
   }
   const selectedLessonType = availableLessonTypes.some((option) => option.value === lessonTypeValue) ? lessonTypeValue : "";
+
+  useEffect(() => {
+    if (ebookIsPendingApproval && editMode) setEditMode(false);
+  }, [ebookIsPendingApproval, editMode]);
 
   useEffect(() => {
     if (!lessonQuery.data || editMode) return;
@@ -799,23 +893,25 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
   if (lessonQuery.isError) return <p className="text-xs font-semibold text-[#b42318]">{(lessonQuery.error as Error).message}</p>;
 
   return (
-    <div className="mt-3 rounded-xl border border-[#e1ebe6] bg-white p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-bold uppercase tracking-[.08em] text-[#7f9d94]">Lesson Detail — Videos · PDF · Notes</p>
+    <div className="mt-4 overflow-hidden rounded-2xl border border-[#cfe1d8] bg-white shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e6efea] bg-[#f4faf6] px-5 py-4">
+        <p className="text-xs font-bold uppercase tracking-[.08em] text-[#7f9d94]">Lesson Detail - Videos  |  PDF  |  Notes</p>
         <div className="flex gap-1">
-          <button type="button" onClick={() => { if (!editMode) setFeedback(null); setEditMode(!editMode); }} className="rounded-full border border-[#1f6a58] px-2 py-0.5 text-[10px] font-bold text-[#1f6a58]">{editMode ? "Cancel" : "Edit"}</button>
+          {canManage && !ebookIsPendingApproval ? <button type="button" onClick={() => { if (!editMode) setFeedback(null); setEditMode(!editMode); }} className="rounded-full border border-[#1f6a58] px-2 py-0.5 text-[10px] font-bold text-[#1f6a58]">{editMode ? "Cancel" : "Edit"}</button> : ebookIsPendingApproval ? <span className="rounded-full bg-[#fff4d6] px-3 py-1 text-[10px] font-bold text-[#8a5a00]">Pending approval</span> : null}
           <button type="button" onClick={onClose} className="rounded-full border border-[#d7e5df] px-2 py-0.5 text-[10px] font-bold text-[#52736a]">Close</button>
         </div>
       </div>
-      {feedback ? <p role="status" className="rounded-lg bg-[#effaf4] px-3 py-1.5 text-xs font-semibold text-[#167550]">{feedback}</p> : null}
+      {feedback ? <p role="status" className="mx-5 mt-4 rounded-xl bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">{feedback}</p> : null}
       {editMode ? (
-        <div className="space-y-2">
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Lesson title" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
-          <select required value={selectedLessonType} onChange={(e) => setLessonTypeValue(e.target.value)} aria-label="Lesson type" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]">
-            <option value="" disabled>{lessonTypeValue ? "Choose an allowed lesson type" : "Lesson type — select"}</option>
+        <div className="space-y-4 p-5">
+          <label className="block text-xs font-bold text-[#284940]">Lesson title<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Enter a clear lesson title" className="mt-2 h-11 w-full rounded-xl border border-[#d7e5df] bg-[#fbfdfb] px-4 text-sm font-normal outline-none transition focus:border-[#1f6a58] focus:ring-2 focus:ring-[#1f6a58]/10" /></label>
+          <label className="block text-xs font-bold text-[#284940]">Lesson type<select required value={selectedLessonType} onChange={(e) => setLessonTypeValue(e.target.value)} aria-label="Lesson type" className="mt-2 h-11 w-full rounded-xl border border-[#d7e5df] bg-[#fbfdfb] px-4 text-sm font-normal outline-none transition focus:border-[#1f6a58] focus:ring-2 focus:ring-[#1f6a58]/10">
+            <option value="" disabled>{lessonTypeValue ? "Choose an allowed lesson type" : "Lesson type - select"}</option>
             {availableLessonTypes.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
+          </select></label>
           {isLessonType(lessonTypeValue, "text", "notes") ? <textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="Topic content..." rows={4} className="w-full rounded-lg border border-[#d7e5df] px-3 py-2 text-xs outline-none focus:border-[#1f6a58]" /> : null}
+          {lessonTypeValue === "ebook" ? <div className="rounded-xl border border-[#b7d5c8] bg-[#f4fbf6] p-3"><p className="text-xs font-bold text-[#06201c]">eBook lesson</p><p className="mt-1 text-[11px] leading-5 text-[#52736a]">Upload an EPUB or PDF, or continue authoring chapters in the Course Builder.</p><LessonFileDrop label="eBook file" accept=".epub,.pdf,application/epub+zip,application/pdf" fileName={lessonDocs.length > 0 ? "Replace eBook file or keep the current file" : ""} onFile={(file) => { setFeedback(null); void uploadTrainingMedia(file, "lesson_document").then((uploaded) => { setLessonDocs((current) => [...current, { url: uploaded.url, name: uploaded.name, visibility: "public", downloadable: true }]); setFileSize(String(uploaded.size)); setFeedback("eBook uploaded. Save the lesson to apply it."); }).catch((error: Error) => setFeedback(error.message)); }} /></div> : null}
+          {lessonTypeValue === "ebook" ? <><EbookCompleteEditor draft={ebookDraft} onChange={setEbookDraft} imageUploadFieldKeys={imageUploadFieldKeys} /><EbookValidationActions trainingId={trainingId} sectionId={sectionId} lessonId={lessonId} draft={ebookDraft} baseVersion={ebookBaseVersion} onBaseVersionChange={setEbookBaseVersion} status={ebookStatus} isPublished={(typeof ebookRecord.published_version === "number" && ebookRecord.published_version > 0) || (typeof ebookNestedRecord.published_version === "number" && ebookNestedRecord.published_version > 0)} onStatusChanged={() => { void ebookQuery.refetch(); }} /></> : null}
           {lessonTypeValue === "video" ? (
             <>
               <LessonFileDrop
@@ -841,7 +937,7 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
               <LessonDuration value={durationSeconds} />
             </>
           ) : null}
-          {isLessonType(lessonTypeValue, "video", "youtube") ? <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder={lessonTypeValue === "youtube" ? "Paste YouTube link" : "Video URL https://…"} className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
+          {isLessonType(lessonTypeValue, "video", "youtube") ? <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder={lessonTypeValue === "youtube" ? "Paste YouTube link" : "Video URL https://..."} className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
           {lessonTypeValue === "live" || lessonTypeValue === "venue" ? (
             <LessonScheduleFields
               type={lessonTypeValue}
@@ -863,7 +959,7 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
               setVenueAddress={setVenueAddress}
             />
           ) : null}
-          {lessonTypeValue === "video" ? <LessonUrlList label="Videos" values={lessonVideos} update={setLessonVideos} placeholder="Additional video URL https://…" previewKind="video" /> : null}
+          {lessonTypeValue === "video" ? <LessonUrlList label="Videos" values={lessonVideos} update={setLessonVideos} placeholder="Additional video URL https://..." previewKind="video" /> : null}
           {lessonTypeValue === "pdf" || lessonTypeValue === "document" ? (
             <>
               <LessonDocsList values={lessonDocs} update={setLessonDocs} showPreview={lessonTypeValue !== "pdf"} />
@@ -886,7 +982,7 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
           ) : null}
           {lessonTypeValue === "notes" ? (
             <>
-              <LessonUrlList label="Notes" values={lessonNotes} update={setLessonNotes} placeholder="Note URL / link https://…" previewKind="document" />
+              <LessonUrlList label="Notes" values={lessonNotes} update={setLessonNotes} placeholder="Note URL / link https://..." previewKind="document" />
               <LessonFileDrop
                 label="note"
                 accept=".txt,.md,.rtf,text/plain,text/markdown"
@@ -904,19 +1000,19 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
               />
             </>
           ) : null}
-          {isLessonType(lessonTypeValue, "video", "pdf", "document", "notes") ? (
+          {isLessonType(lessonTypeValue, "video", "pdf", "document", "notes", "ebook") ? (
             <div className="flex gap-4">
               <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={isPreview} onChange={(e) => setIsPreview(e.target.checked)} className="h-3 w-3" />Is preview</label>
               <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={isDownloadable} onChange={(e) => setIsDownloadable(e.target.checked)} className="h-3 w-3" />Is downloadable</label>
             </div>
           ) : null}
-          {isLessonType(lessonTypeValue, "video", "pdf", "document", "notes") ? <LessonFileSize value={fileSize} /> : null}
+          {isLessonType(lessonTypeValue, "video", "pdf", "document", "notes", "ebook") ? <LessonFileSize value={fileSize} /> : null}
           {isLessonType(lessonTypeValue, "quiz") ? <p className="rounded-lg bg-[#f9fcfa] px-3 py-2 text-xs text-[#52736a]">After saving, use the quiz panel to attach or create questions.</p> : null}
           <p className="text-[10px] text-[#7f9d94]">Only fields for the selected lesson type are shown.</p>
-          <button type="button" onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending || isVideoUploadPending || !title.trim() || !selectedLessonType || ((lessonTypeValue === "live" || lessonTypeValue === "venue") && (!scheduledAt || (detailsSource === "new" && (lessonTypeValue === "live" ? !meetingLink.trim() : !venueName.trim() || !venueAddress.trim()))))} className="h-8 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:opacity-60">{updateMutation.isPending ? "Saving..." : "Save"}</button>
+          <button type="button" onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending || isVideoUploadPending || ebookIsPendingApproval || !title.trim() || !selectedLessonType || ((lessonTypeValue === "live" || lessonTypeValue === "venue") && (!scheduledAt || (detailsSource === "new" && (lessonTypeValue === "live" ? !meetingLink.trim() : !venueName.trim() || !venueAddress.trim()))))} className="h-8 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:opacity-60">{updateMutation.isPending ? "Saving..." : "Save"}</button>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-4 p-5">
           <p className="text-sm font-bold text-[#06201c]">{lessonTitle || "Untitled"}</p>
           {lessonVideoUrl && lessonType === "youtube" ? (
             <a href={lessonVideoUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#1f6a58] underline">
@@ -931,22 +1027,1138 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
           {lessonScheduledAt ? <p className="text-xs text-[#52736a]">{t("lessonScheduling.scheduled", { defaultValue: "Scheduled" })}: {formatLessonScheduledAt(lessonScheduledAt)}</p> : null}
           {lessonType ? <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">{lessonType}</p> : null}
           {lessonVideosInit.length > 0 ? <div><p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Videos</p>{lessonVideosInit.map((videoUrl, index) => <LessonMediaPreview key={`${videoUrl}-${index}`} url={videoUrl} name={videoUrl.split("/").pop() || "Lesson video"} kind="video" />)}</div> : null}
-          {lessonDocsInit.length > 0 ? <div><p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Documents</p>{lessonDocsInit.map((document, index) => <div key={`${document.url}-${index}`}><LessonMediaPreview url={document.url} name={document.name || document.url.split("/").pop() || "Lesson document"} kind="document" showPreview={lessonType !== "pdf"} /><p className="text-[10px] text-[#52736a]">{document.visibility === "private" ? "Private" : "Public"}{document.downloadable ? " • downloadable" : ""}</p></div>)}</div> : null}
+          {lessonDocsInit.length > 0 ? <div><p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Documents</p>{lessonDocsInit.map((document, index) => <div key={`${document.url}-${index}`}><LessonMediaPreview url={document.url} name={document.name || document.url.split("/").pop() || "Lesson document"} kind="document" showPreview={lessonType !== "pdf"} /><p className="text-[10px] text-[#52736a]">{document.visibility === "private" ? "Private" : "Public"}{document.downloadable ? "  |  downloadable" : ""}</p></div>)}</div> : null}
           {lessonNotesInit.length > 0 ? <div><p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Notes</p>{lessonNotesInit.map((noteUrl, index) => <LessonMediaPreview key={`${noteUrl}-${index}`} url={noteUrl} name={noteUrl.split("/").pop() || "Lesson note"} kind="document" />)}</div> : null}
-          <p className="text-xs text-[#7f9d94]">{lessonIsPreview ? "Preview • " : ""}{lessonIsDownloadable ? "Downloadable" : "Not downloadable"}{lessonDuration ? ` • ${lessonType === "video" ? formatVideoDurationSeconds(durationSeconds) || formatLessonDuration(lessonDuration) : formatLessonDuration(lessonDuration)}` : ""}{formattedLessonFileSize ? ` • ${formattedLessonFileSize}` : ""}</p>
-          {lessonContent ? <p className="whitespace-pre-wrap text-xs leading-5 text-[#52736a]">{lessonContent}</p> : <p className="text-xs text-[#7f9d94]">No content.</p>}
+          <p className="text-xs text-[#7f9d94]">{lessonIsPreview ? "Preview  |  " : ""}{lessonIsDownloadable ? "Downloadable" : "Not downloadable"}{lessonDuration ? `  |  ${lessonType === "video" ? formatVideoDurationSeconds(durationSeconds) || formatLessonDuration(lessonDuration) : formatLessonDuration(lessonDuration)}` : ""}{formattedLessonFileSize ? `  |  ${formattedLessonFileSize}` : ""}</p>
+          {lessonType === "ebook" && ebookPreview ? (
+            <div className="rounded-xl border border-[#d7e5df] bg-[#f8fcf9] p-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-bold text-[#06201c]">eBook content</p>
+                  <p className="mt-1 text-xs text-[#52736a]">
+                    {ebookPreview.pages.length} {ebookPreview.pages.length === 1 ? "page" : "pages"}  |  Completion: {humanizeLabel(ebookPreview.completionRule)}
+                  </p>
+                </div>
+                {!ebookIsPendingApproval ? <button type="button" onClick={() => { setFeedback(null); setEditMode(true); }} className="rounded-full border border-[#1f6a58] px-3 py-1.5 text-[11px] font-bold text-[#1f6a58]">Open eBook editor</button> : null}
+              </div>
+              {ebookIsPendingApproval ? <EbookPendingActions trainingId={trainingId} sectionId={sectionId} lessonId={lessonId} onWithdrawn={() => { void ebookQuery.refetch(); setFeedback("eBook submission withdrawn. You can now edit and resubmit it."); }} /> : null}
+              <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold text-[#52736a]">
+                <span className="rounded-full bg-white px-2.5 py-1">Bookmarks {ebookPreview.allowBookmarks ? "enabled" : "disabled"}</span>
+                <span className="rounded-full bg-white px-2.5 py-1">Notes {ebookPreview.allowNotes ? "enabled" : "disabled"}</span>
+              </div>
+              <p className="mt-3 text-xs text-[#52736a]">{ebookPreview.pages[0]?.title || "Untitled page"}{ebookPreview.pages.length > 1 ? ` and ${ebookPreview.pages.length - 1} more` : ""}</p>
+            </div>
+          ) : lessonContent ? <p className="whitespace-pre-wrap text-xs leading-5 text-[#52736a]">{lessonContent}</p> : <p className="text-xs text-[#7f9d94]">No content.</p>}
         </div>
       )}
     </div>
   );
 }
 
+type EbookBlock = { id: number; type: "text" | "heading" | "quote" | "image" | "video" | "audio" | "pdf" | "link"; content: string; url: string; altText: string; caption: string; imageSize?: string; imageFit?: "cover" | "contain"; imagePosition?: string; assetId?: string };
+type EbookPageDraft = { id: number; title: string; content: string; blocks: EbookBlock[] };
+type EbookDraft = { subtitle: string; author: string; description: string; coverUrl: string; sourceUrl: string; pages: EbookPageDraft[]; completionRule: "read_to_end" | "opened" | "manual"; allowBookmarks: boolean; allowNotes: boolean; allowDownload: boolean; transcriptRequired: boolean };
+
+function createEmptyEbookDraft(): EbookDraft { return { subtitle: "", author: "", description: "", coverUrl: "", sourceUrl: "", pages: [{ id: 1, title: "Page 1", content: "", blocks: [] }], completionRule: "read_to_end", allowBookmarks: true, allowNotes: true, allowDownload: false, transcriptRequired: false }; }
+function getEbookDocumentRecord(value: unknown): Record<string, unknown> & { pages: unknown[] } {
+  const record = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const candidates = [record, record.ebook, record.draft, record.data];
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue;
+    const document = candidate as Record<string, unknown>;
+    if (Array.isArray(document.pages)) return document as Record<string, unknown> & { pages: unknown[] };
+    const nested = document.ebook;
+    if (nested && typeof nested === "object" && !Array.isArray(nested) && Array.isArray((nested as Record<string, unknown>).pages)) {
+      return nested as Record<string, unknown> & { pages: unknown[] };
+    }
+  }
+  return { pages: [] };
+}
+function getEbookImageProxyUrl(assetId: string): string {
+  // Always resolve protected media through the Enterprise app proxy. Server
+  // URLs can point at another environment/origin and the proxy validates them;
+  // passing those URLs through can make an otherwise valid asset return 400.
+  return `/api/v1/media/${encodeURIComponent(assetId)}/file`;
+}
+function normaliseEbookImagePosition(value: unknown): string {
+  const position = typeof value === "string" ? value.trim().toLowerCase().replace(/\s+/g, " ") : "";
+  const aliases: Record<string, string> = {
+    "center center": "center",
+    "top center": "top",
+    "bottom center": "bottom",
+    "center left": "left",
+    "center right": "right",
+  };
+  const normalised = aliases[position] ?? position;
+  return ["center", "top", "bottom", "left", "right", "top left", "top right", "bottom left", "bottom right"].includes(normalised)
+    ? normalised
+    : "center";
+}
+function createEbookImageMarkup(imageValue: unknown, index: number): string {
+  if (!imageValue || typeof imageValue !== "object" || Array.isArray(imageValue)) return "";
+  const imageRecord = imageValue as Record<string, unknown>;
+  const assetId = typeof imageRecord.asset_id === "string" ? imageRecord.asset_id : typeof imageRecord.assetId === "string" ? imageRecord.assetId : "";
+  if (!assetId) return "";
+  const image = document.createElement("img");
+  const imageUrl = getEbookImageProxyUrl(assetId);
+  image.src = imageUrl;
+  image.dataset.assetId = assetId;
+  image.dataset.assetUrl = imageUrl;
+  image.dataset.caption = typeof imageRecord.caption === "string" ? imageRecord.caption : "";
+  image.alt = typeof imageRecord.alt_text === "string" ? imageRecord.alt_text : typeof imageRecord.altText === "string" ? imageRecord.altText : "";
+  Object.assign(image.style, {
+    maxWidth: "100%",
+    width: imageRecord.width === "small" ? "45%" : imageRecord.width === "medium" ? "70%" : "100%",
+    height: imageRecord.fit === "cover" ? "260px" : "auto",
+    objectFit: imageRecord.fit === "cover" ? "cover" : "contain",
+    objectPosition: normaliseEbookImagePosition(imageRecord.position),
+    display: "block",
+    margin: "16px 0",
+  });
+  image.dataset.order = String(index);
+  return image.outerHTML;
+}
+function normaliseEbookDraft(value: unknown): EbookDraft {
+  const source = getEbookDocumentRecord(value);
+  const rawPages = source.pages;
+  const pages = rawPages.map((page, index) => {
+    const pageRecord = page && typeof page === "object" && !Array.isArray(page) ? page as Record<string, unknown> : {};
+    const images = Array.isArray(pageRecord.images) ? pageRecord.images : [];
+    const imageAssetIds = images.map((image) => {
+      if (!image || typeof image !== "object" || Array.isArray(image)) return undefined;
+      const imageRecord = image as Record<string, unknown>;
+      return typeof imageRecord.asset_id === "string" ? imageRecord.asset_id : undefined;
+    });
+    const rawContent = typeof pageRecord.content_html === "string" ? pageRecord.content_html : typeof pageRecord.content === "string" ? pageRecord.content : "";
+    const orderedBlocks = Array.isArray(pageRecord.blocks) ? pageRecord.blocks : [];
+    const content = typeof DOMParser === "undefined" ? rawContent : (() => {
+      const document = new DOMParser().parseFromString(rawContent, "text/html");
+      const imagesById = new Map(images.flatMap((image) => {
+        if (!image || typeof image !== "object" || Array.isArray(image)) return [];
+        const imageRecord = image as Record<string, unknown>;
+        return typeof imageRecord.id === "string" ? [[imageRecord.id, imageRecord] as const] : [];
+      }));
+      document.querySelectorAll<HTMLElement>("[data-image-id]").forEach((placeholder) => {
+        const imageRecord = imagesById.get(placeholder.dataset.imageId ?? "");
+        if (!imageRecord) return;
+        const template = document.createElement("template");
+        template.innerHTML = createEbookImageMarkup(imageRecord, images.indexOf(imageRecord));
+        const image = template.content.firstElementChild;
+        if (image) placeholder.replaceWith(image);
+      });
+      document.querySelectorAll<HTMLImageElement>("img").forEach((image, imageIndex) => {
+        const assetId = image.dataset.assetId || imageAssetIds[imageIndex];
+        if (!assetId) return;
+        const imageRecord = images[imageIndex] && typeof images[imageIndex] === "object" && !Array.isArray(images[imageIndex])
+          ? images[imageIndex] as Record<string, unknown>
+          : {};
+        const mediaUrl = getEbookImageProxyUrl(assetId);
+        image.dataset.assetId = assetId;
+        image.dataset.assetUrl = mediaUrl;
+        image.src = mediaUrl;
+      });
+      if (orderedBlocks.length > 0) {
+        const orderedContent = orderedBlocks.map((block, blockIndex) => {
+          if (!block || typeof block !== "object" || Array.isArray(block)) return "";
+          const blockRecord = block as Record<string, unknown>;
+          if (blockRecord.type === "image") return createEbookImageMarkup(blockRecord, blockIndex);
+          const blockContent = typeof blockRecord.content_html === "string" ? blockRecord.content_html : typeof blockRecord.content === "string" ? blockRecord.content : "";
+          return blockContent;
+        }).join("");
+        const representedAssetIds = new Set(orderedBlocks.flatMap((block) => {
+          if (!block || typeof block !== "object" || Array.isArray(block)) return [];
+          const blockRecord = block as Record<string, unknown>;
+          return blockRecord.type === "image" && typeof blockRecord.asset_id === "string" ? [blockRecord.asset_id] : [];
+        }));
+        const trailingImages = images.flatMap((image) => {
+          if (!image || typeof image !== "object" || Array.isArray(image)) return [];
+          const imageRecord = image as Record<string, unknown>;
+          return typeof imageRecord.asset_id === "string" && !representedAssetIds.has(imageRecord.asset_id) ? [createEbookImageMarkup(imageRecord, images.indexOf(image))] : [];
+        });
+        return orderedContent + trailingImages.join("");
+      }
+      const existingAssetIds = new Set(Array.from(document.querySelectorAll<HTMLImageElement>("img")).flatMap((image) => image.dataset.assetId ? [image.dataset.assetId] : []));
+      images.forEach((image, imageIndex) => {
+        if (!image || typeof image !== "object" || Array.isArray(image)) return;
+        const imageRecord = image as Record<string, unknown>;
+        const assetId = typeof imageRecord.asset_id === "string" ? imageRecord.asset_id : imageAssetIds[imageIndex];
+        if (!assetId || existingAssetIds.has(assetId)) return;
+        const element = document.createElement("img");
+        const mediaUrl = getEbookImageProxyUrl(assetId);
+        element.src = mediaUrl;
+        element.dataset.assetId = assetId;
+        element.dataset.assetUrl = mediaUrl;
+        element.alt = typeof imageRecord.alt_text === "string" ? imageRecord.alt_text : "";
+        Object.assign(element.style, {
+          maxWidth: "100%",
+          width: imageRecord.width === "small" ? "45%" : imageRecord.width === "medium" ? "70%" : "100%",
+          height: imageRecord.fit === "cover" ? "260px" : "auto",
+          objectFit: imageRecord.fit === "cover" ? "cover" : "contain",
+          objectPosition: normaliseEbookImagePosition(imageRecord.position),
+          display: "block",
+          margin: "16px 0",
+        });
+        const order = typeof imageRecord.order === "number" ? imageRecord.order : typeof imageRecord.index === "number" ? imageRecord.index : null;
+        const orderedChildren = Array.from(document.body.children);
+        if (order !== null && order >= 0 && order <= orderedChildren.length) {
+          document.body.insertBefore(element, orderedChildren[order] ?? null);
+        } else {
+          document.body.appendChild(element);
+        }
+        existingAssetIds.add(assetId);
+      });
+      return document.body.innerHTML;
+    })();
+    const blocks = images.map((image, imageIndex) => {
+      const imageRecord = image && typeof image === "object" && !Array.isArray(image) ? image as Record<string, unknown> : {};
+      const assetId = typeof imageRecord.asset_id === "string" ? imageRecord.asset_id : undefined;
+      return { id: imageIndex + 1, type: "image" as const, content: "", url: assetId ? getEbookImageProxyUrl(assetId) : typeof imageRecord.url === "string" ? imageRecord.url : "", altText: typeof imageRecord.alt_text === "string" ? imageRecord.alt_text : "", caption: typeof imageRecord.caption === "string" ? imageRecord.caption : "", imageSize: imageRecord.width === "small" || imageRecord.width === "medium" || imageRecord.width === "large" || imageRecord.width === "full" ? imageRecord.width : "full", imageFit: imageRecord.fit === "cover" ? "cover" as const : "contain" as const, imagePosition: normaliseEbookImagePosition(imageRecord.position), assetId };
+    });
+    return { id: typeof pageRecord.id === "string" ? Number.parseInt(pageRecord.id.replace(/\D/g, ""), 10) || index + 1 : index + 1, title: typeof pageRecord.title === "string" ? pageRecord.title : `Page ${index + 1}`, content, blocks };
+  });
+  const empty = createEmptyEbookDraft();
+  return { subtitle: typeof source.subtitle === "string" ? source.subtitle : "", author: typeof source.author === "string" ? source.author : "", description: typeof source.description === "string" ? source.description : "", coverUrl: typeof source.cover_url === "string" ? source.cover_url : "", sourceUrl: typeof source.source_url === "string" ? source.source_url : "", pages: pages.length ? pages : empty.pages, completionRule: source.completion_rule === "opened" || source.completion_rule === "manual" ? source.completion_rule : "read_to_end", allowBookmarks: source.allow_bookmarks !== false, allowNotes: source.allow_notes !== false, allowDownload: source.allow_download === true, transcriptRequired: source.transcript_required === true };
+}
+
+type EbookSerializedBlock = { type: "text"; content_html: string } | { type: "image"; id: string; asset_id: string; alt_text: string; caption: string | null; width: string; fit: "cover" | "contain"; aspect_ratio: string; position: string; decorative: false; placement: "inline" | "after_content" };
+
+function serializeEbookBlocks(content: string, fallbackImages: EbookBlock[], pageKey: string): EbookSerializedBlock[] {
+  if (typeof DOMParser === "undefined") return [];
+  const contentDocument = new DOMParser().parseFromString(content, "text/html");
+  // Lists are sent as semantic HTML. Strip editor-only inline list styles so
+  // the API sanitizer does not discard them or report unsupported styling.
+  contentDocument.querySelectorAll("ul, ol, li").forEach((listElement) => listElement.removeAttribute("style"));
+  let imageIndex = 0;
+  const serializeNode = (node: Node): string => {
+    const container = document.createElement("div");
+    container.appendChild(node.cloneNode(true));
+    return container.innerHTML;
+  };
+  const wrapContent = (element: Element, html: string): string => {
+    const wrapper = element.cloneNode(false) as Element;
+    wrapper.innerHTML = html;
+    return wrapper.outerHTML;
+  };
+  const imageBlock = (image: HTMLImageElement, placement: "inline" | "after_content"): EbookSerializedBlock | null => {
+    const currentIndex = imageIndex;
+    imageIndex += 1;
+    const assetId = image.dataset.assetId || fallbackImages[currentIndex]?.assetId;
+    if (!assetId) return null;
+    const fallback = fallbackImages.find((candidate) => candidate.type === "image" && candidate.assetId === assetId) ?? fallbackImages[currentIndex];
+    return {
+      type: "image",
+      // Keep block identifiers unique per page and separate from the legacy
+      // `images` collection, which represents the same image assets.
+      id: `inline-image-${pageKey}-${imageIndex}`,
+      asset_id: assetId,
+      // Keep the API's required accessibility field without asking authors
+      // to enter it in the eBook editor.
+      alt_text: image.alt.trim() || fallback?.altText.trim() || "eBook image",
+      caption: image.dataset.caption || fallback?.caption || null,
+      width: image.style.width === "45%" ? "small" : image.style.width === "70%" ? "medium" : image.style.width === "100%" ? "full" : fallback?.imageSize ?? "full",
+      fit: image.style.objectFit === "cover" ? "cover" : image.style.objectFit === "contain" ? "contain" : fallback?.imageFit === "cover" ? "cover" : "contain",
+      aspect_ratio: image.style.objectFit === "cover" ? "16:9" : image.style.objectFit === "contain" ? "original" : fallback?.imageFit === "cover" ? "16:9" : "original",
+      position: normaliseEbookImagePosition(image.style.objectPosition || fallback?.imagePosition),
+      decorative: false,
+      placement,
+    };
+  };
+  const splitNode = (node: Node): EbookSerializedBlock[] => {
+    if (node instanceof HTMLImageElement) {
+      const block = imageBlock(node, "inline");
+      return block ? [block] : [];
+    }
+    if (!(node instanceof Element) || !node.querySelector("img")) {
+      const html = serializeNode(node);
+      return html ? [{ type: "text", content_html: html }] : [];
+    }
+    return Array.from(node.childNodes).flatMap((child) => splitNode(child)).map((block) =>
+      block.type === "text" ? { ...block, content_html: wrapContent(node, block.content_html) } : block,
+    );
+  };
+  const blocks = Array.from(contentDocument.body.childNodes).flatMap((node) => splitNode(node));
+  const contentAssetIds = new Set(Array.from(contentDocument.querySelectorAll<HTMLImageElement>("img")).flatMap((image) => image.dataset.assetId ? [image.dataset.assetId] : []));
+  fallbackImages.filter((image) => image.type === "image" && image.assetId && !contentAssetIds.has(image.assetId)).forEach((image) => {
+    blocks.push({
+      type: "image",
+      id: `inline-image-${pageKey}-stored-${String(image.id).replace(/[^A-Za-z0-9_-]/g, "_")}`,
+      asset_id: image.assetId as string,
+      alt_text: image.altText.trim() || "eBook image",
+      caption: image.caption || null,
+      width: image.imageSize ?? "full",
+      fit: image.imageFit === "cover" ? "cover" : "contain",
+      aspect_ratio: image.imageFit === "cover" ? "16:9" : "original",
+      position: normaliseEbookImagePosition(image.imagePosition),
+      decorative: false,
+      placement: "after_content",
+    });
+  });
+  return blocks.reduce<EbookSerializedBlock[]>((orderedBlocks, block) => {
+    const previous = orderedBlocks[orderedBlocks.length - 1];
+    if (block.type === "text" && previous?.type === "text") previous.content_html += block.content_html;
+    else orderedBlocks.push(block);
+    return orderedBlocks;
+  }, []);
+}
+
+function toEbookDocument(draft: EbookDraft, baseVersion = 0): { ebook: Record<string, unknown>; base_version: number } {
+  const normaliseContentHtml = (content: string) => {
+    if (typeof DOMParser === "undefined") return content;
+    const document = new DOMParser().parseFromString(content, "text/html");
+    document.querySelectorAll<HTMLImageElement>("img[data-asset-url]").forEach((image) => {
+      const assetUrl = image.dataset.assetUrl;
+      if (assetUrl) image.src = assetUrl;
+    });
+    // Images are persisted as structured ebook image blocks. Keeping img
+    // markup in content_html makes the backend strip it and produces a
+    // misleading warning, so serialize text/formatting only here.
+    document.querySelectorAll<HTMLImageElement>("img").forEach((image) => image.remove());
+    return document.body.innerHTML;
+  };
+  const pageContentAndImages = (page: EbookPageDraft, pageKey: string) => {
+    const invalidBlock = page.blocks.find((block) => block.type === "image" && (!block.assetId || block.url.startsWith("blob:")));
+    if (invalidBlock) throw new Error("Finish uploading every eBook image before saving. Each image needs a permanent asset_id.");
+    const pageDocument = new DOMParser().parseFromString(page.content, "text/html");
+    const contentImages = Array.from(pageDocument.querySelectorAll<HTMLImageElement>("img"));
+    const storedImages = page.blocks.filter((block) => block.type === "image");
+    contentImages.forEach((image, index) => {
+      const storedAssetId = storedImages[index]?.assetId;
+      if (!image.dataset.assetId && storedAssetId) image.dataset.assetId = storedAssetId;
+    });
+    const invalidImage = contentImages.find((image) => (image.src.startsWith("blob:") && !image.dataset.assetUrl) || !image.dataset.assetId);
+    if (invalidImage) throw new Error("Finish uploading every eBook image before saving. Each image needs a permanent asset_id.");
+    const inlineImageAssetIds = new Set(contentImages.flatMap((image) => image.dataset.assetId ? [image.dataset.assetId] : []));
+    const orderedBlocks = serializeEbookBlocks(pageDocument.body.innerHTML, page.blocks, pageKey);
+    const contentAssetIds = new Set(contentImages.flatMap((image) => image.dataset.assetId ? [image.dataset.assetId] : []));
+    const images = orderedBlocks.flatMap((block) => block.type === "image" ? [{
+      id: block.id,
+      asset_id: block.asset_id,
+      alt_text: block.alt_text,
+      caption: block.caption,
+      width: block.width,
+      fit: block.fit,
+      aspect_ratio: block.aspect_ratio,
+      position: block.position,
+      decorative: false,
+      placement: block.placement,
+    }] : []);
+    const contentHtml = orderedBlocks.map((block) => block.type === "text"
+      ? block.content_html
+      : `<div data-image-id="${block.id}"></div>`).join("");
+    const detachedImages = page.blocks.filter((block) => block.type === "image" && block.assetId && !contentAssetIds.has(block.assetId));
+    detachedImages.forEach((block) => images.push({
+      id: `ebook-image-${pageKey}-stored-${String(block.id).replace(/[^A-Za-z0-9_-]/g, "_")}`,
+      asset_id: block.assetId as string,
+      alt_text: block.altText.trim() || "eBook image",
+      caption: block.caption || null,
+      width: block.imageSize === "small" || block.imageSize === "medium" || block.imageSize === "large" || block.imageSize === "full" ? block.imageSize : "full",
+      fit: block.imageFit === "cover" ? "cover" : "contain",
+      aspect_ratio: block.imageFit === "cover" ? "16:9" : "original",
+      position: normaliseEbookImagePosition(block.imagePosition),
+      decorative: false,
+      placement: "after_content",
+    }));
+    return { contentHtml, images };
+  };
+  return {
+    ebook: {
+      subtitle: draft.subtitle.trim() || null,
+      author: draft.author.trim() || null,
+      description: draft.description.trim() || null,
+      cover_asset_id: draft.coverUrl.trim() || null,
+      completion_rule: draft.completionRule,
+      allow_bookmarks: draft.allowBookmarks,
+      allow_notes: draft.allowNotes,
+      pages: draft.pages.map((page, index) => {
+        const pageKey = `page-${index + 1}`;
+        const pageContent = pageContentAndImages(page, pageKey);
+        return ({
+        id: `page_${page.id}`,
+        order: index + 1,
+        title: page.title.trim() || `Page ${index + 1}`,
+        content_html: pageContent.contentHtml || normaliseContentHtml(page.content),
+        images: pageContent.images,
+        });
+      }),
+    },
+    base_version: baseVersion,
+  };
+}
+
+function extractEbookVersion(value: unknown): number | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  for (const key of ["version", "draft_version", "current_version"]) {
+    const candidate = record[key];
+    if (typeof candidate === "number" && Number.isInteger(candidate) && candidate >= 0) return candidate;
+  }
+  for (const key of ["ebook", "draft", "data"]) {
+    const nestedVersion = extractEbookVersion(record[key]);
+    if (nestedVersion !== null) return nestedVersion;
+  }
+  return null;
+}
+
+async function saveTrainingEbookDraft(trainingId: string, sectionId: string, lessonId: string, payload: { ebook: Record<string, unknown>; base_version: number }): Promise<{ data: unknown; version: number }> {
+  // The API persists image order through data-image-id placeholders in
+  // content_html; blocks are generated by the reader endpoint only.
+  const data = await saveTrainingEbook(trainingId, sectionId, lessonId, payload);
+  const savedVersion = extractEbookVersion(data);
+  if (savedVersion !== null) return { data, version: savedVersion };
+  const latestDraft = await getTrainingEbook(trainingId, sectionId, lessonId, true).catch(() => null);
+  return { data, version: extractEbookVersion(latestDraft) ?? payload.base_version + 1 };
+}
+
+function mergeLocalEbookOrder(apiValue: unknown, lessonContentValue: unknown): unknown {
+  const apiRecord = apiValue && typeof apiValue === "object" && !Array.isArray(apiValue) ? apiValue as Record<string, unknown> : {};
+  const apiDocument = getEbookDocumentRecord(apiValue);
+  const localDocument = getEbookDocumentRecord(lessonContentValue);
+  const apiPages = apiDocument.pages;
+  const localPages = localDocument.pages;
+  if (apiPages.length === 0) return apiValue ?? lessonContentValue;
+  const mergedPages = apiPages.map((page, index) => {
+    if (!page || typeof page !== "object" || Array.isArray(page)) return page;
+    const pageRecord = page as Record<string, unknown>;
+    const localPage = localPages.find((candidate) => candidate && typeof candidate === "object" && !Array.isArray(candidate) && (candidate as Record<string, unknown>).id === pageRecord.id) ?? localPages[index];
+    if (!localPage || typeof localPage !== "object" || Array.isArray(localPage) || !Array.isArray((localPage as Record<string, unknown>).blocks)) return page;
+    return { ...pageRecord, blocks: (localPage as Record<string, unknown>).blocks };
+  });
+  const mergedDocument = { ...apiDocument, pages: mergedPages };
+  const wrapperKey = apiRecord.ebook && typeof apiRecord.ebook === "object" && !Array.isArray(apiRecord.ebook)
+    ? "ebook"
+    : apiRecord.draft && typeof apiRecord.draft === "object" && !Array.isArray(apiRecord.draft)
+      ? "draft"
+      : null;
+  return wrapperKey ? { ...apiRecord, [wrapperKey]: mergedDocument } : mergedDocument;
+}
+
+function EbookValidationActions({ trainingId, sectionId, lessonId, draft, baseVersion, onBaseVersionChange, status, isPublished, onStatusChanged }: { trainingId: string; sectionId: string; lessonId: string; draft: EbookDraft; baseVersion: number; onBaseVersionChange: (version: number) => void; status: string; isPublished: boolean; onStatusChanged: () => void }) {
+  const [message, setMessage] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  if (status === "pending_approval") return <p role="status" className="rounded-lg bg-[#fffaf0] px-3 py-2 text-xs font-semibold text-[#8a5a00]">This eBook is waiting for approval. Withdraw the submission before making changes.</p>;
+  const validate = async () => { setPending(true); setMessage(null); try { const saved = await saveTrainingEbookDraft(trainingId, sectionId, lessonId, toEbookDocument(draft, baseVersion)); onBaseVersionChange(saved.version); const result = await validateTrainingEbook(trainingId, sectionId, lessonId) as Record<string, unknown>; const errors = Array.isArray(result.errors) ? result.errors : []; setMessage(result.valid === true && errors.length === 0 ? "eBook is ready to publish." : errors.map((error) => error && typeof error === "object" && "message" in error ? String(error.message) : "eBook validation failed").join(" ")); } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to validate eBook."); } finally { setPending(false); } };
+  const submit = async () => { setPending(true); setMessage(null); try { const saveResult = await saveTrainingEbookDraft(trainingId, sectionId, lessonId, toEbookDocument(draft, baseVersion)); onBaseVersionChange(saveResult.version); const result = await validateTrainingEbook(trainingId, sectionId, lessonId) as Record<string, unknown>; const errors = Array.isArray(result.errors) ? result.errors : []; if (result.valid !== true || errors.length > 0) { setMessage(errors.map((error) => error && typeof error === "object" && "message" in error ? String(error.message) : "eBook validation failed").join(" ") || "Fix validation issues before submitting for approval."); return; } await submitTrainingEbookForApproval(trainingId, sectionId, lessonId, saveResult.version); setMessage("eBook submitted for Super Admin approval. It will appear to learners after approval and publishing."); onStatusChanged(); } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to submit eBook for approval."); } finally { setPending(false); } };
+  const publish = async () => { setPending(true); setMessage(null); try { await publishTrainingEbook(trainingId, sectionId, lessonId); setMessage("Approved eBook published for learners."); onStatusChanged(); } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to publish the approved eBook."); } finally { setPending(false); } };
+  const hasActionError = message !== null && (/^(Unable to|The server is temporarily unavailable)/i.test(message));
+  return <div className="flex flex-wrap items-center gap-2"><button type="button" onClick={() => void validate()} disabled={pending} className="h-8 rounded-full border border-[#1f6a58] px-3 text-xs font-bold text-[#1f6a58] disabled:opacity-60">{pending ? "Working..." : "Validate eBook"}</button>{status === "draft" || status === "changes_requested" ? <button type="button" onClick={() => void submit()} disabled={pending} className="h-8 rounded-full bg-[#1f6a58] px-3 text-xs font-bold text-white disabled:opacity-60">{pending ? "Submitting..." : "Submit for approval"}</button> : null}{status === "approved" && !isPublished ? <button type="button" onClick={() => void publish()} disabled={pending} className="h-8 rounded-full bg-[#1f6a58] px-3 text-xs font-bold text-white disabled:opacity-60">{pending ? "Publishing..." : "Publish eBook"}</button> : null}{status === "pending_approval" ? <p role="status" className="text-xs font-semibold text-[#8a5a00]">Submitted for Super Admin approval.</p> : null}{isPublished ? <p role="status" className="text-xs font-semibold text-[#167550]">Published for learners.</p> : null}{message ? <p role={hasActionError ? "alert" : "status"} className={`text-xs font-semibold ${hasActionError ? "text-[#b42318]" : "text-[#52736a]"}`}>{message}</p> : null}</div>;
+}
+
+function EbookPendingActions({ trainingId, sectionId, lessonId, onWithdrawn }: { trainingId: string; sectionId: string; lessonId: string; onWithdrawn: () => void }) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const withdraw = async () => {
+    setPending(true);
+    setError(null);
+    try {
+      await withdrawTrainingEbookSubmission(trainingId, sectionId, lessonId);
+      onWithdrawn();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to withdraw the eBook submission.");
+    } finally {
+      setPending(false);
+    }
+  };
+  return <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#f1dfb8] bg-[#fffaf0] p-3">
+    <p className="text-xs text-[#755618]">This eBook is waiting for Super Admin approval and is locked for editing.</p>
+    <button type="button" onClick={() => void withdraw()} disabled={pending} className="h-9 rounded-full border border-[#8a5a00] px-4 text-xs font-bold text-[#8a5a00] disabled:opacity-60">{pending ? "Withdrawing..." : "Withdraw submission"}</button>
+    {error ? <p role="alert" className="w-full text-xs font-semibold text-[#b42318]">{error}</p> : null}
+  </div>;
+}
+
+const emptyEbookBlock = (type: EbookBlock["type"]): EbookBlock => ({ id: Date.now() + Math.random(), type, content: "", url: "", altText: "", caption: "" });
+
+function EbookAuthoringCanvas({ draft, onChange }: { draft: EbookDraft; onChange: (draft: EbookDraft) => void }) {
+  const [activePageId, setActivePageId] = useState(draft.pages[0]?.id ?? 1);
+  const [previewing, setPreviewing] = useState(false);
+  const activePage = draft.pages.find((page) => page.id === activePageId) ?? draft.pages[0];
+  const update = (patch: Partial<EbookDraft>) => onChange({ ...draft, ...patch });
+  const updatePage = (patch: Partial<EbookPageDraft>) => { if (!activePage) return; update({ pages: draft.pages.map((page) => page.id === activePage.id ? { ...page, ...patch } : page) }); };
+  const updateBlock = (id: number, patch: Partial<EbookBlock>) => updatePage({ blocks: activePage.blocks.map((block) => block.id === id ? { ...block, ...patch } : block) });
+  const addPage = () => { const page = { id: Date.now(), title: `Page ${draft.pages.length + 1}`, content: "", blocks: [] }; update({ pages: [...draft.pages, page] }); setActivePageId(page.id); setPreviewing(false); };
+  const addBlock = (type: EbookBlock["type"]) => {
+    if (["heading", "text", "quote"].includes(type)) {
+      const marker = type === "heading" ? "\n\n## Section heading\n" : type === "quote" ? "\n\n> Add a quote\n" : "\n\nWrite more content here...\n";
+      updatePage({ content: `${activePage.content}${marker}` });
+      return;
+    }
+    updatePage({ blocks: [...activePage.blocks, emptyEbookBlock(type)] });
+  };
+  const removePage = () => { if (draft.pages.length === 1 || !activePage) return; const next = draft.pages.filter((page) => page.id !== activePage.id); update({ pages: next }); setActivePageId(next[0].id); };
+  const removeBlock = (id: number) => updatePage({ blocks: activePage.blocks.filter((block) => block.id !== id) });
+  if (!activePage) return null;
+  return <div className="rounded-2xl border border-[#b7d5c8] bg-[#f4fbf6] p-3 sm:p-4">
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-extrabold text-[#06201c]">eBook authoring workspace</p><p className="mt-1 text-[11px] leading-5 text-[#52736a]">Write, arrange, and preview the book exactly as learners will read it.</p></div><button type="button" onClick={addPage} className="rounded-full bg-[#1f6a58] px-3 py-2 text-[11px] font-extrabold text-white">+ Add page</button></div>
+    <div className="mt-4 rounded-xl border border-[#d7e5df] bg-white p-3"><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">Book information</p><div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="block text-[11px] font-extrabold text-[#52736a]">Subtitle<input value={draft.subtitle} onChange={(event) => update({ subtitle: event.target.value })} placeholder="A short description of this book" className="mt-1.5 h-9 w-full rounded-lg border border-[#d7e5df] px-3 text-xs" /></label><label className="block text-[11px] font-extrabold text-[#52736a]">Author<input value={draft.author} onChange={(event) => update({ author: event.target.value })} placeholder="Author or organisation" className="mt-1.5 h-9 w-full rounded-lg border border-[#d7e5df] px-3 text-xs" /></label><label className="block text-[11px] font-extrabold text-[#52736a] sm:col-span-2">Book description<textarea value={draft.description} onChange={(event) => update({ description: event.target.value })} placeholder="Tell learners what they will learn..." rows={2} className="mt-1.5 w-full rounded-lg border border-[#d7e5df] p-2 text-xs" /></label><label className="block text-[11px] font-extrabold text-[#52736a]">Cover image URL<input value={draft.coverUrl} onChange={(event) => update({ coverUrl: event.target.value })} placeholder="Upload cover image or paste URL" className="mt-1.5 h-9 w-full rounded-lg border border-[#d7e5df] px-3 text-xs" /></label><label className="block text-[11px] font-extrabold text-[#52736a]">Import source URL<input value={draft.sourceUrl} onChange={(event) => update({ sourceUrl: event.target.value })} placeholder="Optional EPUB or document source" className="mt-1.5 h-9 w-full rounded-lg border border-[#d7e5df] px-3 text-xs" /></label></div></div>
+    <div className="mt-4 grid gap-3 lg:grid-cols-[170px_minmax(0,1fr)]"><aside className="rounded-xl border border-[#d7e5df] bg-white p-2"><div className="flex items-center justify-between px-2 pb-2"><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">Pages / TOC</p><span className="text-[10px] font-bold text-[#7f9d94]">{draft.pages.length}</span></div><div className="space-y-1">{draft.pages.map((page, index) => <button key={page.id} type="button" onClick={() => { setActivePageId(page.id); setPreviewing(false); }} className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[11px] font-extrabold ${activePage.id === page.id ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f4faf7]"}`}><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#eff8f2] text-[10px]">{index + 1}</span><span className="truncate">{page.title || `Page ${index + 1}`}</span></button>)}</div><button type="button" onClick={addPage} className="mt-3 w-full rounded-lg border border-dashed border-[#b7d5c8] px-2 py-2 text-[11px] font-bold text-[#1f6a58]">+ Add page</button></aside>
+      <section className="rounded-xl border border-[#d7e5df] bg-white p-3 sm:p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">Page {draft.pages.findIndex((page) => page.id === activePage.id) + 1}</p><p className="mt-1 text-xs font-bold text-[#52736a]">Build the page from content blocks</p></div><div className="flex gap-2"><button type="button" onClick={() => setPreviewing((current) => !current)} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-[11px] font-bold text-[#1f6a58]">{previewing ? "Edit page" : "Preview page"}</button><button type="button" onClick={removePage} disabled={draft.pages.length === 1} className="rounded-full border border-[#f0c7c2] px-3 py-1.5 text-[11px] font-bold text-[#b42318] disabled:opacity-40">Remove page</button></div></div>
+        {previewing ? <div className="mt-4 rounded-xl border border-[#e1ebe6] bg-[#fbfdfb] p-4"><p className="text-lg font-extrabold text-[#06201c]">{activePage.title || "Untitled page"}</p>{activePage.blocks.map((block) => <div key={block.id} className="mt-3">{block.type === "heading" ? <p className="text-base font-extrabold text-[#06201c]">{block.content || "Heading"}</p> : block.type === "quote" ? <blockquote className="border-l-4 border-[#83b9a4] pl-3 text-sm italic text-[#52736a]">{block.content || "Quote"}</blockquote> : ["image", "video", "audio", "pdf", "link"].includes(block.type) ? <p className="rounded-lg bg-[#e8f6ee] px-3 py-2 text-xs font-semibold text-[#1f6a58]">{block.type.toUpperCase()} {block.caption || block.url || "content attached"}</p> : <p className="whitespace-pre-wrap text-sm leading-6 text-[#52736a]">{block.content || "Empty text block"}</p>}</div>)}</div> : <div className="mt-4 space-y-3"><label className="block text-[11px] font-extrabold text-[#52736a]">Page title<input value={activePage.title} onChange={(event) => updatePage({ title: event.target.value })} placeholder="Chapter introduction" className="mt-1.5 h-10 w-full rounded-lg border border-[#d7e5df] px-3 text-sm font-semibold text-[#06201c]" /></label><div className="flex flex-wrap gap-2 rounded-lg bg-[#f4faf7] p-2"><span className="self-center text-[10px] font-extrabold uppercase text-[#7f9d94]">Add block</span>{(["heading", "text", "quote", "image", "video", "audio", "pdf", "link"] as EbookBlock["type"][]).map((blockType) => <button key={blockType} type="button" onClick={() => addBlock(blockType)} className="rounded-full border border-[#b7d5c8] bg-white px-2.5 py-1.5 text-[10px] font-bold capitalize text-[#1f6a58]">+ {blockType}</button>)}</div>{activePage.blocks.map((block, index) => <div key={block.id} className="rounded-xl border border-[#e1ebe6] bg-[#fbfdfb] p-3"><div className="flex items-center justify-between"><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">{index + 1}. {block.type}</p><button type="button" onClick={() => removeBlock(block.id)} className="text-[11px] font-bold text-[#b42318]">Remove</button></div>{["heading", "text", "quote"].includes(block.type) ? <><div className="mt-2 flex flex-wrap gap-1.5"><button type="button" onClick={() => updateBlock(block.id, { content: `${block.content} **bold**` })} className="rounded border border-[#d7e5df] px-2 py-1 text-[10px] font-bold">B</button><button type="button" onClick={() => updateBlock(block.id, { content: `${block.content} _italic_` })} className="rounded border border-[#d7e5df] px-2 py-1 text-[10px] italic">I</button><button type="button" onClick={() => updateBlock(block.id, { content: `${block.content} [link]` })} className="rounded border border-[#d7e5df] px-2 py-1 text-[10px] text-[#1f6a58]">Link</button></div><textarea value={block.content} onChange={(event) => updateBlock(block.id, { content: event.target.value })} placeholder={block.type === "heading" ? "Section heading" : "Write learner-facing content..."} rows={block.type === "heading" ? 2 : 4} className="mt-2 w-full rounded-lg border border-[#d7e5df] p-2 text-xs leading-5" /></> : <div className="mt-2 grid gap-2 sm:grid-cols-2"><label className="block text-[10px] font-bold text-[#52736a]">{block.type === "link" ? "URL" : "File or media URL"}<input value={block.url} onChange={(event) => updateBlock(block.id, { url: event.target.value })} placeholder="https://..." className="mt-1 h-9 w-full rounded-lg border border-[#d7e5df] px-2 text-xs" /></label><label className="block text-[10px] font-bold text-[#52736a]">{block.type === "image" ? "Alt text (required for accessibility)" : "Caption / transcript note"}<input value={block.type === "image" ? block.altText : block.caption} onChange={(event) => updateBlock(block.id, block.type === "image" ? { altText: event.target.value } : { caption: event.target.value })} placeholder={block.type === "image" ? "Describe the image" : "Optional learner-facing label"} className="mt-1 h-9 w-full rounded-lg border border-[#d7e5df] px-2 text-xs" /></label></div>}</div>)}</div>}
+      </section></div>
+    <div className="mt-4 rounded-xl border border-[#d7e5df] bg-white p-3"><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">Learner experience and accessibility</p><div className="mt-3 grid gap-2 sm:grid-cols-2"><label className="flex items-center gap-2 text-xs font-semibold text-[#52736a]"><input type="checkbox" checked={draft.allowBookmarks} onChange={(event) => update({ allowBookmarks: event.target.checked })} /> Allow bookmarks</label><label className="flex items-center gap-2 text-xs font-semibold text-[#52736a]"><input type="checkbox" checked={draft.allowNotes} onChange={(event) => update({ allowNotes: event.target.checked })} /> Allow learner notes</label><label className="flex items-center gap-2 text-xs font-semibold text-[#52736a]"><input type="checkbox" checked={draft.allowDownload} onChange={(event) => update({ allowDownload: event.target.checked })} /> Allow book download</label><label className="flex items-center gap-2 text-xs font-semibold text-[#52736a]"><input type="checkbox" checked={draft.transcriptRequired} onChange={(event) => update({ transcriptRequired: event.target.checked })} /> Require transcripts for media</label><label className="block text-[11px] font-extrabold text-[#52736a] sm:col-span-2">Completion rule<select value={draft.completionRule} onChange={(event) => update({ completionRule: event.target.value as EbookDraft["completionRule"] })} className="mt-1.5 h-9 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs"><option value="read_to_end">Read to the end</option><option value="mark_complete">Learner marks complete</option></select></label></div><p className="mt-2 text-[10px] text-[#7f9d94]">Add alt text to every image and a transcript/caption note to audio or video before publishing.</p></div>
+    <div className="mt-4 rounded-xl border border-[#d7e5df] bg-white p-3"><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">Learner experience and accessibility</p><div className="mt-3 grid gap-2 sm:grid-cols-2"><label className="flex items-center gap-2 text-xs font-semibold text-[#52736a]"><input type="checkbox" checked={draft.allowBookmarks} onChange={(event) => update({ allowBookmarks: event.target.checked })} /> Allow bookmarks</label><label className="flex items-center gap-2 text-xs font-semibold text-[#52736a]"><input type="checkbox" checked={draft.allowNotes} onChange={(event) => update({ allowNotes: event.target.checked })} /> Allow learner notes</label><label className="flex items-center gap-2 text-xs font-semibold text-[#52736a]"><input type="checkbox" checked={draft.allowDownload} onChange={(event) => update({ allowDownload: event.target.checked })} /> Allow book download</label><label className="flex items-center gap-2 text-xs font-semibold text-[#52736a]"><input type="checkbox" checked={draft.transcriptRequired} onChange={(event) => update({ transcriptRequired: event.target.checked })} /> Require transcripts for media</label><label className="block text-[11px] font-extrabold text-[#52736a] sm:col-span-2">Completion rule<select value={draft.completionRule} onChange={(event) => update({ completionRule: event.target.value as EbookDraft["completionRule"] })} className="mt-1.5 h-9 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-xs"><option value="read_to_end">Read to the end</option><option value="manual">Learner marks complete</option></select></label></div><p className="mt-2 text-[10px] text-[#7f9d94]">Add alt text to every image and a transcript/caption note to audio or video before publishing.</p></div>
+  </div>;
+}
+
+function EbookUnifiedEditor({ draft, onChange }: { draft: EbookDraft; onChange: (draft: EbookDraft) => void }) {
+  const [activePageId, setActivePageId] = useState(draft.pages[0]?.id ?? 1);
+  const [previewing, setPreviewing] = useState(false);
+  const activePage = draft.pages.find((page) => page.id === activePageId) ?? draft.pages[0];
+  if (!activePage) return null;
+  const update = (patch: Partial<EbookDraft>) => onChange({ ...draft, ...patch });
+  const updatePage = (patch: Partial<EbookPageDraft>) => update({ pages: draft.pages.map((page) => page.id === activePage.id ? { ...page, ...patch } : page) });
+  const insert = (value: string) => updatePage({ content: `${activePage.content}${activePage.content ? "\n\n" : ""}${value}` });
+  const addPage = () => { const page = { id: Date.now(), title: `Page ${draft.pages.length + 1}`, content: "", blocks: [] }; update({ pages: [...draft.pages, page] }); setActivePageId(page.id); };
+  const addMedia = (type: EbookBlock["type"]) => updatePage({ blocks: [...activePage.blocks, emptyEbookBlock(type)] });
+  const updateMedia = (id: number, patch: Partial<EbookBlock>) => updatePage({ blocks: activePage.blocks.map((block) => block.id === id ? { ...block, ...patch } : block) });
+  const removeMedia = (id: number) => updatePage({ blocks: activePage.blocks.filter((block) => block.id !== id) });
+  return <div className="rounded-2xl border border-[#b7d5c8] bg-[#f4fbf6] p-3 sm:p-4">
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-extrabold text-[#06201c]">eBook page editor</p><p className="mt-1 text-[11px] leading-5 text-[#52736a]">Write the whole page in one editor. Use the toolbar to insert structure and supporting media.</p></div><button type="button" onClick={addPage} className="rounded-full bg-[#1f6a58] px-3 py-2 text-[11px] font-extrabold text-white">+ Add page</button></div>
+    <div className="mt-4 grid gap-3 lg:grid-cols-[170px_minmax(0,1fr)]"><aside className="rounded-xl border border-[#d7e5df] bg-white p-2"><p className="px-2 pb-2 text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">Pages / TOC</p><div className="space-y-1">{draft.pages.map((page, index) => <button key={page.id} type="button" onClick={() => { setActivePageId(page.id); setPreviewing(false); }} className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[11px] font-extrabold ${activePage.id === page.id ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f4faf7]"}`}><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#eff8f2] text-[10px]">{index + 1}</span><span className="truncate">{page.title || `Page ${index + 1}`}</span></button>)}</div><button type="button" onClick={addPage} className="mt-3 w-full rounded-lg border border-dashed border-[#b7d5c8] px-2 py-2 text-[11px] font-bold text-[#1f6a58]">+ Add page</button></aside>
+      <section className="rounded-xl border border-[#d7e5df] bg-white p-3 sm:p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">Page {draft.pages.findIndex((page) => page.id === activePage.id) + 1}</p><p className="mt-1 text-xs font-bold text-[#52736a]">One continuous learner-facing editor</p></div><div className="flex gap-2"><button type="button" onClick={() => setPreviewing((value) => !value)} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-[11px] font-bold text-[#1f6a58]">{previewing ? "Edit page" : "Preview page"}</button><button type="button" disabled={draft.pages.length === 1} onClick={() => { const pages = draft.pages.filter((page) => page.id !== activePage.id); update({ pages }); setActivePageId(pages[0].id); }} className="rounded-full border border-[#f0c7c2] px-3 py-1.5 text-[11px] font-bold text-[#b42318] disabled:opacity-40">Remove page</button></div></div>
+        {previewing ? <div className="mt-4 rounded-xl border border-[#e1ebe6] bg-[#fbfdfb] p-4"><h3 className="text-lg font-extrabold text-[#06201c]">{activePage.title || "Untitled page"}</h3><p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#52736a]">{activePage.content || "This page does not have text content yet."}</p>{activePage.blocks.map((block) => <p key={block.id} className="mt-3 rounded-lg bg-[#e8f6ee] px-3 py-2 text-xs font-semibold text-[#1f6a58]">{block.type.toUpperCase()}: {block.caption || block.url || "Configure this attachment"}</p>)}</div> : <div className="mt-4 space-y-3"><label className="block text-[11px] font-extrabold text-[#52736a]">Page title<input value={activePage.title} onChange={(event) => updatePage({ title: event.target.value })} placeholder="Chapter introduction" className="mt-1.5 h-10 w-full rounded-lg border border-[#d7e5df] px-3 text-sm font-semibold text-[#06201c]" /></label><div className="flex flex-wrap gap-2 rounded-lg bg-[#f4faf7] p-2"><span className="self-center text-[10px] font-extrabold uppercase text-[#7f9d94]">Insert</span>{[["H2", "## Section heading"], ["Text", "Write more content here..."], ["Quote", "> Add a quote"], ["List", "- List item\n- List item"]].map(([label, value]) => <button key={label} type="button" onClick={() => insert(value)} className="rounded-full border border-[#b7d5c8] bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#1f6a58]">+ {label}</button>)}<button type="button" onClick={() => insert("**bold text**")} className="rounded border border-[#d7e5df] bg-white px-2 py-1 text-[10px] font-bold">B</button><button type="button" onClick={() => insert("_italic text_")} className="rounded border border-[#d7e5df] bg-white px-2 py-1 text-[10px] italic">I</button><button type="button" onClick={() => insert("[link text](https://...)")} className="rounded border border-[#d7e5df] bg-white px-2 py-1 text-[10px] text-[#1f6a58]">Link</button></div><textarea value={activePage.content} onChange={(event) => updatePage({ content: event.target.value })} placeholder="Start writing the page. Add headings, paragraphs, lists, quotes, and links here..." rows={14} className="w-full resize-y rounded-xl border border-[#b7d5c8] p-4 text-sm leading-7 text-[#06201c] outline-none focus:border-[#1f6a58]" /><div className="flex flex-wrap items-center gap-2"><span className="text-[10px] font-extrabold uppercase text-[#7f9d94]">Add supporting media</span>{(["image", "video", "audio", "pdf", "link"] as EbookBlock["type"][]).map((type) => <button key={type} type="button" onClick={() => addMedia(type)} className="rounded-full border border-[#b7d5c8] px-2.5 py-1.5 text-[10px] font-bold capitalize text-[#1f6a58]">+ {type}</button>)}</div>{activePage.blocks.map((block) => <div key={block.id} className="rounded-xl border border-[#e1ebe6] bg-[#fbfdfb] p-3"><div className="flex items-center justify-between"><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">{block.type} attachment</p><button type="button" onClick={() => removeMedia(block.id)} className="text-[11px] font-bold text-[#b42318]">Remove</button></div><div className="mt-2 grid gap-2 sm:grid-cols-2"><input value={block.url} onChange={(event) => updateMedia(block.id, { url: event.target.value })} placeholder={block.type === "link" ? "Paste URL" : "File or media URL"} className="h-9 rounded-lg border border-[#d7e5df] px-2 text-xs" /><input value={block.type === "image" ? block.altText : block.caption} onChange={(event) => updateMedia(block.id, block.type === "image" ? { altText: event.target.value } : { caption: event.target.value })} placeholder={block.type === "image" ? "Alt text for accessibility" : "Caption or transcript"} className="h-9 rounded-lg border border-[#d7e5df] px-2 text-xs" /></div></div>)}</div>}
+      </section></div>
+  </div>;
+}
+
+function EbookAllInOneEditor({ draft, onChange }: { draft: EbookDraft; onChange: (draft: EbookDraft) => void }) {
+  const [activePageId, setActivePageId] = useState(draft.pages[0]?.id ?? 1);
+  const [previewing, setPreviewing] = useState(false);
+  const activePage = draft.pages.find((page) => page.id === activePageId) ?? draft.pages[0];
+  if (!activePage) return null;
+  const update = (patch: Partial<EbookDraft>) => onChange({ ...draft, ...patch });
+  const updatePage = (patch: Partial<EbookPageDraft>) => update({ pages: draft.pages.map((page) => page.id === activePage.id ? { ...page, ...patch } : page) });
+  const insertText = (value: string) => updatePage({ content: `${activePage.content}${activePage.content ? "\n\n" : ""}${value}` });
+  const addInlineItem = (type: EbookBlock["type"]) => updatePage({ blocks: [...activePage.blocks, emptyEbookBlock(type)] });
+  const addPage = () => { const page = { id: Date.now(), title: `Page ${draft.pages.length + 1}`, content: "", blocks: [] }; update({ pages: [...draft.pages, page] }); setActivePageId(page.id); setPreviewing(false); };
+  const updateInlineItem = (id: number, patch: Partial<EbookBlock>) => updatePage({ blocks: activePage.blocks.map((block) => block.id === id ? { ...block, ...patch } : block) });
+  const removeInlineItem = (id: number) => updatePage({ blocks: activePage.blocks.filter((block) => block.id !== id) });
+  return <div className="rounded-2xl border border-[#b7d5c8] bg-[#f4fbf6] p-3 sm:p-4">
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-extrabold text-[#06201c]">eBook editor</p><p className="mt-1 text-[11px] leading-5 text-[#52736a]">Everything on this page is created inside one editor, in the same order learners will read it.</p></div><button type="button" onClick={addPage} className="rounded-full bg-[#1f6a58] px-3 py-2 text-[11px] font-extrabold text-white">+ Add page</button></div>
+    <div className="mt-4 grid gap-3 lg:grid-cols-[170px_minmax(0,1fr)]"><aside className="rounded-xl border border-[#d7e5df] bg-white p-2"><p className="px-2 pb-2 text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">Pages / TOC</p><div className="space-y-1">{draft.pages.map((page, index) => <button key={page.id} type="button" onClick={() => { setActivePageId(page.id); setPreviewing(false); }} className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[11px] font-extrabold ${activePage.id === page.id ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f4faf7]"}`}><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#eff8f2] text-[10px]">{index + 1}</span><span className="truncate">{page.title || `Page ${index + 1}`}</span></button>)}</div><button type="button" onClick={addPage} className="mt-3 w-full rounded-lg border border-dashed border-[#b7d5c8] px-2 py-2 text-[11px] font-bold text-[#1f6a58]">+ Add page</button></aside>
+      <section className="rounded-xl border border-[#d7e5df] bg-white p-3 sm:p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">Page {draft.pages.findIndex((page) => page.id === activePage.id) + 1}</p><p className="mt-1 text-xs font-bold text-[#52736a]">Single content editor</p></div><div className="flex gap-2"><button type="button" onClick={() => setPreviewing((value) => !value)} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-[11px] font-bold text-[#1f6a58]">{previewing ? "Edit page" : "Preview page"}</button><button type="button" disabled={draft.pages.length === 1} onClick={() => { const pages = draft.pages.filter((page) => page.id !== activePage.id); update({ pages }); setActivePageId(pages[0].id); }} className="rounded-full border border-[#f0c7c2] px-3 py-1.5 text-[11px] font-bold text-[#b42318] disabled:opacity-40">Remove page</button></div></div>
+        {previewing ? <div className="mt-4 rounded-xl border border-[#e1ebe6] bg-[#fbfdfb] p-4"><h3 className="text-lg font-extrabold text-[#06201c]">{activePage.title || "Untitled page"}</h3><p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-[#52736a]">{activePage.content || "This page does not have text content yet."}</p>{activePage.blocks.map((block) => <p key={block.id} className="mt-3 rounded-lg bg-[#e8f6ee] px-3 py-2 text-xs font-semibold text-[#1f6a58]">{block.type.toUpperCase()}: {block.caption || block.url || "content attached"}</p>)}</div> : <div className="mt-4 rounded-xl border-2 border-[#b7d5c8] bg-[#fbfdfb] p-3"><label className="block text-[11px] font-extrabold text-[#52736a]">Page title<input value={activePage.title} onChange={(event) => updatePage({ title: event.target.value })} placeholder="Chapter introduction" className="mt-1.5 h-10 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-sm font-semibold text-[#06201c]" /></label><div className="mt-3 flex flex-wrap gap-2 border-y border-[#e1ebe6] py-2"><span className="self-center text-[10px] font-extrabold uppercase text-[#7f9d94]">Insert into page</span>{[["Heading", "## Section heading"], ["Paragraph", "Write more content here..."], ["Quote", "> Add a quote"], ["List", "- List item\n- List item"], ["Bold", "**bold text**"], ["Italic", "_italic text_"], ["Link", "[link text](https://...)"]].map(([label, value]) => <button key={label} type="button" onClick={() => insertText(value)} className="rounded-full border border-[#b7d5c8] bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#1f6a58]">+ {label}</button>)}</div><textarea value={activePage.content} onChange={(event) => updatePage({ content: event.target.value })} placeholder="Write text, headings, lists, quotes, and links here. Use the insert buttons above to add structure..." rows={14} className="mt-3 w-full resize-y rounded-lg border border-[#d7e5df] bg-white p-4 text-sm leading-7 text-[#06201c] outline-none focus:border-[#1f6a58]" /><div className="mt-3 border-t border-[#e1ebe6] pt-3"><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">Insert media into this same page</p><div className="mt-2 flex flex-wrap gap-2">{(["image", "video", "audio", "pdf", "link"] as EbookBlock["type"][]).map((type) => <button key={type} type="button" onClick={() => addInlineItem(type)} className="rounded-full border border-[#b7d5c8] bg-white px-2.5 py-1.5 text-[10px] font-bold capitalize text-[#1f6a58]">+ {type}</button>)}</div>{activePage.blocks.map((block) => <div key={block.id} className="mt-2 rounded-lg border border-[#e1ebe6] bg-white p-2"><div className="flex items-center justify-between"><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">{block.type} inserted in page</p><button type="button" onClick={() => removeInlineItem(block.id)} className="text-[11px] font-bold text-[#b42318]">Remove</button></div><div className="mt-2 grid gap-2 sm:grid-cols-2"><input value={block.url} onChange={(event) => updateInlineItem(block.id, { url: event.target.value })} placeholder={block.type === "link" ? "Paste URL" : "Upload file or paste media URL"} className="h-9 rounded-lg border border-[#d7e5df] px-2 text-xs" /><input value={block.type === "image" ? block.altText : block.caption} onChange={(event) => updateInlineItem(block.id, block.type === "image" ? { altText: event.target.value } : { caption: event.target.value })} placeholder={block.type === "image" ? "Alt text" : "Caption or transcript"} className="h-9 rounded-lg border border-[#d7e5df] px-2 text-xs" /></div></div>)}</div></div>}
+      </section></div>
+  </div>;
+}
+
+function EbookInlineImageEditor({ draft, onChange }: { draft: EbookDraft; onChange: (draft: EbookDraft) => void }) {
+  const [activePageId, setActivePageId] = useState(draft.pages[0]?.id ?? 1);
+  const [previewing, setPreviewing] = useState(false);
+  const activePage = draft.pages.find((page) => page.id === activePageId) ?? draft.pages[0];
+  if (!activePage) return null;
+  const update = (patch: Partial<EbookDraft>) => onChange({ ...draft, ...patch });
+  const updatePage = (patch: Partial<EbookPageDraft>) => update({ pages: draft.pages.map((page) => page.id === activePage.id ? { ...page, ...patch } : page) });
+  const insertText = (value: string) => updatePage({ content: `${activePage.content}${activePage.content ? "\n\n" : ""}${value}` });
+  const addImage = () => updatePage({ blocks: [...activePage.blocks, emptyEbookBlock("image")] });
+  const updateImage = (id: number, patch: Partial<EbookBlock>) => updatePage({ blocks: activePage.blocks.map((block) => block.id === id ? { ...block, ...patch } : block) });
+  const addPage = () => { const page = { id: Date.now(), title: `Page ${draft.pages.length + 1}`, content: "", blocks: [] }; update({ pages: [...draft.pages, page] }); setActivePageId(page.id); setPreviewing(false); };
+  return <div className="rounded-2xl border border-[#b7d5c8] bg-[#f4fbf6] p-3 sm:p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-extrabold text-[#06201c]">eBook editor</p><p className="mt-1 text-[11px] leading-5 text-[#52736a]">Write text and place images directly in the same learner-facing page.</p></div><button type="button" onClick={addPage} className="rounded-full bg-[#1f6a58] px-3 py-2 text-[11px] font-extrabold text-white">+ Add page</button></div><div className="mt-4 grid gap-3 lg:grid-cols-[170px_minmax(0,1fr)]"><aside className="rounded-xl border border-[#d7e5df] bg-white p-2"><p className="px-2 pb-2 text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">Pages / TOC</p><div className="space-y-1">{draft.pages.map((page, index) => <button key={page.id} type="button" onClick={() => { setActivePageId(page.id); setPreviewing(false); }} className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[11px] font-extrabold ${activePage.id === page.id ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f4faf7]"}`}><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#eff8f2] text-[10px]">{index + 1}</span><span className="truncate">{page.title || `Page ${index + 1}`}</span></button>)}</div><button type="button" onClick={addPage} className="mt-3 w-full rounded-lg border border-dashed border-[#b7d5c8] px-2 py-2 text-[11px] font-bold text-[#1f6a58]">+ Add page</button></aside><section className="rounded-xl border border-[#d7e5df] bg-white p-3 sm:p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">Page {draft.pages.findIndex((page) => page.id === activePage.id) + 1}</p><p className="mt-1 text-xs font-bold text-[#52736a]">One editor for text and images</p></div><div className="flex gap-2"><button type="button" onClick={() => setPreviewing((value) => !value)} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-[11px] font-bold text-[#1f6a58]">{previewing ? "Edit page" : "Preview page"}</button><button type="button" disabled={draft.pages.length === 1} onClick={() => { const pages = draft.pages.filter((page) => page.id !== activePage.id); update({ pages }); setActivePageId(pages[0].id); }} className="rounded-full border border-[#f0c7c2] px-3 py-1.5 text-[11px] font-bold text-[#b42318] disabled:opacity-40">Remove page</button></div></div>{previewing ? <div className="mt-4 rounded-xl border border-[#e1ebe6] bg-[#fbfdfb] p-4"><h3 className="text-lg font-extrabold text-[#06201c]">{activePage.title || "Untitled page"}</h3><p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-[#52736a]">{activePage.content || "This page does not have text content yet."}</p>{activePage.blocks.map((block) => block.url ? <img key={block.id} src={block.url} alt={block.altText} className="mt-4 max-h-72 rounded-lg object-contain" /> : <p key={block.id} className="mt-3 rounded-lg bg-[#fff8e8] px-3 py-2 text-xs text-[#8a5a00]">Add an image URL to preview this image.</p>)}</div> : <div className="mt-4 rounded-xl border-2 border-[#b7d5c8] bg-[#fbfdfb] p-3"><label className="block text-[11px] font-extrabold text-[#52736a]">Page title<input value={activePage.title} onChange={(event) => updatePage({ title: event.target.value })} placeholder="Chapter introduction" className="mt-1.5 h-10 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-sm font-semibold text-[#06201c]" /></label><div className="mt-3 flex flex-wrap gap-2 border-y border-[#e1ebe6] py-2"><span className="self-center text-[10px] font-extrabold uppercase text-[#7f9d94]">Insert</span>{[["Heading", "## Section heading"], ["Paragraph", "Write more content here..."], ["Quote", "> Add a quote"], ["List", "- List item\n- List item"], ["Bold", "**bold text**"], ["Italic", "_italic text_"], ["Link", "[link text](https://...)"]].map(([label, value]) => <button key={label} type="button" onClick={() => insertText(value)} className="rounded-full border border-[#b7d5c8] bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#1f6a58]">+ {label}</button>)}<button type="button" onClick={addImage} className="rounded-full bg-[#1f6a58] px-2.5 py-1.5 text-[10px] font-bold text-white">+ Image</button></div><textarea value={activePage.content} onChange={(event) => updatePage({ content: event.target.value })} placeholder="Write the page content here..." rows={14} className="mt-3 w-full resize-y rounded-lg border border-[#d7e5df] bg-white p-4 text-sm leading-7 text-[#06201c] outline-none focus:border-[#1f6a58]" />{activePage.blocks.map((block) => <div key={block.id} className="mt-3 rounded-lg border border-[#e1ebe6] bg-white p-3"><div className="flex items-center justify-between"><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">Image in this page</p><button type="button" onClick={() => updatePage({ blocks: activePage.blocks.filter((item) => item.id !== block.id) })} className="text-[11px] font-bold text-[#b42318]">Remove</button></div><div className="mt-2 grid gap-2 sm:grid-cols-2"><input value={block.url} onChange={(event) => updateImage(block.id, { url: event.target.value })} placeholder="Upload image or paste image URL" className="h-9 rounded-lg border border-[#d7e5df] px-2 text-xs" /><input value={block.altText} onChange={(event) => updateImage(block.id, { altText: event.target.value })} placeholder="Alt text for accessibility" className="h-9 rounded-lg border border-[#d7e5df] px-2 text-xs" /></div>{block.url ? <img src={block.url} alt={block.altText} className="mt-3 max-h-56 rounded-lg object-contain" /> : <p className="mt-2 text-[10px] text-[#7f9d94]">The image preview will appear here.</p>}</div>)}</div>}</section></div></div>;
+}
+
+function EbookRichContentEditor({ draft, onChange }: { draft: EbookDraft; onChange: (draft: EbookDraft) => void }) {
+  const [activePageId, setActivePageId] = useState(draft.pages[0]?.id ?? 1);
+  const [previewing, setPreviewing] = useState(false);
+  const activePage = draft.pages.find((page) => page.id === activePageId) ?? draft.pages[0];
+  if (!activePage) return null;
+  const update = (patch: Partial<EbookDraft>) => onChange({ ...draft, ...patch });
+  const updatePage = (patch: Partial<EbookPageDraft>) => update({ pages: draft.pages.map((page) => page.id === activePage.id ? { ...page, ...patch } : page) });
+  const runCommand = (command: string, value?: string) => {
+    const isListCommand = command === "insertUnorderedList" || command === "insertOrderedList";
+    document.execCommand("styleWithCSS", false, isListCommand ? "false" : "true");
+    document.execCommand(command, false, value);
+  };
+  const insertHtml = (html: string) => { document.execCommand("insertHTML", false, html); };
+  const addImage = () => updatePage({ blocks: [...activePage.blocks, emptyEbookBlock("image")] });
+  const updateImage = (id: number, patch: Partial<EbookBlock>) => updatePage({ blocks: activePage.blocks.map((block) => block.id === id ? { ...block, ...patch } : block) });
+  const addPage = () => { const page = { id: Date.now(), title: `Page ${draft.pages.length + 1}`, content: "", blocks: [] }; update({ pages: [...draft.pages, page] }); setActivePageId(page.id); setPreviewing(false); };
+  return <div className="rounded-2xl border border-[#b7d5c8] bg-[#f4fbf6] p-3 sm:p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-extrabold text-[#06201c]">eBook rich text editor</p><p className="mt-1 text-[11px] leading-5 text-[#52736a]">Write and format the whole page in one editor, then place images within the same page.</p></div><button type="button" onClick={addPage} className="rounded-full bg-[#1f6a58] px-3 py-2 text-[11px] font-extrabold text-white">+ Add page</button></div><div className="mt-4 grid gap-3 lg:grid-cols-[170px_minmax(0,1fr)]"><aside className="rounded-xl border border-[#d7e5df] bg-white p-2"><p className="px-2 pb-2 text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">Pages / TOC</p><div className="space-y-1">{draft.pages.map((page, index) => <button key={page.id} type="button" onClick={() => { setActivePageId(page.id); setPreviewing(false); }} className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[11px] font-extrabold ${activePage.id === page.id ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f4faf7]"}`}><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#eff8f2] text-[10px]">{index + 1}</span><span className="truncate">{page.title || `Page ${index + 1}`}</span></button>)}</div><button type="button" onClick={addPage} className="mt-3 w-full rounded-lg border border-dashed border-[#b7d5c8] px-2 py-2 text-[11px] font-bold text-[#1f6a58]">+ Add page</button></aside><section className="rounded-xl border border-[#d7e5df] bg-white p-3 sm:p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">Page {draft.pages.findIndex((page) => page.id === activePage.id) + 1}</p><p className="mt-1 text-xs font-bold text-[#52736a]">Complete writing and formatting workspace</p></div><div className="flex gap-2"><button type="button" onClick={() => setPreviewing((value) => !value)} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-[11px] font-bold text-[#1f6a58]">{previewing ? "Edit page" : "Preview page"}</button><button type="button" disabled={draft.pages.length === 1} onClick={() => { const pages = draft.pages.filter((page) => page.id !== activePage.id); update({ pages }); setActivePageId(pages[0].id); }} className="rounded-full border border-[#f0c7c2] px-3 py-1.5 text-[11px] font-bold text-[#b42318] disabled:opacity-40">Remove page</button></div></div>{previewing ? <div className="mt-4 rounded-xl border border-[#e1ebe6] bg-[#fbfdfb] p-4"><h3 className="text-lg font-extrabold text-[#06201c]">{activePage.title || "Untitled page"}</h3><div className="prose prose-sm mt-3 max-w-none text-[#52736a]" dangerouslySetInnerHTML={{ __html: activePage.content || "<p>This page does not have content yet.</p>" }} />{activePage.blocks.map((block) => block.url ? <img key={block.id} src={block.url} alt={block.altText} className="mt-4 max-h-72 rounded-lg object-contain" /> : null)}</div> : <div className="mt-4 rounded-xl border-2 border-[#b7d5c8] bg-[#fbfdfb] p-3"><label className="block text-[11px] font-extrabold text-[#52736a]">Page title<input value={activePage.title} onChange={(event) => updatePage({ title: event.target.value })} placeholder="Chapter introduction" className="mt-1.5 h-10 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-sm font-semibold text-[#06201c]" /></label><div className="mt-3 flex flex-wrap gap-1.5 border-y border-[#e1ebe6] py-2"><button type="button" onClick={() => runCommand("formatBlock", "h2")} className="rounded border border-[#d7e5df] bg-white px-2 py-1 text-[10px] font-bold">Heading</button><button type="button" onClick={() => runCommand("formatBlock", "h3")} className="rounded border border-[#d7e5df] bg-white px-2 py-1 text-[10px] font-bold">Subheading</button><button type="button" onClick={() => runCommand("formatBlock", "p")} className="rounded border border-[#d7e5df] bg-white px-2 py-1 text-[10px]">Paragraph</button><button type="button" onClick={() => runCommand("insertUnorderedList")} className="rounded border border-[#d7e5df] bg-white px-2 py-1 text-[10px]">Bulleted list</button><button type="button" onClick={() => runCommand("insertOrderedList")} className="rounded border border-[#d7e5df] bg-white px-2 py-1 text-[10px]">1. List</button><button type="button" onClick={() => insertHtml("<blockquote>Important quote</blockquote>")} className="rounded border border-[#d7e5df] bg-white px-2 py-1 text-[10px]">Quote</button><button type="button" onClick={() => insertHtml("<table><tbody><tr><td>Cell 1</td><td>Cell 2</td></tr><tr><td>Cell 3</td><td>Cell 4</td></tr></tbody></table>")} className="rounded border border-[#d7e5df] bg-white px-2 py-1 text-[10px]">Table</button><button type="button" onClick={() => insertHtml("<hr />")} className="rounded border border-[#d7e5df] bg-white px-2 py-1 text-[10px]">Divider</button><button type="button" onClick={() => insertHtml("<pre><code>Reference or code</code></pre>")} className="rounded border border-[#d7e5df] bg-white px-2 py-1 text-[10px]">Code</button><button type="button" onClick={() => runCommand("bold")} className="rounded border border-[#d7e5df] bg-white px-2 py-1 text-[10px] font-bold">B</button><button type="button" onClick={() => runCommand("italic")} className="rounded border border-[#d7e5df] bg-white px-2 py-1 text-[10px] italic">I</button><button type="button" onClick={() => runCommand("underline")} className="rounded border border-[#d7e5df] bg-white px-2 py-1 text-[10px] underline">U</button><button type="button" onClick={() => runCommand("justifyLeft")} className="rounded border border-[#d7e5df] bg-white px-2 py-1 text-[10px]">Left</button><button type="button" onClick={() => runCommand("justifyCenter")} className="rounded border border-[#d7e5df] bg-white px-2 py-1 text-[10px]">Center</button><button type="button" onClick={() => runCommand("justifyRight")} className="rounded border border-[#d7e5df] bg-white px-2 py-1 text-[10px]">Right</button><select onChange={(event) => runCommand("fontSize", event.target.value)} defaultValue="3" className="h-6 rounded border border-[#d7e5df] text-[10px]"><option value="2">Small</option><option value="3">Normal</option><option value="5">Large</option><option value="7">Huge</option></select><input type="color" title="Text color" onChange={(event) => runCommand("foreColor", event.target.value)} className="h-6 w-7 rounded border border-[#d7e5df]" /><input type="color" title="Highlight color" onChange={(event) => runCommand("hiliteColor", event.target.value)} className="h-6 w-7 rounded border border-[#d7e5df]" /><button type="button" onClick={() => { const url = window.prompt("Enter link URL"); if (url) runCommand("createLink", url); }} className="rounded border border-[#d7e5df] bg-white px-2 py-1 text-[10px] text-[#1f6a58]">Link</button><button type="button" onClick={() => runCommand("undo")} className="rounded border border-[#d7e5df] bg-white px-2 py-1 text-[10px]">Undo</button><button type="button" onClick={() => runCommand("redo")} className="rounded border border-[#d7e5df] bg-white px-2 py-1 text-[10px]">Redo</button><button type="button" onClick={addImage} className="rounded bg-[#1f6a58] px-2 py-1 text-[10px] font-bold text-white">+ Image</button></div><div contentEditable suppressContentEditableWarning dangerouslySetInnerHTML={{ __html: activePage.content }} onInput={(event) => updatePage({ content: event.currentTarget.innerHTML })} className="mt-3 min-h-[340px] rounded-lg border border-[#d7e5df] bg-white p-4 text-sm leading-7 text-[#06201c] outline-none focus:border-[#1f6a58]" data-placeholder="Write the page content here..." />{activePage.blocks.map((block) => <div key={block.id} className="mt-3 rounded-lg border border-[#e1ebe6] bg-white p-3"><div className="flex items-center justify-between"><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">Image inserted in this page</p><button type="button" onClick={() => updatePage({ blocks: activePage.blocks.filter((item) => item.id !== block.id) })} className="text-[11px] font-bold text-[#b42318]">Remove</button></div><div className="mt-2 grid gap-2 sm:grid-cols-2"><input value={block.url} onChange={(event) => updateImage(block.id, { url: event.target.value })} placeholder="Upload image or paste image URL" className="h-9 rounded-lg border border-[#d7e5df] px-2 text-xs" /><input value={block.altText} onChange={(event) => updateImage(block.id, { altText: event.target.value })} placeholder="Alt text for accessibility" className="h-9 rounded-lg border border-[#d7e5df] px-2 text-xs" /></div>{block.url ? <img src={block.url} alt={block.altText} className="mt-3 max-h-56 rounded-lg object-contain" /> : <p className="mt-2 text-[10px] text-[#7f9d94]">The image preview will appear here.</p>}</div>)}</div>}</section></div></div>;
+}
+
+function StableEbookTextSurface({ value, onCommit }: { value: string; onCommit: (value: string) => void }) {
+  const editorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (editorRef.current && editorRef.current.innerHTML !== value) editorRef.current.innerHTML = value;
+  }, [value]);
+  return <div ref={editorRef} contentEditable suppressContentEditableWarning onBlur={() => onCommit(editorRef.current?.innerHTML ?? "")} className="mt-3 min-h-[340px] rounded-lg border border-[#d7e5df] bg-white p-4 text-sm leading-7 text-[#06201c] outline-none focus:border-[#1f6a58]" data-placeholder="Write the page content here..." />;
+}
+
+function EbookStableEditor({ draft, onChange }: { draft: EbookDraft; onChange: (draft: EbookDraft) => void }) {
+  const [activePageId, setActivePageId] = useState(draft.pages[0]?.id ?? 1);
+  const activePage = draft.pages.find((page) => page.id === activePageId) ?? draft.pages[0];
+  if (!activePage) return null;
+  const update = (patch: Partial<EbookDraft>) => onChange({ ...draft, ...patch });
+  const updatePage = (patch: Partial<EbookPageDraft>) => update({ pages: draft.pages.map((page) => page.id === activePage.id ? { ...page, ...patch } : page) });
+  const command = (name: string, value?: string) => document.execCommand(name, false, value);
+  const insert = (html: string) => document.execCommand("insertHTML", false, html);
+  const addPage = () => { const page = { id: Date.now(), title: `Page ${draft.pages.length + 1}`, content: "", blocks: [] }; update({ pages: [...draft.pages, page] }); setActivePageId(page.id); };
+  const addImage = () => updatePage({ blocks: [...activePage.blocks, emptyEbookBlock("image")] });
+  return <div className="rounded-2xl border border-[#b7d5c8] bg-[#f4fbf6] p-3 sm:p-4"><div className="flex items-center justify-between gap-3"><div><p className="text-sm font-extrabold text-[#06201c]">eBook editor</p><p className="mt-1 text-[11px] text-[#52736a]">The cursor stays in place while you type. Content saves when you leave the editor.</p></div><button type="button" onClick={addPage} className="rounded-full bg-[#1f6a58] px-3 py-2 text-[11px] font-extrabold text-white">+ Add page</button></div><div className="mt-4 grid gap-3 lg:grid-cols-[170px_minmax(0,1fr)]"><aside className="rounded-xl border border-[#d7e5df] bg-white p-2"><p className="px-2 pb-2 text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">Pages / TOC</p>{draft.pages.map((page, index) => <button key={page.id} type="button" onClick={() => setActivePageId(page.id)} className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[11px] font-extrabold ${activePage.id === page.id ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a]"}`}><span className="flex h-6 w-6 items-center justify-center rounded-md bg-[#eff8f2] text-[10px]">{index + 1}</span><span className="truncate">{page.title || `Page ${index + 1}`}</span></button>)}</aside><section className="rounded-xl border border-[#d7e5df] bg-white p-3"><label className="block text-[11px] font-extrabold text-[#52736a]">Page title<input value={activePage.title} onChange={(event) => updatePage({ title: event.target.value })} className="mt-1.5 h-10 w-full rounded-lg border border-[#d7e5df] px-3 text-sm font-semibold" /></label><div className="mt-3 flex flex-wrap gap-1.5 border-y border-[#e1ebe6] py-2"><button type="button" onClick={() => command("formatBlock", "h2")} className="rounded border px-2 py-1 text-[10px] font-bold">Heading</button><button type="button" onClick={() => command("formatBlock", "h3")} className="rounded border px-2 py-1 text-[10px] font-bold">Subheading</button><button type="button" onClick={() => command("insertUnorderedList")} className="rounded border px-2 py-1 text-[10px]">Bulleted list</button><button type="button" onClick={() => command("insertOrderedList")} className="rounded border px-2 py-1 text-[10px]">1. List</button><button type="button" onClick={() => insert("<blockquote>Important quote</blockquote>")} className="rounded border px-2 py-1 text-[10px]">Quote</button><button type="button" onClick={() => insert("<table style='width:100%;border-collapse:collapse;margin:12px 0'><thead><tr><th style='border:1px solid #b7d5c8;padding:8px;text-align:left'>Heading 1</th><th style='border:1px solid #b7d5c8;padding:8px;text-align:left'>Heading 2</th></tr></thead><tbody><tr><td style='border:1px solid #b7d5c8;padding:8px'>Cell 1</td><td style='border:1px solid #b7d5c8;padding:8px'>Cell 2</td></tr></tbody></table><p><br></p>") } className="rounded border px-2 py-1 text-[10px]">Table</button><button type="button" onClick={() => insert("<hr />")} className="rounded border px-2 py-1 text-[10px]">Divider</button><button type="button" onClick={() => insert("<pre><code>Reference or code</code></pre>")} className="rounded border px-2 py-1 text-[10px]">Code</button><button type="button" onClick={() => command("bold")} className="rounded border px-2 py-1 text-[10px] font-bold">B</button><button type="button" onClick={() => command("italic")} className="rounded border px-2 py-1 text-[10px] italic">I</button><button type="button" onClick={() => command("underline")} className="rounded border px-2 py-1 text-[10px] underline">U</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => command("justifyLeft")} className="rounded border px-2 py-1 text-[10px]">Left</button><button type="button" onClick={() => command("justifyCenter")} className="rounded border px-2 py-1 text-[10px]">Center</button><button type="button" onClick={() => command("justifyRight")} className="rounded border px-2 py-1 text-[10px]">Right</button><input type="color" title="Text color" onChange={(event) => command("foreColor", event.target.value)} className="h-6 w-7" /><input type="color" title="Highlight" onChange={(event) => command("hiliteColor", event.target.value)} className="h-6 w-7" /><button type="button" onClick={() => command("undo")} className="rounded border px-2 py-1 text-[10px]">Undo</button><button type="button" onClick={() => command("redo")} className="rounded border px-2 py-1 text-[10px]">Redo</button><button type="button" onClick={addImage} className="rounded bg-[#1f6a58] px-2 py-1 text-[10px] font-bold text-white">+ Image</button></div><StableEbookTextSurface value={activePage.content} onCommit={(content) => updatePage({ content })} />{activePage.blocks.map((block) => <div key={block.id} className="mt-3 rounded-lg border border-[#e1ebe6] p-3"><p className="text-[10px] font-extrabold uppercase text-[#7f9d94]">Image in this page</p><div className="mt-2 grid gap-2 sm:grid-cols-2"><input value={block.url} onChange={(event) => updatePage({ blocks: activePage.blocks.map((item) => item.id === block.id ? { ...item, url: event.target.value } : item) })} placeholder="Image URL" className="h-9 rounded border px-2 text-xs" /><input value={block.altText} onChange={(event) => updatePage({ blocks: activePage.blocks.map((item) => item.id === block.id ? { ...item, altText: event.target.value } : item) })} placeholder="Alt text" className="h-9 rounded border px-2 text-xs" /></div>{block.url ? <img src={block.url} alt={block.altText} className="mt-2 max-h-48 rounded object-contain" /> : null}</div>)}</section></div></div>;
+}
+
+function EbookImageEditingEditor({ draft, onChange }: { draft: EbookDraft; onChange: (draft: EbookDraft) => void }) {
+  const [activePageId, setActivePageId] = useState(draft.pages[0]?.id ?? 1);
+  const [uploadingId, setUploadingId] = useState<number | null>(null);
+  const activePage = draft.pages.find((page) => page.id === activePageId) ?? draft.pages[0];
+  if (!activePage) return null;
+  const update = (patch: Partial<EbookDraft>) => onChange({ ...draft, ...patch });
+  const updatePage = (patch: Partial<EbookPageDraft>) => update({ pages: draft.pages.map((page) => page.id === activePage.id ? { ...page, ...patch } : page) });
+  const updateImage = (id: number, patch: Partial<EbookBlock>) => updatePage({ blocks: activePage.blocks.map((block) => block.id === id ? { ...block, ...patch } : block) });
+  const addPage = () => { const page = { id: Date.now(), title: `Page ${draft.pages.length + 1}`, content: "", blocks: [] }; update({ pages: [...draft.pages, page] }); setActivePageId(page.id); };
+  const addImage = () => updatePage({ blocks: [...activePage.blocks, { ...emptyEbookBlock("image"), imageSize: "full", imageFit: "contain", imagePosition: "center" }] });
+  const uploadImage = async (id: number, file: File) => { setUploadingId(id); try { const uploaded = await uploadTrainingMedia(file, "image"); updateImage(id, { url: uploaded.url, caption: uploaded.name }); } finally { setUploadingId(null); } };
+  return <div className="rounded-2xl border border-[#b7d5c8] bg-[#f4fbf6] p-3 sm:p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-extrabold text-[#06201c]">eBook image editor</p><p className="mt-1 text-[11px] text-[#52736a]">Images appear in the page flow. Upload, resize, crop, reposition, and add accessible text.</p></div><button type="button" onClick={addPage} className="rounded-full bg-[#1f6a58] px-3 py-2 text-[11px] font-extrabold text-white">+ Add page</button></div><div className="mt-4 grid gap-3 lg:grid-cols-[170px_minmax(0,1fr)]"><aside className="rounded-xl border border-[#d7e5df] bg-white p-2"><p className="px-2 pb-2 text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">Pages / TOC</p>{draft.pages.map((page, index) => <button key={page.id} type="button" onClick={() => setActivePageId(page.id)} className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[11px] font-extrabold ${activePage.id === page.id ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a]"}`}><span className="flex h-6 w-6 items-center justify-center rounded-md bg-[#eff8f2] text-[10px]">{index + 1}</span><span className="truncate">{page.title || `Page ${index + 1}`}</span></button>)}</aside><section className="rounded-xl border border-[#d7e5df] bg-white p-3"><input value={activePage.title} onChange={(event) => updatePage({ title: event.target.value })} placeholder="Page title" className="h-10 w-full rounded-lg border border-[#d7e5df] px-3 text-sm font-semibold" /><div contentEditable suppressContentEditableWarning onBlur={(event) => updatePage({ content: event.currentTarget.innerHTML })} dangerouslySetInnerHTML={{ __html: activePage.content }} className="mt-3 min-h-40 rounded-lg border border-[#d7e5df] p-4 text-sm leading-7 outline-none focus:border-[#1f6a58]" data-placeholder="Write your page content..." /><div className="mt-3 flex items-center justify-between border-t border-[#e1ebe6] pt-3"><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">Images in this page</p><button type="button" onClick={addImage} className="rounded-full bg-[#1f6a58] px-3 py-1.5 text-[10px] font-bold text-white">+ Add image</button></div>{activePage.blocks.map((block) => <div key={block.id} className="mt-3 rounded-xl border border-[#e1ebe6] bg-[#fbfdfb] p-3"><div className="flex items-center justify-between"><p className="text-[10px] font-extrabold uppercase text-[#7f9d94]">Inline image</p><button type="button" onClick={() => updatePage({ blocks: activePage.blocks.filter((item) => item.id !== block.id) })} className="text-[11px] font-bold text-[#b42318]">Remove</button></div>{block.url ? <div className="mt-3 overflow-hidden rounded-lg border border-[#d7e5df] bg-white p-2" style={{ width: block.imageSize === "small" ? "45%" : block.imageSize === "medium" ? "70%" : "100%", marginInline: "auto" }}><img src={block.url} alt={block.altText} className="w-full" style={{ aspectRatio: block.imageFit === "cover" ? "16 / 9" : "auto", objectFit: block.imageFit, objectPosition: block.imagePosition }} /></div> : <p className="mt-2 rounded-lg bg-[#fff8e8] px-3 py-2 text-xs text-[#8a5a00]">Upload an image to place it on this page.</p>}<div className="mt-3 grid gap-2 sm:grid-cols-2"><label className="block text-[10px] font-bold text-[#52736a]">Image file<input type="file" accept="image/*" disabled={uploadingId === block.id} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadImage(block.id, file); }} className="mt-1 block w-full text-[10px]" />{uploadingId === block.id ? <span className="text-[#1f6a58]">Uploading...</span> : null}</label><label className="block text-[10px] font-bold text-[#52736a]">Image URL<input value={block.url} onChange={(event) => updateImage(block.id, { url: event.target.value })} placeholder="Paste image URL" className="mt-1 h-9 w-full rounded-lg border border-[#d7e5df] px-2 text-xs" /></label><label className="block text-[10px] font-bold text-[#52736a]">Size<select value={block.imageSize ?? "full"} onChange={(event) => updateImage(block.id, { imageSize: event.target.value as EbookBlock["imageSize"] })} className="mt-1 h-9 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs"><option value="small">Small</option><option value="medium">Medium</option><option value="full">Full width</option></select></label><label className="block text-[10px] font-bold text-[#52736a]">Crop<select value={block.imageFit ?? "contain"} onChange={(event) => updateImage(block.id, { imageFit: event.target.value as EbookBlock["imageFit"] })} className="mt-1 h-9 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs"><option value="contain">Show full image</option><option value="cover">Crop to 16:9</option></select></label><label className="block text-[10px] font-bold text-[#52736a]">Crop position<select value={block.imagePosition ?? "center"} onChange={(event) => updateImage(block.id, { imagePosition: event.target.value })} className="mt-1 h-9 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs"><option value="center">Center</option><option value="top">Top</option><option value="bottom">Bottom</option><option value="left">Left</option><option value="right">Right</option></select></label><label className="block text-[10px] font-bold text-[#52736a]">Alt text<input value={block.altText} onChange={(event) => updateImage(block.id, { altText: event.target.value })} placeholder="Describe the image" className="mt-1 h-9 w-full rounded-lg border border-[#d7e5df] px-2 text-xs" /></label><label className="block text-[10px] font-bold text-[#52736a] sm:col-span-2">Caption<input value={block.caption} onChange={(event) => updateImage(block.id, { caption: event.target.value })} placeholder="Optional caption" className="mt-1 h-9 w-full rounded-lg border border-[#d7e5df] px-2 text-xs" /></label></div></div>)}</section></div></div>;
+}
+
+function EbookCursorImageEditor({ draft, onChange }: { draft: EbookDraft; onChange: (draft: EbookDraft) => void }) {
+  const [activePageId, setActivePageId] = useState(draft.pages[0]?.id ?? 1);
+  const [selectedImage, setSelectedImage] = useState<HTMLImageElement | null>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const savedRange = useRef<Range | null>(null);
+  const activePage = draft.pages.find((page) => page.id === activePageId) ?? draft.pages[0];
+  useEffect(() => {
+    if (editorRef.current && activePage && editorRef.current.innerHTML !== activePage.content) {
+      editorRef.current.innerHTML = activePage.content;
+    }
+    setSelectedImage(null);
+    savedRange.current = null;
+  }, [activePageId, activePage?.content]);
+  useEffect(() => {
+    const toolbar = editorRef.current?.previousElementSibling;
+    if (!toolbar) return;
+    toolbar.setAttribute("aria-label", "eBook formatting toolbar");
+    toolbar.classList.add("rounded-lg", "bg-[#f8fcf9]", "px-2");
+    const hoverClasses = "transition-colors hover:border-[#1f6a58] hover:bg-[#e8f6ee] hover:text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58]";
+    toolbar.querySelectorAll<HTMLElement>("button, select, input").forEach((control) => control.classList.add(...hoverClasses.split(" ")));
+    const groups = [
+      { start: 0, label: "Content blocks" },
+      { start: 8, label: "Text formatting" },
+      { start: 11, label: "Text size" },
+      { start: 12, label: "Text color" },
+      { start: 13, label: "Highlight color" },
+      { start: 14, label: "Alignment" },
+      { start: 17, label: "History" },
+      { start: 19, label: "Media" },
+    ];
+    const controls = Array.from(toolbar.querySelectorAll<HTMLElement>("button, select, input"));
+    groups.forEach(({ start, label }) => {
+      const control = controls[start];
+      if (!control) return;
+      control.classList.add("ml-1", "border-l", "border-[#d7e5df]", "pl-2");
+      control.setAttribute("title", label);
+      control.setAttribute("aria-label", label);
+    });
+  }, []);
+  useEffect(() => {
+    const rememberSelection = () => {
+      const selection = window.getSelection();
+      if (selection?.rangeCount && editorRef.current?.contains(selection.anchorNode)) savedRange.current = selection.getRangeAt(0).cloneRange();
+    };
+    document.addEventListener("selectionchange", rememberSelection);
+    return () => document.removeEventListener("selectionchange", rememberSelection);
+  }, []);
+  if (!activePage) return null;
+  const update = (patch: Partial<EbookDraft>) => onChange({ ...draft, ...patch });
+  const updatePage = (content: string) => update({ pages: draft.pages.map((page) => page.id === activePage.id ? { ...page, content } : page) });
+  const saveSelection = () => { const selection = window.getSelection(); if (selection?.rangeCount) savedRange.current = selection.getRangeAt(0).cloneRange(); };
+  const restoreSelection = () => { if (!savedRange.current) return; const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(savedRange.current); editorRef.current?.focus(); };
+  const openImageUpload = () => { saveSelection(); fileInputRef.current?.click(); };
+  const uploadImageAtCursor = async (file: File) => { const uploaded = await uploadTrainingMedia(file, "image"); restoreSelection(); document.execCommand("insertHTML", false, `<img src="${uploaded.url}" alt="" style="max-width:100%;width:100%;height:auto;display:block;margin:16px 0;" />`); if (editorRef.current) updatePage(editorRef.current.innerHTML); };
+  const setImageStyle = (style: Partial<CSSStyleDeclaration>) => { if (!selectedImage) return; Object.assign(selectedImage.style, style); if (editorRef.current) updatePage(editorRef.current.innerHTML); };
+  const addPage = () => { const page = { id: Date.now(), title: `Page ${draft.pages.length + 1}`, content: "", blocks: [] }; update({ pages: [...draft.pages, page] }); setActivePageId(page.id); };
+  return <div className="rounded-2xl border border-[#b7d5c8] bg-[#f4fbf6] p-3 sm:p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-extrabold text-[#06201c]">eBook inline editor</p><p className="mt-1 text-[11px] text-[#52736a]">Place the cursor anywhere, upload an image, then continue writing around it.</p></div><button type="button" onClick={addPage} className="rounded-full bg-[#1f6a58] px-3 py-2 text-[11px] font-extrabold text-white">+ Add page</button></div><div className="mt-4 grid gap-3 lg:grid-cols-[170px_minmax(0,1fr)]"><aside className="rounded-xl border border-[#d7e5df] bg-white p-2"><p className="px-2 pb-2 text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">Pages / TOC</p>{draft.pages.map((page, index) => <button key={page.id} type="button" onClick={() => setActivePageId(page.id)} className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[11px] font-extrabold ${activePage.id === page.id ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a]"}`}><span className="flex h-6 w-6 items-center justify-center rounded-md bg-[#eff8f2] text-[10px]">{index + 1}</span><span className="truncate">{page.title || `Page ${index + 1}`}</span></button>)}</aside><section className="rounded-xl border border-[#d7e5df] bg-white p-3"><input value={activePage.title} onChange={(event) => update({ pages: draft.pages.map((page) => page.id === activePage.id ? { ...page, title: event.target.value } : page) })} placeholder="Page title" className="h-10 w-full rounded-lg border border-[#d7e5df] px-3 text-sm font-semibold" /><div className="mt-3 flex flex-wrap gap-2 border-y border-[#e1ebe6] py-2"><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={openImageUpload} className="rounded-full bg-[#1f6a58] px-3 py-1.5 text-[10px] font-bold text-white">+ Image</button><span className="self-center text-[10px] text-[#7f9d94]">Click an image after inserting it to edit size and crop.</span><input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadImageAtCursor(file); event.currentTarget.value = ""; }} /></div><div ref={editorRef} contentEditable suppressContentEditableWarning onClick={(event) => { const image = (event.target as HTMLElement).closest("img"); setSelectedImage(image); }} onBlur={() => { if (editorRef.current) updatePage(editorRef.current.innerHTML); }} className="mt-3 min-h-[420px] rounded-lg border border-[#d7e5df] bg-white p-4 text-sm leading-7 text-[#06201c] outline-none focus:border-[#1f6a58]" data-placeholder="Write your page content here..." />{selectedImage ? <div className="mt-3 rounded-lg border border-[#b7d5c8] bg-[#f4fbf6] p-3"><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">Selected image controls</p><div className="mt-2 flex flex-wrap gap-2"><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setImageStyle({ width: "45%", height: "auto", objectFit: "contain" })} className="rounded border bg-white px-2 py-1 text-[10px]">Small</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setImageStyle({ width: "70%", height: "auto", objectFit: "contain" })} className="rounded border bg-white px-2 py-1 text-[10px]">Medium</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setImageStyle({ width: "100%", height: "auto", objectFit: "contain" })} className="rounded border bg-white px-2 py-1 text-[10px]">Full width</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setImageStyle({ width: "100%", height: "260px", objectFit: "cover", objectPosition: "center" })} className="rounded border bg-white px-2 py-1 text-[10px]">Crop 16:9</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setImageStyle({ objectPosition: "top" })} className="rounded border bg-white px-2 py-1 text-[10px]">Top</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setImageStyle({ objectPosition: "center" })} className="rounded border bg-white px-2 py-1 text-[10px]">Center</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setImageStyle({ objectPosition: "bottom" })} className="rounded border bg-white px-2 py-1 text-[10px]">Bottom</button></div></div> : null}</section></div></div>;
+}
+
+function EbookCompleteEditor({ draft, onChange, imageUploadFieldKeys, onUploadStateChange }: { draft: EbookDraft; onChange: (draft: EbookDraft) => void; imageUploadFieldKeys: readonly string[]; onUploadStateChange?: (pending: boolean) => void }) {
+  const [activePageId, setActivePageId] = useState(draft.pages[0]?.id ?? 1);
+  const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
+  const [selectedImageCaption, setSelectedImageCaption] = useState("");
+  const [imageUploadError, setImageUploadError] = useState<string | null>(null);
+  const [imageUploadPending, setImageUploadPending] = useState(false);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const savedRange = useRef<Range | null>(null);
+  const imageObjectUrlsRef = useRef<string[]>([]);
+  const activePage = draft.pages.find((page) => page.id === activePageId) ?? draft.pages[0];
+  const activePageRef = useRef(activePage);
+  activePageRef.current = activePage;
+  useEffect(() => {
+    const editor = editorRef.current;
+    const page = activePageRef.current;
+    if (!editor || !page || editor.dataset.ebookPageId === String(page.id)) return;
+    // Keep React from replacing the editable DOM after every keystroke. That
+    // would invalidate saved selections and make subsequent formatting fail.
+    editor.dataset.ebookPageId = String(page.id);
+    editor.innerHTML = page.content;
+    let disposed = false;
+    const editorImages = Array.from(editor.querySelectorAll<HTMLImageElement>("img"));
+    const loadImages = async () => {
+      await Promise.all(editorImages.map(async (image) => {
+        const source = image.dataset.assetUrl || image.getAttribute("src") || "";
+        if (!source || source.startsWith("blob:")) return;
+        try {
+          const response = await authenticatedFetch(source, { credentials: "include", cache: "no-store" });
+          if (!response.ok) return;
+          const objectUrl = URL.createObjectURL(await response.blob());
+          if (disposed) {
+            URL.revokeObjectURL(objectUrl);
+            return;
+          }
+          imageObjectUrlsRef.current.push(objectUrl);
+          image.src = objectUrl;
+        } catch {
+          // Keep the protected URL in place so the browser can show its alt text.
+        }
+      }));
+    };
+    void loadImages();
+    return () => {
+      disposed = true;
+      imageObjectUrlsRef.current.splice(0).forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [activePageId]);
+  useEffect(() => {
+    setSelectedImageId(null);
+    setSelectedImageCaption("");
+    savedRange.current = null;
+  }, [activePageId]);
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.setAttribute("aria-label", "Page content editor");
+    editor.style.minHeight = "420px";
+    editor.style.display = "block";
+    editor.style.boxSizing = "border-box";
+    editor.style.border = "1px solid #d7e5df";
+    editor.style.borderRadius = "8px";
+    editor.style.backgroundColor = "#ffffff";
+    editor.style.padding = "16px";
+    editor.style.overflowWrap = "anywhere";
+    const initialiseEmptyPage = () => {
+      if (editor.innerHTML.trim()) return;
+      editor.innerHTML = "<p><br></p>";
+    };
+    editor.addEventListener("focus", initialiseEmptyPage);
+    return () => editor.removeEventListener("focus", initialiseEmptyPage);
+  }, [activePageId]);
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const handleEnter = (event: KeyboardEvent) => {
+      if (event.key !== "Enter") return;
+      const selection = window.getSelection();
+      if (!selection?.rangeCount) return;
+      const range = selection.getRangeAt(0);
+      const startElement = range.startContainer.nodeType === Node.ELEMENT_NODE
+        ? range.startContainer as HTMLElement
+        : range.startContainer.parentElement;
+      const quote = startElement?.closest("blockquote");
+      if (quote && editor.contains(quote)) {
+        event.preventDefault();
+        const paragraph = document.createElement("p");
+        paragraph.innerHTML = "<br>";
+        quote.parentNode?.insertBefore(paragraph, quote.nextSibling);
+        const nextRange = document.createRange();
+        nextRange.selectNodeContents(paragraph);
+        nextRange.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(nextRange);
+        savedRange.current = nextRange.cloneRange();
+        updatePage(editor.innerHTML);
+        return;
+      }
+      const listItem = startElement?.closest("li");
+      if (listItem && editor.contains(listItem) && !listItem.textContent?.trim() && range.collapsed) {
+        event.preventDefault();
+        const list = listItem.parentElement;
+        const paragraph = document.createElement("p");
+        paragraph.innerHTML = "<br>";
+        list?.parentNode?.insertBefore(paragraph, list.nextSibling);
+        listItem.remove();
+        if (list && !list.children.length) list.remove();
+        const nextRange = document.createRange();
+        nextRange.selectNodeContents(paragraph);
+        nextRange.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(nextRange);
+        savedRange.current = nextRange.cloneRange();
+        updatePage(editor.innerHTML);
+        return;
+      }
+      const heading = startElement?.closest("h1, h2, h3, h4, h5, h6");
+      if (!heading || !editor.contains(heading)) return;
+      event.preventDefault();
+      const paragraph = document.createElement("p");
+      paragraph.innerHTML = "<br>";
+      heading.parentNode?.insertBefore(paragraph, heading.nextSibling);
+      const nextRange = document.createRange();
+      nextRange.selectNodeContents(paragraph);
+      nextRange.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(nextRange);
+      savedRange.current = nextRange.cloneRange();
+      updatePage(editor.innerHTML);
+    };
+    editor.addEventListener("keydown", handleEnter);
+    return () => editor.removeEventListener("keydown", handleEnter);
+  }, [activePageId]);
+  useEffect(() => {
+    const toolbar = editorRef.current?.previousElementSibling;
+    if (!toolbar) return;
+    toolbar.setAttribute("aria-label", "eBook formatting toolbar");
+    toolbar.classList.add("rounded-lg", "bg-[#f8fcf9]", "px-2");
+    const hoverClasses = "transition-colors hover:border-[#1f6a58] hover:bg-[#e8f6ee] hover:text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58]";
+    toolbar.querySelectorAll<HTMLElement>("button, select, input").forEach((control) => control.classList.add(...hoverClasses.split(" ")));
+    const groups = [
+      { start: 0, label: "Content blocks" },
+      { start: 8, label: "Text formatting" },
+      { start: 11, label: "Text size" },
+      { start: 12, label: "Text color" },
+      { start: 13, label: "Highlight color" },
+      { start: 14, label: "Alignment" },
+      { start: 17, label: "History" },
+      { start: 19, label: "Media" },
+    ];
+    const controls = Array.from(toolbar.querySelectorAll<HTMLElement>("button, select, input"));
+    groups.forEach(({ start, label }) => {
+      const control = controls[start];
+      if (!control) return;
+      control.classList.add("ml-1", "border-l", "border-[#d7e5df]", "pl-2");
+      control.setAttribute("title", label);
+      control.setAttribute("aria-label", label);
+    });
+  }, []);
+  useEffect(() => {
+    const rememberSelection = () => {
+      const selection = window.getSelection();
+      if (selection?.rangeCount && editorRef.current?.contains(selection.anchorNode)) savedRange.current = selection.getRangeAt(0).cloneRange();
+    };
+    document.addEventListener("selectionchange", rememberSelection);
+    return () => document.removeEventListener("selectionchange", rememberSelection);
+  }, []);
+  if (!activePage) return null;
+  const update = (patch: Partial<EbookDraft>) => onChange({ ...draft, ...patch });
+  const updatePage = (content: string) => update({ pages: draft.pages.map((page) => page.id === activePage.id ? { ...page, content } : page) });
+  const rememberCurrentSelection = () => { const selection = window.getSelection(); if (selection?.rangeCount && editorRef.current?.contains(selection.anchorNode)) savedRange.current = selection.getRangeAt(0).cloneRange(); };
+  const markToolbarButton = (label: string) => {
+    const toolbar = editorRef.current?.previousElementSibling;
+    toolbar?.querySelectorAll<HTMLButtonElement>("button").forEach((button) => {
+      const active = button.textContent?.trim() === label;
+      button.classList.toggle("bg-[#dff3e6]", active);
+      button.classList.toggle("border-[#1f6a58]", active);
+      button.classList.toggle("text-[#1f6a58]", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+  };
+  const formatCurrentBlock = (tagName: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    restoreSelection();
+    const selection = window.getSelection();
+    if (!selection?.rangeCount) return;
+    const range = selection.getRangeAt(0);
+    const startElement = range.startContainer.nodeType === Node.ELEMENT_NODE
+      ? range.startContainer as HTMLElement
+      : range.startContainer.parentElement;
+    const block = startElement?.closest("p, div, h1, h2, h3, h4, h5, h6, blockquote, pre, li");
+    const target = block && editor.contains(block) ? block : null;
+    const replacement = document.createElement(tagName);
+    if (tagName === "h2") Object.assign(replacement.style, { fontSize: "1.5rem", lineHeight: "2rem", fontWeight: "800", margin: "0.75rem 0" });
+    if (tagName === "h3") Object.assign(replacement.style, { fontSize: "1.25rem", lineHeight: "1.75rem", fontWeight: "700", margin: "0.625rem 0" });
+    if (target) {
+      while (target.firstChild) replacement.appendChild(target.firstChild);
+      target.replaceWith(replacement);
+    } else {
+      while (editor.firstChild) replacement.appendChild(editor.firstChild);
+      editor.appendChild(replacement);
+    }
+    const nextRange = document.createRange();
+    nextRange.selectNodeContents(replacement);
+    nextRange.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(nextRange);
+    savedRange.current = nextRange.cloneRange();
+  };
+  const command = (name: string, value?: string) => {
+    rememberCurrentSelection();
+    restoreSelection();
+    const isListCommand = name === "insertUnorderedList" || name === "insertOrderedList";
+    document.execCommand("styleWithCSS", false, isListCommand ? "false" : "true");
+    if (name === "formatBlock" && value) {
+      formatCurrentBlock(value);
+      markToolbarButton(value === "h3" ? "Subheading" : "Heading");
+      if (editorRef.current) updatePage(editorRef.current.innerHTML);
+      return;
+    }
+    if (name === "formatBlock" && value && editorRef.current && !editorRef.current.textContent?.trim()) {
+      editorRef.current.innerHTML = `<${value}><br></${value}>`;
+      const range = document.createRange();
+      range.selectNodeContents(editorRef.current.firstElementChild ?? editorRef.current);
+      range.collapse(false);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      savedRange.current = range.cloneRange();
+      markToolbarButton(value === "h3" ? "Subheading" : "Heading");
+      updatePage(editorRef.current.innerHTML);
+      return;
+    }
+    const before = editorRef.current?.innerHTML;
+    const commandValue = name === "formatBlock" && value ? `<${value}>` : value;
+    const applied = document.execCommand(name, false, commandValue);
+    if (name === "formatBlock" && value && editorRef.current?.innerHTML === before) document.execCommand(name, false, value);
+    if (name === "hiliteColor" && !applied) document.execCommand("backColor", false, value);
+    if (name === "formatBlock") markToolbarButton(value === "h3" ? "Subheading" : "Heading");
+    if (editorRef.current) updatePage(editorRef.current.innerHTML);
+  };
+  const insert = (html: string) => {
+    rememberCurrentSelection();
+    restoreSelection();
+    document.execCommand("insertHTML", false, html);
+    if (editorRef.current && html.includes("<blockquote")) {
+      const quotes = editorRef.current.querySelectorAll<HTMLElement>("blockquote");
+      const quote = quotes[quotes.length - 1];
+      if (quote) {
+        Object.assign(quote.style, { borderLeft: "4px solid #83b9a4", paddingLeft: "16px", margin: "16px 0", fontStyle: "italic", color: "#52736a" });
+        const quoteRange = document.createRange();
+        quoteRange.selectNodeContents(quote);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(quoteRange);
+        savedRange.current = quoteRange.cloneRange();
+      }
+    }
+    if (editorRef.current) updatePage(editorRef.current.innerHTML);
+  };
+  const saveSelection = () => { const selection = window.getSelection(); if (selection?.rangeCount) savedRange.current = selection.getRangeAt(0).cloneRange(); };
+  const restoreSelection = () => {
+    const editor = editorRef.current;
+    if (!editor || !savedRange.current || !editor.contains(savedRange.current.commonAncestorContainer)) return;
+    editor.focus();
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(savedRange.current);
+  };
+  const applyFontSize = (fontSize: string) => {
+    const editor = editorRef.current;
+    const allowedFontSizes = new Set(["14px", "16px", "20px", "24px", "32px"]);
+    if (!editor || !allowedFontSizes.has(fontSize)) return;
+    restoreSelection();
+    const selection = window.getSelection();
+    if (!selection?.rangeCount) return;
+    const range = selection.getRangeAt(0).cloneRange();
+    if (!editor.contains(range.commonAncestorContainer)) return;
+    if (range.collapsed) {
+      const sizeSpan = document.createElement("span");
+      sizeSpan.style.fontSize = fontSize;
+      sizeSpan.dataset.fontSizeCaret = "true";
+      const placeholder = document.createTextNode("\u00a0");
+      sizeSpan.appendChild(placeholder);
+      range.insertNode(sizeSpan);
+      const caret = document.createRange();
+      caret.setStart(placeholder, 0);
+      caret.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(caret);
+      savedRange.current = caret.cloneRange();
+    } else {
+      // Wrap only the selected text runs. Wrapping an extracted multi-paragraph
+      // fragment in a span creates invalid HTML and can move formatting/images.
+      const textNodes: Text[] = [];
+      const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+      let currentNode = walker.nextNode();
+      while (currentNode) {
+        const textNode = currentNode as Text;
+        if (textNode.data.length > 0 && range.intersectsNode(textNode)) textNodes.push(textNode);
+        currentNode = walker.nextNode();
+      }
+      let firstFormattedText: Text | null = null;
+      let lastFormattedText: Text | null = null;
+      for (const textNode of textNodes.reverse()) {
+        const startOffset = textNode === range.startContainer ? range.startOffset : 0;
+        const endOffset = textNode === range.endContainer ? range.endOffset : textNode.length;
+        if (endOffset <= startOffset) continue;
+        const selectedText = textNode.splitText(startOffset);
+        selectedText.splitText(endOffset - startOffset);
+        const sizeSpan = document.createElement("span");
+        sizeSpan.style.fontSize = fontSize;
+        selectedText.replaceWith(sizeSpan);
+        sizeSpan.appendChild(selectedText);
+        lastFormattedText ??= selectedText;
+        firstFormattedText = selectedText;
+      }
+      if (!firstFormattedText || !lastFormattedText) return;
+      // Keep the edited selection available so another size can be chosen
+      // immediately without selecting the text again.
+      const updatedRange = document.createRange();
+      updatedRange.setStart(firstFormattedText, 0);
+      updatedRange.setEnd(lastFormattedText, lastFormattedText.length);
+      selection.removeAllRanges();
+      selection.addRange(updatedRange);
+      savedRange.current = updatedRange.cloneRange();
+    }
+    updatePage(editor.innerHTML);
+  };
+  const insertImageAtCursor = (src: string) => {
+    const editor = editorRef.current;
+    if (!editor) return null;
+    editor.focus();
+    const selection = window.getSelection();
+    const range = savedRange.current?.cloneRange() ?? (selection?.rangeCount ? selection.getRangeAt(0).cloneRange() : null);
+    if (!range || !editor.contains(range.commonAncestorContainer)) {
+      const fallbackRange = document.createRange();
+      fallbackRange.selectNodeContents(editor);
+      fallbackRange.collapse(false);
+      selection?.removeAllRanges();
+      selection?.addRange(fallbackRange);
+    } else {
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }
+    const activeRange = selection?.rangeCount ? selection.getRangeAt(0) : range;
+    if (!activeRange) return null;
+    activeRange.deleteContents();
+    const image = document.createElement("img");
+    image.src = src;
+    image.alt = "eBook image";
+    image.dataset.uploading = "true";
+    Object.assign(image.style, { maxWidth: "100%", width: "100%", height: "auto", display: "block", margin: "16px 0" });
+    activeRange.insertNode(image);
+    const afterImage = document.createRange();
+    afterImage.setStartAfter(image);
+    afterImage.collapse(true);
+    selection?.removeAllRanges();
+    selection?.addRange(afterImage);
+    savedRange.current = afterImage.cloneRange();
+    return image;
+  };
+  const uploadImage = async (file: File) => {
+    if (imageUploadPending) return;
+    setImageUploadError(null);
+    setImageUploadPending(true);
+    onUploadStateChange?.(true);
+    let currentImage: HTMLImageElement | null = null;
+    try {
+      const localDisplayUrl = URL.createObjectURL(file);
+      currentImage = insertImageAtCursor(localDisplayUrl);
+      if (!currentImage) {
+        URL.revokeObjectURL(localDisplayUrl);
+        throw new Error("Place the cursor in the eBook page, then try adding the image again.");
+      }
+      currentImage.dataset.localDisplayUrl = localDisplayUrl;
+      currentImage.dataset.uploading = "true";
+      if (imageUploadFieldKeys.length === 0) {
+        throw new Error("This Training form has no enabled image upload field. Enable Gallery Images or Primary Image in its form configuration, then try again.");
+      }
+      let uploaded: Awaited<ReturnType<typeof uploadTrainingMedia>> | null = null;
+      let lastFieldError: Error | null = null;
+      for (const fieldKey of imageUploadFieldKeys) {
+        try {
+          uploaded = await uploadTrainingMedia(file, "image", fieldKey);
+          break;
+        } catch (error) {
+          const isFieldConfigurationError = error instanceof TrainingsApiError
+            && error.status === 422
+            && /field_key|enabled media field|resolved form/i.test(error.message);
+          if (!isFieldConfigurationError) throw error;
+          lastFieldError = error;
+        }
+      }
+      if (!uploaded) throw lastFieldError ?? new Error("No enabled Training image field accepts this upload.");
+      if (!uploaded.asset_id) throw new Error("The image upload succeeded but did not return an asset_id.");
+      currentImage.dataset.assetId = uploaded.asset_id;
+      currentImage.dataset.assetUrl = uploaded.url;
+      currentImage.src = uploaded.url;
+      currentImage.alt = file.name.replace(/\.[^.]+$/, "").replace(/[._-]+/g, " ").trim() || "eBook image";
+      const localImageUrl = currentImage.dataset.localDisplayUrl;
+      if (localImageUrl) URL.revokeObjectURL(localImageUrl);
+      currentImage.removeAttribute("data-local-display-url");
+      currentImage.removeAttribute("data-uploading");
+      currentImage.removeAttribute("data-upload-error");
+      if (editorRef.current) {
+        const imageBlock: EbookBlock = {
+          id: Date.now() + Math.random(),
+          type: "image",
+          content: "",
+          url: uploaded.url,
+          altText: currentImage.alt.trim() || "eBook image",
+          caption: "",
+          assetId: uploaded.asset_id,
+        };
+        onChange({
+          ...draft,
+          pages: draft.pages.map((page) => page.id === activePage.id
+            ? { ...page, content: editorRef.current?.innerHTML ?? page.content, blocks: [...page.blocks, imageBlock] }
+            : page),
+        });
+      }
+    } catch (error) {
+      const localImageUrl = currentImage?.dataset.localDisplayUrl;
+      if (localImageUrl) URL.revokeObjectURL(localImageUrl);
+      currentImage?.remove();
+      if (editorRef.current) {
+        onChange({
+          ...draft,
+          pages: draft.pages.map((page) => page.id === activePage.id ? { ...page, content: editorRef.current?.innerHTML ?? page.content } : page),
+        });
+      }
+      setImageUploadError(error instanceof Error ? error.message : "Unable to upload this image. Please try again.");
+    } finally {
+      setImageUploadPending(false);
+      onUploadStateChange?.(false);
+    }
+  };
+  const addPage = () => { const page = { id: Date.now(), title: `Page ${draft.pages.length + 1}`, content: "", blocks: [] }; update({ pages: [...draft.pages, page] }); setActivePageId(page.id); };
+  const getSelectedImage = () => selectedImageId && editorRef.current
+    ? Array.from(editorRef.current.querySelectorAll<HTMLImageElement>("img[data-ebook-editor-image-id]")).find((image) => image.dataset.ebookEditorImageId === selectedImageId) ?? null
+    : null;
+  const setImageStyle = (style: Partial<CSSStyleDeclaration>) => {
+    const image = getSelectedImage();
+    if (!image) return;
+    Object.assign(image.style, style);
+    if (editorRef.current) updatePage(editorRef.current.innerHTML);
+  };
+  const selectImage = (image: HTMLImageElement | null) => {
+    if (image && !image.dataset.ebookEditorImageId) image.dataset.ebookEditorImageId = `editor-image-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setSelectedImageId(image?.dataset.ebookEditorImageId ?? null);
+    setSelectedImageCaption(image?.dataset.caption ?? "");
+  };
+  const updateSelectedImageMetadata = (value: string) => {
+    const image = getSelectedImage();
+    if (!image) return;
+    image.dataset.caption = value;
+    setSelectedImageCaption(value);
+    if (editorRef.current) updatePage(editorRef.current.innerHTML);
+  };
+  return <div className="rounded-2xl border border-[#b7d5c8] bg-[#f4fbf6] p-3 sm:p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-extrabold text-[#06201c]">eBook complete editor</p><p className="mt-1 text-[11px] text-[#52736a]">Write, format, and insert images in one continuous page.</p></div><button type="button" onClick={addPage} disabled={imageUploadPending} className="rounded-full bg-[#1f6a58] px-3 py-2 text-[11px] font-extrabold text-white disabled:opacity-60">+ Add page</button></div><div className="mt-4 grid gap-3 lg:grid-cols-[170px_minmax(0,1fr)]"><aside className="rounded-xl border border-[#d7e5df] bg-white p-2"><p className="px-2 pb-2 text-[10px] font-extrabold uppercase tracking-[.1em] text-[#7f9d94]">Pages / TOC</p>{draft.pages.map((page, index) => <button key={page.id} type="button" disabled={imageUploadPending} onClick={() => setActivePageId(page.id)} className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[11px] font-extrabold ${activePage.id === page.id ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a]"}`}><span className="flex h-6 w-6 items-center justify-center rounded-md bg-[#eff8f2] text-[10px]">{index + 1}</span><span className="truncate">{page.title || `Page ${index + 1}`}</span></button>)}</aside><section className="rounded-xl border border-[#d7e5df] bg-white p-3"><input value={activePage.title} onChange={(event) => update({ pages: draft.pages.map((page) => page.id === activePage.id ? { ...page, title: event.target.value } : page) })} placeholder="Page title" className="h-10 w-full rounded-lg border border-[#d7e5df] px-3 text-sm font-semibold" /><div className="mt-3 flex flex-wrap items-center gap-1.5 border-y border-[#e1ebe6] py-2"><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => command("formatBlock", "h2")} className="rounded border px-2 py-1 text-[10px] font-bold">Heading</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => command("formatBlock", "h3")} className="rounded border px-2 py-1 text-[10px] font-bold">Subheading</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => command("insertUnorderedList")} className="rounded border px-2 py-1 text-[10px]">Bulleted list</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => command("insertOrderedList")} className="rounded border px-2 py-1 text-[10px]">1. List</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => insert("<blockquote>Important quote</blockquote>") } className="rounded border px-2 py-1 text-[10px]">Quote</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => insert("<table style='width:100%;border-collapse:collapse;margin:12px 0'><thead><tr><th style='border:1px solid #b7d5c8;padding:8px;text-align:left'>Heading 1</th><th style='border:1px solid #b7d5c8;padding:8px;text-align:left'>Heading 2</th></tr></thead><tbody><tr><td style='border:1px solid #b7d5c8;padding:8px'>Cell 1</td><td style='border:1px solid #b7d5c8;padding:8px'>Cell 2</td></tr></tbody></table><p><br></p>") } className="rounded border px-2 py-1 text-[10px]">Table</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => insert("<hr />")} className="rounded border px-2 py-1 text-[10px]">Divider</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => insert("<pre><code>Reference or code</code></pre>")} className="rounded border px-2 py-1 text-[10px]">Code</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => command("bold")} className="rounded border px-2 py-1 text-[10px] font-bold">Bold</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => command("italic")} className="rounded border px-2 py-1 text-[10px] italic">Italic</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => command("underline")} className="rounded border px-2 py-1 text-[10px] underline">Underline</button><label className="flex items-center gap-1 rounded border px-2 py-1 text-[10px]">Font size<select aria-label="Font size" defaultValue="16px" onMouseDown={() => rememberCurrentSelection()} onChange={(event) => applyFontSize(event.target.value)} className="max-w-20 bg-transparent"><option value="14px">Small</option><option value="16px">Normal</option><option value="20px">Large</option><option value="24px">X-Large</option><option value="32px">XX-Large</option></select></label><label className="flex items-center gap-1 rounded border px-2 py-1 text-[10px]">Text color<input type="color" aria-label="Text color" defaultValue="#06201c" onMouseDown={() => rememberCurrentSelection()} onChange={(event) => command("foreColor", event.target.value)} className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0" /></label><label className="flex items-center gap-1 rounded border px-2 py-1 text-[10px]">Highlight color<input type="color" aria-label="Highlight color" defaultValue="#fff4cf" onMouseDown={() => rememberCurrentSelection()} onChange={(event) => command("hiliteColor", event.target.value)} className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0" /></label><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => command("justifyLeft")} className="rounded border px-2 py-1 text-[10px]">Left</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => command("justifyCenter")} className="rounded border px-2 py-1 text-[10px]">Center</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => command("justifyRight")} className="rounded border px-2 py-1 text-[10px]">Right</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => command("undo")} className="rounded border px-2 py-1 text-[10px]">Undo</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => command("redo")} className="rounded border px-2 py-1 text-[10px]">Redo</button><button type="button" onMouseDown={(event) => { event.preventDefault(); saveSelection(); }} onClick={() => fileInputRef.current?.click()} disabled={imageUploadPending} className="rounded bg-[#1f6a58] px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-60">{imageUploadPending ? "Uploading image..." : "+ Image"}</button><input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadImage(file); event.currentTarget.value = ""; }} /></div>{imageUploadError ? <p role="alert" className="mt-2 rounded-lg border border-[#f0c7c2] bg-[#fff6f5] px-3 py-2 text-xs font-semibold text-[#b42318]">{imageUploadError}</p> : null}{imageUploadPending ? <p role="status" className="mt-2 text-xs font-semibold text-[#1f6a58]">Uploading image...</p> : null}<div ref={editorRef} contentEditable suppressContentEditableWarning onClick={(event) => selectImage((event.target as HTMLElement).closest("img"))} onInput={() => {
+        const editor = editorRef.current;
+        if (!editor) return;
+        editor.querySelectorAll<HTMLElement>("span[data-font-size-caret]").forEach((span) => {
+          const placeholder = span.firstChild;
+          if (placeholder?.nodeType === Node.TEXT_NODE && placeholder.textContent?.includes("\u00a0")) {
+            placeholder.textContent = placeholder.textContent.replace("\u00a0", "");
+          }
+          span.removeAttribute("data-font-size-caret");
+        });
+        updatePage(editor.innerHTML);
+  }} onBlur={() => {
+        const editor = editorRef.current;
+        if (!editor) return;
+        editor.querySelectorAll<HTMLElement>("span[data-font-size-caret]").forEach((span) => {
+          if (span.textContent === "\u00a0") span.remove();
+          else span.removeAttribute("data-font-size-caret");
+        });
+        updatePage(editor.innerHTML);
+      }} className="mt-3 min-h-[420px] rounded-lg border border-[#d7e5df] bg-white p-4 text-sm leading-7 text-[#06201c] outline-none focus:border-[#1f6a58] [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-8 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-8 [&_li]:my-1" data-placeholder="Write your page content here..." />{selectedImageId ? <div className="mt-3 rounded-lg border border-[#b7d5c8] bg-[#f4fbf6] p-3"><div className="mb-3 grid gap-2 sm:grid-cols-2"><label className="text-[10px] font-bold text-[#52736a]">Caption<input value={selectedImageCaption} onChange={(event) => updateSelectedImageMetadata(event.target.value)} placeholder="Optional image caption" className="mt-1 h-9 w-full rounded border border-[#d7e5df] bg-white px-2 text-xs" /></label></div><div className="flex flex-wrap items-center gap-2"><span className="text-[10px] font-extrabold uppercase text-[#7f9d94]">Image layout</span><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setImageStyle({ width: "45%", height: "auto", objectFit: "contain" })} className="rounded border bg-white px-2 py-1 text-[10px]">Small</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setImageStyle({ width: "70%", height: "auto", objectFit: "contain" })} className="rounded border bg-white px-2 py-1 text-[10px]">Medium</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setImageStyle({ width: "100%", height: "auto", objectFit: "contain" })} className="rounded border bg-white px-2 py-1 text-[10px]">Full width</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setImageStyle({ width: "100%", height: "260px", objectFit: "cover", objectPosition: "center" })} className="rounded border bg-white px-2 py-1 text-[10px]">Crop 16:9</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setImageStyle({ objectPosition: "top" })} className="rounded border bg-white px-2 py-1 text-[10px]">Top</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setImageStyle({ objectPosition: "center" })} className="rounded border bg-white px-2 py-1 text-[10px]">Center</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setImageStyle({ objectPosition: "bottom" })} className="rounded border bg-white px-2 py-1 text-[10px]">Bottom</button><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { getSelectedImage()?.remove(); setSelectedImageId(null); setSelectedImageCaption(""); if (editorRef.current) updatePage(editorRef.current.innerHTML); }} className="rounded border border-[#f0c7c2] bg-white px-2 py-1 text-[10px] font-semibold text-[#b42318]">Remove image</button></div></div> : null}</section></div></div>;
+}
+
 /** Renders the Training structure: sections, lessons, and reordering. */
-function AddLessonForm({ pending, trainingDeliveryMode, trainingLessonDefaults, onSubmit }: { pending: boolean; trainingDeliveryMode: string; trainingLessonDefaults: TrainingLessonDefaults; onSubmit: (payload: CreateTrainingLessonPayload) => void }) {
+function AddLessonForm({ pending, trainingDeliveryMode, trainingLessonDefaults, imageUploadFieldKeys, onSubmit }: { pending: boolean; trainingDeliveryMode: string; trainingLessonDefaults: TrainingLessonDefaults; imageUploadFieldKeys: readonly string[]; onSubmit: (payload: CreateTrainingLessonPayload) => Promise<unknown> }) {
+  const [isOpen, setIsOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [contentUrl, setContentUrl] = useState("");
   const [type, setType] = useState("text");
+  const [ebookDraft, setEbookDraft] = useState<EbookDraft>({ subtitle: "", author: "", description: "", coverUrl: "", sourceUrl: "", pages: [{ id: 1, title: "Page 1", content: "", blocks: [] }], completionRule: "read_to_end", allowBookmarks: true, allowNotes: true, allowDownload: false, transcriptRequired: false });
   const [scheduledAt, setScheduledAt] = useState("");
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [detailsSource, setDetailsSource] = useState<LessonDetailsSource>("new");
@@ -967,9 +2179,10 @@ function AddLessonForm({ pending, trainingDeliveryMode, trainingLessonDefaults, 
   const [pdfFileName, setPdfFileName] = useState("");
   const [noteFileName, setNoteFileName] = useState("");
   const [fileUploadError, setFileUploadError] = useState<string | null>(null);
+  const [ebookImageUploadPending, setEbookImageUploadPending] = useState(false);
 
   const reset = () => {
-    setTitle(""); setContent(""); setContentUrl(""); setType("text"); setScheduledAt(""); setScheduleError(null); setDetailsSource("new"); setMeetingType("google_meet"); setMeetingLink(""); setJoinMeta("");
+    setTitle(""); setContent(""); setContentUrl(""); setType("text"); setEbookDraft({ subtitle: "", author: "", description: "", coverUrl: "", sourceUrl: "", pages: [{ id: 1, title: "Page 1", content: "", blocks: [] }], completionRule: "read_to_end", allowBookmarks: true, allowNotes: true, allowDownload: false, transcriptRequired: false }); setScheduledAt(""); setScheduleError(null); setDetailsSource("new"); setMeetingType("google_meet"); setMeetingLink(""); setJoinMeta("");
     setVenueName(""); setVenueAddress("");
     setIsPreview(false); setIsDownloadable(false); setFileSize(""); setDuration(""); setVideos([]); setDocuments([]); setNotes([]);
     setVideoFileName(""); setPdfFileName(""); setNoteFileName("");
@@ -977,18 +2190,35 @@ function AddLessonForm({ pending, trainingDeliveryMode, trainingLessonDefaults, 
   };
 
   return (
-    <form
-      className="mt-3 space-y-2 rounded-xl border border-[#d7e5df] bg-white p-3"
-      onSubmit={(event) => {
+    <div className="mt-3">
+      {!isOpen ? <button type="button" aria-expanded="false" onClick={() => setIsOpen(true)} className="flex w-full items-center justify-between gap-3 rounded-xl border border-dashed border-[#b7d5c8] bg-white px-4 py-3 text-left transition hover:border-[#1f6a58] hover:bg-[#f7fbf8]">
+        <span><span className="block text-sm font-bold text-[#1f6a58]">+ Add a lesson</span><span className="mt-0.5 block text-xs text-[#718c82]">Add a video, reading, eBook, quiz, or other course activity.</span></span>
+        <span aria-hidden="true" className="text-xl text-[#1f6a58]">+</span>
+      </button> : <form
+      className="mt-4 space-y-5 rounded-2xl border border-[#cfe1d8] bg-white p-5 shadow-sm [&>input:not([type=checkbox])]:h-11 [&>input:not([type=checkbox])]:rounded-xl [&>input:not([type=checkbox])]:bg-[#fbfdfb] [&>input:not([type=checkbox])]:px-4 [&>input:not([type=checkbox])]:text-sm [&>select]:h-11 [&>select]:rounded-xl [&>select]:bg-[#fbfdfb] [&>select]:px-4 [&>select]:text-sm [&>textarea]:rounded-xl [&>textarea]:bg-[#fbfdfb] [&>textarea]:p-4 [&>textarea]:text-sm"
+      onSubmit={async (event) => {
         event.preventDefault();
         if (!title.trim()) return;
+        if (type === "ebook" && ebookImageUploadPending) {
+          setFileUploadError("Please wait for the eBook image upload to finish before saving.");
+          return;
+        }
         if ((type === "live" || type === "venue") && !isLessonScheduleWithinTraining(scheduledAt, trainingLessonDefaults)) {
           setScheduleError("Set the Training start and end dates first, then choose a lesson date and time within that range.");
           return;
         }
-        onSubmit({
+        let ebookContent: string | undefined;
+        if (type === "ebook") {
+          try {
+            ebookContent = JSON.stringify(toEbookDocument(ebookDraft));
+          } catch (error) {
+            setFileUploadError(error instanceof Error ? error.message : "Finish uploading every eBook image before saving.");
+            return;
+          }
+        }
+        const payload: CreateTrainingLessonPayload = {
           title: title.trim(),
-          content: content.trim() || undefined,
+          content: type === "ebook" ? ebookContent : content.trim() || undefined,
           content_url: contentUrl.trim() || undefined,
           type: toApiLessonType(type),
           ...(type === "live" ? {
@@ -1014,21 +2244,28 @@ function AddLessonForm({ pending, trainingDeliveryMode, trainingLessonDefaults, 
             visibility: document.visibility,
             downloadable: document.downloadable,
           })),
-        });
-        reset();
+        };
+        try {
+          await onSubmit(payload);
+          reset();
+          setIsOpen(false);
+        } catch (error) {
+          setFileUploadError(error instanceof Error ? error.message : "Unable to add this lesson. Check the details and try again.");
+        }
       }}
     >
-      <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">New lesson details</p>
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#e6efea] pb-4"><div><p className="text-[10px] font-extrabold uppercase tracking-[.16em] text-[#62877a]">Build curriculum</p><h3 className="mt-1 text-lg font-extrabold text-[#103c33]">Add a lesson</h3><p className="mt-1 text-sm text-[#718c82]">Choose a lesson type, then add the content learners will use.</p></div><span className="rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">New lesson</span></div>
       {fileUploadError ? <p role="alert" className="rounded-lg border border-[#f0c7c2] bg-[#fff6f5] px-3 py-2 text-xs font-semibold text-[#b42318]">{fileUploadError}</p> : null}
-      <input required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Lesson title" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
+      <label className="block text-xs font-bold text-[#284940]">Lesson title<input required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="For example, Foundations of patient communication" className="mt-2 h-11 w-full rounded-xl border border-[#d7e5df] bg-[#fbfdfb] px-4 text-sm font-normal outline-none transition focus:border-[#1f6a58] focus:ring-2 focus:ring-[#1f6a58]/10" /></label>
       <select required value={type} onChange={(event) => {
         const selectedType = event.target.value;
         setType(selectedType);
         setDetailsSource(getInitialLessonDetailsSource(selectedType, trainingLessonDefaults));
-      }} aria-label="New lesson type" className="h-8 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]">
+      }} aria-label="New lesson type" className="h-11 w-full rounded-xl border border-[#d7e5df] bg-[#fbfdfb] px-4 text-sm outline-none transition focus:border-[#1f6a58] focus:ring-2 focus:ring-[#1f6a58]/10">
         {getLessonTypeOptions(trainingDeliveryMode).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
       {isLessonType(type, "text", "notes") ? <textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder={type === "notes" ? "Notes content..." : "Topic content..."} rows={3} className="w-full rounded-lg border border-[#d7e5df] px-3 py-2 text-xs outline-none focus:border-[#1f6a58]" /> : null}
+      {type === "ebook" ? <EbookCompleteEditor draft={ebookDraft} onChange={setEbookDraft} imageUploadFieldKeys={imageUploadFieldKeys} onUploadStateChange={setEbookImageUploadPending} /> : null}
       {type === "video" ? (
         <>
           <LessonFileDrop label="Video" accept="video/*" fileName={videoFileName} disabled={isVideoUploadPending} onFile={(file) => {
@@ -1090,29 +2327,35 @@ function AddLessonForm({ pending, trainingDeliveryMode, trainingLessonDefaults, 
           .catch((error: Error) => { setNoteFileName(""); setFileUploadError(error.message); });
       }} /> : null}
       {type === "notes" ? notes.map((note) => <LessonMediaPreview key={note} url={note} name={note.split("/").pop() || "Lesson note"} kind="document" />) : null}
-      {isLessonType(type, "video", "pdf", "document", "notes") ? (
+      {isLessonType(type, "video", "pdf", "document", "notes", "ebook") ? (
         <div className="flex flex-wrap gap-4">
           <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={isPreview} onChange={(event) => setIsPreview(event.target.checked)} className="h-3 w-3" />Is preview</label>
           <label className="flex items-center gap-1 text-xs font-semibold text-[#06201c]"><input type="checkbox" checked={isDownloadable} onChange={(event) => setIsDownloadable(event.target.checked)} className="h-3 w-3" />Is downloadable</label>
         </div>
       ) : null}
-      {isLessonType(type, "video", "pdf", "document", "notes") ? <LessonFileSize value={fileSize} /> : null}
+      {isLessonType(type, "video", "pdf", "document", "notes", "ebook") ? <LessonFileSize value={fileSize} /> : null}
       {isLessonType(type, "quiz", "assignment") ? <p className="rounded-lg bg-[#f9fcfa] px-3 py-2 text-xs text-[#52736a]">{type === "quiz" ? "After creating this lesson, attach or create the quiz questions below." : "After creating this lesson, use the Assignments tab to create the submission task."}</p> : null}
       <p className="text-[10px] text-[#7f9d94]">Only fields for the selected lesson type are shown.</p>
       <div className="flex flex-wrap items-center gap-2">
-        <button type="submit" disabled={pending || isVideoUploadPending || !title.trim()} className="h-9 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white hover:bg-[#195646] disabled:opacity-60">{pending ? "Adding..." : "Add lesson"}</button>
-        <button type="button" onClick={reset} disabled={pending || isVideoUploadPending} className="h-9 rounded-full border border-[#d7e5df] px-4 text-xs font-bold text-[#52736a] hover:bg-[#f4faf7] disabled:opacity-60">Clear</button>
+        <button type="submit" disabled={pending || isVideoUploadPending || ebookImageUploadPending || !title.trim()} className="h-9 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white hover:bg-[#195646] disabled:opacity-60">{ebookImageUploadPending ? "Uploading image..." : pending ? "Adding..." : "Add lesson"}</button>
+        <button type="button" onClick={() => { reset(); setIsOpen(false); }} disabled={pending || isVideoUploadPending || ebookImageUploadPending} className="h-9 rounded-full border border-[#d7e5df] px-4 py-1 text-xs font-bold text-[#52736a] hover:bg-[#f4faf7] disabled:opacity-60">Cancel</button>
       </div>
-    </form>
+    </form>}
+    </div>
   );
 }
 
-export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, trainingLessonDefaults }: { trainingId: string; trainingDeliveryMode: string; trainingLessonDefaults: TrainingLessonDefaults }) {
+export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, trainingLessonDefaults, canManage = true }: { trainingId: string; trainingDeliveryMode: string; trainingLessonDefaults: TrainingLessonDefaults; canManage?: boolean }) {
+  const { t } = useTranslation("enterpriseTrainings");
   const queryClient = useQueryClient();
+  const historicalFormQuery = useTrainingHistoricalFormConfiguration(trainingId, Boolean(trainingId));
+  const activeFormQuery = useActiveTrainingFormConfiguration(Boolean(trainingId));
+  const imageUploadFieldKeys = getTrainingImageUploadFieldKeys([historicalFormQuery.data, activeFormQuery.data]);
   const [newSectionTitle, setNewSectionTitle] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
   const [editSectionTitle, setEditSectionTitle] = useState("");
+  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
   const [viewingLesson, setViewingLesson] = useState<{ sectionId: string; lessonId: string } | null>(null);
   const [quizLesson, setQuizLesson] = useState<{ sectionId: string; lessonId: string } | null>(null);
   const [viewingQuizLesson, setViewingQuizLesson] = useState<{ sectionId: string; lessonId: string } | null>(null);
@@ -1120,6 +2363,12 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
   const [lessonAssessmentTitle, setLessonAssessmentTitle] = useState<Record<string, string>>({});
   const [lessonAssessmentInstructions, setLessonAssessmentInstructions] = useState<Record<string, string>>({});
   const [lessonAssessmentPassPercent, setLessonAssessmentPassPercent] = useState<Record<string, string>>({});
+  const [lessonAssessmentType, setLessonAssessmentType] = useState<Record<string, TrainingAssessmentType>>({});
+  const [lessonAssessmentTimeLimit, setLessonAssessmentTimeLimit] = useState<Record<string, string>>({});
+  const [lessonAssessmentAttempts, setLessonAssessmentAttempts] = useState<Record<string, string>>({});
+  const [lessonAssessmentRandomise, setLessonAssessmentRandomise] = useState<Record<string, boolean>>({});
+  const [lessonAssessmentPublication, setLessonAssessmentPublication] = useState<Record<string, "immediate" | "scheduled">>({});
+  const [lessonAssessmentPublishAt, setLessonAssessmentPublishAt] = useState<Record<string, string>>({});
   const [lessonQuestion, setLessonQuestion] = useState<Record<string, string>>({});
   const [lessonQuestionType, setLessonQuestionType] = useState<Record<string, string>>({});
   const [lessonQuestionOptions, setLessonQuestionOptions] = useState<Record<string, string>>({});
@@ -1170,7 +2419,7 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
 
   const attachLessonAssessmentMutation = useMutation({
     mutationFn: ({ sectionId, lessonId, lessonTitle, assessmentId }: { sectionId: string; lessonId: string; lessonTitle: string; assessmentId: string }) => updateTrainingLesson(trainingId, sectionId, lessonId, { title: lessonTitle, assessment_id: assessmentId }),
-    onSuccess: () => { setLessonAssessmentDraft({}); setFeedback("Quiz attached — learners see it after this lesson."); void invalidateSections(); },
+    onSuccess: () => { setLessonAssessmentDraft({}); setFeedback("Quiz attached - learners see it after this lesson."); void invalidateSections(); },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to attach quiz."),
   });
 
@@ -1181,14 +2430,20 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
   });
 
   const createLessonAssessmentMutation = useMutation({
-    mutationFn: async ({ sectionId, lessonId, lessonTitle, title, instructions, passPercent }: { sectionId: string; lessonId: string; lessonTitle: string; title: string; instructions: string; passPercent: string }) => {
+    mutationFn: async ({ sectionId, lessonId, lessonTitle, title, instructions, assessmentType, passPercent, timeLimit, attemptsAllowed, randomise, level, publication, publishAt }: { sectionId: string; lessonId: string; lessonTitle: string; title: string; instructions: string; assessmentType: TrainingAssessmentType; passPercent: string; timeLimit: string; attemptsAllowed: string; randomise: boolean; level: TrainingAssessmentLevel; publication: "immediate" | "scheduled"; publishAt: string }) => {
       const created = await createTrainingAssessment(trainingId, {
         title: title.trim(),
-        type: "quiz",
-        section_id: sectionId,
+        type: assessmentType,
+        module_id: sectionId,
         lesson_id: lessonId,
+        level,
         instructions: instructions.trim() || null,
-        passing_score: passPercent ? Number(passPercent) : null,
+        pass_percent: passPercent ? Number(passPercent) : null,
+        time_limit_minutes: timeLimit ? Number(timeLimit) : null,
+        attempts_allowed: attemptsAllowed ? Number(attemptsAllowed) : null,
+        randomise,
+        publication,
+        publish_at: publication === "scheduled" && publishAt ? new Date(publishAt).toISOString() : null,
         is_published: false,
       });
       const assessment = created && typeof created === "object" ? created as Record<string, unknown> : {};
@@ -1216,6 +2471,12 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
       setLessonAssessmentTitle((current) => ({ ...current, [lessonKey]: "" }));
       setLessonAssessmentInstructions((current) => ({ ...current, [lessonKey]: "" }));
       setLessonAssessmentPassPercent((current) => ({ ...current, [lessonKey]: "" }));
+      setLessonAssessmentType((current) => ({ ...current, [lessonKey]: "quiz" }));
+      setLessonAssessmentTimeLimit((current) => ({ ...current, [lessonKey]: "" }));
+      setLessonAssessmentAttempts((current) => ({ ...current, [lessonKey]: "" }));
+      setLessonAssessmentRandomise((current) => ({ ...current, [lessonKey]: false }));
+      setLessonAssessmentPublication((current) => ({ ...current, [lessonKey]: "immediate" }));
+      setLessonAssessmentPublishAt((current) => ({ ...current, [lessonKey]: "" }));
       setFeedback("Quiz published and linked to this lesson.");
       void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessments"] });
       void invalidateSections();
@@ -1234,7 +2495,9 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
       };
       return createTrainingSection(trainingId, payload);
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      const created = data && typeof data === "object" ? data as Record<string, unknown> : {};
+      if (typeof created.id === "string") setActiveSectionId(created.id);
       setNewSectionTitle("");
       setFeedback("Section created.");
       void invalidateSections();
@@ -1260,15 +2523,26 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
 
   const createLessonMutation = useMutation({
     mutationFn: ({ sectionId, payload }: { sectionId: string; payload: CreateTrainingLessonPayload }) => createTrainingLesson(trainingId, sectionId, payload),
-    onSuccess: (data, vars) => {
+    onSuccess: async (data, vars) => {
       const created = (data ?? {}) as Record<string, unknown>;
       const createdId = typeof created.id === "string" ? created.id : "";
+      let ebookSaveMessage: string | null = null;
+      if (createdId && vars.payload.type === "ebook" && typeof vars.payload.content === "string") {
+        try {
+          const ebookPayload = JSON.parse(vars.payload.content) as { ebook?: Record<string, unknown> };
+          if (ebookPayload.ebook) {
+            await saveTrainingEbookDraft(trainingId, vars.sectionId, createdId, { ebook: ebookPayload.ebook, base_version: 0 });
+          }
+        } catch (error) {
+          ebookSaveMessage = error instanceof Error ? `Lesson added, but eBook content could not be saved: ${error.message}` : "Lesson added, but eBook content could not be saved.";
+        }
+      }
       if (createdId && (vars.payload.type === "quiz" || vars.payload.type === "exam")) {
         setQuizLesson({ sectionId: vars.sectionId, lessonId: createdId });
-        setFeedback("Quiz lesson added — attach an existing quiz or create one below.");
+        setFeedback("Quiz lesson added - attach an existing quiz or create one below.");
       } else {
         if (createdId) setViewingLesson({ sectionId: vars.sectionId, lessonId: createdId });
-        setFeedback(createdId ? "Lesson added — attach videos, PDFs, and notes below." : "Lesson added.");
+        setFeedback(ebookSaveMessage ?? (createdId ? "Lesson added - attach videos, PDFs, and notes below." : "Lesson added."));
       }
       void invalidateSections();
     },
@@ -1325,51 +2599,96 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to reorder lessons."),
   });
 
-  if (sectionsQuery.isLoading) return <p className="text-sm text-[#52736a]">Loading sections...</p>;
-  if (sectionsQuery.isError) return <p className="text-sm font-semibold text-[#b42318]">{(sectionsQuery.error as Error).message}</p>;
+  if (sectionsQuery.isLoading) return <div className="animate-pulse space-y-3" aria-busy="true"><div className="h-20 rounded-2xl bg-[#edf3f0]" /><div className="h-28 rounded-2xl bg-[#edf3f0]" /><span className="sr-only">Loading course structure</span></div>;
+  if (sectionsQuery.isError) return <div role="alert" className="rounded-xl border border-[#f0c7c2] bg-[#fff6f5] p-4 text-sm text-[#b42318]"><p className="font-semibold">{(sectionsQuery.error as Error).message || "Unable to load the course structure."}</p><button type="button" onClick={() => void sectionsQuery.refetch()} className="mt-2 rounded-full border border-[#b42318] px-3 py-1.5 text-xs font-bold">Try again</button></div>;
 
   const sections = Array.isArray(sectionsQuery.data) ? (sectionsQuery.data as Array<Record<string, unknown>>) : [];
   const assessments = Array.isArray(assessmentsQuery.data) ? (assessmentsQuery.data as Array<Record<string, unknown>>) : [];
+  const totalLessons = sections.reduce((count, section) => count + (Array.isArray(section.lessons) ? section.lessons.length : 0), 0);
+  const activeSection = sections.find((section) => typeof section.id === "string" && section.id === activeSectionId) ?? sections[0];
+  const activeSectionIdResolved = activeSection && typeof activeSection.id === "string" ? activeSection.id : "";
 
   return (
-    <SectionCard title="Sessions & Lessons">
-      {sections.length === 0 ? <p className="text-sm text-[#52736a]">No sessions yet. Add your first session to start building the training.</p> : null}
-      <ul className="grid gap-3">
+    <section className="overflow-hidden rounded-2xl border border-[#dce9e3] bg-white shadow-sm">
+      <header className="border-b border-[#e6efea] px-5 py-5 sm:px-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-bold text-[#1f6a58]">Training content</p>
+            <h2 className="mt-1 text-2xl font-bold tracking-tight text-[#06201c]">Sessions &amp; Lessons</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#52736a]">Group lessons into sessions. Learners will follow the same order shown here.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {!canManage ? <span className="rounded-full bg-[#f0f3f2] px-3 py-1.5 text-xs font-bold text-[#52736a]">View only</span> : null}
+          </div>
+        </div>
+      </header>
+      <div className="space-y-5 p-4 sm:p-6">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl bg-[#f5faf7] px-4 py-3 text-sm text-[#52736a]" aria-label="Course outline summary">
+          <span><strong className="text-[#103c33]">{sections.length}</strong> {sections.length === 1 ? "session" : "sessions"}</span>
+          <span className="hidden text-[#b3c8bf] sm:inline" aria-hidden="true">|</span>
+          <span><strong className="text-[#103c33]">{totalLessons}</strong> {totalLessons === 1 ? "lesson" : "lessons"}</span>
+          <span className="ml-auto text-xs text-[#718c82]">Arrange sessions and lessons in the order learners should follow.</span>
+        </div>
+        {sections.length > 0 ? <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-[#dce9e3] bg-white p-4">
+          <label htmlFor="training-active-session" className="min-w-0 flex-1 text-xs font-bold text-[#52736a]">Choose a session
+            <select id="training-active-session" value={activeSectionIdResolved} onChange={(event) => { setActiveSectionId(event.target.value); setViewingLesson(null); setViewingQuizLesson(null); setQuizLesson(null); }} className="mt-1.5 h-11 w-full rounded-xl border border-[#d7e5df] bg-[#fbfdfb] px-3 text-sm font-semibold text-[#103c33] outline-none focus:border-[#1f6a58]">
+              {sections.map((section, index) => { const id = typeof section.id === "string" ? section.id : String(section.order ?? index); const title = typeof section.title === "string" ? section.title : `Session ${index + 1}`; const lessons = Array.isArray(section.lessons) ? section.lessons.length : 0; return <option key={id} value={id}>{index + 1}. {title} ({lessons} {lessons === 1 ? "lesson" : "lessons"})</option>; })}
+            </select>
+          </label>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => { const index = sections.findIndex((section) => section === activeSection); const previous = sections[index - 1]; if (previous && typeof previous.id === "string") setActiveSectionId(previous.id); }} disabled={sections.findIndex((section) => section === activeSection) <= 0} className="h-11 rounded-xl border border-[#dce9e3] px-4 text-sm font-semibold text-[#1f6a58] hover:bg-[#f5faf7] disabled:opacity-40">Previous</button>
+            <button type="button" onClick={() => { const index = sections.findIndex((section) => section === activeSection); const next = sections[index + 1]; if (next && typeof next.id === "string") setActiveSectionId(next.id); }} disabled={sections.findIndex((section) => section === activeSection) >= sections.length - 1} className="h-11 rounded-xl border border-[#dce9e3] px-4 text-sm font-semibold text-[#1f6a58] hover:bg-[#f5faf7] disabled:opacity-40">Next</button>
+          </div>
+        </div> : null}
+        {feedback ? <p role="status" aria-live="polite" className={`rounded-xl border px-4 py-3 text-sm font-semibold ${/unable|could not|failed|error/i.test(feedback) ? "border-[#f0c7c2] bg-[#fff6f5] text-[#b42318]" : "border-[#bce8d1] bg-[#effaf4] text-[#167550]"}`}>{feedback}</p> : null}
+        {assessmentsQuery.isError ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#f0c7c2] bg-[#fff6f5] px-4 py-3 text-sm text-[#b42318]"><span>Quiz details could not be loaded. Sessions and lessons are still available.</span><button type="button" onClick={() => void assessmentsQuery.refetch()} className="font-bold underline">Retry quiz data</button></div> : null}
+        {canManage ? <form className="flex flex-col gap-3 rounded-2xl border border-[#dce9e3] bg-white p-4 sm:flex-row sm:items-center" onSubmit={(event) => { event.preventDefault(); if (newSectionTitle.trim()) void createSectionMutation.mutate(); }}>
+          <div className="min-w-0 flex-1"><label htmlFor="training-session-title" className="block text-sm font-extrabold text-[#103c33]">Add a session</label><p className="mt-1 text-xs text-[#718c82]">Use sessions to group related lessons in the order learners will follow.</p></div>
+          <input id="training-session-title" value={newSectionTitle} onChange={(event) => setNewSectionTitle(event.target.value)} placeholder="For example, Module 1: Foundations" className="h-11 min-w-0 flex-1 rounded-xl border border-[#d7e5df] bg-[#fbfdfb] px-4 text-sm outline-none transition focus:border-[#1f6a58] focus:ring-2 focus:ring-[#1f6a58]/10" />
+          <button type="submit" disabled={createSectionMutation.isPending || !newSectionTitle.trim()} className="h-11 shrink-0 rounded-xl bg-[#1f6a58] px-5 text-sm font-extrabold text-white shadow-sm transition hover:bg-[#195646] disabled:cursor-not-allowed disabled:opacity-50">{createSectionMutation.isPending ? "Adding session..." : "Add session"}</button>
+        </form> : null}
+        {sections.length === 0 ? <div className="rounded-2xl border border-dashed border-[#b7d5c8] bg-white px-5 py-10 text-center"><span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e8f6ee] text-xl font-bold text-[#1f6a58]">+</span><p className="mt-3 font-extrabold text-[#103c33]">Your course outline starts here</p><p className="mx-auto mt-1 max-w-md text-sm leading-6 text-[#718c82]">{canManage ? "Create your first session above. You can add lessons and learning materials inside it." : "Sessions and lessons have not been added to this training yet."}</p></div> : null}
+        <ol className="grid gap-4">
         {sections.map((section, sIndex) => {
           const id = typeof section.id === "string" ? section.id : String(section.order ?? "");
+          if (id !== activeSectionIdResolved) return null;
+          const sectionKey = id || `section-${sIndex}`;
           const title = typeof section.title === "string" ? section.title : "Untitled session";
           const lessons = Array.isArray(section.lessons) ? section.lessons : [];
-          const isEditing = editingSectionId === id;
+          const isEditing = canManage && editingSectionId === id;
+          const sessionIndex = sections.indexOf(section);
           return (
-            <li key={id} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-4">
-              <div className="flex items-start justify-between gap-3">
+            <li key={sectionKey} className="relative overflow-hidden rounded-2xl border border-[#dce9e3] bg-white shadow-sm transition-shadow hover:shadow-md">
+              <div className="absolute bottom-0 left-0 top-0 w-1 bg-[#9dcdb8]" />
+              <div className="flex flex-wrap items-start justify-between gap-3 p-4 pl-5 sm:p-5 sm:pl-6">
                 {isEditing ? (
                   <form className="grid flex-1 gap-2" onSubmit={(e) => { e.preventDefault(); if (editSectionTitle.trim()) updateSectionMutation.mutate({ sectionId: id, title: editSectionTitle.trim() }); }}>
                     <div className="flex gap-2">
                       <input value={editSectionTitle} onChange={(e) => setEditSectionTitle(e.target.value)} className="h-8 flex-1 rounded-lg border border-[#d7e5df] px-3 text-sm font-bold text-[#06201c] outline-none focus:border-[#1f6a58]" />
-                      <button type="submit" className="h-8 rounded-full bg-[#1f6a58] px-3 text-xs font-bold text-white">Save</button>
+                      <button type="submit" disabled={updateSectionMutation.isPending || !editSectionTitle.trim()} className="h-8 rounded-full bg-[#1f6a58] px-3 text-xs font-bold text-white disabled:opacity-60">{updateSectionMutation.isPending ? "Saving..." : "Save"}</button>
                       <button type="button" onClick={() => setEditingSectionId(null)} className="h-8 rounded-full border border-[#d7e5df] px-3 text-xs font-bold text-[#52736a]">Cancel</button>
                     </div>
                   </form>
                 ) : (
                   <>
-                    <div className="min-w-0 flex-1">
-                      <p className="min-w-0 break-words text-sm font-bold text-[#06201c]">{title}</p>
+                    <div className="flex min-w-0 flex-1 items-start gap-3">
+                      <div className="min-w-0 flex-1"><p className="min-w-0 break-words text-base font-extrabold text-[#103c33]">{title}</p><p className="mt-1 text-xs text-[#718c82]">Session {String(sessionIndex + 1).padStart(2, "0")} <span aria-hidden="true"> | </span> {lessons.length} {lessons.length === 1 ? "lesson" : "lessons"}</p></div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <button type="button" onClick={() => moveSectionMutation.mutate({ sectionId: id, direction: "up" })} disabled={sIndex === 0} className="rounded px-1.5 py-0.5 text-[10px] font-bold text-[#7f9d94] hover:bg-[#e8f6ee] disabled:opacity-30">↑</button>
-                      <button type="button" onClick={() => moveSectionMutation.mutate({ sectionId: id, direction: "down" })} disabled={sIndex === sections.length - 1} className="rounded px-1.5 py-0.5 text-[10px] font-bold text-[#7f9d94] hover:bg-[#e8f6ee] disabled:opacity-30">↓</button>
-                      <button type="button" onClick={() => {
-                        setEditingSectionId(id);
-                        setEditSectionTitle(title);
-                      }} className="rounded-full px-2 py-1 text-xs font-semibold text-[#1f6a58] hover:bg-[#e8f6ee]">Edit</button>
-                      <button type="button" onClick={() => { if (window.confirm("Delete this session and its lessons?")) void deleteSectionMutation.mutate(id); }} className="rounded-full px-2 py-1 text-xs font-semibold text-[#b42318] hover:bg-[#fff6f5]">Delete</button>
-                    </div>
+                    {canManage ? <details className="relative shrink-0">
+                      <summary aria-label={`Actions for ${title}`} className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-xl border border-[#dce9e3] text-lg font-bold leading-none text-[#52736a] transition hover:bg-[#f0f8f3] [&::-webkit-details-marker]:hidden">...</summary>
+                      <div className="absolute right-0 top-11 z-20 grid min-w-44 gap-1 rounded-xl border border-[#dce9e3] bg-white p-2 shadow-lg">
+                        <button type="button" aria-label={`Move ${title} up`} onClick={() => moveSectionMutation.mutate({ sectionId: id, direction: "up" })} disabled={sIndex === 0 || moveSectionMutation.isPending} className="rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#284940] hover:bg-[#f0f8f3] disabled:opacity-40">Move up</button>
+                        <button type="button" aria-label={`Move ${title} down`} onClick={() => moveSectionMutation.mutate({ sectionId: id, direction: "down" })} disabled={sIndex === sections.length - 1 || moveSectionMutation.isPending} className="rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#284940] hover:bg-[#f0f8f3] disabled:opacity-40">Move down</button>
+                        <button type="button" onClick={() => { setEditingSectionId(id); setEditSectionTitle(title); }} className="rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#284940] hover:bg-[#f0f8f3]">Rename session</button>
+                        <button type="button" onClick={() => { if (window.confirm("Delete this session and its lessons?")) void deleteSectionMutation.mutate(id); }} className="rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#b42318] hover:bg-[#fff6f5]">Delete session</button>
+                      </div>
+                    </details> : null}
                   </>
                 )}
               </div>
+              <div className="border-t border-[#edf3f0] bg-[#fbfdfb] px-4 pb-4 sm:px-5 sm:pb-5">
               {lessons.length > 0 ? (
-                <ul className="mt-3 grid gap-2">
+                <ol className="mt-4 grid gap-2">
                   {lessons.map((lesson, lIndex) => {
                     const lessonId = typeof lesson.id === "string" ? lesson.id : "";
                     const lessonTitle = typeof lesson.title === "string" ? lesson.title : "Untitled lesson";
@@ -1381,22 +2700,15 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
                     const lessonQuestions: Array<Record<string, unknown>> = lessonAssessment && Array.isArray(lessonAssessment.questions) ? (lessonAssessment.questions as Array<Record<string, unknown>>) : [];
                     const isQuizOpen = quizLesson?.lessonId === lessonId && quizLesson?.sectionId === id;
                     return (
-                      <Fragment key={lessonId || lessonTitle}>
-                        <li className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-bold text-[#7f9d94]">{lIndex + 1}.</span>
-                            <p className="text-sm text-[#52736a]">{lessonTitle}</p>
-                            {lessonType && lessonType !== "text" ? <span className="rounded-full bg-[#f0f3f2] px-2 py-0.5 text-[10px] font-bold text-[#52736a]">{humanizeLabel(lessonType)}</span> : null}
-                            {lessonType !== "live" && ((typeof lesson.meeting_link === "string" && lesson.meeting_link) || (typeof lesson.join_meta === "string" && lesson.join_meta) || (typeof lesson.join_url === "string" && lesson.join_url)) ? <span className="rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[10px] font-bold text-[#1f6a58]">Live</span> : null}
+                      <Fragment key={lessonId || `${lessonTitle}-${lIndex}`}>
+                        <li className="group flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#e7efeb] bg-white px-3 py-3 transition hover:border-[#b7d5c8] hover:shadow-sm sm:px-4">
+                          <div className="flex min-w-0 flex-1 items-center gap-2">
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#f0f6f2] text-[10px] font-extrabold text-[#52736a]">{lIndex + 1}</span>
+                            <p className="min-w-0 break-words text-sm font-medium text-[#284940]">{lessonTitle}</p>
+                            {lessonType ? <span className="rounded-full border border-[#dce9e3] bg-[#f7fbf8] px-2.5 py-1 text-[10px] font-bold text-[#52736a]">{humanizeLabel(lessonType)}</span> : <span className="rounded-full border border-dashed border-[#d7e5df] px-2.5 py-1 text-[10px] font-semibold text-[#7f9d94]">Type not set</span>}
+                            {lessonType !== "live" && ((typeof lesson.meeting_link === "string" && lesson.meeting_link) || (typeof lesson.join_meta === "string" && lesson.join_meta) || (typeof lesson.join_url === "string" && lesson.join_url)) ? <span className="rounded-full bg-[#e8f6ee] px-2.5 py-1 text-[10px] font-bold text-[#1f6a58]">Live details</span> : null}
                           </div>
-                          <div className="flex items-center gap-1">
-                            <button type="button" onClick={() => moveLessonMutation.mutate({ sectionId: id, lessonId, direction: "up" })} disabled={lIndex === 0} className="rounded px-1 text-[10px] font-bold text-[#7f9d94] hover:bg-[#e8f6ee] disabled:opacity-30">↑</button>
-                            <button type="button" onClick={() => moveLessonMutation.mutate({ sectionId: id, lessonId, direction: "down" })} disabled={lIndex === lessons.length - 1} className="rounded px-1 text-[10px] font-bold text-[#7f9d94] hover:bg-[#e8f6ee] disabled:opacity-30">↓</button>
-                            {lessonType === "quiz" ? <button type="button" onClick={() => {
-                              setViewingQuizLesson(null);
-                              setViewingLesson(null);
-                              setQuizLesson(isQuizOpen ? null : { sectionId: id, lessonId });
-                            }} className="rounded-full px-2 py-0.5 text-[10px] font-bold text-[#2563eb] hover:bg-[#eef4ff]">Quiz</button> : null}
+                          <div className="flex shrink-0 items-center gap-2">
                             <button type="button" onClick={() => {
                               if (lessonType === "quiz") {
                                 setViewingLesson(null);
@@ -1407,16 +2719,24 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
                                 return;
                               }
                               setViewingLesson(viewingLesson?.sectionId === id && viewingLesson.lessonId === lessonId ? null : { sectionId: id, lessonId });
-                            }} className="rounded-full px-2 py-0.5 text-[10px] font-bold text-[#1f6a58] hover:bg-[#e8f6ee]">View</button>
-                            <button type="button" onClick={() => { if (window.confirm("Delete this lesson?")) void deleteLessonMutation.mutate({ sectionId: id, lessonId }); }} className="text-[10px] font-semibold text-[#b42318]">Delete</button>
+                            }} className="rounded-lg border border-[#dce9e3] px-3.5 py-2 text-xs font-bold text-[#1f6a58] transition hover:bg-[#f0f8f3]">View lesson</button>
+                            {canManage ? <details className="relative">
+                              <summary aria-label={`Actions for ${lessonTitle}`} className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-xl border border-[#dce9e3] text-lg font-bold leading-none text-[#52736a] transition hover:bg-[#f0f8f3] [&::-webkit-details-marker]:hidden">...</summary>
+                              <div className="absolute right-0 top-11 z-20 grid min-w-44 gap-1 rounded-xl border border-[#dce9e3] bg-white p-2 shadow-lg">
+                                <button type="button" aria-label={`Move ${lessonTitle} up`} onClick={() => moveLessonMutation.mutate({ sectionId: id, lessonId, direction: "up" })} disabled={lIndex === 0 || moveLessonMutation.isPending} className="rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#284940] hover:bg-[#f0f8f3] disabled:opacity-40">Move up</button>
+                                <button type="button" aria-label={`Move ${lessonTitle} down`} onClick={() => moveLessonMutation.mutate({ sectionId: id, lessonId, direction: "down" })} disabled={lIndex === lessons.length - 1 || moveLessonMutation.isPending} className="rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#284940] hover:bg-[#f0f8f3] disabled:opacity-40">Move down</button>
+                                {lessonType === "quiz" ? <button type="button" onClick={() => { setViewingQuizLesson(null); setViewingLesson(null); setQuizLesson(isQuizOpen ? null : { sectionId: id, lessonId }); }} className="rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#284940] hover:bg-[#f0f8f3]">Manage quiz</button> : null}
+                                <button type="button" onClick={() => { if (window.confirm("Delete this lesson?")) void deleteLessonMutation.mutate({ sectionId: id, lessonId }); }} className="rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#b42318] hover:bg-[#fff6f5]">Delete lesson</button>
+                              </div>
+                            </details> : null}
                           </div>
                         </li>
                         {viewingQuizLesson?.sectionId === id && viewingQuizLesson.lessonId === lessonId && lessonType === "quiz" ? (
-                          <li className="rounded-lg border border-[#e1ebe6] bg-[#f9fcfa] p-3">
+                          <li className="rounded-2xl border border-[#dce9e3] bg-white p-5 shadow-sm">
                             <div className="flex items-center justify-between gap-3">
                               <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Quiz questions</p>
                               <div className="flex items-center gap-2">
-                                <button
+                                {canManage ? <button
                                   type="button"
                                   onClick={() => {
                                     setViewingQuizLesson(null);
@@ -1425,7 +2745,7 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
                                   className="rounded-full border border-[#1f6a58] px-3 py-1 text-[10px] font-bold text-[#1f6a58] hover:bg-[#e8f6ee]"
                                 >
                                   Edit questions
-                                </button>
+                                </button> : null}
                                 <button
                                   type="button"
                                   onClick={() => setViewingQuizLesson(null)}
@@ -1491,9 +2811,9 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
                           </li>
                         ) : null}
                         {isQuizOpen && lessonType === "quiz" ? (
-                          <div className="rounded-lg border border-[#e1ebe6] bg-[#f9fcfa] p-3">
+                          <div className="rounded-2xl border border-[#cfe1d8] bg-[#f4faf6] p-5 shadow-sm">
                             <div className="flex items-center justify-between gap-3">
-                              <p className="text-[10px] font-bold uppercase tracking-[.08em] text-[#7f9d94]">Manage quiz questions</p>
+                              <div><p className="text-[10px] font-extrabold uppercase tracking-[.14em] text-[#62877a]">Assessment builder</p><p className="mt-1 text-base font-extrabold text-[#103c33]">Questions and settings</p><p className="mt-1 text-xs text-[#718c82]">Create or attach an assessment and manage its learner questions.</p></div>
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1509,9 +2829,9 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
                               <div className="mt-2 space-y-1">
                                 <div className="flex items-center justify-between gap-2">
                                   <p className="text-sm font-bold text-[#06201c]">{typeof lessonAssessment.title === "string" ? lessonAssessment.title : "Untitled quiz"}</p>
-                                  <button type="button" onClick={() => { if (window.confirm("Detach this quiz from the lesson?")) detachLessonAssessmentMutation.mutate({ sectionId: id, lessonId, lessonTitle }); }} className="rounded-full px-2 py-0.5 text-[10px] font-semibold text-[#b42318] hover:bg-[#fff6f5]">Detach</button>
+                                  {canManage ? <button type="button" onClick={() => { if (window.confirm("Detach this quiz from the lesson?")) detachLessonAssessmentMutation.mutate({ sectionId: id, lessonId, lessonTitle }); }} className="rounded-full px-2 py-0.5 text-[10px] font-semibold text-[#b42318] hover:bg-[#fff6f5]">Detach</button> : null}
                                 </div>
-                                <p className="text-xs text-[#52736a]">{typeof lessonAssessment.type === "string" ? lessonAssessment.type : "quiz"} • {lessonQuestions.length} questions</p>
+                                <p className="text-xs text-[#52736a]">{typeof lessonAssessment.type === "string" ? lessonAssessment.type : "quiz"}  |  {lessonQuestions.length} questions</p>
                                 {lessonQuestions.length > 0 ? (
                                   <ul className="space-y-1">
                                     {lessonQuestions.map((q, qi) => {
@@ -1534,9 +2854,9 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
                                           <div className="flex items-start justify-between gap-2">
                                             <div>
                                               <p className="text-xs font-semibold text-[#52736a]">{qi + 1}. {qText}</p>
-                                              <p className="mt-0.5 text-[10px] uppercase tracking-[.06em] text-[#7f9d94]">{humanizeLabel(qType)}{typeof qr.points === "number" ? ` • ${qr.points} point${qr.points === 1 ? "" : "s"}` : ""}</p>
+                                              <p className="mt-0.5 text-[10px] uppercase tracking-[.06em] text-[#7f9d94]">{humanizeLabel(qType)}{typeof qr.points === "number" ? `  |  ${qr.points} point${qr.points === 1 ? "" : "s"}` : ""}</p>
                                             </div>
-                                            <button type="button" onClick={() => { if (lessonAssessmentId && window.confirm("Delete this question?")) deleteSectionQuestionMutation.mutate({ assessmentId: lessonAssessmentId, questionId: qId }); }} className="shrink-0 text-[10px] font-semibold text-[#b42318]">Delete</button>
+                                            {canManage ? <button type="button" onClick={() => { if (lessonAssessmentId && window.confirm("Delete this question?")) deleteSectionQuestionMutation.mutate({ assessmentId: lessonAssessmentId, questionId: qId }); }} className="shrink-0 text-[10px] font-semibold text-[#b42318]">Delete</button> : null}
                                           </div>
                                           {qOptions.length > 0 ? <ul className="mt-2 space-y-1">{qOptions.map((option, optionIndex) => { const isCorrect = correctOptionIndexes.has(optionIndex); return <li key={`${qId}-${optionIndex}`} className={`rounded border px-2 py-1 text-[11px] ${isCorrect ? "border-[#bce8d1] bg-[#effaf4] font-semibold text-[#167550]" : "border-[#eef4ef] text-[#52736a]"}`}>{String.fromCharCode(65 + optionIndex)}. {option}{isCorrect ? " (correct)" : ""}</li>; })}</ul> : null}
                                           {qCorrect && correctOptionIndexes.size === 0 ? <p className="mt-1 text-[11px] font-semibold text-[#167550]">Correct answer: {qCorrect}</p> : null}
@@ -1544,8 +2864,8 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
                                       );
                                     })}
                                   </ul>
-                                ) : <p className="text-xs text-[#7f9d94]">No questions yet — add the first one below.</p>}
-                                <form className="grid gap-2 sm:grid-cols-2" onSubmit={(e) => {
+                                ) : <p className="text-xs text-[#7f9d94]">No questions yet - add the first one below.</p>}
+                                {canManage ? <form className="grid gap-3 rounded-xl border border-[#e2ece6] bg-[#fbfdfb] p-4 sm:grid-cols-2" onSubmit={(e) => {
                                   e.preventDefault();
                                   const question = lessonQuestion[lessonKey]?.trim() ?? "";
                                   const questionType = lessonQuestionType[lessonKey] ?? "short_answer";
@@ -1563,41 +2883,90 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
                                   {["mcq", "multiple_select"].includes(lessonQuestionType[lessonKey] ?? "short_answer") ? <input value={lessonQuestionOptions[lessonKey] ?? ""} onChange={(e) => setLessonQuestionOptions((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="Options, separated by commas" className="h-8 rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
                                   {lessonQuestionType[lessonKey] === "true_false" ? <select value={lessonCorrectAnswer[lessonKey] ?? ""} onChange={(e) => setLessonCorrectAnswer((current) => ({ ...current, [lessonKey]: e.target.value }))} aria-label="Correct true or false answer" className="h-8 rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]"><option value="">Correct answer</option><option value="true">True</option><option value="false">False</option></select> : null}
                                   {["mcq", "multiple_select", "task"].includes(lessonQuestionType[lessonKey] ?? "") ? <input value={lessonCorrectAnswer[lessonKey] ?? ""} onChange={(e) => setLessonCorrectAnswer((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder={lessonQuestionType[lessonKey] === "task" ? "Task grading note" : "Correct answer"} className="h-8 rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" /> : null}
-                                  <button type="submit" disabled={addSectionQuestionMutation.isPending || !lessonQuestion[lessonKey]?.trim()} className="h-8 rounded-full border border-[#1f6a58] px-3 text-[10px] font-bold text-[#1f6a58] disabled:opacity-60 sm:col-span-2">{addSectionQuestionMutation.isPending ? "Adding…" : "Add question"}</button>
-                                </form>
+                                  <button type="submit" disabled={addSectionQuestionMutation.isPending || !lessonQuestion[lessonKey]?.trim()} className="h-8 rounded-full border border-[#1f6a58] px-3 text-[10px] font-bold text-[#1f6a58] disabled:opacity-60 sm:col-span-2">{addSectionQuestionMutation.isPending ? "Adding..." : "Add question"}</button>
+                                </form> : null}
                               </div>
                             ) : (
-                              <p className="mt-1 text-xs text-[#7f9d94]">No quiz linked yet — learners take it right after finishing this lesson.</p>
+                              <p className="mt-1 text-xs text-[#7f9d94]">No quiz linked yet - learners take it right after finishing this lesson.</p>
                             )}
-                            {!lessonAssessmentId ? (
+                            {canManage && !lessonAssessmentId ? (
                               <>
                                 <div className="mt-2 flex flex-wrap items-center gap-2">
                                   <select value={lessonAssessmentDraft[lessonKey] ?? ""} onChange={(e) => setLessonAssessmentDraft((current) => ({ ...current, [lessonKey]: e.target.value }))} className="h-8 min-w-0 flex-1 rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]">
-                                    <option value="">Attach existing quiz…</option>
+                                    <option value="">Attach existing quiz...</option>
                                     {assessments.map((a) => { const aId = typeof a.id === "string" ? a.id : ""; const aTitle = typeof a.title === "string" ? a.title : "Untitled"; return aId ? <option key={aId} value={aId}>{aTitle}</option> : null; })}
                                   </select>
                                   <button type="button" onClick={() => { const target = lessonAssessmentDraft[lessonKey]; if (target) attachLessonAssessmentMutation.mutate({ sectionId: id, lessonId, lessonTitle, assessmentId: target }); }} disabled={!lessonAssessmentDraft[lessonKey] || attachLessonAssessmentMutation.isPending} className="h-8 rounded-full bg-[#1f6a58] px-3 text-[10px] font-bold text-white disabled:opacity-60">Attach</button>
                                 </div>
-                                <form className="mt-2 grid gap-2 sm:grid-cols-2" onSubmit={(e) => {
+                                <form className="mt-3 grid gap-3 rounded-xl border border-[#e2ece6] bg-white p-4 sm:grid-cols-2 [&_input:not([type=checkbox])]:h-10 [&_input:not([type=checkbox])]:rounded-lg [&_input:not([type=checkbox])]:px-3 [&_input:not([type=checkbox])]:text-sm [&_select]:h-10 [&_select]:rounded-lg [&_select]:px-3 [&_select]:text-sm [&_textarea]:rounded-lg [&_textarea]:p-3 [&_textarea]:text-sm" onSubmit={(e) => {
                                   e.preventDefault();
                                   const title = lessonAssessmentTitle[lessonKey]?.trim() ?? "";
+                                  const assessmentType = lessonAssessmentType[lessonKey] ?? "quiz";
                                   const passPercent = lessonAssessmentPassPercent[lessonKey] ?? "";
-                                  if (!title || !isOptionalIntegerInRange(passPercent, 0, 100)) return;
+                                  const timeLimit = lessonAssessmentTimeLimit[lessonKey] ?? "";
+                                  const attemptsAllowed = lessonAssessmentAttempts[lessonKey] ?? "";
+                                  const randomise = lessonAssessmentRandomise[lessonKey] ?? false;
+                                  const level: TrainingAssessmentLevel = "module";
+                                  const publication = lessonAssessmentPublication[lessonKey] ?? "immediate";
+                                  const publishAt = lessonAssessmentPublishAt[lessonKey] ?? "";
+                                  if (!title || !isOptionalIntegerInRange(passPercent, 0, 100)
+                                    || !isOptionalPositiveInteger(timeLimit)
+                                    || !isOptionalPositiveInteger(attemptsAllowed)
+                                    || (publication === "scheduled" && !publishAt)) return;
                                   createLessonAssessmentMutation.mutate({
                                     sectionId: id,
                                     lessonId,
                                     lessonTitle,
                                     title,
                                     instructions: lessonAssessmentInstructions[lessonKey] ?? "",
+                                    assessmentType,
                                     passPercent,
+                                    timeLimit,
+                                    attemptsAllowed,
+                                    randomise,
+                                    level,
+                                    publication,
+                                    publishAt,
                                   });
                                 }}>
-                                  <input value={lessonAssessmentTitle[lessonKey] ?? ""} onChange={(e) => setLessonAssessmentTitle((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="Or create a new quiz for this lesson…" aria-label="New quiz title" className="h-8 min-w-0 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58] sm:col-span-2" />
+                                  <input value={lessonAssessmentTitle[lessonKey] ?? ""} onChange={(e) => setLessonAssessmentTitle((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="Or create a new quiz for this lesson..." aria-label="New quiz title" className="h-8 min-w-0 rounded-lg border border-[#d7e5df] bg-white px-3 text-xs outline-none focus:border-[#1f6a58] sm:col-span-2" />
                                   <textarea value={lessonAssessmentInstructions[lessonKey] ?? ""} onChange={(e) => setLessonAssessmentInstructions((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="Instructions (optional)" aria-label="Quiz instructions" rows={2} className="min-w-0 rounded-lg border border-[#d7e5df] bg-white px-3 py-2 text-xs outline-none focus:border-[#1f6a58] sm:col-span-2" />
-                                  <label className="text-[10px] font-semibold text-[#52736a]">Pass percentage (optional)
-                                    <input type="number" min="0" max="100" step="1" value={lessonAssessmentPassPercent[lessonKey] ?? ""} onChange={(e) => setLessonAssessmentPassPercent((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="0–100%" className="mt-1 h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]" />
-                                  </label>
-                                  <button type="submit" disabled={createLessonAssessmentMutation.isPending || !lessonAssessmentTitle[lessonKey]?.trim() || !isOptionalIntegerInRange(lessonAssessmentPassPercent[lessonKey] ?? "", 0, 100)} className="h-8 rounded-full border border-[#1f6a58] px-3 text-[10px] font-bold text-[#1f6a58] disabled:opacity-60 sm:col-span-2">{createLessonAssessmentMutation.isPending ? "Creating…" : "Create and publish quiz"}</button>
+                                  <details className="rounded-lg border border-[#e1ebe6] bg-white p-2 sm:col-span-2">
+                                    <summary className="cursor-pointer text-xs font-semibold text-[#52736a]">{t("quizBuilder.optionalSettings", { defaultValue: "Optional quiz settings" })}</summary>
+                                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                                      <label className="text-[10px] font-semibold text-[#52736a]">{t("quizBuilder.assessmentType", { defaultValue: "Assessment type" })}
+                                        <select value={lessonAssessmentType[lessonKey] ?? "quiz"} onChange={(e) => setLessonAssessmentType((current) => ({ ...current, [lessonKey]: e.target.value as TrainingAssessmentType }))} className="mt-1 h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]">
+                                          <option value="quiz">Quiz</option>
+                                          <option value="exam">Exam</option>
+                                        </select>
+                                      </label>
+                                      <label className="text-[10px] font-semibold text-[#52736a]">{t("quizBuilder.passPercent", { defaultValue: "Pass percentage (optional)" })}
+                                        <input type="number" min="0" max="100" step="1" value={lessonAssessmentPassPercent[lessonKey] ?? ""} onChange={(e) => setLessonAssessmentPassPercent((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder="0 > 100%" className="mt-1 h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]" />
+                                        <span className="mt-1 block font-normal">{t("quizBuilder.passPercentHelp", { defaultValue: "Learners need this percentage of the total points to pass." })}</span>
+                                      </label>
+                                      <label className="text-[10px] font-semibold text-[#52736a]">{t("quizBuilder.timeLimit", { defaultValue: "Time limit (minutes)" })}
+                                        <input type="number" min="1" step="1" value={lessonAssessmentTimeLimit[lessonKey] ?? ""} onChange={(e) => setLessonAssessmentTimeLimit((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder={t("quizBuilder.noTimeLimit", { defaultValue: "Leave blank for no time limit" })} className="mt-1 h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]" />
+                                      </label>
+                                      <label className="text-[10px] font-semibold text-[#52736a]">{t("quizBuilder.attemptsAllowed", { defaultValue: "Attempts allowed" })}
+                                        <input type="number" min="1" step="1" value={lessonAssessmentAttempts[lessonKey] ?? ""} onChange={(e) => setLessonAssessmentAttempts((current) => ({ ...current, [lessonKey]: e.target.value }))} placeholder={t("quizBuilder.unlimitedAttempts", { defaultValue: "Leave blank for unlimited attempts" })} className="mt-1 h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]" />
+                                      </label>
+                                      <label className="flex items-center gap-2 self-end pb-2 text-xs font-semibold text-[#52736a]">
+                                        <input type="checkbox" checked={lessonAssessmentRandomise[lessonKey] ?? false} onChange={(e) => setLessonAssessmentRandomise((current) => ({ ...current, [lessonKey]: e.target.checked }))} />
+                                        {t("quizBuilder.randomiseQuestions", { defaultValue: "Randomise questions and answer choices" })}
+                                      </label>
+                                      <label className="text-[10px] font-semibold text-[#52736a]">{t("quizBuilder.resultRelease", { defaultValue: "Result release" })}
+                                        <select value={lessonAssessmentPublication[lessonKey] ?? "immediate"} onChange={(e) => setLessonAssessmentPublication((current) => ({ ...current, [lessonKey]: e.target.value as "immediate" | "scheduled" }))} className="mt-1 h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]">
+                                          <option value="immediate">{t("quizBuilder.immediateResults", { defaultValue: "Immediately after submission" })}</option>
+                                          <option value="scheduled">{t("quizBuilder.scheduledResults", { defaultValue: "On a scheduled date and time" })}</option>
+                                        </select>
+                                      </label>
+                                      {(lessonAssessmentPublication[lessonKey] ?? "immediate") === "scheduled" ? <label className="text-[10px] font-semibold text-[#52736a]">{t("quizBuilder.publishAt", { defaultValue: "Release results at" })}
+                                        <input type="datetime-local" required value={lessonAssessmentPublishAt[lessonKey] ?? ""} onChange={(e) => setLessonAssessmentPublishAt((current) => ({ ...current, [lessonKey]: e.target.value }))} className="mt-1 h-8 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]" />
+                                        <span className="mt-1 block font-normal">{t("quizBuilder.scheduledReleaseHelp", { defaultValue: "Free-text answers remain pending until an instructor grades them." })}</span>
+                                      </label> : null}
+                                    </div>
+                                  </details>
+                                  <button type="submit" disabled={createLessonAssessmentMutation.isPending || !lessonAssessmentTitle[lessonKey]?.trim() || !isOptionalIntegerInRange(lessonAssessmentPassPercent[lessonKey] ?? "", 0, 100) || !isOptionalPositiveInteger(lessonAssessmentTimeLimit[lessonKey] ?? "") || !isOptionalPositiveInteger(lessonAssessmentAttempts[lessonKey] ?? "") || ((lessonAssessmentPublication[lessonKey] ?? "immediate") === "scheduled" && !lessonAssessmentPublishAt[lessonKey])} className="h-8 rounded-full border border-[#1f6a58] px-3 text-[10px] font-bold text-[#1f6a58] disabled:opacity-60 sm:col-span-2">{createLessonAssessmentMutation.isPending ? "Creating..." : "Create and publish quiz"}</button>
                                 </form>
                               </>
                             ) : null}
@@ -1606,8 +2975,8 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
                       </Fragment>
                     );
                   })}
-                </ul>
-              ) : null}
+                </ol>
+              ) : <p className="mt-4 rounded-xl border border-dashed border-[#d7e5df] bg-white px-4 py-5 text-sm text-[#718c82]">No lessons in this session yet.{canManage ? " Add a lesson below to build this part of the course." : ""}</p>}
               {viewingLesson?.sectionId === id ? (
                 <LessonDetail
                   key={`${viewingLesson.sectionId}:${viewingLesson.lessonId}`}
@@ -1616,30 +2985,25 @@ export function TrainingSectionsTab({ trainingId, trainingDeliveryMode, training
                   lessonId={viewingLesson.lessonId}
                   trainingDeliveryMode={trainingDeliveryMode}
                   trainingLessonDefaults={trainingLessonDefaults}
+                  imageUploadFieldKeys={imageUploadFieldKeys}
+                  canManage={canManage}
                   onClose={() => setViewingLesson(null)}
                 />
               ) : null}
-              <AddLessonForm
+              {canManage ? <AddLessonForm
                 pending={createLessonMutation.isPending}
                 trainingDeliveryMode={trainingDeliveryMode}
                 trainingLessonDefaults={trainingLessonDefaults}
-                onSubmit={(payload) => createLessonMutation.mutate({ sectionId: id, payload })}
-              />
+                imageUploadFieldKeys={imageUploadFieldKeys}
+                onSubmit={(payload) => createLessonMutation.mutateAsync({ sectionId: id, payload })}
+              /> : null}
+              </div>
             </li>
           );
         })}
-      </ul>
-      <form
-        className="mt-4 flex gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (newSectionTitle.trim()) void createSectionMutation.mutate();
-        }}
-      >
-        <input value={newSectionTitle} onChange={(event) => setNewSectionTitle(event.target.value)} placeholder="New session title" className="h-10 min-w-0 flex-1 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-4 text-sm outline-none focus:border-[#1f6a58]" />
-        <button type="submit" disabled={createSectionMutation.isPending || !newSectionTitle.trim()} className="h-10 shrink-0 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white disabled:opacity-60">{createSectionMutation.isPending ? "Adding..." : "Add session"}</button>
-      </form>
-    </SectionCard>
+      </ol>
+    </div>
+    </section>
   );
 }
 
@@ -1712,7 +3076,7 @@ function EnrolmentsSection({ trainingId }: { trainingId: string }) {
             const id = typeof record.id === "string" ? record.id : typeof record.enrolment_id === "string" ? record.enrolment_id : String(index);
             const name = typeof record.participant_name === "string" ? record.participant_name : typeof record.name === "string" ? record.name : "Participant";
             const email = typeof record.email === "string" ? record.email : typeof record.participant_email === "string" ? record.participant_email : null;
-            const rawStatus = typeof record.status === "string" ? record.status : typeof record.enrolment_status === "string" ? record.enrolment_status : typeof record.approval_status === "string" ? record.approval_status : "—";
+            const rawStatus = typeof record.status === "string" ? record.status : typeof record.enrolment_status === "string" ? record.enrolment_status : typeof record.approval_status === "string" ? record.approval_status : "-";
             const status = rawStatus.toLowerCase();
             const enrolledAt = typeof record.enrolled_at === "string" ? record.enrolled_at : typeof record.created_at === "string" ? record.created_at : null;
             const settledStatuses = ["approved", "enrolled", "active", "attended", "completed", "cancelled", "rejected", "checked_in"];
@@ -1876,14 +3240,14 @@ function TrainingOrderRow({ trainingId, order }: { trainingId: string; order: un
             {paymentStatus ? <OrderPill tone="neutral">{paymentStatus}</OrderPill> : null}
           </div>
           {participantEmail ? <p className="mt-1 break-all text-xs text-[#52736a]">{participantEmail}</p> : null}
-          <p className="mt-1 text-xs text-[#7f9d94]">Order {id.slice(0, 8)}{createdAt ? ` · ${formatTrainingDate(createdAt)}` : ""}</p>
+          <p className="mt-1 text-xs text-[#7f9d94]">Order {id.slice(0, 8)}{createdAt ? `  |  ${formatTrainingDate(createdAt)}` : ""}</p>
         </div>
         {amount ? <p className="text-base font-bold text-[#06201c]">{amount}</p> : null}
       </div>
 
       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-3">
-        <OrderDetail label="Order status" value={orderStatus || "—"} />
-        <OrderDetail label="Payment status" value={paymentStatus || "—"} />
+        <OrderDetail label="Order status" value={orderStatus || "-"} />
+        <OrderDetail label="Payment status" value={paymentStatus || "-"} />
         {quantity !== null ? <OrderDetail label="Quantity" value={quantity} /> : null}
         {currency ? <OrderDetail label="Currency" value={currency} /> : null}
         {paymentProvider ? <OrderDetail label="Payment provider" value={paymentProvider} /> : null}
@@ -2161,7 +3525,7 @@ export function TrainingLiveTab({ trainingId, discussionId }: { trainingId: stri
   );
 }
 
-/** Renders the learner-facing content view: sections → lessons → topics with complete-lesson buttons. */
+/** Renders the learner-facing content view: sections  >  lessons  >  topics with complete-lesson buttons. */
 export function TrainingContentTab({ trainingId }: { trainingId: string }) {
   const queryClient = useQueryClient();
   const [expandedLesson, setExpandedLesson] = useState<string | null>(null);
@@ -2202,7 +3566,7 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
                     <span className="block text-sm font-bold text-[#06201c]">{sectionTitle}</span>
                     <span className="mt-1 block text-xs text-[#52736a]">{lessons.length} {lessons.length === 1 ? "lesson" : "lessons"}</span>
                   </span>
-                  <span className="shrink-0 text-sm font-bold text-[#1f6a58]" aria-hidden="true">{sessionExpanded ? "−" : "+"}</span>
+                  <span className="shrink-0 text-sm font-bold text-[#1f6a58]" aria-hidden="true">{sessionExpanded ? "'" : "+"}</span>
                 </button>
                 {sessionExpanded && lessons.length === 0 ? <p className="mt-3 text-xs text-[#7f9d94]">No lessons in this session.</p> : null}
                 {sessionExpanded ? <ul className="mt-3 space-y-2">
@@ -2234,7 +3598,7 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
                             {videoUrl ? (
                               <div>
                                 <p className="text-xs font-bold uppercase tracking-[.08em] text-[#7f9d94]">Video</p>
-                                <a href={videoUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-semibold text-[#1f6a58] underline">Watch video →</a>
+                                <a href={videoUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-semibold text-[#1f6a58] underline">Watch video</a>
                               </div>
                             ) : null}
                             {typeof lesson.audio_url === "string" && lesson.audio_url.trim() ? (
@@ -2250,7 +3614,7 @@ export function TrainingContentTab({ trainingId }: { trainingId: string }) {
                                   {lesson.documents.map((document, documentIndex) => {
                                     const documentUrl = typeof document === "string" ? document : document && typeof document === "object" && typeof (document as Record<string, unknown>).url === "string" ? (document as Record<string, unknown>).url as string : "";
                                     const documentName = typeof document === "object" && document !== null && typeof (document as Record<string, unknown>).name === "string" ? (document as Record<string, unknown>).name as string : documentUrl;
-                                    return documentUrl ? <li key={`${documentUrl}-${documentIndex}`}><a href={documentUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-[#1f6a58] underline">{documentName || "Open document"} →</a></li> : null;
+                                    return documentUrl ? <li key={`${documentUrl}-${documentIndex}`}><a href={documentUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-[#1f6a58] underline">{documentName || "Open document"}</a></li> : null;
                                   })}
                                 </ul>
                               </div>
@@ -2317,54 +3681,198 @@ function QuestionBankBrowser({ trainingId, onSelect }: { trainingId: string; onS
   );
 }
 
-function AssessmentReview({ trainingId, assessmentId, submissionId, onClose }: { trainingId: string; assessmentId: string; submissionId: string; onClose: () => void }) {
+function AssessmentSubmissions({ trainingId, assessmentId, totalPoints: assessmentTotalPoints, onReview }: { trainingId: string; assessmentId: string; totalPoints: number | null; onReview: (submission: AssessmentSubmissionListItem, totalPoints: number | null) => void }) {
+  const { t } = useTranslation("enterpriseTrainings");
+  const [page, setPage] = useState(1);
+  const [status, setStatus] = useState<"pending" | "evaluated" | "all">("all");
+  const [order, setOrder] = useState<"newest" | "oldest">("newest");
+  const [search, setSearch] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const fromTimestamp = fromDate ? new Date(fromDate).getTime() : null;
+  const toTimestamp = toDate ? new Date(toDate).getTime() : null;
+  const invalidDateRange = (fromTimestamp !== null && !Number.isFinite(fromTimestamp))
+    || (toTimestamp !== null && !Number.isFinite(toTimestamp))
+    || (fromTimestamp !== null && toTimestamp !== null && fromTimestamp > toTimestamp);
+  const submissionsQuery = useQuery({
+    queryKey: ["trainings", trainingId, "assessment-submissions", assessmentId, page, status, search, fromDate, toDate, order],
+    queryFn: () => listTrainingAssessmentSubmissions(trainingId, assessmentId, {
+      page,
+      page_size: 20,
+      status,
+      order,
+      search: search.trim(),
+      from_date: fromTimestamp !== null && Number.isFinite(fromTimestamp) ? new Date(fromTimestamp).toISOString() : undefined,
+      to_date: toTimestamp !== null && Number.isFinite(toTimestamp) ? new Date(toTimestamp).toISOString() : undefined,
+    }),
+    enabled: Boolean(trainingId && assessmentId) && !invalidDateRange,
+    staleTime: 15_000,
+    retry: 1,
+  });
+  const submissions = submissionsQuery.data?.items ?? [];
+  useEffect(() => {
+    const totalPages = submissionsQuery.data?.total_pages;
+    if (totalPages === undefined) return;
+    if (totalPages === 0 && page !== 1) setPage(1);
+    else if (totalPages > 0 && page > totalPages) setPage(totalPages);
+  }, [page, submissionsQuery.data?.total_pages]);
+  const clearFilters = () => {
+    setSearch("");
+    setStatus("all");
+    setFromDate("");
+    setToDate("");
+    setOrder("newest");
+    setPage(1);
+  };
+
+  return (
+    <section className="rounded-xl border border-[#dce9e3] bg-white p-4 shadow-sm" aria-label={t("assessmentGrading.submissions", { defaultValue: "Learner submissions" })}>
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-bold text-[#123c32]">{t("assessmentGrading.submissions", { defaultValue: "Learner submissions" })}</h3>
+          <p className="mt-1 text-xs text-[#66847a]">{t("assessmentGrading.submissionsHelp", { defaultValue: "Review attempts and grade written answers." })}</p>
+        </div>
+        <span className="rounded-full bg-[#eef7f2] px-3 py-1 text-xs font-semibold text-[#236c58]">
+          {submissionsQuery.data?.total ?? 0} {t("assessmentGrading.results", { defaultValue: "results" })}
+        </span>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <label className="text-xs font-semibold text-[#52736a]">{t("assessmentGrading.findLearner", { defaultValue: "Find a learner" })}
+          <input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder={t("assessmentGrading.searchPlaceholder", { defaultValue: "Search name or email" })} className="mt-1 h-10 w-full rounded-lg border border-[#d7e5df] px-3 text-sm outline-none focus:border-[#1f6a58]" />
+        </label>
+        <label className="text-xs font-semibold text-[#52736a]">{t("assessmentGrading.status", { defaultValue: "Status" })}
+          <select value={status} onChange={(event) => { setStatus(event.target.value as "pending" | "evaluated" | "all"); setPage(1); }} className="mt-1 h-10 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]">
+            <option value="all">{t("assessmentGrading.all", { defaultValue: "All submissions" })} ({submissionsQuery.data?.status_counts.all ?? 0})</option><option value="pending">{t("assessmentGrading.pending", { defaultValue: "Pending grading" })} ({submissionsQuery.data?.status_counts.pending ?? 0})</option><option value="evaluated">{t("assessmentGrading.evaluated", { defaultValue: "Evaluated" })} ({submissionsQuery.data?.status_counts.evaluated ?? 0})</option>
+          </select>
+        </label>
+        <label className="text-xs font-semibold text-[#52736a]">{t("assessmentGrading.fromDate", { defaultValue: "From date and time" })}
+          <input type="datetime-local" value={fromDate} onChange={(event) => { setFromDate(event.target.value); setPage(1); }} className="mt-1 h-10 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]" />
+        </label>
+        <label className="text-xs font-semibold text-[#52736a]">{t("assessmentGrading.toDate", { defaultValue: "To date and time" })}
+          <input type="datetime-local" value={toDate} onChange={(event) => { setToDate(event.target.value); setPage(1); }} className="mt-1 h-10 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]" />
+        </label>
+        <label className="text-xs font-semibold text-[#52736a]">{t("assessmentGrading.sort", { defaultValue: "Sort by submission time" })}
+          <select value={order} onChange={(event) => { setOrder(event.target.value as "newest" | "oldest"); setPage(1); }} className="mt-1 h-10 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]">
+            <option value="newest">{t("assessmentGrading.newestFirst", { defaultValue: "Newest first" })}</option>
+            <option value="oldest">{t("assessmentGrading.oldestFirst", { defaultValue: "Oldest first" })}</option>
+          </select>
+        </label>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[11px] text-[#78948b]">{t("assessmentGrading.utcFilterNote", { defaultValue: "Date filters are sent to the server as UTC." })}</p>
+        <button type="button" onClick={clearFilters} disabled={!search && status === "all" && !fromDate && !toDate && order === "newest"} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-xs font-semibold text-[#376b5b] hover:bg-[#f4faf7] disabled:cursor-not-allowed disabled:opacity-45">{t("assessmentGrading.clearFilters", { defaultValue: "Clear filters" })}</button>
+      </div>
+      {invalidDateRange ? <p role="alert" className="mt-3 rounded-lg border border-[#f3c7c2] bg-[#fff6f5] px-3 py-2 text-xs text-[#b42318]">{t("assessmentGrading.invalidDateRange", { defaultValue: "The start date must be earlier than the end date." })}</p> : null}
+      {submissionsQuery.isLoading && !invalidDateRange ? <div aria-live="polite" className="mt-4 grid gap-2"><div className="h-20 animate-pulse rounded-lg bg-[#f1f6f3]" /><div className="h-20 animate-pulse rounded-lg bg-[#f1f6f3]" /></div> : null}
+      {submissionsQuery.isError && !invalidDateRange ? <div role="alert" className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-[#f3c7c2] bg-[#fff6f5] px-3 py-3 text-sm text-[#b42318]"><span>{t("assessmentGrading.loadError", { defaultValue: "Unable to load learner submissions." })}</span><button type="button" onClick={() => void submissionsQuery.refetch()} className="shrink-0 font-bold underline">{t("assessmentGrading.retry", { defaultValue: "Try again" })}</button></div> : null}
+      {!submissionsQuery.isLoading && !submissionsQuery.isError && !invalidDateRange && submissions.length === 0 ? <div className="mt-4 rounded-lg border border-dashed border-[#cbdcd4] bg-[#fbfdfc] px-4 py-8 text-center"><p className="text-sm font-semibold text-[#31594d]">{t("assessmentGrading.emptyTitle", { defaultValue: "No submissions found" })}</p><p className="mt-1 text-xs text-[#7f9d94]">{t("assessmentGrading.emptyHelp", { defaultValue: "Try changing the filters, or check back after learners submit." })}</p></div> : null}
+      {submissions.length > 0 ? (
+        <ul className="mt-4 space-y-2" aria-busy={submissionsQuery.isFetching}>
+          {submissions.map((submission) => (
+            <li key={submission.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#e7efeb] bg-[#fbfdfc] p-4 transition-colors hover:border-[#b5d4c8]">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-bold text-[#123c32]">{submission.participant_name || t("assessmentGrading.learner", { defaultValue: "Learner" })}</p>
+                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${submission.status === "evaluated" ? "bg-[#e7f6ee] text-[#167550]" : "bg-[#fff4d6] text-[#8a5a00]"}`}>{submission.status === "evaluated" ? t("assessmentGrading.evaluated", { defaultValue: "Evaluated" }) : t("assessmentGrading.pending", { defaultValue: "Pending grading" })}</span>
+                  {submission.needs_manual ? <span className="rounded-full bg-[#eef4ff] px-2.5 py-1 text-[11px] font-bold text-[#2563eb]">{t("assessmentGrading.manualRequired", { defaultValue: "Manual grading needed" })}</span> : null}
+                </div>
+                {submission.participant_email ? <p className="mt-1 truncate text-xs text-[#52736a]">{submission.participant_email}</p> : null}
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#718c83]">
+                  {submission.attempt_number !== null ? <span>{t("assessmentGrading.attempt", { defaultValue: "Attempt {{number}}", number: submission.attempt_number })}</span> : null}
+                  {submission.submitted_at ? <span>{formatDetailDateTime(submission.submitted_at)}</span> : null}
+                  {submission.score !== null && submission.total_points !== null ? <span>{t("assessmentGrading.score", { defaultValue: "Score {{score}} / {{total}}", score: submission.score, total: submission.total_points })}</span> : null}
+                  {submission.passed !== null ? <span className={submission.passed ? "font-semibold text-[#167550]" : "font-semibold text-[#b42318]"}>{submission.passed ? t("assessmentGrading.passed", { defaultValue: "Passed" }) : t("assessmentGrading.notPassed", { defaultValue: "Not passed" })}</span> : null}
+                </div>
+              </div>
+              <button type="button" onClick={() => onReview(submission, submission.total_points ?? assessmentTotalPoints)} className="h-9 shrink-0 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white hover:bg-[#195646] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2">{t("assessmentGrading.reviewSubmission", { defaultValue: "Review submission" })}</button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {submissionsQuery.data && submissionsQuery.data.total_pages > 0 ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#e7efeb] pt-3 text-xs text-[#52736a]">
+        <span>{t("assessmentGrading.pageOf", { defaultValue: "Page {{page}} of {{totalPages}} · {{total}} submissions", page: submissionsQuery.data.page, totalPages: submissionsQuery.data.total_pages, total: submissionsQuery.data.total })}</span>
+        <div className="flex gap-2"><button type="button" disabled={page <= 1 || submissionsQuery.isFetching} onClick={() => setPage((current) => Math.max(1, current - 1))} className="rounded-full border border-[#d7e5df] px-3 py-1.5 font-semibold disabled:opacity-50">{t("assessmentGrading.previous", { defaultValue: "Previous" })}</button><button type="button" disabled={page >= submissionsQuery.data.total_pages || submissionsQuery.isFetching} onClick={() => setPage((current) => current + 1)} className="rounded-full border border-[#d7e5df] px-3 py-1.5 font-semibold disabled:opacity-50">{t("assessmentGrading.next", { defaultValue: "Next" })}</button></div>
+      </div> : null}
+    </section>
+  );
+}
+
+function formatAssessmentAnswer(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return value.map(formatAssessmentAnswer).filter(Boolean).join(", ");
+  if (value && typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return "";
+    }
+  }
+  return "";
+}
+
+function AssessmentReview({ trainingId, assessmentId, submissionId, totalPoints, onClose, onGrade }: { trainingId: string; assessmentId: string; submissionId: string; totalPoints: number | null; onClose: () => void; onGrade: (score: string, totalPoints: number | null, isUpdate: boolean) => void }) {
+  const { t } = useTranslation("enterpriseTrainings");
   const reviewQuery = useQuery({
     queryKey: ["trainings", trainingId, "assessment-review", assessmentId, submissionId],
     queryFn: () => getAssessmentSubmissionReview(trainingId, assessmentId, submissionId),
     enabled: Boolean(trainingId && assessmentId && submissionId),
+    staleTime: 0,
+    retry: 1,
   });
 
-  if (reviewQuery.isLoading) return <p className="text-xs text-[#52736a]">Loading review...</p>;
-  if (reviewQuery.isError) return <p className="text-xs font-semibold text-[#b42318]">{(reviewQuery.error as Error).message}</p>;
+  if (reviewQuery.isLoading) return <p className="text-xs text-[#52736a]">{t("assessmentGrading.loadingReview", { defaultValue: "Loading review…" })}</p>;
+  if (reviewQuery.isError) return <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-[#f3c7c2] bg-[#fff6f5] px-3 py-2 text-xs text-[#b42318]"><span>{t("assessmentGrading.reviewError", { defaultValue: "Unable to load this submission review." })}</span><button type="button" onClick={() => void reviewQuery.refetch()} className="shrink-0 font-bold underline">{t("assessmentGrading.retry", { defaultValue: "Try again" })}</button></div>;
+  if (!reviewQuery.data) return <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-[#f3c7c2] bg-[#fff6f5] px-3 py-2 text-xs text-[#b42318]"><span>{t("assessmentGrading.reviewError", { defaultValue: "Unable to load this submission review." })}</span><button type="button" onClick={() => void reviewQuery.refetch()} className="shrink-0 font-bold underline">{t("assessmentGrading.retry", { defaultValue: "Try again" })}</button></div>;
 
-  const review = (reviewQuery.data ?? {}) as Record<string, unknown>;
-  const score = typeof review.score === "number" || typeof review.score === "string" ? String(review.score) : null;
-  const passed = typeof review.passed === "boolean" ? review.passed : null;
-  const feedback = typeof review.feedback === "string" ? review.feedback : null;
-  const answers = Array.isArray(review.review) ? review.review : Array.isArray(review.answers) ? review.answers : [];
+  const review: AssessmentSubmissionReviewData = reviewQuery.data;
+  const scoreValue = review.final_score ?? review.score ?? review.auto_score;
+  const score = scoreValue === null ? null : String(scoreValue);
+  const hasFinalScore = review.final_score !== null || review.status === "evaluated";
+  const passed = review.passed;
+  const feedback = review.feedback;
+  const answers = review.review;
+  const effectiveTotalPoints = review.total_points ?? totalPoints;
 
   return (
-    <div className="mt-3 rounded-xl border border-[#eef4ff] bg-[#f8faff] p-4 space-y-2">
+    <div className="mt-4 rounded-xl border border-[#dce9e3] bg-[#fbfdfc] p-4 space-y-3" aria-label={t("assessmentGrading.submissionReview", { defaultValue: "Submission review" })}>
       <div className="flex items-center justify-between">
-        <p className="text-xs font-bold uppercase tracking-[.08em] text-[#2563eb]">Submission Review</p>
-        <button type="button" onClick={onClose} className="rounded-full border border-[#d7e5df] px-2 py-0.5 text-[10px] font-bold text-[#52736a]">Close</button>
+        <p className="text-sm font-bold text-[#123c32]">{t("assessmentGrading.submissionReview", { defaultValue: "Submission review" })}</p>
+        <button type="button" onClick={onClose} className="rounded-full border border-[#d7e5df] px-2 py-0.5 text-[10px] font-bold text-[#52736a]">{t("assessmentGrading.close", { defaultValue: "Close" })}</button>
       </div>
-      {score !== null ? <p className="text-sm font-bold text-[#06201c]">Score: {score}</p> : null}
-      {passed !== null ? <p className={`text-xs font-bold ${passed ? "text-[#167550]" : "text-[#b42318]"}`}>{passed ? "Passed" : "Failed"}</p> : null}
+      {score !== null ? <p className="text-sm font-semibold text-[#31594d]">{hasFinalScore ? t("assessmentGrading.currentScore", { defaultValue: "Final score: {{score}}{{total}}", score, total: effectiveTotalPoints !== null ? ` / ${effectiveTotalPoints}` : "" }) : t("assessmentGrading.autoScore", { defaultValue: "Auto-scored so far: {{score}}{{total}}", score, total: effectiveTotalPoints !== null ? ` / ${effectiveTotalPoints}` : "" })}</p> : null}
+      {passed !== null ? <p className={`text-xs font-bold ${passed ? "text-[#167550]" : "text-[#b42318]"}`}>{passed ? t("assessmentGrading.passed", { defaultValue: "Passed" }) : t("assessmentGrading.failed", { defaultValue: "Failed" })}</p> : null}
       {feedback ? <p className="text-xs text-[#52736a]">{feedback}</p> : null}
       {answers.length > 0 ? (
         <ul className="space-y-1">
-          {(answers as Array<Record<string, unknown>>).map((a, aIndex) => {
-            const qText = typeof a.question === "string" ? a.question : typeof a.question_text === "string" ? a.question_text : `Q${aIndex + 1}`;
-            const answer = typeof a.answer === "string" ? a.answer : typeof a.given === "string" ? a.given : typeof a.user_answer === "string" ? a.user_answer : "";
-            const correctAnswer = typeof a.correct === "string" ? a.correct : null;
+          {answers.map((answerItem, aIndex) => {
+            const answer = formatAssessmentAnswer(answerItem.given);
+            const correctAnswer = formatAssessmentAnswer(answerItem.correct);
+            const points = answerItem.points === null ? null : String(answerItem.points);
             return (
-              <li key={aIndex} className="rounded-lg bg-white p-2">
-                <p className="text-xs font-semibold text-[#06201c]">{qText}</p>
-                <p className="text-xs text-[#52736a]">Answer: {answer}</p>
-                {correctAnswer ? <p className="text-[10px] font-semibold text-[#52736a]">Correct answer: {correctAnswer}</p> : null}
-                {typeof a.explanation === "string" && a.explanation ? <p className="text-[10px] text-[#52736a]">{a.explanation}</p> : null}
+              <li key={answerItem.question_id ?? `${submissionId}-question-${aIndex}`} className="rounded-lg bg-white p-2">
+                <p className="text-xs font-semibold text-[#06201c]">{aIndex + 1}. {answerItem.question_text}</p>
+                {answerItem.question_type ? <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-[#7f9d94]">{humanizeLabel(answerItem.question_type)}</p> : null}
+                {points !== null ? <p className="mt-1 text-[10px] font-semibold text-[#7f9d94]">{t("assessmentGrading.questionPoints", { defaultValue: "Question points: {{points}}", points })}</p> : null}
+                <p className="text-xs text-[#52736a]">{t("assessmentGrading.answer", { defaultValue: "Answer: {{answer}}", answer: answer || t("assessmentGrading.noAnswer", { defaultValue: "No answer provided" }) })}</p>
+                {correctAnswer ? <p className="text-[10px] font-semibold text-[#52736a]">{t("assessmentGrading.correctAnswer", { defaultValue: "Correct answer: {{answer}}", answer: correctAnswer })}</p> : null}
+                {answerItem.needs_manual ? <span className="mt-2 inline-flex rounded-full bg-[#fff4d6] px-2 py-1 text-[10px] font-semibold text-[#8a5a00]">{t("assessmentGrading.manualRequired", { defaultValue: "Manual grading needed" })}</span> : null}
+                {answerItem.points_awarded !== null ? <p className="text-[10px] text-[#52736a]">{t("assessmentGrading.pointsAwarded", { defaultValue: "Points awarded: {{points}}", points: answerItem.points_awarded })}</p> : null}
+                {answerItem.explanation ? <p className="text-[10px] text-[#52736a]">{answerItem.explanation}</p> : null}
               </li>
             );
           })}
         </ul>
-      ) : null}
+      ) : <p className="rounded-lg bg-white px-3 py-4 text-sm text-[#66847a]">{t("assessmentGrading.noAnswerDetails", { defaultValue: "No answer details were returned for this submission." })}</p>}
+      {effectiveTotalPoints === null ? <p role="alert" className="rounded-lg border border-[#f3c7c2] bg-[#fff6f5] px-3 py-2 text-xs text-[#b42318]">The assessment’s maximum score is unavailable, so grading is disabled. Refresh the assessment and try again.</p> : null}
+      <button type="button" disabled={effectiveTotalPoints === null} onClick={() => onGrade(score ?? "", effectiveTotalPoints, hasFinalScore)} className="h-9 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">{hasFinalScore ? t("assessmentGrading.updateGrade", { defaultValue: "Update grade" }) : t("assessmentGrading.gradeSubmission", { defaultValue: "Grade submission" })}</button>
     </div>
   );
 }
 
 /** Renders assessments list with create/delete, question management, edit, submit, grade, review, and question bank. */
 export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
+  const { t } = useTranslation("enterpriseTrainings");
   const queryClient = useQueryClient();
   const [feedback, setFeedback] = useState<string | null>(null);
   const [expandedAssessment, setExpandedAssessment] = useState<string | null>(null);
@@ -2375,8 +3883,16 @@ export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
   const [newQuestionPoints, setNewQuestionPoints] = useState("1");
   const [editingAssessmentId, setEditingAssessmentId] = useState<string | null>(null);
   const [editAssessmentTitle, setEditAssessmentTitle] = useState("");
-  const [reviewSubmission, setReviewSubmission] = useState<{ assessmentId: string; submissionId: string } | null>(null);
-  const [gradeSubmission, setGradeSubmission] = useState<{ assessmentId: string; submissionId: string } | null>(null);
+  const [editAssessmentType, setEditAssessmentType] = useState<TrainingAssessmentType>("quiz");
+  const [editAssessmentTypeChanged, setEditAssessmentTypeChanged] = useState(false);
+  const [editAssessmentPassPercent, setEditAssessmentPassPercent] = useState("");
+  const [editAssessmentTimeLimit, setEditAssessmentTimeLimit] = useState("");
+  const [editAssessmentAttempts, setEditAssessmentAttempts] = useState("");
+  const [editAssessmentRandomise, setEditAssessmentRandomise] = useState(false);
+  const [editAssessmentPublication, setEditAssessmentPublication] = useState<"immediate" | "scheduled">("immediate");
+  const [editAssessmentPublishAt, setEditAssessmentPublishAt] = useState("");
+  const [reviewSubmission, setReviewSubmission] = useState<{ assessmentId: string; submissionId: string; totalPoints: number | null } | null>(null);
+  const [gradeSubmission, setGradeSubmission] = useState<{ assessmentId: string; submissionId: string; totalPoints: number | null; isUpdate: boolean } | null>(null);
   const [gradeScore, setGradeScore] = useState("");
   const [gradeFeedback, setGradeFeedback] = useState("");
 
@@ -2387,8 +3903,17 @@ export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
   });
 
   const updateAssessmentMutation = useMutation({
-    mutationFn: ({ assessmentId, title }: { assessmentId: string; title: string }) => updateTrainingAssessment(trainingId, assessmentId, { title }),
-    onSuccess: () => { setEditingAssessmentId(null); setFeedback("Assessment updated."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessments"] }); },
+    mutationFn: ({ assessmentId }: { assessmentId: string }) => updateTrainingAssessment(trainingId, assessmentId, {
+      title: editAssessmentTitle.trim(),
+      ...(editAssessmentTypeChanged ? { type: editAssessmentType } : {}),
+      pass_percent: editAssessmentPassPercent ? Number(editAssessmentPassPercent) : null,
+      time_limit_minutes: editAssessmentTimeLimit ? Number(editAssessmentTimeLimit) : null,
+      attempts_allowed: editAssessmentAttempts ? Number(editAssessmentAttempts) : null,
+      randomise: editAssessmentRandomise,
+      publication: editAssessmentPublication,
+      publish_at: editAssessmentPublication === "scheduled" && editAssessmentPublishAt ? new Date(editAssessmentPublishAt).toISOString() : null,
+    }),
+    onSuccess: () => { setEditingAssessmentId(null); setEditAssessmentTypeChanged(false); setFeedback("Assessment settings updated. Changes apply to future attempts; submitted attempts keep their original settings."); void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessments"] }); },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to update assessment."),
   });
 
@@ -2431,8 +3956,18 @@ export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
   const gradeMutation = useMutation({
     mutationFn: ({ assessmentId, submissionId, score, feedbackText }: { assessmentId: string; submissionId: string; score: number; feedbackText: string }) =>
       gradeAssessmentSubmission(trainingId, assessmentId, submissionId, { score, feedback: feedbackText }),
-    onSuccess: () => { setGradeSubmission(null); setGradeScore(""); setGradeFeedback(""); setFeedback("Submission graded."); },
-    onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to grade submission."),
+    onSuccess: (_result, variables) => {
+      setGradeSubmission(null);
+      setGradeFeedback("");
+      setGradeScore("");
+      setFeedback("Grade saved. The learner has been notified; score visibility follows this assessment's result release setting.");
+      void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessment-review", variables.assessmentId, variables.submissionId] });
+      void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessment-submissions", variables.assessmentId] });
+      void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "assessments"] });
+    },
+    onError: (error) => {
+      setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to save the grade. Your entries are still available to retry.");
+    },
   });
 
   const assessments = assessmentsQuery.data ?? [];
@@ -2459,14 +3994,49 @@ export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
           const questions: Array<Record<string, unknown>> = Array.isArray(record.questions) ? record.questions : [];
           const isExpanded = expandedAssessment === id;
           const isEditing = editingAssessmentId === id;
+          const assessmentPassPercent = typeof record.pass_percent === "number" || typeof record.pass_percent === "string" ? String(record.pass_percent) : "";
+          const assessmentTimeLimit = typeof record.time_limit_minutes === "number" || typeof record.time_limit_minutes === "string" ? String(record.time_limit_minutes) : "";
+          const assessmentAttempts = typeof record.attempts_allowed === "number" || typeof record.attempts_allowed === "string" ? String(record.attempts_allowed) : "";
+          const assessmentRandomise = record.randomise === true;
+          const assessmentPublication = record.publication === "scheduled" ? "scheduled" : "immediate";
+          const assessmentPublishAt = typeof record.publish_at === "string" ? toDateTimeLocalValue(record.publish_at) : "";
           return (
             <li key={id} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-4">
               <div className="flex items-center justify-between gap-3">
                 {isEditing ? (
-                  <form className="flex flex-1 flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); if (editAssessmentTitle.trim()) updateAssessmentMutation.mutate({ assessmentId: id, title: editAssessmentTitle.trim() }); }}>
-                    <input value={editAssessmentTitle} onChange={(e) => setEditAssessmentTitle(e.target.value)} aria-label="Assessment title" className="h-8 flex-1 rounded-lg border border-[#d7e5df] px-3 text-sm font-bold text-[#06201c] outline-none focus:border-[#1f6a58]" />
-                    <button type="submit" className="h-8 rounded-full bg-[#1f6a58] px-3 text-xs font-bold text-white">Save</button>
-                    <button type="button" onClick={() => setEditingAssessmentId(null)} className="h-8 rounded-full border border-[#d7e5df] px-3 text-xs font-bold text-[#52736a]">Cancel</button>
+                  <form className="grid flex-1 gap-3 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); if (editAssessmentTitle.trim() && isOptionalIntegerInRange(editAssessmentPassPercent, 0, 100) && isOptionalPositiveInteger(editAssessmentTimeLimit) && isOptionalPositiveInteger(editAssessmentAttempts) && (editAssessmentPublication !== "scheduled" || Boolean(editAssessmentPublishAt))) updateAssessmentMutation.mutate({ assessmentId: id }); }}>
+                    <label className="text-[10px] font-semibold text-[#52736a] sm:col-span-2">Assessment title
+                      <input value={editAssessmentTitle} onChange={(e) => setEditAssessmentTitle(e.target.value)} aria-label="Assessment title" className="mt-1 h-9 w-full rounded-lg border border-[#d7e5df] px-3 text-sm font-bold text-[#06201c] outline-none focus:border-[#1f6a58]" />
+                    </label>
+                    <label className="text-[10px] font-semibold text-[#52736a]">Assessment type
+                      <select value={editAssessmentType} onChange={(e) => { setEditAssessmentType(e.target.value as TrainingAssessmentType); setEditAssessmentTypeChanged(true); }} className="mt-1 h-9 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]">
+                        <option value="quiz">Quiz</option><option value="exam">Exam</option>
+                      </select>
+                    </label>
+                    <label className="text-[10px] font-semibold text-[#52736a]">Pass percentage (optional)
+                      <input type="number" min="0" max="100" step="1" value={editAssessmentPassPercent} onChange={(e) => setEditAssessmentPassPercent(e.target.value)} placeholder="0 > 100%" className="mt-1 h-9 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
+                    </label>
+                    <label className="text-[10px] font-semibold text-[#52736a]">Time limit (minutes)
+                      <input type="number" min="1" step="1" value={editAssessmentTimeLimit} onChange={(e) => setEditAssessmentTimeLimit(e.target.value)} placeholder="No time limit" className="mt-1 h-9 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
+                    </label>
+                    <label className="text-[10px] font-semibold text-[#52736a]">Attempts allowed
+                      <input type="number" min="1" step="1" value={editAssessmentAttempts} onChange={(e) => setEditAssessmentAttempts(e.target.value)} placeholder="Unlimited attempts" className="mt-1 h-9 w-full rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
+                    </label>
+                    <label className="flex items-center gap-2 self-end pb-2 text-xs font-semibold text-[#52736a]">
+                      <input type="checkbox" checked={editAssessmentRandomise} onChange={(e) => setEditAssessmentRandomise(e.target.checked)} /> Randomise questions and answer choices
+                    </label>
+                    <label className="text-[10px] font-semibold text-[#52736a]">Result release
+                      <select value={editAssessmentPublication} onChange={(e) => setEditAssessmentPublication(e.target.value as "immediate" | "scheduled")} className="mt-1 h-9 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]">
+                        <option value="immediate">Immediately after submission</option><option value="scheduled">On a scheduled date and time</option>
+                      </select>
+                    </label>
+                    {editAssessmentPublication === "scheduled" ? <label className="text-[10px] font-semibold text-[#52736a]">Release results at
+                      <input type="datetime-local" required value={editAssessmentPublishAt} onChange={(e) => setEditAssessmentPublishAt(e.target.value)} className="mt-1 h-9 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]" />
+                    </label> : null}
+                    <div className="flex gap-2 sm:col-span-2">
+                      <button type="submit" disabled={updateAssessmentMutation.isPending || !editAssessmentTitle.trim() || !isOptionalIntegerInRange(editAssessmentPassPercent, 0, 100) || !isOptionalPositiveInteger(editAssessmentTimeLimit) || !isOptionalPositiveInteger(editAssessmentAttempts) || (editAssessmentPublication === "scheduled" && !editAssessmentPublishAt)} className="h-8 rounded-full bg-[#1f6a58] px-3 text-xs font-bold text-white disabled:opacity-60">{updateAssessmentMutation.isPending ? "Saving..." : "Save settings"}</button>
+                      <button type="button" onClick={() => { setEditingAssessmentId(null); setEditAssessmentTypeChanged(false); }} className="h-8 rounded-full border border-[#d7e5df] px-3 text-xs font-bold text-[#52736a]">Cancel</button>
+                    </div>
                   </form>
                 ) : (
                   <div
@@ -2482,18 +4052,46 @@ export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
                     className="flex flex-1 cursor-pointer items-center gap-2 text-left"
                   >
                     <p className="text-sm font-bold text-[#06201c]">{title}</p>
-                    {type ? <span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-[10px] font-bold text-[#2563eb]">{type.toLowerCase() === "exam" ? "Quiz" : humanizeLabel(type)}</span> : null}
+                    {type ? <span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-[10px] font-bold text-[#2563eb]">{humanizeLabel(type)}</span> : null}
                     {typeof record.lesson_id === "string" && record.lesson_id ? <span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-[10px] font-bold text-[#2563eb]">In a lesson</span> : null}
                     <span className="text-xs text-[#7f9d94]">{questions.length} questions</span>
                   </div>
                 )}
                 <div className="flex items-center gap-1">
-                  <button type="button" onClick={(e) => { e.stopPropagation(); setEditingAssessmentId(id); setEditAssessmentTitle(title); }} className="rounded-full px-2 py-1 text-xs font-semibold text-[#1f6a58] hover:bg-[#e8f6ee]">Edit</button>
+                  <button type="button" onClick={(e) => {
+                    e.stopPropagation();
+                    setEditingAssessmentId(id);
+                    setEditAssessmentTitle(title);
+                    setEditAssessmentType(type === "exam" ? "exam" : "quiz");
+                    setEditAssessmentTypeChanged(false);
+                    setEditAssessmentPassPercent(assessmentPassPercent);
+                    setEditAssessmentTimeLimit(assessmentTimeLimit);
+                    setEditAssessmentAttempts(assessmentAttempts);
+                    setEditAssessmentRandomise(assessmentRandomise);
+                    setEditAssessmentPublication(assessmentPublication);
+                    setEditAssessmentPublishAt(assessmentPublishAt);
+                  }} className="rounded-full px-2 py-1 text-xs font-semibold text-[#1f6a58] hover:bg-[#e8f6ee]">Edit</button>
                   <button type="button" onClick={() => { if (window.confirm("Delete this assessment?")) deleteMutation.mutate(id); }} className="rounded-full px-2 py-1 text-xs font-semibold text-[#b42318] hover:bg-[#fff6f5]">Delete</button>
                 </div>
               </div>
               {isExpanded ? (
                 <div className="mt-3 space-y-2 pl-4">
+                  <AssessmentSubmissions
+                    trainingId={trainingId}
+                    assessmentId={id}
+                    totalPoints={questions.reduce((sum, question) => {
+                      const value = question.points;
+                      const points = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : 0;
+                      return Number.isFinite(points) && points > 0 ? sum + points : sum;
+                    }, 0) || null}
+                    onReview={(submission, totalPoints) => {
+                      setGradeSubmission(null);
+                      setGradeScore("");
+                      setGradeFeedback("");
+                      gradeMutation.reset();
+                      setReviewSubmission({ assessmentId: id, submissionId: submission.id, totalPoints });
+                    }}
+                  />
                   {questions.length > 0 ? (
                     <ul className="space-y-1">
                       {questions.map((q, qIndex) => {
@@ -2550,18 +4148,32 @@ export function TrainingAssessmentsTab({ trainingId }: { trainingId: string }) {
                 </div>
               ) : null}
               {reviewSubmission?.assessmentId === id ? (
-                <AssessmentReview trainingId={trainingId} assessmentId={id} submissionId={reviewSubmission.submissionId} onClose={() => setReviewSubmission(null)} />
+                <AssessmentReview trainingId={trainingId} assessmentId={id} submissionId={reviewSubmission.submissionId} totalPoints={reviewSubmission.totalPoints} onClose={() => { setReviewSubmission(null); setGradeSubmission(null); }} onGrade={(score, totalPoints, isUpdate) => { setGradeScore(score); setGradeFeedback(""); setGradeSubmission({ ...reviewSubmission, totalPoints, isUpdate }); }} />
               ) : null}
               {gradeSubmission?.assessmentId === id ? (
-                <div className="mt-3 rounded-xl border border-[#fff4d6] bg-[#fffdf5] p-3 space-y-2">
-                  <p className="text-xs font-bold uppercase tracking-[.08em] text-[#8a5a00]">Grade Submission</p>
-                  <div className="flex gap-2">
-                    <input type="number" value={gradeScore} onChange={(e) => setGradeScore(e.target.value)} placeholder="Score" className="h-8 w-24 rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
-                    <input value={gradeFeedback} onChange={(e) => setGradeFeedback(e.target.value)} placeholder="Feedback (optional)" className="h-8 flex-1 rounded-lg border border-[#d7e5df] px-3 text-xs outline-none focus:border-[#1f6a58]" />
-                    <button type="button" onClick={() => { if (gradeScore) gradeMutation.mutate({ assessmentId: id, submissionId: gradeSubmission.submissionId, score: Number(gradeScore), feedbackText: gradeFeedback }); }} disabled={gradeMutation.isPending || !gradeScore} className="h-8 rounded-full bg-[#1f6a58] px-3 text-[10px] font-bold text-white disabled:opacity-60">Grade</button>
-                    <button type="button" onClick={() => setGradeSubmission(null)} className="h-8 rounded-full border border-[#d7e5df] px-3 text-[10px] font-bold text-[#52736a]">Cancel</button>
+                <form className="mt-3 space-y-3 rounded-xl border border-[#e4d9b8] bg-[#fffdf5] p-4" onSubmit={(event) => {
+                  event.preventDefault();
+                  const parsedScore = Number(gradeScore);
+                  if (gradeSubmission.totalPoints !== null && Number.isInteger(parsedScore) && parsedScore >= 0 && parsedScore <= gradeSubmission.totalPoints) {
+                    gradeMutation.mutate({ assessmentId: id, submissionId: gradeSubmission.submissionId, score: parsedScore, feedbackText: gradeFeedback });
+                  }
+                }}>
+                  <div><p className="text-sm font-bold text-[#6b4c12]">{gradeSubmission.isUpdate ? t("assessmentGrading.updateGrade", { defaultValue: "Update grade" }) : t("assessmentGrading.gradeSubmission", { defaultValue: "Grade submission" })}</p><p className="mt-1 text-xs text-[#7f6b40]">{t("assessmentGrading.gradeHelp", { defaultValue: "Enter the final score, including automatically graded points, and optional instructor feedback." })}</p></div>
+                  <div className="grid gap-3 md:grid-cols-[12rem_1fr]">
+                    <label className="text-xs font-semibold text-[#6b4c12]">Final score (0–{gradeSubmission.totalPoints ?? "?"})
+                      <input type="number" required min="0" max={gradeSubmission.totalPoints ?? undefined} step="1" value={gradeScore} onChange={(event) => setGradeScore(event.target.value)} placeholder="Enter score" className="mt-1 h-10 w-full rounded-lg border border-[#d7e5df] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]" />
+                    </label>
+                    <label className="text-xs font-semibold text-[#6b4c12]">{t("assessmentGrading.instructorFeedback", { defaultValue: "Instructor feedback (optional)" })}
+                      <textarea value={gradeFeedback} onChange={(event) => setGradeFeedback(event.target.value)} rows={2} placeholder={t("assessmentGrading.feedbackPlaceholder", { defaultValue: "Add feedback for the learner" })} className="mt-1 w-full resize-y rounded-lg border border-[#d7e5df] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f6a58]" />
+                    </label>
                   </div>
-                </div>
+                  {gradeScore.trim() && (!Number.isInteger(Number(gradeScore)) || Number(gradeScore) < 0 || gradeSubmission.totalPoints === null || Number(gradeScore) > gradeSubmission.totalPoints) ? <p role="alert" className="text-xs font-semibold text-[#b42318]">Enter a whole-number score from 0 to {gradeSubmission.totalPoints ?? "the maximum score"}.</p> : null}
+                  {gradeMutation.isError ? <p role="alert" className="text-xs font-semibold text-[#b42318]">{gradeMutation.error instanceof TrainingsApiError ? gradeMutation.error.message : t("assessmentGrading.saveError", { defaultValue: "Unable to save the grade. Your entries are preserved; please try again." })}</p> : null}
+                  <div className="flex flex-wrap gap-2">
+                    <button type="submit" disabled={gradeMutation.isPending || !gradeScore.trim() || gradeSubmission.totalPoints === null || !Number.isInteger(Number(gradeScore)) || Number(gradeScore) < 0 || Number(gradeScore) > gradeSubmission.totalPoints} className="h-9 rounded-full bg-[#1f6a58] px-4 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">{gradeMutation.isPending ? t("assessmentGrading.savingGrade", { defaultValue: "Saving grade…" }) : gradeSubmission.isUpdate ? t("assessmentGrading.updateGrade", { defaultValue: "Update grade" }) : t("assessmentGrading.saveGrade", { defaultValue: "Save grade" })}</button>
+                    <button type="button" onClick={() => { setGradeSubmission(null); gradeMutation.reset(); }} className="h-9 rounded-full border border-[#d7e5df] px-4 py-2 text-xs font-bold text-[#52736a]">{t("assessmentGrading.cancel", { defaultValue: "Cancel" })}</button>
+                  </div>
+                </form>
               ) : null}
             </li>
           );
@@ -2659,7 +4271,7 @@ export function TrainingAssignmentsTab({ trainingId }: { trainingId: string }) {
                   <div>
                     <p className="text-sm font-bold text-[#06201c]">{title}</p>
                     {description ? <p className="mt-1 text-xs leading-5 text-[#52736a]">{description}</p> : null}
-                    {dueDate || maxScore !== null ? <p className="mt-1 text-xs text-[#7f9d94]">{dueDate ? "Due: " + formatTrainingDate(dueDate) : ""}{dueDate && maxScore !== null ? " · " : ""}{maxScore !== null ? "Max score: " + maxScore : ""}</p> : null}
+                    {dueDate || maxScore !== null ? <p className="mt-1 text-xs text-[#7f9d94]">{dueDate ? "Due: " + formatTrainingDate(dueDate) : ""}{dueDate && maxScore !== null ? "  |  " : ""}{maxScore !== null ? "Max score: " + maxScore : ""}</p> : null}
                   </div>
                   <div className="flex items-center gap-2">
                     <button type="button" onClick={() => setSubmittingAssignment(isSubmitting ? null : id)} className="rounded-full border border-[#1f6a58] px-3 py-1 text-[11px] font-bold text-[#1f6a58] hover:bg-[#e8f6ee]">

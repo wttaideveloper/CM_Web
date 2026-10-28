@@ -26,7 +26,8 @@ function isUnsupportedTrainingField(field: TrainingFormField): boolean {
   const normalize = (value: string) => value.trim().toLowerCase().replace(/^(core_|custom_)/, "").replace(/[\s-]+/g, "_");
   const unsupportedKeys = new Set(["course_type", "course_types", "badge", "badges", "milestone_badges", "prerequisite", "prerequisites"]);
   const keys = [field.key, field.apiKey, field.stable_key].filter((key): key is string => Boolean(key));
-  return keys.some((key) => unsupportedKeys.has(normalize(key)))
+  return keys.some((key) => unsupportedKeys.has(normalize(key)) || normalize(key) === "create_event")
+    || field.label.trim().toLowerCase().replace(/[\s-]+/g, " ") === "create event"
     || unsupportedKeys.has(normalize(field.label));
 }
 

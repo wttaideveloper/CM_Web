@@ -24,11 +24,29 @@ export function sanitizePlatformReviewerName(name: unknown, module: ReviewModule
   return module === "training" ? "Learner" : module === "event" ? "Attendee" : "Customer";
 }
 
+/** Matches every search word against the visible review fields, ignoring case and accents. */
+export function matchesPlatformReviewSearch(search: string, fields: readonly (string | null | undefined)[]): boolean {
+  const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase().trim();
+  const terms = normalize(search).split(/\s+/).filter(Boolean);
+  if (!terms.length) return true;
+  const searchableText = normalize(fields.filter((value): value is string => typeof value === "string").join(" "));
+  return terms.every((term) => searchableText.includes(term));
+}
+
 /** Appends an explicit UTC zone to a server timestamp when it omits one. */
 export function normalizeUtcDate(value: string | null | undefined): string | null {
   if (!value?.trim()) return null;
   const timestamp = value.trim();
   return /^\d{4}-\d{2}-\d{2}T/.test(timestamp) && !/(?:Z|[+-]\d{2}:?\d{2})$/i.test(timestamp) ? `${timestamp}Z` : timestamp;
+}
+
+/** Uses the edit timestamp for a review card when it is newer than creation. */
+export function platformReviewDisplayTimestamp(createdAt: string | null, updatedAt: string | null): string | null {
+  if (!updatedAt) return createdAt;
+  if (!createdAt) return updatedAt;
+  const createdTime = Date.parse(createdAt);
+  const updatedTime = Date.parse(updatedAt);
+  return Number.isFinite(updatedTime) && (!Number.isFinite(createdTime) || updatedTime > createdTime) ? updatedAt : createdAt;
 }
 
 /** Validates and normalizes one review queue item from backend response shapes. */
@@ -44,7 +62,7 @@ export function parsePlatformReviewItem(raw: unknown): PlatformReviewQueueItem {
   const rawStatus = raw.moderation_status ?? raw.status;
   const moderationStatus = typeof rawStatus === "string" && STATUSES.includes(rawStatus as ReviewModerationStatus) ? rawStatus as ReviewModerationStatus : "approved";
   const email = typeof (raw.reviewer_email ?? raw.participant_email) === "string" ? String(raw.reviewer_email ?? raw.participant_email) : null;
-  const name = raw.reviewer_name ?? raw.participant_name;
+  const name = raw.reviewer_name ?? raw.participant_name ?? raw.customer_name ?? raw.attendee_name ?? raw.user_name ?? raw.name;
   return {
     review_id: reviewId,
     item_id: itemId,
@@ -58,6 +76,7 @@ export function parsePlatformReviewItem(raw: unknown): PlatformReviewQueueItem {
     reviewer_email: email,
     is_verified: raw.is_verified === true || raw.verified === true,
     moderation_status: moderationStatus,
+    reason: typeof (raw.reason ?? raw.rejection_reason ?? raw.moderation_reason) === "string" ? String(raw.reason ?? raw.rejection_reason ?? raw.moderation_reason) : null,
     created_at: normalizeUtcDate(typeof raw.created_at === "string" ? raw.created_at : null),
     updated_at: normalizeUtcDate(typeof raw.updated_at === "string" ? raw.updated_at : null),
   };

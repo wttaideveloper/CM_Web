@@ -377,6 +377,93 @@ export interface CreateTrainingLessonPayload {
   [key: string]: unknown;
 }
 
+export interface EbookDocumentPayload { ebook: Record<string, unknown>; base_version: number; }
+
+export async function getTrainingEbook(trainingId: string, sectionId: string, lessonId: string, includeDrafts = false): Promise<unknown> {
+  const query = includeDrafts ? "?include_drafts=true" : "";
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/ebook${query}`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load the eBook");
+  return unwrapApiData((await res.json()) as unknown);
+}
+
+export async function saveTrainingEbook(trainingId: string, sectionId: string, lessonId: string, payload: EbookDocumentPayload): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/ebook`, { method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (!res.ok) throw await createTrainingsApiError(res, "save the eBook");
+  return unwrapApiData((await res.json()) as unknown);
+}
+
+export async function validateTrainingEbook(trainingId: string, sectionId: string, lessonId: string): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/ebook/validate`, { method: "POST", credentials: "include" });
+  if (!res.ok) throw await createTrainingsApiError(res, "validate the eBook");
+  return unwrapApiData((await res.json()) as unknown);
+}
+
+export async function submitTrainingEbookForApproval(trainingId: string, sectionId: string, lessonId: string, baseVersion?: number): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/ebook/submit`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(typeof baseVersion === "number" ? { base_version: baseVersion } : {}) });
+  if (!res.ok) throw await createTrainingsApiError(res, "submit the eBook for approval");
+  return unwrapApiData((await res.json().catch(() => null)) as unknown);
+}
+
+export async function publishTrainingEbook(trainingId: string, sectionId: string, lessonId: string): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/ebook/publish`, { method: "POST", credentials: "include" });
+  if (!res.ok) throw await createTrainingsApiError(res, "publish the approved eBook");
+  return unwrapApiData((await res.json().catch(() => null)) as unknown);
+}
+
+export async function withdrawTrainingEbookSubmission(trainingId: string, sectionId: string, lessonId: string): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/ebook/withdraw`, { method: "POST", credentials: "include" });
+  if (!res.ok) throw await createTrainingsApiError(res, "withdraw the eBook submission");
+  return unwrapApiData((await res.json().catch(() => null)) as unknown);
+}
+
+export async function reorderTrainingEbookPages(trainingId: string, sectionId: string, lessonId: string, pageIds: string[]): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/ebook/pages/reorder`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ page_ids: pageIds }) });
+  if (!res.ok) throw await createTrainingsApiError(res, "reorder eBook pages");
+  return unwrapApiData((await res.json().catch(() => null)) as unknown);
+}
+
+export async function getMobileTrainingEbook(trainingId: string, lessonId: string): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/lessons/${encodeURIComponent(lessonId)}/ebook`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load the learner eBook");
+  return unwrapApiData((await res.json()) as unknown);
+}
+
+export async function getTrainingEbookProgress(trainingId: string, lessonId: string): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/lessons/${encodeURIComponent(lessonId)}/ebook/progress`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load eBook progress");
+  return unwrapApiData((await res.json()) as unknown);
+}
+
+export async function saveTrainingEbookProgress(trainingId: string, lessonId: string, payload: Record<string, unknown>): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/lessons/${encodeURIComponent(lessonId)}/ebook/progress`, { method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (!res.ok) throw await createTrainingsApiError(res, "save eBook progress");
+  return unwrapApiData((await res.json()) as unknown);
+}
+
+export async function listTrainingEbookBookmarks(trainingId: string, lessonId: string): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/lessons/${encodeURIComponent(lessonId)}/ebook/bookmarks`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load eBook bookmarks");
+  return unwrapApiData((await res.json()) as unknown);
+}
+
+export async function createTrainingEbookBookmark(trainingId: string, lessonId: string, payload: Record<string, unknown>): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/lessons/${encodeURIComponent(lessonId)}/ebook/bookmarks`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (!res.ok) throw await createTrainingsApiError(res, "create eBook bookmark");
+  return unwrapApiData((await res.json()) as unknown);
+}
+
+export async function deleteTrainingEbookBookmark(trainingId: string, lessonId: string, bookmarkId: string): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/lessons/${encodeURIComponent(lessonId)}/ebook/bookmarks/${encodeURIComponent(bookmarkId)}`, { method: "DELETE", credentials: "include" });
+  if (!res.ok) throw await createTrainingsApiError(res, "delete eBook bookmark");
+  return (await res.json().catch(() => null)) as unknown;
+}
+
+export async function getAdminTrainingEbook(trainingId: string, sectionId: string, lessonId: string): Promise<unknown> {
+  const res = await fetch(`/api/v1/admin/trainings/${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/ebook?include_drafts=true`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load the admin eBook review");
+  return unwrapApiData((await res.json()) as unknown);
+}
+
 /** Payload for `PUT /api/v1/trainings/{id}/sections/{sid}/lessons/{lid}`. */
 export type UpdateTrainingLessonPayload = Partial<CreateTrainingLessonPayload>;
 
@@ -393,10 +480,16 @@ export interface CreateTrainingAssessmentPayload {
   description?: string | null;
   instructions?: string | null;
   type?: string | null;
+  level?: "pre_course" | "module" | "final" | "feedback" | null;
+  module_id?: string | null;
+  pass_percent?: number | null;
   passing_score?: number | null;
   time_limit_minutes?: number | null;
+  attempts_allowed?: number | null;
   max_attempts?: number | null;
   randomise?: boolean;
+  publication?: "immediate" | "scheduled";
+  publish_at?: string | null;
   is_published?: boolean;
   section_id?: string | null;
   lesson_id?: string | null;
@@ -420,6 +513,83 @@ export interface SubmitAssessmentPayload {
   answers: Array<{ question_id: string; answer: unknown }>;
   started_at?: string | null;
   [key: string]: unknown;
+}
+
+export interface AssessmentSubmissionListItem {
+  id: string;
+  attempt_id: string | null;
+  participant_name: string | null;
+  participant_email: string | null;
+  attempt_number: number | null;
+  status: "pending" | "evaluated";
+  needs_manual: boolean;
+  score: number | null;
+  total_points: number | null;
+  score_percent: number | null;
+  passed: boolean | null;
+  submitted_at: string | null;
+  is_legacy: boolean;
+}
+
+export interface AssessmentSubmissionsResponse {
+  assessment_id: string | null;
+  assessment_title: string | null;
+  items: AssessmentSubmissionListItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  status_counts: { all: number; pending: number; evaluated: number };
+}
+
+export interface AssessmentSubmissionsParams {
+  page?: number;
+  page_size?: number;
+  status?: "pending" | "evaluated" | "all";
+  search?: string;
+  from_date?: string;
+  to_date?: string;
+  order?: "newest" | "oldest";
+}
+
+/** One answer returned by the assessment submission review endpoint. */
+export interface AssessmentSubmissionAnswer {
+  question_id: string | null;
+  question_text: string;
+  question_type: string | null;
+  given: unknown;
+  correct: unknown;
+  explanation: string | null;
+  points: number | null;
+  points_awarded: number | null;
+  needs_manual: boolean;
+}
+
+/** Normalized result returned when an admin opens one learner attempt. */
+export interface AssessmentSubmissionReview {
+  submission_id: string | null;
+  attempt_id: string | null;
+  assessment_id: string | null;
+  status: "pending" | "evaluated" | null;
+  auto_score: number | null;
+  final_score: number | null;
+  score: number | null;
+  total_points: number | null;
+  score_percent: number | null;
+  passed: boolean | null;
+  feedback: string | null;
+  review: AssessmentSubmissionAnswer[];
+}
+
+/** Result returned after an admin grades an assessment attempt. */
+export interface GradeAssessmentSubmissionResponse {
+  submission_id: string | null;
+  status: "pending" | "evaluated" | null;
+  final_score: number | null;
+  total_points: number | null;
+  score_percent: number | null;
+  passed: boolean | null;
+  feedback: string | null;
 }
 
 /** Payload for `POST /api/v1/trainings/{id}/assignments`. */
@@ -551,6 +721,19 @@ const trainingsBasePath = "/api/v1/trainings/";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function readNullableString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -728,11 +911,16 @@ async function createTrainingsApiError(response: Response, operation: string): P
     }
   }
   const detail = readErrorMessages(body)[0];
-  const message =
-    detail ??
-    (rawText.trim()
-      ? `Unable to ${operation} (HTTP ${response.status}): ${rawText.trim().slice(0, 300)}`
-      : `Unable to ${operation} (HTTP ${response.status}).`);
+  const responseText = rawText.trim();
+  const isHtmlErrorPage = /^<!doctype\s+html|^<html[\s>]/i.test(responseText);
+  const isGatewayFailure = response.status === 502 || response.status === 503 || response.status === 504;
+  const message = detail ?? (isGatewayFailure
+    ? `The server is temporarily unavailable, so we could not ${operation} (HTTP ${response.status}). Your editor content is still open; please retry shortly. If this keeps happening, contact support with the status code.`
+    : isHtmlErrorPage
+      ? `Unable to ${operation} (HTTP ${response.status}). The server returned an HTML error page; please retry or contact support with the status code.`
+      : responseText
+        ? `Unable to ${operation} (HTTP ${response.status}): ${responseText.slice(0, 300)}`
+        : `Unable to ${operation} (HTTP ${response.status}).`);
   return new TrainingsApiError(message, response.status, fieldErrors);
 }
 
@@ -777,8 +965,43 @@ export interface TrainingUploadResponse {
   url: string;
   name: string;
   size: number;
+  asset_id?: string;
   type?: string | null;
   purpose?: string | null;
+}
+
+async function prepareTrainingMediaFile(file: File, purpose: "lesson_video" | "lesson_pdf" | "lesson_document" | "image"): Promise<File> {
+  const isAvif = file.type.toLowerCase() === "image/avif" || file.name.toLowerCase().endsWith(".avif");
+  if (purpose !== "image" || !isAvif) return file;
+  if (typeof createImageBitmap !== "function") {
+    throw new Error("This browser cannot convert AVIF images. Please save the image as PNG, JPEG, or WebP and upload it again.");
+  }
+
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    throw new Error("This AVIF image could not be opened for conversion. Please save it as PNG, JPEG, or WebP and upload it again.");
+  }
+
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("The AVIF image could not be prepared for upload.");
+    context.drawImage(bitmap, 0, 0);
+    const convertedBlob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("The AVIF image could not be converted to PNG."));
+      }, "image/png");
+    });
+    const convertedName = file.name.replace(/\.avif$/i, "") || "image";
+    return new File([convertedBlob], `${convertedName}.png`, { type: "image/png", lastModified: file.lastModified });
+  } finally {
+    bitmap.close();
+  }
 }
 
 /** Uploads Training or lesson media and returns the hosted URL accepted by Training APIs. */
@@ -787,8 +1010,9 @@ export async function uploadTrainingMedia(
   purpose: "lesson_video" | "lesson_pdf" | "lesson_document" | "image",
   fieldKey?: string,
 ): Promise<TrainingUploadResponse> {
+  const uploadFile = await prepareTrainingMediaFile(file, purpose);
   const formData = new FormData();
-  formData.append("file", file);
+  formData.append("file", uploadFile);
   formData.append("purpose", purpose);
   if (fieldKey) formData.append("field_key", fieldKey);
   const res = await fetch(`${trainingsBasePath}upload`, {
@@ -797,22 +1021,39 @@ export async function uploadTrainingMedia(
     credentials: "include",
   });
   if (!res.ok) throw await createTrainingsApiError(res, "upload training media");
-  const value = (await res.json()) as unknown;
-  if (
-    !isRecord(value) ||
-    typeof value.url !== "string" ||
-    !value.url.trim() ||
-    typeof value.name !== "string" ||
-    typeof value.size !== "number" ||
-    !Number.isFinite(value.size)
-  ) {
-    throw new Error("Trainings API returned an invalid media upload response.");
-  }
+  const response = (await res.json()) as unknown;
+  const unwrapped = unwrapApiData(response);
+  const value = Array.isArray(unwrapped) ? unwrapped[0] : unwrapped;
+  if (!isRecord(value)) throw new Error("Trainings API returned an invalid media upload response.");
+  const nestedAsset = isRecord(value.asset) ? value.asset : null;
+  const readAssetId = (candidate: unknown): string | undefined => {
+    if (typeof candidate === "string" && candidate.trim()) return candidate;
+    if (typeof candidate === "number" && Number.isFinite(candidate)) return String(candidate);
+    return undefined;
+  };
+  const assetId = readAssetId(value.asset_id)
+    ?? readAssetId(value.assetId)
+    ?? readAssetId(value.asset_key)
+    ?? readAssetId(value.id)
+    ?? (nestedAsset ? readAssetId(nestedAsset.asset_id) ?? readAssetId(nestedAsset.id) : undefined);
+  const url = assetId
+    ? `/api/v1/media/${encodeURIComponent(assetId)}/file`
+    : typeof value.asset_url === "string" && value.asset_url.trim()
+      ? value.asset_url
+      : typeof value.url === "string" && value.url.trim()
+        ? value.url
+        : typeof value.file_url === "string" && value.file_url.trim()
+          ? value.file_url
+          : typeof value.download_url === "string" && value.download_url.trim()
+            ? value.download_url
+            : "";
+  if (!url) throw new Error("Trainings API returned an upload response without a media URL.");
   return {
-    url: value.url,
-    name: value.name,
-    size: value.size,
-    ...(typeof value.type === "string" ? { type: value.type } : {}),
+    url,
+    name: typeof value.name === "string" && value.name.trim() ? value.name : uploadFile.name,
+    size: typeof value.size === "number" && Number.isFinite(value.size) ? value.size : uploadFile.size,
+    ...(assetId ? { asset_id: assetId } : {}),
+    ...(typeof value.type === "string" ? { type: value.type } : typeof value.mime_type === "string" ? { type: value.mime_type } : {}),
   };
 }
 
@@ -1074,6 +1315,89 @@ export async function getTrainingAssessment(trainingId: string, assessmentId: st
   return unwrapApiData((await res.json()) as unknown);
 }
 
+/** Lists learner submissions for an assessment. */
+export async function listTrainingAssessmentSubmissions(
+  trainingId: string,
+  assessmentId: string,
+  params: AssessmentSubmissionsParams = {},
+): Promise<AssessmentSubmissionsResponse> {
+  const searchParams = toSearchParams({
+    page: params.page ?? 1,
+    page_size: params.page_size ?? 20,
+    status: params.status ?? "all",
+    search: params.search,
+    from_date: params.from_date,
+    to_date: params.to_date,
+    order: params.order ?? "newest",
+  });
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/assessments/${encodeURIComponent(assessmentId)}/submissions?${searchParams.toString()}`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (!res.ok) throw await createTrainingsApiError(res, "load assessment submissions");
+
+  const raw: unknown = await res.json();
+  const unwrapped = unwrapApiData(raw);
+  const responseRecord = isRecord(unwrapped) ? unwrapped : {};
+  const nestedData = isRecord(responseRecord.data) ? responseRecord.data : responseRecord;
+  const rawItems = Array.isArray(unwrapped)
+    ? unwrapped
+    : Array.isArray(nestedData.items)
+      ? nestedData.items
+      : Array.isArray(nestedData.results)
+        ? nestedData.results
+        : Array.isArray(nestedData.records)
+          ? nestedData.records
+          : Array.isArray(nestedData.submissions)
+            ? nestedData.submissions
+            : [];
+  const pagination = isRecord(nestedData.pagination) ? nestedData.pagination : nestedData;
+  const items = rawItems.flatMap((value): AssessmentSubmissionListItem[] => {
+    if (!isRecord(value)) return [];
+    const id = value.submission_id ?? value.id ?? value.attempt_id;
+    if (typeof id !== "string" || !id.trim() || (value.status !== "pending" && value.status !== "evaluated")) return [];
+    const rawScore = value.final_score ?? value.score ?? value.auto_score;
+    const rawScorePercent = value.score_percent;
+    return [{
+      id,
+      attempt_id: typeof value.attempt_id === "string" ? value.attempt_id : null,
+      participant_name: typeof (value.learner_name ?? value.participant_name) === "string" ? String(value.learner_name ?? value.participant_name) : null,
+      participant_email: typeof (value.learner_email ?? value.participant_email) === "string" ? String(value.learner_email ?? value.participant_email) : null,
+      attempt_number: typeof value.attempt_number === "number" ? value.attempt_number : null,
+      status: value.status,
+      needs_manual: value.needs_manual_grading === true || value.needs_manual === true,
+      score: typeof rawScore === "number" && Number.isFinite(rawScore) ? rawScore : null,
+      total_points: typeof value.total_points === "number" && Number.isFinite(value.total_points) && value.total_points >= 0 ? value.total_points : null,
+      score_percent: typeof rawScorePercent === "number" && Number.isFinite(rawScorePercent) ? rawScorePercent : null,
+      passed: typeof value.passed === "boolean" ? value.passed : null,
+      submitted_at: typeof value.submitted_at === "string" ? value.submitted_at : null,
+      is_legacy: value.is_legacy === true,
+    }];
+  });
+  const page = typeof pagination.page === "number" && Number.isInteger(pagination.page) && pagination.page >= 1 ? pagination.page : params.page ?? 1;
+  const pageSize = typeof pagination.page_size === "number" && Number.isInteger(pagination.page_size) && pagination.page_size >= 1 ? pagination.page_size : params.page_size ?? 20;
+  const total = typeof pagination.total === "number" && Number.isFinite(pagination.total) && pagination.total >= 0 ? pagination.total : items.length;
+  const totalPages = typeof pagination.total_pages === "number" && Number.isInteger(pagination.total_pages) && pagination.total_pages >= 0
+    ? pagination.total_pages
+    : Math.ceil(total / Math.max(pageSize, 1));
+  const rawStatusCounts = isRecord(nestedData.status_counts) ? nestedData.status_counts : {};
+  const statusCounts = {
+    all: typeof rawStatusCounts.all === "number" && Number.isFinite(rawStatusCounts.all) ? rawStatusCounts.all : total,
+    pending: typeof rawStatusCounts.pending === "number" && Number.isFinite(rawStatusCounts.pending) ? rawStatusCounts.pending : items.filter((item) => item.status === "pending").length,
+    evaluated: typeof rawStatusCounts.evaluated === "number" && Number.isFinite(rawStatusCounts.evaluated) ? rawStatusCounts.evaluated : items.filter((item) => item.status === "evaluated").length,
+  };
+  return {
+    assessment_id: typeof nestedData.assessment_id === "string" ? nestedData.assessment_id : null,
+    assessment_title: typeof nestedData.assessment_title === "string" ? nestedData.assessment_title : null,
+    items,
+    total,
+    page,
+    page_size: pageSize,
+    total_pages: totalPages,
+    status_counts: statusCounts,
+  };
+}
+
 /** Creates an assessment. */
 export async function createTrainingAssessment(trainingId: string, payload: CreateTrainingAssessmentPayload): Promise<unknown> {
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/assessments`, {
@@ -1123,23 +1447,73 @@ export async function gradeAssessmentSubmission(
   assessmentId: string,
   submissionId: string,
   payload: GradeSubmissionPayload,
-): Promise<unknown> {
+): Promise<GradeAssessmentSubmissionResponse> {
   const res = await fetch(
     `${trainingsBasePath}${encodeURIComponent(trainingId)}/assessments/${encodeURIComponent(assessmentId)}/submissions/${encodeURIComponent(submissionId)}/grade`,
     { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
   );
   if (!res.ok) throw await createTrainingsApiError(res, "grade this assessment submission");
-  return (await res.json()) as unknown;
+  const raw: unknown = await res.json();
+  const unwrapped = unwrapApiData(raw);
+  if (!isRecord(unwrapped)) throw new Error("Training API returned an invalid grade response.");
+  return {
+    submission_id: readNullableString(unwrapped.submission_id),
+    status: unwrapped.status === "pending" || unwrapped.status === "evaluated" ? unwrapped.status : null,
+    final_score: readFiniteNumber(unwrapped.final_score ?? unwrapped.score),
+    total_points: readFiniteNumber(unwrapped.total_points),
+    score_percent: readFiniteNumber(unwrapped.score_percent),
+    passed: typeof unwrapped.passed === "boolean" ? unwrapped.passed : null,
+    feedback: readNullableString(unwrapped.feedback),
+  };
 }
 
 /** Gets assessment submission review. */
-export async function getAssessmentSubmissionReview(trainingId: string, assessmentId: string, submissionId: string): Promise<unknown> {
+export async function getAssessmentSubmissionReview(trainingId: string, assessmentId: string, submissionId: string): Promise<AssessmentSubmissionReview> {
   const res = await fetch(
     `${trainingsBasePath}${encodeURIComponent(trainingId)}/assessments/${encodeURIComponent(assessmentId)}/submissions/${encodeURIComponent(submissionId)}/review`,
     { credentials: "include", cache: "no-store" },
   );
   if (!res.ok) throw await createTrainingsApiError(res, "load assessment submission review");
-  return (await res.json()) as unknown;
+  const raw: unknown = await res.json();
+  const unwrapped = unwrapApiData(raw);
+  if (!isRecord(unwrapped)) throw new Error("Training API returned an invalid submission review.");
+  const rawAnswers = Array.isArray(unwrapped.review)
+    ? unwrapped.review
+    : Array.isArray(unwrapped.answers)
+      ? unwrapped.answers
+      : [];
+  const review = rawAnswers.flatMap((value, index): AssessmentSubmissionAnswer[] => {
+    if (!isRecord(value)) return [];
+    const answer = value.given ?? value.answer ?? value.user_answer ?? null;
+    const correct = value.correct ?? value.correct_answer ?? null;
+    const questionType = readNullableString(value.question_type ?? value.type);
+    return [{
+      question_id: readNullableString(value.question_id ?? value.id),
+      question_text: readNullableString(value.question_text ?? value.question) ?? `Question ${index + 1}`,
+      question_type: questionType,
+      given: answer,
+      correct,
+      explanation: readNullableString(value.explanation),
+      points: readFiniteNumber(value.points),
+      points_awarded: readFiniteNumber(value.points_awarded),
+      needs_manual: value.needs_manual === true || value.needs_manual_grading === true || correct === null,
+    }];
+  });
+  const status = unwrapped.status === "pending" || unwrapped.status === "evaluated" ? unwrapped.status : null;
+  return {
+    submission_id: readNullableString(unwrapped.submission_id ?? unwrapped.id),
+    attempt_id: readNullableString(unwrapped.attempt_id),
+    assessment_id: readNullableString(unwrapped.assessment_id),
+    status,
+    auto_score: readFiniteNumber(unwrapped.auto_score),
+    final_score: readFiniteNumber(unwrapped.final_score),
+    score: readFiniteNumber(unwrapped.score),
+    total_points: readFiniteNumber(unwrapped.total_points),
+    score_percent: readFiniteNumber(unwrapped.score_percent),
+    passed: typeof unwrapped.passed === "boolean" ? unwrapped.passed : null,
+    feedback: readNullableString(unwrapped.feedback),
+    review,
+  };
 }
 
 /** Lists assignments for a Training — `GET /trainings/{id}/assignments`.

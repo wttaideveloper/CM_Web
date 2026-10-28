@@ -610,7 +610,7 @@ function TrainingDetailsContent({
       ) : null}
 
       {activeTab === "content" ? <TrainingContentTab trainingId={trainingId} /> : null}
-      {activeTab === "sections" ? <div className="mt-6"><TrainingSectionsTab trainingId={trainingId} trainingDeliveryMode={training.delivery_mode ?? ""} trainingLessonDefaults={trainingLessonDefaults} /></div> : null}
+      {activeTab === "sections" ? <div className="mt-6"><TrainingSectionsTab trainingId={trainingId} trainingDeliveryMode={training.delivery_mode ?? ""} trainingLessonDefaults={trainingLessonDefaults} canManage={managementActions} /></div> : null}
       {activeTab === "enrolments" ? <div className="mt-6"><TrainingEnrolmentsTab trainingId={trainingId} /></div> : null}
       {activeTab === "attendance" ? <div className="mt-6"><TrainingAttendanceTab trainingId={trainingId} /></div> : null}
       {activeTab === "assessments" ? <div className="mt-6"><TrainingAssessmentsTab trainingId={trainingId} /></div> : null}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { createDynamicAttribute } from "@ihp/attributes";
@@ -10,6 +10,7 @@ import { formatCurrency } from "@ihp/shared";
 import { createProduct } from "../services/product.service";
 import { PRODUCT_CATEGORY_OPTIONS } from "../constants/product-category-options";
 import type { ProductCreateScreenProps, ProductProviderOption } from "../types/product-screen-config.types";
+import { clearProductCreateDraft, getProductCreateDraft, productCreateDraftKey, saveProductCreateDraft } from "../product-create-draft-memory";
 
 const tabs = ["Product Info", "Pricing", "Images", "Review"];
 
@@ -119,31 +120,35 @@ export default function ProductCreateScreen({
 }: ProductCreateScreenProps = {}) {
   const router = useRouter();
   const isEnterpriseAdmin = mode === "enterprise-admin";
-  const [activeTab, setActiveTab] = useState(tabs[0]);
+  const draftKey = productCreateDraftKey(mode, ownerTenantId, ownerEnterpriseId);
+  const [restoredDraft] = useState(() => draftKey ? getProductCreateDraft(draftKey) : null);
+  const hydratedDraftKey = useRef(restoredDraft && draftKey ? draftKey : null);
+  const skipDraftSaveForKey = useRef<string | null>(null);
+  const [activeTab, setActiveTab] = useState(restoredDraft?.activeTab ?? tabs[0]);
   const [enterpriseId, setEnterpriseId] = useState(() =>
-    isEnterpriseAdmin ? ownerEnterpriseId ?? "" : "",
+    restoredDraft?.enterpriseId ?? (isEnterpriseAdmin ? ownerEnterpriseId ?? "" : ""),
   );
-  const [productName, setProductName] = useState("");
-  const [productDescription, setProductDescription] = useState("");
-  const [productCategory, setProductCategory] = useState("Equipment");
-  const [productPrice, setProductPrice] = useState("");
-  const [productImages, setProductImages] = useState("");
-  const [locationId, setLocationId] = useState("");
-  const [providerUserId, setProviderUserId] = useState("");
-  const [providerName, setProviderName] = useState("");
-  const [sku, setSku] = useState("");
-  const [barcodeUpc, setBarcodeUpc] = useState("");
-  const [weight, setWeight] = useState("");
-  const [dimensions, setDimensions] = useState("");
-  const [salePrice, setSalePrice] = useState("");
-  const [costPrice, setCostPrice] = useState("");
-  const [taxClass, setTaxClass] = useState("");
-  const [stockQuantity, setStockQuantity] = useState("");
-  const [lowStockAlertThreshold, setLowStockAlertThreshold] = useState("");
-  const [stockManagement, setStockManagement] = useState("");
-  const [currency, setCurrency] = useState("");
-  const [publishStatus, setPublishStatus] = useState("");
-  const [customAttributes, setCustomAttributes] = useState<CustomAttributeRow[]>([]);
+  const [productName, setProductName] = useState(restoredDraft?.productName ?? "");
+  const [productDescription, setProductDescription] = useState(restoredDraft?.productDescription ?? "");
+  const [productCategory, setProductCategory] = useState(restoredDraft?.productCategory ?? "Equipment");
+  const [productPrice, setProductPrice] = useState(restoredDraft?.productPrice ?? "");
+  const [productImages, setProductImages] = useState(restoredDraft?.productImages ?? "");
+  const [locationId, setLocationId] = useState(restoredDraft?.locationId ?? "");
+  const [providerUserId, setProviderUserId] = useState(restoredDraft?.providerUserId ?? "");
+  const [providerName, setProviderName] = useState(restoredDraft?.providerName ?? "");
+  const [sku, setSku] = useState(restoredDraft?.sku ?? "");
+  const [barcodeUpc, setBarcodeUpc] = useState(restoredDraft?.barcodeUpc ?? "");
+  const [weight, setWeight] = useState(restoredDraft?.weight ?? "");
+  const [dimensions, setDimensions] = useState(restoredDraft?.dimensions ?? "");
+  const [salePrice, setSalePrice] = useState(restoredDraft?.salePrice ?? "");
+  const [costPrice, setCostPrice] = useState(restoredDraft?.costPrice ?? "");
+  const [taxClass, setTaxClass] = useState(restoredDraft?.taxClass ?? "");
+  const [stockQuantity, setStockQuantity] = useState(restoredDraft?.stockQuantity ?? "");
+  const [lowStockAlertThreshold, setLowStockAlertThreshold] = useState(restoredDraft?.lowStockAlertThreshold ?? "");
+  const [stockManagement, setStockManagement] = useState(restoredDraft?.stockManagement ?? "");
+  const [currency, setCurrency] = useState(restoredDraft?.currency ?? "");
+  const [publishStatus, setPublishStatus] = useState(restoredDraft?.publishStatus ?? "");
+  const [customAttributes, setCustomAttributes] = useState<CustomAttributeRow[]>(restoredDraft?.customAttributes ?? []);
   const [enterpriseOptions, setEnterpriseOptions] = useState<EnterpriseOption[]>([]);
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
   const [providerOptions, setProviderOptions] = useState<ProductProviderOption[]>([]);
@@ -154,6 +159,51 @@ export default function ProductCreateScreen({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const previousEnterpriseId = useRef(enterpriseId);
+  useEffect(() => {
+    if (!draftKey || !isEnterpriseAdmin || hydratedDraftKey.current === draftKey) return;
+    const draft = getProductCreateDraft(draftKey);
+    hydratedDraftKey.current = draftKey;
+    if (!draft) return;
+    skipDraftSaveForKey.current = draftKey;
+    setActiveTab(draft.activeTab);
+    setEnterpriseId(draft.enterpriseId);
+    setProductName(draft.productName);
+    setProductDescription(draft.productDescription);
+    setProductCategory(draft.productCategory);
+    setProductPrice(draft.productPrice);
+    setProductImages(draft.productImages);
+    setLocationId(draft.locationId);
+    setProviderUserId(draft.providerUserId);
+    setProviderName(draft.providerName);
+    setSku(draft.sku);
+    setBarcodeUpc(draft.barcodeUpc);
+    setWeight(draft.weight);
+    setDimensions(draft.dimensions);
+    setSalePrice(draft.salePrice);
+    setCostPrice(draft.costPrice);
+    setTaxClass(draft.taxClass);
+    setStockQuantity(draft.stockQuantity);
+    setLowStockAlertThreshold(draft.lowStockAlertThreshold);
+    setStockManagement(draft.stockManagement);
+    setCurrency(draft.currency);
+    setPublishStatus(draft.publishStatus);
+    setCustomAttributes(draft.customAttributes);
+  }, [draftKey, isEnterpriseAdmin]);
+  useEffect(() => {
+    if (!draftKey || !isEnterpriseAdmin) return;
+    if (hydratedDraftKey.current !== draftKey) return;
+    if (skipDraftSaveForKey.current === draftKey) {
+      skipDraftSaveForKey.current = null;
+      return;
+    }
+    saveProductCreateDraft(draftKey, {
+      activeTab, enterpriseId, productName, productDescription, productCategory, productPrice,
+      productImages, locationId, providerUserId, providerName, sku, barcodeUpc, weight,
+      dimensions, salePrice, costPrice, taxClass, stockQuantity, lowStockAlertThreshold,
+      stockManagement, currency, publishStatus, customAttributes,
+    });
+  }, [activeTab, barcodeUpc, costPrice, currency, customAttributes, dimensions, draftKey, enterpriseId, isEnterpriseAdmin, locationId, lowStockAlertThreshold, productCategory, productDescription, productImages, productName, productPrice, providerName, providerUserId, publishStatus, salePrice, sku, stockManagement, stockQuantity, taxClass, weight]);
   const selectedEnterprise = enterpriseOptions.find((enterprise) => enterprise.id === enterpriseId);
   const parsedReviewPrice = Number(productPrice);
   const reviewCustomAttributes = customAttributes.filter(
@@ -276,7 +326,10 @@ export default function ProductCreateScreen({
   }, [isEnterpriseAdmin, ownerEnterpriseId, ownerEnterpriseName]);
 
   useEffect(() => {
-    setLocationId("");
+    if (previousEnterpriseId.current !== enterpriseId) {
+      previousEnterpriseId.current = enterpriseId;
+      setLocationId("");
+    }
     void fetchLocations(enterpriseId.trim());
   }, [enterpriseId]);
 
@@ -284,7 +337,7 @@ export default function ProductCreateScreen({
     void fetchProviders();
   }, [isEnterpriseAdmin, providerOptionsLoader]);
 
-  async function handleSubmit() {
+  async function handleSubmit(saveAsDraft = false) {
     const trimmedEnterpriseId = enterpriseId.trim();
     const trimmedTenantId = ownerTenantId?.trim();
     const trimmedProductName = productName.trim();
@@ -312,7 +365,7 @@ export default function ProductCreateScreen({
       !Number.isFinite(parsedProductPrice) ||
       (isEnterpriseAdmin && !trimmedTenantId)
     ) {
-      setError("Please complete all required product fields.");
+      setError(saveAsDraft ? "Complete the required product details before saving this draft." : "Please complete all required product fields.");
       return;
     }
 
@@ -349,7 +402,7 @@ export default function ProductCreateScreen({
           : {}),
         ...(trimmedStockManagement ? { stock_management: trimmedStockManagement } : {}),
         ...(trimmedCurrency ? { currency: trimmedCurrency } : {}),
-        ...(trimmedPublishStatus ? { publish_status: trimmedPublishStatus } : {}),
+        ...(saveAsDraft ? { publish_status: "draft" } : trimmedPublishStatus ? { publish_status: trimmedPublishStatus } : {}),
       });
 
       const attributesToSave = customAttributes
@@ -375,6 +428,7 @@ export default function ProductCreateScreen({
         }
       }
 
+      if (draftKey) clearProductCreateDraft(draftKey);
       router.push(redirectTo || (isEnterpriseAdmin ? "/admin/products" : "/products"));
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Unable to create product.");
@@ -400,7 +454,7 @@ export default function ProductCreateScreen({
             </p>
           </div>
         </div>
-        <button className="h-12 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a]">
+        <button type="button" onClick={() => void handleSubmit(true)} disabled={isSubmitting} className="h-12 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a] disabled:cursor-not-allowed disabled:opacity-60">
           Save Draft
         </button>
       </div>
@@ -1023,7 +1077,7 @@ export default function ProductCreateScreen({
         ) : null}
 
         <div className="mt-5 flex flex-col gap-3 border-t border-[#edf3f0] pt-4 sm:flex-row sm:justify-end">
-          <button className="h-[46px] rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a]">
+          <button type="button" onClick={() => void handleSubmit(true)} disabled={isSubmitting} className="h-[46px] rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a] disabled:cursor-not-allowed disabled:opacity-60">
             Save Draft
           </button>
           <button

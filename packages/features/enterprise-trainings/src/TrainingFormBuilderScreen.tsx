@@ -5,6 +5,21 @@ import { activateTrainingFormConfig, assignTrainingFormConfig, createEmptyField,
 
 const inputClass = "mt-1.5 h-9 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-xs outline-none focus:border-[#1f6a58]";
 
+function withoutRemovedCreateEventField(configuration: TrainingFormConfig | null): TrainingFormConfig | null {
+  if (!configuration) return null;
+  return {
+    ...configuration,
+    sections: configuration.sections.map((section) => ({
+      ...section,
+      fields: section.fields.filter((field) => {
+        const key = field.key.trim().toLowerCase().replace(/^(core_|custom_)/, "").replace(/[\s-]+/g, "_");
+        const label = field.label.trim().toLowerCase().replace(/[\s-]+/g, " ");
+        return key !== "create_event" && label !== "create event";
+      }),
+    })),
+  };
+}
+
 function TrainingFormBuilderContent() {
   const qc = useQueryClient();
   const listQ = useQuery({ queryKey: ["training-form-configs"], queryFn: listTrainingFormConfigs });
@@ -12,7 +27,7 @@ function TrainingFormBuilderContent() {
   const detailQ = useQuery({ queryKey: ["training-form-config", selectedId], queryFn: () => getTrainingFormConfig(selectedId!), enabled: !!selectedId });
 
   const [draft, setDraft] = useState<TrainingFormConfig | null>(null);
-  const cfg: TrainingFormConfig | null = draft ?? detailQ.data ?? null;
+  const cfg: TrainingFormConfig | null = withoutRemovedCreateEventField(draft ?? detailQ.data ?? null);
 
   const saveMut = useMutation({
     mutationFn: async () => {

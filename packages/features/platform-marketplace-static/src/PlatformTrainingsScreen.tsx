@@ -104,6 +104,23 @@ function PlatformTrainingsContent() {
     setShowSelectedReviewAudit(false);
     window.setTimeout(() => triggerRef.current?.focus(), 0);
   };
+  const selectView = (nextView: "trainings" | "reviews") => {
+    setView(nextView);
+    setReviewItemId(null);
+    setReviewId(null);
+    setReviewStatus("all");
+    setShowReviewAudit(false);
+
+    const nextParams = new URLSearchParams(searchParams.toString());
+    if (nextView === "reviews") nextParams.set("view", "reviews");
+    else for (const key of ["view", "item_id", "review_id", "status", "show_audit"]) nextParams.delete(key);
+    const query = nextParams.toString();
+    const target = `${pathname}${query ? `?${query}` : ""}`;
+    if (target !== `${pathname}${searchParams.size ? `?${searchParams.toString()}` : ""}`) {
+      skipNextSearchParamsSync.current = true;
+      router.replace(target, { scroll: false });
+    }
+  };
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [filter, setFilter] = useState<(typeof filters)[number]>("All");
@@ -142,7 +159,7 @@ function PlatformTrainingsContent() {
         setReviewStatus("all");
       }
       setShowReviewAudit(searchParams.get("show_audit") === "true");
-    } else if (searchParams.get("view") === "trainings") {
+    } else {
       setView("trainings");
     }
   }, [searchParams]);
@@ -175,8 +192,8 @@ function PlatformTrainingsContent() {
       </div>
 
       <div className="mt-5 flex gap-2 border-b border-[#e1ebe6]" role="tablist" aria-label={t("reviews.filterStatus")}>
-        <button type="button" role="tab" aria-selected={view === "trainings"} onClick={() => { setView("trainings"); setReviewItemId(null); setReviewId(null); setReviewStatus("all"); setShowReviewAudit(false); }} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === "trainings" ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#52736a]"}`}>{t("reviews.tabs.trainings")}</button>
-        <button type="button" role="tab" aria-selected={view === "reviews"} onClick={() => setView("reviews")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === "reviews" ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#52736a]"}`}>{t("reviews.tabs.received", { count: pendingReviewsQuery.data?.counts.pending ?? 0 })}</button>
+        <button type="button" role="tab" aria-selected={view === "trainings"} onClick={() => selectView("trainings")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === "trainings" ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#52736a]"}`}>{t("reviews.tabs.trainings")}</button>
+        <button type="button" role="tab" aria-selected={view === "reviews"} onClick={() => selectView("reviews")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === "reviews" ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#52736a]"}`}>{t("reviews.tabs.received")}</button>
       </div>
       {view === "reviews" ? <PlatformModuleReviewsTab module="training" itemId={reviewItemId} reviewId={reviewId} initialStatus={reviewStatus} openAuditOnLoad={showReviewAudit} /> : <>
 

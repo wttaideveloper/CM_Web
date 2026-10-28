@@ -16,10 +16,11 @@ import {
   type EventApprovalStatus,
 } from "./event-approval-queries";
 import TrainingApprovalQueue from "./TrainingApprovalQueue";
+import EbookApprovalQueue from "./EbookApprovalQueue";
 import { auditTimestampValue, formatAuditDateTime } from "./audit-date-formatters";
 import { approvalActorDisplayName } from "./approval-actor-display";
 
-type ApprovalType = "events" | "trainings";
+type ApprovalType = "events" | "trainings" | "ebooks";
 type Status = EventApprovalStatus;
 type ApprovalMutationVariables = { eventId: string; action: EventApprovalDecision; reason?: string };
 
@@ -57,7 +58,7 @@ export default function PlatformApprovalQueueScreen() {
   const searchParams = useSearchParams();
   const requestedType = searchParams.get("type");
   const initialApprovalType: ApprovalType =
-    requestedType === "events" || requestedType === "trainings"
+    requestedType === "events" || requestedType === "trainings" || requestedType === "ebooks"
       ? requestedType
       : "events";
   const [approvalType, setApprovalType] = useState<ApprovalType>(initialApprovalType);
@@ -68,7 +69,7 @@ export default function PlatformApprovalQueueScreen() {
     window.history.replaceState(window.history.state, "", url);
   };
   useEffect(() => {
-    if (requestedType === "events" || requestedType === "trainings") {
+    if (requestedType === "events" || requestedType === "trainings" || requestedType === "ebooks") {
       setApprovalType(requestedType);
     }
   }, [requestedType]);
@@ -83,9 +84,10 @@ export default function PlatformApprovalQueueScreen() {
       <div role="tablist" aria-label="Approval types" className="mt-7 flex gap-2 border-b border-[#d7e5df]">
         <button id="approval-type-events-tab" type="button" role="tab" aria-selected={approvalType === "events"} aria-controls="approval-type-events-panel" onClick={() => selectApprovalType("events")} className={approvalType === "events" ? "border-b-2 border-[#1f6a58] -mb-px px-4 py-3 font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2" : "px-4 py-3 font-bold text-[#52736a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2"}>Events</button>
         <button id="approval-type-trainings-tab" type="button" role="tab" aria-selected={approvalType === "trainings"} aria-controls="approval-type-trainings-panel" onClick={() => selectApprovalType("trainings")} className={approvalType === "trainings" ? "border-b-2 border-[#1f6a58] -mb-px px-4 py-3 font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2" : "px-4 py-3 font-bold text-[#52736a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2"}>Trainings</button>
+        <button id="approval-type-ebooks-tab" type="button" role="tab" aria-selected={approvalType === "ebooks"} aria-controls="approval-type-ebooks-panel" onClick={() => selectApprovalType("ebooks")} className={approvalType === "ebooks" ? "border-b-2 border-[#1f6a58] -mb-px px-4 py-3 font-bold text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2" : "px-4 py-3 font-bold text-[#52736a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2"}>eBooks</button>
       </div>
 
-      {approvalType === "events" ? <EventsQueue /> : <TrainingApprovalQueue />}
+      {approvalType === "events" ? <EventsQueue /> : approvalType === "trainings" ? <TrainingApprovalQueue /> : <EbookApprovalQueue />}
     </section>
   );
 }

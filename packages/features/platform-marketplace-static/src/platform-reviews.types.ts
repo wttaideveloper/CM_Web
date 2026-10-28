@@ -21,6 +21,7 @@ export interface PlatformReviewQueueItem {
   reviewer_email: string | null;
   is_verified: boolean;
   moderation_status: ReviewModerationStatus;
+  reason?: string | null;
   created_at: string | null;
   updated_at: string | null;
 }

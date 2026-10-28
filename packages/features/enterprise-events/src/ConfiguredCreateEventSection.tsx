@@ -24,6 +24,11 @@ const CORE_FIELDS: Record<string, keyof CreateEventFormValues> = { title: "title
 const COMPOSITES = new Set(["venue", "ticket_types", "sessions", "registration_questions", "registration_fields", "custom_fields", "media", "primary_image", "gallery_images", "videos", "documents"]);
 
 function keyFor(field: ActiveEventFormField): string { return field.source === "core" ? field.core_key ?? field.stable_key ?? field.id : field.stable_key ?? field.id; }
+function isRemovedCreateEventField(key: string | null | undefined, label: string | null | undefined): boolean {
+  const normalizedKey = (key ?? "").replace(/^(core_|custom_)/, "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  const normalizedLabel = (label ?? "").trim().toLowerCase().replace(/[\s-]+/g, " ");
+  return normalizedKey === "create_event" || normalizedLabel === "create event";
+}
 function disabledModuleFor(key: string, values: CreateEventFormValues): string | null {
   if (values.modules?.tickets === false && ["pricing_type", "price", "currency", "ticket_types"].includes(key)) return "Tickets are disabled for this Event Type.";
   if (values.modules?.sessions === false && key === "sessions") return "Sessions are disabled for this Event Type.";
@@ -89,7 +94,7 @@ function temporalBounds(key: string, type: string, values: CreateEventFormValues
 
 /** Renders one server-authoritative Event form section in configured field order. */
 export default function ConfiguredCreateEventSection({ section, values, update, errors, customValues, setCustomValues, categories, categoriesLoading, categoriesError, eventTypes, eventTypesLoading = false, eventTypesError = false, currencyOptions, currencyState, createMode = false, allowPastTemporalValues = false, mediaPolicy, policyError, uploads = [], onMediaLinkChange, onMediaAddLink, onMediaRemove, onMediaUpload, onMediaRetry, onMediaUploadRemove, sessionGenerationRules, onSessionGenerationRulesChange }: Props) {
-  const fields = section.fields.filter((field) => field.is_enabled !== false).sort((left, right) => left.position - right.position);
+  const fields = section.fields.filter((field) => field.is_enabled !== false && !isRemovedCreateEventField(field.core_key ?? field.stable_key, field.label)).sort((left, right) => left.position - right.position);
   const eventTypesQuery = useEventTypes(fields.some((field) => keyFor(field) === "event_type"));
   eventTypes = eventTypesQuery.data ?? eventTypes;
   eventTypesLoading = eventTypesQuery.isLoading;

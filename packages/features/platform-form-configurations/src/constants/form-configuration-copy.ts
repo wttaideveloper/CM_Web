@@ -66,7 +66,7 @@ export const formConfigurationCopy = {
     { title: "Set up each field", description: "Choose whether it is Required, set its placeholder where available, choose where it appears, and keep it Enabled to include it on the form." },
     { title: "Preview before publishing", description: "Open Preview to check what Enterprise Admins will see. When it looks right, save a draft or publish the configuration." },
   ],
-  type: "Type", name: "Name", descriptionLabel: "Description", scope: "Scope", status: "Status", active: "Active", version: "Version", assignedTenants: "Assigned Tenants", updatedAt: "Updated At", actions: "Actions",
+  type: "Type", name: "Name", descriptionLabel: "Description", scope: "Scope", status: "Status", active: "Active", version: "Version", assignedTenants: "Assigned Tenants", createdAt: "Created At", updatedAt: "Updated At", actions: "Actions",
   unsavedChangesWarning: "You have unsaved changes. Leave this form and lose those changes?",
   event: "Event", global: "Global", selective: "Selective Tenants", draft: "Draft", published: "Published", retired: "Retired", activeLabel: "Active", inactive: "Inactive",
   basics: "Configuration details", builder: "Form builder", assignment: "Assignment", preview: "Preview as Enterprise Admin",

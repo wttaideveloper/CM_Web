@@ -13,6 +13,7 @@ import { isEventCoreFieldAvailable } from "../model/event-core-field-semantics";
 import { getTrainingCompositeFieldDefinition } from "../model/training-composite-field-definitions";
 import { getTrainingDefaultPlaceholder } from "../model/form-configuration.mock";
 import { validateFormConfiguration } from "../model/form-configuration-validation";
+import { isRemovedCreateEventField } from "../model/removed-form-fields";
 import type { ConfiguredField, CoreFieldRegistryItem, FormConfiguration, FormRenderer, FormSection } from "../model/form-configuration.types";
 import { AssignmentEditor, type AssignmentTenantOption } from "./AssignmentEditor";
 import { ConfigurationPreview } from "./ConfigurationPreview";
@@ -59,6 +60,8 @@ function withoutUnavailableTrainingFields(configuration: FormConfiguration): For
   return {
     ...configuration,
     fields: configuration.fields.filter((field) =>
+      !isRemovedCreateEventField(field.coreKey ?? field.stableKey, field.label)
+      &&
       (field.source !== "core" || !isLocationCoreKey(field.coreKey))
       && (configuration.type !== "training"
         || !isHiddenTrainingField(field.coreKey ?? field.stableKey, field.label)),
@@ -208,8 +211,9 @@ export function ConfigurationBuilder({ initialConfiguration, coreFieldRegistry, 
   const selectedSection = selectedSectionId ? configuration.sections.find((section) => section.localId === selectedSectionId) : undefined;
   const selectedField = selectedFieldId ? configuration.fields.find((field) => field.localId === selectedFieldId) : undefined;
   const selection: BuilderSelection = selectedField ? { kind: "field", id: selectedField.localId } : selectedSection ? { kind: "section", id: selectedSection.localId } : null;
-  const selectInspectorItem = (next: BuilderSelection) => { setSelectedCoreFieldKeys(new Set()); if (!next) { setInspectorMode("none"); setSelectedSectionId(null); setSelectedFieldId(null); setAddFieldSectionId(null); return; } if (next.kind === "section") { setInspectorMode("edit-section"); setSelectedSectionId(next.id); setSelectedFieldId(null); setAddFieldSectionId(null); return; } const field = configuration.fields.find((item) => item.localId === next.id); if (!field) return; setInspectorMode("edit-field"); setSelectedSectionId(field.sectionLocalId); setSelectedFieldId(field.localId); setAddFieldSectionId(null); };
+  const selectInspectorItem = (next: BuilderSelection) => { setSelectedCoreFieldKeys(new Set()); if (!next) { setInspectorMode("none"); setSelectedSectionId(null); setSelectedFieldId(null); setAddFieldSectionId(null); return; } if (next.kind === "section") { setInspectorMode("edit-section"); setSelectedSectionId(next.id); setSelectedFieldId(null); setAddFieldSectionId(null); return; } const field = configuration.fields.find((item) => item.localId === next.id); if (!field) return; setInspectorMode("edit-field"); setSelectedSectionId(null); setSelectedFieldId(field.localId); setAddFieldSectionId(null); };
   const availableCoreFields = useMemo(() => coreFieldRegistry.filter((field) => {
+    if (isRemovedCreateEventField(field.key, field.displayName)) return false;
     if (isLocationCoreKey(field.key)) return false;
     if (isPrimaryImageField(field)) return false;
     if (configuration.type === "event" && !isEventCoreFieldAvailable(field.key)) return false;

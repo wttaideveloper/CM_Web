@@ -36,7 +36,7 @@ function isRemovedTrainingScheduleTimeField(field: Awaited<ReturnType<typeof get
 }
 
 function toListItem(configuration: Awaited<ReturnType<typeof listTrainingFormConfigurations>>[number]): FormConfigurationListItem {
-  return { id: configuration.id, name: configuration.name, description: configuration.description, scope: configuration.scope, status: configuration.status, active: configuration.is_active, currentVersion: configuration.current_version, updatedAt: configuration.updated_at, publishedAt: configuration.published_at };
+  return { id: configuration.id, name: configuration.name, description: configuration.description, scope: configuration.scope, status: configuration.status, active: configuration.is_active, currentVersion: configuration.current_version, createdAt: configuration.created_at, updatedAt: configuration.updated_at, publishedAt: configuration.published_at };
 }
 
 /** Reads configuration summaries for the existing Platform Admin list screen. */

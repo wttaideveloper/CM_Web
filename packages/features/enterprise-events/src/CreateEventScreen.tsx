@@ -29,6 +29,7 @@ import { EVENT_CREATE_LEAVE_MESSAGE, shouldConfirmEventCreateLeave } from "./eve
 import { eventFieldMaxLength, EVENT_DESCRIPTION_MAX_LENGTH } from "./event-field-limits";
 import EventCreateLeaveDialog from "./EventCreateLeaveDialog";
 import { eventCurrencyForSource, findEventCurrencyChange, getEventCurrencyPolicy, hasEventMonetaryValues, isEventCurrencySource, resetEventMonetaryValues, resolveEventCurrencySource, synchronizeEventCurrencies, validateEventCurrencies, type EventCurrencyPolicy, type EventCurrencySource, type EventCurrencyUiState } from "./event-currency";
+import { clearEventCreateDraft, eventCreateDraftKey, getEventCreateDraft, saveEventCreateDraft } from "./event-create-draft-memory";
 
 const steps = ["Basic Information", "Schedule", "Venue & Host", "Pricing & Tickets", "Capacity & Registration", "Images & Media", "Additional Configuration", "Review & Submit"] as const;
 const stepFields: ReadonlyArray<readonly string[]> = [["title", "description", "category", "organiser_name", "organiser_contact"], ["start_date", "end_date", "registration_cutoff", "registration_open_at", "registration_close_at"], ["venue_name", "venue_address", "venue_city"], ["price", "currency", "ticket_types"], ["capacity", "min_participants", "max_participants"], ["media"], ["sessions", "custom_fields"], []];
@@ -129,25 +130,29 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const { t } = useTranslation("enterpriseEvents");
   const router = useRouter(); const queryClient = useQueryClient();
   const { tenantId } = useTenant(); const { currentEnterprise, enterpriseId } = useCurrentEnterprise();
-  const [activeStep, setActiveStep] = useState(0);
+  const createDraftKey = mode === "create" ? eventCreateDraftKey(tenantId, enterpriseId) : null;
+  const [initialCreateDraft] = useState(() => createDraftKey ? getEventCreateDraft(createDraftKey) : null);
+  const hydratedCreateDraftKey = useRef<string | null>(initialCreateDraft && createDraftKey ? createDraftKey : null);
+  const [activeStep, setActiveStep] = useState(initialCreateDraft?.activeStep ?? 0);
   const [initialValues] = useState(() => initialEvent ? eventToFormValues(initialEvent) : createEmptyEventForm());
-  const [values, setValues] = useState(() => initialEvent ? eventToFormValues(initialEvent) : createEmptyEventForm());
+  const [values, setValues] = useState(() => initialCreateDraft?.values ?? (initialEvent ? eventToFormValues(initialEvent) : createEmptyEventForm()));
   const valuesRef = useRef(values);
   valuesRef.current = values;
-  const [currencySourcePreference, setCurrencySourcePreference] = useState<EventCurrencySource | null>(null);
+  const [currencySourcePreference, setCurrencySourcePreference] = useState<EventCurrencySource | null>(initialCreateDraft?.currencySourcePreference ?? null);
   const [pendingCurrencyChange, setPendingCurrencyChange] = useState<{ values: CreateEventFormValues; previousValues: CreateEventFormValues; source: EventCurrencySource; currency: string } | null>(null);
-  const [sessionGenerationRules, setSessionGenerationRules] = useState<SessionGenerationRule[]>(createDefaultSessionGenerationRules);
+  const [sessionGenerationRules, setSessionGenerationRules] = useState<SessionGenerationRule[]>(initialCreateDraft?.sessionGenerationRules ?? createDefaultSessionGenerationRules());
   const previousEventType = useRef(values.event_type);
   const initialLocationId = initialEvent?.location_id ?? "";
   const locationId = initialLocationId;
   const [errors, setErrors] = useState<Record<string, string[]>>({});
-  const [mediaUploads, setMediaUploads] = useState<EventMediaUploadState[]>([]);
+  const [mediaUploads, setMediaUploads] = useState<EventMediaUploadState[]>(initialCreateDraft?.mediaUploads ?? []);
   const cancelledMediaUploads = useRef(new Set<string>());
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [pendingFocusField, setPendingFocusField] = useState<string | null>(null);
   const hasUserEditedFormRef = useRef(false);
+  if (initialCreateDraft) hasUserEditedFormRef.current = true;
   const [leaveConfirmationOpen, setLeaveConfirmationOpen] = useState(false);
-  const [customValues, setCustomValues] = useState<Record<string, string | string[] | boolean | number | null>>({});
+  const [customValues, setCustomValues] = useState<Record<string, string | string[] | boolean | number | null>>(initialCreateDraft?.customValues ?? {});
   const [initialCustomValues, setInitialCustomValues] = useState<Record<string, string | string[] | boolean | number | null>>({});
   const eventCreateAllowNavigation = useRef(false);
   const eventCreateSubmitted = useRef(false);
@@ -247,7 +252,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
       const sessionsField = activeConfiguration?.sections.flatMap((section) => section.fields).find((field) => field.source === "core" && (field.core_key === "sessions" || field.stable_key === "sessions"));
       return createEvent(buildCreateEventPayload(values, tenantId, enterpriseId, locationId, activeConfiguration?.version_id, configuredCustomValues, configuredCoreFieldKeys, sessionsField?.composite_config?.enabled_fields, currencyPolicy ?? undefined));
     },
-    onSuccess: async () => { eventCreateSubmitted.current = true; eventCreateAllowNavigation.current = true; eventCreateSubmissionStarted.current = true; pendingLeaveAction.current = null; setLeaveConfirmationOpen(false); setMediaUploads([]); clearPersistedDateTimeDrafts(); if (!initialEvent) { router.push("/admin/events"); await queryClient.invalidateQueries({ queryKey: ["events", "list"] }); return; } await queryClient.invalidateQueries({ queryKey: ["events", "list"] }); await queryClient.invalidateQueries({ queryKey: ["events", "detail", initialEvent.id] }); router.push(`/admin/events/${initialEvent.id}`); },
+    onSuccess: async () => { eventCreateSubmitted.current = true; eventCreateAllowNavigation.current = true; eventCreateSubmissionStarted.current = true; pendingLeaveAction.current = null; setLeaveConfirmationOpen(false); setMediaUploads([]); if (createDraftKey) clearEventCreateDraft(createDraftKey); clearPersistedDateTimeDrafts(); if (!initialEvent) { router.push("/admin/events"); await queryClient.invalidateQueries({ queryKey: ["events", "list"] }); return; } await queryClient.invalidateQueries({ queryKey: ["events", "list"] }); await queryClient.invalidateQueries({ queryKey: ["events", "detail", initialEvent.id] }); router.push(`/admin/events/${initialEvent.id}`); },
     onError: (error) => { eventCreateSubmissionStarted.current = false; if (error instanceof EventsApiError) { const configuredFields = formConfiguration?.sections.flatMap((section) => section.fields) ?? []; const actionableErrors = Object.fromEntries(Object.entries(error.fieldErrors).map(([fieldKey, messages]) => { const resolvedKey = resolveValidationKey(fieldKey, allFieldOrder) ?? fieldKey; const matchingField = configuredFields.find((field) => [field.core_key, field.stable_key, field.id].some((candidate) => candidate === resolvedKey || candidate === fieldKey)); return [fieldKey, matchingField && messages.some((message) => /invalid format/i.test(message)) ? [getEventFormatError(matchingField, t)] : messages]; })); const displayErrors = normalizeValidationErrors(actionableErrors, allFieldOrder); setErrors((current) => ({ ...current, ...displayErrors })); const firstStructuredItem = error.structuredErrors.find((item) => allFieldOrder.some((field) => resolveValidationKey(item.fieldKey, [field]) === field)); const firstStructuredRoot = firstStructuredItem?.fieldKey; const firstStructuredNested = firstStructuredItem?.nestedPath.filter((part) => part !== "options"); const structuredFocus = firstStructuredRoot && firstStructuredNested?.length ? `${firstStructuredRoot}.${firstStructuredNested.join(".")}` : firstStructuredRoot; const first = structuredFocus ?? firstErrorKey(allFieldOrder, displayErrors) ?? Object.keys(displayErrors).find((key) => displayErrors[key]?.length); if (first) { const sectionIndex = editorSteps.findIndex((_, index) => sectionFields(index).includes(firstStructuredRoot ?? first)); if (sectionIndex >= 0) setActiveStep(sectionIndex); setPendingFocusField(first); } const mappedToField = Boolean(firstStructuredRoot || firstErrorKey(allFieldOrder, displayErrors)); setSubmitError(error.status === 401 || error.status === 403 ? "Your session cannot save this event. Please sign in again." : mappedToField ? null : error.message); } else setSubmitError(error instanceof Error ? error.message : "Unable to save event."); },
   });
   const update = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => {
@@ -317,6 +322,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     setPendingCurrencyChange(null);
   };
   const updateCustomValues = (next: Record<string, string | string[] | boolean | number | null>) => { const changedKey = Object.keys(next).find((key) => JSON.stringify(next[key]) !== JSON.stringify(customValues[key])); if (changedKey) hasUserEditedFormRef.current = true; setCustomValues(next); if (changedKey) setErrors((current) => ({ ...current, [changedKey]: [] })); setSubmitError(null); };
+  const updateSessionGenerationRules = (rules: SessionGenerationRule[]) => { hasUserEditedFormRef.current = true; setSessionGenerationRules(rules); };
   const updateMediaUpload = (id: string, patch: Partial<EventMediaUploadState>) => setMediaUploads((current) => current.map((upload) => upload.id === id ? { ...upload, ...patch } : upload));
   const runMediaUpload = (upload: EventMediaUploadState) => {
     cancelledMediaUploads.current.delete(upload.id);
@@ -341,6 +347,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
       .catch((error: unknown) => updateMediaUpload(upload.id, { status: "error", error: error instanceof EventMediaApiError ? error.message : error instanceof Error ? error.message : "The upload failed." }));
   };
   const onMediaUpload = (field: EventMediaField, file: File, replaceIndex?: number) => {
+    hasUserEditedFormRef.current = true;
     const clientRef = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const valueIndex = field === "primary_image" ? undefined : replaceIndex ?? (values[field] as readonly unknown[]).length;
     const upload: EventMediaUploadState = { id: `${field}-${clientRef}`, field, file, clientRef, progress: 0, status: "uploading", ...(replaceIndex === undefined ? {} : { replaceIndex }), ...(valueIndex === undefined ? {} : { valueIndex }) };
@@ -352,6 +359,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   };
   const onMediaRetry = (id: string) => { const upload = mediaUploads.find((item) => item.id === id); if (upload) runMediaUpload(upload); };
   const onMediaUploadRemove = (id: string) => {
+    hasUserEditedFormRef.current = true;
     const tracked = mediaUploads.find((item) => item.id === id);
     if (!tracked) return;
     if (tracked.status === "uploading") cancelledMediaUploads.current.add(id);
@@ -370,6 +378,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     } else removeUploadState();
   };
   const onMediaLinkChange = (field: EventMediaField, index: number, value: string) => {
+    hasUserEditedFormRef.current = true;
     setValues((current) => {
       if (field === "primary_image") return { ...current, primary_image: value };
       if (field === "documents") return { ...current, documents: current.documents.map((item, itemIndex) => itemIndex === index ? { ...item, url: value } : item) };
@@ -379,9 +388,11 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
     setSubmitError(null);
   };
   const onMediaAddLink = (field: EventMediaField) => {
+    hasUserEditedFormRef.current = true;
     setValues((current) => field === "primary_image" ? { ...current, primary_image: "" } : field === "documents" ? { ...current, documents: [...current.documents, { url: "" }] } : { ...current, [field]: [...(current[field] as string[]), ""] });
   };
   const onMediaRemove = (field: EventMediaField, index: number) => {
+    hasUserEditedFormRef.current = true;
     const value = field === "primary_image" ? values.primary_image : (values[field] as Array<string | { url: string }>)[index];
     const url = documentUrl(value ?? "");
     setValues((current) => field === "primary_image" ? { ...current, primary_image: "" } : field === "documents" ? { ...current, documents: current.documents.filter((_, itemIndex) => itemIndex !== index) } : { ...current, [field]: (current[field] as string[]).filter((_, itemIndex) => itemIndex !== index) });
@@ -424,6 +435,30 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   useEffect(() => {
     eventCreateDirty.current = isDirty;
   }, [isDirty]);
+  useEffect(() => {
+    if (mode !== "create" || !createDraftKey || eventCreateSubmitted.current) return;
+    if (hydratedCreateDraftKey.current !== createDraftKey) {
+      const draft = getEventCreateDraft(createDraftKey);
+      hydratedCreateDraftKey.current = createDraftKey;
+      if (!draft || hasUserEditedFormRef.current) return;
+      const restoredUploads = draft.mediaUploads.map((upload) => upload.status === "uploading"
+        ? { ...upload, status: "error" as const, error: "Upload interrupted while you were away. Retry this upload." }
+        : upload);
+      hasUserEditedFormRef.current = true;
+      valuesRef.current = draft.values;
+      setValues(draft.values);
+      setActiveStep(draft.activeStep);
+      setCurrencySourcePreference(draft.currencySourcePreference);
+      setSessionGenerationRules(draft.sessionGenerationRules);
+      setCustomValues(draft.customValues);
+      setMediaUploads(restoredUploads);
+      return;
+    }
+    if (!hasUserEditedFormRef.current) return;
+    saveEventCreateDraft(createDraftKey, {
+      activeStep, values, currencySourcePreference, sessionGenerationRules, customValues, mediaUploads,
+    });
+  }, [activeStep, createDraftKey, currencySourcePreference, customValues, mediaUploads, mode, sessionGenerationRules, values]);
   const requestLeaveConfirmation = (action: () => void) => {
     if (leaveConfirmationPending.current) return;
     pendingLeaveAction.current = action;
@@ -600,7 +635,7 @@ export default function CreateEventScreen({ mode = "create", initialEvent }: Eve
   const continueToNext = () => { const currentErrors = Object.fromEntries(Object.entries(normalizedAllErrors).filter(([field]) => sectionFields(activeStep).includes(field))); const first = firstErrorKey(sectionFields(activeStep), currentErrors); if (first) { focusError(first, currentErrors); return; } setErrors({}); setActiveStep((current) => Math.min(current + 1, editorSteps.length - 1)); };
   const submit = () => { if (mode === "create" && eventCreateSubmissionStarted.current) return; if (mode === "edit" && !isDirty) return; if (mediaUploads.some((upload) => upload.status === "uploading" || upload.status === "error")) { setSubmitError("Finish or remove the Event media uploads before saving."); return; } const first = firstErrorKey(allFieldOrder, normalizedAllErrors) ?? Object.keys(normalizedAllErrors).find((field) => normalizedAllErrors[field]?.length); if (first) { const sectionIndex = editorSteps.findIndex((_, index) => sectionFields(index).includes(first)); focusError(first, normalizedAllErrors); if (sectionIndex >= 0) setActiveStep(sectionIndex); const count = errorCount(normalizedAllErrors); setSubmitError(`${count} validation error${count === 1 ? "" : "s"} need attention.`); return; } setSubmitError(null); if (mode === "create") eventCreateSubmissionStarted.current = true; saveMutation.mutate(); };
   const mediaProps = { mediaPolicy: mediaPolicyQuery.data, policyError: mediaPolicyQuery.error instanceof Error ? mediaPolicyQuery.error.message : undefined, uploads: mediaUploads, onMediaLinkChange, onMediaAddLink, onMediaRemove, onMediaUpload, onMediaRetry, onMediaUploadRemove };
-  const sharedProps = { values, update, errors: displayErrors, currencyOptions, eventTypes: availableEventTypes, eventTypesLoading: eventTypesQuery.isLoading, eventTypesError: eventTypesQuery.isError, createMode: mode === "create", ...mediaProps, ...(currencyState ? { currencyState } : {}), ...(mode === "create" ? { sessionGenerationRules, onSessionGenerationRulesChange: setSessionGenerationRules } : {}) };
+  const sharedProps = { values, update, errors: displayErrors, currencyOptions, eventTypes: availableEventTypes, eventTypesLoading: eventTypesQuery.isLoading, eventTypesError: eventTypesQuery.isError, createMode: mode === "create", ...mediaProps, ...(currencyState ? { currencyState } : {}), ...(mode === "create" ? { sessionGenerationRules, onSessionGenerationRulesChange: updateSessionGenerationRules } : {}) };
   const backHref = initialEvent ? `/admin/events/${initialEvent.id}` : "/admin/events";
   const title = mode === "edit" ? "Edit Event" : "Create Event";
 

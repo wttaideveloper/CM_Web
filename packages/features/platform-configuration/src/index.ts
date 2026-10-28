@@ -1,4 +1,5 @@
 export { default as PlatformApprovalQueueScreen } from "./PlatformApprovalQueueScreen";
+export { default as EbookApprovalQueue } from "./EbookApprovalQueue";
 export { PlatformEnterpriseReadProvider } from "./EventOwnershipNames";
 export { PlatformApprovalDataProvider, usePendingEventApprovalCount } from "./event-approval-queries";
 export { getEventApprovalList } from "./event-approval-queries";
