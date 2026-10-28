@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { buildEnterpriseChatUpstreamUrl } from "../proxy-path";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,10 +36,9 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
     return NextResponse.json({ detail: "Chat proxy target is not configured." }, { status: 503 });
   }
 
-  const upstreamPath = requestPath === "/messages" ? "messages/" : requestPath.slice(1);
   const upstreamUrl = isChatTokenRequest
     ? `${CHAT_TOKEN_UPSTREAM}/api/v1/auth/chat-token`
-    : `${proxyTarget}/api/v1/${upstreamPath}${request.nextUrl.search}`;
+    : buildEnterpriseChatUpstreamUrl(proxyTarget!, requestPath, request.nextUrl.search);
   console.info("[chat-proxy] request", { path: requestPath, upstreamUrl });
   const headers = new Headers();
   const contentType = request.headers.get("content-type");
