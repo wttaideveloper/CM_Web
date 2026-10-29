@@ -1,7 +1,9 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { AuthProvider } from "@ihp/auth";
 import { AdminSocketProvider } from "@/contexts/AdminSocketContext";
@@ -47,12 +49,16 @@ export function EnterpriseProviders({ children }: { children: ReactNode }) {
 }
 
 export function RealtimeCompatibilityProviders({ children }: { children: ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: 1 } } }));
+
   return (
-    <AuthProvider>
-      <ChatAuthProvider>
-        <AdminSocketProvider>{children}</AdminSocketProvider>
-      </ChatAuthProvider>
-    </AuthProvider>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <ChatAuthProvider>
+          <AdminSocketProvider>{children}</AdminSocketProvider>
+        </ChatAuthProvider>
+      </AuthProvider>
+    </QueryClientProvider>
   );
 }
 
