@@ -14,6 +14,8 @@ import {
 import { formatTrainingDateTime, getTrainingModerationTimestamp, humanizeLabel } from "./detail-formatters";
 import { getTrainingStatusBadgeClass, getTrainingStatusLabel, type TrainingStatus } from "./training-status";
 
+const trainingApprovalsBase = "/api/platform-super-admin/training-approvals";
+
 /** Platform Admin approval calls go through the bearer-token BFF (Super Admin session),
  * not the cookie rewrite — the marketplace backend cannot validate the Keycloak session cookie. */
 function ApprovalNoteForm({

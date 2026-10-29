@@ -4,6 +4,11 @@ const MODULES: readonly ReviewModule[] = ["training", "event", "product", "servi
 const STATUSES: readonly ReviewModerationStatus[] = ["pending", "approved", "rejected"];
 const RATINGS: readonly StarRating[] = [1, 2, 3, 4, 5];
 
+/** Formats a moderation status for the latest-action label on review cards. */
+export function formatPlatformReviewAuditStatus(status: string): string {
+  return status.trim().replace(/[_-]+/g, " ").replace(/^[a-z]/i, (character) => character.toLocaleUpperCase());
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 
 /** Validates a review rating as a whole number from one through five. */
@@ -114,10 +119,29 @@ export async function moderatePlatformReview(module: ReviewModule, reviewId: str
   if (!response.ok) throw await platformReviewError(response, "Unable to update this review.");
 }
 
-/** Permanently deletes a review in any platform module. */
+/** Removes a review from active lists while preserving its moderation audit history. */
 export async function deletePlatformReview(module: ReviewModule, reviewId: string, reason: string): Promise<void> {
   const response = await fetch(`/api/platform-super-admin/reviews/${module}/${encodeURIComponent(reviewId)}`, { method: "DELETE", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: reason.trim() }) });
   if (!response.ok) throw await platformReviewError(response, "Unable to delete this review.");
+}
+
+/** Returns each review's latest audit event, preserving the first event when timestamps tie. */
+export function latestPlatformReviewAuditEntries(entries: readonly PlatformReviewAuditEntry[]): PlatformReviewAuditEntry[] {
+  const latestByReviewId = new Map<string, PlatformReviewAuditEntry>();
+  for (const entry of entries) {
+    const previous = latestByReviewId.get(entry.review_id);
+    if (!previous) {
+      latestByReviewId.set(entry.review_id, entry);
+      continue;
+    }
+
+    const entryTime = entry.created_at ? Date.parse(entry.created_at) : Number.NaN;
+    const previousTime = previous.created_at ? Date.parse(previous.created_at) : Number.NaN;
+    if (Number.isFinite(entryTime) && (!Number.isFinite(previousTime) || entryTime > previousTime)) {
+      latestByReviewId.set(entry.review_id, entry);
+    }
+  }
+  return [...latestByReviewId.values()];
 }
 
 /** Loads platform-wide moderation audit history, optionally filtered to an item. */

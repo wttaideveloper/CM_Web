@@ -357,6 +357,9 @@ function TrainingDetailsContent({
 
   const training = trainingQuery.data;
   const trainingRecord = training as unknown as Record<string, unknown>;
+  const faqsList = Array.isArray(trainingRecord.faqs)
+    ? trainingRecord.faqs.filter((faq): faq is Record<string, unknown> => Boolean(faq) && typeof faq === "object" && !Array.isArray(faq))
+    : [];
   const trainingCustomValues = trainingRecord.custom_values && typeof trainingRecord.custom_values === "object" && !Array.isArray(trainingRecord.custom_values)
     ? trainingRecord.custom_values as Record<string, unknown>
     : {};
@@ -423,6 +426,7 @@ function TrainingDetailsContent({
       <a href="/admin/trainings" className="mb-4 inline-flex h-10 items-center justify-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-semibold text-[#1f6a58] hover:bg-[#f4faf7]">
         ← Back to Trainings
       </a>
+      {searchParams.get("notice") === "approval-submitted" ? <p role="status" className="mb-4 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">Training changes submitted for Super Admin approval.</p> : null}
       {primaryImageUrl ? (
         <div className="relative overflow-hidden rounded-2xl border border-[#e1ebe6] shadow-sm">
           <img alt={training.title} className="h-56 w-full object-cover sm:h-64" src={primaryImageUrl} onError={(event) => { (event.currentTarget as HTMLImageElement).style.display = "none" }} />

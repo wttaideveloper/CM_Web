@@ -191,7 +191,7 @@ function EventDetailsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
-  const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
+  const [statusFeedback, setStatusFeedback] = useState<string | null>(() => searchParams.get("notice") === "approval-submitted" ? "Event changes submitted for Super Admin approval." : null);
   const requestedInitialTab = searchParams.get("tab");
   const [activeTab, setActiveTab] = useState<EventDetailsTab>(
     () => (eventDetailsTabs.some((tab) => tab.id === requestedInitialTab) ? (requestedInitialTab as EventDetailsTab) : "overview"),

@@ -26,7 +26,6 @@ export function TrainingFormConfigurationEditorScreen({ id, mode }: { id?: strin
   const configurations = useTrainingFormConfigurations();
   const assignments = useTrainingFormConfigurationAssignments(isCreate ? undefined : id);
   const tenantOptions = useTrainingFormConfigurationTenantOptions();
-  const enterpriseOptions = useTrainingFormConfigurationEnterpriseOptions();
   const create = useCreateTrainingFormConfiguration();
   const update = useUpdateTrainingFormConfiguration();
   const publish = usePublishTrainingFormConfiguration();

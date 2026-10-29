@@ -1,22 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { getPlatformEventFeedback, getPlatformEventFeedbackReport, getPlatformEventsForFeedback, type PlatformEventFeedbackItem } from "./platform-events.service";
 
 type EventFeedbackEntry = PlatformEventFeedbackItem & { event_title: string };
-type AllEventFeedbackResult = { entries: EventFeedbackEntry[]; totalSubmissions: number; averageRating: number | null };
+type AllEventFeedbackResult = { entries: EventFeedbackEntry[]; totalSubmissions: number; averageRating: number | null; failedEvents: number };
+const FEEDBACK_PAGE_SIZE = 15;
 
 /** Shows mobile attendee feedback across all Events in the Super Admin portal. */
 export function PlatformAllEventFeedbackPanel() {
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const feedbackQuery = useQuery({
     queryKey: ["platform", "event-feedback", "all-events"],
     queryFn: loadAllEventFeedback,
-    staleTime: 15_000,
-    refetchOnMount: "always",
+    staleTime: 60_000,
     refetchOnWindowFocus: true,
     retry: 1,
   });
@@ -28,6 +29,10 @@ export function PlatformAllEventFeedbackPanel() {
     return entries.filter((entry) => [entry.event_title, entry.participant_name, entry.participant_email, entry.comment]
       .some((value) => value?.toLocaleLowerCase().includes(term)));
   }, [entries, search]);
+  const pageCount = Math.max(1, Math.ceil(visible.length / FEEDBACK_PAGE_SIZE));
+  const displayed = visible.slice((page - 1) * FEEDBACK_PAGE_SIZE, page * FEEDBACK_PAGE_SIZE);
+  useEffect(() => { setPage(1); }, [search]);
+  useEffect(() => { if (page > pageCount) setPage(pageCount); }, [page, pageCount]);
 
   return <section className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm" aria-label="Event attendee feedback across all events">
     <header className="flex flex-wrap items-start justify-between gap-3">
@@ -41,9 +46,11 @@ export function PlatformAllEventFeedbackPanel() {
     <label className="mt-4 block text-sm font-semibold text-[#31594d]">Search feedback<input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Event, attendee, email, or comment" className="mt-2 h-11 w-full rounded-xl border border-[#d7e5df] px-3 font-normal" /></label>
     {feedbackQuery.isPending ? <p role="status" className="mt-4 animate-pulse rounded-xl bg-[#f4faf7] p-5 text-sm text-[#52736a]">Loading Event feedback…</p> : null}
     {feedbackQuery.isError ? <div role="alert" className="mt-4 rounded-xl border border-[#f3d5d1] bg-[#fff7f6] p-4 text-sm text-[#b42318]">{feedbackQuery.error.message}<button type="button" onClick={() => void feedbackQuery.refetch()} className="ml-2 font-semibold underline">Try again</button></div> : null}
+    {feedbackQuery.data?.failedEvents ? <p role="status" className="mt-4 rounded-lg bg-[#fff8e8] px-3 py-2 text-sm text-[#805900]">Feedback could not be loaded for {feedbackQuery.data.failedEvents} event{feedbackQuery.data.failedEvents === 1 ? "" : "s"}. Refresh to retry.</p> : null}
     {!feedbackQuery.isPending && !feedbackQuery.isError && entries.length === 0 ? <p className="mt-4 rounded-xl bg-[#f8fbf9] p-5 text-sm text-[#52736a]">No mobile attendee feedback has been submitted for any Event yet.</p> : null}
     {!feedbackQuery.isPending && !feedbackQuery.isError && entries.length > 0 && visible.length === 0 ? <p className="mt-4 rounded-xl bg-[#f8fbf9] p-5 text-sm text-[#52736a]">No feedback matches this search.</p> : null}
-    <div className="mt-4 grid gap-3">{visible.map((entry) => <FeedbackCard key={`${entry.event_id}-${entry.id}`} entry={entry} />)}</div>
+    <div className="mt-4 grid gap-3">{displayed.map((entry) => <FeedbackCard key={`${entry.event_id}-${entry.id}`} entry={entry} />)}</div>
+    {visible.length > FEEDBACK_PAGE_SIZE ? <nav aria-label="Event feedback pagination" className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-[#e1ebe6] pt-4"><p aria-live="polite" className="text-sm text-[#52736a]">Page {page} of {pageCount}</p><div className="flex gap-2"><button type="button" disabled={page <= 1 || feedbackQuery.isFetching} onClick={() => setPage((current) => Math.max(1, current - 1))} className="rounded-full border border-[#d7e5df] px-4 py-2 text-sm font-semibold text-[#1f6a58] disabled:cursor-not-allowed disabled:opacity-50">Previous</button><button type="button" disabled={page >= pageCount || feedbackQuery.isFetching} onClick={() => setPage((current) => Math.min(pageCount, current + 1))} className="rounded-full border border-[#1f6a58] bg-[#1f6a58] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Next</button></div></nav> : null}
   </section>;
 }
 
@@ -53,13 +60,15 @@ async function loadAllEventFeedback(): Promise<AllEventFeedbackResult> {
   let totalSubmissions = 0;
   let ratingTotal = 0;
   let ratingCount = 0;
-  for (let offset = 0; offset < events.length; offset += 8) {
-    const batch = events.slice(offset, offset + 8);
-    const feedbackByEvent = await Promise.all(batch.map(async (event) => {
-      const [feedback, report] = await Promise.all([getPlatformEventFeedback(event.id), getPlatformEventFeedbackReport(event.id)]);
-      return { event, feedback, report };
-    }));
-    for (const { event, feedback, report } of feedbackByEvent) {
+  let failedEvents = 0;
+  let nextEventIndex = 0;
+  const workerCount = Math.min(8, events.length);
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextEventIndex < events.length) {
+      const event = events[nextEventIndex];
+      nextEventIndex += 1;
+      try {
+        const [feedback, report] = await Promise.all([getPlatformEventFeedback(event.id), getPlatformEventFeedbackReport(event.id)]);
       const reportEntriesById = new Map((report.data.feedbacks ?? []).map((entry) => [entry.id, entry]));
       const enrichedFeedback = feedback.map((entry) => {
         const reportEntry = reportEntriesById.get(entry.id);
@@ -75,12 +84,16 @@ async function loadAllEventFeedback(): Promise<AllEventFeedbackResult> {
         ratingTotal += report.data.average_rating * report.data.approved_reviews;
         ratingCount += report.data.approved_reviews;
       }
+      } catch {
+        failedEvents += 1;
+      }
     }
-  }
+  }));
   return {
     entries: entries.sort((left, right) => toTimestamp(right.created_at) - toTimestamp(left.created_at)),
     totalSubmissions,
     averageRating: ratingCount ? ratingTotal / ratingCount : null,
+    failedEvents,
   };
 }
 
