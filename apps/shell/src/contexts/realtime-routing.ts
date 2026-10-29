@@ -19,3 +19,23 @@ export function shouldUseNormalEnterpriseRealtimeAuth(
     chatAuthReady
   );
 }
+
+/**
+ * Selects the existing Enterprise realtime connection for Group Chat without
+ * changing Direct Chat eligibility. Group room access remains backend-authorized.
+ */
+export function shouldUseGroupRealtimeAuth(
+  pathname: string,
+  authReady: boolean,
+  authenticated: boolean,
+  chatAuthReady: boolean,
+  groupRealtimeEnabled: boolean,
+): boolean {
+  return (
+    pathname === "/admin/messages" &&
+    authReady &&
+    authenticated &&
+    chatAuthReady &&
+    groupRealtimeEnabled
+  );
+}

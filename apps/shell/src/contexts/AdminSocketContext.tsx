@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import { type ReactNode, useContext } from "react";
 
 import { useAuth } from "@ihp/auth";
-import { clearChatTokenSession, getChatAccessToken } from "@ihp/chat-runtime";
+import { clearChatTokenSession, getGroupRealtimeAccessToken } from "@ihp/chat-runtime";
 
 import {
   defineRealtimeAdapter,
@@ -22,7 +22,7 @@ import {
   getMarketplaceDemoSession,
 } from "@/services/marketplace-demo-auth.service";
 import { notificationClient } from "@/services/notification.service";
-import { shouldUseNormalEnterpriseRealtimeAuth } from "./realtime-routing";
+import { shouldUseGroupRealtimeAuth, shouldUseNormalEnterpriseRealtimeAuth } from "./realtime-routing";
 
 const shellRealtimeAdapter = defineRealtimeAdapter({
   shouldConnect: (pathname) =>
@@ -36,7 +36,7 @@ const shellRealtimeAdapter = defineRealtimeAdapter({
 
 const enterpriseRealtimeAdapter = defineRealtimeAdapter({
   shouldConnect: () => true,
-  getToken: getChatAccessToken,
+  getToken: getGroupRealtimeAccessToken,
   clearToken: clearChatTokenSession,
   createSocket: createChatSocket,
   updatePresenceStatus,
@@ -45,7 +45,7 @@ const enterpriseRealtimeAdapter = defineRealtimeAdapter({
 
 export function AdminSocketProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { authenticated, authReady } = useAuth();
+  const { authenticated, authReady, user } = useAuth();
   const { canUseProviderChat, isReady: chatAuthReady } = useChatAuth();
   const useNormalEnterpriseRealtimeAuth = shouldUseNormalEnterpriseRealtimeAuth(
     pathname,
@@ -54,12 +54,23 @@ export function AdminSocketProvider({ children }: { children: ReactNode }) {
     canUseProviderChat,
     chatAuthReady,
   );
-  const adapter = useNormalEnterpriseRealtimeAuth ? enterpriseRealtimeAdapter : shellRealtimeAdapter;
+  const useGroupRealtimeAuth = shouldUseGroupRealtimeAuth(
+    pathname,
+    authReady,
+    authenticated,
+    chatAuthReady,
+    process.env.NEXT_PUBLIC_GROUP_CHAT_REALTIME_ENABLED?.trim().toLowerCase() === "true",
+  );
+  const useEnterpriseRealtimeAuth = useNormalEnterpriseRealtimeAuth || useGroupRealtimeAuth;
+  const adapter = useEnterpriseRealtimeAuth ? enterpriseRealtimeAdapter : shellRealtimeAdapter;
+  const isMessagesRoute = pathname === "/admin/messages";
+  const realtimeIdentity = `${user?.userId ?? user?.id ?? ""}:${user?.membership?.tenantSlug ?? user?.membership?.tenantName ?? ""}`;
 
   return (
     <RealtimeProvider
+      key={realtimeIdentity}
       adapter={adapter}
-      enabled={useNormalEnterpriseRealtimeAuth || undefined}
+      enabled={isMessagesRoute ? useEnterpriseRealtimeAuth : undefined}
     >
       {children}
     </RealtimeProvider>
