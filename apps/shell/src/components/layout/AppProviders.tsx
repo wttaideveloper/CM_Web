@@ -16,6 +16,7 @@ import {
   isPublicAuthRoute,
   isRealtimeCompatibilityRoute,
   isRegistrationRoute,
+  ROUTE_PATHS,
 } from "@/routing/route-ownership";
 
 export function PublicAuthProviders({ children }: { children: ReactNode }) {
@@ -49,17 +50,26 @@ export function EnterpriseProviders({ children }: { children: ReactNode }) {
 }
 
 export function RealtimeCompatibilityProviders({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const content = (
+    <AuthProvider>
+      <ChatAuthProvider>
+        <AdminSocketProvider>{children}</AdminSocketProvider>
+      </ChatAuthProvider>
+    </AuthProvider>
+  );
+
+  if (pathname !== ROUTE_PATHS.enterprise.messages) {
+    return content;
+  }
+
+  return <MessagingQueryProvider>{content}</MessagingQueryProvider>;
+}
+
+function MessagingQueryProvider({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: 1 } } }));
 
-  return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <ChatAuthProvider>
-          <AdminSocketProvider>{children}</AdminSocketProvider>
-        </ChatAuthProvider>
-      </AuthProvider>
-    </QueryClientProvider>
-  );
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }
 
 function RouteScopedProviders({ children }: { children: ReactNode }) {
