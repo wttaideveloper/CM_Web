@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 
-import { getEventCategories } from "./events.service";
+import { getEventCategories, getEventType, getEventTypes } from "./events.service";
 
 /** Stable taxonomy keys, reusable by future historical Event edit support. */
 export const eventCategoryQueryKeys = {
@@ -18,4 +18,14 @@ export function useEventCategories(enabled: boolean) {
     staleTime: 60_000,
     retry: 1,
   });
+}
+
+/** Reads backend-owned Event Types with one retry and no hardcoded fallback. */
+export function useEventTypes(enabled: boolean) {
+  return useQuery({ queryKey: ["events", "event-types"], queryFn: getEventTypes, enabled, staleTime: 60_000, retry: 1 });
+}
+
+/** Loads a persisted Event Type for edit screens when it is no longer active for new Events. */
+export function useEventType(eventTypeId: string | null | undefined, enabled: boolean) {
+  return useQuery({ queryKey: ["events", "event-type", eventTypeId], queryFn: () => getEventType(eventTypeId ?? ""), enabled: enabled && Boolean(eventTypeId), staleTime: 60_000, retry: 1 });
 }

@@ -24,6 +24,8 @@ export default function EventRefundAction({ eventId, target, targetId, refundSta
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["events", "orders", eventId] }),
         queryClient.invalidateQueries({ queryKey: ["event-registrations", eventId] }),
+        queryClient.invalidateQueries({ queryKey: ["event-attendees", eventId] }),
+        queryClient.invalidateQueries({ queryKey: ["events", "dashboard", eventId] }),
       ]);
       setOpen(false);
       setReason("");

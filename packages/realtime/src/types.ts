@@ -5,6 +5,8 @@ export type RealtimeStatus = "connected" | "reconnecting" | "disconnected";
 export type NotificationItem = {
   id: string;
   notification_type: string;
+  category?: string;
+  metadata?: Record<string, unknown>;
   title: string;
   body: string;
   data: Record<string, unknown>;
@@ -33,6 +35,8 @@ export type NotificationHistoryResponse = {
 export type RealtimeNotification = {
   id: string;
   notification_type: string;
+  category?: string;
+  metadata?: Record<string, unknown>;
   title: string;
   body: string;
   data: Record<string, unknown>;
@@ -77,6 +81,8 @@ export type RealtimeRuntimeAdapter = {
   createSocket: (token?: string) => ChatSocket;
   updatePresenceStatus: (status: "online" | "offline" | "away") => Promise<unknown>;
   notificationClient: NotificationClient;
+  /** Restricts the shared socket to notification delivery without presence or conversation events. */
+  notificationsOnly?: boolean;
 };
 
 export type RealtimeContextValue = {

@@ -3,6 +3,7 @@ export type EventCompositeSubfieldDefinition = {
   key: string;
   label: string;
   group?: string;
+  requiredByDomain?: boolean;
 };
 
 /** Semantic metadata used to configure and preview composite Event core fields. */
@@ -33,10 +34,13 @@ export const eventCompositeFieldDefinitions: Readonly<Record<string, EventCompos
     subfields: [
       { key: "session_date", label: "Date" },
       { key: "title", label: "Title" },
+      { key: "description", label: "Description" },
       { key: "speaker", label: "Speaker" },
+      { key: "speaker_bio", label: "Speaker bio" },
       { key: "start_time", label: "Start time" },
       { key: "end_time", label: "End time" },
       { key: "location", label: "Location" },
+      { key: "meeting_link", label: "Meeting link" },
     ],
   },
   venue: {
@@ -47,8 +51,6 @@ export const eventCompositeFieldDefinitions: Readonly<Record<string, EventCompos
       { key: "name", label: "Name" },
       { key: "address", label: "Address" },
       { key: "city", label: "City" },
-      { key: "coordinates.lat", label: "Latitude", group: "Coordinates" },
-      { key: "coordinates.lng", label: "Longitude", group: "Coordinates" },
     ],
   },
   custom_fields: {

@@ -2,7 +2,6 @@ import type { NextConfig } from "next";
 
 const authApiBaseUrl =
   process.env.AUTH_API_BASE_URL ?? "https://admin.apis.invigor8.app";
-const workflowApiBaseUrl = process.env.WORKFLOW_API_BASE_URL;
 
 function normalizePlatformApiBaseUrl(value: string): string {
   const url = new URL(value);
@@ -18,10 +17,17 @@ const platformApiBaseUrl = normalizePlatformApiBaseUrl(
   process.env.CHAT_API_BASE_URL ?? "https://chat.wisdomtooth.tech/api/v1",
 );
 
+const assetPrefix = process.env.NEXT_PUBLIC_ASSET_PREFIX?.replace(/\/$/, "") || undefined;
+
 const nextConfig: NextConfig = {
+  assetPrefix,
   transpilePackages: ["@ihp/attributes", "@ihp/auth", "@ihp/enterprise-trainings", "@ihp/enterprises", "@ihp/onboarding-forms", "@ihp/platform-attributes", "@ihp/platform-configuration", "@ihp/platform-dashboard", "@ihp/platform-enterprises", "@ihp/platform-form-configurations", "@ihp/platform-layout", "@ihp/platform-marketplace-static", "@ihp/platform-users", "@ihp/products", "@ihp/services", "@ihp/shared", "@ihp/ui", "@ihp/workflow-admin", "@ihp/workflow-runtime"],
   async rewrites() {
     const fallback = [
+      {
+        source: "/api/v1/reviews/:path*",
+        destination: `${platformApiBaseUrl}/reviews/:path*`,
+      },
       {
         source: "/api/v1/trainings/form-configuration/:path*",
         destination: `${platformApiBaseUrl}/trainings/form-configuration/:path*`,
@@ -93,6 +99,14 @@ const nextConfig: NextConfig = {
       {
         source: "/api/v1/events/:path*",
         destination: `${platformApiBaseUrl}/events/:path*`,
+      },
+      {
+        source: "/api/v1/event-types/",
+        destination: `${platformApiBaseUrl}/event-types/`,
+      },
+      {
+        source: "/api/v1/event-types/:path*",
+        destination: `${platformApiBaseUrl}/event-types/:path*`,
       },
       {
         source: "/api/v1/admin/event-form-configurations",
@@ -169,23 +183,6 @@ const nextConfig: NextConfig = {
         {
           source: "/api/v1/tenant/:path*",
           destination: `${authApiBaseUrl}/api/v1/tenant/:path*`,
-        },
-      );
-    }
-
-    if (workflowApiBaseUrl) {
-      fallback.push(
-        {
-          source: "/api/v1/forms/:path*",
-          destination: `${workflowApiBaseUrl}/api/v1/forms/:path*`,
-        },
-        {
-          source: "/api/v1/workflows/:path*",
-          destination: `${workflowApiBaseUrl}/api/v1/workflows/:path*`,
-        },
-        {
-          source: "/api/v1/media/:path*",
-          destination: `${workflowApiBaseUrl}/api/v1/media/:path*`,
         },
       );
     }

@@ -920,4 +920,3 @@ export async function publishProgramAdmin(programId: string): Promise<unknown> {
   if (!res.ok) throw await createProgramsApiError(res, "publish this program");
   return (await res.json()) as unknown;
 }
-

@@ -1,19 +1,38 @@
 "use client";
 
-import { usePathname } from "next/navigation";
-import { useCallback, type ReactNode } from "react";
+import { useCallback, useEffect, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "@ihp/auth";
 import { EnterpriseAdminLayout } from "@ihp/enterprise-layout";
+import { updatePresenceStatus } from "@ihp/messaging";
+import { useRealtime } from "@ihp/realtime";
 
 import EnterpriseRealtimeRouteProviders from "@/providers/EnterpriseRealtimeRouteProviders";
+import { enterpriseWorkflowNotificationsKey, useEnterpriseWorkflowNotifications } from "@/realtime/enterprise-workflow-notifications";
 
-export default function EnterpriseAdminShell({ children }: { children: ReactNode }) {
+function EnterpriseAdminShellContent({ children }: { children: ReactNode }) {
   const { logout, user } = useAuth();
-  const pathname = usePathname();
+  const realtime = useRealtime();
+  const workflow = useEnterpriseWorkflowNotifications();
+  const queryClient = useQueryClient();
+  const latestRealtimeNotificationId = realtime.notifications[0]?.id;
+
+  useEffect(() => {
+    if (latestRealtimeNotificationId) {
+      void queryClient.invalidateQueries({ queryKey: enterpriseWorkflowNotificationsKey });
+    }
+  }, [latestRealtimeNotificationId, queryClient]);
 
   const handleLogout = useCallback(async () => {
     try {
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[Web presence] publish", {
+          status: "offline",
+          reason: "logout",
+        });
+      }
+      await updatePresenceStatus("offline").catch(() => undefined);
       const logoutUrl = await logout();
       window.location.assign(logoutUrl);
     } catch {
@@ -26,6 +45,7 @@ export default function EnterpriseAdminShell({ children }: { children: ReactNode
       profileHref="/admin/profile"
       notificationsHref="/admin/notifications"
       messagesHref="/admin/messages"
+      workflowNotifications={{ items: workflow.items, unreadCount: workflow.unreadCount, error: workflow.error ?? workflow.readError ?? workflow.readAllError, onRead: workflow.markRead, onMarkAllRead: workflow.markAllRead }}
       user={user}
       onLogout={handleLogout}
     >
@@ -33,11 +53,9 @@ export default function EnterpriseAdminShell({ children }: { children: ReactNode
     </EnterpriseAdminLayout>
   );
 
-  const isRealtimeRoute = pathname === "/admin/messages" || pathname === "/admin/notifications";
+  return layout;
+}
 
-  return isRealtimeRoute ? (
-    <EnterpriseRealtimeRouteProviders>{layout}</EnterpriseRealtimeRouteProviders>
-  ) : (
-    layout
-  );
+export default function EnterpriseAdminShell({ children }: { children: ReactNode }) {
+  return <EnterpriseRealtimeRouteProviders><EnterpriseAdminShellContent>{children}</EnterpriseAdminShellContent></EnterpriseRealtimeRouteProviders>;
 }

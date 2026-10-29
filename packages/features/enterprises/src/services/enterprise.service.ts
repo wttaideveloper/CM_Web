@@ -1,3 +1,4 @@
+import { authenticatedFetch } from "@ihp/auth";
 import type {
   CreateEnterprisePayload,
   EnterpriseDto,
@@ -13,6 +14,7 @@ type EnterpriseApiError = Error & {
 };
 
 const ENTERPRISES_API_BASE = "/api/v1";
+const fetch = authenticatedFetch;
 
 function getEnterprisesApiBase(): string {
   return `${ENTERPRISES_API_BASE}/enterprises/`;

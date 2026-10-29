@@ -11,7 +11,8 @@ import {
   RegistrationApiError,
 } from "@/services/registration-ui.service";
 import { startGoogleOwnerSignup } from "@ihp/auth";
-import { countryDialOptions, type CountryDialOption } from "./register.constants";
+import { countryDialOptions, countryNationalPhoneLengths, type CountryDialOption } from "./register.constants";
+import { focusFirstRegistrationFieldError } from "./registration-field-focus";
 
 type PasswordRuleKey = "minLength" | "uppercase" | "lowercase" | "number" | "special";
 
@@ -19,6 +20,7 @@ type PasswordRuleState = Record<PasswordRuleKey, boolean>;
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DEFAULT_PASSWORD_MIN_LENGTH = 8;
+const MAX_PASSWORD_LENGTH = 500;
 
 function EyeIcon() {
   return (
@@ -93,7 +95,7 @@ function getFieldError(message?: string | null) {
     return null;
   }
 
-  return <p className="mt-1 text-xs font-medium text-[#b42318]">{message}</p>;
+  return <p data-registration-field-error className="mt-1 text-xs font-medium text-[#b42318]">{message}</p>;
 }
 
 function readPositiveNumber(value: unknown): number | null {
@@ -140,6 +142,10 @@ function buildCombinedPhone(country: CountryDialOption | null, localPhone: strin
   }
 
   return `${country.dialCode}${sanitizedLocalPhone}`;
+}
+
+function getNationalPhoneBounds(country: CountryDialOption | null): readonly [number, number] {
+  return country ? countryNationalPhoneLengths[country.isoCode] ?? [4, 15] : [0, 0];
 }
 
 function extractPasswordMinimumLength(response: PasswordRequirementsResponse | null) {
@@ -266,6 +272,13 @@ export default function OwnerDetailsStep() {
   const [passwordRequirements, setPasswordRequirements] = useState<PasswordRequirementsResponse | null>(null);
   const [localPhone, setLocalPhone] = useState(() => splitLocalPhoneValue(getCountryByName(country), phone));
   const passwordRequirementsRef = useRef<HTMLDivElement | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
+
+  useEffect(() => {
+    if (Object.keys(fieldErrors).length === 0) return;
+    const animationFrame = window.requestAnimationFrame(() => focusFirstRegistrationFieldError(formRef.current));
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [fieldErrors]);
 
   useEffect(() => {
     let isActive = true;
@@ -345,13 +358,18 @@ export default function OwnerDetailsStep() {
   const isFullNameValid = fullName.trim().length > 0;
   const isEmailValid = EMAIL_REGEX.test(email.trim());
   const isCountrySelected = Boolean(selectedCountry);
-  const isPhoneValid = sanitizeLocalPhone(localPhone).length > 0;
+  const [minimumPhoneLength, maximumPhoneLength] = getNationalPhoneBounds(selectedCountry);
+  const localPhoneDigits = sanitizeLocalPhone(localPhone);
+  const isPhoneValid = localPhoneDigits.length >= minimumPhoneLength && localPhoneDigits.length <= maximumPhoneLength;
   const arePasswordRulesMet = Object.values(passwordRules).every(Boolean);
+  const passwordExceedsMaximum =
+    password.length > MAX_PASSWORD_LENGTH || confirmPassword.length > MAX_PASSWORD_LENGTH;
   const arePasswordsMatching = confirmPassword.length > 0 && password.length > 0 && confirmPassword === password;
   const isFormReady =
     isFullNameValid &&
     isEmailValid &&
     arePasswordRulesMet &&
+    !passwordExceedsMaximum &&
     arePasswordsMatching &&
     isCountrySelected &&
     isPhoneValid &&
@@ -453,6 +471,10 @@ export default function OwnerDetailsStep() {
       nextFieldErrors.password = "Please meet all password requirements.";
     }
 
+    if (passwordExceedsMaximum) {
+      nextFieldErrors.password = "Password must be 500 characters or fewer.";
+    }
+
     if (!trimmedConfirmPassword) {
       nextFieldErrors.confirmPassword = "Please confirm your password.";
     } else if (trimmedPassword !== trimmedConfirmPassword) {
@@ -465,6 +487,8 @@ export default function OwnerDetailsStep() {
 
     if (!trimmedLocalPhone) {
       nextFieldErrors.phone = "Phone number is required.";
+    } else if (!isPhoneValid) {
+      nextFieldErrors.phone = `Enter a valid ${minimumPhoneLength}-digit national phone number for ${selectedCountry?.name ?? "the selected country"}.`;
     }
 
     if (!agreeToTerms) {
@@ -607,7 +631,7 @@ export default function OwnerDetailsStep() {
   }, [localPhone, phone, selectedCountry, updateRegistration]);
 
   return (
-    <form className="flex h-full flex-col" onSubmit={handleSubmit}>
+    <form ref={formRef} className="flex h-full flex-col" onSubmit={handleSubmit}>
       <div className="space-y-4">
         {formError ? (
           <div className="rounded-2xl border border-[#fecdca] bg-[#fff6f6] px-4 py-3 text-sm text-[#b42318]">
@@ -706,7 +730,9 @@ export default function OwnerDetailsStep() {
               </div>
             </div>
           ) : null}
-          {getFieldError(fieldErrors.password)}
+          {passwordExceedsMaximum
+            ? <p data-registration-field-error role="alert" className="mt-1 text-xs font-medium text-[#b42318]">Password must be 500 characters or fewer.</p>
+            : getFieldError(fieldErrors.password)}
         </label>
 
         <label className="block">
@@ -785,6 +811,7 @@ export default function OwnerDetailsStep() {
               disabled={!selectedCountry}
               inputMode="numeric"
               pattern="[0-9]*"
+              maxLength={maximumPhoneLength}
               placeholder={selectedCountry ? "Enter phone number" : "Select country first"}
               className="min-w-0 flex-1 bg-transparent px-4 text-sm text-[#06201c] outline-none placeholder:text-[#8aa19a] disabled:cursor-not-allowed disabled:text-[#8aa19a]"
             />

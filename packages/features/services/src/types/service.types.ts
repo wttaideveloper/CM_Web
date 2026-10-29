@@ -26,7 +26,19 @@ export type ServiceDto = {
   currency?: string;
   cancellation_policy?: string;
   availability_schedule?: AvailabilityScheduleItem[];
+  rating?: number | null;
+  reviews_count?: number;
+  reviews?: ServiceReviewPreview[];
 };
+
+/** Approved review preview included with Service detail responses. */
+export interface ServiceReviewPreview {
+  id: string;
+  rating: number;
+  comment: string | null;
+  reviewer_name: string | null;
+  created_at: string | null;
+}
 
 export type CreateServicePayload = {
   tenant_id?: string;
@@ -83,4 +95,6 @@ export type ServiceListItem = {
   status: "Active" | "Inactive";
   enterprise: string;
   bookings: string;
+  rating?: number | null;
+  reviewsCount?: number;
 };

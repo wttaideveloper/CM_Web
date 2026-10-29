@@ -4,6 +4,7 @@ import type { ChatTokenResponse, ChatTokenSession } from "./types";
 let chatTokenSession: ChatTokenSession | null = null;
 let chatTokenRequest: Promise<ChatTokenSession> | null = null;
 let chatSessionEnabled = false;
+let chatIdentity: { userId: string | null; tenantId: string | null } = { userId: null, tenantId: null };
 
 async function parseAuthResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -29,6 +30,14 @@ export function setChatSessionEnabled(enabled: boolean) {
 
   if (!enabled) {
     chatTokenSession = null;
+    chatIdentity = { userId: null, tenantId: null };
+  }
+}
+
+export function setChatSessionIdentity(userId: string | null, tenantId: string | null) {
+  if (chatIdentity.userId !== userId || chatIdentity.tenantId !== tenantId) {
+    clearChatTokenSession();
+    chatIdentity = { userId, tenantId };
   }
 }
 
@@ -45,8 +54,8 @@ function isTokenUsable(session: ChatTokenSession) {
   return session.expiresAt - Date.now() > 30_000;
 }
 
-export async function getChatAccessToken() {
-  if (!chatSessionEnabled) {
+async function getAccessToken(allowGroupRealtime: boolean) {
+  if (!chatSessionEnabled && !allowGroupRealtime) {
     throw new Error("Chat is available only for internal users assigned as service providers.");
   }
 
@@ -72,4 +81,14 @@ export async function getChatAccessToken() {
   }
 
   return (await chatTokenRequest).accessToken;
+}
+
+/** Returns a chat token for the existing authenticated Group realtime socket. */
+export async function getGroupRealtimeAccessToken() {
+  return getAccessToken(true);
+}
+
+/** Returns a chat token for Direct Chat and preserves its provider-only eligibility guard. */
+export async function getChatAccessToken() {
+  return getAccessToken(false);
 }

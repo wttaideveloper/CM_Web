@@ -1,80 +1,492 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { useCurrentEnterprise, useTenant } from "@ihp/enterprise-runtime";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { clearPersistedDateTimeDrafts, useUnsavedChangesWarning } from "@ihp/ui";
 
 import { TrainingBasicsSection, TrainingCapacitySection, TrainingCourseBuilderSection, TrainingDeliverySection, TrainingMediaSection, TrainingPricingSection, TrainingScheduleSection } from "./CreateTrainingSections";
 import { buildCreateTrainingPayload, buildUpdateTrainingPayload, createEmptyTrainingForm, trainingToFormValues, validateTrainingForm, type CreateTrainingFormValues } from "./create-training-form";
-import { createTraining, resubmitTraining, TrainingsApiError, updateTraining, updateTrainingStatus, type Training } from "./trainings.service";
-import { useActiveTrainingFormConfiguration, useTrainingHistoricalFormConfiguration } from "./training-form-configuration.queries";
+import { createTraining, TrainingsApiError, updateTraining, type Training } from "./trainings.service";
+import { trainingFormConfigurationQueryKeys, useActiveTrainingFormConfiguration, useTrainingHistoricalFormConfiguration } from "./training-form-configuration.queries";
+import type { TrainingFormConfig, TrainingFormField, TrainingFormSection } from "./training-form-config.service";
+import { useTrainingCategories } from "./training-categories.queries";
 import { canEditTraining } from "./training-status";
 import ConfiguredCreateTrainingSection from "./ConfiguredCreateTrainingSection";
+import { isTrainingFormFieldVisible, TRAINING_OTHER_OPTION_VALUE } from "./training-form-field-settings";
+import { getRequiredTrainingDeliverySubfields, getRequiredTrainingDeliveryValueKeys, getTrainingDeliveryCompositeKey, getTrainingDeliveryCompositeValueKeys, isTrainingAccessInformationField } from "./training-delivery-fields";
 
 const steps = ["Basic Information", "Schedule", "Location & Host", "Pricing & Tickets", "Capacity & Registration", "Images & Media", "Additional Configuration"] as const;
 const stepFields: ReadonlyArray<readonly string[]> = [
   ["title", "description", "category", "subcategory", "tags", "instructor_id", "requirements"],
-  ["start_date", "end_date", "enrolment_start", "enrolment_end", "time_zone", "duration"],
-  ["location_id", "delivery_mode", "course_type"],
+  ["start_date", "end_date", "enrolment_start", "enrolment_end", "time_zone", "duration", "schedule_exceptions"],
+  ["location_id", "delivery_mode"],
   ["price", "currency", "promo_price", "coupon_code"],
-  ["capacity", "requires_approval", "access_duration_days", "group_enrolment", "max_group_size", "access_expiry_type", "access_expiry_days"],
+  ["capacity", "requires_approval", "access_duration_days", "access_expiry_type", "access_expiry_days"],
   ["primary_image", "gallery_images", "promotional_video"],
-  ["prerequisites", "release_rule", "randomise", "scheduled_publication", "is_mandatory"],
+  ["faqs", "discussions", "announcements", "moderation_history"],
 ];
+// One static section component per entry in `steps`, in the same order — retained
+// only for editing older Trainings whose historical form configuration is unavailable.
+const staticSectionComponents = [
+  TrainingBasicsSection,
+  TrainingScheduleSection,
+  TrainingDeliverySection,
+  TrainingPricingSection,
+  TrainingCapacitySection,
+  TrainingMediaSection,
+  TrainingCourseBuilderSection,
+] as const;
 
 type TrainingEditorProps = { mode?: "create" | "edit"; initialTraining?: Training };
 
+function trainingFieldId(key: string): string {
+  return `training-field-${key.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
+function getTrainingFieldAliases(field: TrainingFormField): string[] {
+  const aliases = [field.key, field.apiKey ?? "", field.stable_key ?? "", ...getTrainingDeliveryCompositeValueKeys(field)];
+  const isLearningObjectives = [...aliases, field.label].some((value) => ["learning_objectives", "learning_objective", "objectives", "objective"].includes(normalizeTrainingFieldKey(value)));
+  return [...new Set(isLearningObjectives ? [...aliases, "learning_objectives"] : aliases)];
+}
+
+function isTrainingScheduleTimeField(field: TrainingFormField): boolean {
+  return getTrainingFieldIdentityAliases(field)
+    .map(normalizeTrainingFieldKey)
+    .some((key) => key === "start_time" || key === "end_time");
+}
+
+function getTrainingFieldIdentityAliases(field: TrainingFormField): string[] {
+  return [...getTrainingFieldAliases(field), field.id, field.label].filter(Boolean);
+}
+
+function normalizeTrainingFieldKey(value: string): string {
+  return value
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^(core|custom)_/, "")
+    .replace(/^_+|_+$/g, "");
+}
+
+function configurableListRendererKey(field: TrainingFormField): "tags" | "learning_objectives" | null {
+  const normalizedKeys = [field.key, field.apiKey ?? "", field.stable_key ?? "", field.label]
+    .map(normalizeTrainingFieldKey);
+  return normalizedKeys.find((key): key is "tags" | "learning_objectives" =>
+    key === "tags" || key === "learning_objectives") ?? null;
+}
+
+function applyActiveListRenderersToHistoricalForm(
+  historicalForm: TrainingFormConfig | null,
+  currentForm: TrainingFormConfig | null,
+): TrainingFormConfig | null {
+  if (!historicalForm || !currentForm) return historicalForm;
+
+  const currentFieldsByRendererKey = new Map<string, TrainingFormField>();
+  for (const section of currentForm.sections) {
+    for (const field of section.fields) {
+      const rendererKey = configurableListRendererKey(field);
+      if (rendererKey) currentFieldsByRendererKey.set(rendererKey, field);
+    }
+  }
+
+  return {
+    ...historicalForm,
+    sections: historicalForm.sections.map((section) => ({
+      ...section,
+      fields: section.fields.map((field) => {
+        const rendererKey = configurableListRendererKey(field);
+        const currentField = rendererKey ? currentFieldsByRendererKey.get(rendererKey) : undefined;
+        if (!currentField) return field;
+
+        const inputMode = currentField.frontendSettings?.inputMode
+          ?? (currentField.type === "text" ? "text" : undefined);
+        if (!inputMode) return field;
+
+        return {
+          ...field,
+          ...(inputMode === "text" ? { type: "text" as const } : {}),
+          frontendSettings: { ...field.frontendSettings, inputMode },
+        };
+      }),
+    })),
+  };
+}
+
+function hasConfiguredValue(value: unknown): boolean {
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return value !== null && value !== undefined;
+}
+
+function isConfiguredTrainingFieldApplicable(field: TrainingFormField, deliveryMode: string, pricingType: string): boolean {
+  const identifiers = [field.key, field.stable_key ?? "", field.label].map((value) => value.trim().toLowerCase().replace(/[\s-]+/g, "_"));
+  const isLocationField = identifiers.some((value) => ["location", "location_id"].includes(value))
+    || identifiers.some((value) => value.includes("location_id"));
+  if (isLocationField) return false;
+  const isPricingField = identifiers.some((value) => ["price", "currency", "promo_price", "coupon_code"].includes(value))
+    || identifiers.some((value) => value.includes("promo_price") || value.includes("coupon_code"));
+  if (isPricingField) return pricingType === "paid";
+  const isVenueField = identifiers.some((value) => ["venue", "address", "venue_name", "venue_address"].includes(value));
+  const isLiveField = identifiers.some((value) => ["meeting_link", "meeting_provider", "meeting_id", "meeting_passcode", "delivery_instructions"].includes(value))
+    || identifiers.some((value) => value.includes("meeting_provider") || value.includes("meeting_link") || value.includes("delivery_instruction"));
+  if (isVenueField) return deliveryMode === "physical" || deliveryMode === "hybrid";
+  if (isLiveField) return deliveryMode === "online" || deliveryMode === "hybrid";
+  return true;
+}
+
+function getTrainingFormatError(
+  field: TrainingFormField,
+  translate: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  const label = field.label;
+  if (field.type === "number" || field.valueType?.toLowerCase() === "number") {
+    return translate("numberInput.invalid", { label });
+  }
+
+  const pattern = field.validation?.pattern;
+  if (!pattern) return translate("formatValidation.custom", { label, pattern: "" });
+  const normalizedPattern = pattern.replace(/\\d/g, "[0-9]").replace(/\s/g, "");
+  if (normalizedPattern === "^[0-9]+$" || normalizedPattern === "^[0-9]*$") {
+    return translate("formatValidation.digitsOnly", { label });
+  }
+  const digitCount = normalizedPattern.match(/^\^\[0-9\]\{(\d+)(?:,(\d*))?\}\$$/);
+  if (digitCount) {
+    const minimumDigits = Number(digitCount[1]);
+    const maximumDigits = digitCount[2] ? Number(digitCount[2]) : null;
+    if (maximumDigits === null && digitCount[2] === undefined) {
+      return translate("formatValidation.exactDigits", { label, count: minimumDigits });
+    }
+    if (maximumDigits === null) return translate("formatValidation.minimumDigits", { label, min: minimumDigits });
+    return translate("formatValidation.digitRange", { label, min: minimumDigits, max: maximumDigits });
+  }
+  if (pattern === "^[A-Za-z ]+$") return translate("formatValidation.lettersAndSpaces", { label });
+  if (pattern === "^[A-Za-z0-9 ]+$") return translate("formatValidation.lettersNumbersAndSpaces", { label });
+  if (pattern.includes("@") && pattern.includes("\\.")) return translate("formatValidation.email", { label });
+  if (pattern.includes("[0-9() -]") || pattern.includes("[0-9()\\- ]")) return translate("formatValidation.phone", { label });
+  return translate("formatValidation.custom", { label, pattern });
+}
+
+function validateConfiguredSection(
+  section: TrainingFormSection,
+  values: CreateTrainingFormValues,
+  customValues: Record<string, unknown>,
+  allFields: readonly TrainingFormField[],
+  getFormatError: (field: TrainingFormField) => string,
+): Record<string, string[]> {
+  const errors: Record<string, string[]> = {};
+
+  for (const field of section.fields) {
+    if (field.enabled === false
+      || isTrainingAccessInformationField(field)
+      || !isConfiguredTrainingFieldApplicable(field, values.delivery_mode, values.pricing_type)
+      || !isTrainingFormFieldVisible(field, allFields, values, customValues)) continue;
+    const aliases = getTrainingFieldAliases(field);
+    const isLearningObjectives = aliases.some((value) => normalizeTrainingFieldKey(value) === "learning_objectives");
+    const isDeliveryComposite = getTrainingDeliveryCompositeKey(field) !== undefined;
+    const valueKey = field.source === "custom" && !isLearningObjectives && !isDeliveryComposite
+      ? undefined
+      : aliases.find((candidate) => candidate in values);
+    const key = (valueKey ?? field.key) as keyof CreateTrainingFormValues;
+    const value = valueKey
+      ? values[key]
+      : aliases.map((candidate) => customValues[candidate]).find((candidate) => candidate !== undefined);
+    if (value === TRAINING_OTHER_OPTION_VALUE) {
+      errors[field.key] = ["Custom entries are not saveable until the Training API documents their configuration and submission format. Select a configured option to save."];
+      continue;
+    }
+    const isBoolean = field.type === "checkbox";
+    if (field.required && (!hasConfiguredValue(value) || (isBoolean && value !== true && value !== "true"))) {
+      errors[field.key] = [`${field.label} is required.`];
+      continue;
+    }
+    const normalizedFieldKey = normalizeTrainingFieldKey(field.apiKey ?? field.stable_key ?? field.key);
+    if (field.source !== "custom"
+      && field.configuredOptions?.length
+      && ["currency", "time_zone"].includes(normalizedFieldKey)
+      && typeof value === "string"
+      && value.trim()
+      && !field.configuredOptions.some((option) => option.value === value)) {
+      errors[field.key] = [`${field.label} is not an available option. Choose a value from the list.`];
+      continue;
+    }
+    if (!hasConfiguredValue(value)) continue;
+    const validation = field.validation;
+    const isNumber = field.type === "number" || field.valueType === "number";
+    const isTagList = field.frontendSettings?.inputMode === "tags"
+      || field.key === "tags"
+      || (field.key === "learning_objectives" && field.frontendSettings?.inputMode !== "text");
+    const textValues: string[] = typeof value === "string"
+      ? isTagList ? value.split(/\r?\n/).filter((item) => item.trim()) : [value]
+      : Array.isArray(value)
+        ? value.filter((item): item is string => typeof item === "string")
+        : [];
+    const pattern = validation?.pattern;
+    if (!isNumber && !isTagList && pattern && textValues.length > 0) {
+      try {
+        if (textValues.some((text) => !new RegExp(pattern).test(text))) {
+          errors[field.key] = [getFormatError(field)];
+        }
+      } catch {
+        errors[field.key] = [`${field.label} has an invalid validation pattern.`];
+      }
+    }
+    if (!isNumber && !isTagList) {
+      const minLength = validation?.minLength;
+      if (minLength != null && textValues.some((text) => text.length < minLength)) {
+        errors[field.key] = [`${field.label} must be at least ${minLength} characters.`];
+      }
+      const maxLength = validation?.maxLength;
+      if (maxLength != null && textValues.some((text) => text.length > maxLength)) {
+        errors[field.key] = [`${field.label} must be at most ${maxLength} characters.`];
+      }
+    }
+    const numericValue = isNumber
+      ? typeof value === "number"
+        ? value
+        : typeof value === "string" && value.trim()
+          ? Number(value)
+          : null
+      : null;
+    if (isNumber && numericValue !== null && !Number.isFinite(numericValue)) {
+      errors[field.key] = [getFormatError(field)];
+      continue;
+    }
+    if (numericValue !== null && Number.isFinite(numericValue) && validation?.min != null && numericValue < validation.min) {
+      errors[field.key] = [`${field.label} must be at least ${validation.min}.`];
+    }
+    if (numericValue !== null && Number.isFinite(numericValue) && validation?.max != null && numericValue > validation.max) {
+      errors[field.key] = [`${field.label} must be at most ${validation.max}.`];
+    }
+  }
+
+  return errors;
+}
+
+function hydrateConfiguredCustomValues(initialTraining: Training | undefined, activeForm: TrainingFormConfig | null): Record<string, unknown> {
+  if (!initialTraining || !activeForm) return {};
+  const raw = initialTraining as unknown as Record<string, unknown>;
+  const cv = (raw.custom_values ?? raw.customValues) as Record<string, unknown> | Array<{ field_id: string; value: unknown }> | undefined;
+  let hydrated: Record<string, unknown> = {};
+  if (Array.isArray(cv)) {
+    const byId = new Map(cv.map((entry) => [entry.field_id, entry.value]));
+    for (const section of activeForm.sections) {
+      for (const field of section.fields) {
+        const fieldKey = field.key ?? field.apiKey ?? "";
+        if (!fieldKey) continue;
+        const value = byId.get(field.id) ?? (cv as unknown as Record<string, unknown>)[fieldKey] ?? (field.apiKey ? (cv as unknown as Record<string, unknown>)[field.apiKey] : undefined);
+        if (value !== undefined) hydrated[fieldKey] = value;
+      }
+    }
+  } else if (cv && typeof cv === "object") {
+    hydrated = Object.fromEntries(Object.entries(cv as Record<string, unknown>));
+  } else {
+    const known = new Set(Object.keys(createEmptyTrainingForm()));
+    for (const [key, value] of Object.entries(raw)) {
+      if (!known.has(key) && value != null && value !== "") hydrated[key] = value as unknown;
+    }
+  }
+  return hydrated;
+}
+
 /** Renders the shared Enterprise Admin Training editor — uses active Super Admin form (global→enterprise-assigned) when present, else static fallback. */
 export default function CreateTrainingScreen({ mode = "create", initialTraining }: TrainingEditorProps) {
+  const { t } = useTranslation("enterpriseTrainings");
   const router = useRouter();
   const queryClient = useQueryClient();
   const { tenantId } = useTenant();
-  const { enterpriseId } = useCurrentEnterprise();
-  const activeFormQ = useActiveTrainingFormConfiguration(mode === "create");
+  const { enterpriseId, isLoadingEnterprise } = useCurrentEnterprise();
+  const activeFormQ = useActiveTrainingFormConfiguration(mode === "create" || (mode === "edit" && Boolean(initialTraining)));
   const historicalFormQ = useTrainingHistoricalFormConfiguration(initialTraining?.id, mode === "edit" && Boolean(initialTraining));
-  const activeForm = (mode === "create" ? activeFormQ.data : historicalFormQ.data) ?? null;
-  const formConfigLoading = mode === "create" ? activeFormQ.isLoading : historicalFormQ.isLoading;
+  const activeForm = useMemo(() => mode === "create"
+    ? activeFormQ.data ?? null
+    : applyActiveListRenderersToHistoricalForm(historicalFormQ.data ?? null, activeFormQ.data ?? null),
+  [mode, activeFormQ.data, historicalFormQ.data]);
+  const trainingFormSections = useMemo(() => activeForm?.sections.filter((section) => section.enabled !== false).map((section) => ({
+    ...section,
+    fields: section.fields.filter((field) => !isTrainingScheduleTimeField(field)),
+  })).filter((section) => section.fields.length > 0) ?? [], [activeForm]);
+  const formConfigLoading = mode === "create" ? activeFormQ.isLoading : historicalFormQ.isLoading || activeFormQ.isLoading;
   const formConfigError = mode === "create" ? activeFormQ.error : historicalFormQ.error;
+  const trainingCategoriesQuery = useTrainingCategories(!formConfigLoading);
+  const trainingCategories = useMemo(() => trainingCategoriesQuery.data ?? [], [trainingCategoriesQuery.data]);
   const [activeStep, setActiveStep] = useState(0);
   const [initialValues] = useState(() => (initialTraining ? trainingToFormValues(initialTraining) : createEmptyTrainingForm()));
   const [values, setValues] = useState<CreateTrainingFormValues>(() => (initialTraining ? trainingToFormValues(initialTraining) : createEmptyTrainingForm()));
-  const [customValues, setCustomValues] = useState<Record<string, unknown>>({});
-  // Hydrate text (custom_values) when editing with an active global form — handles both {custom_values: {...}} and Event-style [{field_id, value}]
-  useEffect(() => {
-    if (!initialTraining || !activeForm || Object.keys(customValues).length > 0) return;
-    const raw = initialTraining as unknown as Record<string, unknown>;
-    const cv = (raw.custom_values ?? raw.customValues) as Record<string, unknown> | Array<{ field_id: string; value: unknown }> | undefined;
-    let hydrated: Record<string, unknown> = {};
-    if (Array.isArray(cv)) {
-      const byId = new Map(cv.map(e => [e.field_id, e.value]));
-      for (const sec of activeForm.sections) for (const fld of sec.fields) {
-        const v = byId.get(fld.id) ?? (cv as unknown as Record<string, unknown>)[fld.key];
-        if (v !== undefined) hydrated[fld.key] = v;
-      }
-    } else if (cv && typeof cv === "object") {
-      hydrated = cv as Record<string, unknown>;
-    } else {
-      const known = new Set(Object.keys(createEmptyTrainingForm()));
-      for (const [k, v] of Object.entries(raw)) if (!known.has(k) && v != null && v !== "") hydrated[k] = v as unknown;
-    }
-    if (Object.keys(hydrated).length > 0) setCustomValues(hydrated);
-  }, [activeForm, initialTraining]);
+  const [initialCustomValues] = useState<Record<string, unknown>>(() => hydrateConfiguredCustomValues(initialTraining, activeForm));
+  const [customValues, setCustomValues] = useState<Record<string, unknown>>(() => hydrateConfiguredCustomValues(initialTraining, activeForm));
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitForApprovalMode, setSubmitForApprovalMode] = useState(false);
+  const [pendingFocusField, setPendingFocusField] = useState<string | null>(null);
+  const [isRefreshingActiveForm, setIsRefreshingActiveForm] = useState(false);
+
+  useEffect(() => {
+    if (mode !== "edit" || !initialTraining || !activeForm) return;
+    const hydratedCustomValues = hydrateConfiguredCustomValues(initialTraining, activeForm);
+    setCustomValues((current) => ({ ...hydratedCustomValues, ...current }));
+
+    const scheduleKeys = new Set(["start_date", "end_date", "start_time", "end_time", "enrolment_start", "enrolment_end"]);
+    const customScheduleValues = activeForm.sections.filter((section) => section.enabled !== false).flatMap((section) => section.fields).flatMap((field) => {
+      const aliases = [...getTrainingFieldAliases(field), field.id, field.label]
+        .map(normalizeTrainingFieldKey);
+      const scheduleKey = aliases.find((alias) => scheduleKeys.has(alias));
+      if (!scheduleKey) return [];
+      const candidate = [field.key, field.apiKey, field.stable_key, field.id]
+        .filter((key): key is string => Boolean(key))
+        .map((key) => hydratedCustomValues[key])
+        .find((value) => typeof value === "string" && value.trim());
+      return typeof candidate === "string" ? [[scheduleKey, candidate] as const] : [];
+    });
+
+    if (customScheduleValues.length) {
+      setValues((current) => {
+        const next = { ...current };
+        for (const [key, value] of customScheduleValues) {
+          if (String(next[key as keyof CreateTrainingFormValues] ?? "").trim()) continue;
+          const normalizedValue = key === "start_date" || key === "end_date"
+            ? value.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? value
+            : value;
+          (next as unknown as Record<string, unknown>)[key] = normalizedValue;
+        }
+        return next;
+      });
+    }
+  }, [activeForm, initialTraining, mode]);
 
   // Backend rejects custom_values keys that collide with top-level TrainingCreate fields
   // (e.g. stale `tags` stored as custom → `400 Unknown custom field: tags`). Only send
   // custom keys that exist in the active form and are not top-level payload keys.
   const sanitizeCustomValues = (basePayload: Record<string, unknown>, raw: Record<string, unknown>): Record<string, unknown> | undefined => {
     const topLevelKeys = new Set(Object.keys(basePayload));
-    const formKeys = new Set((activeForm?.sections ?? []).flatMap((sec) => sec.fields.map((fld) => fld.key)));
-    const entries = Object.entries(raw).filter(([k, v]) =>
-      Boolean(k) && !topLevelKeys.has(k) && (formKeys.size === 0 || formKeys.has(k)) && v !== undefined && v !== null && v !== "",
+    const knownCoreKeys = new Set([
+      "title", "description", "category", "subcategory", "tags", "learning_objectives", "requirements",
+      "start_date", "end_date", "start_time", "end_time", "enrolment_start", "enrolment_end", "time_zone",
+      "duration", "access_duration_days", "delivery_mode", "course_type", "location_id", "venue", "address",
+      "meeting_link", "meeting_provider", "delivery_instructions", "instructor_id", "instructor_name",
+      "instructor_bio", "level", "language", "target_audience", "price", "currency",
+      "promo_price", "coupon_code", "capacity", "requires_approval", "access_expiry_type", "access_expiry_days",
+      "primary_image", "gallery_images",
+      "documents", "promotional_video", "notes_pdf_url", "instructor_notes", "prerequisites",
+      "subtitle", "faqs", "instructor_photo",
+      "instructor_credentials", "badges",
+    ]);
+    const canonicalFieldKeys = new Map<string, string>();
+    for (const section of trainingFormSections) {
+      for (const field of section.fields) {
+        const aliases = getTrainingFieldIdentityAliases(field).map(normalizeTrainingFieldKey).filter(Boolean);
+        const preferred = normalizeTrainingFieldKey(field.apiKey ?? field.key);
+        if (!preferred) continue;
+        const coreField = aliases.find((alias) => knownCoreKeys.has(alias));
+        const canonicalKey = coreField
+          ?? (field.source === "custom" ? field.stable_key : null)
+          ?? field.apiKey
+          ?? field.key;
+        for (const alias of aliases) canonicalFieldKeys.set(alias, canonicalKey);
+      }
+    }
+    const formKeys = new Set(trainingFormSections.flatMap((sec) => sec.fields.flatMap((fld) => [fld.key, fld.apiKey, fld.stable_key].filter((key): key is string => Boolean(key)))));
+    const selected = new Map<string, unknown>();
+    for (const [key, value] of Object.entries(raw)) {
+      const rawNormalizedKey = normalizeTrainingFieldKey(key);
+      const canonicalKey = canonicalFieldKeys.get(rawNormalizedKey) ?? key;
+      const normalizedKey = normalizeTrainingFieldKey(canonicalKey);
+      if (!key || value === undefined || value === null || value === "") continue;
+      if (topLevelKeys.has(key)) continue;
+      if (knownCoreKeys.has(normalizedKey)) continue;
+      if ([...knownCoreKeys].some((coreKey) => normalizedKey.startsWith(`${coreKey}_`)) && !formKeys.has(key) && !formKeys.has(canonicalKey)) continue;
+      if (formKeys.size > 0 && !formKeys.has(key) && !formKeys.has(canonicalKey) && !formKeys.has(normalizedKey)) continue;
+      selected.set(canonicalKey, value);
+    }
+    return selected.size ? Object.fromEntries(selected) : undefined;
+  };
+  const getConfiguredCustomValues = (): Record<string, unknown> => {
+    if (!activeForm) return {};
+    const allFields = trainingFormSections.flatMap((section) => section.fields);
+    return Object.fromEntries(
+      trainingFormSections
+        .flatMap((section) => section.fields)
+        .filter((field) => field.source === "custom" && isTrainingFormFieldVisible(field, allFields, values, customValues))
+        .map((field) => {
+          const configuredKey = field.source === "custom"
+            ? field.stable_key ?? field.apiKey ?? field.key
+            : field.apiKey ?? field.key;
+          const value =
+            (field.apiKey && customValues[field.apiKey] !== undefined ? customValues[field.apiKey] : undefined)
+            ?? (field.key in values ? values[field.key as keyof CreateTrainingFormValues] : undefined)
+            ?? customValues[field.key]
+            ?? customValues[field.apiKey ?? field.key];
+          const normalizedAliases = getTrainingFieldIdentityAliases(field).map(normalizeTrainingFieldKey);
+          const isLearningObjectives = normalizedAliases.includes("learning_objectives");
+          const customValue = isLearningObjectives && Array.isArray(value)
+            ? value.filter((objective): objective is string => typeof objective === "string").join("\n")
+            : value;
+          const configuredOptionValue = field.source === "custom" && field.type === "select"
+            ? (Array.isArray(customValue) ? customValue : [customValue])
+              .map((selectedValue) => typeof selectedValue === "string"
+                ? field.configuredOptions?.find((option) => option.value === selectedValue || option.label === selectedValue)?.value ?? selectedValue
+                : selectedValue)
+              .filter((selectedValue) => selectedValue !== undefined && selectedValue !== null && selectedValue !== "")
+            : customValue;
+          const expectsArrayValue = field.valueType?.toLowerCase() === "array"
+            || field.valueType?.trim().endsWith("[]") === true;
+          const serializedCustomValue = field.source === "custom" && field.type === "select" && !expectsArrayValue
+            ? (Array.isArray(configuredOptionValue) ? configuredOptionValue[0] : configuredOptionValue)
+            : configuredOptionValue;
+          return [configuredKey, serializedCustomValue] as const;
+        })
+        .filter(([, value]) => value !== undefined && value !== null && value !== ""),
     );
-    return entries.length ? Object.fromEntries(entries) : undefined;
+  };
+  const getVisibleCustomValues = (): Record<string, unknown> => {
+    if (!activeForm) return customValues;
+    const allFields = trainingFormSections.flatMap((section) => section.fields);
+    const visibleCustomKeys = new Set(allFields
+      .filter((field) => field.source === "custom" && isTrainingFormFieldVisible(field, allFields, values, customValues))
+      .flatMap((field) => [field.key, field.apiKey, field.stable_key].filter((key): key is string => Boolean(key))));
+    return Object.fromEntries(Object.entries(customValues).filter(([key]) => visibleCustomKeys.has(key)));
+  };
+  const applyConfiguredPayload = <T extends Record<string, unknown>>(payload: T): T => {
+    if (!activeForm) return payload;
+    const allFields = trainingFormSections.flatMap((section) => section.fields);
+    const configuredKeys = new Set(allFields
+      .filter((field) => isTrainingFormFieldVisible(field, allFields, values, customValues))
+      .flatMap((field) => {
+        const aliases = getTrainingFieldIdentityAliases(field).map(normalizeTrainingFieldKey);
+        const coreField = aliases.find((alias) => Object.prototype.hasOwnProperty.call(payload, alias));
+        return coreField ? [coreField] : [field.key];
+      }));
+    const alwaysIncluded = new Set([
+      "tenant_id",
+      "enterprise_id",
+      "form_configuration_version_id",
+      "start_date",
+      "end_date",
+      "start_time",
+      "end_time",
+      "enrolment_start",
+      "enrolment_end",
+      "time_zone",
+      "delivery_mode",
+      "venue",
+      "address",
+      "meeting_link",
+      "delivery_instructions",
+      "meeting_provider",
+      "instructor_id",
+      "instructor",
+      "price",
+      "currency",
+      "promo_price",
+      "coupon_code",
+    ]);
+    const changedMediaKeys = new Set<string>();
+    if (values.primary_image !== initialValues.primary_image) changedMediaKeys.add("primary_image");
+    if (JSON.stringify(values.gallery_images) !== JSON.stringify(initialValues.gallery_images)) changedMediaKeys.add("gallery_images");
+    return Object.fromEntries(Object.entries(payload).filter(([key]) => configuredKeys.has(key) || alwaysIncluded.has(key) || changedMediaKeys.has(key))) as T;
   };
 
   const saveMutation = useMutation({
@@ -82,36 +494,27 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
       if (mode === "edit") {
         if (!initialTraining) throw new Error("The training could not be loaded.");
         if (!canEditTraining(initialTraining.status)) throw new Error("This Training cannot be edited in its current lifecycle state.");
-        const baseUpdate = buildUpdateTrainingPayload(values);
-        const custom = sanitizeCustomValues(baseUpdate as unknown as Record<string, unknown>, customValues);
+        const baseUpdate = applyConfiguredPayload(buildUpdateTrainingPayload(values) as unknown as Record<string, unknown>);
+        const custom = sanitizeCustomValues(baseUpdate as unknown as Record<string, unknown>, { ...getVisibleCustomValues(), ...getConfiguredCustomValues() });
         // Keep sessions: edit form has no sessions editor, so carry the stored array through —
         // otherwise a replace-semantics PUT would wipe it. Never drop server data on edit.
         const initialRaw = initialTraining as unknown as Record<string, unknown>;
         const keptSessions = Array.isArray(initialRaw.sessions) ? (initialRaw.sessions as unknown[]) : undefined;
-        const updated = await updateTraining(initialTraining.id, { ...baseUpdate, ...(keptSessions ? { sessions: keptSessions } : {}), ...(custom ? { custom_values: custom } : {}) });
-        if (submitForApprovalMode) {
-          if (initialTraining.status === "needs_revision" || initialTraining.status === "rejected") {
-            await resubmitTraining(initialTraining.id);
-          } else {
-            await updateTrainingStatus(initialTraining.id, { status: "pending_approval" });
-          }
-        }
+        const updated = await updateTraining(initialTraining.id, { ...baseUpdate, ...(keptSessions ? { sessions: keptSessions } : {}), ...(custom ? { custom_values: custom } : {}) } as Parameters<typeof updateTraining>[1]);
         return updated;
       }
       if (!tenantId || !enterpriseId) throw new Error("A tenant and enterprise are required.");
-      const basePayload = buildCreateTrainingPayload(values, tenantId, enterpriseId);
-      const custom = sanitizeCustomValues(basePayload as unknown as Record<string, unknown>, customValues);
-      const payload = activeForm
-        ? ({ ...basePayload, form_configuration_version_id: activeForm.version_id ?? activeForm.id, ...(custom ? { custom_values: custom } : {}) } as unknown as Parameters<typeof createTraining>[0])
-        : basePayload;
-      const created = await createTraining(payload);
-      if (submitForApprovalMode) {
-        await updateTrainingStatus(created.id, { status: "pending_approval" });
-      }
-      return created;
+      const basePayload = applyConfiguredPayload(buildCreateTrainingPayload(values, tenantId, enterpriseId) as unknown as Record<string, unknown>);
+      const custom = sanitizeCustomValues(basePayload as unknown as Record<string, unknown>, { ...getVisibleCustomValues(), ...getConfiguredCustomValues() });
+      const payload = (activeForm
+        ? { ...basePayload, form_configuration_version_id: activeForm.version_id ?? activeForm.id, ...(custom ? { custom_values: custom } : {}) }
+        : basePayload) as unknown as Parameters<typeof createTraining>[0];
+      return createTraining(payload);
     },
     onSuccess: async (data) => {
+      clearPersistedDateTimeDrafts();
       await queryClient.invalidateQueries({ queryKey: ["trainings", "list"] });
+      window.scrollTo({ top: 0, behavior: "auto" });
       if (initialTraining) {
         await queryClient.invalidateQueries({ queryKey: ["trainings", "detail", initialTraining.id] });
         router.push(`/admin/trainings/${initialTraining.id}`);
@@ -121,7 +524,15 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
     },
     onError: (error) => {
       if (error instanceof TrainingsApiError) {
-        setErrors((current) => ({ ...current, ...error.fieldErrors }));
+        const configuredFields = trainingFormSections.flatMap((section) => section.fields);
+        const readableFieldErrors = Object.fromEntries(Object.entries(error.fieldErrors).map(([key, messages]) => {
+          const configuredField = configuredFields.find((field) => getTrainingFieldAliases(field).some((alias) =>
+            alias === key || normalizeTrainingFieldKey(alias) === normalizeTrainingFieldKey(key),
+          ));
+          const hasFormatError = messages.some((message) => /invalid format/i.test(message));
+          return [key, configuredField && hasFormatError ? [getTrainingFormatError(configuredField, t)] : messages];
+        }));
+        setErrors((current) => ({ ...current, ...readableFieldErrors }));
         setSubmitError(error.status === 401 || error.status === 403 ? "Your session cannot save this training. Please sign in again." : error.message);
       } else {
         setSubmitError(error instanceof Error ? error.message : "Unable to save training.");
@@ -134,18 +545,146 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
     setErrors((current) => ({ ...current, [key]: [] }));
     setSubmitError(null);
   };
+  const updateCustomValues = (next: Record<string, unknown>) => setCustomValues(next);
+  useEffect(() => {
+    if (!pendingFocusField) return;
+    const configuredField = trainingFormSections
+      .flatMap((section) => section.fields)
+      .find((field) => getTrainingFieldAliases(field).some((alias) =>
+        alias === pendingFocusField || normalizeTrainingFieldKey(alias) === normalizeTrainingFieldKey(pendingFocusField),
+      ));
+    const fieldKey = configuredField?.key ?? pendingFocusField;
+    const direct = [pendingFocusField, fieldKey]
+      .map((key) => document.getElementById(trainingFieldId(key)))
+      .find((element) => element !== null);
+    const wrapper = [...document.querySelectorAll<HTMLElement>("[data-training-field]")]
+      .find((element) => element.dataset.trainingField === fieldKey);
+    const target = direct ?? wrapper?.querySelector<HTMLElement>("input, select, textarea, button") ?? wrapper;
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (target instanceof HTMLElement && target.matches("input, select, textarea, button")) {
+      target.focus({ preventScroll: true });
+    } else {
+      target.querySelector<HTMLElement>("input, select, textarea, button")?.focus({ preventScroll: true });
+    }
+    setPendingFocusField(null);
+  }, [activeForm, activeStep, pendingFocusField]);
 
-  const allErrors = useMemo(() => validateTrainingForm(values), [values]);
-  const isDirty = JSON.stringify(values) !== JSON.stringify(initialValues);
+  const allErrors = useMemo(() => {
+    const allFields = trainingFormSections.flatMap((section) => section.fields);
+    const configuredRequiredKeys = activeForm
+      ? new Set(allFields.filter((field) => field.enabled !== false && !isTrainingAccessInformationField(field) && isTrainingFormFieldVisible(field, allFields, values, customValues)).flatMap((field) => [
+        ...(field.required ? getTrainingFieldAliases(field) : []),
+        ...getRequiredTrainingDeliveryValueKeys(field),
+      ]))
+      : undefined;
+    const validationErrors = validateTrainingForm(values, configuredRequiredKeys);
+    if (activeForm) {
+      for (const field of allFields) {
+        if (field.enabled === false || !isTrainingFormFieldVisible(field, allFields, values, customValues)) continue;
+        for (const subfield of getRequiredTrainingDeliverySubfields(field)) {
+          const value = values[subfield.valueKey as keyof CreateTrainingFormValues];
+          if (!hasConfiguredValue(value) && !validationErrors[subfield.valueKey]) {
+            validationErrors[subfield.valueKey] = [`${subfield.label} is required.`];
+          }
+        }
+      }
+    }
+    if (mode === "create" && trainingCategoriesQuery.data) {
+      const visibleTaxonomyFields = allFields.filter((field) =>
+        isTrainingFormFieldVisible(field, allFields, values, customValues),
+      );
+      const categoryEnabled = !activeForm || visibleTaxonomyFields.some((field) =>
+        field.source === "core" && getTrainingFieldAliases(field).includes("category"),
+      );
+      const subcategoryField = activeForm
+        ? visibleTaxonomyFields.find((field) => field.source === "core" && getTrainingFieldAliases(field).includes("subcategory"))
+        : undefined;
+      const category = trainingCategories.find((item) => item.parent_id === null && item.name === values.category);
+      const categoryIsCustom = Boolean(values.category.trim())
+        && values.category !== TRAINING_OTHER_OPTION_VALUE
+        && !category;
+      if (categoryEnabled && values.category && !category && !categoryIsCustom) {
+        validationErrors.category = ["Choose a valid Training category."];
+      }
+      if (subcategoryField) {
+        const subcategories = category
+          ? trainingCategories.filter((item) => item.parent_id === category.id)
+          : [];
+        if (values.subcategory === TRAINING_OTHER_OPTION_VALUE) {
+          validationErrors.subcategory = ["Enter a custom subcategory or choose one from the list."];
+        } else if (!values.subcategory.trim() && subcategoryField.required) {
+          validationErrors.subcategory = [
+            !category && !categoryIsCustom
+              ? "Choose a Training category before selecting a subcategory."
+              : "Subcategory is required.",
+          ];
+        } else if (values.subcategory && !categoryIsCustom
+          && !subcategories.some((item) => item.name === values.subcategory)) {
+          validationErrors.subcategory = ["Choose a valid subcategory for the selected Training category."];
+        }
+      } else if (!activeForm && values.subcategory && category
+        && !trainingCategories.some((item) => item.parent_id === category.id && item.name === values.subcategory)) {
+        validationErrors.subcategory = ["Choose a valid subcategory for the selected Training category."];
+      }
+    }
+    if (!activeForm) return validationErrors;
+    const configuredKeys = new Set(trainingFormSections.flatMap((section) => section.fields.filter((field) => !isTrainingAccessInformationField(field)).flatMap(getTrainingFieldAliases)));
+    const businessRuleKeys = new Set(["delivery_mode", "meeting_link", "venue", "address", "price", "currency"]);
+    for (const key of Object.keys(validationErrors)) {
+      if (!configuredKeys.has(key) && !businessRuleKeys.has(key)) delete validationErrors[key];
+    }
+    for (const section of trainingFormSections) {
+      for (const field of section.fields) {
+        if (isTrainingAccessInformationField(field)) continue;
+        if (!isConfiguredTrainingFieldApplicable(field, values.delivery_mode, values.pricing_type)
+          || !isTrainingFormFieldVisible(field, allFields, values, customValues)) {
+          for (const alias of getTrainingFieldAliases(field)) delete validationErrors[alias];
+        }
+      }
+    }
+    const configuredErrors = trainingFormSections
+      .flatMap((section) => Object.entries(validateConfiguredSection(section, values, customValues, allFields, (field) => getTrainingFormatError(field, t))))
+      .reduce<Record<string, string[]>>((result, [key, messages]) => ({ ...result, [key]: messages }), {});
+    Object.assign(validationErrors, configuredErrors);
+    return validationErrors;
+  }, [activeForm, customValues, mode, trainingCategories, trainingCategoriesQuery.data, trainingFormSections, values]);
+  const isDirty = JSON.stringify(values) !== JSON.stringify(initialValues)
+    || JSON.stringify(customValues) !== JSON.stringify(initialCustomValues);
+  useUnsavedChangesWarning(isDirty);
+  const getSectionFieldKeys = (index: number): string[] => activeForm
+    ? configuredSections[index]?.fields.flatMap(getTrainingFieldAliases) ?? []
+    : [...(stepFields[index] ?? [])];
+  const focusValidationError = (key: string, nextErrors: Record<string, string[]>) => {
+    setErrors(nextErrors);
+    setPendingFocusField(key);
+  };
   const continueToNext = () => {
     if (activeForm) {
+      const currentSection = configuredSections[activeStep];
+      if (currentSection) {
+        const allFields = trainingFormSections.flatMap((section) => section.fields);
+        const configuredErrors = validateConfiguredSection(currentSection, values, customValues, allFields, (field) => getTrainingFormatError(field, t));
+        const currentErrors = Object.fromEntries(
+          Object.entries({ ...allErrors, ...configuredErrors }).filter(([field]) =>
+            currentSection.fields.some((configuredField: TrainingFormField) => getTrainingFieldAliases(configuredField).includes(field)),
+          ),
+        );
+        if (Object.keys(currentErrors).length > 0) {
+          const firstError = Object.keys(currentErrors)[0];
+          focusValidationError(firstError, currentErrors);
+          return;
+        }
+      }
+      setErrors({});
       setActiveStep((current) => Math.min(current + 1, editorSteps.length - 1));
       return;
     }
     const currentFields = stepFields[activeStep] ?? [];
     const currentErrors = Object.fromEntries(Object.entries(allErrors).filter(([field]) => currentFields.includes(field)));
     if (Object.keys(currentErrors).length > 0) {
-      setErrors(currentErrors);
+      const firstError = Object.keys(currentErrors)[0];
+      focusValidationError(firstError, currentErrors);
       return;
     }
     setErrors({});
@@ -154,61 +693,107 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
   const submit = () => {
     if (mode === "edit" && !isDirty) return;
     if (Object.keys(allErrors).length > 0) {
-      setErrors(allErrors);
+      const firstError = Object.keys(allErrors).find((key) => allErrors[key]?.length);
+      if (firstError) {
+        const sectionIndex = editorSteps.findIndex((_, index) => getSectionFieldKeys(index).includes(firstError));
+        if (sectionIndex >= 0) setActiveStep(sectionIndex);
+        focusValidationError(firstError, allErrors);
+      } else setErrors(allErrors);
       setSubmitError("Review the highlighted fields before saving.");
       return;
     }
     setSubmitError(null);
-    setSubmitForApprovalMode(false);
     saveMutation.mutate();
   };
-  const submitForApproval = () => {
-    if (Object.keys(allErrors).length > 0) {
-      setErrors(allErrors);
-      setSubmitError("Review the highlighted fields before submitting for approval.");
-      return;
-    }
-    setSubmitError(null);
-    setSubmitForApprovalMode(true);
-    saveMutation.mutate();
-  };
-  const canSubmitForApproval = mode === "create" || Boolean(initialTraining && ["draft", "rejected", "needs_revision"].includes(initialTraining.status));
 
-  const configuredSections = activeForm ? [...activeForm.sections].filter(s => s.fields.length > 0).sort((a, b) => a.order - b.order) : [];
+  const configuredSections = activeForm ? trainingFormSections
+    .map((section) => ({ ...section, fields: section.fields.filter((field) => field.enabled !== false) }))
+    .filter((section) => section.fields.length > 0)
+    .sort((left, right) => left.order - right.order) : [];
   const editorSteps = activeForm ? [...configuredSections.map(s => s.title || "Section"), "Review & Submit"] : [...steps];
-  const sharedProps = { values, update, errors };
+  const sharedProps = {
+    values,
+    update,
+    errors,
+    trainingCategories,
+    categoriesLoading: trainingCategoriesQuery.isLoading,
+    categoriesError: trainingCategoriesQuery.isError,
+    retryCategories: () => { void trainingCategoriesQuery.refetch(); },
+    preserveLegacyCategoryValues: mode === "edit",
+  };
+  const StaticSection = staticSectionComponents[activeStep] ?? staticSectionComponents[0];
   const backHref = initialTraining ? `/admin/trainings/${initialTraining.id}` : "/admin/trainings";
   const title = mode === "edit" ? "Edit Training" : "Create Training";
-  const isCreateBlockedByEnterprise = mode === "create" && !enterpriseId;
+  const isCreateBlockedByEnterprise = mode === "create" && !isLoadingEnterprise && !enterpriseId;
+  const isResolvingEnterprise = mode === "create" && isLoadingEnterprise;
 
-  if (mode === "edit" && formConfigLoading) {
-    return <div role="status" className="rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-5 py-12 text-center text-sm font-semibold text-[#52736a]">Loading this Training&apos;s form configuration…</div>;
+  // Bounded, one-time loading gate (react-query already retries once) so the editor never
+  // flashes the static form and then swaps to the dynamic one a moment later.
+  if (formConfigLoading) {
+    return <div role="status" className="rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-5 py-12 text-center text-sm font-semibold text-[#52736a]">{mode === "edit" ? "Loading this Training's form configuration…" : "Loading the Training form configuration…"}</div>;
   }
-  if (mode === "edit" && formConfigError) {
-    return <div role="alert" className="rounded-2xl border border-[#eadbb8] bg-[#fffaf0] px-5 py-12 text-center text-sm font-semibold text-[#735c1e]">Unable to load this Training&apos;s form configuration.<button type="button" onClick={() => void historicalFormQ.refetch()} className="mt-4 rounded-full border border-current px-4 py-2 text-sm font-bold">Retry</button></div>;
+  const refetchFormConfig = async () => {
+    if (mode === "edit") {
+      await historicalFormQ.refetch();
+      return;
+    }
+
+    const queryKey = trainingFormConfigurationQueryKeys.active(tenantId, enterpriseId);
+    setIsRefreshingActiveForm(true);
+    setValues(createEmptyTrainingForm());
+    setCustomValues({});
+    setErrors({});
+    setSubmitError(null);
+    setPendingFocusField(null);
+    setActiveStep(0);
+    try {
+      await queryClient.cancelQueries({ queryKey, exact: true });
+      queryClient.setQueryData(queryKey, null);
+      await activeFormQ.refetch();
+    } finally {
+      setIsRefreshingActiveForm(false);
+    }
+  };
+  if (mode === "create" && isRefreshingActiveForm) {
+    return <div role="status" className="rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] px-5 py-12 text-center text-sm font-semibold text-[#52736a]">Cleared the previous form and entered data. Loading the latest active Training form configuration…</div>;
   }
-  if (mode === "create" && !formConfigLoading && !activeForm) {
+  if (mode === "create" && !activeForm) {
     return (
       <div className="w-full">
         <header className="flex flex-col gap-4 border-b border-[#edf3f0] pb-6 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <Link href={backHref} className="text-sm font-semibold text-[#1f6a58]">Back to Trainings</Link>
-            <p className="mt-4 text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">DRAFT TRAINING</p>
+            <Link href="/admin/trainings" className="text-sm font-semibold text-[#1f6a58]">Back to Trainings</Link>
+            <p className="mt-4 text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">TRAINING FORM</p>
             <h1 className="mt-2 text-2xl font-bold text-[#06201c] sm:text-3xl">Create Training</h1>
           </div>
-          <Link href={backHref} className="inline-flex h-11 items-center justify-center rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a]">Cancel</Link>
+          <Link href="/admin/trainings" className="inline-flex h-11 items-center justify-center rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a]">Cancel</Link>
         </header>
-        <div role="status" className="mt-6 rounded-2xl border border-[#eadbb8] bg-[#fffaf0] px-8 py-12 text-center">
-          <p className="text-sm font-bold text-[#735c1e]">No active Training form configuration</p>
-          <p className="mt-2 text-sm text-[#52736a]">The Super Admin has not published an active global Training form. Contact Super Admin to publish and activate a form before creating trainings.</p>
-        </div>
+        <section role={formConfigError ? "alert" : "status"} className="mt-6 rounded-2xl border border-[#eadbb8] bg-[#fffaf0] p-6">
+          <h2 className="text-lg font-bold text-[#735c1e]">
+            {formConfigError ? "Unable to load the active Training form configuration." : "No active Super Admin Training form configuration is available."}
+          </h2>
+          <p className="mt-2 text-sm text-[#735c1e]">
+            {formConfigError
+              ? "Retry loading the active form configuration before creating a Training."
+              : "Ask your Super Admin to publish an active Training form configuration before creating a Training."}
+          </p>
+          <button type="button" onClick={() => { void refetchFormConfig(); }} disabled={isRefreshingActiveForm} className="mt-4 h-10 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white disabled:opacity-60">
+            {isRefreshingActiveForm ? "Reloading…" : "Retry"}
+          </button>
+        </section>
       </div>
     );
   }
 
   return (
     <div className="w-full">
-      {activeForm ? <div className="mb-3 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-2 text-xs font-semibold text-[#167550]">{mode === "edit" ? `Historical form: ${activeForm.title}` : `Using Super Admin form: ${activeForm.title}`} {activeForm.is_global ? "(Global)" : `(${activeForm.enterprise_ids.length} enterprises)`} — {configuredSections.length} sections, {configuredSections.reduce((sum, s) => sum + s.fields.length, 0)} fields.</div> : null}
+      {mode === "create" && formConfigError ? (
+        <div role="alert" className="mb-3 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-2 text-xs font-semibold text-[#735c1e]">Could not refresh the active Training form configuration. Retry clears entered data from the previous form and reloads the latest active form. <button type="button" onClick={() => { void refetchFormConfig(); }} disabled={isRefreshingActiveForm} className="underline disabled:opacity-60">{isRefreshingActiveForm ? "Reloading…" : "Retry"}</button></div>
+      ) : activeForm ? (
+        <div className="mb-3 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-2 text-xs font-semibold text-[#167550]">{mode === "edit" ? `Historical form: ${activeForm.title}` : `Using Super Admin form: ${activeForm.title}`} {activeForm.is_global ? "(Global)" : `(${activeForm.enterprise_ids.length} enterprises)`} — {configuredSections.length} sections, {configuredSections.reduce((sum, s) => sum + s.fields.length, 0)} fields.</div>
+      ) : formConfigError ? (
+        <div role="alert" className="mb-3 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-2 text-xs font-semibold text-[#735c1e]">Could not load the historical Training form configuration — using the standard edit form instead. <button type="button" onClick={refetchFormConfig} className="underline">Retry</button></div>
+      ) : null}
       <header className="flex flex-col gap-4 border-b border-[#edf3f0] pb-6 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <Link href={backHref} className="text-sm font-semibold text-[#1f6a58]">Back to {mode === "edit" ? "Training" : "Trainings"}</Link>
@@ -223,15 +808,15 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
         <nav aria-label="Training editor sections" className="rounded-2xl border border-[#e1ebe6] bg-white p-3 shadow-sm">
           {activeForm ? (
             editorSteps.map((step, index) => (
-              <button key={`${step}-${index}`} type="button" onClick={() => setActiveStep(index)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${activeStep === index ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f9fcfa]"}`}>
-                <span className="flex h-6 w-6 items-center justify-center rounded-full border border-current text-xs">{index + 1}</span>
+              <button key={`${step}-${index}`} type="button" onClick={() => setActiveStep(index)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${getSectionFieldKeys(index).some((key) => errors[key]?.length) ? "text-[#b42318]" : activeStep === index ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f9fcfa]"}`}>
+                <span className={`flex h-6 w-6 items-center justify-center rounded-full border border-current text-xs ${getSectionFieldKeys(index).some((key) => errors[key]?.length) ? "bg-[#fff1f0] font-bold" : ""}`}>{getSectionFieldKeys(index).some((key) => errors[key]?.length) ? "!" : index + 1}</span>
                 {step}
               </button>
             ))
           ) : (
             steps.map((step, index) => (
-              <button key={step} type="button" onClick={() => setActiveStep(index)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${activeStep === index ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f9fcfa]"}`}>
-                <span className="flex h-6 w-6 items-center justify-center rounded-full border border-current text-xs">{index + 1}</span>
+              <button key={step} type="button" onClick={() => setActiveStep(index)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${getSectionFieldKeys(index).some((key) => errors[key]?.length) ? "text-[#b42318]" : activeStep === index ? "bg-[#e8f6ee] text-[#1f6a58]" : "text-[#52736a] hover:bg-[#f9fcfa]"}`}>
+                <span className={`flex h-6 w-6 items-center justify-center rounded-full border border-current text-xs ${getSectionFieldKeys(index).some((key) => errors[key]?.length) ? "bg-[#fff1f0] font-bold" : ""}`}>{getSectionFieldKeys(index).some((key) => errors[key]?.length) ? "!" : index + 1}</span>
                 {step}
               </button>
             ))
@@ -240,35 +825,39 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
         <main className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm sm:p-7">
           {activeForm ? (
             activeStep < configuredSections.length ? (
-              <ConfiguredCreateTrainingSection section={configuredSections[activeStep]} values={values} update={update} errors={errors} customValues={customValues} setCustomValues={setCustomValues} />
+              <ConfiguredCreateTrainingSection key={`${activeForm.id}:${activeForm.version_id ?? activeForm.updated_at ?? "current"}:${configuredSections[activeStep].id}`} section={configuredSections[activeStep]} allFields={trainingFormSections.flatMap((section) => section.fields)} tenantId={tenantId} values={values} update={update} errors={errors} customValues={customValues} setCustomValues={updateCustomValues} trainingCategories={trainingCategories} categoriesLoading={trainingCategoriesQuery.isLoading} categoriesError={trainingCategoriesQuery.isError} retryCategories={() => { void trainingCategoriesQuery.refetch(); }} preserveLegacyCategoryValues={mode === "edit"} />
             ) : (
               <section className="space-y-4">
                 <h2 className="text-xl font-bold text-[#06201c]">Review & Submit</h2>
                 <p className="text-sm text-[#52736a]">Review all sections from the Super Admin global form before creating.</p>
                 <div className="grid gap-3">
-                  {configuredSections.map(sec => (
+                  {configuredSections.map((sec) => (
                     <div key={sec.id} className="rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] px-4 py-3">
                       <p className="text-sm font-bold text-[#06201c]">{sec.title}</p>
-                      <p className="text-xs text-[#52736a]">{sec.fields.length} fields</p>
+                      <div className="mt-2 space-y-1 text-sm text-[#52736a]">
+                        {sec.fields.filter((field) => !isTrainingAccessInformationField(field) && isConfiguredTrainingFieldApplicable(field, values.delivery_mode, values.pricing_type) && isTrainingFormFieldVisible(field, trainingFormSections.flatMap((section) => section.fields), values, customValues)).map((field) => {
+                          const raw = field.key in values ? values[field.key as keyof CreateTrainingFormValues] : customValues[field.key];
+                          const displayValue = Array.isArray(raw) ? raw.join(", ") : typeof raw === "boolean" ? (raw ? "Yes" : "No") : raw === null || raw === undefined || raw === "" ? "Not provided" : String(raw);
+                          return <p key={field.id}><span className="font-semibold text-[#06201c]">{field.label}:</span> {displayValue}</p>;
+                        })}
+                      </div>
                     </div>
                   ))}
                 </div>
               </section>
             )
           ) : (
-            <div role="status" className="rounded-2xl border border-[#eadbb8] bg-[#fffaf0] px-8 py-8 text-center text-sm font-semibold text-[#735c1e]">No active Training form — contact Super Admin.</div>
+            <StaticSection {...sharedProps} />
           )}
+          {isResolvingEnterprise ? <div role="status" className="mt-6 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-4 py-3 text-sm font-semibold text-[#52736a]">Checking the linked Enterprise…</div> : null}
           {isCreateBlockedByEnterprise ? <div role="status" className="mt-6 rounded-xl border border-[#eadbb8] bg-[#fffaf0] px-4 py-3 text-sm font-semibold text-[#735c1e]">Creating a Training is unavailable until an Enterprise is linked. The current backend TrainingCreate contract requires an enterprise_id.</div> : null}
           {submitError ? <div role="alert" className="mt-6 rounded-xl border border-[#f3d0cb] bg-[#fff6f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{submitError}</div> : null}
           <div className="mt-8 flex flex-col-reverse gap-3 border-t border-[#edf3f0] pt-5 sm:flex-row sm:justify-between">
-            <button type="button" onClick={() => setActiveStep((current) => Math.max(current - 1, 0))} disabled={activeStep === 0 || saveMutation.isPending} className="h-11 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a] disabled:opacity-50">Back</button>
+            {activeStep > 0 ? <button type="button" onClick={() => setActiveStep((current) => current - 1)} disabled={saveMutation.isPending} className="h-11 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a] disabled:opacity-50">Back</button> : null}
             {(activeForm ? activeStep === editorSteps.length - 1 : activeStep === steps.length - 1) ? (
-              <div className="flex flex-col-reverse gap-3 sm:flex-row">
-                {canSubmitForApproval ? <button type="button" onClick={submitForApproval} disabled={saveMutation.isPending || isCreateBlockedByEnterprise} className="h-11 rounded-full border-2 border-[#d9a24a] bg-[#fffaf0] px-5 text-sm font-bold text-[#8a5a00] shadow-sm transition-colors hover:bg-[#fff4d6] disabled:cursor-not-allowed disabled:opacity-60">{saveMutation.isPending && submitForApprovalMode ? "Submitting..." : "Submit for approval"}</button> : null}
-                <button type="button" onClick={submit} disabled={saveMutation.isPending || isCreateBlockedByEnterprise || (mode === "edit" && !isDirty)} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm disabled:opacity-60">
-                  {saveMutation.isPending && !submitForApprovalMode ? (mode === "edit" ? "Saving..." : "Creating...") : mode === "edit" ? "Save Changes" : "Create Training"}
-                </button>
-              </div>
+              <button type="button" onClick={submit} disabled={saveMutation.isPending || isResolvingEnterprise || isCreateBlockedByEnterprise || (mode === "edit" && !isDirty)} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm disabled:opacity-60">
+                {saveMutation.isPending ? (mode === "edit" ? "Saving..." : "Creating...") : mode === "edit" ? "Save Changes" : "Create Training"}
+              </button>
             ) : (
               <button type="button" onClick={continueToNext} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm">Continue</button>
             )}

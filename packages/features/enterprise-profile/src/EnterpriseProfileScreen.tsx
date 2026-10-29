@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { getAuthMe, ProfileEditModal, type AuthUser, useAuth } from "@ihp/auth";
+import { getAuthMe, ProfileEditModal, type AuthMeResponse, type AuthUser, useAuth } from "@ihp/auth";
+
+const PROFILE_QUERY_KEY = ["auth", "me", "profile"] as const;
 
 function emptyToNotProvided(value: string | null | undefined) {
   return value?.trim() || "Not provided";
@@ -31,19 +34,6 @@ function formatRole(role: string | null | undefined) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function getApiErrorMessage(error: unknown) {
-  if (!(error instanceof Error) || !error.message) {
-    return "We could not update your profile. Please try again.";
-  }
-
-  try {
-    const payload = JSON.parse(error.message) as { detail?: string; message?: string };
-    return payload.detail || payload.message || "We could not update your profile. Please try again.";
-  } catch {
-    return error.message;
-  }
-}
-
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 border-b border-[#edf3f0] py-3 last:border-b-0">
@@ -55,51 +45,35 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 
 export default function EnterpriseProfileScreen() {
   const { user: sessionUser, updateUser } = useAuth();
-  const [profile, setProfile] = useState<AuthUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const profileQuery = useQuery({
+    queryKey: PROFILE_QUERY_KEY,
+    queryFn: getAuthMe,
+    staleTime: 30_000,
+    retry: 1,
+    refetchOnWindowFocus: true,
+  });
   const [isEditing, setIsEditing] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    let isActive = true;
+    if (profileQuery.data) updateUser(profileQuery.data.data);
+  }, [profileQuery.data, updateUser]);
 
-    const loadProfile = async () => {
-      setIsLoading(true);
-      setLoadError(null);
-
-      try {
-        const response = await getAuthMe();
-        if (!isActive) {
-          return;
-        }
-
-        setProfile(response.data);
-        updateUser(response.data);
-      } catch (error) {
-        if (isActive) {
-          setLoadError(getApiErrorMessage(error));
-        }
-      } finally {
-        if (isActive) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    void loadProfile();
-
-    return () => {
-      isActive = false;
-    };
-  }, [updateUser]);
-
-  const displayedProfile = profile ?? sessionUser;
+  const displayedProfile = profileQuery.data?.data ?? sessionUser;
   const membership = displayedProfile?.membership;
   const role = membership?.tenantRole ?? displayedProfile?.roles?.tenantRole;
   const tenantName = membership?.tenantName ?? displayedProfile?.roles?.tenantName;
   const email = displayedProfile?.email ?? "";
   const fullName = displayedProfile?.fullName ?? "";
+
+  const handleProfileUpdated = (nextUser: AuthUser) => {
+    queryClient.setQueryData<AuthMeResponse>(PROFILE_QUERY_KEY, (current) => ({
+      ...current,
+      data: nextUser,
+    }));
+    setSuccessMessage("Profile updated successfully.");
+  };
 
   return (
     <>
@@ -110,7 +84,7 @@ export default function EnterpriseProfileScreen() {
           <p className="mt-1 text-sm text-[#5f7a71]">Manage your personal account information</p>
         </div>
 
-        {isLoading ? (
+        {profileQuery.isLoading && !displayedProfile ? (
           <div className="space-y-5" aria-label="Loading profile">
             <div className="h-36 animate-pulse rounded-2xl border border-[#e1ebe6] bg-[#f7fbf8]" />
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
@@ -118,13 +92,20 @@ export default function EnterpriseProfileScreen() {
               <div className="h-72 animate-pulse rounded-2xl border border-[#e1ebe6] bg-[#f7fbf8]" />
             </div>
           </div>
-        ) : loadError ? (
+        ) : profileQuery.isError && !displayedProfile ? (
           <section className="rounded-2xl border border-[#f3c5bf] bg-[#fff7f6] p-5 text-sm text-[#b42318]">
             <p className="font-bold">Unable to load your profile</p>
-            <p className="mt-1">{loadError}</p>
+            <p className="mt-1">Please retry loading your account information.</p>
+            <button type="button" onClick={() => void profileQuery.refetch()} className="mt-3 font-bold underline">Retry</button>
           </section>
         ) : displayedProfile ? (
           <>
+            {profileQuery.isError ? (
+              <section role="alert" className="rounded-xl border border-[#f3c5bf] bg-[#fff7f6] px-4 py-3 text-sm text-[#b42318]">
+                Your latest profile details could not be loaded. Showing the account information already available.
+                <button type="button" onClick={() => void profileQuery.refetch()} className="ml-2 font-bold underline">Retry</button>
+              </section>
+            ) : null}
             {successMessage ? (
               <div className="rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-medium text-[#167550]" role="status">
                 {successMessage}
@@ -185,10 +166,7 @@ export default function EnterpriseProfileScreen() {
         <ProfileEditModal
           user={displayedProfile}
           onClose={() => setIsEditing(false)}
-          onProfileUpdated={(nextUser) => {
-            setProfile(nextUser);
-            setSuccessMessage("Profile updated successfully.");
-          }}
+          onProfileUpdated={handleProfileUpdated}
         />
       ) : null}
     </>

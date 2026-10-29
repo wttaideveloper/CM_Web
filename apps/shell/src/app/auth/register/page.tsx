@@ -1,6 +1,7 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { Suspense, useEffect, useMemo } from "react";
 
 import { useRegistration, type RegistrationStep } from "@/contexts/RegistrationContext";
@@ -9,14 +10,18 @@ import OwnerDetailsStep from "@/components/auth/register/OwnerDetailsStep";
 import VerifyEmailStep from "@/components/auth/register/VerifyEmailStep";
 import OrganizationStep from "@/components/auth/register/OrganizationStep";
 import PlanStep from "@/components/auth/register/PlanStep";
-import RegistrationSuccessStep from "@/components/auth/register/RegistrationSuccessStep";
+import DocumentsStep from "@/components/auth/register/DocumentsStep";
+import ReviewApplicationStep from "@/components/auth/register/ReviewApplicationStep";
+import ApplicationStatusStep from "@/components/auth/register/ApplicationStatusStep";
 
 const stepLabels: Array<{ step: RegistrationStep; label: string }> = [
   { step: 1, label: "Account" },
   { step: 2, label: "Verify" },
   { step: 3, label: "Organization" },
   { step: 4, label: "Plan" },
-  { step: 5, label: "Complete" },
+  { step: 5, label: "Documents" },
+  { step: 6, label: "Review" },
+  { step: 7, label: "Status" },
 ];
 
 function CheckIcon() {
@@ -37,7 +42,7 @@ function Stepper({
   onStepClick: (step: RegistrationStep) => void;
 }) {
   return (
-    <div className="mb-4 grid grid-cols-5 gap-1.5">
+    <div className="mb-4 grid grid-cols-7 gap-1.5">
       {stepLabels.map((item) => {
         const completed = item.step < maxStepReached;
         const current = item.step === currentStep;
@@ -90,7 +95,7 @@ function LeftPanel() {
       </div>
 
       <div className="relative z-10 flex w-full max-w-[760px] flex-col lg:h-full">
-        <div className="flex items-center gap-4">
+        <Link href="/auth/login" aria-label="Back to login" className="flex w-fit items-center gap-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-white/70">
           <div className="flex h-14 w-14 items-center justify-center rounded-full border border-white/70 bg-white/10 lg:h-10 lg:w-10">
             <svg
               aria-hidden="true"
@@ -115,7 +120,7 @@ function LeftPanel() {
             </svg>
           </div>
           <p className="text-[28px] font-bold tracking-tight lg:text-[22px]">Invigorate Health</p>
-        </div>
+        </Link>
 
         <div className="mt-16 max-w-[620px] sm:mt-20 lg:mt-10">
           <p className="text-[12px] font-bold uppercase tracking-[0.28em] text-white/65 sm:text-[13px]">
@@ -153,10 +158,9 @@ function LeftPanel() {
 }
 
 function AuthRegisterPageContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { authenticated, isLoading, membership, userId, user } = useAuth();
-  const { currentStep, maxStepReached, goToStep, advanceToStep, clearRegistrationState, updateRegistration, socialOwnerSignup } =
+  const { currentStep, maxStepReached, goToStep, advanceToStep, updateRegistration } =
     useRegistration();
 
   const isGoogleOwnerSignup = searchParams.get("owner_signup") === "google";
@@ -211,26 +215,18 @@ function AuthRegisterPageContent() {
           <PlanStep
             onBack={() => goToStep(3)}
             onCompleted={() => {
-              if (socialOwnerSignup) {
-                window.location.assign("/auth/validate");
-                return;
-              }
-
               advanceToStep(5);
             }}
           />
         );
       case 5:
-        return (
-          <RegistrationSuccessStep
-            onContinueToSignIn={() => {
-              clearRegistrationState();
-              router.push("/auth/login");
-            }}
-          />
-        );
+        return <DocumentsStep onBack={() => goToStep(4)} onContinue={() => advanceToStep(6)} />;
+      case 6:
+        return <ReviewApplicationStep onBack={() => goToStep(5)} onSubmitted={() => advanceToStep(7)} />;
+      case 7:
+        return <ApplicationStatusStep onBackToDocuments={() => goToStep(5)} />;
     }
-  }, [advanceToStep, clearRegistrationState, currentStep, goToStep, router, socialOwnerSignup, updateRegistration]);
+  }, [advanceToStep, currentStep, goToStep, updateRegistration]);
 
   return (
     <main className="min-h-screen bg-white text-[#06201c] lg:h-[100svh] lg:overflow-hidden">
@@ -240,6 +236,14 @@ function AuthRegisterPageContent() {
         <section className="flex min-h-screen items-start justify-center px-6 py-8 sm:px-10 lg:h-full lg:min-h-0 lg:items-stretch lg:justify-start lg:overflow-hidden lg:px-8 lg:py-6">
           <div className="flex w-full max-w-[560px] lg:h-full lg:max-w-none">
             <div className="flex h-full w-full flex-col overflow-y-auto overscroll-contain rounded-[26px] border border-[#dfece5] bg-white p-5 shadow-[0_16px_38px_rgba(7,53,45,0.08)] sm:p-6">
+              <div className="-mx-5 -mt-5 mb-4 flex justify-end border-b border-[#edf3f0] bg-white px-5 py-3 sm:-mx-6 sm:-mt-6 sm:px-6">
+                <Link
+                  href="/auth/login"
+                  className="rounded-lg px-3 py-2 text-sm font-semibold text-[#1f6a58] hover:bg-[#f4faf7] hover:underline focus:outline-none focus:ring-2 focus:ring-[#1f6a58]"
+                >
+                  Already have an account? Sign in
+                </Link>
+              </div>
               <Stepper
                 currentStep={currentStep}
                 maxStepReached={maxStepReached}

@@ -48,7 +48,7 @@ export interface EventCoreFieldRegistryOption { value: string; label: string; po
 export interface EventCoreFieldRegistryEntry { key: string; display_name: string; value_type: EventFormValueType; allowed_renderers: EventFormRenderer[]; default_renderer: EventFormRenderer; required_by_domain: boolean; removable: boolean; hideable: boolean; options: EventCoreFieldRegistryOption[] | null; value_source?: string | null; source_endpoint?: string | null; depends_on?: string | null; configurable: { label: boolean; section: boolean; position: boolean; required: boolean; renderer: boolean; placeholder: boolean; help_text: boolean; validation: boolean; }; }
 
 /** One tenant-to-enterprise assignment returned by the configuration assignment endpoint. */
-export interface EventFormAssignment { tenant_id: string; enterprise_id: string; }
+export interface EventFormAssignment { tenant_id: string; enterprise_id?: string | null; }
 
 /** Runtime-verified envelope returned by both assignment GET and PUT operations. */
 export interface EventFormAssignmentsResponse { configuration_id: string; assignments: EventFormAssignment[]; }
@@ -68,8 +68,8 @@ export interface CreateEventFormConfigurationRequest { name: string; description
 /** Request body for updating an Event form configuration. */
 export interface UpdateEventFormConfigurationRequest { name: string; description: string | null; scope: EventFormConfigurationScope; sections: EventFormSectionInput[]; }
 
-/** Request body for replacing a configuration's tenant assignments. */
-export interface UpdateEventFormConfigurationAssignmentsRequest { tenant_ids: string[]; }
+/** Request body for replacing assignments on a Selected tenants Event form configuration. */
+export interface UpdateEventFormConfigurationAssignmentsRequest { tenant_ids?: string[]; assignments?: EventFormAssignment[]; }
 
 /** Runtime-verified publication receipt returned by the Event Form Configuration publish endpoint. */
 export interface EventFormPublishResponse { configuration_id: string; version_id: string; version: number; status: "published"; published_at: string; }

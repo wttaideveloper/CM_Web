@@ -1,19 +1,34 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { isInternalUserRole, useAuth } from "@ihp/auth";
 import { useCurrentEnterprise, useTenant } from "@ihp/enterprise-runtime";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 import EventActionsMenu from "./EventActionsMenu";
-import EventTemplatesDialog from "./EventTemplatesDialog";
 import { PRODUCT_EVENT_STATUSES, getEventStatusBadgeClass, getEventStatusLabel } from "./event-status";
-import { listEvents, type Event } from "./events.service";
+import { listEnterpriseEventReviewsManage, listEvents, type Event } from "./events.service";
+import { formatEventDeliveryMode, formatEventScheduleDateTime } from "./event-detail-formatters";
+import { matchesEventTimeFilter, type EventTimeFilter } from "./event-time-filters";
+import { EnterpriseEventsReviewsTab } from "./EnterpriseEventsReviewsTab";
+import { protectedMediaPreviewUrl } from "./event-media";
 
 type SortOption = "newest" | "oldest" | "az" | "status";
 const statusFilters = ["all", ...PRODUCT_EVENT_STATUSES] as const;
-type StatusFilter = (typeof statusFilters)[number];
+const eventFilters = [...statusFilters, "ongoing", "finished"] as const;
+type EventFilter = (typeof eventFilters)[number];
+type EventsView = "events" | "reviews";
 const EVENTS_PAGE_SIZE = 20;
+
+function isLifecycleFilter(filter: EventFilter): filter is (typeof PRODUCT_EVENT_STATUSES)[number] {
+  return filter !== "all" && filter !== "ongoing" && filter !== "finished";
+}
+
+function isEventTimeFilter(filter: EventFilter): filter is EventTimeFilter {
+  return filter === "all" || filter === "ongoing" || filter === "finished";
+}
 
 function isValidDate(value: string) {
   return Number.isFinite(Date.parse(value));
@@ -50,14 +65,6 @@ function sortEvents(items: Event[], sort: SortOption) {
   });
 }
 
-function formatEventDate(value: string): string {
-  if (!isValidDate(value)) {
-    return "—";
-  }
-
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value));
-}
-
 function formatSeatAvailability(event: Event): string {
   if (event.is_full === true) return "Full";
   if (typeof event.available_seats === "number") {
@@ -66,69 +73,108 @@ function formatSeatAvailability(event: Event): string {
   return "—";
 }
 
+function getEventCapacityProgress(event: Event): { capacity: number; registered: number; percent: number } | null {
+  const capacity = Number.parseInt(event.capacity, 10);
+  if (!Number.isFinite(capacity) || capacity <= 0 || typeof event.available_seats !== "number" || !Number.isFinite(event.available_seats)) return null;
+  const remaining = Math.max(0, Math.min(capacity, event.available_seats));
+  const registered = capacity - remaining;
+  return { capacity, registered, percent: Math.round((registered / capacity) * 100) };
+}
+
+function formatCardLocation(event: Event): string {
+  const venue = [event.venue?.name, event.venue?.city].filter((value): value is string => Boolean(value?.trim())).join(", ");
+  const mode = event.delivery_mode?.trim().toLowerCase();
+  if (mode === "online") return "Online";
+  if (mode === "hybrid") return venue ? `Hybrid · ${venue}` : "Hybrid";
+  if (mode === "in_person") return venue || "In Person";
+  return venue || formatEventDeliveryMode(event.delivery_mode);
+}
+
+function lifecycleLabel(value: Event["lifecycle_state"]): string | null {
+  if (!value) return null;
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 function EventCard({ event, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess }: { event: Event; onStatusSuccess: () => void; onDuplicateSuccess: () => void; onDeleteSuccess: () => void }) {
   const primaryImage = event.primary_image?.trim() ?? "";
+  const primaryImageUrl = protectedMediaPreviewUrl(primaryImage);
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
-  const hasPrimaryImage = primaryImage.length > 0 && failedImageUrl !== primaryImage;
+  const hasPrimaryImage = primaryImageUrl.length > 0 && failedImageUrl !== primaryImageUrl;
 
   useEffect(() => {
-    if (!primaryImage) {
+    if (!primaryImageUrl) {
       setFailedImageUrl(null);
       return;
     }
 
     const image = new Image();
-    image.onerror = () => setFailedImageUrl(primaryImage);
-    image.src = primaryImage;
+    image.onerror = () => setFailedImageUrl(primaryImageUrl);
+    image.src = primaryImageUrl;
 
     return () => {
       image.onerror = null;
     };
-  }, [primaryImage]);
+  }, [primaryImageUrl]);
   const labelClass = hasPrimaryImage ? "text-white/75" : "text-[#7f9d94]";
   const primaryTextClass = hasPrimaryImage ? "text-white" : "text-[#06201c]";
   const secondaryTextClass = hasPrimaryImage ? "text-white/85" : "text-[#52736a]";
   const dividerClass = hasPrimaryImage ? "border-white/25" : "border-[#edf3f0]";
+  const capacityProgress = getEventCapacityProgress(event);
   const interactionClass = hasPrimaryImage
     ? "hover:-translate-y-0.5 hover:border-[#4f9f76] hover:shadow-lg focus-within:border-[#1f6a58] focus-within:ring-2 focus-within:ring-[#1f6a58]/20"
     : "hover:-translate-y-0.5 hover:border-[#4f9f76] hover:bg-[#edf8f1] hover:shadow-lg focus-within:border-[#1f6a58] focus-within:bg-[#f4faf7] focus-within:ring-2 focus-within:ring-[#1f6a58]/20";
 
   return (
-    <article className={`group relative rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-200 ${interactionClass}`}>
-      {hasPrimaryImage ? <div aria-hidden="true" className="absolute inset-0 overflow-hidden rounded-[inherit] bg-cover bg-center" style={{ backgroundImage: `url(${JSON.stringify(primaryImage)})` }}><div className="absolute inset-0 bg-gradient-to-br from-[#06201c]/60 via-[#0c382e]/48 to-[#1f6a58]/38" /></div> : null}
-      <div className="relative z-10">
-      <div className="flex items-start justify-between gap-3">
+    <article className={`group relative flex h-full flex-col rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-200 ${interactionClass}`}>
+      {hasPrimaryImage ? <div aria-hidden="true" className="absolute inset-0 overflow-hidden rounded-[inherit]"><img src={primaryImageUrl} alt="" className="h-full w-full object-cover object-center" onError={() => setFailedImageUrl(primaryImageUrl)} /><div className="absolute inset-0 bg-gradient-to-br from-[#06201c]/60 via-[#0c382e]/48 to-[#1f6a58]/38" /></div> : null}
+      <div className="relative z-10 flex flex-1 flex-col">
+        <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className={`text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>
             {event.category || "—"}
           </p>
           <h3 className={`mt-2 text-lg font-bold ${primaryTextClass}`}>{event.title}</h3>
         </div>
-        <div className="flex shrink-0 items-center gap-2"><span className={`rounded-full px-3 py-1 text-[11px] font-bold shadow-sm ${getEventStatusBadgeClass(event.status)}`}>{getEventStatusLabel(event.status)}</span><div className={hasPrimaryImage ? "rounded-full bg-white/90 shadow-sm" : undefined}><EventActionsMenu event={event} onStatusSuccess={onStatusSuccess} onDuplicateSuccess={onDuplicateSuccess} onDeleteSuccess={onDeleteSuccess} /></div></div>
+        <div className="flex shrink-0 items-center gap-2">{typeof event.average_rating === "number" && event.average_rating > 0 ? <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${hasPrimaryImage ? "bg-white/90 text-[#1f6a58]" : "bg-[#e8f6ee] text-[#1f6a58]"}`}>{event.average_rating.toFixed(1)} ★{typeof event.reviews_count === "number" ? ` (${event.reviews_count})` : ""}</span> : null}<span className={`rounded-full px-3 py-1 text-[11px] font-bold shadow-sm ${getEventStatusBadgeClass(event.status)}`}>{getEventStatusLabel(event.status)}</span>{lifecycleLabel(event.lifecycle_state) ? <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${hasPrimaryImage ? "bg-white/20 text-white" : "bg-[#f1f7f4] text-[#52736a]"}`}>{lifecycleLabel(event.lifecycle_state)}</span> : null}<div className={hasPrimaryImage ? "rounded-full bg-white/90 shadow-sm" : undefined}><EventActionsMenu event={event} onStatusSuccess={onStatusSuccess} onDuplicateSuccess={onDuplicateSuccess} onDeleteSuccess={onDeleteSuccess} /></div></div>
       </div>
 
       <p className={`mt-2 line-clamp-2 min-h-10 text-sm leading-5 ${secondaryTextClass}`}>{event.description || "—"}</p>
 
-      <div className={`mt-3 grid grid-cols-1 gap-x-8 gap-y-4 border-t pt-3 text-sm sm:grid-cols-2 lg:grid-cols-4 ${dividerClass}`}>
+      <div className={`mt-auto grid grid-cols-1 gap-x-6 gap-y-4 border-t pt-3 text-sm sm:grid-cols-2 xl:grid-cols-5 ${dividerClass}`}>
         <div className="min-w-0">
-          <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Date</p>
-          <p className={`mt-1 font-semibold ${primaryTextClass}`}>{formatEventDate(event.start_date)}</p>
+          <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Starts</p>
+          <p className={`mt-1 inline-flex max-w-full whitespace-normal break-words rounded-xl px-3 py-1.5 font-bold leading-5 [overflow-wrap:anywhere] ${hasPrimaryImage ? "bg-[#06201c]/65 text-white" : "bg-[#e8f6ee] text-[#1f6a58]"}`}>{formatEventScheduleDateTime(event.start_date, event.time_zone)}</p>
         </div>
         <div className="min-w-0">
-          <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Location</p>
-          <p className={`mt-1 font-semibold ${primaryTextClass}`}>{event.delivery_mode || "—"}</p>
+          <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Ends</p>
+          <p className={`mt-1 inline-flex max-w-full whitespace-normal break-words rounded-xl px-3 py-1.5 font-bold leading-5 [overflow-wrap:anywhere] ${hasPrimaryImage ? "bg-[#06201c]/65 text-white" : "bg-[#e8f6ee] text-[#1f6a58]"}`}>{formatEventScheduleDateTime(event.end_date, event.time_zone)}</p>
         </div>
         <div className="min-w-0">
-          <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Registrations</p>
-          <p className={`mt-1 font-semibold ${primaryTextClass}`}>—</p>
+          <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Location / Delivery</p>
+          <p className={`mt-1 min-h-10 break-words font-medium leading-5 ${primaryTextClass}`}>{formatCardLocation(event)}</p>
         </div>
         <div className="min-w-0">
-          <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Availability</p>
-          <p className={`mt-1 font-semibold ${primaryTextClass}`}>{formatSeatAvailability(event)}</p>
+          <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Registrations</p>
+          <p className={`mt-1 min-h-10 break-words font-medium leading-5 ${primaryTextClass}`}>{capacityProgress ? capacityProgress.registered : "—"}</p>
+        </div>
+        <div className="min-w-0">
+          <p className={`break-words text-xs font-bold uppercase leading-4 tracking-[0.12em] ${labelClass}`}>Availability</p>
+          <p className={`mt-1 min-h-10 break-words font-medium leading-5 ${primaryTextClass}`}>{formatSeatAvailability(event)}</p>
         </div>
       </div>
+      {capacityProgress && capacityProgress.percent > 0 ? (
+        <div className="mt-3" aria-label={`${capacityProgress.registered} of ${capacityProgress.capacity} places filled`}>
+          <div className="mb-1 flex items-center justify-between text-xs">
+            <span className={secondaryTextClass}>Capacity used</span>
+            <span className={`font-bold ${primaryTextClass}`}>{capacityProgress.percent}%</span>
+          </div>
+          <div role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={capacityProgress.percent} aria-label="Event capacity used" className={`h-2 overflow-hidden rounded-full ${hasPrimaryImage ? "bg-white/30" : "bg-[#e8f6ee]"}`}>
+            <div className="h-full rounded-full bg-[#1f6a58]" style={{ width: `${capacityProgress.percent}%` }} />
+          </div>
+        </div>
+      ) : null}
 
-      <Link href={`/admin/events/${event.id}`} className={`mt-3 block border-t pt-3 text-sm font-semibold outline-none transition-colors hover:underline focus-visible:rounded focus-visible:ring-2 focus-visible:ring-offset-2 ${hasPrimaryImage ? "border-white/25 text-white hover:text-white focus-visible:ring-white focus-visible:ring-offset-[#1f6a58]" : "border-[#edf3f0] text-[#1f6a58] hover:text-[#195646] focus-visible:ring-[#1f6a58]"}`}>
+      <Link href={`/admin/events/${event.id}`} className={`mt-auto flex min-h-11 items-center border-t pt-3 text-sm font-semibold outline-none transition-colors hover:underline focus-visible:rounded focus-visible:ring-2 focus-visible:ring-offset-2 ${hasPrimaryImage ? "border-white/25 text-white hover:text-white focus-visible:ring-white focus-visible:ring-offset-[#1f6a58]" : "border-[#edf3f0] text-[#1f6a58] hover:text-[#195646] focus-visible:ring-[#1f6a58]"}`}>
         View event details
       </Link>
       </div>
@@ -136,18 +182,31 @@ function EventCard({ event, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess
   );
 }
 
-/** Renders the authenticated enterprise's paginated Events list. */
-export default function EnterpriseEventsScreen() {
+function EnterpriseEventsScreenContent() {
+  const searchParams = useSearchParams();
+  const requestedView: EventsView = searchParams.get("tab") === "reviews" || searchParams.get("view") === "reviews" ? "reviews" : "events";
+  const [view, setView] = useState<EventsView>(requestedView);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [sort, setSort] = useState<SortOption>("newest");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [eventFilter, setEventFilter] = useState<EventFilter>("all");
   const [page, setPage] = useState(1);
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
-  const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    const viewParam = searchParams.get("view");
+    if (tab === "reviews" || viewParam === "reviews") {
+      setView("reviews");
+    } else if (tab === "events" || viewParam === "events") {
+      setView("events");
+    }
+  }, [searchParams]);
 
   const { tenantId } = useTenant();
   const { enterpriseId } = useCurrentEnterprise();
+  const { roles } = useAuth();
+  const readOnly = isInternalUserRole(roles?.tenantRole);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -158,13 +217,13 @@ export default function EnterpriseEventsScreen() {
   }, [query]);
 
   const eventsQuery = useQuery({
-    queryKey: ["events", "list", tenantId, enterpriseId, debouncedQuery, statusFilter, page, EVENTS_PAGE_SIZE],
+    queryKey: ["events", "list", tenantId, enterpriseId, debouncedQuery, eventFilter, page, EVENTS_PAGE_SIZE],
     queryFn: () =>
       listEvents({
         tenant_id: tenantId ?? undefined,
         enterprise_id: enterpriseId ?? undefined,
         search: debouncedQuery || undefined,
-        status: statusFilter === "all" ? undefined : statusFilter,
+        status: isLifecycleFilter(eventFilter) ? eventFilter : undefined,
         page,
         page_size: EVENTS_PAGE_SIZE,
       }),
@@ -173,15 +232,26 @@ export default function EnterpriseEventsScreen() {
     retry: 1,
     placeholderData: keepPreviousData,
   });
+  const pendingReviewsQuery = useQuery({ queryKey: ["event-reviews", "manage", "pending-count"], queryFn: () => listEnterpriseEventReviewsManage({ status: "pending", page: 1, pageSize: 1 }), enabled: Boolean(tenantId), staleTime: 30_000, retry: 1 });
 
   const visibleEvents = useMemo(() => {
-    return sortEvents(eventsQuery.data?.items ?? [], sort);
-  }, [eventsQuery.data?.items, sort]);
+    const events = eventsQuery.data?.items ?? [];
+    const timeFilteredEvents = isEventTimeFilter(eventFilter) && eventFilter !== "all"
+      ? events.filter((event) => matchesEventTimeFilter(event, eventFilter))
+      : events;
+    return sortEvents(timeFilteredEvents, sort);
+  }, [eventFilter, eventsQuery.data?.items, sort]);
   const pagination = eventsQuery.data?.pagination;
 
   const showStatusFeedback = () => setStatusFeedback("Event status updated.");
   const showDuplicateFeedback = () => setStatusFeedback("Event duplicated.");
   const showDeleteFeedback = () => setStatusFeedback("Event deleted.");
+
+  useEffect(() => {
+    if (!statusFeedback) return;
+    const timeoutId = window.setTimeout(() => setStatusFeedback(null), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [statusFeedback]);
 
   return (
     <div className="w-full">
@@ -197,21 +267,14 @@ export default function EnterpriseEventsScreen() {
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={() => setIsTemplatesOpen(true)}
-            className="inline-flex h-12 items-center justify-center rounded-full border border-[#b9d6cb] bg-white px-5 text-sm font-bold text-[#1f6a58] shadow-sm transition hover:bg-[#f4faf7]"
-          >
-            Templates
-          </button>
-          {enterpriseId ? (
+          {!readOnly && enterpriseId ? (
             <Link
               href="/admin/events/create"
               className="inline-flex h-12 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm transition hover:bg-[#195646]"
             >
               + Create Event
             </Link>
-          ) : (
+          ) : !readOnly ? (
             <div>
               <button
                 type="button"
@@ -225,9 +288,16 @@ export default function EnterpriseEventsScreen() {
                 Creating an Event requires a linked Enterprise under the current backend contract.
               </p>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
+
+      <div className="mt-5 flex gap-2 border-b border-[#e1ebe6]" role="tablist" aria-label="Events views">
+        <button type="button" role="tab" aria-selected={view === "events"} onClick={() => setView("events")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === "events" ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#52736a]"}`}>Events</button>
+        <button type="button" role="tab" aria-selected={view === "reviews"} onClick={() => setView("reviews")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === "reviews" ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#52736a]"}`}>Reviews{pendingReviewsQuery.data?.counts.pending ? ` (${pendingReviewsQuery.data.counts.pending})` : ""}</button>
+      </div>
+
+      {view === "reviews" ? <EnterpriseEventsReviewsTab /> : <>
 
       <section className="mt-6 rounded-2xl border border-[#b9d6cb] bg-[#f4faf7] p-4 shadow-sm">
         <div className="grid gap-3 xl:grid-cols-[1fr_auto]">
@@ -262,15 +332,15 @@ export default function EnterpriseEventsScreen() {
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
-          {statusFilters.map((chip) => {
-            const active = statusFilter === chip;
+          {eventFilters.map((chip) => {
+            const active = eventFilter === chip;
 
             return (
               <button
                 key={chip}
                 type="button"
                 onClick={() => {
-                  setStatusFilter(chip);
+                  setEventFilter(chip);
                   setPage(1);
                 }}
                 className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
@@ -279,7 +349,7 @@ export default function EnterpriseEventsScreen() {
                     : "border border-[#d7e5df] bg-white text-[#52736a] hover:bg-[#f4faf7]"
                 }`}
               >
-                {chip === "all" ? "All" : getEventStatusLabel(chip)}
+                {chip === "all" ? "All" : chip === "ongoing" ? "Ongoing" : chip === "finished" ? "Finished" : getEventStatusLabel(chip)}
               </button>
             );
           })}
@@ -287,7 +357,6 @@ export default function EnterpriseEventsScreen() {
       </section>
 
       {statusFeedback ? <p role="status" className="mt-4 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">{statusFeedback}</p> : null}
-      {isTemplatesOpen ? <EventTemplatesDialog events={eventsQuery.data?.items ?? []} tenantId={tenantId} enterpriseId={enterpriseId} onClose={() => setIsTemplatesOpen(false)} /> : null}
 
       {eventsQuery.isLoading ? (
         <section className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white px-5 py-16 text-center shadow-sm">
@@ -325,7 +394,17 @@ export default function EnterpriseEventsScreen() {
           />
         </>
       )}
+      </>}
     </div>
+  );
+}
+
+/** Renders the authenticated enterprise's paginated Events list. */
+export default function EnterpriseEventsScreen() {
+  return (
+    <Suspense fallback={null}>
+      <EnterpriseEventsScreenContent />
+    </Suspense>
   );
 }
 

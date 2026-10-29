@@ -102,8 +102,8 @@ function OrdersErrorState({ error, retry }: { error: Error; retry: () => void })
   return <section className="rounded-2xl border border-[#f3d5d1] bg-[#fff7f6] px-5 py-12 text-center"><p role="alert" className="font-bold text-[#b42318]">{getOrdersErrorMessage(error)}</p><button type="button" onClick={retry} className="mt-3 text-sm font-semibold text-[#1f6a58] underline">Try again</button></section>;
 }
 
-function displayOrDash(value: string): string {
-  return value.trim() || "—";
+function displayOrDash(value: string | null | undefined): string {
+  return value?.trim() || "-";
 }
 
 function formatAmount(amount: string): string {

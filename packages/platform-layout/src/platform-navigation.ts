@@ -11,15 +11,10 @@ export const platformNavigationGroups: readonly PlatformNavigationGroup[] = [
     title: "APPROVALS & CONFIG",
     items: [
       { label: "Approval Queue", href: "/approval-queue", icon: "queue" },
-      { label: "Form Builder", href: "/onboarding-forms", icon: "forms" },
-      { label: "Form Builder New", href: "/form-builder-new", icon: "forms" },
-      { label: "Workflow Builder New", href: "/workflow-builder-new", icon: "forms" },
-      { label: "Form Configurations", href: "/form-configurations", icon: "forms" },
+      { label: "Tenant Applications", href: "/tenant-applications", icon: "building" },
+      { label: "Event Forms", href: "/form-configurations", icon: "forms" },
       { label: "Training Forms", href: "/training-form-configurations", icon: "forms" },
-      { label: "Enterprise Types", href: "/enterprise-types", icon: "building" },
       { label: "Categories", href: "/categories", icon: "tag" },
-      { label: "Sub-Admins", href: "/sub-admins", icon: "settings" },
-      { label: "Attributes", href: "/attributes", icon: "tag" },
     ],
   },
   {
@@ -27,12 +22,11 @@ export const platformNavigationGroups: readonly PlatformNavigationGroup[] = [
     items: [
       { label: "Enterprises / Tenants", href: "/enterprises", icon: "building" },
       { label: "Users", href: "/users", icon: "settings" },
+      { label: "Super Admins", href: "/super-admins", icon: "settings" },
       { label: "Products", href: "/products", icon: "package" },
       { label: "Services", href: "/services", icon: "service" },
       { label: "Events", href: "/events", icon: "calendar" },
       { label: "Trainings", href: "/trainings", icon: "training" },
-      { label: "Programs", href: "/programs", icon: "program" },
-      { label: "Integrations", href: "/integrations", icon: "integration" },
     ],
   },
 ];

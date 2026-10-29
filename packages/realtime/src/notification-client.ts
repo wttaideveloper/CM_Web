@@ -11,16 +11,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function normalizeNotificationItem(candidate: unknown): NotificationItem | null {
-  if (!isRecord(candidate) || typeof candidate.id !== "string") {
+  if (!isRecord(candidate)) {
     return null;
   }
 
-  const data = isRecord(candidate.data) ? candidate.data : {};
+  const id = typeof candidate.id === "string" ? candidate.id : candidate.notification_id;
+  if (typeof id !== "string" || !id.trim()) return null;
+
+  const data = isRecord(candidate.data)
+    ? candidate.data
+    : isRecord(candidate.metadata)
+      ? candidate.metadata
+      : {};
 
   return {
-    id: candidate.id,
+    id,
     notification_type:
-      typeof candidate.notification_type === "string" ? candidate.notification_type : "unknown",
+      typeof candidate.notification_type === "string"
+        ? candidate.notification_type
+        : typeof candidate.type === "string"
+          ? candidate.type
+          : "unknown",
+    ...(typeof candidate.category === "string" ? { category: candidate.category } : {}),
+    ...(isRecord(candidate.metadata) ? { metadata: candidate.metadata } : {}),
     title: typeof candidate.title === "string" ? candidate.title : "",
     body: typeof candidate.body === "string" ? candidate.body : "",
     data,
@@ -53,19 +66,11 @@ export function createNotificationClient(requestClient: NotificationRequestClien
   const { requestJson, requestResponse } = requestClient;
 
   async function getUnreadCounts(): Promise<NotificationUnreadCounts> {
-    if (process.env.NODE_ENV !== "production") {
-      console.log("[Notifications] unread-count request");
-    }
-
     const response = await requestJson<unknown>("/notifications/unread-count");
     const counts = parseCountsResponse(response);
 
     if (!counts) {
       throw new Error("Invalid unread count response");
-    }
-
-    if (process.env.NODE_ENV !== "production") {
-      console.log("[Notifications] unread-count success", counts);
     }
 
     return counts;
@@ -75,32 +80,33 @@ export function createNotificationClient(requestClient: NotificationRequestClien
     page = 1,
     pageSize = 20,
   ): Promise<NotificationHistoryResponse> {
-    if (process.env.NODE_ENV !== "production") {
-      console.log("[Notifications] history request", {
-        page,
-        page_size: pageSize,
-      });
-    }
-
     const searchParams = new URLSearchParams({
       page: String(page),
       page_size: String(pageSize),
     });
     const response = await requestJson<unknown>(`/notifications/history?${searchParams.toString()}`);
 
-    if (!isRecord(response) || !Array.isArray(response.items) || !isRecord(response.pagination)) {
+    const envelope = isRecord(response) && isRecord(response.data) ? response.data : response;
+    if (!isRecord(envelope) || !Array.isArray(envelope.items)) {
       throw new Error("Invalid notification history response");
     }
 
-    const items = response.items
+    const items = envelope.items
       .map(normalizeNotificationItem)
       .filter((item): item is NotificationItem => item !== null);
 
+    const paginationRecord = isRecord(envelope.pagination)
+      ? envelope.pagination
+      : isRecord(response) && isRecord(response.meta) && isRecord(response.meta.pagination)
+        ? response.meta.pagination
+        : isRecord(response) && isRecord(response.meta)
+          ? response.meta
+          : {};
     const pagination = {
-      total: Number(response.pagination.total) || 0,
-      page: Number(response.pagination.page) || page,
-      page_size: Number(response.pagination.page_size) || pageSize,
-      total_pages: Number(response.pagination.total_pages) || 0,
+      total: Number(paginationRecord.total) || items.length,
+      page: Number(paginationRecord.page) || page,
+      page_size: Number(paginationRecord.page_size) || pageSize,
+      total_pages: Number(paginationRecord.total_pages) || 0,
     };
 
     const result = {
@@ -108,22 +114,12 @@ export function createNotificationClient(requestClient: NotificationRequestClien
       pagination,
     };
 
-    if (process.env.NODE_ENV !== "production") {
-      console.log("[Notifications] history success", {
-        page: result.pagination.page,
-        page_size: result.pagination.page_size,
-        total: result.pagination.total,
-        total_pages: result.pagination.total_pages,
-        items: result.items.length,
-      });
-    }
-
     return result;
   }
 
-  async function readNotificationResponse(path: string) {
+  async function readNotificationResponse(path: string, method: "PATCH" | "PUT" = "PATCH") {
     const response = await requestResponse(path, {
-      method: "PATCH",
+      method,
     });
 
     const body = await response.text().catch(() => "");
@@ -180,7 +176,7 @@ export function createNotificationClient(requestClient: NotificationRequestClien
       console.log("[Notifications] read-all request");
     }
 
-    const response = await readNotificationResponse("/notifications/read-all");
+    const response = await readNotificationResponse("/notifications/read-all", "PUT");
 
     if (!response.ok) {
       if (process.env.NODE_ENV !== "production") {

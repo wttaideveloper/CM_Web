@@ -4,6 +4,11 @@ export type ProductMode = "super-admin" | "enterprise-admin";
 export type EnterpriseOptionsLoader = () => Promise<EnterpriseDto[]>;
 export type EnterpriseLocationsLoader = (enterpriseId: string) => Promise<EnterpriseLocationDto[]>;
 export type EnterpriseLocationLoader = (locationId: string) => Promise<EnterpriseLocationDto>;
+export type ProductProviderOption = {
+  userId: string;
+  fullName: string;
+};
+export type ProductProviderOptionsLoader = () => Promise<ProductProviderOption[]>;
 
 export type ProductsListScreenProps = {
   enterpriseFilterId?: string;
@@ -13,6 +18,7 @@ export type ProductsListScreenProps = {
   enterpriseName?: string;
   enterprisesLoader?: EnterpriseOptionsLoader;
   enterpriseLocationsLoader?: EnterpriseLocationsLoader;
+  readOnly?: boolean;
 };
 
 export type ProductCreateScreenProps = {
@@ -23,6 +29,7 @@ export type ProductCreateScreenProps = {
   tenantId?: string;
   enterprisesLoader?: EnterpriseOptionsLoader;
   enterpriseLocationsLoader?: EnterpriseLocationsLoader;
+  providerOptionsLoader?: ProductProviderOptionsLoader;
 };
 
 export type ProductDetailsScreenProps = {
@@ -31,6 +38,7 @@ export type ProductDetailsScreenProps = {
   editHrefBase?: string;
   enterprisesLoader?: EnterpriseOptionsLoader;
   enterpriseLocationLoader?: EnterpriseLocationLoader;
+  readOnly?: boolean;
 };
 
 export type ProductEditScreenProps = {
@@ -38,4 +46,5 @@ export type ProductEditScreenProps = {
   listHref?: string;
   detailHrefBase?: string;
   enterpriseLocationsLoader?: EnterpriseLocationsLoader;
+  providerOptionsLoader?: ProductProviderOptionsLoader;
 };

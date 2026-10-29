@@ -4,8 +4,8 @@ import {
 } from "./training-approval-review.types";
 
 export class TrainingApprovalError extends Error {
-  constructor() {
-    super("Unable to approve this Training. Please try again.");
+  constructor(message = "Unable to approve this Training. Please try again.") {
+    super(message);
   }
 }
 
@@ -67,6 +67,10 @@ export async function rejectTrainingReview(trainingId: string, reason?: string, 
     ...(reason?.trim() ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: reason.trim() }) } : {}),
   });
   if (!response.ok) throw new TrainingApprovalError();
+  const persistedTraining = await getTrainingApprovalReview(trainingId);
+  if (persistedTraining.status !== "rejected") {
+    throw new TrainingApprovalError("The Training was not persisted as rejected. Refresh the approval queue and try again.");
+  }
 }
 
 /** A single moderation-history record (undocumented response shape — guard with runtime checks). */

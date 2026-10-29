@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 
 import { usePathname } from "next/navigation";
 
-import type { ChatSocket } from "@ihp/chat-runtime";
+import { realtimeDebug, type ChatSocket } from "@ihp/chat-runtime";
 
 import {
   getCachedNotificationState,
@@ -30,6 +30,8 @@ function toNotificationRecord(candidate: NotificationItem | RealtimeNotification
   return {
     id: candidate.id,
     notification_type: candidate.notification_type,
+    category: candidate.category,
+    metadata: candidate.metadata,
     title: candidate.title,
     body: candidate.body,
     data: candidate.data,
@@ -65,7 +67,11 @@ function readNotificationId(payload: unknown): string | null {
       ? payload.notification
       : null;
 
-  return readString(payload.id) ?? (notificationRecord ? readString(notificationRecord.id) : null);
+  return (
+    readString(payload.id) ??
+    readString(payload.notification_id) ??
+    (notificationRecord ? readString(notificationRecord.id) ?? readString(notificationRecord.notification_id) : null)
+  );
 }
 
 function readConversationId(payload: unknown): string | null {
@@ -81,15 +87,13 @@ function readNotificationData(payload: unknown): Record<string, unknown> {
     return {};
   }
 
-  if (isRecord(payload.data)) {
-    return readRecord(payload.data);
-  }
-
-  if (isRecord(payload.notification) && isRecord(payload.notification.data)) {
-    return readRecord(payload.notification.data);
-  }
-
-  return {};
+  const notificationRecord = isRecord(payload.notification) ? payload.notification : {};
+  return {
+    ...(isRecord(notificationRecord.metadata) ? notificationRecord.metadata : {}),
+    ...(isRecord(payload.metadata) ? payload.metadata : {}),
+    ...(isRecord(notificationRecord.data) ? notificationRecord.data : {}),
+    ...(isRecord(payload.data) ? payload.data : {}),
+  };
 }
 
 function readNotificationConversationId(payload: unknown): string | null {
@@ -172,9 +176,6 @@ function mergeNotificationRecords(
       notificationSortValue(incoming) > notificationSortValue(existing);
 
     if (!shouldReplace) {
-      if (process.env.NODE_ENV === "development") {
-        console.log("[Notifications] duplicate ignored", incoming.id);
-      }
       return;
     }
 
@@ -252,12 +253,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function RealtimeProvider({
   adapter,
   children,
+  enabled = true,
 }: {
   adapter: RealtimeRuntimeAdapter;
   children: ReactNode;
+  enabled?: boolean;
 }) {
   const pathname = usePathname();
-  const shouldConnect = adapter.shouldConnect(pathname);
+  const shouldConnect = enabled && adapter.shouldConnect(pathname);
+
+  useEffect(() => {
+    realtimeDebug("provider", "shouldConnect", { value: shouldConnect });
+  }, [shouldConnect]);
   const socketRef = useRef<ChatSocket | null>(null);
   const socketTokenRef = useRef<string | null>(null);
   const [socket, setSocket] = useState<ChatSocket | null>(null);
@@ -272,12 +279,31 @@ export function RealtimeProvider({
   const notificationReconcileQueuedRef = useRef(false);
   const conversationNotificationReadGuardsRef = useRef<Set<string>>(new Set());
   const activeConversationIdRef = useRef<string | null>(null);
+  const presenceOnlinePublishedRef = useRef(false);
   const setActiveConversationId = useCallback((conversationId: string | null) => {
     activeConversationIdRef.current = conversationId;
   }, []);
-  const syncOnlinePresence = useCallback(() => {
-    void adapter.updatePresenceStatus("online").catch(() => undefined);
-  }, [adapter]);
+  useEffect(() => {
+    if (adapter.notificationsOnly || !shouldConnect || !runtimeToken) {
+      presenceOnlinePublishedRef.current = false;
+      return;
+    }
+
+    if (presenceOnlinePublishedRef.current) {
+      return;
+    }
+
+    presenceOnlinePublishedRef.current = true;
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[Web presence] publish", {
+        status: "online",
+        reason: "session-established",
+      });
+    }
+    void adapter.updatePresenceStatus("online").catch(() => {
+      presenceOnlinePublishedRef.current = false;
+    });
+  }, [adapter, runtimeToken, shouldConnect]);
 
   useEffect(() => {
     if (!shouldConnect) {
@@ -306,7 +332,9 @@ export function RealtimeProvider({
       }
     };
 
-    void syncRuntimeToken();
+    const initialSyncTimeoutId = window.setTimeout(() => {
+      void syncRuntimeToken();
+    }, 0);
 
     const intervalId = window.setInterval(() => {
       void syncRuntimeToken();
@@ -314,6 +342,7 @@ export function RealtimeProvider({
 
     return () => {
       active = false;
+      window.clearTimeout(initialSyncTimeoutId);
       window.clearInterval(intervalId);
     };
   }, [adapter, shouldConnect]);
@@ -423,12 +452,6 @@ export function RealtimeProvider({
 
         notificationReconcileInFlightRef.current = true;
 
-        if (process.env.NODE_ENV === "development") {
-          console.log("[Notifications] reconnect reconciliation", {
-            reason,
-          });
-        }
-
         void (async () => {
           try {
             const [counts, history] = await Promise.all([
@@ -459,7 +482,7 @@ export function RealtimeProvider({
   const handleNotification = useCallback(
     (payload: unknown) => {
       if (process.env.NODE_ENV === "development") {
-        console.log("[Admin socket] receive notification", payload);
+        console.log("[Admin socket] receive notification");
       }
 
       const notificationId = readNotificationId(payload);
@@ -472,26 +495,38 @@ export function RealtimeProvider({
         isRecord(payload) && isRecord(payload.notification) && !Array.isArray(payload.notification)
           ? payload.notification
           : null;
-      const notificationType =
-        isRecord(payload) && typeof payload.type === "string"
-          ? payload.type
-          : isRecord(payload) && typeof payload.notification_type === "string"
-            ? payload.notification_type
-            : notificationRecord && typeof notificationRecord.notification_type === "string"
-              ? notificationRecord.notification_type
-              : "unknown";
       const title =
         isRecord(payload) && typeof payload.title === "string"
           ? payload.title
           : notificationRecord && typeof notificationRecord.title === "string"
             ? notificationRecord.title
             : "";
+      const category =
+        isRecord(payload) && typeof payload.category === "string"
+          ? payload.category
+          : notificationRecord && typeof notificationRecord.category === "string"
+            ? notificationRecord.category
+            : undefined;
+      const metadata =
+        isRecord(payload) && isRecord(payload.metadata)
+          ? payload.metadata
+          : notificationRecord && isRecord(notificationRecord.metadata)
+            ? notificationRecord.metadata
+            : undefined;
+      const eventName =
+        (typeof category === "string" && category.trim()) ||
+        (metadata && typeof metadata.category === "string" && metadata.category.trim()) ||
+        "training";
       const body =
-        isRecord(payload) && typeof payload.body === "string"
-          ? payload.body
-          : notificationRecord && typeof notificationRecord.body === "string"
-            ? notificationRecord.body
-            : "";
+        isRecord(payload) && typeof payload.message === "string"
+          ? payload.message
+          : isRecord(payload) && typeof payload.body === "string"
+            ? payload.body
+            : notificationRecord && typeof notificationRecord.message === "string"
+              ? notificationRecord.message
+              : notificationRecord && typeof notificationRecord.body === "string"
+                ? notificationRecord.body
+                : "";
       const createdAt =
         isRecord(payload) && typeof payload.created_at === "string"
           ? payload.created_at
@@ -505,7 +540,9 @@ export function RealtimeProvider({
       const isActiveConversation = activeConversationId !== null && conversationId === activeConversationId;
       const incoming: RealtimeNotification = {
         id: notificationId,
-        notification_type: notificationType,
+        notification_type: eventName,
+        category: category ?? (metadata && typeof metadata.category === "string" ? metadata.category : undefined),
+        metadata,
         title,
         body,
         data,
@@ -659,7 +696,7 @@ export function RealtimeProvider({
   }, [adapter.notificationClient, commitNotificationState]);
 
   useEffect(() => {
-    if (!shouldConnect) {
+    if (!enabled) {
       return;
     }
 
@@ -738,7 +775,32 @@ export function RealtimeProvider({
     return () => {
       active = false;
     };
-  }, [adapter.notificationClient, shouldConnect]);
+  }, [adapter.notificationClient, shouldConnect, enabled]);
+
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void Promise.all([refreshUnreadCounts(), refreshNotifications()]).catch(() => undefined);
+      }
+    }, 30_000);
+    const refresh = () => {
+      if (document.visibilityState === "visible") {
+        void Promise.all([refreshUnreadCounts(), refreshNotifications()]).catch(() => undefined);
+      }
+    };
+
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [refreshNotifications, refreshUnreadCounts, enabled]);
 
   useEffect(() => {
     if (!shouldConnect || !runtimeToken) {
@@ -767,20 +829,17 @@ export function RealtimeProvider({
         existingSocket.disconnect();
       }
 
-      nextSocket = adapter.createSocket(runtimeToken);
+      nextSocket = adapter.createSocket(runtimeToken ?? undefined);
       socketRef.current = nextSocket;
       socketTokenRef.current = runtimeToken;
       setSocket(nextSocket);
+      realtimeDebug("provider", "socket initialized");
       if (process.env.NODE_ENV === "development") {
         console.log("[Admin socket] instance created", {
           connected: nextSocket.connected,
           socketId: nextSocket.id,
         });
       }
-    } else if (nextSocket) {
-      nextSocket.auth = {
-        token: runtimeToken,
-      };
     }
 
     if (!nextSocket) {
@@ -794,8 +853,8 @@ export function RealtimeProvider({
         return;
       }
 
-      syncOnlinePresence();
       setStatus("connected");
+      realtimeDebug("socket", "connected", { socketId: nextSocket?.id, transport: nextSocket?.io.engine?.transport?.name });
       if (process.env.NODE_ENV === "development") {
         console.log("[Admin socket] connected", {
           socketId: nextSocket?.id,
@@ -811,6 +870,7 @@ export function RealtimeProvider({
       }
 
       setStatus("disconnected");
+      realtimeDebug("socket", "disconnected", { reason });
       if (process.env.NODE_ENV === "development") {
         console.log("[Admin socket] disconnected", {
           reason,
@@ -826,6 +886,10 @@ export function RealtimeProvider({
       }
 
       setStatus("reconnecting");
+      realtimeDebug("socket", "connect_error", {
+        name: error.name,
+        message: error.message,
+      });
       if (process.env.NODE_ENV === "development") {
         console.warn("[Admin socket] connect_error", {
           message: error.message,
@@ -847,6 +911,12 @@ export function RealtimeProvider({
           connected: nextSocket?.connected,
         });
       }
+
+      void adapter.getToken().then((token) => {
+        if (active && nextSocket) nextSocket.auth = { token };
+      }).catch(() => {
+        if (active) adapter.clearToken();
+      });
     };
 
     const handleReconnect = (attempt: number) => {
@@ -855,6 +925,7 @@ export function RealtimeProvider({
       }
 
       setStatus("connected");
+      realtimeDebug("socket", "reconnected", { attempt, socketId: nextSocket?.id });
       queueNotificationReconciliation("reconnect");
       if (process.env.NODE_ENV === "development") {
         console.log("[Admin socket] reconnect", {
@@ -886,12 +957,10 @@ export function RealtimeProvider({
     nextSocket.io.on("reconnect", handleReconnect);
     nextSocket.io.on("reconnect_error", handleReconnectError);
     nextSocket.on("notification", handleNotification);
-    nextSocket.on("conversation_updated", handleConversationUpdated);
-    nextSocket.connect();
-    if (nextSocket.connected) {
-      syncOnlinePresence();
+    if (!adapter.notificationsOnly) {
+      nextSocket.on("conversation_updated", handleConversationUpdated);
     }
-
+    nextSocket.connect();
     return () => {
       active = false;
 
@@ -916,7 +985,9 @@ export function RealtimeProvider({
       nextSocket.io.off("reconnect", handleReconnect);
       nextSocket.io.off("reconnect_error", handleReconnectError);
       nextSocket.off("notification", handleNotification);
-      nextSocket.off("conversation_updated", handleConversationUpdated);
+      if (!adapter.notificationsOnly) {
+        nextSocket.off("conversation_updated", handleConversationUpdated);
+      }
       socketRef.current = null;
       socketTokenRef.current = null;
     };
@@ -927,7 +998,6 @@ export function RealtimeProvider({
     queueNotificationReconciliation,
     runtimeToken,
     shouldConnect,
-    syncOnlinePresence,
   ]);
 
   const value = useMemo<RealtimeContextValue>(

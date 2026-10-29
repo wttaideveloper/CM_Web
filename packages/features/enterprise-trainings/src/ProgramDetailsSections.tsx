@@ -36,7 +36,7 @@ import {
   type CreateProgramCheckInPayload,
   type CreateProgramPhasePayload,
 } from "./programs.service";
-import { formatProgramDate, humanizeLabel } from "./detail-formatters";
+import { formatProgramDate, formatProgramDateTime, humanizeLabel } from "./detail-formatters";
 import { ParticipantDashboardCard, ProviderDashboardCard } from "./dashboard-cards";
 import { parseTrainingParticipantDashboard, parseTrainingProviderDashboard } from "./trainings.service";
 
@@ -158,9 +158,11 @@ export function ProgramPhasesTab({ programId }: { programId: string }) {
                       const actRecord = act as Record<string, unknown>;
                       const actId = typeof actRecord.id === "string" ? actRecord.id : String(aIdx);
                       const actTitle = typeof actRecord.title === "string" ? actRecord.title : "Untitled activity";
+                      const activityTimestamp = [actRecord.created_at, actRecord.createdAt, actRecord.updated_at, actRecord.updatedAt, actRecord.timestamp, actRecord.date_time, actRecord.scheduled_at, actRecord.starts_at, actRecord.start_date]
+                        .find((timestamp): timestamp is string => typeof timestamp === "string" && timestamp.trim().length > 0);
                       return (
                         <li key={actId} className="flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-sm">
-                          <span className="text-[#06201c]">{actTitle}</span>
+                          <div className="min-w-0"><p className="break-words text-[#06201c]">{actTitle}</p><p className="mt-0.5 text-xs text-[#7f9d94]">{activityTimestamp ? formatProgramDateTime(activityTimestamp) : "Date and time unavailable"}</p></div>
                           <button type="button" onClick={() => void deleteActivityMutation.mutate({ phaseId: id, activityId: actId })} className="text-xs font-semibold text-[#b42318]">Delete</button>
                         </li>
                       );

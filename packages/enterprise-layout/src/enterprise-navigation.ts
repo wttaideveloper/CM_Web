@@ -31,7 +31,7 @@ export const enterpriseNavigationGroups: readonly EnterpriseNavigationGroup[] = 
     items: [
       { label: "Dashboard", href: "/admin/dashboard", icon: "dashboard", owner: "enterprise-admin" },
       {
-        label: "Enterprise Setup",
+        label: "My Enterprise",
         href: "/admin/enterprise",
         icon: "building",
         owner: "enterprise-admin",
@@ -47,20 +47,12 @@ export const enterpriseNavigationGroups: readonly EnterpriseNavigationGroup[] = 
       { label: "My Services", href: "/admin/services", icon: "service", owner: "enterprise-admin" },
       { label: "My Events", href: "/admin/events", icon: "calendar", owner: "enterprise-admin" },
       { label: "My Trainings", href: "/admin/trainings", icon: "training", owner: "enterprise-admin" },
-      { label: "My Programs", href: "/admin/programs", icon: "program", owner: "enterprise-admin" },
     ],
   },
   {
     title: "ACCOUNT",
     items: [
       { label: "Settings", href: "/admin/settings", icon: "settings", owner: "enterprise-admin" },
-      {
-        label: "My Enterprise",
-        href: "/admin/enterprise",
-        icon: "building",
-        owner: "enterprise-admin",
-        activeMatch: "never",
-      },
       {
         label: "Edit Enterprise",
         href: "/admin/enterprise/edit",

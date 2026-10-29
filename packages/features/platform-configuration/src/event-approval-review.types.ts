@@ -16,18 +16,35 @@ export type EventSession = {
   id?: string;
   session_date?: string | null;
   title: string;
+  description?: string | null;
   speaker?: string | null;
+  speaker_bio?: string | null;
   start_time?: string | null;
   end_time?: string | null;
   location?: string | null;
   meeting_link?: string | null;
 };
+export type EventServiceOption = { id?: string | null; name: string; description?: string | null; date?: string | null; price?: string | null; currency?: string | null; capacity?: string | null; purchase_start_at?: string | null; purchase_end_at?: string | null; service_start_at?: string | null; service_end_at?: string | null; active?: boolean };
 
 export type EventCustomField = {
+  id?: string;
+  stable_key?: string | null;
   label: string;
   type: string;
   options: string[];
+  position?: number;
 };
+
+export type EventCustomValue = {
+  field_id: string;
+  value: string | string[] | boolean | number | null;
+};
+
+export type EventLifecycleState = "upcoming" | "ongoing" | "finished";
+export type EventDocumentValue = string | { url: string; name?: string | null; id?: string | null; size?: number | null; type?: string | null; attached?: boolean | null; expires_at?: string | null };
+
+export type EventModuleState = Partial<Record<"registration" | "tickets" | "sessions" | "check_in" | "online_meeting" | "custom_questions" | "meals" | "accommodation", boolean>>;
+export type EventTypeReviewValue = string | { key?: string | null; name?: string | null };
 
 export type EventApprovalReview = {
   id: string;
@@ -49,7 +66,7 @@ export type EventApprovalReview = {
   primary_image?: string | null;
   gallery_images?: string[] | null;
   videos?: string[] | null;
-  documents?: string[] | null;
+  documents?: EventDocumentValue[] | null;
   delivery_mode?: string | null;
   venue?: EventVenue | null;
   meeting_link?: string | null;
@@ -62,13 +79,49 @@ export type EventApprovalReview = {
   max_participants?: string | null;
   registration_open_at?: string | null;
   registration_close_at?: string | null;
+  form_configuration_id?: string | null;
+  form_configuration_version_id?: string | null;
   custom_fields?: EventCustomField[] | null;
+  custom_values?: EventCustomValue[] | null;
   sessions?: EventSession[] | null;
+  lifecycle_state?: EventLifecycleState | null;
   status: string;
+  event_type?: EventTypeReviewValue | null;
+  modules?: EventModuleState | null;
+  meals?: { enabled?: boolean | null; options?: readonly EventServiceOption[] | null } | null;
+  accommodation?: { enabled?: boolean | null; options?: readonly EventServiceOption[] | null } | null;
   is_deleted?: boolean | null;
   created_at?: string | null;
   updated_at?: string | null;
   last_admin_notes?: string | null;
+};
+
+/** Historical field metadata used to label submitted Event custom values. */
+export type HistoricalEventFormField = {
+  id: string;
+  stable_key: string | null;
+  label: string;
+  value_type: string;
+  position: number;
+  section_position: number;
+};
+
+/** Exact immutable Event form version returned by the Platform form-config BFF. */
+export type HistoricalEventFormConfigurationVersion = {
+  id: string;
+  configuration_id: string;
+  sections: Array<{
+    position: number;
+    is_enabled: boolean;
+    fields: Array<{
+      id: string;
+      stable_key: string | null;
+      label: string;
+      value_type: string;
+      position: number;
+      is_enabled: boolean;
+    }>;
+  }>;
 };
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -81,6 +134,31 @@ function isOptionalString(value: unknown): value is string | null | undefined {
 
 function isOptionalStringArray(value: unknown): value is string[] | null | undefined {
   return value === undefined || value === null || (Array.isArray(value) && value.every((item) => typeof item === "string"));
+}
+
+function normalizeMediaUrl(value: unknown): unknown {
+  if (value === null || value === undefined || typeof value === "string") return value;
+  return isRecord(value) && typeof value.url === "string" ? value.url : value;
+}
+
+/** Preserves complete backend media URLs when approval responses use media objects. */
+export function normalizeEventApprovalMedia(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  const normalizeArray = (field: string) => Array.isArray(value[field]) ? value[field].map(normalizeMediaUrl) : value[field];
+  return {
+    ...value,
+    primary_image: normalizeMediaUrl(value.primary_image),
+    gallery_images: normalizeArray("gallery_images"),
+    videos: normalizeArray("videos"),
+  };
+}
+
+function isDocumentValue(value: unknown): value is EventDocumentValue {
+  return typeof value === "string" || (isRecord(value) && typeof value.url === "string" && (value.name === undefined || value.name === null || typeof value.name === "string"));
+}
+
+function isOptionalDocumentArray(value: unknown): value is EventDocumentValue[] | null | undefined {
+  return value === undefined || value === null || (Array.isArray(value) && value.every(isDocumentValue));
 }
 
 function isVenue(value: unknown): value is EventVenue | null | undefined {
@@ -96,14 +174,43 @@ function isSession(value: unknown): value is EventSession {
 }
 
 function isCustomField(value: unknown): value is EventCustomField {
-  return isRecord(value) && typeof value.label === "string" && typeof value.type === "string" && Array.isArray(value.options) && value.options.every((option) => typeof option === "string");
+  return isRecord(value) && (value.id === undefined || typeof value.id === "string") && (value.stable_key === undefined || value.stable_key === null || typeof value.stable_key === "string") && typeof value.label === "string" && typeof value.type === "string" && Array.isArray(value.options) && value.options.every((option) => typeof option === "string") && (value.position === undefined || (typeof value.position === "number" && Number.isFinite(value.position)));
+}
+
+function isCustomValue(value: unknown): value is EventCustomValue {
+  return isRecord(value) && typeof value.field_id === "string" && (value.value === null || typeof value.value === "string" || typeof value.value === "number" || typeof value.value === "boolean" || (Array.isArray(value.value) && value.value.every((item) => typeof item === "string")));
+}
+
+function isHistoricalVersionField(value: unknown): boolean {
+  return isRecord(value) && typeof value.id === "string" && (value.stable_key === null || typeof value.stable_key === "string") && typeof value.label === "string" && typeof value.value_type === "string" && Number.isInteger(value.position) && typeof value.is_enabled === "boolean";
+}
+
+function isHistoricalVersionSection(value: unknown): boolean {
+  return isRecord(value) && Number.isInteger(value.position) && typeof value.is_enabled === "boolean" && Array.isArray(value.fields) && value.fields.every(isHistoricalVersionField);
+}
+
+/** Validates the historical version fields required for label resolution. */
+export function isHistoricalEventFormConfigurationVersion(value: unknown): value is HistoricalEventFormConfigurationVersion {
+  return isRecord(value) && typeof value.id === "string" && typeof value.configuration_id === "string" && Array.isArray(value.sections) && value.sections.every(isHistoricalVersionSection);
 }
 
 function isOptionalArray<T>(value: unknown, guard: (item: unknown) => item is T): value is T[] | null | undefined {
   return value === undefined || value === null || (Array.isArray(value) && value.every(guard));
 }
 
+function isEventTypeReviewValue(value: unknown): value is EventTypeReviewValue | null | undefined {
+  return value === undefined || value === null || typeof value === "string" || (isRecord(value) && (value.key === undefined || value.key === null || typeof value.key === "string") && (value.name === undefined || value.name === null || typeof value.name === "string"));
+}
+
+function isModuleState(value: unknown): value is EventModuleState | null | undefined {
+  return value === undefined || value === null || (isRecord(value) && Object.values(value).every((item) => typeof item === "boolean"));
+}
+
+function isServiceSummary(value: unknown): boolean {
+  return value === undefined || value === null || (isRecord(value) && (value.enabled === undefined || value.enabled === null || typeof value.enabled === "boolean") && (value.options === undefined || value.options === null || (Array.isArray(value.options) && value.options.every(isRecord))));
+}
+
 /** Validates the runtime Event detail fields used by the read-only approval dossier. */
 export function isEventApprovalReview(value: unknown): value is EventApprovalReview {
-  return isRecord(value) && typeof value.id === "string" && (value.enterprise_id === null || typeof value.enterprise_id === "string") && typeof value.title === "string" && typeof value.category === "string" && typeof value.status === "string" && isOptionalString(value.tenant_id) && isOptionalString(value.location_id) && isOptionalString(value.enterprise_name) && isOptionalString(value.description) && isOptionalString(value.subcategory) && isOptionalStringArray(value.tags) && isOptionalString(value.organiser_name) && isOptionalString(value.organiser_contact) && isOptionalString(value.start_date) && isOptionalString(value.end_date) && isOptionalString(value.time_zone) && isOptionalString(value.registration_cutoff) && isOptionalString(value.primary_image) && isOptionalStringArray(value.gallery_images) && isOptionalStringArray(value.videos) && isOptionalStringArray(value.documents) && isOptionalString(value.delivery_mode) && isVenue(value.venue) && isOptionalString(value.meeting_link) && isOptionalString(value.meeting_provider) && isOptionalString(value.price) && isOptionalString(value.currency) && isOptionalArray(value.ticket_types, isTicketType) && isOptionalString(value.capacity) && isOptionalString(value.min_participants) && isOptionalString(value.max_participants) && isOptionalString(value.registration_open_at) && isOptionalString(value.registration_close_at) && isOptionalArray(value.custom_fields, isCustomField) && isOptionalArray(value.sessions, isSession) && (value.is_deleted === undefined || value.is_deleted === null || typeof value.is_deleted === "boolean") && isOptionalString(value.created_at) && isOptionalString(value.updated_at) && isOptionalString(value.last_admin_notes);
+    return isRecord(value) && typeof value.id === "string" && (value.enterprise_id === null || typeof value.enterprise_id === "string") && typeof value.title === "string" && typeof value.category === "string" && typeof value.status === "string" && isEventTypeReviewValue(value.event_type) && isModuleState(value.modules) && isServiceSummary(value.meals) && isServiceSummary(value.accommodation) && isOptionalString(value.tenant_id) && isOptionalString(value.location_id) && isOptionalString(value.enterprise_name) && isOptionalString(value.description) && isOptionalString(value.subcategory) && isOptionalStringArray(value.tags) && isOptionalString(value.organiser_name) && isOptionalString(value.organiser_contact) && isOptionalString(value.start_date) && isOptionalString(value.end_date) && isOptionalString(value.time_zone) && isOptionalString(value.registration_cutoff) && isOptionalString(value.primary_image) && isOptionalStringArray(value.gallery_images) && isOptionalStringArray(value.videos) && isOptionalDocumentArray(value.documents) && isOptionalString(value.delivery_mode) && isVenue(value.venue) && isOptionalString(value.meeting_link) && isOptionalString(value.meeting_provider) && isOptionalString(value.price) && isOptionalString(value.currency) && isOptionalArray(value.ticket_types, isTicketType) && isOptionalString(value.capacity) && isOptionalString(value.min_participants) && isOptionalString(value.max_participants) && isOptionalString(value.registration_open_at) && isOptionalString(value.registration_close_at) && isOptionalArray(value.custom_fields, isCustomField) && isOptionalArray(value.custom_values, isCustomValue) && isOptionalArray(value.sessions, isSession) && (value.is_deleted === undefined || value.is_deleted === null || typeof value.is_deleted === "boolean") && isOptionalString(value.created_at) && isOptionalString(value.updated_at) && isOptionalString(value.last_admin_notes);
 }

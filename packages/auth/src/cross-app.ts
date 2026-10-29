@@ -1,11 +1,31 @@
-const SHELL_ORIGIN_ENV = "NEXT_PUBLIC_SHELL_ORIGIN";
-const ENTERPRISE_ADMIN_ORIGIN_ENV = "NEXT_PUBLIC_ENTERPRISE_ADMIN_ORIGIN";
-const PLATFORM_ADMIN_ORIGIN_ENV = "NEXT_PUBLIC_PLATFORM_ADMIN_ORIGIN";
-const platformAdminSafeReturnPaths = new Set([
+const platformAdminSafeReturnPrefixes = [
   "/",
+  "/profile",
+  "/account-settings",
   "/form-builder-new",
   "/workflow-builder-new",
-]);
+  "/dashboard",
+  "/approval-queue",
+  "/tenant-applications",
+  "/onboarding-forms",
+  "/form-configurations",
+  "/training-forms",
+  "/training-form-configurations",
+  "/enterprise-types",
+  "/categories",
+  "/sub-admins",
+  "/attributes",
+  "/products",
+  "/services",
+  "/enterprises",
+  "/users",
+  "/super-admins",
+  "/events",
+  "/trainings",
+  "/integrations",
+] as const;
+
+const shellSafeReturnPrefixes = ["/admin", "/trainings", "/training-forms"] as const;
 
 function normalizeOrigin(value: string | undefined) {
   if (!value?.trim()) {
@@ -20,8 +40,8 @@ function normalizeOrigin(value: string | undefined) {
   }
 }
 
-function getConfiguredOrigin(environmentVariable: string, developmentFallback: string) {
-  const configured = normalizeOrigin(process.env[environmentVariable]);
+function getConfiguredOrigin(value: string | undefined, developmentFallback: string) {
+  const configured = normalizeOrigin(value);
   if (configured) {
     return configured;
   }
@@ -30,15 +50,24 @@ function getConfiguredOrigin(environmentVariable: string, developmentFallback: s
 }
 
 export function getShellAppOrigin() {
-  return getConfiguredOrigin(SHELL_ORIGIN_ENV, "http://localhost:3000");
+  return getConfiguredOrigin(
+    process.env.NEXT_PUBLIC_SHELL_ORIGIN,
+    "http://localhost:3000",
+  );
 }
 
 export function getEnterpriseAdminAppOrigin() {
-  return getConfiguredOrigin(ENTERPRISE_ADMIN_ORIGIN_ENV, "http://localhost:3001");
+  return getConfiguredOrigin(
+    process.env.NEXT_PUBLIC_ENTERPRISE_ADMIN_ORIGIN,
+    "http://localhost:3001",
+  );
 }
 
 export function getPlatformAdminAppOrigin() {
-  return getConfiguredOrigin(PLATFORM_ADMIN_ORIGIN_ENV, "http://localhost:3002");
+  return getConfiguredOrigin(
+    process.env.NEXT_PUBLIC_PLATFORM_ADMIN_ORIGIN,
+    "http://localhost:3002",
+  );
 }
 
 export function getSafeEnterpriseAdminReturnUrl(value: string | null | undefined) {
@@ -64,6 +93,33 @@ export function getSafeEnterpriseAdminReturnUrl(value: string | null | undefined
   }
 }
 
+/** Returns a same-origin Shell route allowed after authentication, without query data. */
+export function getSafeShellReturnPath(value: string | null | undefined) {
+  if (!value?.trim()) {
+    return null;
+  }
+
+  try {
+    const shellOrigin = getShellAppOrigin();
+    const url = new URL(value, shellOrigin ?? "https://invalid.local");
+    if (
+      !shellOrigin ||
+      url.origin !== shellOrigin ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      !shellSafeReturnPrefixes.some((prefix) => url.pathname === prefix || url.pathname.startsWith(`${prefix}/`))
+    ) {
+      return null;
+    }
+
+    return url.pathname;
+  } catch {
+    return null;
+  }
+}
+
 export function getSafePlatformAdminReturnUrl(value: string | null | undefined) {
   const platformAdminOrigin = getPlatformAdminAppOrigin();
   if (!platformAdminOrigin || !value?.trim()) {
@@ -76,7 +132,9 @@ export function getSafePlatformAdminReturnUrl(value: string | null | undefined) 
       url.origin !== platformAdminOrigin ||
       url.username ||
       url.password ||
-      !platformAdminSafeReturnPaths.has(url.pathname)
+      url.search ||
+      url.hash ||
+      !platformAdminSafeReturnPrefixes.some((prefix) => url.pathname === prefix || url.pathname.startsWith(`${prefix}/`))
     ) {
       return null;
     }
@@ -113,10 +171,16 @@ export function buildShellLoginUrlForPlatform(returnUrl: string) {
 
 export function buildAuthCallbackPath(returnUrl: string | null | undefined) {
   const safeReturnUrl =
-    getSafeEnterpriseAdminReturnUrl(returnUrl) ?? getSafePlatformAdminReturnUrl(returnUrl);
+    getSafeEnterpriseAdminReturnUrl(returnUrl) ??
+    getSafePlatformAdminReturnUrl(returnUrl) ??
+    getSafeShellReturnPath(returnUrl);
   if (!safeReturnUrl) {
     return "/auth/validate";
   }
 
-  return `/auth/validate?return_to=${encodeURIComponent(safeReturnUrl)}`;
+  const serializedReturnUrl = safeReturnUrl.startsWith("/")
+    ? new URL(safeReturnUrl, getShellAppOrigin() ?? "https://invalid.local").toString()
+    : safeReturnUrl;
+
+  return `/auth/validate?return_to=${encodeURIComponent(serializedReturnUrl)}`;
 }

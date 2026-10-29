@@ -6,12 +6,13 @@ import { useState } from "react";
 import { ConfigurationBuilder } from "../components/ConfigurationBuilder";
 import { ConfigurationHistoryPanels } from "../components/ConfigurationHistoryPanels";
 import { formConfigurationCopy as copy } from "../constants/form-configuration-copy";
-import { useActivateEventFormConfiguration, useCreateEventFormConfiguration, useDeactivateEventFormConfiguration, useDeleteEventFormConfiguration, useEventFormConfiguration, useEventFormConfigurationAssignments, useEventFormConfigurationTenantOptions, useEventFormFieldRegistry, usePublishEventFormConfiguration, useRetireEventFormConfiguration, useUpdateEventFormConfiguration, useUpdateEventFormConfigurationAssignments } from "../form-configurations.queries";
+import { useActivateEventFormConfiguration, useCreateEventFormConfiguration, useDeactivateEventFormConfiguration, useDeleteEventFormConfiguration, useEventFormConfiguration, useEventFormConfigurationAssignments, useEventFormConfigurationTenantOptions, useEventFormConfigurations, useEventFormFieldRegistry, usePublishEventFormConfiguration, useRetireEventFormConfiguration, useUpdateEventFormConfiguration, useUpdateEventFormConfigurationAssignments } from "../form-configurations.queries";
 import { toBuilderFormConfiguration, toEventFormConfigurationCreateCandidate, toEventFormConfigurationPatchCandidate } from "../model/form-configuration.mappers";
 import { createMockConfiguration } from "../model/form-configuration.mock";
 import type { FormConfiguration } from "../model/form-configuration.types";
 import { getConfigurationActions } from "../model/configuration-actions";
-import { FormConfigurationsApiError } from "../services/form-configurations.service";
+import { hasDuplicateConfigurationName } from "../model/configuration-name";
+import { findActiveEventFormConfigurationConflicts, FormConfigurationsApiError, getEventFormConfiguration, getEventFormConfigurationAssignments } from "../services/form-configurations.service";
 
 /** Hosts persisted configuration editing while keeping the route adapter thin. */
 export function FormConfigurationEditorScreen({ id, mode }: { id?: string; mode: "create" | "view" | "edit" }) {
@@ -21,6 +22,8 @@ export function FormConfigurationEditorScreen({ id, mode }: { id?: string; mode:
   const isCreate = mode === "create";
   const registry = useEventFormFieldRegistry();
   const configuration = useEventFormConfiguration(isCreate ? undefined : id);
+  const isReadOnly = mode === "view" || configuration.data?.status === "retired";
+  const configurations = useEventFormConfigurations();
   const assignments = useEventFormConfigurationAssignments(isCreate ? undefined : id);
   const tenantOptions = useEventFormConfigurationTenantOptions();
   const create = useCreateEventFormConfiguration();
@@ -36,40 +39,87 @@ export function FormConfigurationEditorScreen({ id, mode }: { id?: string; mode:
   const error = registry.error ?? configuration.error;
   const errorCopy = error instanceof FormConfigurationsApiError && (error.status === 401 || error.status === 403) ? copy.forbidden : copy.loadError;
 
+  const updateConfigurationDraft = async (builder: FormConfiguration): Promise<FormConfiguration> => {
+    if (!id) throw new Error("Configuration ID is unavailable.");
+    await ensureUniqueName(builder.name, id);
+    let updated = await update.mutateAsync({ configurationId: id, payload: toEventFormConfigurationPatchCandidate(builder) });
+    if (builder.scope === "global") {
+      updated = await getEventFormConfiguration(id);
+      if (updated.scope !== "global") {
+        throw new Error("The Event configuration API did not persist Global scope. Tenant assignments are not sent for Global configurations; the API must save scope: global through the configuration update.");
+      }
+    } else {
+      updated = await getEventFormConfiguration(id);
+      if (updated.scope !== "selective") {
+        throw new Error("The Event configuration API did not persist Selected tenants scope. Tenant assignments were not sent; save the configuration scope before retrying assignments.");
+      }
+      const tenantIds = await persistAssignments(builder.tenantIds);
+      updated = await getEventFormConfiguration(id);
+      if (updated.scope !== "selective") throw new Error("The selected tenant scope was not saved. Retry Save Draft.");
+      if (!sameAssignmentIds(tenantIds, builder.tenantIds)) throw new Error("The server did not retain all selected tenant assignments. Retry Save Draft.");
+    }
+    return {
+      ...toBuilderFormConfiguration(updated),
+      scope: builder.scope,
+      tenantIds: builder.scope === "global" ? [] : [...builder.tenantIds],
+      enterpriseIds: builder.scope === "global" ? [] : [...(builder.enterpriseIds ?? [])],
+    };
+  };
+
   const save = async (builder: FormConfiguration): Promise<FormConfiguration> => {
     if (assignmentRecovery) throw new Error("Tenant assignments could not be saved. Open the saved configuration to recover.");
-    if (!isCreate) {
-      if (!id) throw new Error("Configuration ID is unavailable.");
-      return toBuilderFormConfiguration(await update.mutateAsync({ configurationId: id, payload: toEventFormConfigurationPatchCandidate(builder) }));
+    if (!isCreate) return updateConfigurationDraft(builder);
+    await ensureUniqueName(builder.name);
+    const conflicts = await findActiveEventFormConfigurationConflicts(builder.scope === "selective" ? builder.tenantIds : []);
+    if (conflicts.length > 0) {
+      const conflictText = conflicts.map((conflict) => `${conflict.tenantId} is assigned to active configuration "${conflict.configurationName}"`).join("; ");
+      throw new Error(`This Event form cannot be assigned to the selected tenant${conflicts.length === 1 ? "" : "s"} yet: ${conflictText}. Deactivate or reassign the active configuration first.`);
     }
     const saved = await create.mutateAsync(toEventFormConfigurationCreateCandidate(builder));
     if (builder.scope === "selective" && builder.tenantIds.length > 0) {
       try {
         await saveAssignments.mutateAsync({ configurationId: saved.id, payload: { tenant_ids: builder.tenantIds } });
+        const persistedAssignments = await getEventFormConfigurationAssignments(saved.id);
+        const persistedTenantIds = persistedAssignments.assignments.map((assignment) => assignment.tenant_id);
+        if (!sameAssignmentIds(persistedTenantIds, builder.tenantIds)) {
+          throw new Error("The server did not retain all selected tenant assignments.");
+        }
       } catch (reason) {
         const message = reason instanceof Error ? reason.message : "Unable to save tenant assignments.";
         setAssignmentRecovery({ id: saved.id, message });
         throw new Error(`Configuration was created, but tenant assignments could not be saved. ${message}`);
       }
     }
-    router.push("/form-configurations");
+    router.replace(`/form-configurations/${saved.id}/edit`);
     return toBuilderFormConfiguration(saved, saved.draft_version);
+  };
+  const ensureUniqueName = async (name: string, currentConfigurationId?: string): Promise<void> => {
+    const latestConfigurations = await configurations.refetch();
+    if (latestConfigurations.isError || !latestConfigurations.data) throw new Error(copy.unableToCheckConfigurationName);
+    if (hasDuplicateConfigurationName(name, latestConfigurations.data, currentConfigurationId)) throw new Error(copy.duplicateConfigurationName);
   };
   const publishConfiguration = async (builder: FormConfiguration): Promise<FormConfiguration> => {
     if (!id) throw new Error("Save this configuration before publishing it.");
-    await update.mutateAsync({ configurationId: id, payload: toEventFormConfigurationPatchCandidate(builder) });
     const published = await publish.mutateAsync(id);
-    router.push("/form-configurations");
     return { ...builder, status: published.status, active: false, version: published.version };
   };
   const persistAssignments = async (tenantIds: string[]): Promise<string[]> => {
     if (!id) throw new Error("Save this configuration before assigning tenants.");
-    const saved = await saveAssignments.mutateAsync({ configurationId: id, payload: { tenant_ids: tenantIds } });
-    return saved.assignments.map((assignment) => assignment.tenant_id);
+    const persistedConfiguration = await getEventFormConfiguration(id);
+    if (persistedConfiguration.scope !== "selective") throw new Error("Global configurations cannot be changed to Selective after creation.");
+    await saveAssignments.mutateAsync({ configurationId: id, payload: { tenant_ids: tenantIds } });
+    const saved = await getEventFormConfigurationAssignments(id);
+    const savedTenantIds = saved.assignments.map((assignment) => assignment.tenant_id);
+    if (!sameAssignmentIds(savedTenantIds, tenantIds)) {
+      throw new Error("The Event configuration assignment update completed, but the selected tenants were not returned by the server. Check the tenant selection and retry.");
+    }
+    await Promise.all([configuration.refetch(), assignments.refetch()]);
+    return savedTenantIds;
   };
   const runLifecycle = async (action: "activate" | "deactivate" | "retire" | "delete") => {
     if (!id) return;
     if (action === "delete" && !window.confirm("Delete configuration?\n\nThis permanently deletes this draft configuration. This action cannot be undone.")) return;
+    if (action === "retire" && !window.confirm(copy.confirmRetire)) return;
     setLifecycleError("");
     try {
       if (action === "activate") await activate.mutateAsync(id);
@@ -83,7 +133,11 @@ export function FormConfigurationEditorScreen({ id, mode }: { id?: string; mode:
   if (error) return <Page><p role="alert">{errorCopy}</p><button type="button" onClick={() => { void registry.refetch(); void configuration.refetch(); }}>{copy.retry}</button></Page>;
   if (!builderConfiguration || registry.data?.length === 0) return <Page><p>{copy.emptyFieldRegistry}</p></Page>;
   const lifecycleActions = apiConfiguration ? new Set(getConfigurationActions({ id: apiConfiguration.id, name: apiConfiguration.name, description: apiConfiguration.description, scope: apiConfiguration.scope, status: apiConfiguration.status, active: apiConfiguration.is_active, currentVersion: apiConfiguration.current_version, updatedAt: apiConfiguration.updated_at, publishedAt: apiConfiguration.published_at })) : new Set();
-  return <Page>{assignmentRecovery ? <p role="alert">Configuration was created, but assignments were not saved: {assignmentRecovery.message} <Link href={`/form-configurations/${assignmentRecovery.id}/edit`}>Open the saved configuration to retry.</Link></p> : null}<div className="mb-4 flex flex-wrap gap-2">{lifecycleActions.has("activate") ? <button className="rounded-full border border-[#cfe0d8] px-4 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#eef6f2] focus:outline-none focus:ring-2 focus:ring-[#1f6a58]" type="button" disabled={activate.isPending} onClick={() => void runLifecycle("activate")}>{copy.activate}</button> : null}{lifecycleActions.has("deactivate") ? <button className="rounded-full border border-[#cfe0d8] px-4 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#eef6f2] focus:outline-none focus:ring-2 focus:ring-[#1f6a58]" type="button" disabled={deactivate.isPending} onClick={() => void runLifecycle("deactivate")}>{copy.deactivate}</button> : null}{lifecycleActions.has("retire") ? <button className="rounded-full border border-[#cfe0d8] px-4 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#eef6f2] focus:outline-none focus:ring-2 focus:ring-[#1f6a58]" type="button" disabled={retire.isPending} onClick={() => void runLifecycle("retire")}>{copy.retire}</button> : null}{lifecycleActions.has("delete") ? <button className="rounded-full border border-[#efc7c2] px-4 py-2 text-sm font-semibold text-[#b42318] transition hover:bg-[#fff1ef] focus:outline-none focus:ring-2 focus:ring-[#b42318]" type="button" disabled={remove.isPending} onClick={() => void runLifecycle("delete")}>{copy.delete}</button> : null}</div>{lifecycleError ? <p role="alert">{lifecycleError}</p> : null}<ConfigurationBuilder key={builderConfiguration.id} initialConfiguration={builderConfiguration} coreFieldRegistry={registry.data ?? []} readOnly={mode === "view"} tenantOptions={tenantOptions.data ?? []} assignmentTenantIds={assignments.data?.assignments.map((assignment) => assignment.tenant_id)} assignmentsLoaded={assignments.isSuccess} isPersisted={!isCreate && Boolean(id)} isLoadingTenants={tenantOptions.isLoading} tenantError={tenantOptions.isError} isLoadingAssignments={assignments.isLoading} assignmentError={assignments.isError} isSaving={create.isPending || update.isPending} isPublishing={publish.isPending} isSavingAssignments={saveAssignments.isPending} onSave={mode === "view" ? undefined : save} onPublish={mode === "edit" ? publishConfiguration : undefined} onSaveAssignments={mode === "view" || !id ? undefined : persistAssignments} />{apiConfiguration ? <ConfigurationHistoryPanels configuration={apiConfiguration} /> : null}</Page>;
+  return <Page>{assignmentRecovery ? <p role="alert">Configuration was created, but assignments were not saved: {assignmentRecovery.message} <Link href={`/form-configurations/${assignmentRecovery.id}/edit`}>Open the saved configuration to retry.</Link></p> : null}{!isReadOnly ? <div className="mb-4 flex flex-wrap gap-2">{lifecycleActions.has("activate") ? <button className="rounded-full border border-[#cfe0d8] px-4 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#eef6f2] focus:outline-none focus:ring-2 focus:ring-[#1f6a58]" type="button" disabled={activate.isPending} onClick={() => void runLifecycle("activate")}>{copy.activate}</button> : null}{lifecycleActions.has("deactivate") ? <button className="rounded-full border border-[#cfe0d8] px-4 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#eef6f2] focus:outline-none focus:ring-2 focus:ring-[#1f6a58]" type="button" disabled={deactivate.isPending} onClick={() => void runLifecycle("deactivate")}>{copy.deactivate}</button> : null}{lifecycleActions.has("retire") ? <button className="rounded-full border border-[#cfe0d8] px-4 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#eef6f2] focus:outline-none focus:ring-2 focus:ring-[#1f6a58]" type="button" disabled={retire.isPending} onClick={() => void runLifecycle("retire")}>{copy.retire}</button> : null}{lifecycleActions.has("delete") ? <button className="rounded-full border border-[#efc7c2] px-4 py-2 text-sm font-semibold text-[#b42318] transition hover:bg-[#fff1ef] focus:outline-none focus:ring-2 focus:ring-[#b42318]" type="button" disabled={remove.isPending} onClick={() => void runLifecycle("delete")}>{copy.delete}</button> : null}</div> : null}{!isReadOnly && lifecycleError ? <p role="alert">{lifecycleError}</p> : null}<ConfigurationBuilder key={builderConfiguration.id} initialConfiguration={builderConfiguration} coreFieldRegistry={registry.data ?? []} readOnly={isReadOnly} tenantOptions={tenantOptions.data ?? []} assignmentTenantIds={assignments.data?.assignments.map((assignment) => assignment.tenant_id)} assignmentsLoaded={assignments.isSuccess} isPersisted={!isCreate && Boolean(id)} isLoadingTenants={tenantOptions.isLoading} tenantError={tenantOptions.isError} isLoadingAssignments={assignments.isLoading} assignmentError={assignments.isError} isSaving={create.isPending || update.isPending} isPublishing={publish.isPending} isSavingAssignments={saveAssignments.isPending} onSave={isReadOnly ? undefined : save} onPublish={mode === "edit" && !isReadOnly ? publishConfiguration : undefined} onSaveAssignments={isReadOnly || !id ? undefined : persistAssignments} />{apiConfiguration ? <ConfigurationHistoryPanels configuration={apiConfiguration} /> : null}</Page>;
 }
 
-function Page({ children }: { children: React.ReactNode }) { return <div className="mx-auto w-full max-w-[1180px]"><div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><h1 className="text-3xl font-bold text-[#06201c]">{copy.title}</h1><Link href="/form-configurations" className="inline-flex w-fit items-center rounded-full border border-[#cfe0d8] px-4 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#eef6f2] focus:outline-none focus:ring-2 focus:ring-[#1f6a58] focus:ring-offset-2">← Back to Form Configurations</Link></div>{children}</div>; }
+function Page({ children }: { children: React.ReactNode }) { return <div className="mx-auto w-full max-w-[1180px]"><div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><h1 className="text-3xl font-bold text-[#06201c]">{copy.title}</h1><Link href="/form-configurations" className="inline-flex w-fit items-center rounded-full border border-[#cfe0d8] px-4 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#eef6f2] focus:outline-none focus:ring-2 focus:ring-[#1f6a58] focus:ring-offset-2">← Back to Event Forms</Link></div>{children}</div>; }
+
+function sameAssignmentIds(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((tenantId) => right.includes(tenantId));
+}

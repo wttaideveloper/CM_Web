@@ -3,6 +3,14 @@ import type {
   Training,
   UpdateTrainingPayload,
 } from "./trainings.service";
+import { TRAINING_OTHER_OPTION_VALUE } from "./training-form-field-settings";
+
+/** Resolves a taxonomy value, never letting the unresolved "Other" sentinel reach the API. */
+function resolveTaxonomyValue(value: string, optional: boolean): string | null {
+  if (value === TRAINING_OTHER_OPTION_VALUE) return optional ? null : "";
+  const trimmed = value.trim();
+  return !trimmed && optional ? null : trimmed;
+}
 
 /** All local values maintained by the Training editor workspace. */
 export interface CreateTrainingFormValues {
@@ -35,41 +43,30 @@ export interface CreateTrainingFormValues {
   enrolment_end: string;
   time_zone: string;
   capacity: string;
+  pricing_type: "free" | "paid";
   price: string;
   currency: string;
   promo_price: string;
   coupon_code: string;
   requires_approval: boolean;
   access_duration_days: string;
-  prerequisites: string;
-  release_rule: string;
-  randomise: boolean;
-  scheduled_publication: string;
-  is_mandatory: boolean;
-  group_enrolment: boolean;
-  max_group_size: string;
   access_expiry_type: string;
   access_expiry_days: string;
   location_id: string;
   level: string;
   language: string;
-  // --- Missing schema gaps wired for POST/PUT ---
+  // --- Additional Training fields wired for POST/PUT ---
   recurring: string;
   schedule_exceptions: string;
-  access_information: string;
   meeting_provider: string;
   meeting_passcode: string;
   instructor_role: string;
-  instructor_notes: string;
-  notes_documents: string[];
+  instructor_notes: string[];
   notes_pdf_url: string;
   target_audience: string;
   difficulty_level: string;
   offline_enabled: boolean;
   session_mode: string;
-  check_in: boolean;
-  pass_code: string;
-  qr_payload: string;
   discussions: string;
   announcements: string;
   moderation_history: string;
@@ -79,6 +76,16 @@ export interface CreateTrainingFormValues {
   instructor_photo: string;
   instructor_credentials: string;
   badges: string[];
+}
+
+function parseLearningObjectives(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((objective): objective is string => typeof objective === "string" && objective.trim().length > 0);
+  }
+  if (typeof value === "string") {
+    return value.split(/\r?\n/).map((objective) => objective.trim()).filter(Boolean);
+  }
+  return [];
 }
 
 /** Returns blank values for a newly opened Training editor workspace. */
@@ -98,7 +105,7 @@ export function createEmptyTrainingForm(): CreateTrainingFormValues {
     gallery_images: [],
     promotional_video: "",
     documents: [],
-    delivery_mode: "self_paced",
+    delivery_mode: "hybrid",
     course_type: "",
     duration: "",
     start_date: "",
@@ -111,21 +118,15 @@ export function createEmptyTrainingForm(): CreateTrainingFormValues {
     delivery_instructions: "",
     enrolment_start: "",
     enrolment_end: "",
-    time_zone: "Asia/Kolkata",
+    time_zone: "",
     capacity: "",
+    pricing_type: "free",
     price: "",
     currency: "INR",
     promo_price: "",
     coupon_code: "",
     requires_approval: false,
     access_duration_days: "",
-    prerequisites: "",
-    release_rule: "immediate",
-    randomise: false,
-    scheduled_publication: "",
-    is_mandatory: false,
-    group_enrolment: false,
-    max_group_size: "",
     access_expiry_type: "never",
     access_expiry_days: "",
     location_id: "",
@@ -133,20 +134,15 @@ export function createEmptyTrainingForm(): CreateTrainingFormValues {
     language: "English",
     recurring: "",
     schedule_exceptions: "",
-    access_information: "",
     meeting_provider: "",
     meeting_passcode: "",
     instructor_role: "",
-    instructor_notes: "",
-    notes_documents: [],
+    instructor_notes: [],
     notes_pdf_url: "",
     target_audience: "",
     difficulty_level: "",
     offline_enabled: false,
     session_mode: "",
-    check_in: false,
-    pass_code: "",
-    qr_payload: "",
     discussions: "",
     announcements: "",
     moderation_history: "",
@@ -175,6 +171,21 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
     const value = record[key];
     return typeof value === "string" ? value : fallback;
   };
+  const dateInputValue = (key: string) => {
+    const value = stringValue(key);
+    // The schedule editor uses a datetime input; retain any returned clock time.
+    return value.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? value;
+  };
+  const timeInputValue = (key: string, dateKey: string) => {
+    const time = stringValue(key);
+    if (time) return time;
+    return stringValue(dateKey).match(/T(\d{2}:\d{2})/)?.[1] ?? "";
+  };
+  const dateTimeInputValue = (dateKey: string, timeKey: string) => {
+    const date = dateInputValue(dateKey);
+    const time = timeInputValue(timeKey, dateKey).slice(0, 5);
+    return date && time ? `${date}T${time}` : date;
+  };
   return {
     title: training.title ?? "",
     description: training.description ?? "",
@@ -189,33 +200,28 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
     delivery_mode: training.delivery_mode ?? "hybrid",
     course_type: training.course_type ?? "",
     duration: stringValue("duration"),
-    start_date: stringValue("start_date"),
-    end_date: stringValue("end_date"),
+    start_date: dateTimeInputValue("start_date", "start_time"),
+    end_date: dateTimeInputValue("end_date", "end_time"),
     enrolment_start: stringValue("enrolment_start"),
     enrolment_end: stringValue("enrolment_end"),
-    time_zone: stringValue("time_zone", "Asia/Kolkata"),
+    time_zone: stringValue("time_zone"),
     capacity: training.capacity ?? "",
+    pricing_type: stringValue("pricing_type", training.price ? "paid" : "free") === "paid" ? "paid" : "free",
     price: training.price ?? "",
     currency: stringValue("currency", "INR"),
     promo_price: stringValue("promo_price"),
     coupon_code: stringValue("coupon_code"),
     requires_approval: record.requires_approval === true,
     access_duration_days: stringValue("access_duration_days"),
-    prerequisites: stringValue("prerequisites"),
-    randomise: record.randomise === true || record.randomize === true,
-    scheduled_publication: stringValue("scheduled_publication"),
-    is_mandatory: record.is_mandatory === true || record.mandatory === true,
-    group_enrolment: record.group_enrolment === true || record.group_enrollment === true,
-    max_group_size: stringValue("max_group_size"),
     access_expiry_type: stringValue("access_expiry_type", "never"),
     access_expiry_days: stringValue("access_expiry_days"),
     location_id: stringValue("location_id"),
     instructor_name: stringValue("instructor_name"),
     instructor_bio: stringValue("instructor_bio"),
-    learning_objectives: Array.isArray(record.learning_objectives) ? record.learning_objectives.filter((v): v is string => typeof v === "string") : [],
+    learning_objectives: parseLearningObjectives(record.learning_objectives),
     documents: Array.isArray(record.documents) ? (record.documents as unknown[]).map((d) => { if (typeof d === "string" && d.trim()) return { url: d, visibility: "public", downloadable: true }; if (d && typeof d === "object" && typeof (d as Record<string, unknown>).url === "string") { const r = d as Record<string, unknown>; return { url: r.url as string, visibility: typeof r.visibility === "string" ? r.visibility as string : "public", downloadable: typeof r.downloadable === "boolean" ? r.downloadable as boolean : true }; } return null; }).filter((v): v is { url: string; visibility: string; downloadable: boolean } => v !== null && Boolean(v.url)) : [],
-    start_time: stringValue("start_time"),
-    end_time: stringValue("end_time"),
+    start_time: timeInputValue("start_time", "start_date"),
+    end_time: timeInputValue("end_time", "end_date"),
     venue: stringValue("venue"),
     address: stringValue("address"),
     meeting_link: stringValue("meeting_link"),
@@ -224,21 +230,15 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
     language: normalizeLanguage(record.language),
     recurring: stringValue("recurring"),
     schedule_exceptions: (() => { const v = record.schedule_exceptions; return Array.isArray(v) ? JSON.stringify(v) : typeof v === "string" ? v : ""; })(),
-    access_information: stringValue("access_information"),
     meeting_provider: stringValue("meeting_provider"),
     meeting_passcode: stringValue("meeting_passcode"),
     instructor_role: (() => { const ins = record.instructor as Record<string, unknown> | null; return typeof ins?.role === "string" ? ins.role : stringValue("instructor_role"); })(),
-    instructor_notes: stringValue("instructor_notes"),
-    notes_documents: (() => { const notesRaw = record.notes_documents ?? record.notes; if (!Array.isArray(notesRaw)) return []; return notesRaw.map(n => typeof (n as Record<string, unknown>)?.url === "string" ? (n as Record<string, unknown>).url as string : typeof n === "string" ? n : "").filter(Boolean); })(),
+    instructor_notes: Array.isArray(record.instructor_notes) ? (record.instructor_notes as unknown[]).map(n => typeof (n as Record<string, unknown>)?.url === "string" ? (n as Record<string, unknown>).url as string : typeof n === "string" ? n : "").filter(Boolean) : Array.isArray(record.notes_pdf_url) ? [] : [],
     notes_pdf_url: stringValue("notes_pdf_url"),
     target_audience: stringValue("target_audience"),
     difficulty_level: stringValue("difficulty_level") || stringValue("difficultyLevel") || stringValue("level", "beginner"),
     offline_enabled: record.offline_enabled === true || record.offline_access_enabled === true,
     session_mode: stringValue("session_mode"),
-    check_in: (() => { const v = record.check_in; return typeof v === "boolean" ? v : v === true || v === "true"; })(),
-    pass_code: stringValue("pass_code"),
-    qr_payload: stringValue("qr_payload"),
-    release_rule: (() => { const v = record.release_rule; if (typeof v === "string") return v; if (v && typeof v === "object") return typeof (v as Record<string, unknown>).type === "string" ? (v as Record<string, unknown>).type as string : "immediate"; return "immediate"; })(),
     discussions: (() => { const v = record.discussions; return Array.isArray(v) ? JSON.stringify(v) : typeof v === "string" ? v : ""; })(),
     announcements: (() => { const v = record.announcements; return Array.isArray(v) ? JSON.stringify(v) : typeof v === "string" ? v : ""; })(),
     moderation_history: (() => { const v = record.moderation_history; return Array.isArray(v) ? JSON.stringify(v) : typeof v === "string" ? v : ""; })(),
@@ -251,25 +251,41 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
 }
 
 /** Builds a confirmed Create Training payload without response-only fields.
- * NOTE: delivery_mode accepts online|physical|hybrid|self_paced (backend Literal). */
+ * NOTE: delivery_mode is restricted to "where" values only: hybrid/physical/online. */
 export function buildCreateTrainingPayload(values: CreateTrainingFormValues, tenantId: string, enterpriseId: string): CreateTrainingPayload {
+  const isLive = values.delivery_mode === "online" || values.delivery_mode === "hybrid";
+  const isVenue = values.delivery_mode === "physical" || values.delivery_mode === "hybrid";
+  const isPaid = values.pricing_type === "paid";
+  const galleryImages = values.gallery_images.map((url) => url.trim()).filter(Boolean);
+  const documents = values.documents
+    .filter((doc) => doc.url.trim())
+    .map((doc, idx) => ({
+      id: `doc-${idx}`,
+      url: doc.url.trim(),
+      name: doc.url.trim().split("/").pop() || `document-${idx}.pdf`,
+      type: doc.url.trim().endsWith(".pdf") ? "pdf" : "file",
+      size: null,
+      visibility: doc.visibility,
+      downloadable: doc.downloadable,
+      title: doc.url.trim().split("/").pop() || `Document ${idx + 1}`,
+    }));
   return {
     tenant_id: tenantId,
     enterprise_id: enterpriseId,
     title: values.title.trim(),
     description: values.description.trim() || null,
-    category: values.category.trim(),
-    subcategory: values.subcategory.trim() || null,
+    category: resolveTaxonomyValue(values.category, false),
+    subcategory: resolveTaxonomyValue(values.subcategory, true),
     tags: values.tags,
     instructor_id: values.instructor_id.trim() || null,
     instructor_name: values.instructor_name.trim() || null,
     instructor_bio: values.instructor_bio.trim() || null,
     requirements: values.requirements.trim() || null,
-    learning_objectives: values.learning_objectives.length ? values.learning_objectives : null,
+    learning_objectives: values.learning_objectives.map((objective) => objective.trim()).filter(Boolean),
     primary_image: values.primary_image.trim() || null,
-    gallery_images: values.gallery_images.length ? values.gallery_images : null,
+    gallery_images: galleryImages.length ? galleryImages : null,
     promotional_video: values.promotional_video.trim() || null,
-    documents: values.documents.length ? values.documents.map((doc, idx) => ({ id: `doc-${idx}`, url: doc.url, name: doc.url.split("/").pop() || `document-${idx}.pdf`, type: doc.url.endsWith(".pdf") ? "pdf" : "file", size: null, visibility: doc.visibility, downloadable: doc.downloadable, title: doc.url.split("/").pop() || `Document ${idx+1}` })) : null,
+    documents: documents.length ? documents : null,
     delivery_mode: values.delivery_mode || null,
     course_type: values.course_type.trim() || null,
     duration: values.duration.trim() || null,
@@ -277,44 +293,37 @@ export function buildCreateTrainingPayload(values: CreateTrainingFormValues, ten
     end_date: values.end_date || null,
     start_time: values.start_time || null,
     end_time: values.end_time || null,
-    venue: values.venue.trim() || null,
-    address: values.address.trim() || null,
-    meeting_link: values.meeting_link.trim() || null,
-    delivery_instructions: values.delivery_instructions.trim() || null,
+    venue: isVenue ? values.venue.trim() || null : null,
+    address: isVenue ? values.address.trim() || null : null,
+    meeting_link: isLive ? values.meeting_link.trim() || null : null,
+    delivery_instructions: isLive ? values.delivery_instructions.trim() || null : null,
     enrolment_start: values.enrolment_start || null,
     enrolment_end: values.enrolment_end || null,
     time_zone: values.time_zone || null,
     capacity: values.capacity.trim() || null,
-    price: values.price.trim() || null,
-    currency: values.currency.trim() || null,
-    promo_price: values.promo_price.trim() || null,
-    coupon_code: values.coupon_code.trim() || null,
+    price: isPaid ? values.price.trim() || null : null,
+    currency: isPaid ? values.currency.trim() || null : null,
+    promo_price: isPaid ? values.promo_price.trim() || null : null,
+    coupon_code: isPaid ? values.coupon_code.trim() || null : null,
     requires_approval: values.requires_approval,
     access_duration_days: values.access_duration_days.trim() || null,
-location_id: values.location_id.trim() || null,
+    access_expiry_type: values.access_expiry_type || null,
+    access_expiry_days: values.access_expiry_days.trim() || null,
+location_id: isVenue ? values.location_id.trim() || null : null,
     level: values.level || values.difficulty_level || null,
     language: values.language || null,
-    prerequisites: values.prerequisites.trim() || null,
-release_rule: values.release_rule.trim() ? { type: values.release_rule.trim() } : null,
-    randomise: values.randomise,
-    scheduled_publication: values.scheduled_publication.trim() || null,
-    is_mandatory: values.is_mandatory,
     recurring: values.recurring.trim() || null,
     schedule_exceptions: (() => { try { return values.schedule_exceptions.trim() ? JSON.parse(values.schedule_exceptions) : null; } catch { return values.schedule_exceptions.trim() || null; } })(),
-    access_information: values.access_information.trim() || null,
-    meeting_provider: values.meeting_provider.trim() || null,
-    meeting_passcode: values.meeting_passcode.trim() || null,
-    instructor: values.instructor_role.trim() ? { id: values.instructor_id.trim() || null, name: values.instructor_name.trim() || null, bio: values.instructor_bio.trim() || null, role: values.instructor_role.trim() || null } : null,
-    instructor_notes: values.instructor_notes.trim() || null,
-    notes_documents: values.notes_documents.length ? values.notes_documents.filter((u) => u.trim()).map((url, idx) => ({ title: url.split("/").pop()?.split(".")[0]?.replace(/[_-]+/g, " ").trim() || `Note ${idx + 1}`, url: url.trim() })) : null,
+    meeting_provider: isLive ? values.meeting_provider.trim() || null : null,
+    instructor: values.instructor_id.trim() || values.instructor_name.trim() || values.instructor_role.trim()
+      ? { id: values.instructor_id.trim() || null, name: values.instructor_name.trim() || null, bio: values.instructor_bio.trim() || null, role: values.instructor_role.trim() || null }
+      : null,
+    instructor_notes: values.instructor_notes.length ? values.instructor_notes.map((url, idx) => ({ id: `note-${idx}`, title: `Note ${idx+1}`, url })) : null,
     notes_pdf_url: values.notes_pdf_url.trim() || null,
     target_audience: values.target_audience.trim() || null,
     offline_enabled: values.offline_enabled,
     offline_access_enabled: values.offline_enabled,
     session_mode: values.session_mode.trim() || null,
-    check_in: values.check_in,
-    pass_code: values.pass_code.trim() || null,
-    qr_payload: values.qr_payload.trim() || null,
     discussions: (() => { try { return values.discussions.trim() ? JSON.parse(values.discussions) : null; } catch { return values.discussions.trim() || null; } })(),
     announcements: (() => { try { return values.announcements.trim() ? JSON.parse(values.announcements) : null; } catch { return values.announcements.trim() || null; } })(),
     moderation_history: (() => { try { return values.moderation_history.trim() ? JSON.parse(values.moderation_history) : null; } catch { return values.moderation_history.trim() || null; } })(),
@@ -328,21 +337,37 @@ release_rule: values.release_rule.trim() ? { type: values.release_rule.trim() } 
 
 /** Builds a partial Update payload from changed form values. */
 export function buildUpdateTrainingPayload(values: CreateTrainingFormValues): UpdateTrainingPayload {
+  const isLive = values.delivery_mode === "online" || values.delivery_mode === "hybrid";
+  const isVenue = values.delivery_mode === "physical" || values.delivery_mode === "hybrid";
+  const isPaid = values.pricing_type === "paid";
+  const galleryImages = values.gallery_images.map((url) => url.trim()).filter(Boolean);
+  const documents = values.documents
+    .filter((doc) => doc.url.trim())
+    .map((doc, idx) => ({
+      id: `doc-${idx}`,
+      url: doc.url.trim(),
+      name: doc.url.trim().split("/").pop() || `document-${idx}.pdf`,
+      type: doc.url.trim().endsWith(".pdf") ? "pdf" : "file",
+      size: null,
+      visibility: doc.visibility,
+      downloadable: doc.downloadable,
+      title: doc.url.trim().split("/").pop() || `Document ${idx + 1}`,
+    }));
   return {
     title: values.title.trim(),
     description: values.description.trim() || null,
-    category: values.category.trim(),
-    subcategory: values.subcategory.trim() || null,
+    category: resolveTaxonomyValue(values.category, false),
+    subcategory: resolveTaxonomyValue(values.subcategory, true),
     tags: values.tags,
     instructor_id: values.instructor_id.trim() || null,
     instructor_name: values.instructor_name.trim() || null,
     instructor_bio: values.instructor_bio.trim() || null,
     requirements: values.requirements.trim() || null,
-    learning_objectives: values.learning_objectives.length ? values.learning_objectives : null,
+    learning_objectives: values.learning_objectives.map((objective) => objective.trim()).filter(Boolean),
     primary_image: values.primary_image.trim() || null,
-    gallery_images: values.gallery_images.length ? values.gallery_images : null,
+    gallery_images: galleryImages.length ? galleryImages : null,
     promotional_video: values.promotional_video.trim() || null,
-    documents: values.documents.length ? values.documents.map((doc, idx) => ({ id: `doc-${idx}`, url: doc.url, name: doc.url.split("/").pop() || `document-${idx}.pdf`, type: doc.url.endsWith(".pdf") ? "pdf" : "file", size: null, visibility: doc.visibility, downloadable: doc.downloadable, title: doc.url.split("/").pop() || `Document ${idx+1}` })) : null,
+    documents: documents.length ? documents : null,
     delivery_mode: values.delivery_mode || null,
     course_type: values.course_type.trim() || null,
     duration: values.duration.trim() || null,
@@ -350,44 +375,37 @@ export function buildUpdateTrainingPayload(values: CreateTrainingFormValues): Up
     end_date: values.end_date || null,
     start_time: values.start_time || null,
     end_time: values.end_time || null,
-    venue: values.venue || null,
-    address: values.address || null,
-    meeting_link: values.meeting_link.trim() || null,
-    delivery_instructions: values.delivery_instructions || null,
+    venue: isVenue ? values.venue.trim() || null : null,
+    address: isVenue ? values.address.trim() || null : null,
+    meeting_link: isLive ? values.meeting_link.trim() || null : null,
+    delivery_instructions: isLive ? values.delivery_instructions.trim() || null : null,
     enrolment_start: values.enrolment_start || null,
     enrolment_end: values.enrolment_end || null,
     time_zone: values.time_zone || null,
     capacity: values.capacity.trim() || null,
-    price: values.price.trim() || null,
-    currency: values.currency.trim() || null,
-    promo_price: values.promo_price.trim() || null,
-    coupon_code: values.coupon_code.trim() || null,
+    price: isPaid ? values.price.trim() || null : null,
+    currency: isPaid ? values.currency.trim() || null : null,
+    promo_price: isPaid ? values.promo_price.trim() || null : null,
+    coupon_code: isPaid ? values.coupon_code.trim() || null : null,
     requires_approval: values.requires_approval,
     access_duration_days: values.access_duration_days.trim() || null,
-    location_id: values.location_id.trim() || null,
+    access_expiry_type: values.access_expiry_type || null,
+    access_expiry_days: values.access_expiry_days.trim() || null,
+    location_id: isVenue ? values.location_id.trim() || null : null,
     level: values.level || values.difficulty_level || null,
     language: values.language || null,
-    prerequisites: values.prerequisites.trim() || null,
-release_rule: values.release_rule.trim() ? { type: values.release_rule.trim() } : null,
-    randomise: values.randomise,
-    scheduled_publication: values.scheduled_publication.trim() || null,
-    is_mandatory: values.is_mandatory,
 recurring: values.recurring.trim() || null,
     schedule_exceptions: (() => { try { return values.schedule_exceptions.trim() ? JSON.parse(values.schedule_exceptions) : null; } catch { return values.schedule_exceptions.trim() || null; } })(),
-    access_information: values.access_information.trim() || null,
-    meeting_provider: values.meeting_provider.trim() || null,
-    meeting_passcode: values.meeting_passcode.trim() || null,
-    instructor: values.instructor_role.trim() ? { id: values.instructor_id.trim() || null, name: values.instructor_name.trim() || null, bio: values.instructor_bio.trim() || null, role: values.instructor_role.trim() || null } : null,
-    instructor_notes: values.instructor_notes.trim() || null,
-    notes_documents: values.notes_documents.length ? values.notes_documents.filter((u) => u.trim()).map((url, idx) => ({ title: url.split("/").pop()?.split(".")[0]?.replace(/[_-]+/g, " ").trim() || `Note ${idx + 1}`, url: url.trim() })) : null,
+    meeting_provider: isLive ? values.meeting_provider.trim() || null : null,
+    instructor: values.instructor_id.trim() || values.instructor_name.trim() || values.instructor_role.trim()
+      ? { id: values.instructor_id.trim() || null, name: values.instructor_name.trim() || null, bio: values.instructor_bio.trim() || null, role: values.instructor_role.trim() || null }
+      : null,
+    instructor_notes: values.instructor_notes.length ? values.instructor_notes.map((url, idx) => ({ id: `note-${idx}`, title: `Note ${idx+1}`, url })) : null,
     notes_pdf_url: values.notes_pdf_url.trim() || null,
     target_audience: values.target_audience.trim() || null,
     offline_enabled: values.offline_enabled,
     offline_access_enabled: values.offline_enabled,
     session_mode: values.session_mode.trim() || null,
-    check_in: values.check_in,
-    pass_code: values.pass_code.trim() || null,
-    qr_payload: values.qr_payload.trim() || null,
     discussions: (() => { try { return values.discussions.trim() ? JSON.parse(values.discussions) : null; } catch { return values.discussions.trim() || null; } })(),
     announcements: (() => { try { return values.announcements.trim() ? JSON.parse(values.announcements) : null; } catch { return values.announcements.trim() || null; } })(),
     moderation_history: (() => { try { return values.moderation_history.trim() ? JSON.parse(values.moderation_history) : null; } catch { return values.moderation_history.trim() || null; } })(),
@@ -400,21 +418,53 @@ recurring: values.recurring.trim() || null,
 }
 
 /** Validates the current form values, returning per-field messages. */
-export function validateTrainingForm(values: CreateTrainingFormValues): Record<string, string[]> {
+export function validateTrainingForm(values: CreateTrainingFormValues, configuredRequiredKeys?: ReadonlySet<string>): Record<string, string[]> {
   const errors: Record<string, string[]> = {};
-  const timeRe = /^([01]\d|2[0-3]):([0-5]\d)$/;
-  if (!values.title.trim()) errors.title = ["Title is required."];
-  if (!values.category.trim()) errors.category = ["Category is required."];
-  if (values.delivery_mode === "hybrid" && !values.meeting_link.trim()) errors.meeting_link = ["Hybrid mode requires the Google Meet / Zoom meeting link."];
-  if (values.delivery_mode === "hybrid" && !values.qr_payload.trim()) errors.qr_payload = ["Hybrid mode requires the QR payload (check-in code)."];
-  if (values.delivery_mode === "online" && !values.meeting_link.trim()) errors.meeting_link = ["Online mode requires the Google Meet / Zoom meeting link."];
-  if (values.start_time && !timeRe.test(values.start_time)) errors.start_time = ["Start time must be HH:MM (00:00–23:59)."];
-  if (values.end_time && !timeRe.test(values.end_time)) errors.end_time = ["End time must be HH:MM (00:00–23:59)."];
+  const required = (key: string, value: string, message: string) => {
+    if ((configuredRequiredKeys === undefined || configuredRequiredKeys.has(key)) && !value.trim()) errors[key] = [message];
+  };
+  required("title", values.title, "Title is required.");
+  required("description", values.description, "Description is required.");
+  required("category", values.category, "Category is required.");
+  const isLive = values.delivery_mode === "online" || values.delivery_mode === "hybrid";
+  const isVenue = values.delivery_mode === "physical" || values.delivery_mode === "hybrid";
+  if (isVenue && (configuredRequiredKeys === undefined || configuredRequiredKeys.has("venue")) && !values.venue.trim()) errors.venue = ["Venue is required for Venue or Hybrid mode."];
+  if (isVenue && (configuredRequiredKeys === undefined || configuredRequiredKeys.has("address")) && !values.address.trim()) errors.address = ["Address is required for Venue or Hybrid mode."];
   if (values.start_date && values.end_date && values.end_date < values.start_date) {
     errors.end_date = ["End date cannot be before the start date."];
   }
-  if (values.enrolment_start && values.enrolment_end && values.enrolment_end < values.enrolment_start) {
-    errors.enrolment_end = ["Enrolment end cannot be before enrolment start."];
+  if (values.enrolment_start && values.enrolment_end && values.enrolment_end <= values.enrolment_start) {
+    errors.enrolment_end = ["Enrolment end must be after enrolment start."];
   }
+  if (values.enrolment_end && values.start_date && values.enrolment_end > values.start_date) {
+    errors.enrolment_end = ["Enrolment must close on or before the Training start date and time."];
+  }
+  for (const [key, value] of [
+    ["schedule_exceptions", values.schedule_exceptions],
+    ["discussions", values.discussions],
+    ["announcements", values.announcements],
+    ["moderation_history", values.moderation_history],
+    ["faqs", values.faqs],
+  ] as const) {
+    if (!value.trim()) continue;
+    try {
+      JSON.parse(value);
+    } catch {
+      errors[key] = ["Enter valid JSON or leave this field empty."];
+    }
+  }
+  if (values.faqs.trim() && !errors.faqs) {
+    try {
+      if (!Array.isArray(JSON.parse(values.faqs))) errors.faqs = ["FAQs must be a JSON array."];
+    } catch {
+      // Invalid JSON is already reported above.
+    }
+  }
+  const capacity = values.capacity.trim() ? Number(values.capacity) : null;
+  if (capacity !== null && (!Number.isFinite(capacity) || capacity <= 0)) errors.capacity = ["Capacity must be greater than zero."];
+  const price = values.pricing_type === "paid" && values.price.trim() ? Number(values.price) : null;
+  if (values.pricing_type === "paid" && !values.price.trim()) errors.price = ["Price is required for Paid training."];
+  if (price !== null && (!Number.isFinite(price) || price < 0)) errors.price = ["Price must be zero or greater."];
+  if (values.pricing_type === "paid" && !values.currency.trim()) errors.currency = ["Currency is required for Paid training."];
   return errors;
 }

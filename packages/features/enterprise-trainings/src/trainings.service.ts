@@ -7,7 +7,24 @@
  * enterprise-events module convention (single self-contained service file).
  */
 
+import { authenticatedFetch } from "@ihp/auth";
 import type { TrainingStatus, TrainingStatusUpdatePayload } from "./training-status";
+import {
+  parseManagedTrainingReviews,
+  parseTrainingReviews,
+} from "./training-reviews.service";
+import type {
+  EnterpriseTrainingReviewsParams,
+  ReviewModerationStatus,
+  ReviewsManageResponse,
+  TrainingReview,
+  TrainingReviewAuditEntry,
+  TrainingStarRating,
+} from "./training-reviews.types";
+
+export type { EnterpriseTrainingReviewsParams, ReviewModerationStatus, ReviewsManageResponse, TrainingReview, TrainingReviewAuditEntry, TrainingRatingSummary, TrainingStarRating } from "./training-reviews.types";
+
+const fetch = authenticatedFetch;
 
 /** Pagination metadata returned with every list response. */
 export interface TrainingPagination {
@@ -22,6 +39,7 @@ export interface TrainingListItem {
   id: string;
   tenant_id: string | null;
   enterprise_id: string;
+  enterprise_name?: string | null;
   location_id: string | null;
   primary_image?: string | null;
   title: string;
@@ -37,6 +55,8 @@ export interface TrainingListItem {
   capacity: string | null;
   enrolled_count?: number | null;
   available_slots?: number | null;
+  average_rating?: number | null;
+  reviews_count?: number | null;
   price: string | null;
   currency: string | null;
   status: TrainingStatus;
@@ -47,11 +67,14 @@ export interface TrainingListItem {
   end_date?: string | null;
   start_time?: string | null;
   end_time?: string | null;
+  enrolment_start?: string | null;
+  enrolment_end?: string | null;
+  time_zone?: string | null;
   venue?: string | null;
   address?: string | null;
   meeting_link?: string | null;
   delivery_instructions?: string | null;
-  learning_objectives?: string[] | null;
+  learning_objectives?: string | string[] | null;
   documents?: unknown[] | null;
   requirements?: string | null;
   sections: unknown[] | null;
@@ -90,15 +113,6 @@ export interface TrainingFaq {
   answer?: string | null;
   q?: string | null;
   a?: string | null;
-}
-/** Review `reviews[]`. */
-export interface TrainingReview {
-  id?: string | null;
-  author?: string | null;
-  rating?: number | null;
-  comment?: string | null;
-  created_at?: string | null;
-  verified?: boolean | null;
 }
 /** Lesson topic. */
 export interface TrainingLessonTopic {
@@ -140,6 +154,7 @@ export interface TrainingDetail extends TrainingListItem {
   enterprise_name: string | null;
   promotional_video?: string | null;
   gallery_images?: string[] | null;
+  prerequisites?: string | null;
   // --- Missing fields & schema gaps (GET /api/v1/trainings/{id}) ---
   recurring?: string | boolean | Record<string, unknown> | null;
   schedule_exceptions?: unknown[] | null;
@@ -159,7 +174,6 @@ export interface TrainingDetail extends TrainingListItem {
   check_in?: boolean | null;
   pass_code?: string | null;
   qr_payload?: string | null;
-  release_rule?: { type?: string | null } | Record<string, unknown> | null;
   discussions?: unknown[] | null;
   announcements?: unknown[] | null;
   moderation_history?: unknown[] | null;
@@ -235,6 +249,7 @@ export interface CreateTrainingPayload {
   instructor_name?: string | null;
   instructor_bio?: string | null;
   requirements?: string | null;
+  prerequisites?: string | null;
   learning_objectives?: string[] | null;
   primary_image?: string | null;
   gallery_images?: unknown[] | null;
@@ -261,6 +276,8 @@ export interface CreateTrainingPayload {
   coupon_code?: string | null;
   requires_approval?: boolean;
   access_duration_days?: string | null;
+  access_expiry_type?: string | null;
+  access_expiry_days?: string | null;
   level?: string | null;
   language?: string | null;
   status?: string;
@@ -269,7 +286,6 @@ export interface CreateTrainingPayload {
   // --- Missing schema gaps wired for POST/PUT ---
   recurring?: string | boolean | Record<string, unknown> | null;
   schedule_exceptions?: unknown[] | null;
-  access_information?: string | null;
   meeting_provider?: string | null;
   waitlist_count?: number | null;
   instructor?: TrainingInstructor | null;
@@ -284,7 +300,6 @@ export interface CreateTrainingPayload {
   check_in?: boolean | null;
   pass_code?: string | null;
   qr_payload?: string | null;
-  release_rule?: { type?: string | null } | Record<string, unknown> | null;
   discussions?: unknown[] | null;
   announcements?: unknown[] | null;
   moderation_history?: unknown[] | null;
@@ -310,10 +325,17 @@ export type UpdateTrainingPayload = Partial<CreateTrainingPayload>;
 /** Payload for `POST /api/v1/trainings/{id}/sections`. */
 export interface CreateTrainingSectionPayload {
   title: string;
+  type?: "session" | "video" | "hybrid" | "live" | "venue" | string | null;
   description?: string | null;
   order?: number | null;
+  scheduled_at?: string | null;
+  meeting_type?: "google_meet" | "zoom" | "teams" | "webex" | "other" | string | null;
   meeting_link?: string | null;
   join_url?: string | null;
+  venue_name?: string | null;
+  venue_address?: string | null;
+  pass_code?: string | null;
+  check_in_window?: string | null;
   assessment_id?: string | null;
   [key: string]: unknown;
 }
@@ -322,7 +344,7 @@ export interface CreateTrainingSectionPayload {
 export type UpdateTrainingSectionPayload = Partial<CreateTrainingSectionPayload>;
 
 /** Payload for `POST /api/v1/trainings/{id}/sections/{section_id}/lessons`. */
-export type TrainingLessonType = "text" | "video" | "audio" | "webpage" | "pdf" | "live" | "presentation" | "worksheet" | "document" | "venue" | "exam";
+export type TrainingLessonType = "text" | "video" | "youtube" | "audio" | "webpage" | "pdf" | "live" | "presentation" | "worksheet" | "document" | "venue" | "quiz" | "exam";
 
 export interface CreateTrainingLessonPayload {
   title: string;
@@ -336,7 +358,7 @@ export interface CreateTrainingLessonPayload {
   is_downloadable?: boolean | null;
   is_draft?: boolean | null;
   is_mandatory?: boolean | null;
-  file_size?: number | null;
+  file_size?: string | number | null;
   meeting_link?: string | null;
   join_meta?: string | null;
   thumbnail_url?: string | null;
@@ -347,15 +369,105 @@ export interface CreateTrainingLessonPayload {
   assessment_id?: string | null;
   completion_rule?: string | null;
   prerequisites?: string[] | null;
-  release_rule?: string | null;
+  release_rule?: Record<string, unknown> | string | null;
   instructor_id?: string | null;
+  videos?: string[] | null;
+  documents?: Array<Record<string, unknown>> | null;
+  notes?: string[] | null;
   [key: string]: unknown;
+}
+
+export interface EbookDocumentPayload { ebook: Record<string, unknown>; base_version: number; }
+
+export async function getTrainingEbook(trainingId: string, sectionId: string, lessonId: string, includeDrafts = false): Promise<unknown> {
+  const query = includeDrafts ? "?include_drafts=true" : "";
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/ebook${query}`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load the eBook");
+  return unwrapApiData((await res.json()) as unknown);
+}
+
+export async function saveTrainingEbook(trainingId: string, sectionId: string, lessonId: string, payload: EbookDocumentPayload): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/ebook`, { method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (!res.ok) throw await createTrainingsApiError(res, "save the eBook");
+  return unwrapApiData((await res.json()) as unknown);
+}
+
+export async function validateTrainingEbook(trainingId: string, sectionId: string, lessonId: string): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/ebook/validate`, { method: "POST", credentials: "include" });
+  if (!res.ok) throw await createTrainingsApiError(res, "validate the eBook");
+  return unwrapApiData((await res.json()) as unknown);
+}
+
+export async function submitTrainingEbookForApproval(trainingId: string, sectionId: string, lessonId: string, baseVersion?: number): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/ebook/submit`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(typeof baseVersion === "number" ? { base_version: baseVersion } : {}) });
+  if (!res.ok) throw await createTrainingsApiError(res, "submit the eBook for approval");
+  return unwrapApiData((await res.json().catch(() => null)) as unknown);
+}
+
+export async function publishTrainingEbook(trainingId: string, sectionId: string, lessonId: string): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/ebook/publish`, { method: "POST", credentials: "include" });
+  if (!res.ok) throw await createTrainingsApiError(res, "publish the approved eBook");
+  return unwrapApiData((await res.json().catch(() => null)) as unknown);
+}
+
+export async function withdrawTrainingEbookSubmission(trainingId: string, sectionId: string, lessonId: string): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/ebook/withdraw`, { method: "POST", credentials: "include" });
+  if (!res.ok) throw await createTrainingsApiError(res, "withdraw the eBook submission");
+  return unwrapApiData((await res.json().catch(() => null)) as unknown);
+}
+
+export async function reorderTrainingEbookPages(trainingId: string, sectionId: string, lessonId: string, pageIds: string[]): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/ebook/pages/reorder`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ page_ids: pageIds }) });
+  if (!res.ok) throw await createTrainingsApiError(res, "reorder eBook pages");
+  return unwrapApiData((await res.json().catch(() => null)) as unknown);
+}
+
+export async function getMobileTrainingEbook(trainingId: string, lessonId: string): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/lessons/${encodeURIComponent(lessonId)}/ebook`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load the learner eBook");
+  return unwrapApiData((await res.json()) as unknown);
+}
+
+export async function getTrainingEbookProgress(trainingId: string, lessonId: string): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/lessons/${encodeURIComponent(lessonId)}/ebook/progress`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load eBook progress");
+  return unwrapApiData((await res.json()) as unknown);
+}
+
+export async function saveTrainingEbookProgress(trainingId: string, lessonId: string, payload: Record<string, unknown>): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/lessons/${encodeURIComponent(lessonId)}/ebook/progress`, { method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (!res.ok) throw await createTrainingsApiError(res, "save eBook progress");
+  return unwrapApiData((await res.json()) as unknown);
+}
+
+export async function listTrainingEbookBookmarks(trainingId: string, lessonId: string): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/lessons/${encodeURIComponent(lessonId)}/ebook/bookmarks`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load eBook bookmarks");
+  return unwrapApiData((await res.json()) as unknown);
+}
+
+export async function createTrainingEbookBookmark(trainingId: string, lessonId: string, payload: Record<string, unknown>): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/lessons/${encodeURIComponent(lessonId)}/ebook/bookmarks`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (!res.ok) throw await createTrainingsApiError(res, "create eBook bookmark");
+  return unwrapApiData((await res.json()) as unknown);
+}
+
+export async function deleteTrainingEbookBookmark(trainingId: string, lessonId: string, bookmarkId: string): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/lessons/${encodeURIComponent(lessonId)}/ebook/bookmarks/${encodeURIComponent(bookmarkId)}`, { method: "DELETE", credentials: "include" });
+  if (!res.ok) throw await createTrainingsApiError(res, "delete eBook bookmark");
+  return (await res.json().catch(() => null)) as unknown;
+}
+
+export async function getAdminTrainingEbook(trainingId: string, sectionId: string, lessonId: string): Promise<unknown> {
+  const res = await fetch(`/api/v1/admin/trainings/${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/ebook?include_drafts=true`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load the admin eBook review");
+  return unwrapApiData((await res.json()) as unknown);
 }
 
 /** Payload for `PUT /api/v1/trainings/{id}/sections/{sid}/lessons/{lid}`. */
 export type UpdateTrainingLessonPayload = Partial<CreateTrainingLessonPayload>;
 
-/** Payload for `POST /api/v1/trainings/{id}/sections/reorder` and friends. */
+/** Payload for `POST /api/v1/trainings/{id}/sections/reorder` and lesson reorder endpoints. */
 export interface ReorderPayload {
   order: string[];
 }
@@ -366,11 +478,19 @@ export interface ReorderPayload {
 export interface CreateTrainingAssessmentPayload {
   title: string;
   description?: string | null;
+  instructions?: string | null;
   type?: string | null;
+  level?: "pre_course" | "module" | "final" | "feedback" | null;
+  module_id?: string | null;
+  pass_percent?: number | null;
   passing_score?: number | null;
   time_limit_minutes?: number | null;
   attempts_allowed?: number | null;
   max_attempts?: number | null;
+  randomise?: boolean;
+  publication?: "immediate" | "scheduled";
+  publish_at?: string | null;
+  is_published?: boolean;
   section_id?: string | null;
   lesson_id?: string | null;
   [key: string]: unknown;
@@ -380,7 +500,7 @@ export interface CreateTrainingAssessmentPayload {
 export interface CreateAssessmentQuestionPayload {
   question_text: string;
   question_type?: string | null;
-  options?: Array<string | { id?: string; label?: string }> | null;
+  options?: string[] | null;
   correct_answer?: string | null;
   points?: number | null;
   explanation?: string | null;
@@ -395,10 +515,86 @@ export interface SubmitAssessmentPayload {
   [key: string]: unknown;
 }
 
+export interface AssessmentSubmissionListItem {
+  id: string;
+  attempt_id: string | null;
+  participant_name: string | null;
+  participant_email: string | null;
+  attempt_number: number | null;
+  status: "pending" | "evaluated";
+  needs_manual: boolean;
+  score: number | null;
+  total_points: number | null;
+  score_percent: number | null;
+  passed: boolean | null;
+  submitted_at: string | null;
+  is_legacy: boolean;
+}
+
+export interface AssessmentSubmissionsResponse {
+  assessment_id: string | null;
+  assessment_title: string | null;
+  items: AssessmentSubmissionListItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  status_counts: { all: number; pending: number; evaluated: number };
+}
+
+export interface AssessmentSubmissionsParams {
+  page?: number;
+  page_size?: number;
+  status?: "pending" | "evaluated" | "all";
+  search?: string;
+  from_date?: string;
+  to_date?: string;
+  order?: "newest" | "oldest";
+}
+
+/** One answer returned by the assessment submission review endpoint. */
+export interface AssessmentSubmissionAnswer {
+  question_id: string | null;
+  question_text: string;
+  question_type: string | null;
+  given: unknown;
+  correct: unknown;
+  explanation: string | null;
+  points: number | null;
+  points_awarded: number | null;
+  needs_manual: boolean;
+}
+
+/** Normalized result returned when an admin opens one learner attempt. */
+export interface AssessmentSubmissionReview {
+  submission_id: string | null;
+  attempt_id: string | null;
+  assessment_id: string | null;
+  status: "pending" | "evaluated" | null;
+  auto_score: number | null;
+  final_score: number | null;
+  score: number | null;
+  total_points: number | null;
+  score_percent: number | null;
+  passed: boolean | null;
+  feedback: string | null;
+  review: AssessmentSubmissionAnswer[];
+}
+
+/** Result returned after an admin grades an assessment attempt. */
+export interface GradeAssessmentSubmissionResponse {
+  submission_id: string | null;
+  status: "pending" | "evaluated" | null;
+  final_score: number | null;
+  total_points: number | null;
+  score_percent: number | null;
+  passed: boolean | null;
+  feedback: string | null;
+}
+
 /** Payload for `POST /api/v1/trainings/{id}/assignments`. */
 export interface CreateTrainingAssignmentPayload {
   title: string;
-  instructions?: string | null;
   description?: string | null;
   due_date?: string | null;
   max_score?: number | null;
@@ -407,16 +603,14 @@ export interface CreateTrainingAssignmentPayload {
 
 /** Payload for `POST /api/v1/trainings/{id}/assignments/{aid}/submit`. */
 export interface SubmitAssignmentPayload {
-  submission_text?: string | null;
-  file_url?: string | null;
   content?: string | null;
+  file_url?: string | null;
   [key: string]: unknown;
 }
 
 /** Payload for `POST .../grade`. */
 export interface GradeSubmissionPayload {
-  grade?: string | number | null;
-  score?: number | null;
+  score: number;
   feedback?: string | null;
   [key: string]: unknown;
 }
@@ -454,7 +648,6 @@ export interface CompleteLessonPayload {
 export interface CreateTrainingAnnouncementPayload {
   title?: string | null;
   message: string;
-  channel?: "in_app" | "email" | "sms" | "both";
   recipient_type?: "all" | "registered" | "specific";
   channels?: Array<"in_app" | "push" | "email" | "sms">;
   [key: string]: unknown;
@@ -474,9 +667,6 @@ export interface TrainingTopic {
   id: string;
   title: string;
   content?: string | null;
-  videos?: string[] | null;
-  documents?: Array<{ url: string; name?: string; visibility?: string; downloadable?: boolean }> | null;
-  notes?: string[] | null;
   [key: string]: unknown;
 }
 
@@ -533,6 +723,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function readFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function readNullableString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
@@ -557,10 +760,13 @@ function isTrainingListItem(value: unknown): value is TrainingListItem {
     typeof rec.category === "string" &&
     typeof rec.status === "string" &&
     (rec.tenant_id === undefined || rec.tenant_id === null || typeof rec.tenant_id === "string") &&
+    (rec.enterprise_name === undefined || rec.enterprise_name === null || typeof rec.enterprise_name === "string") &&
     (rec.description === undefined || rec.description === null || typeof rec.description === "string") &&
     (rec.created_at === undefined || rec.created_at === null || typeof rec.created_at === "string") &&
     (rec.updated_at === undefined || rec.updated_at === null || typeof rec.updated_at === "string") &&
-    (rec.start_date === undefined || rec.start_date === null || typeof rec.start_date === "string")
+    (rec.start_date === undefined || rec.start_date === null || typeof rec.start_date === "string") &&
+    (rec.capacity === undefined || rec.capacity === null || typeof rec.capacity === "string" || typeof rec.capacity === "number") &&
+    (rec.price === undefined || rec.price === null || typeof rec.price === "string" || typeof rec.price === "number")
   );
 }
 
@@ -571,11 +777,113 @@ function isTrainingDetail(value: unknown): value is TrainingDetail {
   return en === undefined || en === null || typeof en === "string";
 }
 
+function unwrapApiData(value: unknown): unknown {
+  if (!isRecord(value) || !Object.prototype.hasOwnProperty.call(value, "data")) return value;
+  return value.data;
+}
+
+function readArrayResponse(value: unknown, operation: string): unknown[] {
+  const unwrapped = unwrapApiData(value);
+  if (Array.isArray(unwrapped)) return unwrapped;
+  if (isRecord(unwrapped)) {
+    for (const key of ["items", "results", "records"]) {
+      if (Array.isArray(unwrapped[key])) return unwrapped[key];
+    }
+  }
+  throw new Error(`Trainings API returned an invalid ${operation} response.`);
+}
+
+function normaliseTrainingRecord(value: TrainingListItem | TrainingDetail): TrainingListItem | TrainingDetail {
+  const record = value as TrainingListItem & Partial<TrainingDetail> & Record<string, unknown>;
+  const normalised = { ...record };
+  const schedule = isRecord(record.schedule) ? record.schedule : {};
+  const customValues = record.custom_values ?? record.customValues;
+  const readCustomScheduleValue = (...keys: string[]): unknown => {
+    const normalizedKeys = new Set(keys.map((key) => key.toLowerCase().replace(/[^a-z0-9]/g, "")));
+    if (isRecord(customValues)) {
+      const match = Object.entries(customValues).find(([key]) => normalizedKeys.has(key.toLowerCase().replace(/[^a-z0-9]/g, "")));
+      return match?.[1];
+    }
+    if (Array.isArray(customValues)) {
+      const match = customValues.find((entry) => {
+        if (!isRecord(entry)) return false;
+        return [entry.key, entry.api_key, entry.stable_key, entry.field_key, entry.label]
+          .some((key) => typeof key === "string" && normalizedKeys.has(key.toLowerCase().replace(/[^a-z0-9]/g, "")));
+      });
+      return isRecord(match) ? match.value : undefined;
+    }
+    return undefined;
+  };
+  const readString = (...candidates: unknown[]): string | undefined =>
+    candidates.find((candidate): candidate is string => typeof candidate === "string" && candidate.trim().length > 0);
+  normalised.start_date = readString(
+    record.start_date,
+    record.startDate,
+    record.training_start_date,
+    record.starts_at,
+    schedule.start_date,
+    schedule.startDate,
+    schedule.starts_at,
+    readCustomScheduleValue("start_date", "startDate", "training_start_date"),
+  ) ?? record.start_date ?? null;
+  normalised.end_date = readString(
+    record.end_date,
+    record.endDate,
+    record.training_end_date,
+    record.ends_at,
+    schedule.end_date,
+    schedule.endDate,
+    schedule.ends_at,
+    readCustomScheduleValue("end_date", "endDate", "training_end_date"),
+  ) ?? record.end_date ?? null;
+  normalised.start_time = readString(record.start_time, record.startTime, schedule.start_time, schedule.startTime, readCustomScheduleValue("start_time", "startTime"))
+    ?? (typeof normalised.start_date === "string" ? normalised.start_date.match(/T(\d{2}:\d{2})/)?.[1] : undefined)
+    ?? record.start_time ?? null;
+  normalised.end_time = readString(record.end_time, record.endTime, schedule.end_time, schedule.endTime, readCustomScheduleValue("end_time", "endTime"))
+    ?? (typeof normalised.end_date === "string" ? normalised.end_date.match(/T(\d{2}:\d{2})/)?.[1] : undefined)
+    ?? record.end_time ?? null;
+  normalised.enrolment_start = readString(
+    record.enrolment_start,
+    record.enrolmentStart,
+    record.enrollment_start,
+    record.enrollmentStart,
+    schedule.enrolment_start,
+    schedule.enrolmentStart,
+    schedule.enrollment_start,
+    schedule.enrollmentStart,
+    readCustomScheduleValue("enrolment_start", "enrolmentStart", "enrollment_start", "enrollmentStart"),
+  ) ?? record.enrolment_start ?? null;
+  normalised.enrolment_end = readString(
+    record.enrolment_end,
+    record.enrolmentEnd,
+    record.enrollment_end,
+    record.enrollmentEnd,
+    schedule.enrolment_end,
+    schedule.enrolmentEnd,
+    schedule.enrollment_end,
+    schedule.enrollmentEnd,
+    readCustomScheduleValue("enrolment_end", "enrolmentEnd", "enrollment_end", "enrollmentEnd"),
+  ) ?? record.enrolment_end ?? null;
+  normalised.time_zone = readString(record.time_zone, record.timezone, record.timeZone, schedule.time_zone, schedule.timezone, schedule.timeZone)
+    ?? record.time_zone ?? null;
+  for (const key of ["capacity", "price"] as const) {
+    const field = normalised[key];
+    if (typeof field === "number") normalised[key] = String(field);
+  }
+  if (!Array.isArray(normalised.sections) && Array.isArray(normalised.sections_typed)) normalised.sections = normalised.sections_typed;
+  if (!Array.isArray(normalised.instructor_notes) && Array.isArray(normalised.instructor_notes_typed)) normalised.instructor_notes = normalised.instructor_notes_typed;
+  return normalised;
+}
+
 function parsePaginatedResponse(value: unknown): TrainingPaginatedResponse {
-  if (!isRecord(value) || !Array.isArray(value.items) || !value.items.every(isTrainingListItem) || !isPagination(value.pagination)) {
+  const unwrapped = unwrapApiData(value);
+  const candidate = isRecord(unwrapped) && Array.isArray(unwrapped.results)
+    ? { ...unwrapped, items: unwrapped.results }
+    : unwrapped;
+  if (!isRecord(candidate) || !Array.isArray(candidate.items) || !candidate.items.every(isTrainingListItem) || !isPagination(candidate.pagination)) {
     throw new Error("Trainings API returned an invalid paginated response.");
   }
-  return { items: value.items, pagination: value.pagination };
+  return { items: candidate.items, pagination: candidate.pagination };
 }
 
 function readErrorMessages(value: unknown): string[] {
@@ -603,11 +911,16 @@ async function createTrainingsApiError(response: Response, operation: string): P
     }
   }
   const detail = readErrorMessages(body)[0];
-  const message =
-    detail ??
-    (rawText.trim()
-      ? `Unable to ${operation} (HTTP ${response.status}): ${rawText.trim().slice(0, 300)}`
-      : `Unable to ${operation} (HTTP ${response.status}).`);
+  const responseText = rawText.trim();
+  const isHtmlErrorPage = /^<!doctype\s+html|^<html[\s>]/i.test(responseText);
+  const isGatewayFailure = response.status === 502 || response.status === 503 || response.status === 504;
+  const message = detail ?? (isGatewayFailure
+    ? `The server is temporarily unavailable, so we could not ${operation} (HTTP ${response.status}). Your editor content is still open; please retry shortly. If this keeps happening, contact support with the status code.`
+    : isHtmlErrorPage
+      ? `Unable to ${operation} (HTTP ${response.status}). The server returned an HTML error page; please retry or contact support with the status code.`
+      : responseText
+        ? `Unable to ${operation} (HTTP ${response.status}): ${responseText.slice(0, 300)}`
+        : `Unable to ${operation} (HTTP ${response.status}).`);
   return new TrainingsApiError(message, response.status, fieldErrors);
 }
 
@@ -645,7 +958,103 @@ export async function listTrainings(params: TrainingListParams = {}): Promise<Tr
   if (!res.ok) throw await createTrainingsApiError(res, "load trainings");
   const value = (await res.json()) as unknown;
   const parsed = parsePaginatedResponse(value);
-  return { items: parsed.items.map(normaliseTrainingListItem), pagination: parsed.pagination };
+  return { items: parsed.items.map((item) => normaliseTrainingListItem(normaliseTrainingRecord(item) as TrainingListItem)), pagination: parsed.pagination };
+}
+
+export interface TrainingUploadResponse {
+  url: string;
+  name: string;
+  size: number;
+  asset_id?: string;
+  type?: string | null;
+  purpose?: string | null;
+}
+
+async function prepareTrainingMediaFile(file: File, purpose: "lesson_video" | "lesson_pdf" | "lesson_document" | "image"): Promise<File> {
+  const isAvif = file.type.toLowerCase() === "image/avif" || file.name.toLowerCase().endsWith(".avif");
+  if (purpose !== "image" || !isAvif) return file;
+  if (typeof createImageBitmap !== "function") {
+    throw new Error("This browser cannot convert AVIF images. Please save the image as PNG, JPEG, or WebP and upload it again.");
+  }
+
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    throw new Error("This AVIF image could not be opened for conversion. Please save it as PNG, JPEG, or WebP and upload it again.");
+  }
+
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("The AVIF image could not be prepared for upload.");
+    context.drawImage(bitmap, 0, 0);
+    const convertedBlob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("The AVIF image could not be converted to PNG."));
+      }, "image/png");
+    });
+    const convertedName = file.name.replace(/\.avif$/i, "") || "image";
+    return new File([convertedBlob], `${convertedName}.png`, { type: "image/png", lastModified: file.lastModified });
+  } finally {
+    bitmap.close();
+  }
+}
+
+/** Uploads Training or lesson media and returns the hosted URL accepted by Training APIs. */
+export async function uploadTrainingMedia(
+  file: File,
+  purpose: "lesson_video" | "lesson_pdf" | "lesson_document" | "image",
+  fieldKey?: string,
+): Promise<TrainingUploadResponse> {
+  const uploadFile = await prepareTrainingMediaFile(file, purpose);
+  const formData = new FormData();
+  formData.append("file", uploadFile);
+  formData.append("purpose", purpose);
+  if (fieldKey) formData.append("field_key", fieldKey);
+  const res = await fetch(`${trainingsBasePath}upload`, {
+    method: "POST",
+    body: formData,
+    credentials: "include",
+  });
+  if (!res.ok) throw await createTrainingsApiError(res, "upload training media");
+  const response = (await res.json()) as unknown;
+  const unwrapped = unwrapApiData(response);
+  const value = Array.isArray(unwrapped) ? unwrapped[0] : unwrapped;
+  if (!isRecord(value)) throw new Error("Trainings API returned an invalid media upload response.");
+  const nestedAsset = isRecord(value.asset) ? value.asset : null;
+  const readAssetId = (candidate: unknown): string | undefined => {
+    if (typeof candidate === "string" && candidate.trim()) return candidate;
+    if (typeof candidate === "number" && Number.isFinite(candidate)) return String(candidate);
+    return undefined;
+  };
+  const assetId = readAssetId(value.asset_id)
+    ?? readAssetId(value.assetId)
+    ?? readAssetId(value.asset_key)
+    ?? readAssetId(value.id)
+    ?? (nestedAsset ? readAssetId(nestedAsset.asset_id) ?? readAssetId(nestedAsset.id) : undefined);
+  const url = assetId
+    ? `/api/v1/media/${encodeURIComponent(assetId)}/file`
+    : typeof value.asset_url === "string" && value.asset_url.trim()
+      ? value.asset_url
+      : typeof value.url === "string" && value.url.trim()
+        ? value.url
+        : typeof value.file_url === "string" && value.file_url.trim()
+          ? value.file_url
+          : typeof value.download_url === "string" && value.download_url.trim()
+            ? value.download_url
+            : "";
+  if (!url) throw new Error("Trainings API returned an upload response without a media URL.");
+  return {
+    url,
+    name: typeof value.name === "string" && value.name.trim() ? value.name : uploadFile.name,
+    size: typeof value.size === "number" && Number.isFinite(value.size) ? value.size : uploadFile.size,
+    ...(assetId ? { asset_id: assetId } : {}),
+    ...(typeof value.type === "string" ? { type: value.type } : typeof value.mime_type === "string" ? { type: value.mime_type } : {}),
+  };
 }
 
 function normaliseTrainingListItem(item: TrainingListItem): TrainingListItem {
@@ -659,7 +1068,8 @@ export async function searchTrainings(params: TrainingSearchParams = {}): Promis
   const qs = sp.toString() ? `?${sp.toString()}` : "";
   const res = await fetch(`/api/v1/search/trainings${qs}`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "search trainings");
-  return parsePaginatedResponse((await res.json()) as unknown);
+  const parsed = parsePaginatedResponse((await res.json()) as unknown);
+  return { items: parsed.items.map((item) => normaliseTrainingListItem(normaliseTrainingRecord(item) as TrainingListItem)), pagination: parsed.pagination };
 }
 
 /** Creates a Training. */
@@ -676,13 +1086,13 @@ export async function createTraining(payload: CreateTrainingPayload): Promise<Tr
   return value as TrainingDetail;
 }
 
-/** Retrieves one Training by id. */
-export async function getTrainingById(trainingId: string): Promise<TrainingDetail> {
-  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}`, { credentials: "include", cache: "no-store" });
+/** Retrieves one Training by id, optionally through a caller-owned authenticated proxy path. */
+export async function getTrainingById(trainingId: string, endpointBasePath = trainingsBasePath): Promise<TrainingDetail> {
+  const res = await fetch(`${endpointBasePath}${encodeURIComponent(trainingId)}`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "load this training");
-  const value = (await res.json()) as unknown;
+  const value = unwrapApiData((await res.json()) as unknown);
   if (!isTrainingDetail(value)) throw new Error("Trainings API returned an invalid training response.");
-  return value;
+  return normaliseTrainingRecord(value) as TrainingDetail;
 }
 
 /** Partially updates a Training. */
@@ -771,9 +1181,7 @@ export async function restoreTraining(trainingId: string): Promise<TrainingDetai
 export async function getTrainingSections(trainingId: string): Promise<unknown[]> {
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/sections`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "load training sections");
-  const value = (await res.json()) as unknown;
-  if (!Array.isArray(value)) throw new Error("Trainings API returned an invalid sections response.");
-  return value;
+  return readArrayResponse(await res.json(), "sections");
 }
 
 /** Creates a section. */
@@ -859,28 +1267,6 @@ export async function updateTrainingLesson(
   return (await res.json()) as unknown;
 }
 
-/** Removes a single attachment from a lesson media list (documents | videos | notes). */
-export async function deleteTrainingLessonMedia(
-  trainingId: string,
-  sectionId: string,
-  lessonId: string,
-  kind: "documents" | "videos" | "notes",
-  url: string,
-): Promise<unknown> {
-  const res = await fetch(
-    `${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/media?kind=${encodeURIComponent(kind)}&url=${encodeURIComponent(url)}`,
-    { method: "DELETE", credentials: "include" },
-  );
-  if (!res.ok) throw await createTrainingsApiError(res, "remove this attachment");
-  const text = await res.text();
-  if (!text) return null;
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return text;
-  }
-}
-
 /** Deletes a lesson. */
 export async function deleteTrainingLesson(trainingId: string, sectionId: string, lessonId: string): Promise<unknown> {
   const res = await fetch(
@@ -919,9 +1305,97 @@ export async function listTrainingAssessments(trainingId: string, params: Assess
   const qs = sp.toString() ? `?${sp.toString()}` : "";
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/assessments${qs}`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "load assessments");
-  const value = (await res.json()) as unknown;
-  if (!Array.isArray(value)) throw new Error("Trainings API returned an invalid assessments response.");
-  return value;
+  return readArrayResponse(await res.json(), "assessments");
+}
+
+/** Gets one assessment with its questions and submissions metadata. */
+export async function getTrainingAssessment(trainingId: string, assessmentId: string): Promise<unknown> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/assessments/${encodeURIComponent(assessmentId)}`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load this assessment");
+  return unwrapApiData((await res.json()) as unknown);
+}
+
+/** Lists learner submissions for an assessment. */
+export async function listTrainingAssessmentSubmissions(
+  trainingId: string,
+  assessmentId: string,
+  params: AssessmentSubmissionsParams = {},
+): Promise<AssessmentSubmissionsResponse> {
+  const searchParams = toSearchParams({
+    page: params.page ?? 1,
+    page_size: params.page_size ?? 20,
+    status: params.status ?? "all",
+    search: params.search,
+    from_date: params.from_date,
+    to_date: params.to_date,
+    order: params.order ?? "newest",
+  });
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/assessments/${encodeURIComponent(assessmentId)}/submissions?${searchParams.toString()}`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (!res.ok) throw await createTrainingsApiError(res, "load assessment submissions");
+
+  const raw: unknown = await res.json();
+  const unwrapped = unwrapApiData(raw);
+  const responseRecord = isRecord(unwrapped) ? unwrapped : {};
+  const nestedData = isRecord(responseRecord.data) ? responseRecord.data : responseRecord;
+  const rawItems = Array.isArray(unwrapped)
+    ? unwrapped
+    : Array.isArray(nestedData.items)
+      ? nestedData.items
+      : Array.isArray(nestedData.results)
+        ? nestedData.results
+        : Array.isArray(nestedData.records)
+          ? nestedData.records
+          : Array.isArray(nestedData.submissions)
+            ? nestedData.submissions
+            : [];
+  const pagination = isRecord(nestedData.pagination) ? nestedData.pagination : nestedData;
+  const items = rawItems.flatMap((value): AssessmentSubmissionListItem[] => {
+    if (!isRecord(value)) return [];
+    const id = value.submission_id ?? value.id ?? value.attempt_id;
+    if (typeof id !== "string" || !id.trim() || (value.status !== "pending" && value.status !== "evaluated")) return [];
+    const rawScore = value.final_score ?? value.score ?? value.auto_score;
+    const rawScorePercent = value.score_percent;
+    return [{
+      id,
+      attempt_id: typeof value.attempt_id === "string" ? value.attempt_id : null,
+      participant_name: typeof (value.learner_name ?? value.participant_name) === "string" ? String(value.learner_name ?? value.participant_name) : null,
+      participant_email: typeof (value.learner_email ?? value.participant_email) === "string" ? String(value.learner_email ?? value.participant_email) : null,
+      attempt_number: typeof value.attempt_number === "number" ? value.attempt_number : null,
+      status: value.status,
+      needs_manual: value.needs_manual_grading === true || value.needs_manual === true,
+      score: typeof rawScore === "number" && Number.isFinite(rawScore) ? rawScore : null,
+      total_points: typeof value.total_points === "number" && Number.isFinite(value.total_points) && value.total_points >= 0 ? value.total_points : null,
+      score_percent: typeof rawScorePercent === "number" && Number.isFinite(rawScorePercent) ? rawScorePercent : null,
+      passed: typeof value.passed === "boolean" ? value.passed : null,
+      submitted_at: typeof value.submitted_at === "string" ? value.submitted_at : null,
+      is_legacy: value.is_legacy === true,
+    }];
+  });
+  const page = typeof pagination.page === "number" && Number.isInteger(pagination.page) && pagination.page >= 1 ? pagination.page : params.page ?? 1;
+  const pageSize = typeof pagination.page_size === "number" && Number.isInteger(pagination.page_size) && pagination.page_size >= 1 ? pagination.page_size : params.page_size ?? 20;
+  const total = typeof pagination.total === "number" && Number.isFinite(pagination.total) && pagination.total >= 0 ? pagination.total : items.length;
+  const totalPages = typeof pagination.total_pages === "number" && Number.isInteger(pagination.total_pages) && pagination.total_pages >= 0
+    ? pagination.total_pages
+    : Math.ceil(total / Math.max(pageSize, 1));
+  const rawStatusCounts = isRecord(nestedData.status_counts) ? nestedData.status_counts : {};
+  const statusCounts = {
+    all: typeof rawStatusCounts.all === "number" && Number.isFinite(rawStatusCounts.all) ? rawStatusCounts.all : total,
+    pending: typeof rawStatusCounts.pending === "number" && Number.isFinite(rawStatusCounts.pending) ? rawStatusCounts.pending : items.filter((item) => item.status === "pending").length,
+    evaluated: typeof rawStatusCounts.evaluated === "number" && Number.isFinite(rawStatusCounts.evaluated) ? rawStatusCounts.evaluated : items.filter((item) => item.status === "evaluated").length,
+  };
+  return {
+    assessment_id: typeof nestedData.assessment_id === "string" ? nestedData.assessment_id : null,
+    assessment_title: typeof nestedData.assessment_title === "string" ? nestedData.assessment_title : null,
+    items,
+    total,
+    page,
+    page_size: pageSize,
+    total_pages: totalPages,
+    status_counts: statusCounts,
+  };
 }
 
 /** Creates an assessment. */
@@ -973,36 +1447,84 @@ export async function gradeAssessmentSubmission(
   assessmentId: string,
   submissionId: string,
   payload: GradeSubmissionPayload,
-): Promise<unknown> {
+): Promise<GradeAssessmentSubmissionResponse> {
   const res = await fetch(
     `${trainingsBasePath}${encodeURIComponent(trainingId)}/assessments/${encodeURIComponent(assessmentId)}/submissions/${encodeURIComponent(submissionId)}/grade`,
     { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
   );
   if (!res.ok) throw await createTrainingsApiError(res, "grade this assessment submission");
-  return (await res.json()) as unknown;
+  const raw: unknown = await res.json();
+  const unwrapped = unwrapApiData(raw);
+  if (!isRecord(unwrapped)) throw new Error("Training API returned an invalid grade response.");
+  return {
+    submission_id: readNullableString(unwrapped.submission_id),
+    status: unwrapped.status === "pending" || unwrapped.status === "evaluated" ? unwrapped.status : null,
+    final_score: readFiniteNumber(unwrapped.final_score ?? unwrapped.score),
+    total_points: readFiniteNumber(unwrapped.total_points),
+    score_percent: readFiniteNumber(unwrapped.score_percent),
+    passed: typeof unwrapped.passed === "boolean" ? unwrapped.passed : null,
+    feedback: readNullableString(unwrapped.feedback),
+  };
 }
 
 /** Gets assessment submission review. */
-export async function getAssessmentSubmissionReview(trainingId: string, assessmentId: string, submissionId: string): Promise<unknown> {
+export async function getAssessmentSubmissionReview(trainingId: string, assessmentId: string, submissionId: string): Promise<AssessmentSubmissionReview> {
   const res = await fetch(
     `${trainingsBasePath}${encodeURIComponent(trainingId)}/assessments/${encodeURIComponent(assessmentId)}/submissions/${encodeURIComponent(submissionId)}/review`,
     { credentials: "include", cache: "no-store" },
   );
   if (!res.ok) throw await createTrainingsApiError(res, "load assessment submission review");
-  return (await res.json()) as unknown;
+  const raw: unknown = await res.json();
+  const unwrapped = unwrapApiData(raw);
+  if (!isRecord(unwrapped)) throw new Error("Training API returned an invalid submission review.");
+  const rawAnswers = Array.isArray(unwrapped.review)
+    ? unwrapped.review
+    : Array.isArray(unwrapped.answers)
+      ? unwrapped.answers
+      : [];
+  const review = rawAnswers.flatMap((value, index): AssessmentSubmissionAnswer[] => {
+    if (!isRecord(value)) return [];
+    const answer = value.given ?? value.answer ?? value.user_answer ?? null;
+    const correct = value.correct ?? value.correct_answer ?? null;
+    const questionType = readNullableString(value.question_type ?? value.type);
+    return [{
+      question_id: readNullableString(value.question_id ?? value.id),
+      question_text: readNullableString(value.question_text ?? value.question) ?? `Question ${index + 1}`,
+      question_type: questionType,
+      given: answer,
+      correct,
+      explanation: readNullableString(value.explanation),
+      points: readFiniteNumber(value.points),
+      points_awarded: readFiniteNumber(value.points_awarded),
+      needs_manual: value.needs_manual === true || value.needs_manual_grading === true || correct === null,
+    }];
+  });
+  const status = unwrapped.status === "pending" || unwrapped.status === "evaluated" ? unwrapped.status : null;
+  return {
+    submission_id: readNullableString(unwrapped.submission_id ?? unwrapped.id),
+    attempt_id: readNullableString(unwrapped.attempt_id),
+    assessment_id: readNullableString(unwrapped.assessment_id),
+    status,
+    auto_score: readFiniteNumber(unwrapped.auto_score),
+    final_score: readFiniteNumber(unwrapped.final_score),
+    score: readFiniteNumber(unwrapped.score),
+    total_points: readFiniteNumber(unwrapped.total_points),
+    score_percent: readFiniteNumber(unwrapped.score_percent),
+    passed: typeof unwrapped.passed === "boolean" ? unwrapped.passed : null,
+    feedback: readNullableString(unwrapped.feedback),
+    review,
+  };
 }
 
-/** Lists assignments for a Training — `GET /trainings/{id}/assignments`. Returns the array (or `items` wrapper) when present. */
+/** Lists assignments for a Training — `GET /trainings/{id}/assignments`.
+ *  Backend currently returns 405; gracefully returns [] until the endpoint is implemented. */
 export async function listTrainingAssignments(trainingId: string): Promise<unknown[]> {
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/assignments`, {
     credentials: "include",
     cache: "no-store",
   });
   if (!res.ok) return [];
-  const value = (await res.json()) as unknown;
-  if (Array.isArray(value)) return value;
-  if (isRecord(value) && Array.isArray(value.items)) return value.items as unknown[];
-  return [];
+  return readArrayResponse(await res.json(), "assignments");
 }
 
 /** Creates an assignment. */
@@ -1062,9 +1584,7 @@ export async function gradeAssignmentSubmission(
 export async function listMyTrainingEnrolments(): Promise<unknown[]> {
   const res = await fetch(`${trainingsBasePath}my/enrolments`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "load my training enrolments");
-  const value = (await res.json()) as unknown;
-  if (!Array.isArray(value)) throw new Error("Trainings API returned an invalid my enrolments response.");
-  return value;
+  return readArrayResponse(await res.json(), "my enrolments");
 }
 
 /** Enrols in a Training. */
@@ -1082,11 +1602,8 @@ export async function enrolInTraining(trainingId: string, payload: Record<string
 /** Lists enrolments for a Training. */
 export async function listTrainingEnrolments(trainingId: string): Promise<unknown[]> {
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/enrolments`, { credentials: "include", cache: "no-store" });
-  if (!res.ok) return [];
-  const value = (await res.json()) as unknown;
-  if (Array.isArray(value)) return value;
-  if (isRecord(value) && Array.isArray(value.items)) return value.items as unknown[];
-  return [];
+  if (!res.ok) throw await createTrainingsApiError(res, "load training enrolments");
+  return readArrayResponse(await res.json(), "training enrolments");
 }
 
 /** Cancels an enrolment. */
@@ -1259,11 +1776,12 @@ export async function removeTrainingFromWishlist(trainingId: string): Promise<un
 // Progress / Content / Live sessions / Certificate / Calendar etc.
 // ---------------------------------------------------------------------------
 
-/** Gets training progress. */
-export async function getTrainingProgress(trainingId: string): Promise<unknown> {
-  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/progress`, { credentials: "include", cache: "no-store" });
+/** Gets training progress, optionally scoped to an enrolled participant email. */
+export async function getTrainingProgress(trainingId: string, participantEmail?: string): Promise<unknown> {
+  const query = participantEmail?.trim() ? `?participant_email=${encodeURIComponent(participantEmail.trim())}` : "";
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/progress${query}`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "load training progress");
-  return (await res.json()) as unknown;
+  return unwrapApiData((await res.json()) as unknown);
 }
 
 /** Gets training content (sections/lessons for learner) — supports `?is_preview=true` draft gating. */
@@ -1271,7 +1789,7 @@ export async function getTrainingContent(trainingId: string, isPreview = false):
   const qs = isPreview ? "?is_preview=true" : "";
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/content${qs}`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "load training content");
-  return (await res.json()) as unknown;
+  return unwrapApiData((await res.json()) as unknown);
 }
 
 /** Gets a single lesson — `GET /sections/{sid}/lessons/{lid}` with optional `?is_preview`. */
@@ -1282,7 +1800,14 @@ export async function getTrainingLesson(trainingId: string, sectionId: string, l
     { credentials: "include", cache: "no-store" },
   );
   if (!res.ok) throw await createTrainingsApiError(res, "load this lesson");
-  return (await res.json()) as unknown;
+  return unwrapApiData((await res.json()) as unknown);
+}
+
+/** Downloads one lesson's protected media/content. */
+export async function downloadTrainingLesson(trainingId: string, sectionId: string, lessonId: string): Promise<{ blob: Blob; filename: string | null }> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/download`, { credentials: "include" });
+  if (!res.ok) throw await createTrainingsApiError(res, "download this lesson");
+  return { blob: await res.blob(), filename: getAttachmentFilename(res.headers.get("Content-Disposition")) };
 }
 
 /** Completes a lesson. */
@@ -1301,9 +1826,7 @@ export async function completeTrainingLesson(trainingId: string, payload: Comple
 export async function listTrainingLiveSessions(trainingId: string): Promise<unknown[]> {
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/live-sessions`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "load live sessions");
-  const value = (await res.json()) as unknown;
-  if (!Array.isArray(value)) throw new Error("Trainings API returned an invalid live sessions response.");
-  return value;
+  return readArrayResponse(await res.json(), "live sessions");
 }
 
 /** Creates a live session. */
@@ -1353,6 +1876,27 @@ export async function downloadTrainingCalendar(trainingId: string): Promise<{ bl
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/calendar.ics`, { credentials: "include" });
   if (!res.ok) throw await createTrainingsApiError(res, "download training calendar");
   return { blob: await res.blob(), filename: getAttachmentFilename(res.headers.get("Content-Disposition")) };
+}
+
+/** Downloads all downloadable training content as provided by the API. */
+export async function downloadTrainingDownloads(trainingId: string): Promise<{ blob: Blob; filename: string | null }> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/downloads`, { credentials: "include" });
+  if (!res.ok) throw await createTrainingsApiError(res, "download training content");
+  return { blob: await res.blob(), filename: getAttachmentFilename(res.headers.get("Content-Disposition")) };
+}
+
+/** Downloads the generated training notes PDF. */
+export async function downloadTrainingNotesPdf(trainingId: string): Promise<{ blob: Blob; filename: string | null }> {
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/notes.pdf`, { credentials: "include" });
+  if (!res.ok) throw await createTrainingsApiError(res, "download training notes");
+  return { blob: await res.blob(), filename: getAttachmentFilename(res.headers.get("Content-Disposition")) };
+}
+
+/** Retrieves uploaded training media by its stored filename. */
+export async function getTrainingUploadedMedia(storedName: string): Promise<Blob> {
+  const res = await fetch(`${trainingsBasePath}upload/${encodeURIComponent(storedName)}`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw await createTrainingsApiError(res, "load training media");
+  return res.blob();
 }
 
 /** Gets meeting link. */
@@ -1639,8 +2183,8 @@ export async function listTrainingAnnouncements(trainingId: string): Promise<unk
 
 // ---- Discussion threaded replies ----
 
-/** Replies to a discussion — `POST /discussions/{did}/replies` with `{message, is_answer?}`. */
-export async function createDiscussionReply(trainingId: string, discussionId: string, payload: { message: string; is_answer?: boolean }): Promise<unknown> {
+/** Replies to a discussion — `POST /discussions/{did}/replies` with `{answer, is_answer?}`. */
+export async function createDiscussionReply(trainingId: string, discussionId: string, payload: { answer: string; is_answer?: boolean }): Promise<unknown> {
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/discussions/${encodeURIComponent(discussionId)}/replies`, {
     method: "POST",
     credentials: "include",
@@ -1776,24 +2320,97 @@ export async function exportTrainingEnrolments(trainingId: string): Promise<{ bl
 }
 
 /** Lists reviews — `GET /trainings/{id}/reviews`. */
-export async function listTrainingReviews(trainingId: string): Promise<unknown[]> {
-  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/reviews`, { credentials: "include", cache: "no-store" });
-  if (!res.ok) throw await createTrainingsApiError(res, "load reviews");
-  const value = (await res.json()) as unknown;
-  if (!Array.isArray(value)) throw new Error("Trainings API returned an invalid reviews response.");
-  return value;
+export async function listTrainingReviews(trainingId: string): Promise<TrainingReview[]> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 10_000);
+  try {
+    const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/reviews`, {
+      credentials: "include",
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!res.ok) throw await createTrainingsApiError(res, "load reviews");
+    return parseTrainingReviews(await res.json());
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Loading reviews timed out. Please try again.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 }
 
-/** Creates a review — `POST /trainings/{id}/reviews`. */
-export async function createTrainingReview(trainingId: string, payload: { rating: number; comment?: string | null; participant_email?: string }): Promise<unknown> {
-  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/reviews`, {
-    method: "POST",
+/** Changes a Training review's moderation state through the deployed shared Reviews API. */
+export async function moderateTrainingReview(reviewId: string, status: ReviewModerationStatus): Promise<void> {
+  const payload = JSON.stringify({ action: status });
+  const globalResponse = await fetch(`/api/v1/reviews/training/${encodeURIComponent(reviewId)}/moderate`, {
+    method: "PATCH",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: payload,
   });
-  if (!res.ok) throw await createTrainingsApiError(res, "create this review");
-  return (await res.json()) as unknown;
+  if (!globalResponse.ok) throw await createTrainingsApiError(globalResponse, "update review moderation");
+}
+
+/** Lists the authenticated Enterprise's managed Training reviews and aggregate status counts. */
+export async function listEnterpriseReviewsManage(params: EnterpriseTrainingReviewsParams = {}): Promise<ReviewsManageResponse> {
+  const searchParams = toSearchParams({
+    module: "training",
+    item_id: params.trainingId,
+    status: params.status === "all" ? undefined : params.status,
+    page: params.page ?? 1,
+    page_size: params.pageSize ?? 20,
+    rating: params.rating === "all" ? undefined : params.rating,
+    q: params.q?.trim().slice(0, 200) || undefined,
+  });
+  const response = await fetch(`/api/v1/reviews/manage?${searchParams.toString()}`, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw await createTrainingsApiError(response, "load managed Training reviews");
+
+  return parseManagedTrainingReviews(unwrapApiData(await response.json()), params.page ?? 1, params.pageSize ?? 20);
+}
+
+/** Loads Training review moderation audit entries, optionally filtered to one Training. */
+export async function getTrainingReviewsAudit(trainingId?: string): Promise<TrainingReviewAuditEntry[]> {
+  const searchParams = toSearchParams({ module: "training", item_id: trainingId, page: 1, page_size: 100 });
+  const response = await fetch(`/api/v1/reviews/audit?${searchParams.toString()}`, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw await createTrainingsApiError(response, "load review moderation history");
+  const payload = unwrapApiData(await response.json());
+  const rows = Array.isArray(payload)
+    ? payload
+    : isRecord(payload) && Array.isArray(payload.items)
+      ? payload.items
+      : isRecord(payload) && Array.isArray(payload.audit)
+        ? payload.audit
+        : null;
+  if (!rows) throw new Error("Training Reviews API returned an invalid moderation audit response.");
+
+  return rows.filter(isRecord).map((row, index) => ({
+    id: typeof row.id === "string" ? row.id : `audit-${index}`,
+    module: typeof row.module === "string" ? row.module : "training",
+    review_id: typeof row.review_id === "string" ? row.review_id : "",
+    item_id: typeof row.item_id === "string" ? row.item_id : "",
+    item_name: typeof row.item_name === "string" ? row.item_name : null,
+    from_status: typeof row.from_status === "string" ? row.from_status : null,
+    to_status: typeof row.to_status === "string" ? row.to_status : "updated",
+    actor_name: typeof row.actor_name === "string" ? row.actor_name : null,
+    actor_user_id: typeof row.actor_user_id === "string" ? row.actor_user_id : null,
+    actor_role: typeof row.actor_role === "string" ? row.actor_role : null,
+    created_at: typeof row.created_at === "string" ? row.created_at : null,
+    customer_name: typeof row.customer_name === "string" ? row.customer_name : null,
+    rating: typeof row.rating === "number" && row.rating >= 1 && row.rating <= 5 ? row.rating as TrainingStarRating : null,
+    comment: typeof row.comment === "string" ? row.comment : null,
+    reason: typeof (row.reason ?? row.rejection_reason ?? row.moderation_reason) === "string" ? String(row.reason ?? row.rejection_reason ?? row.moderation_reason) : null,
+  })).filter((entry) => entry.item_id && entry.review_id);
+}
+
+/** Permanently deletes a review — `DELETE /reviews/training/{review_id}`. */
+export async function deleteTrainingReview(reviewId: string): Promise<void> {
+  const res = await fetch(`/api/v1/reviews/training/${encodeURIComponent(reviewId)}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!res.ok) throw await createTrainingsApiError(res, "delete this review");
 }
 
 // Re-export helper for filename parsing (used for cert/calendar exports).
@@ -1886,6 +2503,65 @@ export interface TrainingBatchCheckInResponse {
   results: readonly TrainingBatchCheckInResult[];
 }
 
+/** Attendance status accepted and returned by the lesson attendance API. */
+export type LessonAttendanceStatus = "attended" | "absent" | "not_marked";
+
+/** User metadata for the latest lesson attendance update. */
+export interface LessonAttendanceMarkedBy {
+  id?: string | null;
+  name?: string | null;
+  email?: string | null;
+}
+
+/** One enrolled participant's attendance record for a lesson. */
+export interface LessonAttendanceParticipant {
+  enrolment_id: string;
+  participant_name: string;
+  participant_email: string;
+  enrolment_status: string;
+  status: LessonAttendanceStatus;
+  marked_by?: LessonAttendanceMarkedBy | null;
+  marked_at?: string | null;
+}
+
+/** Roster returned by GET/POST `/lessons/{lesson_id}/attendance/roster`. */
+export interface LessonAttendanceRosterResponse {
+  training_id: string;
+  lesson_id: string;
+  lesson_title?: string | null;
+  lesson_type?: string | null;
+  participants: readonly LessonAttendanceParticipant[];
+}
+
+/** One participant attendance update in a lesson roster batch. */
+export interface LessonAttendanceMarkItem {
+  enrolment_id: string;
+  status: LessonAttendanceStatus;
+}
+
+/** Request body for batch lesson attendance updates. */
+export interface LessonAttendanceBatchRequest {
+  records: readonly LessonAttendanceMarkItem[];
+}
+
+/** Request body for QR check-in against a selected lesson. */
+export interface LessonQrCheckInRequest {
+  qr_code: string;
+}
+
+/** Result of marking lesson attendance from a participant QR scan. */
+export interface LessonQrCheckInResponse {
+  enrolment_id: string;
+  participant_name: string;
+  participant_email: string;
+  enrolment_status: string;
+  status: LessonAttendanceStatus;
+  marked_by?: LessonAttendanceMarkedBy | null;
+  marked_at?: string | null;
+  result: "marked" | "already_attended";
+  message?: string;
+}
+
 function isValidateTrainingQrResponse(value: unknown): value is ValidateTrainingQrResponse {
   return isRecord(value) &&
     typeof value.valid === "boolean" &&
@@ -1948,6 +2624,51 @@ function isTrainingBatchCheckInResponse(value: unknown): value is TrainingBatchC
     Array.isArray(value.results) && value.results.every(isTrainingBatchCheckInResult);
 }
 
+function isLessonAttendanceStatus(value: unknown): value is LessonAttendanceStatus {
+  return value === "attended" || value === "absent" || value === "not_marked";
+}
+
+function isLessonAttendanceMarkedBy(value: unknown): value is LessonAttendanceMarkedBy {
+  return isRecord(value) &&
+    (value.id === undefined || value.id === null || typeof value.id === "string") &&
+    (value.name === undefined || value.name === null || typeof value.name === "string") &&
+    (value.email === undefined || value.email === null || typeof value.email === "string");
+}
+
+function isLessonAttendanceParticipant(value: unknown): value is LessonAttendanceParticipant {
+  return isRecord(value) &&
+    typeof value.enrolment_id === "string" &&
+    typeof value.participant_name === "string" &&
+    typeof value.participant_email === "string" &&
+    typeof value.enrolment_status === "string" &&
+    isLessonAttendanceStatus(value.status) &&
+    (value.marked_by === undefined || value.marked_by === null || isLessonAttendanceMarkedBy(value.marked_by)) &&
+    (value.marked_at === undefined || value.marked_at === null || typeof value.marked_at === "string");
+}
+
+function isLessonAttendanceRosterResponse(value: unknown): value is LessonAttendanceRosterResponse {
+  return isRecord(value) &&
+    typeof value.training_id === "string" &&
+    typeof value.lesson_id === "string" &&
+    (value.lesson_title === undefined || value.lesson_title === null || typeof value.lesson_title === "string") &&
+    (value.lesson_type === undefined || value.lesson_type === null || typeof value.lesson_type === "string") &&
+    Array.isArray(value.participants) &&
+    value.participants.every(isLessonAttendanceParticipant);
+}
+
+function isLessonQrCheckInResponse(value: unknown): value is LessonQrCheckInResponse {
+  return isRecord(value) &&
+    typeof value.enrolment_id === "string" &&
+    typeof value.participant_name === "string" &&
+    typeof value.participant_email === "string" &&
+    typeof value.enrolment_status === "string" &&
+    isLessonAttendanceStatus(value.status) &&
+    (value.marked_by === undefined || value.marked_by === null || isLessonAttendanceMarkedBy(value.marked_by)) &&
+    (value.marked_at === undefined || value.marked_at === null || typeof value.marked_at === "string") &&
+    (value.result === "marked" || value.result === "already_attended") &&
+    (value.message === undefined || typeof value.message === "string");
+}
+
 /** Validates a backend-issued enrolment QR code without changing attendance state. */
 export async function validateTrainingQr(trainingId: string, payload: ValidateTrainingQrPayload): Promise<ValidateTrainingQrResponse> {
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/enrolments/validate-qr`, {
@@ -1973,6 +2694,60 @@ export async function checkInTrainingParticipant(trainingId: string, payload: Ch
   if (!res.ok) throw await createTrainingsApiError(res, "check in this participant");
   const value = (await res.json()) as unknown;
   if (!isCheckInTrainingParticipantResponse(value)) throw new Error("Trainings API returned an invalid check-in response.");
+  return value;
+}
+
+/** Loads the enrolled participants and current statuses for one lesson. */
+export async function getLessonAttendanceRoster(trainingId: string, lessonId: string): Promise<LessonAttendanceRosterResponse> {
+  const res = await fetch(
+    `${trainingsBasePath}${encodeURIComponent(trainingId)}/lessons/${encodeURIComponent(lessonId)}/attendance/roster`,
+    { credentials: "include", cache: "no-store" },
+  );
+  if (!res.ok) throw await createTrainingsApiError(res, "load lesson attendance");
+  const value = (await res.json()) as unknown;
+  if (!isLessonAttendanceRosterResponse(value)) throw new Error("Trainings API returned an invalid lesson attendance roster.");
+  return value;
+}
+
+/** Saves changed attendance statuses for one lesson in a single batch. */
+export async function saveLessonAttendanceRoster(
+  trainingId: string,
+  lessonId: string,
+  payload: LessonAttendanceBatchRequest,
+): Promise<LessonAttendanceRosterResponse> {
+  const res = await fetch(
+    `${trainingsBasePath}${encodeURIComponent(trainingId)}/lessons/${encodeURIComponent(lessonId)}/attendance/roster`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!res.ok) throw await createTrainingsApiError(res, "save lesson attendance");
+  const value = (await res.json()) as unknown;
+  if (!isLessonAttendanceRosterResponse(value)) throw new Error("Trainings API returned an invalid lesson attendance roster.");
+  return value;
+}
+
+/** Scans an enrolment QR and marks that participant attended for the selected lesson. */
+export async function scanLessonAttendanceQr(
+  trainingId: string,
+  lessonId: string,
+  payload: LessonQrCheckInRequest,
+): Promise<LessonQrCheckInResponse> {
+  const res = await fetch(
+    `${trainingsBasePath}${encodeURIComponent(trainingId)}/lessons/${encodeURIComponent(lessonId)}/attendance/scan`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!res.ok) throw await createTrainingsApiError(res, "check in this participant for the lesson");
+  const value = (await res.json()) as unknown;
+  if (!isLessonQrCheckInResponse(value)) throw new Error("Trainings API returned an invalid lesson QR check-in response.");
   return value;
 }
 
@@ -2015,61 +2790,4 @@ export async function batchCheckInTrainingParticipants(trainingId: string, paylo
   const value = (await res.json()) as unknown;
   if (!isTrainingBatchCheckInResponse(value)) throw new Error("Trainings API returned an invalid batch check-in response.");
   return value;
-}
-
-// ---- Media upload (lessons videos / PDFs / notes) ----
-
-/** Upload-purpose enum matching the backend TrainingUploadPurpose literal. */
-export type TrainingUploadPurpose = "lesson_video" | "lesson_pdf" | "lesson_document";
-
-/** Result returned to the caller after a successful media upload. */
-export interface TrainingMediaUploadResult {
-  mediaUrl: string;
-  mediaId: string;
-  storageKey: string;
-  fileName: string;
-  contentType: string;
-  sizeBytes: number;
-}
-
-/** Maps file MIME to the backend purpose enum. */
-function purposeForFile(file: File): TrainingUploadPurpose {
-  const type = file.type || "";
-  if (type.startsWith("video/")) return "lesson_video";
-  if (type === "application/pdf" || type.endsWith("/pdf")) return "lesson_pdf";
-  return "lesson_document";
-}
-
-/**
- * Single-step multipart upload via POST /api/v1/trainings/upload.
- * Returns the persisted media URL to store in the lesson payload.
- */
-export async function uploadLessonMedia(file: File, purpose?: TrainingUploadPurpose): Promise<TrainingMediaUploadResult> {
-  if (!file) throw new Error("No file selected.");
-
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("purpose", purpose ?? purposeForFile(file));
-
-  const res = await fetch(`${trainingsBasePath}upload`, {
-    method: "POST",
-    credentials: "include",
-    body: formData,
-  });
-
-  if (!res.ok) throw await createTrainingsApiError(res, "upload this file");
-
-  const body = (await res.json()) as unknown;
-  if (!isRecord(body) || typeof body.url !== "string") {
-    throw new TrainingsApiError("Upload API returned an invalid response.", res.status);
-  }
-
-  return {
-    mediaUrl: body.url,
-    mediaId: typeof body.stored_name === "string" ? body.stored_name : "",
-    storageKey: typeof body.url === "string" ? body.url : "",
-    fileName: typeof body.name === "string" ? body.name : file.name,
-    contentType: typeof body.type === "string" ? body.type : file.type || "application/octet-stream",
-    sizeBytes: typeof body.size === "number" ? body.size : file.size,
-  };
 }

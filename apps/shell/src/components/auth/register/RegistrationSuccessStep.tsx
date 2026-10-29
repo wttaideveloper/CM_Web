@@ -19,11 +19,11 @@ function CheckIcon() {
 
 export default function RegistrationSuccessStep({ onContinueToSignIn }: RegistrationSuccessStepProps) {
   const router = useRouter();
-  const { email, tenantName, tenantSlug, plan, createdTenant, clearRegistrationState } = useRegistration();
+  const { email, tenantName, tenantSlug, plan, clearRegistrationState } = useRegistration();
 
-  const workspaceSlug = createdTenant?.slug ?? tenantSlug;
-  const organizationName = createdTenant?.name ?? tenantName;
-  const selectedPlan = createdTenant?.plan ?? plan;
+  const workspaceSlug = tenantSlug;
+  const organizationName = tenantName;
+  const selectedPlan = plan;
 
   const handleContinue = () => {
     clearRegistrationState();

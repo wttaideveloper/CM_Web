@@ -1,13 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useCurrentEnterprise, useTenant } from "@ihp/enterprise-runtime";
 import Link from "next/link";
+import { useTranslation } from "react-i18next";
 
 import TrainingActionsMenu from "./TrainingActionsMenu";
+import { humanizeLabel } from "./detail-formatters";
 import { PRODUCT_TRAINING_STATUSES, getTrainingStatusBadgeClass, getTrainingStatusLabel } from "./training-status";
-import { listTrainings, searchTrainings, getTrainingsReportSummary, type TrainingListItem } from "./trainings.service";
+import { getTrainingProviderDashboard, listTrainings, searchTrainings, getTrainingsReportSummary, listEnterpriseReviewsManage, type TrainingListItem } from "./trainings.service";
+import { getTrainingMediaPreviewUrl } from "./training-media-url";
+import { EnterpriseTrainingsReviewsTab } from "./EnterpriseTrainingsReviewsTab";
 
 type SortOption = "newest" | "oldest" | "az" | "status";
 const statusFilters = ["all", ...PRODUCT_TRAINING_STATUSES] as const;
@@ -48,21 +52,54 @@ function sortTrainings(items: TrainingListItem[], sort: SortOption) {
   });
 }
 
-function formatTrainingDate(value: string): string {
+function formatTrainingDate(value: string, separateTime?: string | null): string {
   if (!isValidDate(value)) {
     return "—";
   }
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value));
+  const hasEmbeddedTime = /T\d{2}:\d{2}/.test(value);
+  const formattedDate = new Intl.DateTimeFormat(undefined, hasEmbeddedTime
+    ? { dateStyle: "medium", timeStyle: "short" }
+    : { dateStyle: "medium" }).format(new Date(value));
+  if (hasEmbeddedTime || !separateTime || !/^([01]\d|2[0-3]):[0-5]\d/.test(separateTime)) return formattedDate;
+  const timeValue = new Date(`1970-01-01T${separateTime.slice(0, 5)}:00`);
+  return `${formattedDate}, ${new Intl.DateTimeFormat(undefined, { timeStyle: "short" }).format(timeValue)}`;
 }
 
-function formatTrainingAvailability(training: TrainingListItem): string {
+function formatTrainingAvailability(training: TrainingListItem, registrationCount: number | undefined): string {
+  if (typeof training.available_slots === "number" && Number.isFinite(training.available_slots)) {
+    return `${Math.max(0, training.available_slots)} seats available`;
+  }
   if (typeof training.capacity === "string" && training.capacity.trim().length > 0) {
     const capacity = Number.parseInt(training.capacity.trim(), 10);
     if (Number.isFinite(capacity) && capacity > 0) {
-      return `${capacity} seats available`;
+      const availableSeats = typeof registrationCount === "number" && Number.isFinite(registrationCount)
+        ? Math.max(0, capacity - registrationCount)
+        : capacity;
+      return `${availableSeats} seats available`;
     }
   }
   return "—";
+}
+
+function summarizeTrainingLocation(value: string | null | undefined): string {
+  const location = value?.trim().replace(/\s+/g, " ");
+  if (!location) return "";
+  if (location.length <= 38) return location;
+  const addressParts = location.split(",").map((part) => part.trim()).filter(Boolean);
+  if (addressParts.length > 1) {
+    const summary = addressParts.slice(-2).join(", ");
+    if (summary.length <= 38) return summary;
+  }
+  return `${location.slice(0, 35).trimEnd()}…`;
+}
+
+function formatTrainingLocation(training: TrainingListItem): string {
+  const mode = training.delivery_mode?.trim().toLowerCase();
+  const venue = summarizeTrainingLocation(training.venue) || summarizeTrainingLocation(training.address);
+  if (mode === "online" || mode === "self_paced") return mode === "self_paced" ? "Self-paced" : "Online";
+  if (mode === "hybrid") return venue ? `Hybrid · ${venue}` : "Hybrid";
+  const deliveryLabel = training.delivery_mode ? humanizeLabel(training.delivery_mode) : "In person";
+  return venue ? `${deliveryLabel} · ${venue}` : deliveryLabel;
 }
 
 function TrainingsSummaryCard({ summary, isLoading, isError }: { summary: unknown; isLoading: boolean; isError: boolean }) {
@@ -106,28 +143,82 @@ function TrainingsSummaryCard({ summary, isLoading, isError }: { summary: unknow
 }
 
 function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteSuccess }: { training: TrainingListItem; onStatusSuccess: () => void; onDuplicateSuccess: () => void; onDeleteSuccess: () => void }) {
-  const primaryImage = typeof training.primary_image === "string" ? training.primary_image.trim() : "";
-  const hasPrimaryImage = primaryImage.length > 0;
+  const { t } = useTranslation("enterpriseTrainings");
+  const cardRef = useRef<HTMLElement | null>(null);
+  const [isNearViewport, setIsNearViewport] = useState(false);
+  const needsEnrolmentCount = training.enrolled_count === null || training.enrolled_count === undefined;
+  useEffect(() => {
+    if (!needsEnrolmentCount || isNearViewport) return;
+    const card = cardRef.current;
+    if (!card || typeof IntersectionObserver === "undefined") {
+      setIsNearViewport(true);
+      return;
+    }
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) return;
+      setIsNearViewport(true);
+      observer.disconnect();
+    }, { rootMargin: "200px" });
+    observer.observe(card);
+    return () => observer.disconnect();
+  }, [isNearViewport, needsEnrolmentCount]);
+
+  const providerDashboardQuery = useQuery({
+    queryKey: ["trainings", training.id, "dashboard", "provider"],
+    queryFn: () => getTrainingProviderDashboard(training.id),
+    enabled: needsEnrolmentCount && isNearViewport,
+    staleTime: 30_000,
+    retry: 1,
+  });
+  const registrationCount = typeof training.enrolled_count === "number" && Number.isFinite(training.enrolled_count)
+    ? training.enrolled_count
+    : providerDashboardQuery.data?.total_enrolments;
+  const primaryImage = getTrainingMediaPreviewUrl(training.primary_image);
+  const tags = [...new Set((training.tags ?? [])
+    .filter((tag): tag is string => typeof tag === "string")
+    .map((tag) => tag.trim())
+    .filter(Boolean))];
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
+  const hasPrimaryImage = Boolean(primaryImage) && failedImageUrl !== primaryImage;
+  useEffect(() => {
+    if (!primaryImage) {
+      setFailedImageUrl(null);
+      return;
+    }
+    const image = new Image();
+    image.onerror = () => setFailedImageUrl(primaryImage);
+    image.src = primaryImage;
+    return () => {
+      image.onerror = null;
+    };
+  }, [primaryImage]);
   const labelClass = hasPrimaryImage ? "text-white/75" : "text-[#7f9d94]";
   const primaryTextClass = hasPrimaryImage ? "text-white" : "text-[#06201c]";
   const secondaryTextClass = hasPrimaryImage ? "text-white/85" : "text-[#52736a]";
   const dividerClass = hasPrimaryImage ? "border-white/25" : "border-[#edf3f0]";
-  const bodyBackgroundClass = hasPrimaryImage ? "bg-[#06201c]/95" : "bg-white";
 
   return (
-    <article className={`group relative rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-200 ${hasPrimaryImage ? "hover:-translate-y-0.5 hover:border-[#4f9f76] hover:shadow-lg" : "hover:-translate-y-0.5 hover:border-[#c6ddd3] hover:shadow-md"}`}>
+    <article ref={cardRef} className={`group relative flex h-full flex-col rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-200 ${hasPrimaryImage ? "hover:-translate-y-0.5 hover:border-[#4f9f76] hover:shadow-lg" : "hover:-translate-y-0.5 hover:border-[#c6ddd3] hover:shadow-md"}`}>
       {hasPrimaryImage ? (
         <div aria-hidden="true" className="absolute inset-0 overflow-hidden rounded-[inherit] bg-cover bg-center" style={{ backgroundImage: `url(${JSON.stringify(primaryImage)})` }}>
-          <div className="absolute inset-0 bg-gradient-to-br from-[#06201c]/60 via-[#0c382e]/45 to-[#1f6a58]/35" />
+          <div className="absolute inset-0 bg-gradient-to-br from-[#06201c]/80 via-[#0c382e]/70 to-[#1f6a58]/60" />
         </div>
       ) : null}
-      <div className="relative z-10">
+      <div className="relative z-10 flex flex-1 flex-col">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className={`text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>{training.category || "—"}</p>
-            <h3 className={`mt-2 text-lg font-bold ${primaryTextClass}`}>{training.title}</h3>
+            <h3 className={`mt-2 line-clamp-2 min-h-14 text-lg font-bold leading-7 ${primaryTextClass}`} title={training.title}>{training.title}</h3>
           </div>
-          <div className={hasPrimaryImage ? "flex shrink-0 items-center gap-2" : "flex shrink-0 flex-col items-end gap-2"}>
+          <div className="flex shrink-0 items-center gap-2">
+            {typeof training.average_rating === "number" && Number.isFinite(training.average_rating) && training.average_rating > 0 ? (
+              <span
+                className={`rounded-full px-2.5 py-1 text-[11px] font-bold shadow-sm ${hasPrimaryImage ? "bg-white/90 text-[#1f6a58]" : "bg-[#e8f6ee] text-[#1f6a58]"}`}
+                aria-label={`Average rating ${training.average_rating.toFixed(1)} out of 5${typeof training.reviews_count === "number" ? ` from ${training.reviews_count} reviews` : ""}`}
+              >
+                {training.average_rating.toFixed(1)} ★{typeof training.reviews_count === "number" ? ` (${training.reviews_count})` : ""}
+              </span>
+            ) : null}
             <span className={`rounded-full px-3 py-1 text-[11px] font-bold shadow-sm ${getTrainingStatusBadgeClass(training.status)}`}>{getTrainingStatusLabel(training.status)}</span>
             <div className={hasPrimaryImage ? "rounded-full bg-white/90 shadow-sm" : undefined}>
               <TrainingActionsMenu training={training} onStatusSuccess={onStatusSuccess} onDuplicateSuccess={onDuplicateSuccess} onDeleteSuccess={onDeleteSuccess} />
@@ -136,29 +227,45 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
         </div>
 
         <p className={`mt-2 line-clamp-2 min-h-10 text-sm leading-5 ${secondaryTextClass}`}>{training.description || "—"}</p>
+        {tags.length > 0 ? (
+          <div className="mt-3">
+            <p className={`text-[10px] font-bold uppercase tracking-[0.12em] ${labelClass}`}>{t("list.tags")}</p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {tags.slice(0, 4).map((tag) => (
+                <span key={tag} className={`max-w-full truncate rounded-full px-2.5 py-1 text-[11px] font-bold ${hasPrimaryImage ? "bg-white/90 text-[#1f6a58]" : "bg-[#e8f6ee] text-[#1f6a58]"}`} title={tag}>{tag}</span>
+              ))}
+              {tags.length > 4 ? <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${hasPrimaryImage ? "bg-white/90 text-[#52736a]" : "bg-[#f0f3f2] text-[#52736a]"}`}>{t("list.moreTags", { count: tags.length - 4 })}</span> : null}
+            </div>
+          </div>
+        ) : null}
+        {training.status === "needs_revision" || training.status === "rejected" ? (
+          <Link href={`/admin/trainings/${training.id}`} className={`mt-2 inline-block text-xs font-semibold underline underline-offset-2 ${hasPrimaryImage ? "text-white" : "text-[#8a5a00]"}`}>
+            Review Super Admin feedback
+          </Link>
+        ) : null}
 
-        <div className={`mt-3 grid grid-cols-1 gap-x-8 gap-y-4 border-t pt-3 text-sm sm:grid-cols-2 lg:grid-cols-4 ${dividerClass}`}>
+        <div className={`mt-auto grid grid-cols-2 gap-x-4 gap-y-4 border-t pt-3 text-sm xl:grid-cols-4 ${dividerClass}`}>
           <div className="min-w-0">
-            <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Date</p>
-            <p className={`mt-1 font-semibold ${primaryTextClass}`}>{formatTrainingDate(training.start_date ?? "")}</p>
+            <p className={`truncate text-[10px] font-bold uppercase leading-4 tracking-[0.1em] ${labelClass}`}>Date</p>
+            <p className={`mt-1 line-clamp-2 h-10 text-sm font-bold leading-5 ${primaryTextClass}`} title={formatTrainingDate(training.start_date ?? "", training.start_time)}>{formatTrainingDate(training.start_date ?? "", training.start_time)}</p>
           </div>
           <div className="min-w-0">
-            <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Location</p>
-            <p className={`mt-1 font-semibold ${primaryTextClass}`}>{training.delivery_mode || "—"}</p>
+            <p className={`truncate text-[10px] font-bold uppercase leading-4 tracking-[0.1em] ${labelClass}`}>Format / location</p>
+            <p className={`mt-1 line-clamp-2 h-10 text-sm font-bold leading-5 ${primaryTextClass}`} title={formatTrainingLocation(training)}>{formatTrainingLocation(training)}</p>
           </div>
           <div className="min-w-0">
-            <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Registrations</p>
-            <p className={`mt-1 font-semibold ${primaryTextClass}`}>—</p>
+            <p className={`truncate text-[10px] font-bold uppercase leading-4 tracking-[0.1em] ${labelClass}`}>Registrations</p>
+            <p className={`mt-1 line-clamp-2 h-10 text-sm font-bold leading-5 ${primaryTextClass}`}>{typeof registrationCount === "number" ? registrationCount : "—"}</p>
           </div>
           <div className="min-w-0">
-            <p className={`whitespace-nowrap text-xs font-bold uppercase tracking-[0.12em] ${labelClass}`}>Availability</p>
-            <p className={`mt-1 font-semibold ${primaryTextClass}`}>{formatTrainingAvailability(training)}</p>
+            <p className={`truncate text-[10px] font-bold uppercase leading-4 tracking-[0.1em] ${labelClass}`}>Availability</p>
+            <p className={`mt-1 line-clamp-2 h-10 text-sm font-bold leading-5 ${primaryTextClass}`} title={formatTrainingAvailability(training, registrationCount)}>{formatTrainingAvailability(training, registrationCount)}</p>
           </div>
         </div>
 
         <Link
           href={`/admin/trainings/${training.id}`}
-          className={`mt-3 block border-t pt-3 text-sm font-semibold outline-none transition-colors hover:underline focus-visible:rounded focus-visible:ring-2 focus-visible:ring-offset-2 ${hasPrimaryImage ? "border-white/25 text-white hover:text-white focus-visible:ring-white focus-visible:ring-offset-[#1f6a58]" : "border-[#edf3f0] text-[#1f6a58] hover:text-[#195646] focus-visible:ring-[#1f6a58]"}`}
+          className={`mt-3 flex min-h-11 items-center border-t pt-3 text-sm font-semibold outline-none transition-colors hover:underline focus-visible:rounded focus-visible:ring-2 focus-visible:ring-offset-2 ${hasPrimaryImage ? "border-white/25 text-white hover:text-white focus-visible:ring-white focus-visible:ring-offset-[#1f6a58]" : "border-[#edf3f0] text-[#1f6a58] hover:text-[#195646] focus-visible:ring-[#1f6a58]"}`}
         >
           View training details
         </Link>
@@ -169,6 +276,7 @@ function TrainingCard({ training, onStatusSuccess, onDuplicateSuccess, onDeleteS
 
 /** Renders the authenticated enterprise's paginated Trainings list. */
 export default function EnterpriseTrainingsScreen() {
+  const [activeView, setActiveView] = useState<"trainings" | "reviews">("trainings");
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [sort, setSort] = useState<SortOption>("newest");
@@ -189,12 +297,27 @@ export default function EnterpriseTrainingsScreen() {
     return () => window.clearTimeout(timeoutId);
   }, [query]);
 
+  useEffect(() => {
+    if (!statusFeedback) return;
+    const timeoutId = window.setTimeout(() => setStatusFeedback(null), 5_000);
+    return () => window.clearTimeout(timeoutId);
+  }, [statusFeedback]);
+
   const trainingsQuery = useQuery({
     queryKey: ["trainings", "list", tenantId, enterpriseId, debouncedQuery, statusFilter, levelFilter, languageFilter, page, TRAININGS_PAGE_SIZE],
     queryFn: () =>
-      debouncedQuery
-        ? searchTrainings({ query: debouncedQuery, level: levelFilter === "all" ? undefined : levelFilter, language: languageFilter === "all" ? undefined : languageFilter, page, page_size: TRAININGS_PAGE_SIZE })
+      debouncedQuery && statusFilter === "all"
+        ? searchTrainings({
+            query: debouncedQuery,
+            tenant_id: tenantId ?? undefined,
+            enterprise_id: enterpriseId ?? undefined,
+            level: levelFilter === "all" ? undefined : levelFilter,
+            language: languageFilter === "all" ? undefined : languageFilter,
+            page,
+            page_size: TRAININGS_PAGE_SIZE,
+          })
         : listTrainings({
+            search: debouncedQuery || undefined,
             tenant_id: tenantId ?? undefined,
             enterprise_id: enterpriseId ?? undefined,
             status: statusFilter === "all" ? undefined : statusFilter,
@@ -203,7 +326,7 @@ export default function EnterpriseTrainingsScreen() {
             page,
             page_size: TRAININGS_PAGE_SIZE,
           }),
-    enabled: Boolean(tenantId),
+    enabled: Boolean(tenantId) && activeView === "trainings",
     staleTime: 30_000,
     retry: 1,
     placeholderData: keepPreviousData,
@@ -213,12 +336,20 @@ export default function EnterpriseTrainingsScreen() {
     return sortTrainings(trainingsQuery.data?.items ?? [], sort);
   }, [trainingsQuery.data?.items, sort]);
   const pagination = trainingsQuery.data?.pagination;
+  const hasActiveFilters = Boolean(debouncedQuery) || statusFilter !== "all" || levelFilter !== "all" || languageFilter !== "all";
 
   const showStatusFeedback = () => setStatusFeedback("Training status updated.");
   const showDuplicateFeedback = () => setStatusFeedback("Training duplicated.");
   const showDeleteFeedback = () => setStatusFeedback("Training deleted.");
 
-  const summaryQuery = useQuery({ queryKey: ["trainings", "reports", "summary"], queryFn: () => getTrainingsReportSummary(), enabled: Boolean(tenantId), staleTime: 30_000, retry: 1 });
+  const summaryQuery = useQuery({ queryKey: ["trainings", "reports", "summary"], queryFn: () => getTrainingsReportSummary(), enabled: Boolean(tenantId) && activeView === "trainings", staleTime: 30_000, retry: 1 });
+  const pendingReviewsQuery = useQuery({
+    queryKey: ["training-reviews", "manage", "pending-count"],
+    queryFn: () => listEnterpriseReviewsManage({ status: "pending", page: 1 }),
+    enabled: Boolean(tenantId),
+    staleTime: 30_000,
+    retry: 1,
+  });
 
   return (
     <div className="w-full">
@@ -227,33 +358,21 @@ export default function EnterpriseTrainingsScreen() {
           <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">
             ADMIN PORTAL
           </p>
-          <h2 className="mt-2 text-2xl font-bold text-[#06201c] sm:text-3xl">Trainings</h2>
+          <h2 className="mt-2 text-2xl font-bold text-[#06201c] sm:text-3xl">{activeView === "reviews" ? "Training Reviews" : "Trainings"}</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[#52736a] sm:text-base">
-            Manage training courses for your enterprise.
+            {activeView === "reviews" ? "Review and manage learner feedback across your enterprise trainings." : "Manage training courses for your enterprise."}
           </p>
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <Link
-            href="/admin/trainings/wishlist"
-            className="inline-flex h-12 items-center justify-center rounded-full border border-[#1f6a58] px-5 text-sm font-bold text-[#1f6a58] shadow-sm transition hover:bg-[#e8f6ee]"
-          >
-            Wishlist
-          </Link>
-          <Link
-            href="/admin/trainings/my-enrolments"
-            className="inline-flex h-12 items-center justify-center rounded-full border border-[#1f6a58] px-5 text-sm font-bold text-[#1f6a58] shadow-sm transition hover:bg-[#e8f6ee]"
-          >
-            My Enrolments
-          </Link>
-          {enterpriseId ? (
+          {activeView === "trainings" && enterpriseId ? (
             <Link
               href="/admin/trainings/create"
               className="inline-flex h-12 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm transition hover:bg-[#195646]"
             >
               + Create Training
             </Link>
-          ) : (
+          ) : activeView === "trainings" ? (
             <button
               type="button"
               disabled
@@ -262,13 +381,23 @@ export default function EnterpriseTrainingsScreen() {
             >
               + Create Training
             </button>
-          )}
+          ) : null}
         </div>
       </div>
 
-      {statusFeedback ? <p role="status" className="mt-4 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">{statusFeedback}</p> : null}
+      <nav aria-label="Training views" className="mt-5 flex flex-wrap gap-2 border-b border-[#d7e5df]">
+        <button type="button" role="tab" aria-selected={activeView === "trainings"} onClick={() => setActiveView("trainings")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${activeView === "trainings" ? "border-[#1f6a58] bg-[#effaf4] text-[#1f6a58]" : "border-transparent text-[#52736a] hover:bg-[#f4faf7]"}`}>Trainings</button>
+        <button type="button" role="tab" aria-selected={activeView === "reviews"} onClick={() => setActiveView("reviews")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${activeView === "reviews" ? "border-[#1f6a58] bg-[#effaf4] text-[#1f6a58]" : "border-transparent text-[#52736a] hover:bg-[#f4faf7]"}`}>Reviews ({pendingReviewsQuery.data?.counts.pending ?? 0})</button>
+      </nav>
 
-      <TrainingsSummaryCard summary={summaryQuery.data} isLoading={summaryQuery.isLoading} isError={summaryQuery.isError} />
+      {activeView === "reviews" ? <EnterpriseTrainingsReviewsTab /> : <>
+
+      {statusFeedback ? (
+        <div role="status" className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">
+          <span>{statusFeedback}</span>
+          <button type="button" onClick={() => setStatusFeedback(null)} className="shrink-0 rounded px-2 py-1 text-[#167550] underline underline-offset-2 hover:bg-[#dff4e8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#167550]" aria-label="Dismiss notification">Dismiss</button>
+        </div>
+      ) : null}
 
       <section className="mt-6 rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm">
         <div className="grid gap-3 xl:grid-cols-[1fr_auto]">
@@ -349,16 +478,26 @@ export default function EnterpriseTrainingsScreen() {
         </section>
       ) : trainingsQuery.isError ? (
         <section className="mt-6 rounded-2xl border border-[#f3d5d1] bg-[#fff7f6] px-8 py-12 text-center shadow-sm" role="alert">
-          <p className="text-2xl" aria-hidden="true">�</p>
+          <p className="text-2xl" aria-hidden="true">!</p>
           <p className="mt-3 text-base font-bold text-[#b42318]">We couldn’t load trainings</p>
           <p className="mt-2 text-sm leading-5 text-[#6b5a52]">{(trainingsQuery.error as Error).message || "Check your connection and try again."}</p>
           <button type="button" onClick={() => void trainingsQuery.refetch()} className="mt-5 inline-flex h-10 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm hover:bg-[#195646]">Try again</button>
         </section>
       ) : !pagination || visibleTrainings.length === 0 ? (
         <section className="mt-6 rounded-2xl border border-dashed border-[#cfe0d8] bg-[#f9fcfa] px-8 py-16 text-center shadow-sm">
-          <p className="mt-3 text-base font-bold text-[#06201c]">No trainings yet</p>
-          <p className="mt-2 mx-auto max-w-md text-sm leading-5 text-[#52736a]">Create your first training to start enrolling learners. Use a clear title and a great cover image — it makes all the difference.</p>
-          <a href="/admin/trainings/create" className="mt-5 inline-flex h-10 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm hover:bg-[#195646]">+ Create Training</a>
+          <p className="mt-3 text-base font-bold text-[#06201c]">{hasActiveFilters ? "No trainings match these filters" : "No trainings yet"}</p>
+          <p className="mt-2 mx-auto max-w-md text-sm leading-5 text-[#52736a]">
+            {hasActiveFilters
+              ? "Try changing your search or filters to find other trainings."
+              : "Create your first training to start enrolling learners. Use a clear title and a great cover image — it makes all the difference."}
+          </p>
+          {!hasActiveFilters ? (
+            enterpriseId ? (
+              <a href="/admin/trainings/create" className="mt-5 inline-flex h-10 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm hover:bg-[#195646]">+ Create Training</a>
+            ) : (
+              <button type="button" disabled title="Enterprise required" className="mt-5 inline-flex h-10 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white opacity-60">+ Create Training</button>
+            )
+          ) : null}
         </section>
       ) : (
         <>
@@ -392,6 +531,8 @@ export default function EnterpriseTrainingsScreen() {
           </nav>
         </>
       )}
+      <TrainingsSummaryCard summary={summaryQuery.data} isLoading={summaryQuery.isLoading} isError={summaryQuery.isError} />
+      </>}
     </div>
   );
 }

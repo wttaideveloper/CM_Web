@@ -89,7 +89,7 @@ const publishEventAction: EventStatusAction = {
   confirmationTitle: "Publish event?",
   confirmationDescription: "This changes the event lifecycle status to Published.",
   confirmLabel: "Publish event",
-  cancelLabel: "Keep approved",
+  cancelLabel: "Cancel",
   pendingLabel: "Publishing...",
 };
 
@@ -178,10 +178,15 @@ export function getEventStatusActions(status: EventStatus): readonly EventStatus
 
 /** Returns whether the current product workflow permits Enterprise Admin editing. */
 export function canEditEvent(status: EventStatus): boolean {
-  return status === "draft" || status === "rejected" || status === "needs_revision";
+  return status === "draft" || status === "needs_revision";
 }
 
 /** Returns whether the current Enterprise Admin policy permits destructive deletion. */
 export function canDeleteEvent(status: EventStatus): boolean {
   return status === "draft";
+}
+
+/** Returns whether an Event may expose live or historical operational data. */
+export function hasOperationalEventDataAccess(status: EventStatus): boolean {
+  return status === "published" || status === "suspended" || status === "completed" || status === "cancelled";
 }

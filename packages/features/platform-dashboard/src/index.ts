@@ -1,2 +1,2 @@
 export { default as PlatformDashboardScreen } from "./PlatformDashboardScreen";
-export type { PlatformDashboardScreenProps } from "./types";
+export type { DashboardApprovalActivity, PendingApplication, PlatformDashboardScreenProps } from "./types";

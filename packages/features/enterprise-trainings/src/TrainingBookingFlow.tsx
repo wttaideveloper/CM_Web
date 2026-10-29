@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
-import { formatTrainingDate, formatTrainingPrice } from "./detail-formatters";
+import { formatTrainingDate, formatTrainingPrice, humanizeLabel } from "./detail-formatters";
 import {
   checkoutTraining,
   enrolInTraining,
@@ -32,8 +32,6 @@ export default function TrainingBookingFlow({ trainingId: trainingIdProp }: { tr
   const [step, setStep] = useState<BookingStep>("review");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [isGroup, setIsGroup] = useState(false);
-  const [groupSize, setGroupSize] = useState("");
   const [coupon, setCoupon] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [doneMessage, setDoneMessage] = useState("");
@@ -79,15 +77,12 @@ export default function TrainingBookingFlow({ trainingId: trainingIdProp }: { tr
         return checkoutTraining(trainingId, {
           participant_name: name.trim(),
           participant_email: email.trim(),
-          quantity: isGroup && groupSize.trim() ? Number(groupSize) || 1 : 1,
           coupon_code: coupon.trim() || undefined,
         });
       }
       return enrolInTraining(trainingId, {
         participant_name: name.trim(),
         participant_email: email.trim(),
-        group_enrol: isGroup || undefined,
-        max_group_size: groupSize.trim() || undefined,
       });
     },
     onSuccess: (_data, mode) => {
@@ -99,7 +94,10 @@ export default function TrainingBookingFlow({ trainingId: trainingIdProp }: { tr
             : "Booking confirmed. Check your email for details.",
       );
       setStep("done");
-      void queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "enrolments"] });
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["trainings", trainingId, "enrolments"] }),
+        queryClient.invalidateQueries({ queryKey: ["trainings", "list"] }),
+      ]);
     },
     onError: (error) => setFeedback(error instanceof TrainingsApiError ? error.message : "Unable to complete booking."),
   });
@@ -156,7 +154,7 @@ export default function TrainingBookingFlow({ trainingId: trainingIdProp }: { tr
               <p className="text-sm text-[#52736a]">Price: <span className="font-bold text-[#06201c]">{formatTrainingPrice(training.price, training.currency)}</span></p>
               <p className="text-sm text-[#52736a]">Seats left: <span className="font-bold text-[#06201c]">{availableSlots ?? "—"}</span></p>
               <p className="text-sm text-[#52736a]">Starts: <span className="font-bold text-[#06201c]">{typeof record.start_date === "string" ? formatTrainingDate(record.start_date) : "—"}</span></p>
-              <p className="text-sm text-[#52736a]">Mode: <span className="font-bold text-[#06201c]">{typeof training.delivery_mode === "string" ? training.delivery_mode : "—"}</span></p>
+              <p className="text-sm text-[#52736a]">Mode: <span className="font-bold text-[#06201c]">{typeof training.delivery_mode === "string" ? humanizeLabel(training.delivery_mode) : "—"}</span></p>
             </div>
             {soldOut ? <p className="rounded-xl bg-[#fff7e5] px-4 py-3 text-sm font-semibold text-[#b7791f]">Sold out — you can join the waitlist on the next step.</p> : null}
           </section>
@@ -167,8 +165,6 @@ export default function TrainingBookingFlow({ trainingId: trainingIdProp }: { tr
             <h2 className="text-xl font-bold text-[#06201c]">Your details</h2>
             <label className="block text-sm font-semibold text-[#06201c]">Full name<input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" className="mt-1.5 h-11 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm outline-none focus:border-[#1f6a58]" /></label>
             <label className="block text-sm font-semibold text-[#06201c]">Email<input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" type="email" className="mt-1.5 h-11 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm outline-none focus:border-[#1f6a58]" /></label>
-            <label className="flex items-center gap-3 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={isGroup} onChange={(e) => setIsGroup(e.target.checked)} className="h-4 w-4 rounded border-[#d7e5df] text-[#1f6a58]" />Group booking</label>
-            {isGroup ? <label className="block text-sm font-semibold text-[#06201c]">Group size<input value={groupSize} onChange={(e) => setGroupSize(e.target.value)} placeholder="e.g. 4" type="number" min={1} className="mt-1.5 h-11 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm outline-none focus:border-[#1f6a58]" /></label> : null}
             {isPaid && !soldOut ? <label className="block text-sm font-semibold text-[#06201c]">Coupon code (optional)<input value={coupon} onChange={(e) => setCoupon(e.target.value)} placeholder="EARLY20" className="mt-1.5 h-11 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm outline-none focus:border-[#1f6a58]" /></label> : null}
           </section>
         ) : null}
@@ -178,7 +174,7 @@ export default function TrainingBookingFlow({ trainingId: trainingIdProp }: { tr
             <h2 className="text-xl font-bold text-[#06201c]">Confirm</h2>
             <div className="rounded-xl bg-[#f9fcfa] border border-[#e1ebe6] p-4 text-sm text-[#52736a]">
               <p><span className="font-bold text-[#06201c]">{training.title}</span></p>
-              <p className="mt-1">{name} · {email}{isGroup && groupSize.trim() ? ` · Group of ${groupSize.trim()}` : ""}</p>
+              <p className="mt-1">{name} · {email}</p>
               <p className="mt-1">Total: <span className="font-bold text-[#06201c]">{soldOut ? "Free (waitlist)" : formatTrainingPrice(training.price, training.currency)}</span></p>
             </div>
           </section>
@@ -190,7 +186,6 @@ export default function TrainingBookingFlow({ trainingId: trainingIdProp }: { tr
             <p role="status" className="mx-auto max-w-md rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">{doneMessage}</p>
             <div className="flex justify-center gap-3">
               <Link href={`/admin/trainings/${trainingId}`} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white inline-flex items-center">View training</Link>
-              <Link href="/admin/trainings/my-enrolments" className="h-11 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a] inline-flex items-center">My enrolments</Link>
             </div>
           </section>
         ) : null}

@@ -2,6 +2,8 @@ export type ProductDto = {
   id: string;
   enterprise_id: string;
   location_id?: string | null;
+  provider_user_id?: string | null;
+  provider_name?: string | null;
   product_name: string;
   product_description: string;
   product_category: string;
@@ -20,12 +22,26 @@ export type ProductDto = {
   stock_management?: string;
   currency?: string;
   publish_status?: string;
+  rating?: number | null;
+  reviews_count?: number;
+  reviews?: ProductReviewPreview[];
 };
+
+/** Approved review preview included with Product detail responses. */
+export interface ProductReviewPreview {
+  id: string;
+  rating: number;
+  comment: string | null;
+  reviewer_name: string | null;
+  created_at: string | null;
+}
 
 export type CreateProductPayload = {
   tenant_id?: string;
   enterprise_id: string;
   location_id?: string;
+  provider_user_id?: string;
+  provider_name?: string;
   product_name: string;
   product_description: string;
   product_category: string;
@@ -49,6 +65,8 @@ export type CreateProductPayload = {
 export type UpdateProductPayload = Partial<{
   enterprise_id: string;
   location_id: string;
+  provider_user_id: string;
+  provider_name: string;
   product_name: string;
   product_description: string;
   product_category: string;
@@ -81,4 +99,6 @@ export type ProductListItem = {
   enterprise: string;
   stock: string;
   sales: string;
+  rating?: number | null;
+  reviewsCount?: number;
 };

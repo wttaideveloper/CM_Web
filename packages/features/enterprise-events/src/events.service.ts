@@ -1,3 +1,231 @@
+import { authenticatedFetch } from "@ihp/auth";
+import { mediaItemUrl, mediaUrlsFromUnknown, normalizeDocumentEntries, type EventDocumentEntry } from "./event-media";
+import { parseEventOrdersResponse, type EventOrder } from "./event-orders-parser";
+import { parseEventReview, parseManagedEventReviews, normalizeUtcDate } from "./event-reviews.service";
+import type { EnterpriseEventReviewsParams, EventFeedbackAnswer, EventFeedbackItem, EventFeedbackReportResponse, EventReview, EventReviewAuditEntry, EventReviewsManageResponse, EventStarRating, ReviewModerationStatus } from "./event-reviews.types";
+import { normalizeEventVenue } from "./event-location";
+
+export type { EventOrder } from "./event-orders-parser";
+
+const fetch = authenticatedFetch;
+
+export type EventLifecycleState = "upcoming" | "ongoing" | "finished";
+export type EventType = string;
+
+export type AttendeeSource = "online" | "walk_in";
+export type AttendeeSort = "newest" | "oldest" | "name" | "email";
+
+export interface EventSessionAttendance {
+  session_id: string;
+  title: string;
+  checked_in: boolean;
+  checked_in_at: string | null;
+  checked_in_by: string | null;
+  checked_out_at: string | null;
+}
+
+export interface EventAttendeeAnswer {
+  question?: string | null;
+  question_id?: string | null;
+  label?: string | null;
+  key?: string | null;
+  value?: unknown;
+  answer?: unknown;
+}
+
+export type EventAttendeeAnswers = readonly EventAttendeeAnswer[] | Record<string, unknown>;
+
+export interface EventAttendeeServiceSelection {
+  id?: string | null;
+  meal_id?: string | null;
+  accommodation_id?: string | null;
+  name?: string | null;
+  price?: string | number | null;
+  currency?: string | null;
+  quantity?: number | null;
+  status?: string | null;
+  service_start_at?: string | null;
+  service_end_at?: string | null;
+  [key: string]: unknown;
+}
+
+export type EventAttendeeServiceSelections = readonly (string | EventAttendeeServiceSelection)[];
+
+export interface EventAttendee {
+  registration_id: string;
+  event_id: string;
+  participant_name: string;
+  participant_email: string;
+  registration_status: string;
+  registration_reference: string | null;
+  ticket_type_id: string | null;
+  ticket_type_name: string | null;
+  quantity: number;
+  payment_status: string;
+  order_id: string | null;
+  order_status: string | null;
+  amount: string | null;
+  currency: string | null;
+  is_checked_in: boolean;
+  checked_in_at: string | null;
+  checked_out_at: string | null;
+  registered_at: string;
+  registration_source: AttendeeSource;
+  meal_selections: EventAttendeeServiceSelections;
+  accommodation_selections: EventAttendeeServiceSelections;
+  custom_answers: EventAttendeeAnswers;
+  session_attendance: readonly EventSessionAttendance[];
+}
+
+export interface EventAttendeePagination { total: number; page: number; page_size: number; total_pages: number; }
+export interface EventAttendeesResponse { items: readonly EventAttendee[]; pagination: EventAttendeePagination; }
+export interface EventAttendeeFilters {
+  page?: number; page_size?: number; q?: string; status?: string; ticket_type_id?: string;
+  payment_status?: string; checked_in?: boolean; source?: AttendeeSource;
+  registered_from?: string; registered_to?: string; sort?: AttendeeSort;
+}
+
+export type SessionAttendancePayload = { registration_id: string } | { qr_code: string };
+export interface EventWalkInPayload {
+  participant_name: string;
+  participant_email: string;
+  ticket_type_id?: string | null;
+  quantity?: number;
+  session_id?: string | null;
+  custom_fields?: Record<string, unknown>;
+  meal_selections?: EventAttendeeServiceSelections;
+  accommodation_selections?: EventAttendeeServiceSelections;
+  check_in?: boolean;
+}
+export type EventCheckoutQuoteRequest = { ticket_type_id: string; quantity?: number; meal_selections?: string[] | null; accommodation_selections?: string[] | null };
+export interface EventCheckoutQuoteLine { option_type: "meal" | "accommodation"; option_id: string; name: string; unit_price: number; quantity: number; line_total: number; currency: string; }
+export interface EventCheckoutQuoteResponse { ticket_subtotal: number; meal_subtotal: number; accommodation_subtotal: number; discount?: number; tax?: number; grand_total: number; currency: string; items?: EventCheckoutQuoteLine[]; }
+export interface DashboardMeal { meal_id: string; name: string; selected_count: number; active: boolean; price?: number; currency?: string; capacity?: number | null; reserved_count?: number | null; remaining_capacity?: number | null; sold_out?: boolean; }
+export type DashboardAccommodation = Omit<DashboardMeal, "meal_id"> & { accommodation_id: string };
+export type EventOptionPurchasePaymentStatus = "free" | "unpaid" | "pending" | "paid" | "refund_requested" | "refunded" | "cancelled" | "failed";
+export interface EventOptionPurchase { registration_id: string; participant_name: string; participant_email: string; registration_status: string; option_type: "meal" | "accommodation"; option_id: string; option_name: string; quantity: number; unit_price: number; currency: string; line_total: number; order_id?: string | null; payment_status: EventOptionPurchasePaymentStatus; }
+export interface EventFulfilmentResponse { meals?: DashboardMeal[]; accommodation?: DashboardAccommodation[]; purchases?: EventOptionPurchase[]; generated_at: string; }
+export interface WalkInPayment { required: boolean; status: EventOptionPurchasePaymentStatus; amount?: number | null; currency?: string | null; order_id?: string | null; note?: string | null; }
+export interface WalkInCheckIn { requested: boolean; performed: boolean; checked_in_at?: string | null; reason?: "payment_pending" | null; }
+export interface EventWalkInResponse { payment?: WalkInPayment; check_in?: WalkInCheckIn; [key: string]: unknown; }
+
+/** Backend-owned Event Type definition with boolean module capability maps. */
+export interface EventTypeDefinition {
+  id: string;
+  key: string;
+  name: string;
+  active: boolean;
+  default_modules: EventModules;
+  allowed_modules: EventModules;
+  required_modules: EventModules;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface EventModules {
+  registration: boolean;
+  tickets: boolean;
+  sessions: boolean;
+  check_in: boolean;
+  online_meeting: boolean;
+  custom_questions: boolean;
+  meals: boolean;
+  accommodation: boolean;
+}
+
+export interface EventModulesInput {
+  registration?: boolean | null;
+  tickets?: boolean | null;
+  sessions?: boolean | null;
+  check_in?: boolean | null;
+  online_meeting?: boolean | null;
+  custom_questions?: boolean | null;
+  meals?: boolean | null;
+  accommodation?: boolean | null;
+}
+
+export interface MealOption {
+  id: string;
+  name: string;
+  description: string | null;
+  date: string | null;
+  active: boolean;
+  price?: string | null;
+  currency?: string | null;
+  capacity?: string | null;
+  purchase_start_at?: string | null;
+  purchase_end_at?: string | null;
+  service_start_at?: string | null;
+  service_end_at?: string | null;
+  remaining_capacity?: number | null;
+  sold_out?: boolean | null;
+}
+
+export interface MealOptionInput {
+  id?: string | null;
+  name: string;
+  description?: string | null;
+  date?: string | null;
+  active?: boolean;
+  price?: string | null;
+  currency?: string | null;
+  capacity?: string | null;
+  purchase_start_at?: string | null;
+  purchase_end_at?: string | null;
+  service_start_at?: string | null;
+  service_end_at?: string | null;
+}
+
+export interface EventMeals {
+  enabled: boolean;
+  options: MealOption[];
+}
+
+export interface EventMealsInput {
+  enabled?: boolean | null;
+  options?: MealOptionInput[] | null;
+}
+
+export interface AccommodationOption {
+  id: string;
+  name: string;
+  description: string | null;
+  active: boolean;
+  price?: string | null;
+  currency?: string | null;
+  capacity?: string | null;
+  purchase_start_at?: string | null;
+  purchase_end_at?: string | null;
+  service_start_at?: string | null;
+  service_end_at?: string | null;
+  remaining_capacity?: number | null;
+  sold_out?: boolean | null;
+}
+
+export interface AccommodationOptionInput {
+  id?: string | null;
+  name: string;
+  description?: string | null;
+  active?: boolean;
+  price?: string | null;
+  currency?: string | null;
+  capacity?: string | null;
+  purchase_start_at?: string | null;
+  purchase_end_at?: string | null;
+  service_start_at?: string | null;
+  service_end_at?: string | null;
+}
+
+export interface EventAccommodation {
+  enabled: boolean;
+  options: AccommodationOption[];
+}
+
+export interface EventAccommodationInput {
+  enabled?: boolean | null;
+  options?: AccommodationOptionInput[] | null;
+}
+
 /** An event returned by the Events list API. */
 export interface Event {
   id: string;
@@ -19,13 +247,15 @@ export interface Event {
   primary_image: string | null;
   gallery_images: string[];
   videos: string[];
-  documents: string[];
+  documents: EventDocumentEntry[];
   delivery_mode: string;
   venue: EventVenue | null;
   meeting_link?: string | null;
   meeting_provider: string | null;
-  price: string;
+  price: string | null;
+  pricing_type?: "free" | "paid" | null;
   currency: string;
+  default_ticket_type_id?: string | null;
   ticket_types: EventTicketType[];
   capacity: string;
   min_participants: string;
@@ -37,6 +267,9 @@ export interface Event {
   custom_fields: EventCustomField[];
   sessions: EventSessionRecord[];
   status: EventStatus;
+  lifecycle_state?: EventLifecycleState | null;
+  average_rating?: number | null;
+  reviews_count?: number | null;
   is_deleted: boolean;
   created_at: string;
   updated_at: string;
@@ -44,7 +277,101 @@ export interface Event {
   last_admin_notes: string | null;
   form_configuration_id?: string | null;
   form_configuration_version_id?: string | null;
+  event_type_id?: string | null;
   custom_values?: EventCustomValue[];
+  registration_open?: boolean;
+  delivery_mode_display?: string;
+  requires_reapproval?: boolean;
+  event_type?: EventType | null;
+  modules?: EventModules | null;
+  meals?: EventMeals | null;
+  accommodation?: EventAccommodation | null;
+}
+
+export interface EventDashboardRegistrations {
+  total: number;
+  active: number;
+  confirmed: number;
+  attended: number;
+  cancelled: number;
+  no_show: number;
+  other: number;
+  online: number;
+  walk_in: number;
+}
+
+export interface EventDashboardCapacity {
+  capacity: number | null;
+  unlimited: boolean;
+  seats_taken: number;
+  seats_reserved: number;
+  available_seats: number | null;
+  is_full: boolean | null;
+  fill_percentage: number | null;
+}
+
+export interface EventDashboardAttendance {
+  checked_in: number;
+  not_checked_in: number;
+  attendance_percentage: number | null;
+}
+
+export interface EventDashboardWaitlist {
+  total: number;
+  waiting: number;
+  payment_pending: number;
+  promoted: number;
+  expired: number;
+  left: number;
+  other: number;
+}
+
+export interface EventDashboardOrders {
+  total: number;
+  successful: number;
+  pending: number;
+  refund_requested: number;
+  refunded: number;
+  cancelled: number;
+  failed: number;
+}
+
+export interface EventDashboardRevenue {
+  currency: string | null;
+  total_revenue: number | null;
+  refunded_amount: number | null;
+  pending_refund_amount: number | null;
+  paid_orders: number;
+  mixed_currency: boolean;
+  by_currency: readonly Record<string, unknown>[];
+  unparseable_orders: number;
+}
+
+export interface EventDashboardSession {
+  session_id: string;
+  title?: string | null;
+  session_date?: string | null;
+  start_time?: string | null;
+  registered_count: number;
+  checked_in_count: number;
+  attendance_percentage?: number | null;
+}
+
+export type EventDashboardMeal = DashboardMeal;
+export type EventDashboardAccommodation = DashboardAccommodation;
+
+export interface EventDashboard {
+  event: Record<string, unknown>;
+  registrations: EventDashboardRegistrations;
+  capacity: EventDashboardCapacity;
+  attendance: EventDashboardAttendance;
+  waitlist: EventDashboardWaitlist;
+  orders: EventDashboardOrders;
+  revenue: EventDashboardRevenue;
+  sessions: readonly EventDashboardSession[];
+  meals: readonly EventDashboardMeal[];
+  accommodation: readonly EventDashboardAccommodation[];
+  generated_at: string;
 }
 
 /** One typed value captured for a configuration-owned custom Event field. */
@@ -120,37 +447,30 @@ export interface EventRegistration {
   id: string;
   participant_email: string;
   ticket_type_id: string | null;
+  ticket_type_name?: string | null;
   status: string;
   checked_in_at: string | null;
   checked_out_at: string | null;
   created_at: string;
   participant_name: string;
-  custom_fields: Record<string, unknown>;
+  custom_fields: EventAttendeeAnswers;
   qr_code: string;
   checked_in_by: unknown | null;
   session_id: string | null;
+  registration_source?: AttendeeSource;
+  registration_reference?: string | null;
+  payment_status?: string;
+  order_id?: string | null;
+  order_status?: string | null;
+  amount?: string | null;
+  currency?: string | null;
+  meal_selections?: EventAttendeeServiceSelections;
+  accommodation_selections?: EventAttendeeServiceSelections;
+  session_attendance?: readonly EventSessionAttendance[];
 }
 
 /** The runtime-confirmed top-level registrations response for one Event. */
 export type EventRegistrationsResponse = readonly EventRegistration[];
-
-/** Runtime-confirmed purchase record returned for one Event. Monetary and quantity fields remain API strings. */
-export interface EventOrder {
-  id: string;
-  participant_email: string;
-  quantity: string;
-  currency: string;
-  status: string;
-  refund_reason: string | null;
-  updated_at: string;
-  event_id: string;
-  participant_name: string;
-  ticket_type_id: string;
-  amount: string;
-  payment_status: string;
-  payment_provider: string;
-  created_at: string;
-}
 
 /** Exact optional fields accepted by both Event registration and order refund endpoints. */
 export interface EventRefundPayload {
@@ -196,9 +516,6 @@ export interface UpdateEventTemplatePayload {
 export interface DeleteEventTemplateResponse {
   message: string;
 }
-
-/** Swagger defines GET /feedback with an empty response schema; preserve it as unknown. */
-export type EventFeedbackResponse = unknown;
 
 /** Runtime-confirmed JSON response for the registration Event report. */
 export interface EventRegistrationReportResponse {
@@ -328,8 +645,20 @@ export interface ValidateEventQrResponse {
   message: string;
 }
 
+/** A waitlist record returned for one Event. */
+export interface EventWaitlistRecord {
+  id: string;
+  event_id: string;
+  participant_name: string | null;
+  participant_email: string | null;
+  status: string;
+  payment_offer_expires_at: string | null;
+  registration_id: string | null;
+  created_at: string;
+}
+
 /** The runtime-confirmed top-level waitlist response for one Event. */
-export type EventWaitlistResponse = readonly unknown[];
+export type EventWaitlistResponse = readonly EventWaitlistRecord[];
 
 /** The runtime-confirmed top-level session representations returned for one Event. */
 export type EventSessionsResponse = readonly EventSessionRecord[];
@@ -392,10 +721,13 @@ export interface CreateEventCustomField extends EventCustomField {
 export interface EventSessionInput {
   session_date: string;
   title: string;
+  description?: string | null;
   speaker: string;
+  speaker_bio?: string | null;
   start_time: string;
   end_time: string;
-  location: string;
+  location?: string | null;
+  meeting_link?: string | null;
 }
 
 /** A session embedded in an Event response from the original create payload. */
@@ -409,7 +741,9 @@ export interface EventSession {
   id: string;
   session_date?: string | null;
   title: string;
+  description?: string | null;
   speaker: string | null;
+  speaker_bio?: string | null;
   start_time: string | null;
   end_time: string | null;
   location: string | null;
@@ -423,7 +757,9 @@ export type EventSessionRecord = EventEmbeddedSession | EventSession;
 export interface AddEventSessionPayload {
   session_date: string;
   title: string;
+  description?: string | null;
   speaker?: string | null;
+  speaker_bio?: string | null;
   start_time?: string | null;
   end_time?: string | null;
   location?: string | null;
@@ -434,7 +770,9 @@ export interface AddEventSessionPayload {
 export interface UpdateEventSessionPayload {
   session_date?: string | null;
   title?: string | null;
+  description?: string | null;
   speaker?: string | null;
+  speaker_bio?: string | null;
   start_time?: string | null;
   end_time?: string | null;
   location?: string | null;
@@ -445,7 +783,7 @@ export interface UpdateEventSessionPayload {
 export interface CreateEventPayload {
   tenant_id: string;
   enterprise_id: string;
-  location_id: string;
+  location_id: string | null;
   title: string;
   description: string;
   category: string;
@@ -461,17 +799,18 @@ export interface CreateEventPayload {
   primary_image: string;
   gallery_images: string[];
   videos: string[];
-  documents: string[];
+  documents: EventDocumentEntry[];
   delivery_mode: "in_person";
-  venue: CreateEventVenue;
+  venue: CreateEventVenue | null;
   meeting_link: string | null;
   meeting_provider: string | null;
-  price: string;
+  price: string | null;
+  pricing_type: "free" | "paid";
   currency: string;
   ticket_types: EventTicketType[];
-  capacity: string;
-  min_participants: string;
-  max_participants: string;
+  capacity: string | null;
+  min_participants: string | null;
+  max_participants: string | null;
   registration_open_at: string;
   registration_close_at: string;
   custom_fields: CreateEventCustomField[];
@@ -479,6 +818,10 @@ export interface CreateEventPayload {
   status: "draft";
   form_configuration_version_id?: string;
   custom_values?: Array<{ field_id: string; value: string | string[] | boolean | number | null }>;
+  event_type?: EventType | null;
+  modules?: EventModulesInput | null;
+  meals?: EventMealsInput | null;
+  accommodation?: EventAccommodationInput | null;
 }
 
 /**
@@ -504,12 +847,13 @@ export interface UpdateEventPayload {
   primary_image?: string | null;
   gallery_images?: string[] | null;
   videos?: string[] | null;
-  documents?: string[] | null;
+  documents?: EventDocumentEntry[] | null;
   delivery_mode?: string | null;
   venue?: EventVenue | null;
   meeting_link?: string | null;
   meeting_provider?: string | null;
   price?: string | null;
+  pricing_type?: "free" | "paid" | null;
   currency?: string | null;
   ticket_types?: EventTicketType[] | null;
   capacity?: string | null;
@@ -520,6 +864,10 @@ export interface UpdateEventPayload {
   custom_fields?: EventCustomField[] | null;
   sessions?: EventSessionInput[] | null;
   custom_values?: EventCustomValue[] | null;
+  event_type?: EventType | null;
+  modules?: EventModulesInput | null;
+  meals?: EventMealsInput | null;
+  accommodation?: EventAccommodationInput | null;
 }
 
 /** Runtime-confirmed JSON response returned after a successful Event deletion. */
@@ -533,6 +881,7 @@ export class EventsApiError extends Error {
     message: string,
     public readonly status: number,
     public readonly fieldErrors: Record<string, string[]> = {},
+    public readonly structuredErrors: Array<{ fieldKey: string; nestedPath: Array<string | number>; message: string; source: "backend" }> = [],
   ) {
     super(message);
   }
@@ -558,24 +907,6 @@ function isActiveEventFormSection(value: unknown): value is ActiveEventFormSecti
 function isActiveEventFormConfiguration(value: unknown): value is ActiveEventFormConfiguration { return isRecord(value) && typeof value.configuration_id === "string" && typeof value.version_id === "string" && typeof value.name === "string" && (value.scope === "global" || value.scope === "selective") && Number.isInteger(value.version) && Array.isArray(value.sections) && value.sections.every(isActiveEventFormSection); }
 function isEventCustomValue(value: unknown): value is EventCustomValue { return isRecord(value) && typeof value.field_id === "string" && (value.value === null || typeof value.value === "string" || typeof value.value === "number" || typeof value.value === "boolean" || isStringArray(value.value)); }
 function isEventCategory(value: unknown): value is EventCategory { return isRecord(value) && typeof value.id === "string" && typeof value.name === "string" && isNullableString(value.parent_id) && isNullableString(value.description) && typeof value.created_at === "string"; }
-
-function isEventVenueCoordinates(value: unknown): value is EventVenueCoordinates {
-  return (
-    isRecord(value) &&
-    (value.lat === undefined || value.lat === null || typeof value.lat === "number") &&
-    (value.lng === undefined || value.lng === null || typeof value.lng === "number")
-  );
-}
-
-function isEventVenue(value: unknown): value is EventVenue {
-  return (
-    isRecord(value) &&
-    (value.name === undefined || value.name === null || typeof value.name === "string") &&
-    (value.address === undefined || value.address === null || typeof value.address === "string") &&
-    (value.city === undefined || value.city === null || typeof value.city === "string") &&
-    (value.coordinates === undefined || isEventVenueCoordinates(value.coordinates))
-  );
-}
 
 function isEventTicketType(value: unknown): value is EventTicketType {
   return (
@@ -620,10 +951,12 @@ function isEventEmbeddedSession(value: unknown): value is EventEmbeddedSession {
 function isEventSession(value: unknown): value is EventSession {
   return isRecord(value) && typeof value.id === "string" && typeof value.title === "string" &&
     (value.session_date === undefined || value.session_date === null || typeof value.session_date === "string") &&
-    (value.speaker === null || typeof value.speaker === "string") &&
-    (value.start_time === null || typeof value.start_time === "string") &&
-    (value.end_time === null || typeof value.end_time === "string") &&
-    (value.location === null || typeof value.location === "string") &&
+    (value.speaker === undefined || value.speaker === null || typeof value.speaker === "string") &&
+    (value.description === undefined || value.description === null || typeof value.description === "string") &&
+    (value.speaker_bio === undefined || value.speaker_bio === null || typeof value.speaker_bio === "string") &&
+    (value.start_time === undefined || value.start_time === null || typeof value.start_time === "string") &&
+    (value.end_time === undefined || value.end_time === null || typeof value.end_time === "string") &&
+    (value.location === undefined || value.location === null || typeof value.location === "string") &&
     (value.meeting_link === undefined || value.meeting_link === null || typeof value.meeting_link === "string");
 }
 
@@ -631,44 +964,112 @@ function isEventSessionRecord(value: unknown): value is EventSessionRecord {
   return isEventSession(value) || isEventEmbeddedSession(value);
 }
 
+function normalizeEventTicket(value: unknown): EventTicketType | null {
+  if (!isRecord(value) || typeof value.name !== "string") return null;
+  const id = typeof value.id === "string" ? value.id : value.name;
+  const text = (candidate: unknown) => candidate === null || candidate === undefined ? "" : String(candidate);
+  return { id, name: value.name, price: text(value.price), currency: text(value.currency), capacity: text(value.capacity) };
+}
+
+function normalizeEventSession(value: unknown): EventSessionRecord | null {
+  if (!isRecord(value) || typeof value.title !== "string" || typeof value.session_date !== "string") return null;
+  const optionalText = (candidate: unknown) => candidate === null || candidate === undefined ? null : typeof candidate === "string" ? candidate : null;
+  const common = {
+    session_date: value.session_date,
+    title: value.title,
+    description: optionalText(value.description),
+    speaker: optionalText(value.speaker),
+    speaker_bio: optionalText(value.speaker_bio),
+    start_time: optionalText(value.start_time),
+    end_time: optionalText(value.end_time),
+    location: optionalText(value.location),
+    meeting_link: optionalText(value.meeting_link),
+  };
+  return typeof value.id === "string" ? { id: value.id, ...common } : { ...common, speaker: common.speaker ?? "", start_time: common.start_time ?? "", end_time: common.end_time ?? "" };
+}
+
+function normalizeEventResponse(value: unknown): Event | null {
+  if (!isRecord(value)) return null;
+  const requiredStrings = ["id", "tenant_id", "title", "description", "category", "start_date", "end_date", "status", "created_at", "updated_at"];
+  if (!requiredStrings.every((key) => typeof value[key] === "string") || !isEventStatus(value.status)) return null;
+  if (value.enterprise_id !== null && typeof value.enterprise_id !== "string") return null;
+  const text = (key: string, fallback = "") => typeof value[key] === "string" ? value[key] as string : fallback;
+  const nullableText = (key: string) => value[key] === null || value[key] === undefined ? null : typeof value[key] === "string" ? value[key] as string : null;
+  const arrayOfStrings = (key: string) => Array.isArray(value[key]) ? value[key].filter((item): item is string => typeof item === "string") : [];
+  const customValues = Array.isArray(value.custom_values) ? value.custom_values.filter(isEventCustomValue) : [];
+  const customFields = Array.isArray(value.custom_fields) ? value.custom_fields.filter(isEventCustomField) : [];
+  const sessions = Array.isArray(value.sessions) ? value.sessions.map(normalizeEventSession).filter((item): item is EventSessionRecord => item !== null) : [];
+  const ticketTypes = Array.isArray(value.ticket_types) ? value.ticket_types.map(normalizeEventTicket).filter((item): item is EventTicketType => item !== null) : [];
+  const venue = value.venue === null || value.venue === undefined ? null : normalizeEventVenue(value.venue);
+  const defaultTicketTypeId = typeof value.default_ticket_type_id === "string" && value.default_ticket_type_id.trim() ? value.default_ticket_type_id.trim() : null;
+  return {
+    ...(value as unknown as Event),
+    id: value.id as string,
+    tenant_id: value.tenant_id as string,
+    enterprise_id: value.enterprise_id as string | null,
+    title: value.title as string,
+    description: value.description as string,
+    category: value.category as string,
+    subcategory: text("subcategory"),
+    tags: arrayOfStrings("tags"),
+    organiser_name: text("organiser_name"),
+    organiser_contact: text("organiser_contact"),
+    start_date: value.start_date as string,
+    end_date: value.end_date as string,
+    duration_type: text("duration_type"),
+    time_zone: text("time_zone"),
+    registration_cutoff: text("registration_cutoff"),
+    registration_open_at: text("registration_open_at"),
+    registration_close_at: text("registration_close_at"),
+    primary_image: mediaItemUrl(value.primary_image),
+    gallery_images: mediaUrlsFromUnknown(value.gallery_images),
+    videos: mediaUrlsFromUnknown(value.videos),
+    documents: normalizeDocumentEntries(value.documents),
+    delivery_mode: text("delivery_mode"),
+    venue,
+    location_id: nullableText("location_id"),
+    meeting_link: nullableText("meeting_link"),
+    meeting_provider: nullableText("meeting_provider"),
+    price: nullableText("price"),
+    pricing_type: value.pricing_type === "free" || value.pricing_type === "paid" ? value.pricing_type : null,
+    currency: text("currency"),
+    default_ticket_type_id: defaultTicketTypeId,
+    capacity: text("capacity"),
+    min_participants: text("min_participants"),
+    max_participants: text("max_participants"),
+    ticket_types: ticketTypes,
+    custom_fields: customFields,
+    custom_values: customValues,
+    sessions,
+    available_seats: typeof value.available_seats === "number" && Number.isFinite(value.available_seats) ? value.available_seats : null,
+    is_full: typeof value.is_full === "boolean" ? value.is_full : null,
+    form_configuration_id: nullableText("form_configuration_id"),
+    form_configuration_version_id: nullableText("form_configuration_version_id"),
+    enterprise_name: nullableText("enterprise_name"),
+    last_admin_notes: nullableText("last_admin_notes"),
+    is_deleted: typeof value.is_deleted === "boolean" ? value.is_deleted : false,
+    registration_open: typeof value.registration_open === "boolean" ? value.registration_open : undefined,
+    delivery_mode_display: typeof value.delivery_mode_display === "string" ? value.delivery_mode_display : undefined,
+    requires_reapproval: typeof value.requires_reapproval === "boolean" ? value.requires_reapproval : undefined,
+    created_at: value.created_at as string,
+    updated_at: value.updated_at as string,
+    status: value.status as EventStatus,
+    lifecycle_state: value.lifecycle_state === "upcoming" || value.lifecycle_state === "ongoing" || value.lifecycle_state === "finished" ? value.lifecycle_state : null,
+    average_rating: typeof value.average_rating === "number" && Number.isFinite(value.average_rating) ? value.average_rating : null,
+    reviews_count: typeof value.reviews_count === "number" && Number.isFinite(value.reviews_count) ? value.reviews_count : null,
+  };
+}
+
 function isEvent(value: unknown): value is Event {
-  if (!isRecord(value) || (value.venue !== null && !isEventVenue(value.venue))) {
-    return false;
-  }
-
-  const stringFields: Array<keyof Omit<Event, "enterprise_id" | "location_id" | "venue" | "meeting_link" | "meeting_provider" | "primary_image" | "available_seats" | "is_full" | "last_admin_notes" | "tags" | "gallery_images" | "videos" | "documents" | "ticket_types" | "custom_fields" | "sessions" | "is_deleted">> = [
-    "id", "tenant_id", "title", "description", "category", "start_date", "end_date", "duration_type", "time_zone",
-    "delivery_mode", "price", "currency", "capacity", "created_at", "updated_at",
-  ];
-  const stringArrayFields = ["tags", "gallery_images", "videos", "documents"];
-
-  return (
-    stringFields.every((field) => typeof value[field] === "string") &&
-    ["subcategory", "organiser_name", "organiser_contact", "registration_cutoff", "min_participants", "max_participants", "registration_open_at", "registration_close_at"].every((field) => value[field] === null || typeof value[field] === "string") &&
-    (value.enterprise_id === null || typeof value.enterprise_id === "string") &&
-    (value.primary_image === null || typeof value.primary_image === "string") &&
-    (value.available_seats === null || (typeof value.available_seats === "number" && Number.isFinite(value.available_seats))) &&
-    (value.is_full === null || typeof value.is_full === "boolean") &&
-    (value.last_admin_notes === null || typeof value.last_admin_notes === "string") &&
-    (value.form_configuration_id === undefined || value.form_configuration_id === null || typeof value.form_configuration_id === "string") &&
-    (value.form_configuration_version_id === undefined || value.form_configuration_version_id === null || typeof value.form_configuration_version_id === "string") &&
-    (value.custom_values === undefined || Array.isArray(value.custom_values) && value.custom_values.every(isEventCustomValue)) &&
-    stringArrayFields.every((field) => isStringArray(value[field])) &&
-    (value.location_id === null || typeof value.location_id === "string") &&
-    (value.meeting_link === null || typeof value.meeting_link === "string") &&
-    (value.meeting_provider === null || typeof value.meeting_provider === "string") &&
-    Array.isArray(value.ticket_types) && value.ticket_types.every(isEventTicketType) &&
-    Array.isArray(value.custom_fields) && value.custom_fields.every(isEventCustomField) &&
-    Array.isArray(value.sessions) && value.sessions.every(isEventSessionRecord) &&
-    (value.enterprise_name === undefined || value.enterprise_name === null || typeof value.enterprise_name === "string") &&
-    typeof value.is_deleted === "boolean" &&
-    isEventStatus(value.status)
-  );
+  return normalizeEventResponse(value) !== null;
 }
 
 function normalizeNullableEventFields(event: Event): Event {
   return {
     ...event,
+    price: event.price ?? "",
+    pricing_type: event.pricing_type ?? (event.price !== null && event.price !== undefined && String(event.price).trim() !== "" && Number(event.price) !== 0 ? "paid" : "free"),
+    default_ticket_type_id: event.default_ticket_type_id?.trim() || null,
     subcategory: event.subcategory ?? "",
     organiser_name: event.organiser_name ?? "",
     organiser_contact: event.organiser_contact ?? "",
@@ -695,11 +1096,14 @@ function isDeleteEventResponse(value: unknown): value is DeleteEventResponse {
 }
 
 function parseEventListResponse(value: unknown): EventListResponse {
-  if (!isRecord(value) || !Array.isArray(value.items) || !value.items.every(isEvent) || !isPagination(value.pagination)) {
+  if (!isRecord(value) || !Array.isArray(value.items) || !isPagination(value.pagination)) {
     throw new Error("Events API returned an invalid list response.");
   }
-
-  return { items: value.items.map((item) => normalizeNullableEventFields(item)), pagination: value.pagination };
+  const items = value.items.map(normalizeEventResponse);
+  if (items.some((item): item is null => item === null)) {
+    throw new Error("Events API returned an invalid list response.");
+  }
+  return { items: (items as Event[]).map((item) => normalizeNullableEventFields(item)), pagination: value.pagination };
 }
 
 function isEventRegistration(value: unknown): value is EventRegistration {
@@ -722,32 +1126,6 @@ function isEventRegistration(value: unknown): value is EventRegistration {
 function parseEventRegistrationsResponse(value: unknown): EventRegistrationsResponse {
   if (!Array.isArray(value) || !value.every(isEventRegistration)) {
     throw new Error("Events API returned an invalid registrations response.");
-  }
-
-  return value;
-}
-
-function isEventOrder(value: unknown): value is EventOrder {
-  return isRecord(value) &&
-    typeof value.id === "string" &&
-    typeof value.participant_email === "string" &&
-    typeof value.quantity === "string" &&
-    typeof value.currency === "string" &&
-    typeof value.status === "string" &&
-    (value.refund_reason === null || typeof value.refund_reason === "string") &&
-    typeof value.updated_at === "string" &&
-    typeof value.event_id === "string" &&
-    typeof value.participant_name === "string" &&
-    typeof value.ticket_type_id === "string" &&
-    typeof value.amount === "string" &&
-    typeof value.payment_status === "string" &&
-    typeof value.payment_provider === "string" &&
-    typeof value.created_at === "string";
-}
-
-function parseEventOrdersResponse(value: unknown): EventOrdersResponse {
-  if (!Array.isArray(value) || !value.every(isEventOrder)) {
-    throw new Error("Events API returned an invalid orders response.");
   }
 
   return value;
@@ -869,7 +1247,17 @@ function parseEventWaitlistResponse(value: unknown): EventWaitlistResponse {
     throw new Error("Events API returned an invalid waitlist response.");
   }
 
-  return value;
+  return value.filter((record): record is EventWaitlistRecord =>
+    isRecord(record) &&
+    typeof record.id === "string" &&
+    typeof record.event_id === "string" &&
+    (record.participant_name === null || typeof record.participant_name === "string") &&
+    (record.participant_email === null || typeof record.participant_email === "string") &&
+    typeof record.status === "string" &&
+    (record.payment_offer_expires_at === null || typeof record.payment_offer_expires_at === "string") &&
+    (record.registration_id === null || typeof record.registration_id === "string") &&
+    typeof record.created_at === "string",
+  );
 }
 
 function parseEventSessionsResponse(value: unknown): EventSessionsResponse {
@@ -917,6 +1305,7 @@ function readErrorMessages(value: unknown): string[] {
 async function createEventsApiError(response: Response, operation: string): Promise<EventsApiError> {
   const body = await response.json().catch(() => null) as unknown;
   const fieldErrors: Record<string, string[]> = {};
+  const structuredErrors: Array<{ fieldKey: string; nestedPath: Array<string | number>; message: string; source: "backend" }> = [];
 
   if (isRecord(body) && Array.isArray(body.detail)) {
     for (const detail of body.detail) {
@@ -928,12 +1317,22 @@ async function createEventsApiError(response: Response, operation: string): Prom
       const messages = readErrorMessages(detail.msg);
       if (field && messages.length > 0) {
         fieldErrors[field] = [...(fieldErrors[field] ?? []), ...messages];
+        const path = detail.loc.slice(1).filter((item): item is string | number => typeof item === "string" || typeof item === "number");
+        const fieldKey = path[0] === "modules" && path[1] === "online_meeting" ? "delivery_mode" : (typeof path[0] === "string" ? path[0] : field);
+        const nestedPath = fieldKey === "delivery_mode" && path[0] === "modules" ? [] : path.slice(1);
+        const normalizedNestedPath = nestedPath[0] === "options" ? nestedPath.slice(1) : nestedPath;
+        if (normalizedNestedPath.length > 0) fieldErrors[`${fieldKey}.${normalizedNestedPath.join(".")}`] = [...(fieldErrors[`${fieldKey}.${normalizedNestedPath.join(".")}`] ?? []), ...messages];
+        structuredErrors.push({ fieldKey, nestedPath, message: messages[0], source: "backend" });
       }
     }
   }
 
   const message = readErrorMessages(body)[0] ?? `Unable to ${operation} (HTTP ${response.status}).`;
-  return new EventsApiError(message, response.status, fieldErrors);
+  if (message === "modules.online_meeting can only be enabled when delivery_mode is 'online' or 'hybrid'.") {
+    fieldErrors.delivery_mode = [...(fieldErrors.delivery_mode ?? []), message];
+    structuredErrors.push({ fieldKey: "delivery_mode", nestedPath: [], message, source: "backend" });
+  }
+  return new EventsApiError(message, response.status, fieldErrors, structuredErrors);
 }
 
 function toSearchParams(params: EventListParams): URLSearchParams {
@@ -983,9 +1382,20 @@ export async function getEventHistoricalFormConfiguration(eventId: string): Prom
   return value;
 }
 
+/** Loads attendee registration questions, separate from the Event Create/Edit form configuration. */
+export async function getEventRegistrationForm(eventId: string): Promise<ActiveEventFormField[]> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/registration-form`, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw await createEventsApiError(response, "load the Event registration form");
+  const value = (await response.json()) as unknown;
+  if (isRecord(value) && Array.isArray(value.fields)) return value.fields.filter(isActiveEventFormField);
+  if (isRecord(value) && Array.isArray(value.sections)) return value.sections.flatMap((section) => isRecord(section) && Array.isArray(section.fields) ? section.fields.filter(isActiveEventFormField) : []);
+  if (Array.isArray(value)) return value.filter(isActiveEventFormField);
+  throw new Error("Events API returned an invalid Event registration form.");
+}
+
 /** Reads the backend-owned Event taxonomy through the authenticated same-origin Events proxy. */
 export async function getEventCategories(): Promise<EventCategoriesResponse> {
-  const response = await fetch("/api/v1/event-categories", { credentials: "include", cache: "no-store" });
+  const response = await fetch("/api/v1/event-categories/", { credentials: "include", cache: "no-store" });
   if (!response.ok) throw await createEventsApiError(response, "load Event categories");
   const value = (await response.json()) as unknown;
   if (!Array.isArray(value) || !value.every(isEventCategory)) {
@@ -994,8 +1404,116 @@ export async function getEventCategories(): Promise<EventCategoriesResponse> {
   return value;
 }
 
-/** Reads submitted Event feedback through the authenticated same-origin Events proxy. */
-export async function getEventFeedback(eventId: string): Promise<EventFeedbackResponse> {
+function isEventModules(value: unknown): value is EventModules {
+  if (!isRecord(value)) return false;
+  return ["registration", "tickets", "sessions", "check_in", "online_meeting", "custom_questions", "meals", "accommodation"]
+    .every((key) => typeof value[key] === "boolean");
+}
+
+function isEventTypeDefinition(value: unknown): value is EventTypeDefinition {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  return typeof item.id === "string" && typeof item.key === "string" && typeof item.name === "string" && typeof item.active === "boolean"
+    && isEventModules(item.default_modules) && isEventModules(item.allowed_modules) && isEventModules(item.required_modules)
+    && (item.created_at === undefined || typeof item.created_at === "string")
+    && (item.updated_at === undefined || typeof item.updated_at === "string");
+}
+
+/** Reads one backend-owned Event Type definition through the authenticated Events proxy. */
+export async function getEventType(eventTypeId: string): Promise<EventTypeDefinition> {
+  const response = await fetch(`/api/v1/event-types/${encodeURIComponent(eventTypeId)}`, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw await createEventsApiError(response, "load this Event Type");
+  const value = (await response.json()) as unknown;
+  if (!isEventTypeDefinition(value)) throw new EventsApiError("Events API returned an invalid Event Type.", response.status);
+  return value;
+}
+
+/** Reads Event Type definitions from the backend without a hardcoded UI fallback. */
+export async function getEventTypes(): Promise<EventTypeDefinition[]> {
+  const response = await fetch("/api/v1/event-types/", { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw await createEventsApiError(response, "load Event Types");
+  const value = (await response.json()) as unknown;
+  if (!Array.isArray(value) || !value.every(isEventTypeDefinition)) throw new EventsApiError("Events API returned invalid Event Types.", response.status);
+  return value;
+}
+
+function isEventStarRating(value: unknown): value is EventStarRating {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 5;
+}
+
+function parseEventFeedbackAnswer(value: unknown, index: number): EventFeedbackAnswer {
+  if (isRecord(value)) {
+    return {
+      ...(typeof value.question === "string" || value.question === null ? { question: value.question } : {}),
+      ...(typeof value.question_id === "string" || value.question_id === null ? { question_id: value.question_id } : {}),
+      ...(typeof value.label === "string" || value.label === null ? { label: value.label } : {}),
+      ...(typeof value.key === "string" || value.key === null ? { key: value.key } : {}),
+      ...(Object.prototype.hasOwnProperty.call(value, "value") ? { value: value.value } : {}),
+      ...(Object.prototype.hasOwnProperty.call(value, "answer") ? { answer: value.answer } : {}),
+    };
+  }
+  return { label: `Question ${index + 1}`, value };
+}
+
+function parseEventFeedbackItems(value: unknown, eventId: string): EventFeedbackItem[] {
+  const envelope = isRecord(value) ? value : null;
+  const rows: unknown = Array.isArray(value)
+    ? value
+    : (envelope && [envelope.items, envelope.feedback, envelope.feedbacks, envelope.submissions, envelope.data].find((candidate): candidate is unknown[] => Array.isArray(candidate)))
+      ?? (envelope && isRecord(envelope.data) ? [envelope.data.items, envelope.data.feedback, envelope.data.feedbacks, envelope.data.submissions].find((candidate): candidate is unknown[] => Array.isArray(candidate)) : undefined);
+  if (!Array.isArray(rows)) throw new EventsApiError("Events API returned invalid attendee feedback.", 200);
+  return rows.flatMap((candidate, index) => {
+    const id = isRecord(candidate) ? candidate.id ?? candidate.feedback_id : null;
+    if (!isRecord(candidate) || typeof id !== "string" || !id.trim()) return [];
+    const rawRating = candidate.rating;
+    const numericRating = typeof rawRating === "string" && /^[1-5](?:\.0+)?$/.test(rawRating.trim()) ? Number(rawRating) : rawRating;
+    const rating = isEventStarRating(numericRating) ? numericRating : null;
+    const name = candidate.participant_name ?? candidate.attendee_name ?? candidate.name;
+    const email = candidate.participant_email ?? candidate.attendee_email ?? candidate.email;
+    const eventValue = candidate.event_id ?? eventId;
+    const rawAnswers = candidate.answers;
+    const answers = Array.isArray(rawAnswers)
+      ? rawAnswers.map(parseEventFeedbackAnswer)
+      : isRecord(rawAnswers)
+        ? rawAnswers
+        : {};
+    return [{
+      id,
+      event_id: typeof eventValue === "string" ? eventValue : eventId,
+      participant_name: typeof name === "string" && name.trim() ? name.trim() : "Attendee",
+      participant_email: typeof email === "string" && email.trim() ? email.trim() : null,
+      rating,
+      comment: typeof candidate.comment === "string" && candidate.comment.trim() ? candidate.comment : null,
+      form_id: typeof candidate.form_id === "string" ? candidate.form_id : null,
+      answers,
+      created_at: typeof candidate.created_at === "string" ? normalizeUtcDate(candidate.created_at) : null,
+    }];
+  });
+}
+
+function parseEventFeedbackReport(value: unknown, eventId: string): EventFeedbackReportResponse {
+  if (!isRecord(value) || !isRecord(value.data)) throw new EventsApiError("Events API returned an invalid feedback report.", 200);
+  const { total_feedbacks, total_reviews, approved_reviews, average_rating } = value.data;
+  const validCount = (count: unknown): count is number => typeof count === "number" && Number.isInteger(count) && count >= 0;
+  if (!validCount(total_feedbacks) || !validCount(total_reviews) || !validCount(approved_reviews)
+    || (average_rating !== null && (typeof average_rating !== "number" || !Number.isFinite(average_rating) || average_rating < 0 || average_rating > 5))) {
+    throw new EventsApiError("Events API returned an invalid feedback report.", 200);
+  }
+  return {
+    event_id: typeof value.event_id === "string" ? value.event_id : eventId,
+    type: "feedback",
+    data: {
+      total_feedbacks,
+      total_reviews,
+      approved_reviews,
+      average_rating,
+      ...(Array.isArray(value.data.feedbacks) ? { feedbacks: parseEventFeedbackItems(value.data.feedbacks, eventId) } : {}),
+    },
+  };
+}
+
+/** Reads private attendee feedback through the authenticated same-origin Events proxy. */
+export async function getEventFeedback(eventId: string): Promise<EventFeedbackItem[]> {
   const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/feedback`, {
     credentials: "include",
     cache: "no-store",
@@ -1005,8 +1523,82 @@ export async function getEventFeedback(eventId: string): Promise<EventFeedbackRe
     throw await createEventsApiError(response, "load event feedback");
   }
 
-  const contentType = response.headers.get("content-type") ?? "";
-  return contentType.includes("application/json") ? response.json() : response.text();
+  return parseEventFeedbackItems(await response.json() as unknown, eventId);
+}
+
+/** Loads feedback and public review aggregates for an Event. */
+export async function getEventFeedbackReport(eventId: string): Promise<EventFeedbackReportResponse> {
+  const searchParams = new URLSearchParams({ type: "feedback", format: "json" });
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/reports?${searchParams.toString()}`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (!response.ok) throw await createEventsApiError(response, "load the Event feedback report");
+  return parseEventFeedbackReport(await response.json() as unknown, eventId);
+}
+
+/** Loads the authenticated Enterprise's paginated Event review queue. */
+export async function listEnterpriseEventReviewsManage(params: EnterpriseEventReviewsParams = {}): Promise<EventReviewsManageResponse> {
+  const query = new URLSearchParams({ module: "event", page: String(params.page ?? 1), page_size: String(params.pageSize ?? 20) });
+  if (params.eventId) query.set("item_id", params.eventId);
+  if (params.status && params.status !== "all") query.set("status", params.status);
+  if (params.rating && params.rating !== "all") query.set("rating", String(params.rating));
+  if (params.q?.trim()) query.set("q", params.q.trim());
+  const response = await fetch(`/api/v1/reviews/manage?${query.toString()}`, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw await createEventsApiError(response, "load Event reviews");
+  return parseManagedEventReviews((await response.json()) as unknown, params.page ?? 1, params.pageSize ?? 20);
+}
+
+/** Changes the moderation state of an Event review. */
+export async function moderateEventReview(reviewId: string, status: ReviewModerationStatus): Promise<void> {
+  const response = await fetch(`/api/v1/reviews/event/${encodeURIComponent(reviewId)}/moderate`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: status }) });
+  if (!response.ok) throw await createEventsApiError(response, "update this Event review");
+}
+
+/** Permanently deletes an Event review. */
+export async function deleteEventReview(reviewId: string): Promise<void> {
+  const response = await fetch(`/api/v1/reviews/event/${encodeURIComponent(reviewId)}`, { method: "DELETE", credentials: "include" });
+  if (!response.ok) throw await createEventsApiError(response, "delete this Event review");
+}
+
+/** Loads the approved public-facing reviews for an Event. */
+export async function listEventReviews(eventId: string): Promise<EventReview[]> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/reviews`, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw await createEventsApiError(response, "load this Event's reviews");
+  const value = (await response.json()) as unknown;
+  const rows = Array.isArray(value) ? value : isReviewEnvelope(value) && Array.isArray(value.items) ? value.items : isReviewEnvelope(value) && Array.isArray(value.reviews) ? value.reviews : null;
+  if (!rows) throw new EventsApiError("Events API returned invalid Event reviews.", response.status);
+  return rows.map(parseEventReview);
+}
+
+/** Loads moderation history for the Enterprise's Events, optionally narrowed to one Event. */
+export async function getEventReviewsAudit(eventId?: string): Promise<EventReviewAuditEntry[]> {
+  const query = new URLSearchParams({ module: "event" });
+  if (eventId) query.set("item_id", eventId);
+  const response = await fetch(`/api/v1/reviews/audit?${query.toString()}`, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw await createEventsApiError(response, "load Event review history");
+  const value = (await response.json()) as unknown;
+  if (!isReviewEnvelope(value) || !Array.isArray(value.items)) throw new EventsApiError("Reviews API returned invalid Event audit history.", response.status);
+  return value.items.filter(isEventReviewAuditEntry).map((entry) => ({ ...entry, created_at: normalizeUtcDate(entry.created_at) }));
+}
+
+function isReviewEnvelope(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
+function isEventReviewAuditEntry(value: unknown): value is EventReviewAuditEntry {
+  if (!isReviewEnvelope(value)) return false;
+  return typeof value.id === "string" && typeof value.review_id === "string" && typeof value.item_id === "string" && typeof value.to_status === "string"
+    && (value.module === undefined || value.module === "event")
+    && (value.item_name === undefined || value.item_name === null || typeof value.item_name === "string")
+    && (value.from_status === undefined || value.from_status === null || typeof value.from_status === "string")
+    && (value.actor_name === undefined || value.actor_name === null || typeof value.actor_name === "string")
+    && (value.actor_user_id === undefined || value.actor_user_id === null || typeof value.actor_user_id === "string")
+    && (value.actor_role === undefined || value.actor_role === null || typeof value.actor_role === "string")
+    && (value.customer_name === undefined || value.customer_name === null || typeof value.customer_name === "string")
+    && (value.rating === undefined || value.rating === null || (typeof value.rating === "number" && value.rating >= 1 && value.rating <= 5))
+    && (value.comment === undefined || value.comment === null || typeof value.comment === "string")
+    && (value.reason === undefined || value.reason === null || typeof value.reason === "string")
+    && (value.rejection_reason === undefined || value.rejection_reason === null || typeof value.rejection_reason === "string")
+    && (value.moderation_reason === undefined || value.moderation_reason === null || typeof value.moderation_reason === "string")
+    && (value.created_at === undefined || value.created_at === null || typeof value.created_at === "string");
 }
 
 /** Reads the only documented Event report defaults: type=registration and format=json. */
@@ -1038,11 +1630,12 @@ export async function createEvent(payload: CreateEventPayload): Promise<Event> {
   }
 
   const value = (await response.json()) as unknown;
-  if (!isEvent(value)) {
+  const event = normalizeEventResponse(value);
+  if (!event) {
     throw new Error("Events API returned an invalid created event response.");
   }
 
-  return normalizeNullableEventFields(value);
+  return normalizeNullableEventFields(event);
 }
 
 /** Retrieves one Event by its backend identifier using the authenticated browser session. */
@@ -1060,7 +1653,49 @@ export async function getEventById(eventId: string): Promise<Event> {
     throw new Error("Events API returned an invalid event response.");
   }
 
-  return value;
+  return normalizeNullableEventFields(value);
+}
+
+/** Reads the backend-authoritative dashboard summary for one Event. */
+export async function getEventDashboard(eventId: string): Promise<EventDashboard> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/dashboard`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw await createEventsApiError(response, "load the Event dashboard");
+  }
+
+  return (await response.json()) as EventDashboard;
+}
+
+/** Requests the backend-authoritative quote for an Event checkout selection. */
+export async function quoteEventCheckout(eventId: string, payload: EventCheckoutQuoteRequest): Promise<EventCheckoutQuoteResponse> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/checkout/quote`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (!response.ok) throw await createEventsApiError(response, "quote this Event registration");
+  return (await response.json()) as EventCheckoutQuoteResponse;
+}
+
+/** Loads backend-authoritative service fulfilment and purchase snapshots. */
+export async function getEventFulfilment(eventId: string): Promise<EventFulfilmentResponse> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/fulfilment`, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw await createEventsApiError(response, "load Event service fulfilment");
+  return (await response.json()) as EventFulfilmentResponse;
+}
+
+/** Reads the latest Platform review note for an Event through the authenticated Events API. */
+export async function getEventAdminNotes(eventId: string): Promise<unknown> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/admin-notes`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw await createEventsApiError(response, "load the Event admin note");
+  }
+
+  return (await response.json().catch(() => null)) as unknown;
 }
 
 /** Lists registration records for one Event through the authenticated same-origin proxy. */
@@ -1074,6 +1709,38 @@ export async function getEventRegistrations(eventId: string): Promise<EventRegis
   }
 
   return parseEventRegistrationsResponse((await response.json()) as unknown);
+}
+
+/** Lists backend-authoritative attendees with the supported management filters. */
+export async function getEventAttendees(eventId: string, filters: EventAttendeeFilters = {}): Promise<EventAttendeesResponse> {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => { if (value !== undefined && value !== "") params.set(key, String(value)); });
+  const suffix = params.size ? `?${params.toString()}` : "";
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/attendees${suffix}`, { credentials: "include" });
+  if (!response.ok) throw await createEventsApiError(response, "load attendees");
+  return (await response.json()) as EventAttendeesResponse;
+}
+
+async function postSessionAttendance(eventId: string, sessionId: string, action: string, payload: SessionAttendancePayload | { participants: readonly SessionAttendancePayload[] }): Promise<unknown> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/sessions/${encodeURIComponent(sessionId)}/${action}`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (!response.ok) throw await createEventsApiError(response, `perform session ${action}`);
+  return (await response.json().catch(() => null)) as unknown;
+}
+
+/** Performs session-level check-in without changing event-level attendance. */
+export function checkInEventSessionAttendee(eventId: string, sessionId: string, payload: SessionAttendancePayload) { return postSessionAttendance(eventId, sessionId, "check-in", payload); }
+/** Reverses one session-level check-in without changing event-level attendance. */
+export function uncheckInEventSessionAttendee(eventId: string, sessionId: string, payload: SessionAttendancePayload) { return postSessionAttendance(eventId, sessionId, "uncheck-in", payload); }
+/** Performs session-level checkout. */
+export function checkOutEventSessionAttendee(eventId: string, sessionId: string, payload: SessionAttendancePayload) { return postSessionAttendance(eventId, sessionId, "check-out", payload); }
+/** Performs independent per-attendee session batch check-in. */
+export function batchCheckInEventSessionAttendees(eventId: string, sessionId: string, payload: { participants: readonly SessionAttendancePayload[] }) { return postSessionAttendance(eventId, sessionId, "batch-check-in", payload); }
+
+/** Registers a walk-in using only fields supported by the confirmed request model. */
+export async function createEventWalkIn(eventId: string, payload: EventWalkInPayload): Promise<EventWalkInResponse> {
+  const response = await fetch(`${eventsBasePath}${encodeURIComponent(eventId)}/walk-in`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (!response.ok) throw await createEventsApiError(response, "register this walk-in attendee");
+  return (await response.json()) as EventWalkInResponse;
 }
 
 /** Lists backend-authoritative purchase records for one Event through the same-origin proxy. */
@@ -1212,7 +1879,7 @@ export async function applyEventTemplate(
     throw new Error("Events API returned an invalid applied template response.");
   }
 
-  return value;
+  return normalizeNullableEventFields(value);
 }
 
 /** Loads the backend-authoritative read-only attendance report for one Event. */
@@ -1520,7 +2187,7 @@ export async function updateEvent(eventId: string, payload: UpdateEventPayload):
     throw new Error("Events API returned an invalid updated event response.");
   }
 
-  return value;
+  return normalizeNullableEventFields(value);
 }
 
 /** Duplicates an Event through the backend-authoritative authenticated endpoint. */
@@ -1539,7 +2206,7 @@ export async function duplicateEvent(eventId: string): Promise<Event> {
     throw new Error("Events API returned an invalid duplicated event response.");
   }
 
-  return value;
+  return normalizeNullableEventFields(value);
 }
 
 /** Deletes an eligible Event through the authenticated same-origin Events proxy. */
@@ -1579,7 +2246,7 @@ export async function updateEventStatus(eventId: string, payload: EventStatusUpd
     throw new Error("Events API returned an invalid updated event status response.");
   }
 
-  return value;
+  return normalizeNullableEventFields(value);
 }
 
 /** Resubmits an Event after a Super Admin rejection or request for revision. */
@@ -1598,7 +2265,7 @@ export async function resubmitEvent(eventId: string): Promise<Event> {
     throw new Error("Events API returned an invalid resubmitted event response.");
   }
 
-  return value;
+  return normalizeNullableEventFields(value);
 }
 
 /** Sends an Event announcement through the authenticated same-origin Events proxy. */

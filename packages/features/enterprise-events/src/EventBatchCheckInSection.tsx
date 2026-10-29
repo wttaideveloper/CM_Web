@@ -16,7 +16,7 @@ import {
 
 const COPY = {
   title: "Batch check-in",
-  description: "Review backend-eligible participants, then check them in with one operation.",
+  description: "Check in multiple registered attendees at once.",
   open: "Batch check-in",
   selectAll: "Select all eligible",
   clear: "Clear selection",
@@ -75,6 +75,9 @@ export default function EventBatchCheckInSection({ eventId, enabled, timeZone }:
       await Promise.all([
         queryClient.invalidateQueries({ queryKey }),
         queryClient.invalidateQueries({ queryKey: ["event-attendance", eventId] }),
+        queryClient.invalidateQueries({ queryKey: ["event-attendees", eventId] }),
+        queryClient.invalidateQueries({ queryKey: ["event-registrations", eventId] }),
+        queryClient.invalidateQueries({ queryKey: ["events", "dashboard", eventId] }),
       ]);
     },
     onError: () => {

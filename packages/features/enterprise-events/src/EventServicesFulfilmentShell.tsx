@@ -1,0 +1,4 @@
+"use client";
+export default function EventServicesFulfilmentShell({ meals, accommodation, search, pagination }: { meals?: React.ReactNode; accommodation?: React.ReactNode; search?: React.ReactNode; pagination?: React.ReactNode }) {
+  return <section aria-label="Event Services fulfilment" className="space-y-6">{search ? <div>{search}</div> : null}<section><h2 className="text-lg font-bold text-[#06201c]">Meals</h2><div className="mt-3">{meals ?? <p className="text-sm text-[#52736a]">No meal fulfilment data available.</p>}</div></section><section><h2 className="text-lg font-bold text-[#06201c]">Accommodation</h2><div className="mt-3">{accommodation ?? <p className="text-sm text-[#52736a]">No accommodation fulfilment data available.</p>}</div></section>{pagination ? <div>{pagination}</div> : null}</section>;
+}

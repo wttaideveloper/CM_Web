@@ -4,10 +4,10 @@ import { proxyTrainingApprovalGet, proxyTrainingApprovalMutation } from "../_lib
 
 type RouteContext = { params: Promise<{ path: string[] }> };
 
-/** Admin training detail — `GET /api/v1/admin/trainings/{id}`. */
+/** Super Admin training detail — uses the canonical date fields from `GET /api/v1/trainings/{id}`. */
 export async function GET(request: NextRequest, context: RouteContext) {
   const { path } = await context.params;
-  return proxyTrainingApprovalGet(`/api/v1/admin/trainings/${path.join("/")}`, request.nextUrl.search, path);
+  return proxyTrainingApprovalGet(`/api/v1/trainings/${path.join("/")}`, request.nextUrl.search, path);
 }
 
 /** Approve / reject / publish / request-changes — `POST /api/v1/admin/trainings/{id}/{action}`. */

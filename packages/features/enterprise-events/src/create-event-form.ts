@@ -8,8 +8,21 @@ import type {
   CreateEventVenue,
   Event,
   UpdateEventPayload,
+  EventModules,
+  EventMealsInput,
+  EventAccommodationInput,
 } from "./events.service";
+import { buildEventMediaPayload, buildEventMediaUpdatePayload, normalizeDocumentEntries, validateEventMediaLink, type EventDocumentEntry } from "./event-media";
 import { validateSessions } from "./SessionTableEditor";
+import { EVENT_DESCRIPTION_MAX_LENGTH, eventServiceOptionLengthError } from "./event-field-limits";
+import { assertEventCurrencyConsistency, eventCurrencyForSource, normalizeEventFormCurrency, resolveEventCurrencySource, synchronizeEventCurrencies, synchronizeEventServiceEnablement, type EventCurrencyPolicy } from "./event-currency";
+import { deriveEventPurchaseWindow, syncPurchaseWindows } from "./event-service-purchase-window";
+import { buildEventVenue } from "./event-location";
+import {
+  hasUnsafeProtectedSessionMeetingLinkEdit,
+  isProtectedMeetingLink,
+  isUnsafeProtectedMeetingLinkEdit,
+} from "./event-meeting-link";
 
 /** An editable ticket row in the Create Event workspace. */
 export interface EventTicketFormValue extends EventTicketType {}
@@ -20,6 +33,9 @@ export interface EventCustomFieldFormValue extends EventCustomField {}
 /** Local session value that retains backend identity while an Event is edited. */
 export interface EventSessionFormValue extends EventSessionInput {
   id?: string;
+  location: string;
+  description: string;
+  speaker_bio: string;
   meeting_link?: string | null;
 }
 
@@ -39,15 +55,15 @@ export interface CreateEventFormValues {
   registration_open_at: string;
   registration_close_at: string;
   time_zone: string;
+  event_type: string;
   delivery_mode: string;
   venue_name: string;
   venue_address: string;
   venue_city: string;
-  venue_latitude: string;
-  venue_longitude: string;
   meeting_link: string;
   meeting_provider: string;
   price: string;
+  pricing_type: "free" | "paid";
   currency: string;
   ticket_types: EventTicketFormValue[];
   capacity: string;
@@ -56,9 +72,12 @@ export interface CreateEventFormValues {
   primary_image: string;
   gallery_images: string[];
   videos: string[];
-  documents: string[];
+  documents: EventDocumentEntry[];
   custom_fields: EventCustomFieldFormValue[];
   sessions: EventSessionFormValue[];
+  modules: EventModules | null;
+  meals: EventMealsInput | null;
+  accommodation: EventAccommodationInput | null;
 }
 
 /** Returns blank values for a newly opened Create Event workspace. */
@@ -66,12 +85,34 @@ export function createEmptyEventForm(): CreateEventFormValues {
   return {
     title: "", description: "", category: "", subcategory: "", tags: [], organiser_name: "",
     organiser_contact: "", start_date: "", end_date: "", duration_type: "", registration_cutoff: "",
-    registration_open_at: "", registration_close_at: "", time_zone: "Asia/Kolkata", delivery_mode: "in_person",
-    venue_name: "", venue_address: "", venue_city: "", venue_latitude: "", venue_longitude: "",
-    meeting_link: "", meeting_provider: "", price: "", currency: "INR", ticket_types: [], capacity: "",
+    registration_open_at: "", registration_close_at: "", time_zone: "America/New_York", event_type: "", delivery_mode: "in_person",
+    venue_name: "", venue_address: "", venue_city: "",
+    meeting_link: "", meeting_provider: "", price: "", pricing_type: "paid", currency: "", ticket_types: [], capacity: "",
     min_participants: "", max_participants: "", primary_image: "", gallery_images: [], videos: [], documents: [],
-    custom_fields: [], sessions: [],
+    custom_fields: [], sessions: [], modules: null, meals: null, accommodation: null,
   };
+}
+
+/** Keeps Create Event service purchasing windows derived from registration dates. */
+export function synchronizeCreateEventServiceWindows(values: CreateEventFormValues): CreateEventFormValues {
+  const purchaseWindow = deriveEventPurchaseWindow(values.registration_open_at, values.registration_close_at, values.registration_cutoff);
+  return synchronizeEventServiceEnablement({
+    ...values,
+    meals: values.modules?.meals === true && values.meals
+      ? { ...values.meals, options: syncPurchaseWindows(values.meals.options ?? [], purchaseWindow) }
+      : values.meals,
+    accommodation: values.modules?.accommodation === true && values.accommodation
+      ? { ...values.accommodation, options: syncPurchaseWindows(values.accommodation.options ?? [], purchaseWindow) }
+      : values.accommodation,
+  });
+}
+
+/** Applies the authoritative service currency and module flags to writable service payloads. */
+function synchronizeServicePayloadValues(values: CreateEventFormValues, currencyPolicy?: EventCurrencyPolicy): CreateEventFormValues {
+  const source = currencyPolicy ? resolveEventCurrencySource(values, currencyPolicy, null) : null;
+  const currency = eventCurrencyForSource(values, source);
+  const currencyValues = currencyPolicy && currency ? synchronizeEventCurrencies(values, currencyPolicy, currency) : values;
+  return synchronizeEventServiceEnablement(currencyValues);
 }
 
 /** Builds a confirmed Create Event payload without response-only fields. */
@@ -83,19 +124,20 @@ export function buildCreateEventPayload(
   formConfigurationVersionId?: string,
   customValues?: Array<{ field_id: string; value: string | string[] | boolean | number | null }>,
   configuredCoreKeys?: ReadonlySet<string>,
+  sessionsEnabledFields?: readonly string[],
+  currencyPolicy?: EventCurrencyPolicy,
 ): CreateEventPayload {
-  const coordinates = buildCoordinates(values.venue_latitude, values.venue_longitude);
-  const venue: CreateEventVenue = {
-    name: values.venue_name.trim(),
-    address: values.venue_address.trim(),
-    city: values.venue_city.trim(),
-    ...(coordinates ? { coordinates } : {}),
-  };
+  if (currencyPolicy) assertEventCurrencyConsistency(values, currencyPolicy);
+  const synchronizedValues = synchronizeCreateEventServiceWindows(synchronizeServicePayloadValues(values, currencyPolicy));
+  const eventType = values.event_type.trim();
+  if (!eventType) throw new Error("Select an Event Type before creating this Event.");
+  const venue: CreateEventVenue = buildEventVenue(values.venue_name, values.venue_address, values.venue_city);
 
+  const mediaPayload = buildEventMediaPayload(values);
   const payload: CreateEventPayload = {
     tenant_id: tenantId,
     enterprise_id: enterpriseId,
-    location_id: locationId,
+    location_id: values.delivery_mode === "online" ? null : locationId || null,
     title: values.title.trim(),
     description: values.description.trim(),
     category: values.category.trim(),
@@ -107,64 +149,71 @@ export function buildCreateEventPayload(
     end_date: toBackendLocalDateTime(values.end_date),
     duration_type: values.duration_type,
     time_zone: values.time_zone,
+    event_type: eventType,
     registration_cutoff: toBackendLocalDateTime(values.registration_cutoff),
-    primary_image: values.primary_image.trim(),
-    gallery_images: values.gallery_images,
-    videos: values.videos,
-    documents: values.documents,
+    ...mediaPayload,
     delivery_mode: values.delivery_mode as "in_person",
-    venue,
-    meeting_link: values.meeting_link.trim() || null,
-    meeting_provider: values.meeting_provider.trim() || null,
-    price: values.price.trim(),
-    currency: values.currency.trim(),
-    ticket_types: values.ticket_types,
-    capacity: values.capacity.trim(),
-    min_participants: values.min_participants.trim(),
-    max_participants: values.max_participants.trim(),
+    venue: values.delivery_mode === "online" ? null : venue,
+    meeting_link: values.delivery_mode === "in_person" ? null : values.meeting_link.trim() || null,
+    meeting_provider: values.delivery_mode === "in_person" ? null : values.meeting_provider.trim() || null,
+    price: values.pricing_type === "free" ? null : values.price.trim(),
+    pricing_type: values.pricing_type,
+    currency: synchronizedValues.pricing_type === "free" ? "" : synchronizedValues.currency.trim(),
+    ticket_types: synchronizedValues.pricing_type === "free" ? [] : synchronizedValues.ticket_types,
+    capacity: toOptionalNumericString(values.capacity),
+    min_participants: toOptionalNumericString(values.min_participants),
+    max_participants: toOptionalNumericString(values.max_participants),
     registration_open_at: toBackendLocalDateTime(values.registration_open_at),
     registration_close_at: toBackendLocalDateTime(values.registration_close_at),
     custom_fields: values.custom_fields as CreateEventCustomField[],
-    sessions: values.sessions.map(({ id: _id, meeting_link: _meetingLink, ...session }) => session),
+    sessions: values.sessions.map((session) => mapSessionForPayload(session, sessionsEnabledFields, values.delivery_mode)),
     status: "draft",
     ...(formConfigurationVersionId ? { form_configuration_version_id: formConfigurationVersionId } : {}),
     ...(customValues ? { custom_values: customValues } : {}),
+    ...(synchronizedValues.modules ? { modules: synchronizedValues.modules } : {}),
+    ...(synchronizedValues.modules?.meals === true && synchronizedValues.meals ? { meals: synchronizedValues.meals } : {}),
+    ...(synchronizedValues.modules?.accommodation === true && synchronizedValues.accommodation ? { accommodation: synchronizedValues.accommodation } : {}),
   };
   if (configuredCoreKeys) {
-    const payloadFields: Record<string, keyof CreateEventPayload> = { title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", start_date: "start_date", start_datetime: "start_date", end_date: "end_date", end_datetime: "end_date", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", timezone: "time_zone", time_zone: "time_zone", event_type: "delivery_mode", delivery_mode: "delivery_mode", venue: "venue", price: "price", currency: "currency", ticket_types: "ticket_types", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents", media: "primary_image", sessions: "sessions", custom_fields: "custom_fields", registration_questions: "custom_fields" };
+    const payloadFields: Record<string, keyof CreateEventPayload> = { title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", start_date: "start_date", start_datetime: "start_date", end_date: "end_date", end_datetime: "end_date", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", timezone: "time_zone", time_zone: "time_zone", event_type: "event_type", delivery_mode: "delivery_mode", venue: "venue", pricing_type: "pricing_type", price: "price", currency: "currency", ticket_types: "ticket_types", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents", media: "primary_image", sessions: "sessions", custom_fields: "custom_fields", registration_questions: "custom_fields" };
     const configuredPayloadFields = new Set(
       Object.entries(payloadFields)
         .filter(([configurationKey]) => configuredCoreKeys.has(configurationKey))
         .map(([, payloadKey]) => payloadKey),
     );
+    if (configuredCoreKeys.has("media")) for (const payloadKey of ["primary_image", "gallery_images", "videos", "documents"] as const) configuredPayloadFields.add(payloadKey);
     for (const payloadKey of new Set(Object.values(payloadFields))) {
       if (!configuredPayloadFields.has(payloadKey)) {
         delete (payload as Partial<CreateEventPayload>)[payloadKey];
       }
     }
   }
+  if (values.modules) payload.modules = values.modules;
+  if (synchronizedValues.modules?.meals === true && synchronizedValues.meals) payload.meals = synchronizedValues.meals;
+  if (synchronizedValues.modules?.accommodation === true && synchronizedValues.accommodation) payload.accommodation = synchronizedValues.accommodation;
   return payload;
 }
 
 /** Converts a real Event response into usable editable controls without literal null values. */
 export function eventToFormValues(event: Event): CreateEventFormValues {
+  const pricingType = event.pricing_type ?? (Number(event.price) === 0 ? "free" : "paid");
   return {
     title: event.title, description: event.description, category: event.category, subcategory: event.subcategory,
     tags: event.tags, organiser_name: event.organiser_name, organiser_contact: event.organiser_contact,
     start_date: toDateTimeLocal(event.start_date), end_date: toDateTimeLocal(event.end_date), duration_type: event.duration_type,
     registration_cutoff: toDateTimeLocal(event.registration_cutoff), registration_open_at: toDateTimeLocal(event.registration_open_at),
-    registration_close_at: toDateTimeLocal(event.registration_close_at), time_zone: event.time_zone, delivery_mode: event.delivery_mode,
+    registration_close_at: toDateTimeLocal(event.registration_close_at), time_zone: event.time_zone, event_type: event.event_type ?? "", delivery_mode: event.delivery_mode,
     venue_name: event.venue?.name ?? "", venue_address: event.venue?.address ?? "", venue_city: event.venue?.city ?? "",
-    venue_latitude: event.venue?.coordinates?.lat?.toString() ?? "", venue_longitude: event.venue?.coordinates?.lng?.toString() ?? "",
-    meeting_link: event.meeting_link ?? "", meeting_provider: event.meeting_provider ?? "", price: event.price,
-    currency: event.currency, ticket_types: event.ticket_types, capacity: event.capacity,
+    meeting_link: event.meeting_link ?? "", meeting_provider: event.meeting_provider ?? "", price: event.price ?? "", pricing_type: pricingType,
+    currency: normalizeEventFormCurrency(pricingType, event.currency), ticket_types: event.ticket_types, capacity: event.capacity,
     min_participants: event.min_participants, max_participants: event.max_participants, primary_image: event.primary_image ?? "",
-    gallery_images: event.gallery_images, videos: event.videos, documents: event.documents,
-    custom_fields: event.custom_fields, sessions: event.sessions.map((session) => ({ ...(session.id ? { id: session.id } : {}), session_date: session.session_date ?? "", title: session.title, speaker: session.speaker ?? "", start_time: session.start_time ?? "", end_time: session.end_time ?? "", location: session.location ?? "", meeting_link: session.meeting_link ?? null })),
+    gallery_images: event.gallery_images, videos: event.videos, documents: normalizeDocumentEntries(event.documents),
+    custom_fields: event.custom_fields, sessions: event.sessions.map((session) => ({ ...(session.id ? { id: session.id } : {}), session_date: session.session_date ?? "", title: session.title, description: session.description ?? "", speaker: session.speaker ?? "", speaker_bio: session.speaker_bio ?? "", start_time: session.start_time ?? "", end_time: session.end_time ?? "", location: session.location ?? "", meeting_link: session.meeting_link ?? null })),
+    modules: event.modules ?? null, meals: event.meals ?? null, accommodation: event.accommodation ?? null,
   };
 }
 
-const sessionFormKeys = ["session_date", "title", "speaker", "start_time", "end_time", "location", "meeting_link"] as const;
+const sessionFormKeys = ["session_date", "title", "description", "speaker", "speaker_bio", "start_time", "end_time", "location", "meeting_link"] as const;
 type SessionFormKey = typeof sessionFormKeys[number];
 
 function formSessionFromRecord(session: EventSessionRecord): EventSessionFormValue {
@@ -172,7 +221,9 @@ function formSessionFromRecord(session: EventSessionRecord): EventSessionFormVal
     ...(session.id ? { id: session.id } : {}),
     session_date: session.session_date ?? "",
     title: session.title,
+    description: session.description ?? "",
     speaker: session.speaker ?? "",
+    speaker_bio: session.speaker_bio ?? "",
     start_time: session.start_time ?? "",
     end_time: session.end_time ?? "",
     location: session.location ?? "",
@@ -234,71 +285,220 @@ function mergeChangedSession(
 }
 
 /** Builds the partial writable EventUpdate request, preserving untouched backend values. */
-export function buildUpdateEventPayload(values: CreateEventFormValues, initialValues: CreateEventFormValues, locationId: string, initialLocationId: string, configuredCoreKeys?: ReadonlySet<string>): UpdateEventPayload {
-  const changed = <Key extends keyof CreateEventFormValues>(key: Key): boolean => JSON.stringify(values[key]) !== JSON.stringify(initialValues[key]);
+export function buildUpdateEventPayload(values: CreateEventFormValues, initialValues: CreateEventFormValues, locationId: string, initialLocationId: string, configuredCoreKeys?: ReadonlySet<string>, sessionsEnabledFields?: readonly string[], currencyPolicy?: EventCurrencyPolicy): UpdateEventPayload {
+  if (currencyPolicy) assertEventCurrencyConsistency(values, currencyPolicy);
+  const synchronizedValues = synchronizeServicePayloadValues(values, currencyPolicy);
+  const changed = <Key extends keyof CreateEventFormValues>(key: Key): boolean => JSON.stringify(synchronizedValues[key]) !== JSON.stringify(initialValues[key]);
   const payload: UpdateEventPayload = {};
-  const scalarKeys: Array<keyof Pick<CreateEventFormValues, "title" | "description" | "category" | "subcategory" | "tags" | "organiser_name" | "organiser_contact" | "duration_type" | "time_zone" | "delivery_mode" | "primary_image" | "gallery_images" | "videos" | "documents" | "price" | "currency" | "ticket_types" | "capacity" | "min_participants" | "max_participants" | "custom_fields" | "sessions">> = ["title", "description", "category", "subcategory", "tags", "organiser_name", "organiser_contact", "duration_type", "time_zone", "delivery_mode", "primary_image", "gallery_images", "videos", "documents", "price", "currency", "ticket_types", "capacity", "min_participants", "max_participants", "custom_fields", "sessions"];
-  for (const key of scalarKeys) if (changed(key)) Object.assign(payload, { [key]: values[key] });
+  const mediaUpdate = buildEventMediaUpdatePayload(values, initialValues);
+  const scalarKeys: Array<keyof Pick<CreateEventFormValues, "title" | "description" | "category" | "subcategory" | "tags" | "organiser_name" | "organiser_contact" | "duration_type" | "time_zone" | "event_type" | "delivery_mode" | "primary_image" | "gallery_images" | "videos" | "documents" | "price" | "pricing_type" | "currency" | "ticket_types" | "capacity" | "min_participants" | "max_participants" | "custom_fields" | "sessions">> = ["title", "description", "category", "subcategory", "tags", "organiser_name", "organiser_contact", "duration_type", "time_zone", "event_type", "delivery_mode", "primary_image", "gallery_images", "videos", "documents", "price", "pricing_type", "currency", "ticket_types", "capacity", "min_participants", "max_participants", "custom_fields", "sessions"];
+  for (const key of scalarKeys) {
+    if (!changed(key)) continue;
+    if (key === "capacity" || key === "min_participants" || key === "max_participants") {
+      Object.assign(payload, { [key]: toOptionalNumericString(synchronizedValues[key]) });
+    } else {
+      if (key === "primary_image" || key === "gallery_images" || key === "videos" || key === "documents") Object.assign(payload, mediaUpdate);
+      else Object.assign(payload, { [key]: synchronizedValues[key] });
+    }
+  }
+  if (changed("sessions")) {
+    if (hasUnsafeProtectedSessionMeetingLinkEdit(synchronizedValues.sessions, initialValues.sessions)) {
+      throw new Error("One or more Sessions have protected meeting links. Enter replacement URLs before clearing or changing other fields.");
+    }
+    payload.sessions = synchronizedValues.sessions.map((session) => mapSessionForPayload(session, sessionsEnabledFields, synchronizedValues.delivery_mode));
+  }
+  if (changed("modules")) payload.modules = synchronizedValues.modules;
+  if (changed("meals")) payload.meals = synchronizedValues.meals;
+  if (changed("accommodation")) payload.accommodation = synchronizedValues.accommodation;
   const datetimeKeys: Array<keyof Pick<CreateEventFormValues, "start_date" | "end_date" | "registration_cutoff" | "registration_open_at" | "registration_close_at">> = ["start_date", "end_date", "registration_cutoff", "registration_open_at", "registration_close_at"];
-  for (const key of datetimeKeys) if (changed(key)) Object.assign(payload, { [key]: toBackendLocalDateTime(values[key]) });
-  if (values.meeting_link !== initialValues.meeting_link) payload.meeting_link = values.meeting_link.trim() || null;
-  if (values.meeting_provider !== initialValues.meeting_provider) payload.meeting_provider = values.meeting_provider.trim() || null;
+  for (const key of datetimeKeys) if (changed(key)) Object.assign(payload, { [key]: toBackendLocalDateTime(synchronizedValues[key]) });
+  const deliveryModeChanged = changed("delivery_mode");
+  if (synchronizedValues.meeting_link !== initialValues.meeting_link) {
+    if (isUnsafeProtectedMeetingLinkEdit(initialValues.meeting_link, synchronizedValues.meeting_link)) {
+      throw new Error("This Event has a protected meeting link. Enter a replacement URL before clearing it.");
+    }
+    payload.meeting_link = synchronizedValues.meeting_link.trim() || null;
+  }
+  if (synchronizedValues.meeting_provider !== initialValues.meeting_provider) payload.meeting_provider = synchronizedValues.meeting_provider.trim() || null;
+  if (deliveryModeChanged && synchronizedValues.delivery_mode === "in_person") {
+    if (isUnsafeProtectedMeetingLinkEdit(initialValues.meeting_link, synchronizedValues.meeting_link)) {
+      throw new Error("This Event has a protected meeting link and cannot be changed to In Person until the link is replaced.");
+    }
+    payload.meeting_link = null;
+    payload.meeting_provider = null;
+  }
   if (locationId !== initialLocationId) payload.location_id = locationId || null;
-  const venueFields: Array<keyof CreateEventFormValues> = ["venue_name", "venue_address", "venue_city", "venue_latitude", "venue_longitude"];
-  if (venueFields.some((field) => changed(field))) payload.venue = buildVenue(values);
+  if (deliveryModeChanged && synchronizedValues.delivery_mode === "online") {
+    payload.location_id = null;
+    payload.venue = null;
+  }
+  const venueFields: Array<keyof CreateEventFormValues> = ["venue_name", "venue_address", "venue_city"];
+  if (venueFields.some((field) => changed(field)) || (deliveryModeChanged && synchronizedValues.delivery_mode !== "online")) {
+    payload.venue = synchronizedValues.delivery_mode === "online" ? null : buildVenue(synchronizedValues);
+  }
+  if (synchronizedValues.pricing_type === "free" && (changed("pricing_type") || changed("price"))) payload.price = null;
   if (configuredCoreKeys) {
-    const payloadKeys: Record<string, keyof UpdateEventPayload> = { title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", duration_type: "duration_type", start_date: "start_date", end_date: "end_date", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", time_zone: "time_zone", delivery_mode: "delivery_mode", venue: "venue", location_id: "location_id", meeting_link: "meeting_link", meeting_provider: "meeting_provider", price: "price", currency: "currency", ticket_types: "ticket_types", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents", sessions: "sessions" };
-    for (const [configurationKey, payloadKey] of Object.entries(payloadKeys)) if (!configuredCoreKeys.has(configurationKey)) delete (payload as Partial<UpdateEventPayload>)[payloadKey];
+    const payloadKeys: Record<string, keyof UpdateEventPayload> = { title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", duration_type: "duration_type", start_date: "start_date", end_date: "end_date", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", time_zone: "time_zone", event_type: "event_type", delivery_mode: "delivery_mode", venue: "venue", location_id: "location_id", meeting_link: "meeting_link", meeting_provider: "meeting_provider", pricing_type: "pricing_type", price: "price", currency: "currency", ticket_types: "ticket_types", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents", sessions: "sessions" };
+    for (const [configurationKey, payloadKey] of Object.entries(payloadKeys)) if (!configuredCoreKeys.has(configurationKey) && !(configuredCoreKeys.has("media") && ["primary_image", "gallery_images", "videos", "documents"].includes(configurationKey))) delete (payload as Partial<UpdateEventPayload>)[payloadKey];
   }
   return payload;
 }
 
+export function mapSessionForPayload(session: EventSessionFormValue, enabledFields?: readonly string[], deliveryMode?: string): EventSessionInput {
+  const { id: _id, meeting_link, location, ...base } = session;
+  const meetingLinkEnabled = enabledFields === undefined || enabledFields.length === 0 || enabledFields.includes("meeting_link");
+  const locationApplicable = deliveryMode !== "online";
+  const meetingLinkApplicable = deliveryMode === undefined || deliveryMode === "online" || deliveryMode === "hybrid";
+  const normalizedMeetingLink = meeting_link?.trim();
+  return { ...base, description: base.description?.trim() || null, speaker_bio: base.speaker_bio?.trim() || null, ...(locationApplicable && location?.trim() ? { location: location.trim() } : {}), ...(meetingLinkApplicable && meetingLinkEnabled && normalizedMeetingLink && !isProtectedMeetingLink(normalizedMeetingLink) ? { meeting_link: normalizedMeetingLink } : {}) };
+}
+
+function toOptionalNumericString(value: string | number | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  const normalized = String(value).trim();
+  return normalized || null;
+}
+
+/** Validates the shared Event capacity and participant constraints. */
+export function validateParticipantCapacity(values: Pick<CreateEventFormValues, "capacity" | "min_participants" | "max_participants">, errors: Record<string, string[]>): void {
+  const fields = ["capacity", "min_participants", "max_participants"] as const;
+  const valuesByField = Object.fromEntries(fields.map((field) => {
+    const rawValue = values[field];
+    const textValue = rawValue === null ? "" : String(rawValue).trim();
+    return [field, { text: textValue, number: textValue ? Number(textValue) : null }];
+  })) as Record<typeof fields[number], { text: string; number: number | null }>;
+  for (const field of fields) {
+    const value = valuesByField[field];
+    if (value.text && (value.number === null || !Number.isFinite(value.number) || value.number < 0)) {
+      errors[field] = ["Enter a non-negative number."];
+    } else if (value.number !== null && !Number.isInteger(value.number)) {
+      errors[field] = ["Enter a whole number."];
+    }
+  }
+  const minimum = valuesByField.min_participants.number;
+  const maximum = valuesByField.max_participants.number;
+  const capacity = valuesByField.capacity.number;
+  if (!valuesByField.capacity.text) {
+    errors.capacity = ["Capacity is required."];
+  }
+  if (capacity !== null && Number.isFinite(capacity) && capacity <= 0) {
+    errors.capacity = ["Capacity must be greater than 0."];
+  }
+  if (minimum !== null && maximum !== null && Number.isFinite(minimum) && Number.isFinite(maximum) && minimum > maximum) {
+    errors.min_participants = ["Minimum participants must not exceed maximum participants."];
+  }
+  if (maximum !== null && capacity !== null && Number.isFinite(maximum) && Number.isFinite(capacity) && maximum > capacity) {
+    errors.max_participants = ["Maximum participants must not exceed overall capacity."];
+  }
+}
+
 /** Validates the safe, user-supplied Create Event values before submission. */
-export function validateEventForm(values: CreateEventFormValues, hasLocation: boolean, mode: "create" | "edit" = "create"): Record<string, string[]> {
+export function validateServiceSchedule(values: CreateEventFormValues, includePurchaseWindow = true): Record<string, string[]> {
+  const errors: Record<string, string[]> = {};
+  const start = values.start_date;
+  const end = values.end_date;
+  const check = (key: "meals" | "accommodation", options: readonly { name?: string | null; description?: string | null; date?: string | null; purchase_start_at?: string | null; purchase_end_at?: string | null; service_start_at?: string | null; service_end_at?: string | null }[]) => {
+    options.forEach((option, index) => {
+      const prefix = `${key}.${index}`;
+      const addError = (field: string, message: string) => {
+        errors[`${prefix}.${field}`] = [message];
+        errors[key] = [...(errors[key] ?? []), message];
+      };
+      const nameError = eventServiceOptionLengthError(key, "name", option.name ?? "");
+      const descriptionError = eventServiceOptionLengthError(key, "description", option.description ?? "");
+      if (nameError) addError("name", nameError);
+      if (descriptionError) addError("description", descriptionError);
+      if (option.date && ((start && option.date < start.slice(0, 10)) || (end && option.date > end.slice(0, 10)))) addError("date", "Service date must be within the Event schedule.");
+      if (option.service_start_at && start && option.service_start_at < start || option.service_start_at && end && option.service_start_at > end) addError("service_start_at", "Service start must be within the Event schedule.");
+      if (option.service_end_at && start && option.service_end_at < start || option.service_end_at && end && option.service_end_at > end) addError("service_end_at", "Service end must be within the Event schedule.");
+      if (option.service_start_at && option.service_end_at && option.service_end_at < option.service_start_at) addError("service_end_at", "Service end must be after service start.");
+      if (includePurchaseWindow && option.purchase_start_at && option.purchase_end_at && option.purchase_end_at < option.purchase_start_at) addError("purchase_end_at", "Purchase end must be after purchase start.");
+    });
+  };
+  if (!includePurchaseWindow || values.modules?.meals === true) check("meals", values.meals?.options ?? []);
+  if (!includePurchaseWindow || values.modules?.accommodation === true) check("accommodation", values.accommodation?.options ?? []);
+  return errors;
+}
+
+export function validateEventForm(values: CreateEventFormValues, mode: "create" | "edit" = "create"): Record<string, string[]> {
   const errors: Record<string, string[]> = {};
   const require = (field: keyof CreateEventFormValues, label: string) => {
     if (!String(values[field]).trim()) errors[field] = [`${label} is required.`];
   };
   if (mode === "create") {
+    require("event_type", "Event Type");
     require("title", "Event name"); require("description", "Description"); require("category", "Category");
     require("organiser_name", "Organizer"); require("organiser_contact", "Organizer contact");
     require("start_date", "Start date and time"); require("end_date", "End date and time");
     require("registration_cutoff", "Registration cutoff"); require("registration_open_at", "Registration opening");
-    require("registration_close_at", "Registration closing"); require("venue_name", "Venue name");
-    require("venue_address", "Venue address"); require("venue_city", "Venue city"); require("price", "Price");
-    require("currency", "Currency"); require("capacity", "Overall capacity");
+    require("registration_close_at", "Registration closing");
+    require("pricing_type", "Pricing type");
+    if (values.pricing_type === "paid") { if (!values.price.trim() && values.ticket_types.length === 0) errors.price = ["Paid Events need a price or at least one ticket type."]; require("currency", "Currency"); }
+    require("capacity", "Overall capacity");
     require("min_participants", "Minimum participants"); require("max_participants", "Maximum participants");
-    if (!hasLocation) errors.location_id = ["Select an existing enterprise location before creating this event."];
+  }
+  if (values.description.length > EVENT_DESCRIPTION_MAX_LENGTH) errors.description = [`Description must be ${EVENT_DESCRIPTION_MAX_LENGTH} characters or fewer.`];
+  if (values.delivery_mode !== "online") {
+    if (!values.venue_name.trim()) errors.venue = ["Venue name is required."];
+    else if (!values.venue_address.trim()) errors.venue = ["Venue address is required."];
+    else if (!values.venue_city.trim()) errors.venue = ["Venue city is required."];
   }
   validateDateOrder(values, errors);
   validateNumbers(values, errors);
   validateUrls(values, errors);
   validateRepeatingValues(values, errors);
+  Object.assign(errors, validateServiceSchedule(values, mode === "create"));
   return errors;
 }
 
 function validateDateOrder(values: CreateEventFormValues, errors: Record<string, string[]>): void {
-  const start = Date.parse(values.start_date); const end = Date.parse(values.end_date);
-  const opens = Date.parse(values.registration_open_at); const closes = Date.parse(values.registration_close_at);
-  const cutoff = Date.parse(values.registration_cutoff);
-  if (Number.isFinite(start) && Number.isFinite(end) && end < start) errors.end_date = ["End must not be earlier than start."];
-  if (Number.isFinite(opens) && Number.isFinite(closes) && closes < opens) errors.registration_close_at = ["Registration closing must not be earlier than opening."];
-  if (Number.isFinite(cutoff) && Number.isFinite(start) && cutoff > start) errors.registration_cutoff = ["Registration cutoff must not be after the event starts."];
+  const start = localDateTimeOrderValue(values.start_date); const end = localDateTimeOrderValue(values.end_date);
+  const opens = localDateTimeOrderValue(values.registration_open_at); const closes = localDateTimeOrderValue(values.registration_close_at);
+  const cutoff = localDateTimeOrderValue(values.registration_cutoff);
+  if (start !== null && end !== null && end <= start) errors.end_date = ["End date and time must be after the start date and time."];
+  if (opens !== null && closes !== null && closes <= opens) errors.registration_close_at = ["Registration closing time must be after registration opening time."];
+  if (closes !== null && start !== null && closes > start) errors.registration_close_at = ["Registration closing time must be on or before the Event start."];
+  if (cutoff !== null && opens !== null && cutoff <= opens) errors.registration_cutoff = ["Registration cutoff must be after registration opening time."];
+  if (cutoff !== null && closes !== null && cutoff > closes) errors.registration_cutoff = ["Registration cutoff must not be after registration closing time."];
+  if (cutoff !== null && start !== null && cutoff > start) errors.registration_cutoff = ["Registration cutoff must not be after the event starts."];
+}
+
+/** Converts a timezone-less datetime-local value into an orderable wall-clock value. */
+export function localDateTimeOrderValue(value: string): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?$/.exec(value);
+  if (!match) return null;
+
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText = "0", fraction = ""] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const millisecond = Number((fraction + "000").slice(0, 3));
+  if (month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) return null;
+
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  date.setUTCHours(hour, minute, second, millisecond);
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  return date.getTime();
 }
 
 function validateNumbers(values: CreateEventFormValues, errors: Record<string, string[]>): void {
   const numericFields: Array<keyof CreateEventFormValues> = ["price", "capacity", "min_participants", "max_participants"];
   for (const field of numericFields) if (Number(values[field]) < 0 || !Number.isFinite(Number(values[field]))) errors[field] = ["Enter a non-negative number."];
-  if (Number(values.max_participants) < Number(values.min_participants)) errors.max_participants = ["Maximum participants must not be below minimum participants."];
+  validateParticipantCapacity(values, errors);
 }
 
 function validateUrls(values: CreateEventFormValues, errors: Record<string, string[]>): void {
-  const urls = [values.primary_image, ...values.gallery_images, ...values.videos, ...values.documents, values.meeting_link].filter(Boolean);
-  if (urls.some((value) => !isUrl(value))) errors.media = ["Enter valid URLs for media and meeting links."];
+  const mediaValues: Array<[string, string]> = [["primary_image", values.primary_image], ...values.gallery_images.map((value) => ["gallery_images", value] as [string, string]), ...values.videos.map((value) => ["videos", value] as [string, string]), ...values.documents.map((value) => ["documents", value.url] as [string, string])];
+  for (const [field, value] of mediaValues) if (value && validateEventMediaLink(value).error) errors[field] = [validateEventMediaLink(value).error as string];
+  if (values.meeting_link && !isUrl(values.meeting_link)) errors.media = ["Enter a valid meeting link."];
 }
 
 function validateRepeatingValues(values: CreateEventFormValues, errors: Record<string, string[]>): void {
-  const invalidTicket = values.ticket_types.some(
+  const invalidTicket = values.pricing_type === "paid" && values.ticket_types.some(
     (ticket) =>
       !ticket.id.trim() ||
       !ticket.name.trim() ||
@@ -308,7 +508,7 @@ function validateRepeatingValues(values: CreateEventFormValues, errors: Record<s
   );
   if (invalidTicket) errors.ticket_types = ["Each ticket needs an ID, name, currency, non-negative price, and capacity."];
 
-  const sessionError = validateSessions(values.sessions, values.start_date, values.end_date, undefined, ["session_date", "title", "speaker", "start_time", "end_time", "location"]);
+  const sessionError = validateSessions(values.sessions, values.start_date, values.end_date, undefined, ["session_date", "title", "speaker", "start_time", "end_time", "location"], [], values.delivery_mode);
   if (sessionError) errors.sessions = [sessionError];
 
   const invalidCustomField = values.custom_fields.some(
@@ -324,15 +524,8 @@ function isUrl(value: string): boolean {
   try { new URL(value); return true; } catch { return false; }
 }
 
-function buildCoordinates(latitude: string, longitude: string): CreateEventVenue["coordinates"] | undefined {
-  if (!latitude.trim() && !longitude.trim()) return undefined;
-  const lat = Number(latitude); const lng = Number(longitude);
-  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : undefined;
-}
-
 function buildVenue(values: CreateEventFormValues): CreateEventVenue {
-  const coordinates = buildCoordinates(values.venue_latitude, values.venue_longitude);
-  return { name: values.venue_name.trim(), address: values.venue_address.trim(), city: values.venue_city.trim(), ...(coordinates ? { coordinates } : {}) };
+  return buildEventVenue(values.venue_name, values.venue_address, values.venue_city);
 }
 
 function toDateTimeLocal(value: string): string {

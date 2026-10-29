@@ -26,17 +26,23 @@ export const trainingFormConfigurationListQueryKey = trainingFormConfigurationKe
 export const trainingFormFieldRegistryQueryKey = trainingFormConfigurationKeys.fieldRegistry();
 
 function toBuilderRegistryItem(field: Awaited<ReturnType<typeof getTrainingFormFieldRegistry>>[number]): CoreFieldRegistryItem {
-  return { key: field.key, displayName: field.display_name, valueType: field.value_type, allowedRenderers: field.allowed_renderers, defaultRenderer: field.default_renderer, requiredByDomain: field.required_by_domain, removable: field.removable, hideable: field.hideable, configurable: { label: field.configurable.label, section: field.configurable.section, position: field.configurable.position, required: field.configurable.required, renderer: field.configurable.renderer, placeholder: field.configurable.placeholder, helpText: field.configurable.help_text, validation: field.configurable.validation } };
+  return { key: field.key, displayName: field.display_name, valueType: field.value_type, allowedRenderers: field.allowed_renderers, defaultRenderer: field.default_renderer, requiredByDomain: field.required_by_domain, removable: field.removable, hideable: field.hideable, options: field.options ?? [], valueSource: field.value_source, sourceEndpoint: field.source_endpoint, dependsOn: field.depends_on, configurable: { label: field.configurable.label, section: field.configurable.section, position: field.configurable.position, required: field.configurable.required, renderer: field.configurable.renderer, placeholder: field.configurable.placeholder, helpText: field.configurable.help_text, validation: field.configurable.validation } };
+}
+
+function isRemovedTrainingScheduleTimeField(field: Awaited<ReturnType<typeof getTrainingFormFieldRegistry>>[number]): boolean {
+  const key = field.key.replace(/^(core_|custom_)/, "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  const label = field.display_name.trim().toLowerCase().replace(/[\s-]+/g, " ");
+  return key === "start_time" || key === "end_time" || label === "start time" || label === "end time";
 }
 
 function toListItem(configuration: Awaited<ReturnType<typeof listTrainingFormConfigurations>>[number]): FormConfigurationListItem {
-  return { id: configuration.id, name: configuration.name, description: configuration.description, scope: configuration.scope, status: configuration.status, active: configuration.is_active, currentVersion: configuration.current_version, updatedAt: configuration.updated_at, publishedAt: configuration.published_at };
+  return { id: configuration.id, name: configuration.name, description: configuration.description, scope: configuration.scope, status: configuration.status, active: configuration.is_active, currentVersion: configuration.current_version, createdAt: configuration.created_at, updatedAt: configuration.updated_at, publishedAt: configuration.published_at };
 }
 
 /** Reads configuration summaries for the existing Platform Admin list screen. */
-export function useTrainingFormConfigurations() { return useQuery({ queryKey: trainingFormConfigurationKeys.list(), queryFn: async () => (await listTrainingFormConfigurations()).map(toListItem), retry: 1 }); }
+export function useTrainingFormConfigurations(enabled = true) { return useQuery({ queryKey: trainingFormConfigurationKeys.list(), queryFn: async () => (await listTrainingFormConfigurations()).map(toListItem), enabled, retry: 1 }); }
 /** Reads and maps the backend registry for the existing builder model. */
-export function useTrainingFormFieldRegistry() { return useQuery({ queryKey: trainingFormConfigurationKeys.fieldRegistry(), queryFn: async () => (await getTrainingFormFieldRegistry()).map(toBuilderRegistryItem), retry: 1, staleTime: 60_000 }); }
+export function useTrainingFormFieldRegistry() { return useQuery({ queryKey: trainingFormConfigurationKeys.fieldRegistry(), queryFn: async () => (await getTrainingFormFieldRegistry()).filter((field) => !isRemovedTrainingScheduleTimeField(field)).map(toBuilderRegistryItem), retry: 1, staleTime: 60_000 }); }
 /** Reads one persisted configuration. */
 export function useTrainingFormConfiguration(configurationId: string | undefined) { return useQuery({ queryKey: trainingFormConfigurationKeys.detail(configurationId ?? ""), queryFn: () => getTrainingFormConfiguration(configurationId ?? ""), enabled: Boolean(configurationId), retry: 1 }); }
 /** Reads immutable versions for one configuration. */
@@ -44,47 +50,34 @@ export function useTrainingFormConfigurationVersions(configurationId: string | u
 /** Reads one immutable configuration version. */
 export function useTrainingFormConfigurationVersion(configurationId: string | undefined, versionId: string | undefined) { return useQuery({ queryKey: trainingFormConfigurationKeys.version(configurationId ?? "", versionId ?? ""), queryFn: () => getTrainingFormConfigurationVersion(configurationId ?? "", versionId ?? ""), enabled: Boolean(configurationId && versionId), retry: 1 }); }
 /** Reads tenant assignments for one configuration. */
-export function useTrainingFormConfigurationAssignments(configurationId: string | undefined) { return useQuery({ queryKey: trainingFormConfigurationKeys.assignments(configurationId ?? ""), queryFn: () => getTrainingFormConfigurationAssignments(configurationId ?? ""), enabled: Boolean(configurationId), retry: 1 }); }
+export function useTrainingFormConfigurationAssignments(configurationId: string | undefined, enabled = true) { return useQuery({ queryKey: trainingFormConfigurationKeys.assignments(configurationId ?? ""), queryFn: () => getTrainingFormConfigurationAssignments(configurationId ?? ""), enabled: Boolean(configurationId) && enabled, retry: 1 }); }
 /** Reads audit history for one configuration. */
-export function useTrainingFormConfigurationAudit(configurationId: string | undefined) { return useQuery({ queryKey: trainingFormConfigurationKeys.audit(configurationId ?? ""), queryFn: () => getTrainingFormConfigurationAudit(configurationId ?? ""), enabled: Boolean(configurationId), retry: 1 }); }
+export function useTrainingFormConfigurationAudit(configurationId: string | undefined, isEnabled = true) { return useQuery({ queryKey: trainingFormConfigurationKeys.audit(configurationId ?? ""), queryFn: () => getTrainingFormConfigurationAudit(configurationId ?? ""), enabled: Boolean(configurationId) && isEnabled, retry: 1 }); }
 /** Reads canonical Enterprise-module tenant UUIDs through the authenticated Platform BFF — same source as Event Form Configuration. */
-export function useTrainingFormConfigurationTenantOptions() {
+export function useTrainingFormConfigurationTenantOptions(enabled = true) {
   return useQuery({
     queryKey: trainingFormConfigurationKeys.assignableTenants(),
     queryFn: async (): Promise<AssignmentTenantOption[]> => {
-      const response = await getPlatformEnterpriseTenants();
-      return response.items.map((tenant) => ({ id: tenant.id, name: tenant.name, slug: tenant.slug }));
+      const [response, enterprises] = await Promise.all([
+        getPlatformEnterpriseTenants(),
+        getPlatformEnterprises(),
+      ]);
+      const linkedTenantIds = new Set(
+        enterprises
+          .map((enterprise) => enterprise.tenant_id)
+          .filter((tenantId): tenantId is string => Boolean(tenantId)),
+      );
+      return response.items
+        .filter((tenant) => linkedTenantIds.has(tenant.id))
+        .map((tenant) => ({ id: tenant.id, name: tenant.name, slug: tenant.slug }));
     },
+    enabled,
     retry: 1,
     staleTime: 60_000,
   });
 }
-/** Reads enterprises for enterprise_ids assignment — display name prefers the trading name. */
-export function useTrainingFormConfigurationEnterpriseOptions() {
-  return useQuery({
-    queryKey: [...trainingFormConfigurationKeys.all, "assignable-enterprises"] as const,
-    queryFn: async (): Promise<AssignmentTenantOption[]> => {
-      const enterprises = await getPlatformEnterprises();
-      return enterprises
-        .map((enterprise) => {
-          const record = enterprise as unknown as Record<string, unknown>;
-          const id = typeof record.id === "string" ? record.id : "";
-          const name = typeof record.business_short_name === "string" && record.business_short_name
-            ? record.business_short_name
-            : typeof record.business_legal_name === "string" && record.business_legal_name
-              ? record.business_legal_name
-              : typeof record.name === "string" ? record.name : "";
-          return { id, name, slug: null };
-        })
-        .filter((option) => option.id && option.name);
-    },
-    retry: 1,
-    staleTime: 60_000,
-  });
-}
-
 /** Creates a configuration and refreshes the configuration collection. */
-export function useCreateTrainingFormConfiguration() { const queryClient = useQueryClient(); return useMutation({ mutationFn: createTrainingFormConfiguration, onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: trainingFormConfigurationKeys.list() }); } }); }
+export function useCreateTrainingFormConfiguration() { const queryClient = useQueryClient(); return useMutation({ mutationFn: createTrainingFormConfiguration, onSuccess: async (created) => { const createdItem = toListItem(created); queryClient.setQueryData<FormConfigurationListItem[]>(trainingFormConfigurationKeys.list(), (current) => [createdItem, ...(current ?? []).filter((item) => item.id !== createdItem.id)]); await queryClient.invalidateQueries({ queryKey: trainingFormConfigurationKeys.list() }); } }); }
 /** Updates a configuration and refreshes its list and detail projections. */
 export function useUpdateTrainingFormConfiguration() { const queryClient = useQueryClient(); return useMutation({ mutationFn: ({ configurationId, payload }: { configurationId: string; payload: UpdateTrainingFormConfigurationRequest }) => updateTrainingFormConfiguration(configurationId, payload), onSuccess: async (_data, variables) => { await Promise.all([queryClient.invalidateQueries({ queryKey: trainingFormConfigurationKeys.list() }), queryClient.invalidateQueries({ queryKey: trainingFormConfigurationKeys.detail(variables.configurationId) })]); } }); }
 /** Deletes a configuration and removes stale detail data. */

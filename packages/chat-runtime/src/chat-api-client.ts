@@ -1,5 +1,8 @@
+import { authenticatedFetch } from "@ihp/auth";
+
 import { CHAT_API_BASE_URL, CHAT_GATEWAY_MODE } from "./config";
 import { getChatAccessToken } from "./chat-token";
+import { buildGroupChatGatewayPath, createGroupChatRequestResponse } from "./group-chat-gateway";
 
 function buildHeaders(initHeaders?: HeadersInit, includeJsonContentType = true, token?: string) {
   const headers = new Headers(initHeaders);
@@ -29,13 +32,20 @@ export async function chatRequestResponse(
     headers.delete("Content-Type");
   }
 
-  return fetch(`${CHAT_API_BASE_URL}${path}`, {
+  const request = CHAT_GATEWAY_MODE ? authenticatedFetch : fetch;
+
+  return request(`${CHAT_API_BASE_URL}${path}`, {
     ...init,
     cache: "no-store",
     credentials: CHAT_GATEWAY_MODE ? "include" : undefined,
     headers,
   });
 }
+
+export { buildGroupChatGatewayPath } from "./group-chat-gateway";
+
+/** Sends a Group Chat REST request through the normal authenticated BFF session. */
+export const groupChatRequestResponse = createGroupChatRequestResponse(authenticatedFetch);
 
 export async function chatRequest<T>(path: string, init?: RequestInit, includeJsonContentType = true): Promise<T> {
   const response = await chatRequestResponse(path, init, includeJsonContentType);

@@ -11,6 +11,7 @@ import { formatCurrency } from "@ihp/shared";
 import { activateProduct, deactivateProduct, getProductById } from "../services/product.service";
 import type { ProductDto } from "../types/product.types";
 import type { ProductDetailsScreenProps } from "../types/product-screen-config.types";
+import { ProductReviewsSummary } from "./ProductReviewsSummary";
 
 function statusLabel(status: boolean) {
   return status === false ? "Inactive" : "Active";
@@ -101,6 +102,7 @@ export default function ProductDetailsScreen({
   editHrefBase = "/products",
   enterprisesLoader = getEnterprises,
   enterpriseLocationLoader = getLocationById,
+  readOnly = false,
 }: ProductDetailsScreenProps = {}) {
   const params = useParams<{ id: string }>();
   const [product, setProduct] = useState<ProductDto | null>(null);
@@ -195,6 +197,14 @@ export default function ProductDetailsScreen({
   useEffect(() => {
     void fetchProduct();
   }, [params.id]);
+
+  useEffect(() => {
+    if (!product || window.location.hash !== "#product-reviews") return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById("product-reviews")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [product]);
 
   async function handleDeactivate() {
     if (!product || isTogglingStatus) {
@@ -304,13 +314,13 @@ export default function ProductDetailsScreen({
           <p className="mt-1 text-sm text-[#52736a]">Product details</p>
         </div>
         <div className="flex flex-wrap gap-3">
-          <Link
+          {!readOnly ? <Link
             href={`${editHrefBase}/${product.id}/edit`}
             className="inline-flex h-12 items-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-bold text-[#1f6a58] shadow-sm"
           >
             Edit Product
-          </Link>
-          {productStatus !== "Active" ? (
+          </Link> : null}
+          {!readOnly && productStatus !== "Active" ? (
             <button
               type="button"
               onClick={() => void handleActivate()}
@@ -319,7 +329,7 @@ export default function ProductDetailsScreen({
             >
               Activate
             </button>
-          ) : (
+          ) : !readOnly ? (
             <button
               type="button"
               onClick={() => void handleDeactivate()}
@@ -328,7 +338,7 @@ export default function ProductDetailsScreen({
             >
               Deactivate
             </button>
-          )}
+          ) : null}
           <Link
             href={listHref}
             className="inline-flex h-12 items-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-bold text-[#1f6a58] shadow-sm"
@@ -359,6 +369,7 @@ export default function ProductDetailsScreen({
           <DetailRow label="Category" value={product.product_category || "N/A"} />
           <DetailRow label="Price" value={formatCurrency(product.product_price, product.currency)} />
           <DetailRow label="Enterprise" value={enterpriseName} />
+          <DetailRow label="Provider" value={product.provider_name || product.provider_user_id || "N/A"} />
           <DetailRow label="Location" value={locationValue} />
         </div>
 
@@ -405,6 +416,8 @@ export default function ProductDetailsScreen({
             {product.product_description || "N/A"}
           </p>
         </div>
+
+        <ProductReviewsSummary product={product} />
 
         <div className="mt-4">
           <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">

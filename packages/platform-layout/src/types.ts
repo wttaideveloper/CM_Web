@@ -36,17 +36,35 @@ export type PlatformAdminLayoutProps = {
   currentPath: string;
   homeHref: string;
   notificationsHref: string;
+  /** Pending approval counts for Platform Admins; omitted by shells using message notifications. */
+  approvalNotifications?: {
+    eventCount: number | null;
+    trainingCount: number | null;
+    approvalQueueHref: string;
+    enterpriseRequestCount?: number | null;
+    tenantApplicationsHref?: string;
+  };
   messagesHref?: string | null;
   profileHref?: string;
   profileInitials?: string;
+  profileName?: string | null;
+  profileEmail?: string | null;
   navigationGroups?: readonly PlatformNavigationGroup[];
   resolveNavigationHref?: (item: PlatformNavigationItem) => string;
   onLogout?: () => Promise<void> | void;
+  workflowNotifications?: {
+    unreadCount?: number;
+    unreadCountError?: unknown;
+    error?: string | null;
+    items: readonly { id: string; title: string; message: string; notification_type: string; category?: string; metadata?: Record<string, unknown>; is_read: boolean; target?: string | null; created_at?: string | null }[];
+    onRead: (id: string) => void;
+    onMarkAllRead: () => void;
+  };
 };
 
 export type PlatformAdminHeaderProps = Pick<
   PlatformAdminLayoutProps,
-  "homeHref" | "notificationsHref" | "messagesHref" | "profileHref" | "profileInitials" | "onLogout"
+  "homeHref" | "notificationsHref" | "approvalNotifications" | "workflowNotifications" | "messagesHref" | "profileHref" | "profileInitials" | "profileName" | "profileEmail" | "onLogout"
 > & {
   onMenuClick: () => void;
 };

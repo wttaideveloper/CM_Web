@@ -1,6 +1,8 @@
 import type { ConfiguredField, FormConfiguration, FormFieldValidation, FormSection } from "./form-configuration.types";
 import type { CreateTrainingFormConfigurationRequest, TrainingFormConfiguration, TrainingFormConfigurationVersion, TrainingFormFieldInput, TrainingFormSectionInput, UpdateTrainingFormConfigurationRequest } from "./training-form-configuration-api.types";
 import { normalizeConfigurationOrder, normalizeOptionPositions } from "./form-configuration-ordering";
+import { isTrainingDeliveryModeField, TRAINING_DELIVERY_MODE_OPTIONS } from "./training-delivery-mode-options";
+import { isRemovedCreateEventField } from "./removed-form-fields";
 
 export type TrainingFormFieldCandidate = TrainingFormFieldInput;
 export type TrainingFormSectionCandidate = TrainingFormSectionInput;
@@ -8,12 +10,102 @@ export type TrainingFormConfigurationCreateCandidate = CreateTrainingFormConfigu
 export type TrainingFormConfigurationPatchCandidate = UpdateTrainingFormConfigurationRequest;
 
 const mapValidation = (validation: FormFieldValidation) => ({ min_length: validation.minLength, max_length: validation.maxLength, min: validation.min, max: validation.max, pattern: validation.pattern });
-const mapField = (field: ConfiguredField, includeServerId: boolean): TrainingFormFieldCandidate => ({ ...(includeServerId && field.serverId ? { id: field.serverId } : {}), source: field.source, core_key: field.coreKey, stable_key: field.stableKey, label: field.label, renderer: field.renderer, value_type: field.valueType, required: field.required, is_enabled: field.enabled, position: field.position, placeholder: field.placeholder || null, help_text: field.helpText || null, options: normalizeOptionPositions(field.options), validation: mapValidation(field.validation), ...(field.compositeConfig !== undefined ? { composite_config: field.compositeConfig } : {}) });
+const mapTrainingRendererForApi = (renderer: string) => renderer === "dropdown" ? "select" : renderer;
+const mapTrainingRendererForBuilder = (renderer: string) => renderer === "select" ? "dropdown" : renderer;
+const mapField = (field: ConfiguredField, includeServerId: boolean): TrainingFormFieldCandidate => ({ ...(includeServerId && field.serverId ? { id: field.serverId } : {}), source: field.source, core_key: field.coreKey, stable_key: field.stableKey, label: field.label, renderer: mapTrainingRendererForApi(field.renderer), value_type: field.valueType, required: field.required, is_enabled: field.enabled, position: field.position, placeholder: field.placeholder || null, help_text: field.helpText || null, options: normalizeOptionPositions(isTrainingDeliveryModeField(field) ? [...TRAINING_DELIVERY_MODE_OPTIONS] : field.options), validation: mapValidation(field.validation), ...(field.compositeConfig !== undefined ? { composite_config: field.compositeConfig } : {}) });
 const mapSections = (configuration: FormConfiguration, includeServerIds: boolean): TrainingFormSectionCandidate[] => { const normalized = normalizeConfigurationOrder(configuration.sections, configuration.fields); return normalized.sections.map((section: FormSection) => ({ ...(includeServerIds && section.serverId ? { id: section.serverId } : {}), stable_key: section.stableKey, label: section.name, description: section.description || null, position: section.position, is_enabled: section.enabled, fields: normalized.fields.filter((field) => field.sectionLocalId === section.localId).map((field) => mapField(field, includeServerIds)) })); };
+const HIDDEN_TRAINING_FIELD_KEYS = new Set([
+  "group_enrolment",
+  "group_enrollment",
+  "max_group_size",
+  "release_rule",
+  "scheduled_publication",
+  "randomise",
+  "randomize",
+  "is_mandatory",
+  "access_information",
+  "access_days",
+  "access_duration",
+  "access_duration_days",
+  "access_expiry",
+  "access_expiry_type",
+  "access_expiry_days",
+  "expiry_days",
+  "course_type",
+  "course_types",
+  "badge",
+  "badges",
+  "milestone_badges",
+  "instructor",
+  "instructor_id",
+  "instructor_photo",
+  "prerequisite",
+  "prerequisites",
+  "course_prerequisites",
+  "gallery_image",
+  "gallery_images",
+  "document",
+  "documents",
+  "promotional_video",
+  "start_time",
+  "end_time",
+]);
+const HIDDEN_TRAINING_FIELD_LABELS = new Set([
+  "group enrolment",
+  "group enrollment",
+  "max group size",
+  "release rule",
+  "scheduled publication",
+  "randomise",
+  "randomize",
+  "is mandatory",
+  "mandatory lessons",
+  "access information",
+  "access days",
+  "access duration",
+  "access duration days",
+  "access duration (days)",
+  "access expiry",
+  "access expiry type",
+  "access expiry days",
+  "expiry days",
+  "course type",
+  "course types",
+  "badge",
+  "badges",
+  "milestone badge",
+  "milestone badges",
+  "instructor",
+  "instructor photo",
+  "prerequisite",
+  "prerequisites",
+  "course prerequisites",
+  "gallery image",
+  "gallery images",
+  "document",
+  "documents",
+  "promotional video",
+  "start time",
+  "end time",
+]);
+const isHiddenTrainingField = (field: { stable_key?: string | null; core_key?: string | null; label?: string | null }) => {
+  const keys = [field.stable_key, field.core_key].map((key) => key?.replace(/^(core_|custom_)/, "").trim().toLowerCase().replace(/[\s-]+/g, "_") ?? "");
+  if (keys.includes("instructor_name")) return false;
+  const label = field.label?.trim().toLowerCase().replace(/[\s-]+/g, " ").replace(/\s*\(\s*/g, " (").replace(/\s*\)\s*/g, ")") ?? "";
+  return keys.some((key) => HIDDEN_TRAINING_FIELD_KEYS.has(key)) || HIDDEN_TRAINING_FIELD_LABELS.has(label);
+};
+const mapTrainingSections = (configuration: FormConfiguration, includeServerIds: boolean): TrainingFormSectionCandidate[] => {
+  const mappedSections = mapSections(configuration, includeServerIds);
+  if (configuration.type !== "training") return mappedSections;
+  return mappedSections.map((section) => ({
+    ...section,
+    fields: section.fields.filter((field) => !isHiddenTrainingField(field) && !isRemovedCreateEventField(field.core_key, field.label)),
+  }));
+};
 /** Pure future create payload candidate. It intentionally excludes server IDs and write transport. */
-export function toTrainingFormConfigurationCreateCandidate(configuration: FormConfiguration): TrainingFormConfigurationCreateCandidate { return { name: configuration.name, description: configuration.description || null, scope: configuration.scope, sections: mapSections(configuration, false) }; }
+export function toTrainingFormConfigurationCreateCandidate(configuration: FormConfiguration): TrainingFormConfigurationCreateCandidate { return { name: configuration.name, description: configuration.description || null, scope: configuration.scope, sections: mapTrainingSections(configuration, false) }; }
 /** Pure future patch payload candidate. Scope and all write transport are intentionally excluded. */
-export function toTrainingFormConfigurationPatchCandidate(configuration: FormConfiguration): TrainingFormConfigurationPatchCandidate { return { name: configuration.name, description: configuration.description || null, scope: configuration.scope, sections: mapSections(configuration, true) }; }
+export function toTrainingFormConfigurationPatchCandidate(configuration: FormConfiguration): TrainingFormConfigurationPatchCandidate { return { name: configuration.name, description: configuration.description || null, scope: configuration.scope, sections: mapTrainingSections(configuration, true) }; }
 
 /** Maps a persisted configuration or immutable version into the existing local builder model. */
 export function toBuilderTrainingFormConfiguration(configuration: TrainingFormConfiguration, version?: TrainingFormConfigurationVersion): FormConfiguration {
@@ -21,7 +113,8 @@ export function toBuilderTrainingFormConfiguration(configuration: TrainingFormCo
   const sections = [...(selectedVersion?.sections ?? [])].sort((left, right) => left.position - right.position);
   const builderSections: FormSection[] = sections.map((section) => ({ localId: `section-${section.id}`, serverId: section.id, stableKey: section.stable_key, name: section.label, description: section.description ?? "", enabled: section.is_enabled, position: section.position }));
   const builderFields: ConfiguredField[] = sections.flatMap((section) => [...section.fields]
+    .filter((field) => !isHiddenTrainingField(field) && !isRemovedCreateEventField(field.core_key, field.label))
     .sort((left, right) => left.position - right.position)
-    .map((field) => ({ localId: `field-${field.id}`, serverId: field.id, stableKey: field.stable_key, source: field.source, coreKey: field.core_key, label: field.label, sectionLocalId: `section-${section.id}`, position: field.position, valueType: field.value_type, required: field.required, renderer: field.renderer, placeholder: field.placeholder ?? "", helpText: field.help_text ?? "", options: field.options, validation: { minLength: field.validation.min_length, maxLength: field.validation.max_length, min: field.validation.min, max: field.validation.max, pattern: field.validation.pattern }, compositeConfig: field.composite_config ?? null, enabled: field.is_enabled })));
+    .map((field) => ({ localId: `field-${field.id}`, serverId: field.id, stableKey: field.stable_key, source: field.source, coreKey: field.core_key, label: field.label, sectionLocalId: `section-${section.id}`, position: field.position, valueType: field.value_type, required: field.required, renderer: mapTrainingRendererForBuilder(field.renderer), placeholder: field.placeholder ?? "", helpText: field.help_text ?? "", options: isTrainingDeliveryModeField({ source: field.source, coreKey: field.core_key, stableKey: field.stable_key, label: field.label }) ? [...TRAINING_DELIVERY_MODE_OPTIONS] : field.options, validation: { minLength: field.validation.min_length, maxLength: field.validation.max_length, min: field.validation.min, max: field.validation.max, pattern: field.validation.pattern }, compositeConfig: field.composite_config ?? null, enabled: field.is_enabled })));
   return { id: configuration.id, type: "training", name: configuration.name, description: configuration.description ?? "", scope: configuration.scope, status: configuration.status, active: configuration.is_active, version: selectedVersion?.version ?? configuration.current_version, tenantIds: [], updatedAt: configuration.updated_at ?? "", sections: builderSections, fields: builderFields };
 }

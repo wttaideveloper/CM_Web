@@ -16,10 +16,31 @@ export interface TrainingFormFieldOption { value: string; label: string; positio
 /** Validation metadata accepted by the Training Form Configuration API. */
 export interface TrainingFormFieldValidation { min_length?: number | null; max_length?: number | null; min?: number | null; max?: number | null; pattern?: string | null; }
 
-/** Persisted settings for a backend-defined composite Training core field. */
+/** Declarative field visibility rule persisted and enforced by the Training Form API. */
+export interface TrainingFormVisibilityCondition {
+  field_key: string;
+  operator: "equals" | "not_equals" | "has_value" | "is_empty";
+  value?: string;
+}
+
+/** Upload restrictions persisted with a configured Training media field. */
+export interface TrainingFormUploadSettings {
+  allowed_mime_types?: string[];
+  max_file_size_mb?: number | null;
+}
+
+/** Declarative Training field settings persisted in composite_config.frontend_settings. */
+export interface TrainingFormFrontendSettings {
+  visibility?: TrainingFormVisibilityCondition | null;
+  upload?: TrainingFormUploadSettings | null;
+  input_mode?: "text" | "tags";
+}
+
+/** Composite Training metadata accepted by the Training Form Configuration API. */
 export interface TrainingFormCompositeConfig {
   enabled_fields?: string[];
   required_fields?: string[];
+  frontend_settings?: TrainingFormFrontendSettings | null;
   [key: string]: unknown;
 }
 
@@ -44,7 +65,8 @@ export interface TrainingFormConfigurationLifecycleResponse { id: string; status
 export interface TrainingFormConfigurationCreateResponse extends TrainingFormConfiguration { draft_version: TrainingFormConfigurationVersion; }
 
 /** Authoritative metadata for one core Training field. */
-export interface TrainingCoreFieldRegistryEntry { key: string; display_name: string; value_type: TrainingFormValueType; allowed_renderers: TrainingFormRenderer[]; default_renderer: TrainingFormRenderer; required_by_domain: boolean; removable: boolean; hideable: boolean; configurable: { label: boolean; section: boolean; position: boolean; required: boolean; renderer: boolean; placeholder: boolean; help_text: boolean; validation: boolean; }; }
+export interface TrainingCoreFieldRegistryOption { value: string; label: string; position: number; }
+export interface TrainingCoreFieldRegistryEntry { key: string; display_name: string; value_type: TrainingFormValueType; allowed_renderers: TrainingFormRenderer[]; default_renderer: TrainingFormRenderer; required_by_domain: boolean; removable: boolean; hideable: boolean; options?: TrainingCoreFieldRegistryOption[] | null; value_source?: string | null; source_endpoint?: string | null; depends_on?: string | null; configurable: { label: boolean; section: boolean; position: boolean; required: boolean; renderer: boolean; placeholder: boolean; help_text: boolean; validation: boolean; }; }
 
 /** One tenant assignment returned by the configuration assignment endpoint. */
 export interface TrainingFormAssignment { id: string; configuration_id: string; tenant_id: string; enterprise_id: string | null; created_at: string | null; updated_at: string | null; }
@@ -64,10 +86,8 @@ export interface CreateTrainingFormConfigurationRequest { name: string; descript
 /** Request body for updating a Training form configuration. */
 export interface UpdateTrainingFormConfigurationRequest { name: string; description: string | null; scope: TrainingFormConfigurationScope; sections: TrainingFormSectionInput[]; }
 
-/** Request body for replacing a configuration's assignments. Backend contract: `{is_global: true}`
- * or `{enterprise_ids: []}` makes the config global; non-empty `enterprise_ids` (or `tenant_ids` /
- * `tenant_slugs`) makes it selective. `tenant_ids` is the legacy fallback. */
-export interface UpdateTrainingFormConfigurationAssignmentsRequest { tenant_ids: string[]; enterprise_ids?: string[]; is_global?: boolean; }
+/** Request body for replacing assignments on a Selected tenants Training configuration. */
+export interface UpdateTrainingFormConfigurationAssignmentsRequest { tenant_ids?: string[]; tenant_slugs?: string[]; enterprise_ids?: string[]; assignments?: TrainingFormAssignment[]; }
 
 /** Response returned after publishing a configuration. */
 export interface TrainingFormPublishResponse { configuration: TrainingFormConfiguration; version: TrainingFormConfigurationVersion; }

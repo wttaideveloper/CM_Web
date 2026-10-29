@@ -40,6 +40,7 @@ export type EnterprisesListScreenProps = {
 
 export type EnterpriseDetailsScreenProps = {
   enterpriseId?: string;
+  enterpriseCatalogOnly?: boolean;
   editHref?: string;
   productCreateHref?: string;
   serviceCreateHref?: string;

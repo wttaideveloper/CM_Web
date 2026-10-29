@@ -10,6 +10,7 @@ import {
 } from "./training-approval.service";
 import type { TrainingApprovalReview } from "./training-approval-review.types";
 import { EnterpriseDisplayName, TenantDisplayName } from "./EventOwnershipNames";
+import { approvalActorDisplayName } from "./approval-actor-display";
 
 type DisplayRow = { label: string; value: React.ReactNode };
 
@@ -37,6 +38,7 @@ function wallClockDateTime(value: string | null | undefined): string {
 function priceLabel(price: string | null | undefined, currency: string | null | undefined): string | null {
   if (!hasText(price)) return null;
   const number = Number(price);
+  if (Number.isFinite(number) && number === 0) return "Free";
   if (Number.isFinite(number) && hasText(currency)) {
     try {
       return new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 2 }).format(number);
@@ -93,7 +95,7 @@ export default function TrainingApprovalReview({
   const history = historyQuery.data ?? [];
 
   return <div className="mt-5 space-y-6 text-sm text-[#52736a]">
-    <ReviewSection title="Training Overview"><DetailGrid rows={[{ label: "Training title", value: training.title }, ...(hasText(training.description) ? [{ label: "Description", value: training.description }] : []), { label: "Category", value: training.category }, ...(hasText(training.subcategory) ? [{ label: "Subcategory", value: training.subcategory }] : []), { label: "Status", value: enumLabel(training.status) }, ...(hasText(training.delivery_mode) ? [{ label: "Delivery mode", value: enumLabel(training.delivery_mode) }] : []), ...(hasText(training.course_type) ? [{ label: "Course type", value: enumLabel(training.course_type) }] : [])]} />{tags.length ? <div className="mt-4"><p className="text-xs font-bold uppercase tracking-[.08em] text-[#7f9d94]">Tags</p><div className="mt-2 flex flex-wrap gap-2">{tags.map((tag) => <span key={tag} className="rounded-full bg-[#edf3f0] px-3 py-1 font-semibold text-[#284940]">{tag}</span>)}</div></div> : null}</ReviewSection>
+    <ReviewSection title="Training Overview"><DetailGrid rows={[{ label: "Training title", value: training.title }, ...(hasText(training.description) ? [{ label: "Description", value: training.description }] : []), { label: "Category", value: training.category }, ...(hasText(training.subcategory) ? [{ label: "Subcategory", value: training.subcategory }] : []), { label: "Status", value: enumLabel(training.status) }, ...(hasText(training.delivery_mode) ? [{ label: "Delivery mode", value: enumLabel(training.delivery_mode) }] : [])]} />{tags.length ? <div className="mt-4"><p className="text-xs font-bold uppercase tracking-[.08em] text-[#7f9d94]">Tags</p><div className="mt-2 flex flex-wrap gap-2">{tags.map((tag) => <span key={tag} className="rounded-full bg-[#edf3f0] px-3 py-1 font-semibold text-[#284940]">{tag}</span>)}</div></div> : null}</ReviewSection>
     <ReviewSection title="Enterprise / Ownership"><DetailGrid rows={[{ label: "Enterprise", value: <EnterpriseDisplayName enterpriseId={training.enterprise_id} eventEnterpriseName={training.enterprise_name} /> }, { label: "Tenant", value: <TenantDisplayName tenantId={training.tenant_id} /> }, ...(hasText(training.location_id) ? [{ label: "Location", value: training.location_id }] : [])]} /></ReviewSection>
     {(basePrice || hasText(training.capacity)) ? <ReviewSection title="Pricing & Capacity"><DetailGrid rows={[...(basePrice ? [{ label: "Price", value: basePrice }] : []), ...(basePrice ? [{ label: "Admission", value: Number(training.price) === 0 ? "Free" : "Paid" }] : []), ...(hasText(training.capacity) ? [{ label: "Capacity", value: training.capacity }] : [])]} /></ReviewSection> : null}
     {(sectionCount !== null || assessmentCount !== null) ? <ReviewSection title="Content Structure"><DetailGrid rows={[...(sectionCount !== null ? [{ label: "Sections", value: String(sectionCount) }] : []), ...(assessmentCount !== null ? [{ label: "Assessments", value: String(assessmentCount) }] : [])]} /></ReviewSection> : null}
@@ -103,12 +105,13 @@ export default function TrainingApprovalReview({
       const from = entry.from_status;
       const to = entry.to_status ?? entry.status;
       const reason = entry.reason;
-      const who = entry.performed_by;
+      const isCancellation = [label, to].some((value) => typeof value === "string" && value.toLowerCase().includes("cancel"));
+      const who = approvalActorDisplayName(entry.performed_by);
       const when = entry.created_at ?? entry.timestamp;
       return <li key={entry.id ?? `history-${index}`} className="pl-6 relative before:absolute before:left-[-5px] before:top-1 before:h-2 before:w-2 before:rounded-full before:bg-[#1f6a58]">
         <p className="font-bold text-[#284940]">{enumLabel(String(label))}{from && to ? <span className="font-normal text-[#52736a]"> — {enumLabel(String(from))} → {enumLabel(String(to))}</span> : null}</p>
-        {hasText(who) ? <p className="text-xs text-[#7f9d94]">by {who}</p> : null}
-        {hasText(reason) ? <p className="mt-1 rounded-lg bg-[#f9fcfa] px-3 py-2 text-xs text-[#52736a]">{reason}</p> : null}
+        {who ? <p className="text-xs text-[#7f9d94]">by {who}</p> : null}
+        {hasText(reason) ? <p className="mt-1 rounded-lg bg-[#f9fcfa] px-3 py-2 text-xs text-[#52736a]">{isCancellation ? "Cancellation reason: " : ""}{reason}</p> : null}
         {hasText(when) ? <p className="mt-1 text-xs text-[#7f9d94]">{wallClockDateTime(when)}</p> : null}
       </li>;
     })}</ol>}</ReviewSection>

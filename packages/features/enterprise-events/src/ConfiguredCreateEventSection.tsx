@@ -1,84 +1,217 @@
-"use client";
-
+﻿"use client";
 import { useState } from "react";
-
-import type { EnterpriseLocationDto } from "@ihp/enterprises";
+import { useTranslation } from "react-i18next";
 
 import type { CreateEventFormValues, EventCustomFieldFormValue, EventTicketFormValue } from "./create-event-form";
-import type { ActiveEventFormField, ActiveEventFormFieldOption, ActiveEventFormSection, EventCategory } from "./events.service";
-import SessionTableEditor from "./SessionTableEditor";
+import type { ActiveEventFormField, ActiveEventFormFieldOption, ActiveEventFormSection, EventCategory, EventTypeDefinition } from "./events.service";
+import SessionTableEditor, { type SessionGenerationRule } from "./SessionTableEditor";
+import EventModulesControls from "./EventModulesControls";
+import { useEventTypes } from "./event-categories.queries";
+import EventServicesEditor from "./EventServicesEditor";
+import EventMediaEditor from "./EventMediaEditor";
+import type { EventMediaField, EventMediaPolicy, EventMediaUploadState } from "./event-media";
+import { eventFieldMaxLength } from "./event-field-limits";
+import { DateLocalInput, DateTimeLocalInput } from "@ihp/ui";
+import { resolveNewEventCurrency, type EventCurrencySource, type EventCurrencyUiState } from "./event-currency";
+import { isProtectedMeetingLink } from "./event-meeting-link";
 
 type UpdateForm = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => void;
-type Props = { section: ActiveEventFormSection; values: CreateEventFormValues; update: UpdateForm; errors: Record<string, string[]>; customValues: Record<string, string | string[] | boolean | number | null>; setCustomValues: (next: Record<string, string | string[] | boolean | number | null>) => void; locations: EnterpriseLocationDto[]; locationId: string; setLocationId: (value: string) => void; categories: readonly EventCategory[]; categoriesLoading: boolean; categoriesError: boolean; currencyOptions?: readonly ActiveEventFormFieldOption[]; allowPastTemporalValues?: boolean; };
+type Props = { section: ActiveEventFormSection; values: CreateEventFormValues; update: UpdateForm; errors: Record<string, string[]>; customValues: Record<string, string | string[] | boolean | number | null>; setCustomValues: (next: Record<string, string | string[] | boolean | number | null>) => void; categories: readonly EventCategory[]; categoriesLoading: boolean; categoriesError: boolean; eventTypes?: readonly EventTypeDefinition[]; eventTypesLoading?: boolean; eventTypesError?: boolean; currencyOptions?: readonly ActiveEventFormFieldOption[]; currencyState?: EventCurrencyUiState; createMode?: boolean; allowPastTemporalValues?: boolean; modules?: CreateEventFormValues["modules"]; selectedEventType?: EventTypeDefinition; mediaPolicy?: EventMediaPolicy; policyError?: string; uploads?: readonly EventMediaUploadState[]; onMediaLinkChange?: (field: EventMediaField, index: number, value: string) => void; onMediaAddLink?: (field: EventMediaField) => void; onMediaRemove?: (field: EventMediaField, index: number) => void; onMediaUpload?: (field: EventMediaField, file: File, replaceIndex?: number) => void; onMediaRetry?: (uploadId: string) => void; onMediaUploadRemove?: (uploadId: string) => void; sessionGenerationRules?: readonly SessionGenerationRule[]; onSessionGenerationRulesChange?: (rules: SessionGenerationRule[]) => void; };
 
-const inputClass = "mt-1.5 h-10 w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm text-[#06201c] outline-none focus:border-[#1f6a58]";
-const CORE_FIELDS: Record<string, keyof CreateEventFormValues> = { title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", start_date: "start_date", start_datetime: "start_date", end_date: "end_date", end_datetime: "end_date", duration_type: "duration_type", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", timezone: "time_zone", time_zone: "time_zone", event_type: "delivery_mode", delivery_mode: "delivery_mode", meeting_provider: "meeting_provider", meeting_link: "meeting_link", price: "price", currency: "currency", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents" };
-const COMPOSITES = new Set(["venue", "ticket_types", "sessions", "registration_questions", "registration_fields", "custom_fields", "media", "gallery_images", "videos", "documents"]);
+const inputClass = "mt-1.5 h-10 w-full min-w-0 max-w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm font-normal text-[#06201c] outline-none focus:border-[#1f6a58]";
+const NUMERIC_FIELD_TYPES = new Set(["number", "numeric", "integer", "decimal", "float", "number_input", "numeric_input"]);
+const CORE_FIELDS: Record<string, keyof CreateEventFormValues> = { title: "title", description: "description", category: "category", subcategory: "subcategory", tags: "tags", organiser_name: "organiser_name", organiser_contact: "organiser_contact", start_date: "start_date", start_datetime: "start_date", end_date: "end_date", end_datetime: "end_date", duration_type: "duration_type", registration_cutoff: "registration_cutoff", registration_open_at: "registration_open_at", registration_close_at: "registration_close_at", timezone: "time_zone", time_zone: "time_zone", event_type: "event_type", delivery_mode: "delivery_mode", pricing_type: "pricing_type", meeting_provider: "meeting_provider", meeting_link: "meeting_link", price: "price", currency: "currency", capacity: "capacity", min_participants: "min_participants", max_participants: "max_participants", primary_image: "primary_image", gallery_images: "gallery_images", videos: "videos", documents: "documents" };
+const COMPOSITES = new Set(["venue", "ticket_types", "sessions", "registration_questions", "registration_fields", "custom_fields", "media", "primary_image", "gallery_images", "videos", "documents"]);
 
 function keyFor(field: ActiveEventFormField): string { return field.source === "core" ? field.core_key ?? field.stable_key ?? field.id : field.stable_key ?? field.id; }
+function isRemovedCreateEventField(key: string | null | undefined, label: string | null | undefined): boolean {
+  const normalizedKey = (key ?? "").replace(/^(core_|custom_)/, "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  const normalizedLabel = (label ?? "").trim().toLowerCase().replace(/[\s-]+/g, " ");
+  return normalizedKey === "create_event" || normalizedLabel === "create event";
+}
+function disabledModuleFor(key: string, values: CreateEventFormValues): string | null {
+  if (values.modules?.tickets === false && ["pricing_type", "price", "currency", "ticket_types"].includes(key)) return "Tickets are disabled for this Event Type.";
+  if (values.modules?.sessions === false && key === "sessions") return "Sessions are disabled for this Event Type.";
+  if (values.modules?.online_meeting === false && ["meeting_provider", "meeting_link"].includes(key)) return "Go to Schedule and check Online Meeting under Event Capabilities to use these fields.";
+  if (values.modules?.custom_questions === false && ["custom_fields", "registration_questions", "registration_fields"].includes(key)) return "Custom Questions are disabled for this Event Type.";
+  return null;
+}
 function isCompositeSubfieldEnabled(field: ActiveEventFormField, key: string): boolean { const enabled = field.composite_config?.enabled_fields ?? []; return enabled.length === 0 || enabled.includes(key); }
 function isCompositeSubfieldRequired(field: ActiveEventFormField, key: string): boolean { return (field.composite_config?.required_fields ?? []).includes(key); }
 function scalar(value: unknown): string { return typeof value === "string" || typeof value === "number" ? String(value) : ""; }
+function isNumericField(field: ActiveEventFormField): boolean {
+  return [field.renderer, field.value_type].some((value) => NUMERIC_FIELD_TYPES.has(value.trim().toLowerCase().replace(/[\s-]+/g, "_")));
+}
+function numberRangeError(value: unknown, label: string, min?: number | null, max?: number | null): string | undefined {
+  if (value === null || value === undefined || value === "") return undefined;
+  const numericValue = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  if (!Number.isFinite(numericValue)) return undefined;
+  if (min != null && numericValue < min) return `${label} must be at least ${min}.`;
+  if (max != null && numericValue > max) return `${label} must be at most ${max}.`;
+  return undefined;
+}
+function clampNumberToRange(value: string, min?: number | null, max?: number | null): { value: string; bound: "minimum" | "maximum" | null } {
+  if (!value.trim()) return { value, bound: null };
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return { value, bound: null };
+  if (min != null && numericValue < min) return { value: String(min), bound: "minimum" };
+  if (max != null && numericValue > max) return { value: String(max), bound: "maximum" };
+  return { value, bound: null };
+}
+function isDateTimeType(value: string | null | undefined): boolean {
+  return value?.trim().toLowerCase().replace(/[-_ ]/g, "") === "datetime"
+    || value?.trim().toLowerCase() === "datetime-local";
+}
 function isComplexField(field: ActiveEventFormField): boolean { const key = keyFor(field); return key === "venue" || key === "ticket_types" || key === "sessions" || ["custom_fields", "registration_questions", "registration_fields", "media", "gallery_images", "videos", "documents"].includes(key) || ["ticket_types", "sessions", "registration_fields"].includes(field.renderer); }
+function isDeliveryFieldApplicable(key: string, deliveryMode: string): boolean { if (!deliveryMode) return true; if (["venue", "location", "location_id"].includes(key)) return deliveryMode !== "online"; if (["meeting_provider", "meeting_link"].includes(key)) return deliveryMode === "online" || deliveryMode === "hybrid"; return true; }
 function fieldType(field: ActiveEventFormField, key: string): string {
   if (["start_date", "start_datetime", "end_date", "end_datetime", "registration_cutoff", "registration_open_at", "registration_close_at"].includes(key)) return "datetime-local";
-  if (field.renderer === "date" || ["date", "session_date"].includes(key)) return "date";
-  if (field.renderer === "datetime") return "datetime-local";
+  if (isDateTimeType(field.renderer) || isDateTimeType(field.value_type)) return "datetime-local";
+  if (field.renderer?.trim().toLowerCase() === "date" || field.value_type?.trim().toLowerCase() === "date" || ["date", "session_date"].includes(key)) return "date";
   if (["start_time", "end_time"].includes(key)) return "time";
-  if (field.renderer === "textarea") return "textarea";
-  if (field.renderer === "number" || field.value_type === "number" || ["price", "capacity", "min_participants", "max_participants", "venue_latitude", "venue_longitude"].includes(key)) return "number";
-  if (field.renderer === "url" || field.value_type === "url" || ["primary_image", "gallery_images", "videos", "documents", "meeting_link"].includes(key)) return "url";
+  if (field.renderer?.trim().toLowerCase() === "textarea") return "textarea";
+  if (isNumericField(field) || ["price", "capacity", "min_participants", "max_participants"].includes(key)) return "number";
+  if (field.renderer?.trim().toLowerCase() === "url" || field.value_type?.trim().toLowerCase() === "url" || ["primary_image", "gallery_images", "videos", "documents", "meeting_link"].includes(key)) return "url";
   return "text";
 }
 function toDateTimeLocalNow(): string { const now = new Date(); now.setSeconds(0, 0); const offset = now.getTimezoneOffset() * 60_000; return new Date(now.getTime() - offset).toISOString().slice(0, 16); }
+/** Drops the upper bound when intermediate values invert the range so the native picker never receives an impossible window. */
+function validDateTimeBounds(bounds: { min?: string; max?: string }): { min?: string; max?: string } {
+  if (bounds.min && bounds.max && bounds.min > bounds.max) return { min: bounds.min };
+  return bounds;
+}
 function temporalBounds(key: string, type: string, values: CreateEventFormValues, allowPastTemporalValues: boolean): { min?: string; max?: string } {
   if (type !== "datetime-local") return {};
   if (["start_date", "start_datetime", "registration_open_at"].includes(key)) return allowPastTemporalValues ? {} : { min: toDateTimeLocalNow() };
   if (["end_date", "end_datetime"].includes(key)) return { min: values.start_date || (allowPastTemporalValues ? undefined : toDateTimeLocalNow()) };
-  if (key === "registration_close_at") return { min: values.registration_open_at || (allowPastTemporalValues ? undefined : toDateTimeLocalNow()), ...(values.start_date ? { max: values.start_date } : {}) };
+  if (key === "registration_close_at") return validDateTimeBounds({ min: values.registration_open_at || (allowPastTemporalValues ? undefined : toDateTimeLocalNow()), ...(values.start_date ? { max: values.start_date } : {}) });
   if (key === "registration_cutoff") {
     const maximum = [values.start_date, values.registration_close_at].filter(Boolean).sort()[0];
-    return { ...(values.registration_open_at ? { min: values.registration_open_at } : {}), ...(maximum ? { max: maximum } : {}) };
+    return validDateTimeBounds({ ...(values.registration_open_at ? { min: values.registration_open_at } : {}), ...(maximum ? { max: maximum } : {}) });
   }
   return {};
 }
 
 /** Renders one server-authoritative Event form section in configured field order. */
-export default function ConfiguredCreateEventSection({ section, values, update, errors, customValues, setCustomValues, locations, locationId, setLocationId, categories, categoriesLoading, categoriesError, currencyOptions, allowPastTemporalValues = false }: Props) {
-  const fields = [...section.fields].sort((left, right) => left.position - right.position);
-  return <section className="space-y-4"><div><h2 className="text-xl font-bold text-[#06201c]">{section.label}</h2>{section.description ? <p className="mt-1 text-sm text-[#52736a]">{section.description}</p> : null}</div><div className="grid gap-4 md:grid-cols-2">{fields.map((field) => <div key={field.id} className={isComplexField(field) ? "md:col-span-2" : "min-w-0"}><ConfiguredField field={field} values={values} update={update} errors={errors} customValues={customValues} setCustomValues={setCustomValues} locations={locations} locationId={locationId} setLocationId={setLocationId} categories={categories} categoriesLoading={categoriesLoading} categoriesError={categoriesError} currencyOptions={currencyOptions} allowPastTemporalValues={allowPastTemporalValues} /></div>)}</div></section>;
+export default function ConfiguredCreateEventSection({ section, values, update, errors, customValues, setCustomValues, categories, categoriesLoading, categoriesError, eventTypes, eventTypesLoading = false, eventTypesError = false, currencyOptions, currencyState, createMode = false, allowPastTemporalValues = false, mediaPolicy, policyError, uploads = [], onMediaLinkChange, onMediaAddLink, onMediaRemove, onMediaUpload, onMediaRetry, onMediaUploadRemove, sessionGenerationRules, onSessionGenerationRulesChange }: Props) {
+  const fields = section.fields.filter((field) => field.is_enabled !== false && !isRemovedCreateEventField(field.core_key ?? field.stable_key, field.label)).sort((left, right) => left.position - right.position);
+  const eventTypesQuery = useEventTypes(fields.some((field) => keyFor(field) === "event_type"));
+  eventTypes = eventTypesQuery.data ?? eventTypes;
+  eventTypesLoading = eventTypesQuery.isLoading;
+  eventTypesError = eventTypesQuery.isError;
+  const selectedEventType = eventTypes?.find((item) => item.key === values.event_type);
+  const dependent = fields.some((field) => ["venue", "location", "location_id", "meeting_provider", "meeting_link"].includes(keyFor(field)));
+  const guidance = !values.delivery_mode ? "These fields depend on Delivery Mode. Online events use meeting details, In-Person events use venue details, and Hybrid events can use both. Their visibility may change after you choose a Delivery Mode." : values.delivery_mode === "online" ? values.modules?.online_meeting === false ? "This event is Online. Go to Schedule and check Online Meeting under Event Capabilities to use the online fields." : "This event is Online. Venue and physical-location fields are not applicable." : values.delivery_mode === "hybrid" ? values.modules?.online_meeting === false ? "This event is Hybrid. Go to Schedule and check Online Meeting under Event Capabilities to use the online fields." : "This event is Hybrid. Both physical venue and online meeting details can be provided." : "This event is In Person. Online meeting fields are not applicable.";
+  return <><section className="min-w-0 space-y-4"><div className="min-w-0 break-words"><h2 className="break-words text-xl font-bold text-[#06201c]">{section.label}</h2>{section.description ? <p className="mt-1 break-words text-sm text-[#52736a]">{section.description}</p> : null}</div>{dependent ? <p className="rounded-xl bg-[#f4faf7] px-3 py-2 text-xs text-[#52736a]">{guidance}</p> : null}<div className="grid min-w-0 gap-4 md:grid-cols-[repeat(2,minmax(0,1fr))]">{fields.map((field) => { const key = keyFor(field); if (values.pricing_type === "free" && ["price", "currency", "ticket_types"].includes(key)) return null; if (!isDeliveryFieldApplicable(key, values.delivery_mode)) return null; const hasError = Boolean(errors[key]?.length); return <div key={field.id} data-event-field={key} data-event-invalid={hasError ? "true" : undefined} className={`min-w-0 break-words ${isComplexField(field) ? "md:col-span-2" : ""} ${hasError ? "rounded-xl ring-2 ring-inset ring-[#f3d0cb]" : ""}`}><ConfiguredField field={field} values={values} update={update} errors={errors} customValues={customValues} setCustomValues={setCustomValues} categories={categories} categoriesLoading={categoriesLoading} categoriesError={categoriesError} eventTypes={eventTypes} eventTypesLoading={eventTypesLoading} eventTypesError={eventTypesError} currencyOptions={currencyOptions} currencyState={currencyState} allowPastTemporalValues={allowPastTemporalValues} selectedEventType={selectedEventType} mediaPolicy={mediaPolicy} policyError={policyError} uploads={uploads} onMediaLinkChange={onMediaLinkChange} onMediaAddLink={onMediaAddLink} onMediaRemove={onMediaRemove} onMediaUpload={onMediaUpload} onMediaRetry={onMediaRetry} onMediaUploadRemove={onMediaUploadRemove} sessionGenerationRules={sessionGenerationRules} onSessionGenerationRulesChange={onSessionGenerationRulesChange} /></div>; })}</div></section>{fields.some((field) => keyFor(field) === "event_type") ? <EventServicesEditor values={values} update={update} createMode={createMode} defaultCurrency={createMode ? undefined : values.currency} currencyOptions={currencyOptions} currencyState={currencyState} errors={errors} /> : null}</>;
 }
 
-function ConfiguredField(props: Omit<Props, "section"> & { field: ActiveEventFormField }) {
-  const { field, values, update, errors, customValues, setCustomValues, locations, locationId, setLocationId, categories, categoriesLoading, categoriesError, currencyOptions, allowPastTemporalValues = false } = props;
-  const key = keyFor(field); const required = field.required ? " *" : ""; const error = errors[key]?.[0];
-  if (field.source === "core" && (key === "location" || key === "location_id")) return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}<select value={locationId} onChange={(event) => setLocationId(event.target.value)} className={inputClass}><option value="">Select a location</option>{locations.map((location) => <option key={location.id} value={location.id}>{location.location_name} — {location.city}</option>)}</select>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
+function ConfiguredField(props: Omit<Props, "section"> & { field: ActiveEventFormField; selectedEventType?: EventTypeDefinition }) {
+  const [rangeAdjustment, setRangeAdjustment] = useState<"minimum" | "maximum" | null>(null);
+  const { t } = useTranslation("enterpriseEvents");
+  const { field, values, update, errors, customValues, setCustomValues, categories, categoriesLoading, categoriesError, eventTypes = [], eventTypesLoading = false, eventTypesError = false, currencyOptions, currencyState, allowPastTemporalValues = false, selectedEventType, mediaPolicy, policyError, uploads = [], onMediaLinkChange, onMediaAddLink, onMediaRemove, onMediaUpload, onMediaRetry, onMediaUploadRemove } = props;
+  const key = keyFor(field); const required = field.required ? " *" : ""; const error = errors[key]?.[0]; const moduleDisabledMessage = disabledModuleFor(key, values); const moduleDisabled = Boolean(moduleDisabledMessage);
+  if (field.source === "core" && ["location", "location_id"].includes(key.replace(/^(core_|custom_)/, "").trim().toLowerCase())) return null;
   if (field.source === "core" && (key === "category" || key === "subcategory")) return <CategoryTaxonomySelect field={field} keyName={key} values={values} update={update} error={error} categories={categories} loading={categoriesLoading} hasError={categoriesError} />;
-  if (field.source === "core" && (COMPOSITES.has(key) || ["ticket_types", "sessions", "registration_fields"].includes(field.renderer))) return <CompositeField field={field} values={values} update={update} error={error} currencyOptions={currencyOptions} />;
+  if (field.source === "core" && (COMPOSITES.has(key) || ["ticket_types", "sessions", "registration_fields"].includes(field.renderer))) return <><CompositeField field={field} values={values} update={update} error={error} currencyOptions={currencyOptions} currencyState={currencyState} selectedEventType={selectedEventType} disabled={moduleDisabled} mediaPolicy={mediaPolicy} policyError={policyError} uploads={uploads} onMediaLinkChange={onMediaLinkChange} onMediaAddLink={onMediaAddLink} onMediaRemove={onMediaRemove} onMediaUpload={onMediaUpload} onMediaRetry={onMediaRetry} onMediaUploadRemove={onMediaUploadRemove} sessionGenerationRules={props.sessionGenerationRules} onSessionGenerationRulesChange={props.onSessionGenerationRulesChange} />{key === "venue" && error ? <p role="alert" className="mt-2 text-xs text-[#b42318]">{error}</p> : null}{moduleDisabledMessage ? <p className="mt-2 rounded-xl bg-[#fff8f7] px-3 py-2 text-xs font-semibold text-[#b42318]">{moduleDisabledMessage}</p> : null}</>;
   if (field.source === "core" && key === "tags") return <TagsEditor field={field} values={values} update={update} error={error} />;
+  if (field.source === "core" && key === "pricing_type") { const options = field.options.length ? field.options : [{ value: "free", label: "Free", position: 1 }, { value: "paid", label: "Paid", position: 2 }]; return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}<select value={values.pricing_type} required={field.required} onChange={(event) => update("pricing_type", event.target.value as CreateEventFormValues["pricing_type"])} className={inputClass}>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>; }
   if (field.source === "core" && key === "duration_type") return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}<select value={values.duration_type} required={field.required} onChange={(event) => update("duration_type", event.target.value)} className={inputClass}><option value="">Select a duration</option>{field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
-  if (field.source === "core" && (key === "delivery_mode" || key === "event_type")) return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}<select value={values.delivery_mode} onChange={(event) => update("delivery_mode", event.target.value)} className={inputClass}>{field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
-  const coreField = field.source === "core" ? CORE_FIELDS[key] : undefined;
+  if (field.source === "core" && key === "event_type") { const current = values.event_type; const activeOptions = eventTypes.filter((item) => item.active); const known = eventTypes.find((item) => item.key === current || item.id === current); return <div><label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}<select value={current} required={field.required} disabled={eventTypesLoading || eventTypesError} onChange={(event) => update("event_type", event.target.value)} className={inputClass}><option value="">{eventTypesLoading ? "Loading Event Types..." : eventTypesError ? "Unable to load Event Types" : "Select an Event Type"}</option>{current && !known ? <option value={current}>{current} (legacy or inactive)</option> : null}{activeOptions.map((item) => <option key={item.id} value={item.key}>{item.name}</option>)}</select>{error || eventTypesError ? <p className="mt-1 text-xs text-[#b42318]">{error ?? "Unable to load Event Types. Retry and try again."}</p> : null}</label>{current && values.modules ? <EventModulesControls modules={values.modules} eventType={known} deliveryMode={values.delivery_mode} hasConfiguredTickets={values.ticket_types.length > 0} onChange={(next) => update("modules", next)} /> : null}</div>; }
+  if (field.source === "core" && key === "delivery_mode") return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}<select value={values.delivery_mode} required={field.required} onChange={(event) => update("delivery_mode", event.target.value)} className={inputClass}>{field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
+  const coreField = field.source === "core" ? CORE_FIELDS[key] ?? (key in values ? key as keyof CreateEventFormValues : undefined) : undefined;
   const value = coreField ? (coreField === "tags" ? values.tags.join(", ") : Array.isArray(values[coreField]) ? (values[coreField] as string[]).join(", ") : scalar(values[coreField])) : scalar(customValues[key]);
-  const isBoolean = field.value_type === "boolean" || field.renderer === "checkbox";
-  const isNumber = field.value_type === "number" || field.renderer === "number";
-  const setValue = (next: string) => { if (coreField) { if (coreField === "tags") update("tags", next.split(",").map((item) => item.trim()).filter(Boolean)); else if (["gallery_images", "videos", "documents"].includes(coreField)) update(coreField, next.split(",").map((item) => item.trim()).filter(Boolean) as CreateEventFormValues[typeof coreField]); else update(coreField, next as CreateEventFormValues[typeof coreField]); } else setCustomValues({ ...customValues, [key]: isBoolean ? next === "true" : isNumber ? Number(next) : next }); };
-  const options = [...field.options].sort((left, right) => left.position - right.position);
+  const isBoolean = [field.value_type, field.renderer].some((typeValue) => typeValue.trim().toLowerCase() === "boolean" || typeValue.trim().toLowerCase() === "checkbox");
+  const isNumber = isNumericField(field);
+  const setValue = (next: string) => { if (coreField) { if (coreField === "tags") update("tags", next.split(",").map((item) => item.trim()).filter(Boolean)); else if (["gallery_images", "videos", "documents"].includes(coreField)) update(coreField, next.split(",").map((item) => item.trim()).filter(Boolean) as CreateEventFormValues[typeof coreField]); else update(coreField, next as CreateEventFormValues[typeof coreField]); } else setCustomValues({ ...customValues, [key]: isBoolean ? next === "true" : isNumber ? (next.trim() ? Number(next) : null) : next }); };
+  const setNumberValue = (next: string) => {
+    const adjusted = clampNumberToRange(next, field.validation.min, field.validation.max);
+    setRangeAdjustment(adjusted.bound);
+    setValue(adjusted.value);
+  };
+  const configuredOptions = [...field.options];
+  const isCoreCurrency = field.source === "core" && key === "currency";
+  if (["time_zone", "timezone"].includes(key) && !configuredOptions.some((option) => option.value === "America/New_York")) configuredOptions.unshift({ value: "America/New_York", label: "America/New_York", position: 0 });
+  const options = configuredOptions.sort((left, right) => left.position - right.position);
   if (field.renderer === "multi_select") return <MultiSelectField field={field} value={Array.isArray(customValues[key]) ? customValues[key] as string[] : value ? [value] : []} onChange={(next) => setCustomValues({ ...customValues, [key]: next })} error={error} />;
   const type = fieldType(field, key);
   const bounds = temporalBounds(key, type, values, allowPastTemporalValues);
-  if (isBoolean) return <label className="flex items-center gap-2 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={coreField ? value === "true" : customValues[key] === true} onChange={(event) => setValue(String(event.target.checked))} />{field.label}{required}</label>;
-  return <label className="block text-sm font-semibold text-[#06201c]">{field.label}{required}{field.help_text ? <span className="ml-1 font-normal text-[#52736a]">{field.help_text}</span> : null}{options.length || field.value_type === "enum" || key === "currency" ? <select value={value} onChange={(event) => setValue(event.target.value)} className={inputClass}><option value="">Select an option</option>{options.length ? options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>) : <option value={value}>{value}</option>}</select> : type === "textarea" ? <textarea value={value} required={field.required} placeholder={field.placeholder ?? undefined} minLength={field.validation.min_length ?? undefined} maxLength={field.validation.max_length ?? undefined} onChange={(event) => setValue(event.target.value)} className={`${inputClass} h-24 resize-y py-2`} /> : <input type={type} value={value} required={field.required} placeholder={field.placeholder ?? undefined} minLength={field.validation.min_length ?? undefined} maxLength={field.validation.max_length ?? undefined} min={bounds.min ?? field.validation.min ?? undefined} max={bounds.max ?? field.validation.max ?? undefined} pattern={field.validation.pattern ?? undefined} onChange={(event) => setValue(event.target.value)} className={inputClass} />}{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
+  const isTemporal = type === "date" || type === "datetime-local";
+  const id = `event-field-${key.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+  if (isBoolean) {
+    const booleanValue = coreField ? values[coreField] : customValues[key];
+    return <div><label htmlFor={id} className="flex items-center gap-2 text-sm font-semibold text-[#06201c]"><input id={id} type="checkbox" checked={booleanValue === true || booleanValue === "true"} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} onChange={(event) => setValue(String(event.target.checked))} />{field.label}{required}</label>{error ? <p id={`${id}-error`} role="alert" className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</div>;
+  }
+  const constraints = field.validation;
+  const rangeError = isNumber ? numberRangeError(coreField ? values[coreField] : customValues[key], field.label, constraints.min, constraints.max) : undefined;
+  const displayedError = error ?? rangeError;
+  const isTextEntry = !isTemporal && !(options.length || field.value_type === "enum" || isCoreCurrency);
+  const currencyLocked = isCoreCurrency && Boolean(currencyState?.isLocked({ kind: "base" }));
+  const textLimit = isTextEntry ? eventFieldMaxLength(key, constraints.max_length) : undefined;
+  const numberHint = isNumber
+    ? constraints.min != null && constraints.max != null
+      ? t("numberInput.hintWithRange", { min: constraints.min, max: constraints.max })
+      : constraints.min != null
+        ? t("numberInput.hintWithMinimum", { min: constraints.min })
+        : constraints.max != null
+          ? t("numberInput.hintWithMaximum", { max: constraints.max })
+          : t("numberInput.hint")
+    : null;
+  return (
+    <div className="block text-sm font-semibold text-[#06201c]">
+      <label htmlFor={id}>
+        {field.label}{required}{field.help_text ? <span className="ml-1 font-normal text-[#52736a]">{field.help_text}</span> : null}
+      </label>
+      {!isTemporal && (options.length || field.value_type === "enum" || isCoreCurrency) ? (
+          <select id={id} disabled={moduleDisabled || currencyLocked} value={value} required={field.required} onChange={(event) => setValue(event.target.value)} className={inputClass}>
+            <option value="">Select an option</option>
+            {options.length ? options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>) : <option value={value}>{value}</option>}
+          </select>
+      ) : type === "textarea" ? (
+          <textarea id={id} disabled={moduleDisabled} value={value} required={field.required} placeholder={field.placeholder ?? undefined} minLength={constraints.min_length ?? undefined} maxLength={textLimit} onChange={(event) => setValue(event.target.value)} className={`${inputClass} h-24 resize-y py-2`} />
+      ) : type === "datetime-local" ? (
+          <DateTimeLocalInput id={id} disabled={moduleDisabled} value={value} required={field.required} min={bounds.min ?? (constraints.min == null ? undefined : String(constraints.min))} max={bounds.max ?? (constraints.max == null ? undefined : String(constraints.max))} persistDraft aria-invalid={displayedError ? true : undefined} aria-describedby={displayedError ? `${id}-error` : undefined} onChange={setValue} className={inputClass} />
+      ) : type === "date" ? (
+          <DateLocalInput id={id} disabled={moduleDisabled} value={value} required={field.required} min={bounds.min ?? (constraints.min == null ? undefined : String(constraints.min))} max={bounds.max ?? (constraints.max == null ? undefined : String(constraints.max))} aria-invalid={displayedError ? true : undefined} aria-describedby={displayedError ? `${id}-error` : undefined} onChange={setValue} className={inputClass} />
+      ) : isTemporal ? (
+          <input id={id} disabled={moduleDisabled} type={type} value={value} required={field.required} placeholder={field.placeholder ?? undefined} min={bounds.min ?? constraints.min ?? undefined} max={bounds.max ?? constraints.max ?? undefined} onChange={(event) => setValue(event.target.value)} className={inputClass} />
+      ) : (
+          <input
+            id={id}
+            disabled={moduleDisabled}
+            type={type}
+            value={value}
+            required={field.required}
+            placeholder={field.placeholder ?? undefined}
+            minLength={constraints.min_length ?? undefined}
+            maxLength={textLimit}
+            min={bounds.min ?? constraints.min ?? undefined}
+            max={bounds.max ?? constraints.max ?? undefined}
+            pattern={!isNumber ? constraints.pattern ?? undefined : undefined}
+            step={isNumber ? (["capacity", "min_participants", "max_participants"].includes(String(coreField)) ? "1" : "any") : undefined}
+            aria-invalid={displayedError ? true : undefined}
+            aria-describedby={displayedError ? `${id}-error` : undefined}
+            onChange={(event) => isNumber ? setNumberValue(event.target.value) : setValue(event.target.value)}
+            className={inputClass}
+          />
+      )}
+      {numberHint ? <p className="mt-1 text-xs font-normal text-[#7f9d94]">{numberHint}</p> : null}
+      {textLimit != null ? <p className="mt-1 text-xs text-[#7f9d94]">{value.length}/{textLimit} characters</p> : null}
+      {displayedError ? <p id={`${id}-error`} role="alert" className="mt-1 text-xs text-[#b42318]">{displayedError}</p> : null}
+      {rangeAdjustment ? <p role="status" className="mt-1 text-xs text-[#52736a]">{t(`numberRange.adjustedTo${rangeAdjustment === "minimum" ? "Minimum" : "Maximum"}`, { value: rangeAdjustment === "minimum" ? constraints.min : constraints.max })}</p> : null}
+      {moduleDisabledMessage ? <p className="mt-2 rounded-xl bg-[#fff8f7] px-3 py-2 text-xs font-semibold text-[#b42318]">{moduleDisabledMessage}</p> : null}
+    </div>
+  );
 }
 
 function MultiSelectField({ field, value, onChange, error }: { field: ActiveEventFormField; value: string[]; onChange: (value: string[]) => void; error?: string }) {
   const options = [...field.options].sort((left, right) => left.position - right.position);
   const selected = new Set(value);
-  return <div className="block text-sm font-semibold text-[#06201c]"><span>{field.label}{field.required ? " *" : ""}</span>{field.help_text ? <span className="ml-1 font-normal text-[#52736a]">{field.help_text}</span> : null}<div className="mt-1.5 flex min-h-11 flex-wrap items-center gap-2 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-2 focus-within:border-[#1f6a58]">{value.map((item) => { const option = options.find((candidate) => candidate.value === item); return <span key={item} className="inline-flex items-center gap-1 rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{option?.label ?? item}<button type="button" aria-label={`Remove ${option?.label ?? item}`} onClick={() => onChange(value.filter((current) => current !== item))} className="rounded-full px-1 hover:bg-[#cdebd8]">×</button></span>; })}<select aria-label={field.label} value="" onChange={(event) => { if (event.target.value && !selected.has(event.target.value)) onChange([...value, event.target.value]); }} className="min-w-32 flex-1 bg-transparent px-1 py-1 text-sm outline-none"><option value="">Select another option...</option>{options.filter((option) => !selected.has(option.value)).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</div>;
+  return <div className="block text-sm font-semibold text-[#06201c]"><span>{field.label}{field.required ? " *" : ""}</span>{field.help_text ? <span className="ml-1 font-normal text-[#52736a]">{field.help_text}</span> : null}<div className="mt-1.5 flex min-h-11 flex-wrap items-center gap-2 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-2 focus-within:border-[#1f6a58]">{value.map((item) => { const option = options.find((candidate) => candidate.value === item); return <span key={item} className="inline-flex items-center gap-1 rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{option?.label ?? item}<button type="button" aria-label={`Remove ${option?.label ?? item}`} onClick={() => onChange(value.filter((current) => current !== item))} className="rounded-full px-1 hover:bg-[#cdebd8]">{"\u00d7"}</button></span>; })}<select aria-label={field.label} aria-invalid={Boolean(error) || undefined} aria-describedby={error ? `event-field-${field.id}-error` : undefined} value="" onChange={(event) => { if (event.target.value && !selected.has(event.target.value)) onChange([...value, event.target.value]); }} className="min-w-32 flex-1 bg-transparent px-1 py-1 text-sm outline-none"><option value="">Select another option...</option>{options.filter((option) => !selected.has(option.value)).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>{error ? <p id={`event-field-${field.id}-error`} role="alert" className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</div>;
 }
 
 /** Renders backend-owned category taxonomy without persisting taxonomy identifiers in the Event payload. */
 function CategoryTaxonomySelect({ field, keyName, values, update, error, categories, loading, hasError }: { field: ActiveEventFormField; keyName: "category" | "subcategory"; values: CreateEventFormValues; update: UpdateForm; error?: string; categories: readonly EventCategory[]; loading: boolean; hasError: boolean }) {
+  const { t } = useTranslation("enterpriseEvents");
   const parents = categories.filter((category) => category.parent_id === null);
   const selectedParent = parents.find((category) => category.name === values.category);
   const children = selectedParent ? categories.filter((category) => category.parent_id === selectedParent.id) : [];
@@ -90,10 +223,14 @@ function CategoryTaxonomySelect({ field, keyName, values, update, error, categor
     : hasError
       ? "Unable to load categories"
       : isSubcategory && !selectedParent
-        ? "Select a category first"
+        ? t("taxonomy.chooseCategoryFirst", { defaultValue: "Choose a category first" })
         : isSubcategory && children.length === 0
           ? "No subcategories available"
-          : "No categories available";
+          : isSubcategory
+            ? t("taxonomy.chooseSubcategory", { defaultValue: "Choose a subcategory" })
+            : parents.length === 0
+              ? "No categories available"
+              : t("taxonomy.chooseCategory", { defaultValue: "Choose a category" });
   const queryError = hasError ? "Unable to load Event categories." : undefined;
 
   const options = isSubcategory ? children : parents;
@@ -113,27 +250,92 @@ function CategoryTaxonomySelect({ field, keyName, values, update, error, categor
 
 function TagsEditor({ field, values, update, error }: { field: ActiveEventFormField; values: CreateEventFormValues; update: UpdateForm; error?: string }) {
   const [draft, setDraft] = useState("");
+  const [draftError, setDraftError] = useState<string | null>(null);
   const addTag = () => {
     const tag = draft.trim();
-    if (!tag || values.tags.some((item) => item.toLocaleLowerCase() === tag.toLocaleLowerCase())) return;
+    if (!tag) return;
+    const { min_length: minLength, max_length: maxLength, pattern } = field.validation;
+    if (minLength != null && tag.length < minLength) {
+      setDraftError(`${field.label} must be at least ${minLength} characters.`);
+      return;
+    }
+    if (maxLength != null && tag.length > maxLength) {
+      setDraftError(`${field.label} must be at most ${maxLength} characters.`);
+      return;
+    }
+    if (pattern) {
+      try {
+        if (!new RegExp(pattern).test(tag)) {
+          setDraftError(`${field.label} has an invalid format.`);
+          return;
+        }
+      } catch {
+        setDraftError(`${field.label} has an invalid validation rule.`);
+        return;
+      }
+    }
+    if (values.tags.some((item) => item.toLocaleLowerCase() === tag.toLocaleLowerCase())) return;
     update("tags", [...values.tags, tag]);
     setDraft("");
+    setDraftError(null);
   };
 
-  return <div className="block text-sm font-semibold text-[#06201c]"><label htmlFor={`event-tags-${field.id}`}>{field.label}{field.required ? " *" : ""}{field.help_text ? <span className="ml-1 font-normal text-[#52736a]">{field.help_text}</span> : null}</label><input id={`event-tags-${field.id}`} value={draft} required={field.required && values.tags.length === 0} placeholder={field.placeholder ?? "Type a tag and press Enter"} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addTag(); } }} className={inputClass} />{values.tags.length > 0 ? <div className="mt-2 flex flex-wrap gap-2">{values.tags.map((tag) => <span key={tag} className="inline-flex items-center gap-1 rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{tag}<button type="button" onClick={() => update("tags", values.tags.filter((item) => item !== tag))} aria-label={`Remove ${tag}`} className="rounded-full px-0.5 text-[#1f6a58] hover:bg-[#cdebd8]">×</button></span>)}</div> : null}{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</div>;
+  return <div className="block text-sm font-semibold text-[#06201c]"><label htmlFor={`event-tags-${field.id}`}>{field.label}{field.required ? " *" : ""}{field.help_text ? <span className="ml-1 font-normal text-[#52736a]">{field.help_text}</span> : null}</label><input id={`event-tags-${field.id}`} value={draft} required={field.required && values.tags.length === 0} minLength={field.validation.min_length ?? undefined} pattern={field.validation.pattern ?? undefined} aria-invalid={Boolean(draftError || error) || undefined} onChange={(event) => { setDraft(event.target.value); setDraftError(null); }} placeholder={field.placeholder ?? "Type a tag and press Enter"} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addTag(); } }} className={inputClass} />{values.tags.length > 0 ? <div className="mt-2 flex flex-wrap gap-2">{values.tags.map((tag) => <span key={tag} className="inline-flex items-center gap-1 rounded-full bg-[#e8f6ee] px-3 py-1 text-xs font-bold text-[#1f6a58]">{tag}<button type="button" onClick={() => update("tags", values.tags.filter((item) => item !== tag))} aria-label={`Remove ${tag}`} className="rounded-full px-0.5 text-[#1f6a58] hover:bg-[#cdebd8]">{"\u00d7"}</button></span>)}</div> : null}{draftError ? <p role="alert" className="mt-1 text-xs text-[#b42318]">{draftError}</p> : error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</div>;
 }
 
-function CompositeField({ field, values, update, error, currencyOptions }: { field: ActiveEventFormField; values: CreateEventFormValues; update: UpdateForm; error?: string; currencyOptions?: readonly ActiveEventFormFieldOption[] }) {
+function CompositeField({ field, values, update, error, currencyOptions, currencyState, selectedEventType, disabled = false, mediaPolicy, policyError, uploads = [], onMediaLinkChange, onMediaAddLink, onMediaRemove, onMediaUpload, onMediaRetry, onMediaUploadRemove, sessionGenerationRules, onSessionGenerationRulesChange }: { field: ActiveEventFormField; values: CreateEventFormValues; update: UpdateForm; error?: string; currencyOptions?: readonly ActiveEventFormFieldOption[]; currencyState?: EventCurrencyUiState; selectedEventType?: EventTypeDefinition; disabled?: boolean; mediaPolicy?: EventMediaPolicy; policyError?: string; uploads?: readonly EventMediaUploadState[]; onMediaLinkChange?: (field: EventMediaField, index: number, value: string) => void; onMediaAddLink?: (field: EventMediaField) => void; onMediaRemove?: (field: EventMediaField, index: number) => void; onMediaUpload?: (field: EventMediaField, file: File, replaceIndex?: number) => void; onMediaRetry?: (uploadId: string) => void; onMediaUploadRemove?: (uploadId: string) => void; sessionGenerationRules?: readonly SessionGenerationRule[]; onSessionGenerationRulesChange?: (rules: SessionGenerationRule[]) => void }) {
   const key = keyFor(field);
-  if (key === "venue") return <div className="grid gap-4 rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] p-4 md:grid-cols-2"><div className="md:col-span-2"><h3 className="font-bold text-[#06201c]">{field.label}</h3></div>{isCompositeSubfieldEnabled(field, "name") ? <Simple field={field} required={isCompositeSubfieldRequired(field, "name")} label="Name" value={values.venue_name} onChange={(value) => update("venue_name", value)} /> : null}{isCompositeSubfieldEnabled(field, "address") ? <Simple field={field} required={isCompositeSubfieldRequired(field, "address")} label="Address" value={values.venue_address} onChange={(value) => update("venue_address", value)} /> : null}{isCompositeSubfieldEnabled(field, "city") ? <Simple field={field} required={isCompositeSubfieldRequired(field, "city")} label="City" value={values.venue_city} onChange={(value) => update("venue_city", value)} /> : null}{isCompositeSubfieldEnabled(field, "coordinates.lat") || isCompositeSubfieldEnabled(field, "coordinates.lng") ? <div className="md:col-span-2"><p className="text-sm font-semibold text-[#06201c]">Coordinates</p><div className="mt-2 grid gap-4 md:grid-cols-2">{isCompositeSubfieldEnabled(field, "coordinates.lat") ? <Simple field={field} required={isCompositeSubfieldRequired(field, "coordinates.lat")} label="Latitude" value={values.venue_latitude} onChange={(value) => update("venue_latitude", value)} /> : null}{isCompositeSubfieldEnabled(field, "coordinates.lng") ? <Simple field={field} required={isCompositeSubfieldRequired(field, "coordinates.lng")} label="Longitude" value={values.venue_longitude} onChange={(value) => update("venue_longitude", value)} /> : null}</div></div> : null}</div>;
-  if (key === "ticket_types" || field.renderer === "ticket_types") return <TicketTypesEditor field={field} values={values} update={update} error={error} currencyOptions={currencyOptions} />;
-  if (key === "sessions" || field.renderer === "sessions") return <SessionTableEditor mode="create" eventStart={values.start_date} eventEnd={values.end_date} sessions={values.sessions} enabledFields={field.composite_config?.enabled_fields ?? undefined} requiredFields={field.composite_config?.required_fields ?? []} label={field.label} error={error} onSessionsChange={(sessions) => update("sessions", sessions)} />;
-  if (["custom_fields", "registration_questions", "registration_fields"].includes(key) || field.renderer === "registration_fields") return <RegistrationEditor field={field} values={values} update={update} error={error} />;
-  if (["primary_image", "gallery_images", "videos", "documents", "media"].includes(key)) return <MediaEditor field={field} values={values} update={update} error={error} />;
+  if (key === "venue") {
+    const venueRequired = values.delivery_mode !== "online";
+    const requiredSubfield = (subfield: string) => venueRequired || isCompositeSubfieldRequired(field, subfield);
+    return <div className="grid gap-4 rounded-2xl border border-[#d7e5df] bg-[#f9fcfa] p-4 md:grid-cols-2"><div className="md:col-span-2"><h3 className="font-bold text-[#06201c]">{field.label}{venueRequired || field.required ? " *" : ""}</h3></div>{isCompositeSubfieldEnabled(field, "name") ? <Simple field={field} required={requiredSubfield("name")} label="Name" value={values.venue_name} onChange={(value) => update("venue_name", value)} /> : null}{isCompositeSubfieldEnabled(field, "address") ? <Simple field={field} required={requiredSubfield("address")} label="Address" value={values.venue_address} onChange={(value) => update("venue_address", value)} /> : null}{isCompositeSubfieldEnabled(field, "city") ? <Simple field={field} required={requiredSubfield("city")} label="City" value={values.venue_city} onChange={(value) => update("venue_city", value)} /> : null}</div>;
+  }
+  if (key === "ticket_types" || field.renderer === "ticket_types") return <TicketTypesEditor field={field} values={values} update={update} error={error} currencyOptions={currencyOptions} currencyState={currencyState} selectedEventType={selectedEventType} disabled={disabled} />;
+  if (key === "sessions" || field.renderer === "sessions") return <SessionTableEditor mode="create" eventStart={values.start_date} eventEnd={values.end_date} sessions={values.sessions} deliveryMode={values.delivery_mode} enabledFields={field.composite_config?.enabled_fields ?? undefined} requiredFields={field.composite_config?.required_fields ?? []} label={field.label} isRequired={field.required} error={error} disabled={disabled} generationRules={sessionGenerationRules} onGenerationRulesChange={onSessionGenerationRulesChange} onSessionsChange={(sessions) => update("sessions", sessions)} />;
+  if (["custom_fields", "registration_questions", "registration_fields"].includes(key) || field.renderer === "registration_fields") return <RegistrationEditor field={field} values={values} update={update} error={error} disabled={disabled} />;
+  if (["primary_image", "gallery_images", "videos", "documents", "media"].includes(key)) return <MediaEditor field={field} values={values} update={update} error={error} mediaPolicy={mediaPolicy} policyError={policyError} uploads={uploads} onMediaLinkChange={onMediaLinkChange} onMediaAddLink={onMediaAddLink} onMediaRemove={onMediaRemove} onMediaUpload={onMediaUpload} onMediaRetry={onMediaRetry} onMediaUploadRemove={onMediaUploadRemove} />;
   return null;
 }
-function Simple({ field, required, label, value, onChange }: { field: ActiveEventFormField; required: boolean; label: string; value: string; onChange: (value: string) => void }) { return <label className="block text-sm font-semibold text-[#06201c]">{label}{required ? " *" : ""}<input required={required} value={value} onChange={(event) => onChange(event.target.value)} className={inputClass} /></label>; }
-function TicketTypesEditor({ field, values, update, error, currencyOptions }: { field: ActiveEventFormField; values: CreateEventFormValues; update: UpdateForm; error?: string; currencyOptions?: readonly ActiveEventFormFieldOption[] }) { const patch = (index: number, name: keyof EventTicketFormValue, value: string) => update("ticket_types", values.ticket_types.map((item, current) => current === index ? { ...item, [name]: value } : item)); const fields: Array<keyof EventTicketFormValue> = ["name", "price", "currency", "capacity"]; return <CompositeList title={field.label} onAdd={() => update("ticket_types", [...values.ticket_types, { id: "", name: "", price: "", currency: values.currency, capacity: "" }])} error={error}>{values.ticket_types.map((item, index) => <div key={index} className="grid gap-3 md:grid-cols-2">{fields.filter((name) => isCompositeSubfieldEnabled(field, name)).map((name) => <label key={name} className="block text-sm font-semibold">{name}{isCompositeSubfieldRequired(field, name) ? " *" : ""}{name === "currency" && currencyOptions?.length ? <select required={isCompositeSubfieldRequired(field, name)} value={item.currency} onChange={(event) => patch(index, name, event.target.value)} className={inputClass}>{currencyOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select> : <input required={isCompositeSubfieldRequired(field, name)} type={name === "price" || name === "capacity" ? "number" : "text"} value={item[name]} onChange={(event) => patch(index, name, event.target.value)} className={inputClass} />}</label>)}<button type="button" onClick={() => update("ticket_types", values.ticket_types.filter((_, current) => current !== index))}>Remove</button></div>)}</CompositeList>; }
-function RegistrationEditor({ field, values, update, error }: { field: ActiveEventFormField; values: CreateEventFormValues; update: UpdateForm; error?: string }) { const patch = (index: number, name: keyof EventCustomFieldFormValue, value: string | string[]) => update("custom_fields", values.custom_fields.map((item, current) => current === index ? { ...item, [name]: value } as EventCustomFieldFormValue : item)); return <CompositeList title={field.label} onAdd={() => update("custom_fields", [...values.custom_fields, { label: "", type: "select", options: [] }])} error={error}>{values.custom_fields.map((item, index) => <div key={index} className="grid gap-3 md:grid-cols-2">{isCompositeSubfieldEnabled(field, "label") ? <Simple field={field} required={isCompositeSubfieldRequired(field, "label")} label="Label" value={item.label} onChange={(value) => patch(index, "label", value)} /> : null}{isCompositeSubfieldEnabled(field, "type") ? <label>Type<select value={item.type} onChange={(event) => patch(index, "type", event.target.value)} className={inputClass}><option value="select">Select</option></select></label> : null}{isCompositeSubfieldEnabled(field, "options") ? <Simple field={field} required={isCompositeSubfieldRequired(field, "options")} label="Options" value={item.options.join(", ")} onChange={(value) => patch(index, "options", value.split(",").map((part) => part.trim()).filter(Boolean))} /> : null}<button type="button" onClick={() => update("custom_fields", values.custom_fields.filter((_, current) => current !== index))}>Remove</button></div>)}</CompositeList>; }
-function MediaEditor({ field, values, update, error }: { field: ActiveEventFormField; values: CreateEventFormValues; update: UpdateForm; error?: string }) { const key = keyFor(field); const formKey = key === "primary_image" ? "primary_image" : key === "gallery_images" ? "gallery_images" : key === "videos" ? "videos" : "documents"; const list = formKey === "primary_image" ? [values.primary_image] : values[formKey]; return <CompositeList title={field.label} error={error}>{list.map((item, index) => <div key={index} className="flex gap-2"><input type="url" required={field.required || isCompositeSubfieldRequired(field, "url")} value={item} onChange={(event) => { if (formKey === "primary_image") update("primary_image", event.target.value); else update(formKey, list.map((value, current) => current === index ? event.target.value : value)); }} className={inputClass} />{formKey !== "primary_image" ? <button type="button" onClick={() => update(formKey, list.filter((_, current) => current !== index))}>Remove</button> : null}</div>)}{formKey !== "primary_image" ? <button type="button" onClick={() => update(formKey, [...list, ""])}>Add</button> : null}</CompositeList>; }
-function CompositeList({ title, onAdd, error, children }: { title: string; onAdd?: () => void; error?: string; children: React.ReactNode }) { return <div className="space-y-2 rounded-xl border border-[#d7e5df] p-3"><div className="flex items-center justify-between gap-3"><h3 className="font-semibold">{title}</h3>{onAdd ? <button type="button" onClick={onAdd} className="min-h-9 px-2 text-sm font-semibold text-[#1f6a58]">Add</button> : null}</div>{children}{error ? <p className="text-xs text-[#b42318]">{error}</p> : null}</div>; }
+function Simple({ field, required, label, value, onChange, disabled = false }: { field: ActiveEventFormField; required: boolean; label: string; value: string; onChange: (value: string) => void; disabled?: boolean }) { const type = field.value_type === "number" || field.renderer === "number" ? "number" : "text"; const id = `event-field-${field.id}`; const inputValue = (field.core_key === "meeting_link" || field.stable_key === "meeting_link") && isProtectedMeetingLink(value) ? "" : value; return <label className="block text-sm font-semibold text-[#06201c]">{label}{required ? " *" : ""}<input disabled={disabled} id={id} type={type} min={type === "number" ? "0" : undefined} required={required} value={inputValue} onChange={(event) => onChange(event.target.value)} className={inputClass} /></label>; }
+
+ function TicketTypesEditor({ field, values, update, error, currencyOptions, currencyState, selectedEventType, disabled = false }: { field: ActiveEventFormField; values: CreateEventFormValues; update: UpdateForm; error?: string; currencyOptions?: readonly ActiveEventFormFieldOption[]; currencyState?: EventCurrencyUiState; selectedEventType?: EventTypeDefinition; disabled?: boolean }) { const patch = (index: number, name: keyof EventTicketFormValue, value: string) => update("ticket_types", values.ticket_types.map((item, current) => current === index ? { ...item, [name]: value } : item)); const fields: Array<keyof EventTicketFormValue> = ["name", "price", "currency", "capacity"]; const allowed = selectedEventType?.allowed_modules.tickets !== false; const currencyHint = currencyState?.value ? "Currency is controlled by the global Event currency selected in Pricing & Tickets." : "Select the global Event currency in Pricing & Tickets first."; const addTicket = () => { if (!allowed || disabled) return; update("ticket_types", [...values.ticket_types, { id: "", name: "", price: "", currency: resolveNewEventCurrency(values.currency, currencyState), capacity: "" }]); if (values.modules && !values.modules.tickets) update("modules", { ...values.modules, tickets: true }); }; return <CompositeList title={field.label} required={field.required} onAdd={allowed && !disabled ? addTicket : undefined} error={error}>{!allowed ? <p className="text-sm text-[#b42318]">Tickets are unavailable for the selected Event Type.</p> : null}{values.ticket_types.map((item, index) => <div key={index} className="grid gap-3 md:grid-cols-2">{fields.filter((name) => isCompositeSubfieldEnabled(field, name)).map((name) => { const ticketSource: EventCurrencySource = { kind: "ticket_types", index }; const currencyLocked = name === "currency" && Boolean(currencyState?.isLocked(ticketSource)); const currencyValue = item.currency || (currencyState?.value ?? ""); return <label key={name} className="block text-sm font-semibold">{name.charAt(0).toUpperCase() + name.slice(1)}{isCompositeSubfieldRequired(field, name) ? " *" : ""}{name === "currency" && currencyOptions?.length ? <select disabled={disabled || currencyLocked} required={isCompositeSubfieldRequired(field, name)} value={currencyValue} onChange={(event) => patch(index, name, event.target.value)} className={inputClass}>{currencyOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select> : <input disabled={disabled || currencyLocked} required={isCompositeSubfieldRequired(field, name)} type={name === "price" || name === "capacity" ? "number" : "text"} value={name === "currency" ? currencyValue : item[name]} onChange={(event) => patch(index, name, event.target.value)} className={inputClass} />}{currencyLocked ? <span className="mt-1 block text-xs font-normal text-[#52736a]">{currencyHint}</span> : null}</label>; })}{!disabled ? <button type="button" onClick={() => update("ticket_types", values.ticket_types.filter((_, current) => current !== index))} className="rounded-full px-2 py-1 text-sm font-semibold text-[#b42318] hover:bg-[#fff1f0] hover:underline focus:bg-[#fff1f0] focus:outline-none focus:ring-2 focus:ring-[#b42318] focus:ring-offset-2">Remove</button> : null}</div>)}</CompositeList>; }
+function RegistrationEditor({ field, values, update, error, disabled = false }: { field: ActiveEventFormField; values: CreateEventFormValues; update: UpdateForm; error?: string; disabled?: boolean }) {
+  const patch = (index: number, name: keyof EventCustomFieldFormValue, value: string | string[]) => update("custom_fields", values.custom_fields.map((item, current) => current === index ? { ...item, [name]: value } as EventCustomFieldFormValue : item));
+  const patchOption = (questionIndex: number, optionIndex: number, value: string) => {
+    const options = values.custom_fields[questionIndex]?.options ?? [];
+    const normalized = value.trim().toLowerCase();
+    if (normalized && options.some((option, current) => current !== optionIndex && option.trim().toLowerCase() === normalized)) return;
+    patch(questionIndex, "options", options.map((option, current) => current === optionIndex ? value : option));
+  };
+  const removeOption = (questionIndex: number, optionIndex: number) => patch(questionIndex, "options", (values.custom_fields[questionIndex]?.options ?? []).filter((_, current) => current !== optionIndex));
+  return <CompositeList title={field.label} required={field.required} onAdd={!disabled ? () => update("custom_fields", [...values.custom_fields, { label: "", type: "select", options: [] }]) : undefined} error={error}>
+    {values.custom_fields.map((item, index) => <div key={index} className="rounded-xl border border-[#edf3f0] p-3">
+      <div className="grid gap-3 md:grid-cols-2">
+        {isCompositeSubfieldEnabled(field, "label") ? <Simple disabled={disabled} field={field} required={isCompositeSubfieldRequired(field, "label")} label="Label" value={item.label} onChange={(value) => patch(index, "label", value)} /> : null}
+        {isCompositeSubfieldEnabled(field, "type") ? <label>Type<select disabled={disabled} value={item.type} onChange={(event) => patch(index, "type", event.target.value)} className={inputClass}><option value="select">Select</option></select></label> : null}
+        {!disabled ? <button type="button" className="justify-self-start rounded px-1 text-sm font-bold text-[#b42318] underline underline-offset-2 transition-colors hover:bg-[#fff1f0] hover:text-[#8f1b13] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b42318]" onClick={() => update("custom_fields", values.custom_fields.filter((_, current) => current !== index))}>Remove question</button> : null}
+      </div>
+      {isCompositeSubfieldEnabled(field, "options") ? <div className="mt-3 space-y-2">
+        <p className="text-sm font-semibold">Options</p>
+        {item.options.map((option, optionIndex) => <div key={`${index}-${optionIndex}`} className="flex gap-2">
+          <input disabled={disabled} value={option} aria-label={`Option ${optionIndex + 1}`} onChange={(event) => patchOption(index, optionIndex, event.target.value)} onBlur={() => { if (!item.options[optionIndex]?.trim()) removeOption(index, optionIndex); }} className={`${inputClass} flex-1`} />
+          <button type="button" disabled={disabled} onClick={() => removeOption(index, optionIndex)} className="text-sm font-bold text-[#b42318] disabled:opacity-50">Remove</button>
+        </div>)}
+        {!disabled ? <button type="button" onClick={() => patch(index, "options", [...item.options, ""])} className="text-sm font-bold text-[#1f6a58]">Add option</button> : null}
+      </div> : null}
+    </div>)}
+  </CompositeList>;
+}
+ function RegistrationEditorFeature({ field, values, update, error, disabled = false }: { field: ActiveEventFormField; values: CreateEventFormValues; update: UpdateForm; error?: string; disabled?: boolean }) { const patch = (index: number, name: keyof EventCustomFieldFormValue, value: string | string[]) => update("custom_fields", values.custom_fields.map((item, current) => current === index ? { ...item, [name]: value } as EventCustomFieldFormValue : item)); const patchOption = (questionIndex: number, optionIndex: number, value: string) => { const normalized = value.trim(); const options = values.custom_fields[questionIndex]?.options ?? []; if (normalized && options.some((option, current) => current !== optionIndex && option.trim().toLowerCase() === normalized.toLowerCase())) return; patch(questionIndex, "options", options.map((option, current) => current === optionIndex ? value : option)); }; const removeOption = (questionIndex: number, optionIndex: number) => patch(questionIndex, "options", (values.custom_fields[questionIndex]?.options ?? []).filter((_, current) => current !== optionIndex)); return <CompositeList title={field.label} onAdd={!disabled ? () => update("custom_fields", [...values.custom_fields, { label: "", type: "select", options: [] }]) : undefined} error={error}>{values.custom_fields.map((item, index) => <div key={index} className="rounded-xl border border-[#edf3f0] p-3"><div className="grid gap-3 md:grid-cols-2">{isCompositeSubfieldEnabled(field, "label") ? <Simple disabled={disabled} field={field} required={isCompositeSubfieldRequired(field, "label")} label="Label" value={item.label} onChange={(value) => patch(index, "label", value)} /> : null}{!disabled ? <button type="button" className="justify-self-start rounded px-1 text-sm font-bold text-[#b42318] hover:bg-[#fff1f0] hover:underline focus:bg-[#fff1f0] focus:underline focus:outline-none focus:ring-2 focus:ring-[#b42318] focus:ring-offset-2" onClick={() => update("custom_fields", values.custom_fields.filter((_, current) => current !== index))}>Remove question</button> : null}</div>{isCompositeSubfieldEnabled(field, "options") ? <div className="mt-3 space-y-2"><p className="text-sm font-semibold">Options</p>{item.options.map((option, optionIndex) => <div key={`${index}-${optionIndex}`} className="flex gap-2"><input disabled={disabled} value={option} aria-label={`Option ${optionIndex + 1}`} onChange={(event) => patchOption(index, optionIndex, event.target.value)} onBlur={() => { if (!item.options[optionIndex]?.trim()) removeOption(index, optionIndex); }} className={`${inputClass} flex-1`} /><button type="button" disabled={disabled} onClick={() => removeOption(index, optionIndex)} className="text-sm font-bold text-[#b42318] disabled:opacity-50">Remove</button></div>)}{!disabled ? <button type="button" onClick={() => patch(index, "options", [...item.options, ""])} className="text-sm font-bold text-[#1f6a58]">Add option</button> : null}</div> : null}</div>)}</CompositeList>; }
+function MediaEditor({ field, values, update, error, mediaPolicy, policyError, uploads = [], onMediaLinkChange, onMediaAddLink, onMediaRemove, onMediaUpload, onMediaRetry, onMediaUploadRemove }: { field: ActiveEventFormField; values: CreateEventFormValues; update: UpdateForm; error?: string; mediaPolicy?: EventMediaPolicy; policyError?: string; uploads?: readonly EventMediaUploadState[]; onMediaLinkChange?: (field: EventMediaField, index: number, value: string) => void; onMediaAddLink?: (field: EventMediaField) => void; onMediaRemove?: (field: EventMediaField, index: number) => void; onMediaUpload?: (field: EventMediaField, file: File, replaceIndex?: number) => void; onMediaRetry?: (uploadId: string) => void; onMediaUploadRemove?: (uploadId: string) => void }) {
+  const key = keyFor(field);
+  const change = onMediaLinkChange ?? (() => undefined); const add = onMediaAddLink ?? (() => undefined); const remove = onMediaRemove ?? (() => undefined); const upload = onMediaUpload ?? (() => undefined); const retry = onMediaRetry ?? (() => undefined); const removeUpload = onMediaUploadRemove ?? (() => undefined);
+  const editor = (mediaField: EventMediaField, label: string, value: string | string[] | typeof values.documents, fieldError?: string) => <EventMediaEditor field={mediaField} label={label} value={value} error={fieldError} policy={mediaPolicy} policyError={policyError} uploads={uploads} onLinkChange={(index, next) => change(mediaField, index, next)} onAddLink={() => add(mediaField)} onRemove={(index) => remove(mediaField, index)} onUpload={(file, index) => upload(mediaField, file, index)} onRetry={retry} onUploadRemove={removeUpload} />;
+  if (key === "media") return <div className="space-y-5">{editor("primary_image", "Primary Image", values.primary_image, error)}{editor("gallery_images", "Gallery Images", values.gallery_images, error)}{editor("videos", "Videos", values.videos, error)}{editor("documents", "Documents", values.documents, error)}</div>;
+  const mediaField = key as EventMediaField;
+  return editor(mediaField, field.label, mediaField === "primary_image" ? values.primary_image : mediaField === "documents" ? values.documents : values[mediaField], error);
+}
+function CompositeList({ title, required = false, onAdd, error, children }: { title: string; required?: boolean; onAdd?: () => void; error?: string; children: React.ReactNode }) { return <div className="space-y-2 rounded-xl border border-[#d7e5df] p-3"><div className="flex items-center justify-between gap-3"><h3 className="font-semibold">{title}{required ? " *" : ""}</h3>{onAdd ? <button type="button" onClick={onAdd} className="min-h-9 px-2 text-sm font-semibold text-[#1f6a58]">Add</button> : null}</div>{children}{error ? <p className="text-xs text-[#b42318]">{error}</p> : null}</div>; }
+// Feature-side helper retained for compatibility with the merged implementation.
+export {};
+

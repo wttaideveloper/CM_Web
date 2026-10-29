@@ -5,21 +5,19 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { HeaderFrame } from "@ihp/ui";
+import { formatEventFeedbackNotificationDetails, formatNotificationTimestamp, formatReviewModerationNotificationDetails, formatReviewModerationNotificationTitle, formatReviewNotificationDetails, formatReviewSubmissionNotification, notificationReason } from "@ihp/realtime";
 
 import type { PlatformAdminHeaderProps } from "./types";
 
 type OpenMenu = "notifications" | "settings" | "profile" | null;
 
-type SettingsMenuItem = { key: string; href?: string };
+type SettingsMenuItem = { key: string; href?: string; disabled?: boolean };
 
 const settingsItems: readonly SettingsMenuItem[] = [
-  { key: "settingsMenu.accountSettings" },
-  { key: "settingsMenu.platformPreferences" },
-  { key: "settingsMenu.superAdmins", href: "/super-admins" },
-  { key: "settingsMenu.billingSettings" },
-  { key: "settingsMenu.integrations" },
+  { key: "settingsMenu.accountSettings", href: "/account-settings" },
+  { key: "settingsMenu.buildingPages", href: "/building-pages", disabled: true },
+  { key: "settingsMenu.integrations", href: "/integrations", disabled: true },
 ];
-const profileItems = ["View Profile", "My Enterprise", "Help Center"] as const;
 
 function BellIcon() {
   return <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /><path d="M13.7 21a2 2 0 0 1-3.4 0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>;
@@ -54,9 +52,13 @@ function Brand({ homeHref }: { homeHref: string }) {
 export function PlatformAdminHeader({
   homeHref,
   notificationsHref,
+  approvalNotifications,
+  workflowNotifications,
   messagesHref,
   profileHref,
   profileInitials = "IH",
+  profileName = null,
+  profileEmail = null,
   onLogout,
   onMenuClick,
 }: PlatformAdminHeaderProps) {
@@ -88,6 +90,16 @@ export function PlatformAdminHeader({
 
   const closeMenu = () => setOpenMenu(null);
   const toggleMenu = (menu: OpenMenu) => setOpenMenu((current) => (current === menu ? null : menu));
+  const pendingNotificationCount = approvalNotifications?.eventCount !== null
+    && approvalNotifications?.eventCount !== undefined
+    && approvalNotifications.trainingCount !== null
+    && approvalNotifications.trainingCount !== undefined
+    && (!approvalNotifications.tenantApplicationsHref || typeof approvalNotifications.enterpriseRequestCount === "number")
+    ? approvalNotifications.eventCount
+      + approvalNotifications.trainingCount
+      + (approvalNotifications.tenantApplicationsHref ? approvalNotifications.enterpriseRequestCount ?? 0 : 0)
+    : null;
+  const unreadNotificationCount = workflowNotifications?.unreadCount ?? 0;
 
   return (
     <HeaderFrame
@@ -103,24 +115,89 @@ export function PlatformAdminHeader({
       right={(
         <>
           <div className="relative">
-            <button type="button" onClick={() => toggleMenu("notifications")} className="relative flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4]" aria-label="Notifications" aria-expanded={openMenu === "notifications"}>
+            <button type="button" onClick={() => toggleMenu("notifications")} className="relative flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4]" aria-label={unreadNotificationCount > 0 ? `Notifications, ${unreadNotificationCount} unread` : t("header.notifications", { defaultValue: "Notifications" })} aria-expanded={openMenu === "notifications"}>
               <BellIcon />
+              {unreadNotificationCount > 0 ? (
+                <span className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-[#b42318] px-1 text-[10px] font-bold text-white">
+                  {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
+                </span>
+              ) : null}
             </button>
             <div className={`fixed left-3 right-3 top-[76px] z-50 max-h-[70vh] w-auto max-w-none origin-top overflow-y-auto rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 sm:absolute sm:left-auto sm:right-0 sm:top-12 sm:w-[360px] sm:max-w-sm sm:origin-top-right sm:p-3 ${openMenu === "notifications" ? "pointer-events-auto scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"}`}>
-              <div className="flex items-center justify-between border-b border-[#edf3f0] px-2 pb-3">
-                <div>
-                  <p className="text-sm font-bold text-[#06201c]">Notifications</p>
-                  <p className="text-xs font-semibold text-[#7f9d94]">0 unread</p>
-                </div>
-                <span className="rounded-full bg-[#e8f6ee] px-2.5 py-1 text-[11px] font-bold text-[#16825b]">0 unread</span>
-              </div>
-              <div className="space-y-1 py-2">
-                <div className="rounded-xl px-3 py-4 text-sm text-[#52736a]">No notifications yet.</div>
-              </div>
-              <Link href={notificationsHref} onClick={closeMenu} className="mt-1 flex items-center justify-between rounded-xl bg-[#f7fbf9] px-3 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#eef7f2]">
-                <span>View all notifications</span>
-                <ChevronRightIcon />
-              </Link>
+              {approvalNotifications || workflowNotifications ? (
+                <>
+                  {approvalNotifications ? (
+                    <>
+                      <div className="flex items-center justify-between border-b border-[#edf3f0] px-2 pb-3">
+                        <p className="text-sm font-bold text-[#06201c]">{t("approvalNotifications.title", { defaultValue: "Pending approvals" })}</p>
+                        {pendingNotificationCount !== null ? (
+                          <span className="text-xs font-semibold text-[#1f6a58]">
+                            {t("approvalNotifications.pendingCount", { count: pendingNotificationCount, defaultValue: "{{count}} pending" })}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-1 space-y-1">
+                        <Link href={`${approvalNotifications.approvalQueueHref}?type=events`} onClick={closeMenu} className="flex items-center justify-between rounded-xl px-3 py-2 text-sm text-[#1f6a58] transition hover:bg-[#eef7f2]">
+                          <span>{t("approvalNotifications.events", { defaultValue: "Events" })}</span>
+                          <span className="font-semibold">{approvalNotifications.eventCount === null
+                            ? t("approvalNotifications.countUnavailable", { defaultValue: "Unavailable" })
+                            : t("approvalNotifications.pendingCount", { count: approvalNotifications.eventCount, defaultValue: "{{count}} pending" })}</span>
+                        </Link>
+                        <Link href={`${approvalNotifications.approvalQueueHref}?type=trainings`} onClick={closeMenu} className="flex items-center justify-between rounded-xl px-3 py-2 text-sm text-[#1f6a58] transition hover:bg-[#eef7f2]">
+                          <span>{t("approvalNotifications.trainings", { defaultValue: "Trainings" })}</span>
+                          <span className="font-semibold">{approvalNotifications.trainingCount === null
+                            ? t("approvalNotifications.countUnavailable", { defaultValue: "Unavailable" })
+                            : t("approvalNotifications.pendingCount", { count: approvalNotifications.trainingCount, defaultValue: "{{count}} pending" })}</span>
+                        </Link>
+                        {approvalNotifications.tenantApplicationsHref ? (
+                          <Link href={approvalNotifications.tenantApplicationsHref} onClick={closeMenu} className="flex items-center justify-between rounded-xl px-3 py-2 text-sm text-[#1f6a58] transition hover:bg-[#eef7f2]">
+                            <span>{t("approvalNotifications.enterpriseRequests", { defaultValue: "Enterprise requests" })}</span>
+                            <span className="font-semibold">{approvalNotifications.enterpriseRequestCount === null || approvalNotifications.enterpriseRequestCount === undefined
+                              ? t("approvalNotifications.countUnavailable", { defaultValue: "Unavailable" })
+                              : t("approvalNotifications.pendingCount", { count: approvalNotifications.enterpriseRequestCount, defaultValue: "{{count}} pending" })}</span>
+                          </Link>
+                        ) : null}
+                      </div>
+                      {pendingNotificationCount === 0 && (!workflowNotifications || workflowNotifications.items.length === 0) ? (
+                        <p className="px-3 py-2 text-xs text-[#52736a]">{t("approvalNotifications.noPending", { defaultValue: "No pending approvals or Enterprise requests." })}</p>
+                      ) : null}
+                    </>
+                  ) : null}
+                      {workflowNotifications ? (
+                    <div className={approvalNotifications ? "mt-2 border-t border-[#edf3f0] pt-2" : ""}>
+                      {!approvalNotifications || workflowNotifications.items.length > 0 ? (
+                        <div className="flex items-center justify-between px-2 pb-2">
+                          <p className="text-xs font-bold uppercase tracking-[0.08em] text-[#52736a]">Notifications</p>
+                          <span className="text-xs font-semibold text-[#1f6a58]">{workflowNotifications.unreadCountError ? "Unread count unavailable" : `${workflowNotifications.unreadCount} unread`}</span>
+                        </div>
+                      ) : null}
+                      {workflowNotifications.error ? <p role="alert" className="rounded-lg bg-[#fff8f7] px-2 py-2 text-xs text-[#8f3b2f]">{workflowNotifications.error}</p> : null}
+                      {workflowNotifications.items.length > 0 ? (
+                        <div className="mt-1 space-y-1">{workflowNotifications.items.slice(0, 5).map((item) => {
+                          const review = formatReviewNotificationDetails({ notification_type: item.notification_type, category: item.category, metadata: item.metadata, data: item.metadata ?? {} });
+                          const moderation = formatReviewModerationNotificationDetails({ notification_type: item.notification_type, category: item.category, metadata: item.metadata, data: item.metadata ?? {}, title: item.title, body: item.message });
+                          const reviewSubmission = formatReviewSubmissionNotification({ notification_type: item.notification_type, category: item.category, metadata: item.metadata, data: item.metadata ?? {}, title: item.title, body: item.message });
+                          const feedback = formatEventFeedbackNotificationDetails({ notification_type: item.notification_type, category: item.category, metadata: item.metadata, data: item.metadata ?? {}, title: item.title, body: item.message });
+                          const reason = notificationReason({ data: item.metadata ?? {}, body: item.message });
+                          const title = formatReviewModerationNotificationTitle({ notification_type: item.notification_type, category: item.category, metadata: item.metadata, data: item.metadata ?? {}, title: item.title, body: item.message }) ?? item.title;
+                          return <Link key={item.id} href={item.target ?? notificationsHref} onClick={() => { workflowNotifications.onRead(item.id); closeMenu(); }} className={`block rounded-xl px-3 py-2 text-sm hover:bg-[#eef7f2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1f6a58] ${item.is_read ? "" : "bg-[#f7fbf9]"}`}><span className="block font-semibold">{reviewSubmission?.title ?? title}</span><span className={reviewSubmission ? "block whitespace-normal break-words text-xs leading-5 text-[#52736a]" : "block truncate text-xs text-[#52736a]"}>{reviewSubmission?.message ?? item.message}</span>{feedback?.attendeeName ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">Attendee: {feedback.attendeeName}</span> : null}{feedback?.eventTitle ? <span className="block text-xs font-semibold text-[#1f6a58]">Event: {feedback.eventTitle}</span> : null}{feedback?.comment ? <span className="mt-1 block whitespace-pre-wrap rounded-lg bg-[#f4faf7] p-2 text-xs text-[#31594d]">{feedback.comment}</span> : null}{moderation.actorName ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">By: {moderation.actorName}{moderation.actorRole ? ` (${moderation.actorRole})` : ""}</span> : null}{moderation.action ? <span className="block text-xs font-semibold capitalize text-[#52736a]">Action: {moderation.action.replace(/[_-]+/g, " ")}</span> : null}{moderation.itemName ? <span className="block truncate text-xs font-semibold text-[#1f6a58]">{moderation.itemType ?? "Item"}: {moderation.itemName}</span> : null}{reason ? <span className="block text-xs text-[#8a5a00]">Reason: {reason}</span> : null}{review.learnerName ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">Reviewer: {review.learnerName}</span> : null}{review.rating !== null ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">Rating: {review.rating} {"\u2605"}</span> : null}{review.itemName ? <span className="mt-1 block truncate text-xs font-semibold text-[#1f6a58]">{review.itemType ?? "Item"}: {review.itemName}</span> : null}{item.created_at ? <time className="mt-1 block text-xs text-[#7f9d94]">{formatNotificationTimestamp(item.created_at)}</time> : null}</Link>;
+                        })}</div>
+                      ) : null}
+                      <div className="mt-1 flex items-center justify-between pt-1"><button type="button" onClick={workflowNotifications.onMarkAllRead} className="px-2 text-xs font-semibold text-[#1f6a58]">Mark all read</button><Link href={notificationsHref} onClick={closeMenu} className="px-2 text-xs font-semibold text-[#1f6a58]">View all</Link></div>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <div className="border-b border-[#edf3f0] px-2 pb-3">
+                    <p className="text-sm font-bold text-[#06201c]">{t("header.notifications", { defaultValue: "Notifications" })}</p>
+                  </div>
+                  <Link href={notificationsHref} onClick={closeMenu} className="mt-1 flex items-center justify-between rounded-xl bg-[#f7fbf9] px-3 py-2 text-sm font-semibold text-[#1f6a58] transition hover:bg-[#eef7f2]">
+                    <span>{t("header.viewAllNotifications", { defaultValue: "View all notifications" })}</span>
+                    <ChevronRightIcon />
+                  </Link>
+                </>
+              )}
             </div>
           </div>
 
@@ -134,15 +211,15 @@ export function PlatformAdminHeader({
             <button type="button" onClick={() => toggleMenu("settings")} className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4]" aria-label="Settings" aria-expanded={openMenu === "settings"}>
               <SettingsIcon />
             </button>
-            <div className={`absolute right-0 top-[calc(100%+10px)] w-64 origin-top-right rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 ${openMenu === "settings" ? "pointer-events-auto scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"}`}>
+            <div className={`absolute right-0 top-[calc(100%+10px)] z-50 w-64 origin-top-right rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 ${openMenu === "settings" ? "pointer-events-auto scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"}`}>
               {settingsItems.map((item) => (
-                item.href ? (
+                item.href && !item.disabled ? (
                   <Link key={item.key} href={item.href} onClick={closeMenu} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]">
                     <span>{t(item.key)}</span>
                     <ChevronRightIcon />
                   </Link>
                 ) : (
-                  <button key={item.key} type="button" onClick={closeMenu} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]">
+                  <button key={item.key} type="button" disabled={item.disabled} aria-disabled={item.disabled || undefined} onClick={closeMenu} className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium ${item.disabled ? "cursor-not-allowed text-[#9eb0a9] opacity-80" : "text-[#06201c] hover:bg-[#f7fbf9]"}`}>
                     <span>{t(item.key)}</span>
                     <ChevronRightIcon />
                   </button>
@@ -155,20 +232,14 @@ export function PlatformAdminHeader({
             <button type="button" onClick={() => toggleMenu("profile")} className="flex h-9 w-9 items-center justify-center rounded-full bg-[#e8f6ee] font-bold text-[#1f6a58] hover:bg-[#def0e7]" aria-label="Profile" aria-expanded={openMenu === "profile"}>
               {profileInitials}
             </button>
-            <div className={`absolute right-0 top-[calc(100%+10px)] w-60 origin-top-right rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 ${openMenu === "profile" ? "pointer-events-auto scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"}`}>
-              {profileItems.map((item) => (
-                item === "View Profile" && profileHref ? (
-                  <Link key={item} href={profileHref} onClick={closeMenu} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]">
-                    <span>{item}</span>
-                    <ChevronRightIcon />
-                  </Link>
-                ) : (
-                  <button key={item} type="button" onClick={closeMenu} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]">
-                    <span>{item}</span>
-                    <ChevronRightIcon />
-                  </button>
-                )
-              ))}
+            <div className={`absolute right-0 top-[calc(100%+10px)] z-50 w-60 origin-top-right rounded-2xl border border-[#e1ebe6] bg-white p-2 shadow-[0_18px_30px_rgba(7,53,45,0.12)] transition duration-150 ${openMenu === "profile" ? "pointer-events-auto scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"}`}>
+              {profileName || profileEmail ? <div className="border-b border-[#edf3f0] px-3 pb-2 pt-1"><p className="truncate text-sm font-bold text-[#06201c]">{profileName || "Profile"}</p>{profileEmail ? <p className="truncate text-xs text-[#52736a]">{profileEmail}</p> : null}</div> : null}
+              {profileHref ? (
+                <Link href={profileHref} onClick={closeMenu} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]">
+                  <span>View Profile</span>
+                  <ChevronRightIcon />
+                </Link>
+              ) : null}
               <button type="button" onClick={() => { closeMenu(); void onLogout?.(); }} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-[#06201c] hover:bg-[#f7fbf9]">
                 <span>Logout</span>
                 <ChevronRightIcon />

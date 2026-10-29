@@ -2,16 +2,18 @@
 
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { keepPreviousData } from "@tanstack/react-query";
-import Link from "next/link";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useTranslation } from "react-i18next";
+import { getPlatformEnterpriseById } from "@ihp/platform-enterprises";
 import { listTrainings } from "@ihp/enterprise-trainings";
 import type { TrainingListItem } from "@ihp/enterprise-trainings";
+import { listPlatformReviewsManage } from "./platform-reviews.service";
+import { PlatformModuleReviewsTab } from "./PlatformModuleReviewsTab";
+import PlatformTrainingDetailsModal from "./PlatformTrainingDetailsModal";
 
 const filters = ["All", "draft", "published", "archived"] as const;
 const PAGE_SIZE = 20;
-
-/** Enterprise create lives at /admin/trainings/create (enterprise route in shell/enterprise-admin), not platform. */
-const createTrainingHref = "/admin/trainings/create";
 
 function pillClass(status: string) {
   const s = status.toLowerCase();
@@ -21,27 +23,37 @@ function pillClass(status: string) {
   return "bg-[#eef4ff] text-[#2563eb]";
 }
 
-function TrainingCard({ training }: { training: TrainingListItem }) {
+function TrainingCard({ training, onOpen }: { training: TrainingListItem; onOpen: (trigger: HTMLElement) => void }) {
+  const { t } = useTranslation("platform");
   const primaryImage = typeof training.primary_image === "string" ? training.primary_image.trim() : "";
   const hasImage = primaryImage.length > 0;
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg">
+    <article role="button" tabIndex={0} aria-label={`View details for ${training.title}`} onClick={(event) => onOpen(event.currentTarget)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(event.currentTarget); } }} className="group overflow-hidden rounded-2xl border border-[#e1ebe6] bg-white shadow-sm outline-none transition-all hover:-translate-y-1 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2">
       <div className={`relative h-[140px] p-5 ${hasImage ? "bg-cover bg-center" : "bg-gradient-to-br from-[#1f6a58] via-[#5a9b78] to-[#c3d8a6]"}`} style={hasImage ? { backgroundImage: `url(${JSON.stringify(primaryImage)})` } : undefined}>
         {hasImage ? <div className="absolute inset-0 bg-gradient-to-br from-[#06201c]/55 via-[#0c382e]/40 to-[#1f6a58]/28" /> : null}
-        <span className={`relative rounded-full px-3 py-1 text-xs font-bold ${hasImage ? "bg-white/90 text-[#06201c]" : "bg-white/90 text-[#1f6a58]"}`}>{training.category || "—"}</span>
-        <span className={`absolute right-4 top-4 rounded-full px-3 py-1 text-xs font-bold ${pillClass(training.status)}`}>{training.status}</span>
+        <span className={`relative z-10 rounded-full px-3 py-1 text-xs font-bold ${hasImage ? "bg-white/90 text-[#06201c]" : "bg-white/90 text-[#1f6a58]"}`}>{training.category || "—"}</span>
+        <span className={`absolute right-4 top-4 z-10 rounded-full px-3 py-1 text-xs font-bold ${pillClass(training.status)}`}>{training.status}</span>
       </div>
       <div className="p-5">
-        <h3 className="text-lg font-bold leading-tight text-[#06201c]">{training.title}</h3>
+        <h3 className="break-words text-lg font-bold leading-tight text-[#06201c]">{training.title}</h3>
+        <div className="mt-2 flex flex-wrap items-baseline gap-x-1.5 text-sm"><span className="font-semibold text-[#31594d]">{t("trainings.enterpriseLabel", { defaultValue: "Enterprise:" })}</span><TrainingEnterpriseName enterpriseId={training.enterprise_id} fallback={training.enterprise_name} /></div>
+        {typeof training.reviews_count === "number" && training.reviews_count > 0 && typeof training.average_rating === "number" && Number.isFinite(training.average_rating) ? <p className="mt-2"><span className="inline-flex items-center gap-1 rounded-full bg-[#fff8e8] px-3 py-1 text-sm font-semibold text-[#805900]" aria-label={`Average rating ${training.average_rating.toFixed(1)} out of 5 from ${training.reviews_count} reviews`}>{training.average_rating.toFixed(1)} <span aria-hidden="true">★</span><span className="text-xs font-medium">({training.reviews_count})</span></span></p> : null}
         <p className="mt-2 line-clamp-2 text-sm text-[#52736a]">{training.description || "—"}</p>
         <div className="mt-4 flex items-center justify-between text-sm">
-          <span className="text-[#52736a]">{training.delivery_mode || "—"} · {training.course_type || "—"}</span>
+          <span className="text-[#52736a]">{training.delivery_mode || "—"}</span>
           <span className="font-semibold text-[#06201c]">{training.price ? `${training.price} ${training.currency ?? ""}`.trim() : "—"}</span>
         </div>
       </div>
     </article>
   );
+}
+
+function TrainingEnterpriseName({ enterpriseId, fallback }: { enterpriseId: string; fallback?: string | null }) {
+  const { t } = useTranslation("platform");
+  const enterpriseQuery = useQuery({ queryKey: ["platform", "training-enterprise", enterpriseId], queryFn: () => getPlatformEnterpriseById(enterpriseId), enabled: Boolean(enterpriseId), staleTime: 5 * 60_000, retry: 1 });
+  const resolvedName = enterpriseQuery.data?.business_legal_name || enterpriseQuery.data?.business_short_name || enterpriseQuery.data?.name || fallback?.trim();
+  return <span className="min-w-0 break-words text-[#52736a]">{resolvedName || (enterpriseQuery.isPending ? t("trainings.enterpriseLoading", { defaultValue: "Loading enterprise…" }) : t("trainings.enterpriseUnavailable", { defaultValue: "Enterprise information unavailable" }))}</span>;
 }
 
 /**
@@ -51,12 +63,64 @@ export default function PlatformTrainingsScreen() {
   const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30_000 } } }));
   return (
     <QueryClientProvider client={client}>
-      <PlatformTrainingsContent />
+      <Suspense fallback={<div role="status" className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{[1, 2, 3].map((item) => <div key={item} className="h-[290px] animate-pulse rounded-xl bg-[#edf3f0]" />)}</div>}>
+        <PlatformTrainingsContent />
+      </Suspense>
     </QueryClientProvider>
   );
 }
 
 function PlatformTrainingsContent() {
+  const { t } = useTranslation("platform");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [view, setView] = useState<"trainings" | "reviews">(() => searchParams.get("view") === "reviews" ? "reviews" : "trainings");
+  const [reviewItemId, setReviewItemId] = useState<string | null>(() => searchParams.get("item_id"));
+  const [reviewId, setReviewId] = useState<string | null>(() => searchParams.get("review_id"));
+  const [reviewStatus, setReviewStatus] = useState<"pending" | "approved" | "rejected" | "deleted" | "all">(() => {
+    const requested = searchParams.get("status");
+    if (requested === "pending" || requested === "approved" || requested === "rejected" || requested === "deleted") return requested;
+    return "all";
+  });
+  const [showReviewAudit, setShowReviewAudit] = useState(() => searchParams.get("show_audit") === "true");
+  const skipNextSearchParamsSync = useRef(false);
+  const [selectedTrainingId, setSelectedTrainingId] = useState<string | null>(null);
+  const [selectedReviewId, setSelectedReviewId] = useState<string | null>(null);
+  const [selectedReviewStatus, setSelectedReviewStatus] = useState<"pending" | "approved" | "rejected" | "deleted" | "all">("all");
+  const [showSelectedReviewAudit, setShowSelectedReviewAudit] = useState(false);
+  const triggerRef = useRef<HTMLElement | null>(null);
+
+  const openTraining = (trainingId: string, trigger?: HTMLElement) => {
+    if (trigger) triggerRef.current = trigger;
+    setSelectedReviewId(null);
+    setSelectedReviewStatus("all");
+    setShowSelectedReviewAudit(false);
+    setSelectedTrainingId(trainingId);
+  };
+  const closeTraining = () => {
+    setSelectedTrainingId(null);
+    setSelectedReviewId(null);
+    setShowSelectedReviewAudit(false);
+    window.setTimeout(() => triggerRef.current?.focus(), 0);
+  };
+  const selectView = (nextView: "trainings" | "reviews") => {
+    setView(nextView);
+    setReviewItemId(null);
+    setReviewId(null);
+    setReviewStatus("all");
+    setShowReviewAudit(false);
+
+    const nextParams = new URLSearchParams(searchParams.toString());
+    if (nextView === "reviews") nextParams.set("view", "reviews");
+    else for (const key of ["view", "item_id", "review_id", "status", "show_audit"]) nextParams.delete(key);
+    const query = nextParams.toString();
+    const target = `${pathname}${query ? `?${query}` : ""}`;
+    if (target !== `${pathname}${searchParams.size ? `?${searchParams.toString()}` : ""}`) {
+      skipNextSearchParamsSync.current = true;
+      router.replace(target, { scroll: false });
+    }
+  };
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [filter, setFilter] = useState<(typeof filters)[number]>("All");
@@ -70,6 +134,44 @@ function PlatformTrainingsContent() {
     return () => window.clearTimeout(id);
   }, [query]);
 
+  useEffect(() => {
+    if (skipNextSearchParamsSync.current) {
+      skipNextSearchParamsSync.current = false;
+      return;
+    }
+    const reviewItem = searchParams.get("reviewItem");
+    if (reviewItem) {
+      setView("trainings");
+      setSelectedTrainingId(reviewItem);
+      setSelectedReviewId(searchParams.get("review_id"));
+      const requestedStatus = searchParams.get("status");
+      setSelectedReviewStatus(requestedStatus === "pending" || requestedStatus === "approved" || requestedStatus === "rejected" || requestedStatus === "deleted" ? requestedStatus : "all");
+      setShowSelectedReviewAudit(searchParams.get("show_audit") === "true");
+    }
+    if (searchParams.get("view") === "reviews") {
+      setView("reviews");
+      setReviewItemId(searchParams.get("item_id"));
+      setReviewId(searchParams.get("review_id"));
+      const requestedStatus = searchParams.get("status");
+      if (requestedStatus === "pending" || requestedStatus === "approved" || requestedStatus === "rejected" || requestedStatus === "deleted") {
+        setReviewStatus(requestedStatus);
+      } else {
+        setReviewStatus("all");
+      }
+      setShowReviewAudit(searchParams.get("show_audit") === "true");
+    } else {
+      setView("trainings");
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (searchParams.get("view") !== "reviews" || !["item_id", "review_id", "status", "show_audit"].some((key) => searchParams.has(key))) return;
+    const cleanParams = new URLSearchParams(searchParams.toString());
+    for (const key of ["item_id", "review_id", "status", "show_audit"]) cleanParams.delete(key);
+    skipNextSearchParamsSync.current = true;
+    router.replace(`${pathname}?${cleanParams.toString()}`, { scroll: false });
+  }, [pathname, router, searchParams]);
+
   const q = useQuery({
     queryKey: ["trainings", "platform-list", debounced, filter, page],
     queryFn: () => listTrainings({ search: debounced || undefined, status: filter === "All" ? undefined : filter, page, page_size: PAGE_SIZE }),
@@ -78,6 +180,7 @@ function PlatformTrainingsContent() {
   });
 
   const pagination = q.data?.pagination;
+  const pendingReviewsQuery = useQuery({ queryKey: ["platform", "reviews", "training", "pending-count"], queryFn: () => listPlatformReviewsManage({ module: "training", status: "pending", page: 1, pageSize: 1 }), staleTime: 30_000, retry: 1 });
 
   return (
     <>
@@ -86,15 +189,13 @@ function PlatformTrainingsContent() {
           <h2 className="text-2xl font-bold text-[#06201c]">Training Management</h2>
           <p className="mt-1 text-sm text-[#52736a]">Create and manage training courses.</p>
         </div>
-        {createTrainingHref ? (
-          <Link
-            href={createTrainingHref}
-            className="inline-flex h-12 items-center justify-center rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm transition hover:bg-[#195646]"
-          >
-            + Create Course
-          </Link>
-        ) : null}
       </div>
+
+      <div className="mt-5 flex gap-2 border-b border-[#e1ebe6]" role="tablist" aria-label={t("reviews.filterStatus")}>
+        <button type="button" role="tab" aria-selected={view === "trainings"} onClick={() => selectView("trainings")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === "trainings" ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#52736a]"}`}>{t("reviews.tabs.trainings")}</button>
+        <button type="button" role="tab" aria-selected={view === "reviews"} onClick={() => selectView("reviews")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === "reviews" ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#52736a]"}`}>{t("reviews.tabs.received")}</button>
+      </div>
+      {view === "reviews" ? <PlatformModuleReviewsTab module="training" itemId={reviewItemId} reviewId={reviewId} initialStatus={reviewStatus} openAuditOnLoad={showReviewAudit} /> : <>
 
       <div className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -146,7 +247,7 @@ function PlatformTrainingsContent() {
         <>
           <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3" aria-busy={q.isFetching}>
             {(q.data?.items ?? []).map((t) => (
-              <TrainingCard key={t.id} training={t} />
+              <TrainingCard key={t.id} training={t} onOpen={(trigger) => openTraining(t.id, trigger)} />
             ))}
           </div>
           <nav aria-label="Trainings pagination" className="mt-6 flex flex-col gap-3 rounded-2xl border border-[#e1ebe6] bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
@@ -164,7 +265,8 @@ function PlatformTrainingsContent() {
           </nav>
         </>
       )}
+      {selectedTrainingId ? <PlatformTrainingDetailsModal trainingId={selectedTrainingId} reviewId={selectedReviewId} reviewStatus={selectedReviewStatus} openReviewAudit={showSelectedReviewAudit} onClose={closeTraining} /> : null}
+      </>}
     </>
   );
 }
-

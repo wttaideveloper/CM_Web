@@ -1,6 +1,7 @@
 "use client";
 
 import type { CreateProgramFormValues } from "./create-program-form";
+import { DateTimeLocalInput } from "@ihp/ui";
 
 type UpdateForm = <Key extends keyof CreateProgramFormValues>(key: Key, value: CreateProgramFormValues[Key]) => void;
 
@@ -58,12 +59,12 @@ export function ProgramScheduleSection({ values, update, errors }: SectionProps)
     <section className="space-y-5">
       <SectionHeading title="Schedule" description="Set the program window and enrolment period." />
       <div className="grid gap-4 md:grid-cols-2">
-        <label className={labelClass}>Start date<input type="datetime-local" value={values.start_date} onChange={(event) => update("start_date", event.target.value)} className={inputClass} /><FieldError error={errors.start_date} /></label>
-        <label className={labelClass}>End date<input type="datetime-local" value={values.end_date} onChange={(event) => update("end_date", event.target.value)} className={inputClass} /><FieldError error={errors.end_date} /></label>
+        <label className={labelClass}>Start date<DateTimeLocalInput value={values.start_date} onChange={(value) => update("start_date", value)} className={inputClass} /><FieldError error={errors.start_date} /></label>
+        <label className={labelClass}>End date<DateTimeLocalInput value={values.end_date} onChange={(value) => update("end_date", value)} className={inputClass} /><FieldError error={errors.end_date} /></label>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
-        <label className={labelClass}>Enrolment opens<input type="datetime-local" value={values.enrolment_start} onChange={(event) => update("enrolment_start", event.target.value)} className={inputClass} /><FieldError error={errors.enrolment_start} /></label>
-        <label className={labelClass}>Enrolment closes<input type="datetime-local" value={values.enrolment_end} onChange={(event) => update("enrolment_end", event.target.value)} className={inputClass} /><FieldError error={errors.enrolment_end} /></label>
+        <label className={labelClass}>Enrolment opens<DateTimeLocalInput value={values.enrolment_start} onChange={(value) => update("enrolment_start", value)} className={inputClass} /><FieldError error={errors.enrolment_start} /></label>
+        <label className={labelClass}>Enrolment closes<DateTimeLocalInput value={values.enrolment_end} onChange={(value) => update("enrolment_end", value)} className={inputClass} /><FieldError error={errors.enrolment_end} /></label>
       </div>
     </section>
   );

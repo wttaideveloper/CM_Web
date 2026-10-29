@@ -1,0 +1,136 @@
+export type WorkflowNotification = {
+  id: string;
+  notification_id: string;
+  user_id: string;
+  is_read: boolean;
+  read_at: string | null;
+  delivered_at: string | null;
+  title: string;
+  message: string;
+  notification_type: string;
+  category: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+export type WorkflowNotificationHistoryResponse = {
+  items: WorkflowNotification[];
+  pagination: { page: number; page_size: number; total: number; total_pages: number };
+};
+
+export type WorkflowNotificationClient = {
+  list: (page?: number, pageSize?: number) => Promise<WorkflowNotificationHistoryResponse>;
+  unreadCount: () => Promise<{ unread_count: number }>;
+  markRead: (id: string) => Promise<WorkflowNotification>;
+  markAllRead: () => Promise<{ marked_read: number }>;
+};
+
+export type WorkflowRequest = <T>(path: string, init?: RequestInit) => Promise<T>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function firstString(record: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    if (typeof record[key] === "string") return record[key] as string;
+  }
+  return "";
+}
+
+function normalizeWorkflowNotification(candidate: unknown): WorkflowNotification | null {
+  if (!isRecord(candidate)) return null;
+  const id = firstString(candidate, "id", "notification_id");
+  if (!id) return null;
+  const metadata = {
+    ...candidate,
+    ...(isRecord(candidate.data) ? candidate.data : {}),
+    ...(isRecord(candidate.metadata) ? candidate.metadata : {}),
+  };
+  const readAt = candidate.read_at;
+  const deliveredAt = candidate.delivered_at;
+  return {
+    id,
+    notification_id: firstString(candidate, "notification_id", "id") || id,
+    user_id: firstString(candidate, "user_id"),
+    is_read: candidate.is_read === true,
+    read_at: typeof readAt === "string" ? readAt : null,
+    delivered_at: typeof deliveredAt === "string" ? deliveredAt : null,
+    title: firstString(candidate, "title"),
+    message: firstString(candidate, "message", "body"),
+    notification_type: firstString(candidate, "notification_type", "type") || "unknown",
+    category: firstString(candidate, "category") || firstString(metadata, "category"),
+    metadata,
+    created_at: firstString(candidate, "created_at"),
+  };
+}
+
+function normalizeHistory(response: unknown, page: number, pageSize: number): WorkflowNotificationHistoryResponse {
+  const envelope = isRecord(response) && (isRecord(response.data) || Array.isArray(response.data)) ? response.data : response;
+  const rows = Array.isArray(response)
+    ? response
+    : Array.isArray(envelope)
+      ? envelope
+      : isRecord(envelope) && Array.isArray(envelope.items)
+        ? envelope.items
+        : isRecord(envelope) && Array.isArray(envelope.notifications)
+          ? envelope.notifications
+          : isRecord(envelope) && (typeof envelope.id === "string" || typeof envelope.notification_id === "string")
+            ? [envelope]
+            : null;
+  if (!rows) throw new Error("Invalid workflow notification history response.");
+
+  const envelopeRecord = isRecord(envelope) ? envelope : {};
+  const responseRecord = isRecord(response) ? response : {};
+  const pagination = isRecord(envelopeRecord.pagination)
+    ? envelopeRecord.pagination
+    : isRecord(responseRecord.meta) && isRecord(responseRecord.meta.pagination)
+      ? responseRecord.meta.pagination
+      : isRecord(responseRecord.meta)
+        ? responseRecord.meta
+        : {};
+  const items = rows
+    .map(normalizeWorkflowNotification)
+    .filter((item): item is WorkflowNotification => item !== null)
+    .map((item, index) => ({ item, index, timestamp: Date.parse(item.created_at) }))
+    .sort((left, right) => {
+      const leftTime = Number.isFinite(left.timestamp) ? left.timestamp : Number.NEGATIVE_INFINITY;
+      const rightTime = Number.isFinite(right.timestamp) ? right.timestamp : Number.NEGATIVE_INFINITY;
+      return rightTime - leftTime || left.index - right.index;
+    })
+    .map(({ item }) => item);
+
+  return {
+    items,
+    pagination: {
+      page: Number(pagination.page) || page,
+      page_size: Number(pagination.page_size) || pageSize,
+      total: Number(pagination.total) || items.length,
+      total_pages: Number(pagination.total_pages) || (items.length > 0 ? 1 : 0),
+    },
+  };
+}
+
+/** Creates a client for the authenticated workflow notification store. */
+export function createWorkflowNotificationClient(request: WorkflowRequest): WorkflowNotificationClient {
+  return {
+    list: async (page = 1, pageSize = 20) =>
+      normalizeHistory(await request<unknown>(`/notifications?page=${page}&page_size=${pageSize}`), page, pageSize),
+    unreadCount: () => request("/notifications/unread-count"),
+    markRead: (id) => request(`/notifications/${encodeURIComponent(id)}/read`, { method: "PUT", body: "{}" }),
+    markAllRead: () => request("/notifications/read-all", { method: "PUT", body: "{}" }),
+  };
+}
+
+/** Performs a same-origin workflow notification request without exposing credentials. */
+export async function browserWorkflowRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`/api/platform-super-admin${path}`, { ...init, credentials: "include", cache: "no-store" });
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = body && typeof body === "object" && "detail" in body && typeof body.detail === "string"
+      ? body.detail
+      : "Unable to load workflow notifications.";
+    throw new Error(detail);
+  }
+  return body as T;
+}

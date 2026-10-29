@@ -100,7 +100,7 @@ const enterpriseHeaderConfig: ShellHeaderConfig = {
   messagesHref: ROUTE_PATHS.enterprise.messages,
   profileInitials: "authenticated-user",
   localLogoutHref: null,
-  realtime: false,
+  realtime: true,
   settingsItems: sharedSettingsItems,
   profileItems: enterpriseProfileItems,
 };

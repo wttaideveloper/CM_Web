@@ -32,3 +32,24 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.form-configuration-builder-inspector button:not(:disabled) {
+  transition: box-shadow 150ms ease, filter 150ms ease, transform 150ms ease !important;
+}
+
+.form-configuration-builder-inspector button:not(:disabled):hover {
+  filter: brightness(0.94) saturate(1.08) !important;
+  box-shadow: 0 0 0 2px rgb(31 106 88 / 30%) inset, 0 4px 10px rgb(7 53 45 / 18%) !important;
+  transform: translateY(-1px) !important;
+}
+
+.form-configuration-builder-inspector button:focus-visible {
+  outline: 2px solid #1f6a58;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .form-configuration-builder-inspector button:not(:disabled) {
+    transition: none;
+  }
+}

@@ -3,6 +3,7 @@ export { TenantProvider, useTenant } from "./TenantContext";
 export {
   getTenantMe,
   getTenantMembers,
+  isTenantMemberPermissionDenied,
   getTenantMember,
   getTenantPermissions,
   getTenantRoles,
@@ -15,6 +16,7 @@ export {
   type TenantMemberActionResponse,
   type TenantMemberResponse,
   type TenantDetails,
+  TenantApiError,
   type TenantMember,
   type TenantListResponse,
   type TenantMeResponse,

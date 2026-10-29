@@ -1,7 +1,9 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { AuthProvider } from "@ihp/auth";
 import { AdminSocketProvider } from "@/contexts/AdminSocketContext";
@@ -14,6 +16,7 @@ import {
   isPublicAuthRoute,
   isRealtimeCompatibilityRoute,
   isRegistrationRoute,
+  ROUTE_PATHS,
 } from "@/routing/route-ownership";
 
 export function PublicAuthProviders({ children }: { children: ReactNode }) {
@@ -36,22 +39,37 @@ export function EnterpriseProviders({ children }: { children: ReactNode }) {
   return (
     <AuthProvider>
       <ChatAuthProvider>
-        <TenantProvider>
-          <CurrentEnterpriseProvider>{children}</CurrentEnterpriseProvider>
-        </TenantProvider>
+        <AdminSocketProvider>
+          <TenantProvider>
+            <CurrentEnterpriseProvider>{children}</CurrentEnterpriseProvider>
+          </TenantProvider>
+        </AdminSocketProvider>
       </ChatAuthProvider>
     </AuthProvider>
   );
 }
 
 export function RealtimeCompatibilityProviders({ children }: { children: ReactNode }) {
-  return (
+  const pathname = usePathname();
+  const content = (
     <AuthProvider>
       <ChatAuthProvider>
         <AdminSocketProvider>{children}</AdminSocketProvider>
       </ChatAuthProvider>
     </AuthProvider>
   );
+
+  if (pathname !== ROUTE_PATHS.enterprise.messages) {
+    return content;
+  }
+
+  return <MessagingQueryProvider>{content}</MessagingQueryProvider>;
+}
+
+function MessagingQueryProvider({ children }: { children: ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: 1 } } }));
+
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }
 
 function RouteScopedProviders({ children }: { children: ReactNode }) {

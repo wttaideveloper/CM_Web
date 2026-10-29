@@ -26,10 +26,80 @@ export function formatDetailDateTime(value: string | null | undefined): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(parsed);
 }
 
+/** Finds the timestamp from supported moderation-history response field names. */
+export function getTrainingModerationTimestamp(record: Record<string, unknown>): string | null {
+  const timestampFields = [
+    "created_at",
+    "performed_at",
+    "timestamp",
+    "createdAt",
+    "performedAt",
+    "reviewed_at",
+    "changed_at",
+    "created_on",
+    "updated_at",
+    "updated_on",
+    "updatedAt",
+    "action_at",
+    "actionAt",
+    "date_time",
+    "datetime",
+    "reviewed_on",
+    "activity_at",
+    "occurred_at",
+    "event_at",
+    "decision_at",
+  ];
+
+  for (const field of timestampFields) {
+    const value = record[field];
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      const date = new Date(value);
+      if (Number.isFinite(date.getTime())) return date.toISOString();
+    }
+  }
+
+  for (const field of ["metadata", "details", "audit", "event"]) {
+    const nested = record[field];
+    if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+      const timestamp = getTrainingModerationTimestamp(nested as Record<string, unknown>);
+      if (timestamp) return timestamp;
+    }
+  }
+
+  return null;
+}
+
 /** Returns the date-only portion of a datetime. */
 export function formatDetailDate(value: string | null | undefined): string {
   const formatted = formatDetailDateTime(value);
   return formatted === "Not provided" ? formatted : formatted.split(", ")[0] ?? formatted;
+}
+
+/** Formats the Training schedule date without timezone conversion, preserving the date selected by the owner. */
+export function formatTrainingScheduleDate(value: string | null | undefined): string {
+  if (!value) return "Not provided";
+  const isoDate = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoDate) return `${isoDate[2]}-${isoDate[3]}-${isoDate[1]}`;
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime())
+    ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(parsed)
+    : value;
+}
+
+/** Formats an API time value for the Training schedule while preserving unrecognized legacy values. */
+export function formatTrainingScheduleTime(value: string | null | undefined): string {
+  if (!value) return "Not provided";
+  const time = value.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!time) return value;
+  const hours = Number(time[1]);
+  const minutes = Number(time[2]);
+  if (hours > 23 || minutes > 59) return value;
+  const date = new Date(2000, 0, 1, hours, minutes);
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
 }
 
 /** Formats a currency amount, leaving backend strings untouched when the value is not numeric. */

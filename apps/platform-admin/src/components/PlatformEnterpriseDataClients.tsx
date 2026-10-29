@@ -1,6 +1,7 @@
 "use client";
 
 import { PlatformAttributesScreen } from "@ihp/platform-attributes";
+import { useParams } from "next/navigation";
 import { EnterpriseEditScreen } from "@ihp/enterprises";
 import {
   ProductCreateScreen,
@@ -14,6 +15,7 @@ import {
   ServiceEditScreen,
   ServicesListScreen,
 } from "@ihp/services";
+import { PlatformCatalogManagement } from "./PlatformCatalogManagement";
 import {
   getPlatformEnterpriseById,
   getPlatformEnterpriseLocationById,
@@ -31,7 +33,7 @@ export function PlatformEnterpriseEditWithEnterpriseData() {
 }
 
 export function PlatformProductsListWithEnterpriseData() {
-  return <ProductsListScreen enterprisesLoader={getPlatformEnterprises} />;
+  return <PlatformCatalogManagement module="product"><ProductsListScreen enterprisesLoader={getPlatformEnterprises} /></PlatformCatalogManagement>;
 }
 
 export function PlatformProductCreateWithEnterpriseData() {
@@ -39,7 +41,8 @@ export function PlatformProductCreateWithEnterpriseData() {
 }
 
 export function PlatformProductDetailsWithEnterpriseData() {
-  return <ProductDetailsScreen enterprisesLoader={getPlatformEnterprises} enterpriseLocationLoader={getPlatformEnterpriseLocationById} />;
+  const params = useParams<{ id: string }>();
+  return <PlatformCatalogManagement module="product" itemId={params.id}><ProductDetailsScreen enterprisesLoader={getPlatformEnterprises} enterpriseLocationLoader={getPlatformEnterpriseLocationById} /></PlatformCatalogManagement>;
 }
 
 export function PlatformProductEditWithEnterpriseData() {
@@ -47,7 +50,7 @@ export function PlatformProductEditWithEnterpriseData() {
 }
 
 export function PlatformServicesListWithEnterpriseData() {
-  return <ServicesListScreen enterprisesLoader={getPlatformEnterprises} />;
+  return <PlatformCatalogManagement module="service"><ServicesListScreen enterprisesLoader={getPlatformEnterprises} /></PlatformCatalogManagement>;
 }
 
 export function PlatformServiceCreateWithEnterpriseData() {
@@ -55,7 +58,8 @@ export function PlatformServiceCreateWithEnterpriseData() {
 }
 
 export function PlatformServiceDetailsWithEnterpriseData() {
-  return <ServiceDetailsScreen enterprisesLoader={getPlatformEnterprises} enterpriseLocationLoader={getPlatformEnterpriseLocationById} />;
+  const params = useParams<{ id: string }>();
+  return <PlatformCatalogManagement module="service" itemId={params.id}><ServiceDetailsScreen enterprisesLoader={getPlatformEnterprises} enterpriseLocationLoader={getPlatformEnterpriseLocationById} /></PlatformCatalogManagement>;
 }
 
 export function PlatformServiceEditWithEnterpriseData() {

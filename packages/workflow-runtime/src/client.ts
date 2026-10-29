@@ -74,6 +74,9 @@ export class WorkflowApiError extends Error {
 export async function requestWorkflowApi<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const method = options.method ?? "GET";
   const requestUrl = new URL(path, window.location.origin);
+  if (requestUrl.pathname.startsWith("/api/v1/forms")) requestUrl.pathname = requestUrl.pathname.replace("/api/v1/forms", "/api/platform-super-admin/forms");
+  if (requestUrl.pathname.startsWith("/api/v1/workflows")) requestUrl.pathname = requestUrl.pathname.replace("/api/v1/workflows", "/api/platform-super-admin/workflows");
+  if (requestUrl.pathname.startsWith("/api/v1/media")) requestUrl.pathname = requestUrl.pathname.replace("/api/v1/media", "/api/platform-super-admin/media");
   const endpoint = `${requestUrl.pathname}${requestUrl.search}`;
   const timestamp = new Date().toISOString();
   const response = await fetch(endpoint, {

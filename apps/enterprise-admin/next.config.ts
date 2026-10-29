@@ -1,11 +1,16 @@
 import type { NextConfig } from "next";
 
-const authApiBaseUrl = process.env.AUTH_API_BASE_URL;
+const authApiBaseUrl =
+  process.env.AUTH_API_BASE_URL ?? "https://admin.apis.invigor8.app";
 const chatApiBaseUrl = process.env.CHAT_API_BASE_URL;
 const eventsApiBaseUrl = process.env.EVENTS_API_BASE_URL;
 const workflowApiBaseUrl = process.env.WORKFLOW_API_BASE_URL;
 
 const nextConfig: NextConfig = {
+  skipTrailingSlashRedirect: true,
+  experimental: {
+    proxyClientMaxBodySize: "310mb",
+  },
   transpilePackages: [
     "@ihp/auth",
     "@ihp/attributes",
@@ -32,22 +37,29 @@ const nextConfig: NextConfig = {
   async rewrites() {
     const fallback = [];
 
-    if (authApiBaseUrl) {
-      fallback.push(
-        {
-          source: "/api/v1/auth/:path*",
-          destination: `${authApiBaseUrl}/api/v1/auth/:path*`,
-        },
-        {
-          source: "/api/v1/tenant/:path*",
-          destination: `${authApiBaseUrl}/api/v1/tenant/:path*`,
-        },
-      );
-    }
+    fallback.push(
+      {
+        source: "/api/v1/auth/:path*",
+        destination: `${authApiBaseUrl}/api/v1/auth/:path*`,
+      },
+      {
+        source: "/api/v1/tenant/:path*",
+        destination: `${authApiBaseUrl}/api/v1/tenant/:path*`,
+      },
+    );
 
     if (chatApiBaseUrl) {
       const chatBaseHttps = chatApiBaseUrl.replace(/^http:/, "https:");
+      const chatApiV1Base = /\/api\/v1\/?$/.test(chatBaseHttps) ? chatBaseHttps.replace(/\/$/, "") : `${chatBaseHttps.replace(/\/$/, "")}/api/v1`;
       fallback.push(
+        {
+          source: "/api/v1/users/me/notifications",
+          destination: `${chatApiV1Base}/users/me/notifications`,
+        },
+        {
+          source: "/api/v1/users/me/notifications/:path*",
+          destination: `${chatApiV1Base}/users/me/notifications/:path*`,
+        },
         {
           source: "/api/v1/trainings/form-configuration/:path*",
           destination: `${chatBaseHttps}/trainings/form-configuration/:path*`,
@@ -117,8 +129,20 @@ const nextConfig: NextConfig = {
           destination: `${chatApiBaseUrl}/trainings/`,
         },
         {
+          source: "/api/v1/reviews/:path*",
+          destination: `${chatApiBaseUrl}/reviews/:path*`,
+        },
+        {
           source: "/api/v1/trainings/:path*",
           destination: `${chatApiBaseUrl}/trainings/:path*`,
+        },
+        {
+          source: "/api/v1/training-categories",
+          destination: `${chatApiBaseUrl}/training-categories/`,
+        },
+        {
+          source: "/api/v1/training-categories/:path*",
+          destination: `${chatApiBaseUrl}/training-categories/:path*`,
         },
         {
           source: "/api/v1/search/trainings",
@@ -182,6 +206,15 @@ const nextConfig: NextConfig = {
 
     if (eventsApiBaseUrl) {
       fallback.push(
+        // Preserve the documented collection slash before proxying multipart requests.
+        {
+          source: "/api/v1/events/media",
+          destination: `${eventsApiBaseUrl}/api/v1/events/media/`,
+        },
+        {
+          source: "/api/v1/events/media/",
+          destination: `${eventsApiBaseUrl}/api/v1/events/media/`,
+        },
         {
           source: "/api/v1/events",
           destination: `${eventsApiBaseUrl}/api/v1/events/`,
@@ -193,6 +226,14 @@ const nextConfig: NextConfig = {
         {
           source: "/api/v1/event-categories",
           destination: `${eventsApiBaseUrl}/api/v1/event-categories/`,
+        },
+        {
+          source: "/api/v1/event-types",
+          destination: `${eventsApiBaseUrl}/api/v1/event-types/`,
+        },
+        {
+          source: "/api/v1/event-types/:path*",
+          destination: `${eventsApiBaseUrl}/api/v1/event-types/:path*`,
         },
       );
     }

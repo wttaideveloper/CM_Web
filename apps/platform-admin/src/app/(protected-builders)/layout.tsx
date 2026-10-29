@@ -1,16 +1,19 @@
-import { AuthProvider } from "@ihp/auth";
+"use client";
+
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WorkflowAdminProvider } from "@ihp/workflow-admin";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import PlatformBuilderAuthGate from "@/components/PlatformBuilderAuthGate";
 
-/** Mounts Web Auth only for the temporary Platform builder routes. */
+/** Mounts Web Auth for the protected Platform builder routes. */
 export default function ProtectedBuildersLayout({ children }: { children: ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }));
   return (
-    <AuthProvider>
+    <QueryClientProvider client={queryClient}>
       <WorkflowAdminProvider>
         <PlatformBuilderAuthGate>{children}</PlatformBuilderAuthGate>
       </WorkflowAdminProvider>
-    </AuthProvider>
+    </QueryClientProvider>
   );
 }

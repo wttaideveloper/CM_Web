@@ -1,3 +1,4 @@
+import { authenticatedFetch } from "@ihp/auth";
 import type {
   CreateEnterpriseLocationPayload,
   EnterpriseLocationDto,
@@ -5,6 +6,7 @@ import type {
 } from "../types/location.types";
 
 const ENTERPRISES_API_BASE = "/api/v1";
+const fetch = authenticatedFetch;
 
 type EnterpriseLocationListResponse =
   | EnterpriseLocationDto[]

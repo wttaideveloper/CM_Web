@@ -39,6 +39,7 @@ export default function AdminEnterprisePage() {
     <AppShell>
       <EnterpriseDetailsScreen
         enterpriseId={enterpriseId}
+        enterpriseCatalogOnly
         editHref="/admin/enterprise/edit"
         productCreateHref="/admin/products/create"
         serviceCreateHref="/admin/services/create"

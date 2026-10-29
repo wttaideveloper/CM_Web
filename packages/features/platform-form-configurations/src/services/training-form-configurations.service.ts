@@ -16,7 +16,30 @@ function isStatus(value: unknown): boolean { return value === "draft" || value =
 function isValidation(value: unknown): boolean { return isRecord(value) && isNullableFiniteNumber(value.min_length) && isNullableFiniteNumber(value.max_length) && isNullableFiniteNumber(value.min) && isNullableFiniteNumber(value.max) && isNullableString(value.pattern); }
 function isOption(value: unknown): boolean { return isRecord(value) && isString(value.value) && isString(value.label) && Number.isInteger(value.position); }
 function isStringArray(value: unknown): value is string[] { return Array.isArray(value) && value.every(isString); }
-function isCompositeConfig(value: unknown): value is TrainingFormCompositeConfig { return isRecord(value) && (value.enabled_fields === undefined || isStringArray(value.enabled_fields)) && (value.required_fields === undefined || isStringArray(value.required_fields)); }
+function isFrontendSettings(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const visibility = value.visibility;
+  if (visibility !== undefined && visibility !== null) {
+    if (!isRecord(visibility) || !isString(visibility.field_key) || !visibility.field_key.trim()) return false;
+    const operator = visibility.operator;
+    if (operator !== "equals" && operator !== "not_equals" && operator !== "has_value" && operator !== "is_empty") return false;
+    if ((operator === "equals" || operator === "not_equals") && !isString(visibility.value)) return false;
+    if (visibility.value !== undefined && !isString(visibility.value)) return false;
+  }
+  const upload = value.upload;
+  if (upload !== undefined && upload !== null) {
+    if (!isRecord(upload)
+      || (upload.allowed_mime_types !== undefined && !isStringArray(upload.allowed_mime_types))
+      || !isNullableFiniteNumber(upload.max_file_size_mb)) return false;
+  }
+  return true;
+}
+function isCompositeConfig(value: unknown): value is TrainingFormCompositeConfig {
+  return isRecord(value)
+    && (value.enabled_fields === undefined || isStringArray(value.enabled_fields))
+    && (value.required_fields === undefined || isStringArray(value.required_fields))
+    && (value.frontend_settings === undefined || value.frontend_settings === null || isFrontendSettings(value.frontend_settings));
+}
 function isNullableCompositeConfig(value: unknown): value is TrainingFormCompositeConfig | null | undefined { return value === undefined || value === null || isCompositeConfig(value); }
 function isField(value: unknown): boolean { return isRecord(value) && isString(value.id) && (value.source === "core" || value.source === "custom") && isNullableString(value.core_key) && isNullableString(value.stable_key) && isString(value.label) && isString(value.renderer) && isString(value.value_type) && typeof value.required === "boolean" && typeof value.is_enabled === "boolean" && Number.isInteger(value.position) && isNullableString(value.placeholder) && isNullableString(value.help_text) && Array.isArray(value.options) && value.options.every(isOption) && isValidation(value.validation) && isNullableCompositeConfig(value.composite_config); }
 function isSection(value: unknown): boolean { return isRecord(value) && isString(value.id) && isString(value.stable_key) && isString(value.label) && isNullableString(value.description) && Number.isInteger(value.position) && typeof value.is_enabled === "boolean" && Array.isArray(value.fields) && value.fields.every(isField); }
@@ -24,23 +47,34 @@ function isSummary(value: unknown): value is TrainingFormConfigurationSummary { 
 function isVersion(value: unknown): value is TrainingFormConfigurationVersion { return isRecord(value) && isString(value.id) && isString(value.configuration_id) && Number.isInteger(value.version) && isStatus(value.status) && Array.isArray(value.sections) && value.sections.every(isSection) && isNullableString(value.created_by) && isNullableString(value.created_at) && isNullableString(value.published_at); }
 function isNullableVersion(value: unknown): value is TrainingFormConfigurationVersion | null { return value === null || isVersion(value); }
 function isConfiguration(value: unknown): value is TrainingFormConfiguration { return isSummary(value) && isRecord(value) && "draft_version" in value && isNullableVersion(value.draft_version) && (!("published_version" in value) || isNullableVersion(value.published_version)); }
+function isPublishedVersion(value: unknown): value is TrainingFormConfigurationVersion { return isVersion(value) && (value.status === "published" || value.status === "active"); }
 function isLifecycleResponse(value: unknown): value is TrainingFormConfigurationLifecycleResponse { return isRecord(value) && isString(value.id) && isStatus(value.status) && typeof value.is_active === "boolean"; }
 function isCreatedConfiguration(value: unknown): value is TrainingFormConfigurationCreateResponse { return isConfiguration(value) && isVersion(value.draft_version); }
-function isRegistryEntry(value: unknown): value is TrainingCoreFieldRegistryEntry { if (!isRecord(value) || !isString(value.key) || !isString(value.display_name) || !isString(value.value_type) || !Array.isArray(value.allowed_renderers) || !value.allowed_renderers.every(isString) || !isString(value.default_renderer) || typeof value.required_by_domain !== "boolean" || typeof value.removable !== "boolean" || typeof value.hideable !== "boolean" || !isRecord(value.configurable)) return false; const configurable = value.configurable; return ["label", "section", "position", "required", "renderer", "placeholder", "help_text", "validation"].every((key) => typeof configurable[key] === "boolean"); }
-function isAssignment(value: unknown): value is TrainingFormAssignment {
-  if (!isRecord(value)) return false;
-  const idOk = isString(value.id) || typeof value.id === "number" || isString((value as Record<string, unknown>).assignment_id);
-  const tenantOk = isString(value.tenant_id) || isString((value as Record<string, unknown>).tenantId) || isString((value as Record<string, unknown>).tenant);
-  // configuration_id may be omitted for global assignments — accept missing
-  return idOk && tenantOk;
+function isRegistryEntry(value: unknown): value is TrainingCoreFieldRegistryEntry { if (!isRecord(value) || !isString(value.key) || !isString(value.display_name) || !isString(value.value_type) || !Array.isArray(value.allowed_renderers) || !value.allowed_renderers.every(isString) || !isString(value.default_renderer) || typeof value.required_by_domain !== "boolean" || typeof value.removable !== "boolean" || typeof value.hideable !== "boolean" || !(value.options === undefined || value.options === null || Array.isArray(value.options) && value.options.every(isOption)) || !isNullableString(value.value_source) || !isNullableString(value.source_endpoint) || !isNullableString(value.depends_on) || !isRecord(value.configurable)) return false; const configurable = value.configurable; return ["label", "section", "position", "required", "renderer", "placeholder", "help_text", "validation"].every((key) => typeof configurable[key] === "boolean"); }
+function assignmentTenantId(value: unknown): string | null {
+  if (!isRecord(value)) return null;
+  for (const candidate of [value.tenant_id, value.tenantId, value.tenant]) {
+    if (isString(candidate) && candidate.trim()) return candidate.trim();
+    if (isRecord(candidate)) {
+      for (const nested of [candidate.id, candidate.tenant_id, candidate.tenantId, candidate.slug]) {
+        if (isString(nested) && nested.trim()) return nested.trim();
+      }
+    }
+  }
+  return null;
+}
+function isAssignment(value: unknown): value is Record<string, unknown> {
+  return isRecord(value) && assignmentTenantId(value) !== null;
 }
 function normalizeAssignment(raw: Record<string, unknown>, fallbackConfigurationId: string): TrainingFormAssignment {
-  const id = isString(raw.id) ? raw.id : typeof raw.id === "number" ? String(raw.id) : isString(raw.assignment_id) ? String(raw.assignment_id) : `${fallbackConfigurationId}:${isString(raw.tenant_id) ? raw.tenant_id : isString(raw.tenantId) ? String(raw.tenantId) : String(raw.tenant ?? "unknown")}`;
-  const configuration_id = isString(raw.configuration_id) ? raw.configuration_id : isString((raw as Record<string, unknown>).configurationId) ? String((raw as Record<string, unknown>).configurationId) : fallbackConfigurationId;
-  const tenant_id = isString(raw.tenant_id) ? raw.tenant_id : isString((raw as Record<string, unknown>).tenantId) ? String((raw as Record<string, unknown>).tenantId) : isString((raw as Record<string, unknown>).tenant) ? String((raw as Record<string, unknown>).tenant) : "";
-  const enterprise_id = isString(raw.enterprise_id) ? raw.enterprise_id : isString((raw as Record<string, unknown>).enterpriseId) ? String((raw as Record<string, unknown>).enterpriseId) : null;
-  const created_at = isString(raw.created_at) ? raw.created_at : isString((raw as Record<string, unknown>).createdAt) ? String((raw as Record<string, unknown>).createdAt) : null;
-  const updated_at = isString(raw.updated_at) ? raw.updated_at : isString((raw as Record<string, unknown>).updatedAt) ? String((raw as Record<string, unknown>).updatedAt) : null;
+  const tenant_id = assignmentTenantId(raw);
+  if (!tenant_id) throw new TrainingFormConfigurationsApiError(null, "Training Form Configurations returned an assignment without a tenant identifier.");
+  const id = isString(raw.id) ? raw.id : typeof raw.id === "number" ? String(raw.id) : isString(raw.assignment_id) ? raw.assignment_id : `${fallbackConfigurationId}:${tenant_id}`;
+  const configuration_id = isString(raw.configuration_id) ? raw.configuration_id : isString(raw.configurationId) ? raw.configurationId : fallbackConfigurationId;
+  const enterpriseCandidate = raw.enterprise_id ?? raw.enterpriseId ?? (isRecord(raw.enterprise) ? raw.enterprise.id : undefined);
+  const enterprise_id = isString(enterpriseCandidate) ? enterpriseCandidate : null;
+  const created_at = isString(raw.created_at) ? raw.created_at : isString(raw.createdAt) ? raw.createdAt : null;
+  const updated_at = isString(raw.updated_at) ? raw.updated_at : isString(raw.updatedAt) ? raw.updatedAt : null;
   return { id, configuration_id, tenant_id, enterprise_id, created_at, updated_at };
 }
 function collectionEntries(value: unknown, keys: readonly string[]): unknown[] | null { if (Array.isArray(value)) return value; if (!isRecord(value)) return null; for (const key of keys) if (Array.isArray(value[key])) return value[key] as unknown[]; return null; }
@@ -85,40 +119,47 @@ export async function getTrainingFormConfigurationVersion(configurationId: strin
 export async function publishTrainingFormConfiguration(configurationId: string): Promise<TrainingFormPublishResponse> {
   try {
     const value = await requestJson(configurationPath(configurationId, "/publish"), jsonRequest("POST"));
-  // Backend for training has returned {configuration, version} (event shape) here,
-  // but some deploys return the configuration directly or {data: {configuration, version}}.
-  // Accept all three to avoid "invalid publish data" after a 200.
-  const maybeWrapped = isRecord(value) && "data" in value && isRecord(value.data) ? value.data : value;
-  if (isConfiguration(maybeWrapped as unknown)) {
-    const cfg = maybeWrapped as unknown as TrainingFormConfiguration;
-    const ver = cfg.published_version ?? cfg.draft_version;
-    if (ver && isVersion(ver)) return { configuration: cfg, version: ver };
-  }
-  if (isRecord(maybeWrapped) && isRecord(maybeWrapped.configuration) && isRecord(maybeWrapped.version)) {
-    const cfg = maybeWrapped.configuration;
-    const ver = maybeWrapped.version;
-    if (typeof cfg.id === "string" && typeof cfg.name === "string" && typeof ver.id === "string" && typeof (ver as Record<string, unknown>).version === "number") {
-      return { configuration: cfg as unknown as TrainingFormConfiguration, version: ver as unknown as TrainingFormConfigurationVersion };
+    const response = isRecord(value) && isRecord(value.data) ? value.data : value;
+    if (isRecord(response)) {
+      const responseConfiguration = response.configuration;
+      const responseVersion = response.version;
+      if (isConfiguration(responseConfiguration) && isPublishedVersion(responseVersion)) {
+        return { configuration: responseConfiguration, version: responseVersion };
+      }
+      if (isConfiguration(response)) {
+        const publishedVersion = response.published_version ?? response.draft_version;
+        if (isPublishedVersion(publishedVersion)) {
+          return { configuration: response, version: publishedVersion };
+        }
+      }
     }
-  }
-  if (!isRecord(value) || !isConfiguration((value as Record<string, unknown>).configuration ?? value) || !isVersion((value as Record<string, unknown>).version ?? (value as Record<string, unknown>).published_version ?? (value as Record<string, unknown>).draft_version)) {
-    // Fall through to original strict check for event-compatible backends
-    if (isRecord(value) && isConfiguration((value as Record<string, unknown>).configuration as unknown) && isVersion((value as Record<string, unknown>).version as unknown)) {
-      return { configuration: (value as Record<string, unknown>).configuration as unknown as TrainingFormConfiguration, version: (value as Record<string, unknown>).version as unknown as TrainingFormConfigurationVersion };
-    }
-  }
-  if (isRecord(value) && isConfiguration(value.configuration as unknown) && isVersion(value.version as unknown)) return { configuration: value.configuration as unknown as TrainingFormConfiguration, version: value.version as unknown as TrainingFormConfigurationVersion };
-  throw new TrainingFormConfigurationsApiError(null, "Training Form Configurations returned invalid publish data.");
+
+    return await readPublishedTrainingConfiguration(configurationId);
   } catch (error) {
     if (error instanceof TrainingFormConfigurationsApiError && error.status === 502) {
-      const current = await getTrainingFormConfiguration(configurationId).catch(() => null);
-      if (current) {
-        const version = current.draft_version ?? current.published_version;
-        if (version) return { configuration: { ...current, status: "published" as const, is_active: false } as TrainingFormConfiguration, version };
+      try {
+        return await readPublishedTrainingConfiguration(configurationId);
+      } catch (fallbackError) {
+        if (fallbackError instanceof TrainingFormConfigurationsApiError) throw error;
+        throw fallbackError;
       }
     }
     throw error;
   }
+}
+
+async function readPublishedTrainingConfiguration(configurationId: string): Promise<TrainingFormPublishResponse> {
+  const configuration = await getTrainingFormConfiguration(configurationId);
+  const publishedVersion = [configuration.published_version, configuration.draft_version].find(isPublishedVersion);
+  if (publishedVersion) return { configuration, version: publishedVersion };
+
+  const versions = await listTrainingFormConfigurationVersions(configurationId);
+  const latestPublishedVersion = versions
+    .filter(isPublishedVersion)
+    .sort((left, right) => right.version - left.version)[0];
+  if (latestPublishedVersion) return { configuration, version: latestPublishedVersion };
+
+  throw new TrainingFormConfigurationsApiError(null, "Training Form Configurations did not return a published version.");
 }
 /** Activates one published Training form configuration. */
 export async function activateTrainingFormConfiguration(configurationId: string): Promise<TrainingFormConfiguration> {
@@ -205,28 +246,20 @@ export async function getTrainingFormConfigurationAssignments(configurationId: s
   }
   if (value === undefined) return [];
   const entries = assignmentEntries(value);
-  // Lenient: backend may return {assignments: []} or {data: []} or [] or {configuration_id, assignments}; invalid shape → empty (global)
+  // Backend may return {assignments: []}, {data: []}, [] or {configuration_id, assignments}.
   if (!entries) {
     if (isAssignment(value)) return [normalizeAssignment(value as unknown as Record<string, unknown>, configurationId)];
-    return [];
+    throw new TrainingFormConfigurationsApiError(null, "Training Form Configurations returned an invalid assignments response.");
   }
-  const filtered = entries.filter(isAssignment);
-  const toNormalize = filtered.length ? filtered : entries;
-  return (toNormalize as unknown as Record<string, unknown>[]).map((raw) => normalizeAssignment(raw, configurationId));
+  if (!entries.every(isAssignment)) {
+    throw new TrainingFormConfigurationsApiError(null, "Training Form Configurations returned invalid assignment entries.");
+  }
+  return entries.map((raw) => normalizeAssignment(raw, configurationId));
 }
 function isUuid(value: string): boolean { return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value); }
 
-/** Replaces assignments for one Training form configuration. Backend contract first:
- * `{is_global: true}` (or `{enterprise_ids: []}`) makes the config global; non-empty
- * `enterprise_ids` makes it selective. Falls back to the legacy tenant_ids/tenant_slugs flow. */
+/** Replaces assignments for one Selected tenants Training form configuration. */
 export async function updateTrainingFormConfigurationAssignments(configurationId: string, payload: UpdateTrainingFormConfigurationAssignmentsRequest): Promise<TrainingFormAssignment[]> {
-  if (payload.is_global === true) {
-    const value = await requestJson(configurationPath(configurationId, "/assignments"), jsonRequest("PUT", { is_global: true }));
-    if (value === undefined) return [];
-    const entries = assignmentEntries(value);
-    if (!entries) return [];
-    return entries.map((raw) => normalizeAssignment(raw as unknown as Record<string, unknown>, configurationId));
-  }
   if (payload.enterprise_ids !== undefined) {
     const value = await requestJson(configurationPath(configurationId, "/assignments"), jsonRequest("PUT", { enterprise_ids: payload.enterprise_ids }));
     if (value === undefined) return [];
@@ -234,7 +267,7 @@ export async function updateTrainingFormConfigurationAssignments(configurationId
     if (!entries) return [];
     return entries.map((raw) => normalizeAssignment(raw as unknown as Record<string, unknown>, configurationId));
   }
-  const tenantIds = (payload as unknown as Record<string, unknown>).tenant_ids as string[] ?? [];
+  const tenantIds = payload.tenant_ids ?? [];
   const uuids = tenantIds.filter(isUuid);
   const slugs = tenantIds.filter((id) => !isUuid(id));
   const tryRequest = async (body: Record<string, unknown>): Promise<TrainingFormAssignment[]> => {

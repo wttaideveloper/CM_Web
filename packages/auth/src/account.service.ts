@@ -1,4 +1,6 @@
 import type { AuthRoles, AuthUser } from "./types";
+import { getEnterpriseAdminAppOrigin } from "./cross-app";
+import { normalizeAuthUserName } from "./profile-name";
 
 const WEB_AUTH_BASE_URL = "/api/v1/auth";
 
@@ -38,6 +40,7 @@ export type InviteUserPayload = {
   full_name: string;
   email: string;
   role_slug: string;
+  frontendOrigin?: string;
 };
 
 export type AuthTenant = {
@@ -118,7 +121,8 @@ export async function getAuthMe() {
     credentials: "include",
   });
 
-  return parseAuthResponse<AuthMeResponse>(response);
+  const result = await parseAuthResponse<AuthMeResponse>(response);
+  return { ...result, data: normalizeAuthUserName(result.data) };
 }
 
 /** Retrieves the current user's role and permission assignments. */
@@ -201,7 +205,8 @@ export async function getInviteRoles(): Promise<InviteRole[]> {
 }
 
 export function inviteUser(payload: InviteUserPayload) {
-  return postAuthAction("/invite", payload);
+  const frontendOrigin = getEnterpriseAdminAppOrigin() ?? (typeof window !== "undefined" ? window.location.origin : "");
+  return postAuthAction("/invite", { ...payload, frontendOrigin: payload.frontendOrigin ?? frontendOrigin });
 }
 
 export async function getAuthTenants(): Promise<AuthTenant[]> {

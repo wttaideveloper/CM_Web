@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useRegistration } from "@/contexts/RegistrationContext";
 import { companySizeOptions, industryOptions, countryOptions, normalizeWorkspaceSlug, isValidWorkspaceSlug } from "./register.constants";
+import { focusFirstRegistrationFieldError } from "./registration-field-focus";
 
 type OrganizationStepProps = {
   onBack: () => void;
@@ -15,7 +16,7 @@ function getFieldError(message?: string | null) {
     return null;
   }
 
-  return <p className="mt-1 text-xs font-medium text-[#b42318]">{message}</p>;
+  return <p data-registration-field-error className="mt-1 text-xs font-medium text-[#b42318]">{message}</p>;
 }
 
 export default function OrganizationStep({ onBack, onContinue }: OrganizationStepProps) {
@@ -30,6 +31,13 @@ export default function OrganizationStep({ onBack, onContinue }: OrganizationSte
   } = useRegistration();
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const formRef = useRef<HTMLFormElement | null>(null);
+
+  useEffect(() => {
+    if (Object.keys(fieldErrors).length === 0) return;
+    const animationFrame = window.requestAnimationFrame(() => focusFirstRegistrationFieldError(formRef.current));
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [fieldErrors]);
 
   useEffect(() => {
     if (tenantSlugTouched) {
@@ -96,7 +104,7 @@ export default function OrganizationStep({ onBack, onContinue }: OrganizationSte
   }
 
   return (
-    <form className="flex h-full flex-col" onSubmit={handleSubmit}>
+    <form ref={formRef} className="flex h-full flex-col" onSubmit={handleSubmit}>
       <div className="space-y-4">
         <div className="space-y-2">
           <h2 className="text-xl font-bold text-[#06201c]">Tell us about your organization</h2>
