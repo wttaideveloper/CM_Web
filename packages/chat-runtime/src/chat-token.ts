@@ -54,8 +54,8 @@ function isTokenUsable(session: ChatTokenSession) {
   return session.expiresAt - Date.now() > 30_000;
 }
 
-export async function getChatAccessToken() {
-  if (!chatSessionEnabled) {
+async function getAccessToken(allowGroupRealtime: boolean) {
+  if (!chatSessionEnabled && !allowGroupRealtime) {
     throw new Error("Chat is available only for internal users assigned as service providers.");
   }
 
@@ -81,4 +81,14 @@ export async function getChatAccessToken() {
   }
 
   return (await chatTokenRequest).accessToken;
+}
+
+/** Returns a chat token for the existing authenticated Group realtime socket. */
+export async function getGroupRealtimeAccessToken() {
+  return getAccessToken(true);
+}
+
+/** Returns a chat token for Direct Chat and preserves its provider-only eligibility guard. */
+export async function getChatAccessToken() {
+  return getAccessToken(false);
 }

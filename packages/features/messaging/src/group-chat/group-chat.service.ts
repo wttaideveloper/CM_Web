@@ -1,4 +1,4 @@
-import { chatRequestResponse } from "@ihp/chat-runtime";
+import { groupChatRequestResponse } from "@ihp/chat-runtime";
 
 import type {
   AcceptGroupInvitationPayload,
@@ -96,7 +96,7 @@ export class GroupChatApiError extends Error {
 export async function uploadGroupAvatar(file: File): Promise<string> {
   if (!isSupportedGroupAvatarFile(file)) throw new GroupChatApiError(422, "Select an image file for the Group Chat avatar.");
   try {
-    const response = await chatRequestResponse("/uploads/", { method: "POST", body: buildGroupAvatarUploadFormData(file) }, false);
+    const response = await groupChatRequestResponse("/uploads/", { method: "POST", body: buildGroupAvatarUploadFormData(file) }, false);
     if (!response.ok) throw new GroupChatApiError(response.status, await backendErrorMessage(response));
     const body: unknown = await response.json();
     const parsed: GroupAvatarUploadResponse | null = normalizeGroupAvatarUploadResponse(body);
@@ -116,7 +116,7 @@ export async function uploadGroupChatAttachment(groupId: string, file: File, att
   if (!formData) throw new GroupChatApiError(422, "A Group Chat and attachment are required.");
 
   try {
-    const response = await chatRequestResponse("/attachments/upload", { method: "POST", body: formData }, false);
+    const response = await groupChatRequestResponse("/attachments/upload", { method: "POST", body: formData }, false);
     if (!response.ok) throw new GroupChatApiError(response.status, await backendErrorMessage(response));
     const parsed = normalizeGroupChatAttachmentUploadResponse(await response.json(), attachmentType, file.name);
     if (!parsed) throw new GroupChatApiError(502, "The attachment service did not return an attachment ID.");
@@ -133,7 +133,7 @@ export async function downloadGroupChatAttachment(attachmentId: string): Promise
   const normalizedAttachmentId = attachmentId.trim();
   if (!normalizedAttachmentId) throw new GroupChatApiError(422, "An attachment identifier is required.");
 
-  const response = await chatRequestResponse(`/attachments/${encodeURIComponent(normalizedAttachmentId)}?download=true`, { method: "GET" }, false);
+  const response = await groupChatRequestResponse(`/attachments/${encodeURIComponent(normalizedAttachmentId)}?download=true`, { method: "GET" }, false);
   if (!response.ok) throw new GroupChatApiError(response.status, await backendErrorMessage(response));
   const contentType = response.headers.get("content-type");
   if (contentType?.toLowerCase().includes("application/json")) {
@@ -253,7 +253,7 @@ async function request<T>(path: string, params = new URLSearchParams(), options:
   if (options.body !== undefined) init.body = JSON.stringify(options.body);
 
   try {
-    const response = await chatRequestResponse(url, init);
+    const response = await groupChatRequestResponse(url, init);
     if (!response.ok) throw new GroupChatApiError(response.status, await (options.errorMessage?.(response) ?? backendErrorMessage(response)));
     if (options.expectedStatus !== undefined && response.status !== options.expectedStatus) throw new GroupChatApiError(502, `The Group Chat service returned an unexpected success status (${response.status}).`);
     if (response.status === 204) return undefined as T;
@@ -814,7 +814,7 @@ export async function createGroupChatDataRequest(payload: CreateGroupChatDataReq
 export async function downloadGroupChatDataRequest(requestId: string): Promise<GroupChatDataRequestDownloadResponse> {
   const normalizedRequestId = requestId.trim();
   if (!isValidGroupChatUuid(normalizedRequestId)) throw new GroupChatApiError(422, "A valid data request identifier is required.");
-  const response = await chatRequestResponse(buildGroupChatDataRequestDownloadPath(normalizedRequestId), { method: "GET" });
+  const response = await groupChatRequestResponse(buildGroupChatDataRequestDownloadPath(normalizedRequestId), { method: "GET" });
   if (!response.ok) throw new GroupChatApiError(response.status, await dataRequestErrorMessage(response));
   const rawContentType = response.headers.get("content-type") ?? "";
   const mimeType = rawContentType.split(";", 1)[0].trim().toLowerCase();
