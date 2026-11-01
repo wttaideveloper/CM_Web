@@ -29,6 +29,8 @@ export type PlatformNavigationItem = {
 export type PlatformNavigationGroup = {
   title: string;
   items: readonly PlatformNavigationItem[];
+  icon?: PlatformNavigationIcon;
+  collapsible?: boolean;
 };
 
 export type PlatformAdminLayoutProps = {

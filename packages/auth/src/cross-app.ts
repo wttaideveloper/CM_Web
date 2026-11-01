@@ -23,6 +23,7 @@ const platformAdminSafeReturnPrefixes = [
   "/events",
   "/trainings",
   "/integrations",
+  "/commerce",
 ] as const;
 
 const shellSafeReturnPrefixes = ["/admin", "/trainings", "/training-forms"] as const;

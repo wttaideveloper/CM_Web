@@ -1,10 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { SidebarFrame } from "@ihp/ui";
 
+import {
+  COMMERCE_MANAGEMENT_NAVIGATION_TITLE,
+  isCommerceNavigationPath,
+  isPlatformNavigationGroupExpanded,
+} from "./platform-navigation";
 import type {
   PlatformAdminSidebarProps,
   PlatformNavigationIcon,
@@ -106,6 +111,11 @@ const navigationIcons: Record<PlatformNavigationIcon, () => React.JSX.Element> =
   settings: SettingsIcon,
 };
 
+function NavigationIcon({ icon }: { icon: PlatformNavigationIcon }) {
+  const IconComponent = navigationIcons[icon];
+  return <IconComponent />;
+}
+
 function isActive(currentPath: string, item: PlatformNavigationItem) {
   if (item.disabled || item.href === "#" || item.activeMatch === "never") {
     return false;
@@ -118,13 +128,23 @@ function isActive(currentPath: string, item: PlatformNavigationItem) {
   return currentPath === item.href || currentPath.startsWith(`${item.href}/`);
 }
 
+function navigationGroupId(title: string, instance: "desktop" | "mobile") {
+  return `platform-navigation-${instance}-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+}
+
 function SidebarContent({
   currentPath,
   navigationGroups,
   resolveNavigationHref,
   onNavigate,
+  expandedGroups,
+  onToggleGroup,
+  instance,
 }: Pick<PlatformAdminSidebarProps, "currentPath" | "navigationGroups" | "resolveNavigationHref"> & {
   onNavigate?: () => void;
+  expandedGroups: Readonly<Record<string, boolean>>;
+  onToggleGroup: (title: string) => void;
+  instance: "desktop" | "mobile";
 }) {
   return (
     <nav className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 pb-6">
@@ -132,69 +152,111 @@ function SidebarContent({
         <div className="px-3 pt-1">
           <p className="text-sm font-bold uppercase tracking-[0.22em] text-[#06201c]">Super Admin</p>
         </div>
-        {navigationGroups.map((group) => (
-          <div key={group.title}>
-            <p className="mb-2 px-3 text-[11px] font-bold uppercase tracking-[0.22em] text-[#8ca69e]">
-              {group.title}
-            </p>
-            <div className="space-y-1">
-              {group.items.map((item) => {
-                const active = isActive(currentPath, item);
-                const isPlaceholder = item.disabled || item.href === "#";
-                const IconComponent = navigationIcons[item.icon];
+        {navigationGroups.map((group) => {
+          const expanded = isPlatformNavigationGroupExpanded(group, currentPath, expandedGroups);
 
-                return (
-                  <Link
-                    key={`${item.label}-${item.href}`}
-                    href={isPlaceholder ? "#" : resolveNavigationHref(item)}
-                    aria-disabled={isPlaceholder}
-                    tabIndex={isPlaceholder ? -1 : 0}
-                    onClick={(event) => {
-                      if (isPlaceholder) {
-                        event.preventDefault();
-                        return;
-                      }
-                      onNavigate?.();
-                    }}
-                    className={`flex items-center gap-3 rounded-xl py-2 text-sm font-medium transition ${
-                      item.child ? "ml-5 px-3" : "px-3"
-                    } ${
-                      isPlaceholder
-                        ? "cursor-default text-[#9eb0a9] opacity-80"
-                        : active
-                          ? "bg-[#e9f4ee] font-bold text-[#0f5d4a]"
-                          : "text-[#4f6f67] hover:bg-[#f4faf7] hover:text-[#0f5d4a]"
-                    }`}
-                  >
-                    <span className="flex w-4 shrink-0 items-center justify-center text-current">
-                      <IconComponent />
-                    </span>
-                    <span className="flex min-w-0 flex-1 items-center gap-2">
-                      <span>{item.label}</span>
-                      {item.badge ? (
-                        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#f59e0b] px-1.5 text-[10px] font-bold text-white">
-                          {item.badge}
-                        </span>
-                      ) : null}
-                    </span>
-                  </Link>
-                );
-              })}
+          return (
+            <div key={group.title}>
+            {group.collapsible ? (
+              <button
+                type="button"
+                onClick={() => onToggleGroup(group.title)}
+                aria-expanded={expanded}
+                aria-controls={navigationGroupId(group.title, instance)}
+                className={`mb-2 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-[11px] font-bold uppercase tracking-[0.22em] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f5d4a] focus-visible:ring-offset-2 ${
+                  group.items.some((item) => isActive(currentPath, item))
+                    ? "bg-[#e9f4ee] text-[#0f5d4a]"
+                    : "text-[#8ca69e] hover:bg-[#f4faf7] hover:text-[#0f5d4a]"
+                }`}
+              >
+                {group.icon ? (
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center text-current">
+                    <NavigationIcon icon={group.icon} />
+                  </span>
+                ) : null}
+                <span className="min-w-0 flex-1">{group.title}</span>
+                <svg
+                  aria-hidden="true"
+                  className={`h-3.5 w-3.5 shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                >
+                  <path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            ) : (
+              <p className="mb-2 px-3 text-[11px] font-bold uppercase tracking-[0.22em] text-[#8ca69e]">
+                {group.title}
+              </p>
+            )}
+            {expanded ? (
+              <div id={group.collapsible ? navigationGroupId(group.title, instance) : undefined} className="space-y-1">
+                {group.items.map((item) => {
+                  const active = isActive(currentPath, item);
+                  const isPlaceholder = item.disabled || item.href === "#";
+
+                  return (
+                    <Link
+                      key={`${item.label}-${item.href}`}
+                      href={isPlaceholder ? "#" : resolveNavigationHref(item)}
+                      aria-disabled={isPlaceholder}
+                      tabIndex={isPlaceholder ? -1 : 0}
+                      onClick={(event) => {
+                        if (isPlaceholder) {
+                          event.preventDefault();
+                          return;
+                        }
+                        onNavigate?.();
+                      }}
+                      className={`flex items-center gap-3 rounded-xl py-2 text-sm font-medium transition ${
+                        item.child ? "ml-5 px-3" : "px-3"
+                      } ${
+                        isPlaceholder
+                          ? "cursor-default text-[#9eb0a9] opacity-80"
+                          : active
+                            ? "bg-[#e9f4ee] font-bold text-[#0f5d4a]"
+                            : "text-[#4f6f67] hover:bg-[#f4faf7] hover:text-[#0f5d4a]"
+                      }`}
+                    >
+                      <span className="flex w-4 shrink-0 items-center justify-center text-current">
+                        <NavigationIcon icon={item.icon} />
+                      </span>
+                      <span className="flex min-w-0 flex-1 items-center gap-2">
+                        <span>{item.label}</span>
+                        {item.badge ? (
+                          <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#f59e0b] px-1.5 text-[10px] font-bold text-white">
+                            {item.badge}
+                          </span>
+                        ) : null}
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : null}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </nav>
   );
 }
 
-export function PlatformAdminSidebar({
+export function PlatformAdminSidebar(props: PlatformAdminSidebarProps) {
+  const navigationMode = isCommerceNavigationPath(props.currentPath) ? "commerce" : "default";
+
+  return <PlatformAdminSidebarStateful key={navigationMode} {...props} />;
+}
+
+function PlatformAdminSidebarStateful({
   currentPath,
   navigationGroups,
   resolveNavigationHref,
   mobileOpen,
   onClose,
 }: PlatformAdminSidebarProps) {
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+
   useEffect(() => {
     document.body.style.overflow = mobileOpen ? "hidden" : "";
 
@@ -203,6 +265,16 @@ export function PlatformAdminSidebar({
     };
   }, [mobileOpen]);
 
+  const toggleGroup = (title: string) => {
+    setExpandedGroups((current) => {
+      const currentExpanded = title === COMMERCE_MANAGEMENT_NAVIGATION_TITLE && isCommerceNavigationPath(currentPath)
+        ? current[title] !== false
+        : current[title] === true;
+
+      return { ...current, [title]: !currentExpanded };
+    });
+  };
+
   return (
     <SidebarFrame
       desktopContent={(
@@ -210,6 +282,9 @@ export function PlatformAdminSidebar({
           currentPath={currentPath}
           navigationGroups={navigationGroups}
           resolveNavigationHref={resolveNavigationHref}
+          expandedGroups={expandedGroups}
+          onToggleGroup={toggleGroup}
+          instance="desktop"
         />
       )}
       mobileHeader={(
@@ -233,6 +308,9 @@ export function PlatformAdminSidebar({
           navigationGroups={navigationGroups}
           resolveNavigationHref={resolveNavigationHref}
           onNavigate={onClose}
+          expandedGroups={expandedGroups}
+          onToggleGroup={toggleGroup}
+          instance="mobile"
         />
       )}
       mobileOpen={mobileOpen}
