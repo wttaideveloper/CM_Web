@@ -40,6 +40,7 @@ export type HeaderMenuItem = {
 };
 
 export type ShellHeaderConfig = {
+  portal: "platform" | "enterprise";
   homeHref: string;
   notificationsHref: string;
   messagesHref: string | null;
@@ -84,6 +85,7 @@ const enterpriseProfileItems: readonly HeaderMenuItem[] = [
 const enterpriseNavigationGroups: readonly ShellNavigationGroup[] = sharedEnterpriseNavigationGroups;
 
 const platformHeaderConfig: ShellHeaderConfig = {
+  portal: "platform",
   homeHref: ROUTE_PATHS.platform.dashboard,
   notificationsHref: ROUTE_PATHS.realtime.notifications,
   messagesHref: null,
@@ -95,6 +97,7 @@ const platformHeaderConfig: ShellHeaderConfig = {
 };
 
 const enterpriseHeaderConfig: ShellHeaderConfig = {
+  portal: "enterprise",
   homeHref: ROUTE_PATHS.platform.dashboard,
   notificationsHref: ROUTE_PATHS.enterprise.notifications,
   messagesHref: ROUTE_PATHS.enterprise.messages,
@@ -115,7 +118,7 @@ export const platformAdminLayoutConfig: ShellLayoutConfig = {
 
 export const enterpriseAdminLayoutConfig: ShellLayoutConfig = {
   id: "enterprise-admin",
-  sidebarLabel: "Enterprise Owner",
+  sidebarLabel: "Enterprise",
   sidebarLabelClassName: "text-[#6b4fd3]",
   navigationGroups: enterpriseNavigationGroups,
   header: enterpriseHeaderConfig,

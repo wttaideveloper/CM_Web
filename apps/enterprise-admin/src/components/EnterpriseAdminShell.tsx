@@ -46,7 +46,7 @@ function EnterpriseAdminShellContent({ children }: { children: ReactNode }) {
       notificationsHref="/admin/notifications"
       messagesHref="/admin/messages"
       workflowNotifications={{ items: workflow.items, unreadCount: workflow.unreadCount, error: workflow.error ?? workflow.readError ?? workflow.readAllError, onRead: workflow.markRead, onMarkAllRead: workflow.markAllRead }}
-      user={user}
+      user={{ fullName: user?.fullName, email: user?.email, tenantRole: user?.membership?.tenantRole ?? user?.roles?.tenantRole ?? null }}
       onLogout={handleLogout}
     >
       {children}

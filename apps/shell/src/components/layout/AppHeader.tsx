@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { HeaderFrame } from "@ihp/ui";
+import { getEnterpriseHeaderRoleLabel, resolveEnterprisePortalRole } from "@ihp/auth";
 import { formatReviewNotificationDetails, formatTrainingNotificationDetails } from "@ihp/realtime";
 
 import { useAdminSocket } from "@/contexts/AdminSocketContext";
@@ -176,6 +177,9 @@ function AppHeaderContent({
 }: AppHeaderProps & { realtime?: HeaderRealtimeState }) {
   const router = useRouter();
   const { logout, user } = useAuth();
+  const enterpriseRoleLabel = header.portal === "enterprise"
+    ? getEnterpriseHeaderRoleLabel(resolveEnterprisePortalRole(user?.membership?.tenantRole ?? user?.roles?.tenantRole ?? null))
+    : null;
   const headerRef = useRef<HTMLElement | null>(null);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const notificationsRoute = header.notificationsHref;
@@ -311,7 +315,7 @@ function AppHeaderContent({
               />
             </svg>
           </div>
-          <h1 className="text-lg font-bold text-[#07352d]">Invigorate Health</h1>
+          <div><h1 className="text-lg font-bold text-[#07352d]">Invigorate Health</h1>{enterpriseRoleLabel ? <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8ca69e]">{enterpriseRoleLabel}</p> : null}</div>
         </Link>
         </>
       )}

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { useCurrentEnterprise } from "@ihp/enterprise-runtime";
+import { getEnterpriseSidebarRoleLabel, resolveEnterprisePortalRole, useAuth } from "@ihp/auth";
 import { normalizeEnterpriseStatus } from "@ihp/enterprises";
 import { getProducts } from "@ihp/products";
 import { getServices } from "@ihp/services";
@@ -166,6 +167,7 @@ function ActivityIcon({ kind }: { kind: "package" | "service" | "grad" }) {
 
 export default function EnterpriseDashboardScreen({ routes }: EnterpriseDashboardScreenProps) {
   const { currentEnterprise, enterpriseId, isLoadingEnterprise } = useCurrentEnterprise();
+  const { membership, roles } = useAuth();
   const [productCount, setProductCount] = useState<number | null>(null);
   const [serviceCount, setServiceCount] = useState<number | null>(null);
   const [isLoadingInventory, setIsLoadingInventory] = useState(false);
@@ -216,6 +218,7 @@ export default function EnterpriseDashboardScreen({ routes }: EnterpriseDashboar
       ? "Loading enterprise..."
       : "Enterprise unavailable";
   const enterpriseStatus = currentEnterprise ? normalizeEnterpriseStatus(currentEnterprise.status) : null;
+  const roleLabel = getEnterpriseSidebarRoleLabel(resolveEnterprisePortalRole(membership?.tenantRole ?? roles?.tenantRole ?? null));
   const productCountValue = isLoadingInventory || productCount === null ? "\u2014" : String(productCount);
   const serviceCountValue = isLoadingInventory || serviceCount === null ? "\u2014" : String(serviceCount);
   const stats = [
@@ -230,7 +233,7 @@ export default function EnterpriseDashboardScreen({ routes }: EnterpriseDashboar
       <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">
-            ENTERPRISE OWNER &middot; {enterpriseName.toUpperCase()}
+            {roleLabel} &middot; {enterpriseName.toUpperCase()}
           </p>
           <h2 className="mt-1 text-2xl font-bold text-[#06201c]">
             My Business Dashboard
