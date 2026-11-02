@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { deleteEvent, duplicateEvent, EventsApiError, updateEventStatus, type Event } from "./events.service";
+import { deleteEvent, duplicateEvent, EventsApiError, resubmitEvent, updateEventStatus, type Event } from "./events.service";
 import { canDeleteEvent, canEditEvent, getEventStatusActions, type EventStatusAction } from "./event-status";
 
 /** Props for the shared Event card/detail contextual action menu. */
@@ -46,7 +46,11 @@ export default function EventActionsMenu({ event, includeNavigation = true, onSt
     window.requestAnimationFrame(() => triggerRef.current?.focus());
   };
   const statusMutation = useMutation({
-    mutationFn: (action: EventStatusAction) => updateEventStatus(event.id, { status: action.targetStatus, ...(action.targetStatus === "cancelled" && cancellationReason.trim() ? { reason: cancellationReason.trim() } : {}) }),
+    mutationFn: (action: EventStatusAction) => {
+      const isResubmit = action.targetStatus === "pending_approval" && (event.status === "rejected" || event.status === "needs_revision");
+      if (isResubmit) return resubmitEvent(event.id) as Promise<Event>;
+      return updateEventStatus(event.id, { status: action.targetStatus, ...(action.targetStatus === "cancelled" && cancellationReason.trim() ? { reason: cancellationReason.trim() } : {}) });
+    },
     onSuccess: async (updatedEvent, action) => { await invalidateEventQueries(queryClient, event.id); closeConfirmation(); onStatusSuccess?.(updatedEvent, action); },
     onError: (error) => { closeConfirmation(); setActionError(getStatusErrorMessage(error)); },
   });

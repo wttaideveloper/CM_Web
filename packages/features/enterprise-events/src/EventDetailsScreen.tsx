@@ -19,6 +19,7 @@ import { mediaItemUrl, type EventMediaItem } from "./event-media";
 import EventOrdersSection from "./EventOrdersSection";
 import EventOverviewSection from "./EventOverviewSection";
 import EventReportsSection from "./EventReportsSection";
+import EventBlogsTab from "./EventBlogsTab";
 import { EventReviewsTab, type ReviewStatusFilter, STATUSES as EVENT_REVIEW_STATUSES } from "./EventReviewsTab";
 import SessionAttendancePanel from "./SessionAttendancePanel";
 import {
@@ -92,7 +93,7 @@ type DetailItem = {
   label: string;
   value: string | number | boolean | null | undefined;
 };
-type EventDetailsTab = "overview" | "details" | "sessions" | "registrations" | "attendance" | "reviews" | "reports" | "orders" | "fulfilment";
+type EventDetailsTab = "overview" | "details" | "sessions" | "registrations" | "attendance" | "reviews" | "reports" | "orders" | "fulfilment" | "blogs";
 type RegistrationsSubview = "registered" | "waitlist";
 
 function AdminNoteBanner({ eventId, status }: { eventId: string; status: string }) {
@@ -133,7 +134,20 @@ function AdminNoteBanner({ eventId, status }: { eventId: string; status: string 
   );
 }
 
-const eventDetailsTabs: ReadonlyArray<{ id: EventDetailsTab; label: string }> =
+function isEventBlogsEnabled(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const raw = window.localStorage.getItem("ihp.blogs.governance.v1");
+    if (!raw) return true;
+    const parsed = JSON.parse(raw);
+    const modules = parsed.modules ?? parsed;
+    return typeof modules.events === "boolean" ? modules.events : true;
+  } catch {
+    return true;
+  }
+}
+
+const eventDetailsTabs: ReadonlyArray<{ id: EventDetailsTab; label: string; badge?: string | number }> =
   [
     { id: "overview", label: "Overview" },
     { id: "details", label: "Details" },
@@ -144,6 +158,7 @@ const eventDetailsTabs: ReadonlyArray<{ id: EventDetailsTab; label: string }> =
     { id: "reports", label: "Reports" },
     { id: "orders", label: "Orders" },
     { id: "fulfilment", label: "Fulfilment" },
+    { id: "blogs", label: "Blogs & News" },
   ];
 
 const registrationsSubviews: ReadonlyArray<{
@@ -260,7 +275,7 @@ function EventDetailsContent() {
   const sessionsVisible = sessionsOperational || event.sessions.length > 0;
   const hasHistoricalAttendance = attendanceHistoryQuery.data?.participants.length ? attendanceHistoryQuery.data.participants.length > 0 : false;
   const visibleTabs = hasOperationalDataAccess
-    ? eventDetailsTabs.filter((tab) => (tab.id !== "attendance" || event.modules?.check_in !== false || hasHistoricalAttendance) && (tab.id !== "sessions" || sessionsVisible))
+    ? eventDetailsTabs.filter((tab) => (tab.id !== "attendance" || event.modules?.check_in !== false || hasHistoricalAttendance) && (tab.id !== "sessions" || sessionsVisible) && (tab.id !== "blogs" || isEventBlogsEnabled()))
     : eventDetailsTabs.slice(0, 2);
   const effectiveActiveTab = visibleTabs.some((tab) => tab.id === activeTab) ? activeTab : "overview";
   const coordinates = event.venue?.coordinates;
@@ -328,7 +343,7 @@ function EventDetailsContent() {
               Edit Event
             </Link>
           ) : null}
-          {event.status === "needs_revision" ? (
+          {(event.status === "needs_revision" || event.status === "rejected") ? (
             <button type="button" onClick={() => resubmitMutation.mutate()} disabled={resubmitMutation.isPending} className="inline-flex h-11 items-center justify-center rounded-full border border-[#1f6a58] px-5 text-sm font-bold text-[#1f6a58] disabled:cursor-not-allowed disabled:opacity-60">
               {resubmitMutation.isPending ? "Resubmitting..." : "Resubmit for approval"}
             </button>
@@ -560,6 +575,11 @@ function EventDetailsContent() {
         </section>
       ) : null}
       {effectiveActiveTab === "fulfilment" ? <EventFulfilmentSection eventId={event.id} /> : null}
+      {effectiveActiveTab === "blogs" ? (
+        <section id="event-blogs-panel" role="tabpanel" aria-labelledby="event-blogs-tab" className="mt-6">
+          <EventBlogsTab eventId={event.id} eventTitle={event.title} />
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -577,7 +597,7 @@ function EventDetailsTabs({
   activeTab,
   onChange,
 }: {
-  tabs: ReadonlyArray<{ id: EventDetailsTab; label: string }>;
+  tabs: ReadonlyArray<{ id: EventDetailsTab; label: string; badge?: string | number }>;
   activeTab: EventDetailsTab;
   onChange: (tab: EventDetailsTab) => void;
 }) {
@@ -600,7 +620,7 @@ function EventDetailsTabs({
           onKeyDown={(event) => handleTabKeyDown(event, index, onChange)}
           className={`mr-6 border-b-2 px-1 pb-3 text-sm font-bold outline-none transition focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2 ${activeTab === tab.id ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#52736a] hover:text-[#06201c]"}`}
         >
-          {tab.label}
+          <span>{tab.label}</span>{tab.badge !== undefined ? <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-[#86f2e4]/30 text-[#006a61] text-[11px] font-mono font-bold">{tab.badge}</span> : null}
         </button>
       ))}
     </div>

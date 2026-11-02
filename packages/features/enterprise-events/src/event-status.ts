@@ -169,6 +169,7 @@ export function getEventStatusBadgeClass(status: EventStatus): string {
 export function getEventStatusActions(status: EventStatus): readonly EventStatusAction[] {
   if (status === "draft") return [submitForApprovalAction, cancelEventAction];
   if (status === "pending_approval") return [cancelEventAction];
+  if (status === "rejected") return [submitForApprovalAction];
   if (status === "approved") return [publishEventAction, cancelEventAction];
   if (status === "published") return [suspendEventAction, unpublishEventAction, cancelEventAction];
   if (status === "suspended") return [resumeEventAction, cancelEventAction];
@@ -178,7 +179,7 @@ export function getEventStatusActions(status: EventStatus): readonly EventStatus
 
 /** Returns whether the current product workflow permits Enterprise Admin editing. */
 export function canEditEvent(status: EventStatus): boolean {
-  return status === "draft" || status === "needs_revision" || status === "approved";
+  return status === "draft" || status === "needs_revision" || status === "approved" || status === "rejected";
 }
 
 /** Returns whether the current Enterprise Admin policy permits destructive deletion. */

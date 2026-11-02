@@ -14,8 +14,22 @@ import { getTrainingAdminNotes, getTrainingById, downloadTrainingNotesPdf, getTr
 import TrainingCalendarAction from "./TrainingCalendarAction";
 import { getTrainingMediaPreviewUrl } from "./training-media-url";
 import { useTrainingHistoricalFormConfiguration } from "./training-form-configuration.queries";
+import TrainingBlogsTab from "./TrainingBlogsTab";
 
-type TrainingDetailsTab = "details" | "content" | "sections" | "enrolments" | "attendance" | "assessments" | "reviews" | "live" | "dashboards";
+type TrainingDetailsTab = "details" | "content" | "sections" | "enrolments" | "attendance" | "assessments" | "reviews" | "live" | "dashboards" | "blogs";
+
+function isTrainingBlogsEnabled(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const raw = window.localStorage.getItem("ihp.blogs.governance.v1");
+    if (!raw) return true;
+    const parsed = JSON.parse(raw);
+    const modules = parsed.modules ?? parsed;
+    return typeof modules.trainings === "boolean" ? modules.trainings : true;
+  } catch {
+    return true;
+  }
+}
 
 const trainingDetailsTabs: ReadonlyArray<{ id: TrainingDetailsTab; label: string }> = [
   { id: "details", label: "Details" },
@@ -27,6 +41,7 @@ const trainingDetailsTabs: ReadonlyArray<{ id: TrainingDetailsTab; label: string
   { id: "reviews", label: "Reviews" },
   { id: "live", label: "Live & Discussions" },
   { id: "dashboards", label: "Dashboards" },
+  { id: "blogs", label: "Blogs & News" },
 ];
 
 function formatLearningObjectives(value: unknown): string {
@@ -82,7 +97,7 @@ function AdminNoteBanner({ trainingId, status }: { trainingId: string; status: s
           ) : null}
           {note ? <p className="mt-2 text-sm leading-6 text-[#6b5a1e]">{note}</p> : null}
         </div>
-        {status === "needs_revision" ? (
+        {(status === "needs_revision" || status === "rejected") ? (
           <Link
             href={`/admin/trainings/${trainingId}/edit`}
             className="inline-flex h-10 shrink-0 items-center justify-center rounded-full bg-[#8a5a00] px-4 text-sm font-bold text-white hover:bg-[#704900]"
@@ -94,7 +109,7 @@ function AdminNoteBanner({ trainingId, status }: { trainingId: string; status: s
       <p className="mt-3 text-xs leading-5 text-[#8a6b37]">
         {status === "needs_revision"
           ? "Update the requested details, then choose “Submit for approval” from Training actions."
-          : "This Training was rejected and cannot be resubmitted. Contact a Super Admin if you need this decision reviewed."}
+          : "Update the Training based on the Super Admin feedback, then choose “Submit for approval” from Training actions."}
       </p>
     </section>
   );
@@ -468,7 +483,7 @@ function TrainingDetailsContent({
       ) : null}
 
       <div className="mt-6 flex flex-wrap gap-2 border-b border-[#e1ebe6] overflow-x-auto scrollbar-thin">
-        {trainingDetailsTabs.map((tab) => (
+        {trainingDetailsTabs.filter((t) => t.id !== "blogs" || isTrainingBlogsEnabled()).map((tab) => (
           <button
             key={tab.id}
             type="button"
@@ -624,6 +639,7 @@ function TrainingDetailsContent({
       })()} /></div> : null}
       {activeTab === "live" ? <div className="mt-6"><TrainingLiveTab trainingId={trainingId} discussionId={discussionId} /></div> : null}
       {activeTab === "dashboards" ? <div className="mt-6"><TrainingDashboardsTab trainingId={trainingId} /></div> : null}
+      {activeTab === "blogs" ? <TrainingBlogsTab trainingId={trainingId} trainingTitle={training.title ?? "Training"} /> : null}
     </div>
   );
 }

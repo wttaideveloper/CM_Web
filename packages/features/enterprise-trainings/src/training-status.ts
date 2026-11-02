@@ -169,6 +169,7 @@ export function getTrainingStatusBadgeClass(status: TrainingStatus): string {
 export function getTrainingStatusActions(status: TrainingStatus): readonly TrainingStatusAction[] {
   if (status === "draft") return [submitForApprovalAction, cancelTrainingAction];
   if (status === "pending_approval") return [cancelTrainingAction];
+  if (status === "rejected") return [submitForApprovalAction];
   if (status === "approved") return [publishTrainingAction, cancelTrainingAction];
   if (status === "published") return [unpublishTrainingAction, suspendTrainingAction, archiveTrainingAction, cancelTrainingAction];
   if (status === "unpublished") return [publishTrainingAction, cancelTrainingAction];
@@ -181,7 +182,7 @@ export function getTrainingStatusActions(status: TrainingStatus): readonly Train
 
 /** Returns whether the current product workflow permits Enterprise Admin editing. */
 export function canEditTraining(status: TrainingStatus): boolean {
-  return status === "draft" || status === "needs_revision" || status === "unpublished";
+  return status === "draft" || status === "needs_revision" || status === "unpublished" || status === "rejected";
 }
 
 /** Returns whether the current Enterprise Admin policy permits destructive deletion. */
