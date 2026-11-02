@@ -17,6 +17,7 @@ export interface TrainingReview {
   moderation_status: ReviewModerationStatus;
   created_at: string | null;
   updated_at: string | null;
+  reason?: string | null;
 }
 
 /** Approved-review rating metrics for a Training or review collection. */

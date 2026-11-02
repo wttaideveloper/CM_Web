@@ -53,6 +53,7 @@ export interface EventReview {
   moderation_status: ReviewModerationStatus;
   created_at: string | null;
   updated_at: string | null;
+  reason?: string | null;
 }
 
 /** Summary calculated from approved Event reviews. */
