@@ -19,7 +19,7 @@ import { mediaItemUrl, type EventMediaItem } from "./event-media";
 import EventOrdersSection from "./EventOrdersSection";
 import EventOverviewSection from "./EventOverviewSection";
 import EventReportsSection from "./EventReportsSection";
-import EventBlogsTab from "./EventBlogsTab";
+import { ContextualModuleBlogsTab } from "@ihp/enterprise-dashboard";
 import { EventReviewsTab, type ReviewStatusFilter, STATUSES as EVENT_REVIEW_STATUSES } from "./EventReviewsTab";
 import SessionAttendancePanel from "./SessionAttendancePanel";
 import {
@@ -250,7 +250,7 @@ function EventDetailsContent() {
       ]);
       setStatusFeedback("Event resubmitted for approval.");
     },
-    onError: () => setStatusFeedback("Unable to resubmit this Event for approval. Please try again."),
+    onError: (error) => setStatusFeedback(error instanceof Error && error.message ? error.message : "Unable to resubmit this Event for approval. Please try again."),
   });
   useEffect(() => {
     const status = eventQuery.data?.status;
@@ -577,7 +577,7 @@ function EventDetailsContent() {
       {effectiveActiveTab === "fulfilment" ? <EventFulfilmentSection eventId={event.id} /> : null}
       {effectiveActiveTab === "blogs" ? (
         <section id="event-blogs-panel" role="tabpanel" aria-labelledby="event-blogs-tab" className="mt-6">
-          <EventBlogsTab eventId={event.id} eventTitle={event.title} />
+          <ContextualModuleBlogsTab module="events" entityId={event.id} entityTitle={event.title} />
         </section>
       ) : null}
     </div>

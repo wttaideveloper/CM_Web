@@ -14,7 +14,7 @@ import { getTrainingAdminNotes, getTrainingById, downloadTrainingNotesPdf, getTr
 import TrainingCalendarAction from "./TrainingCalendarAction";
 import { getTrainingMediaPreviewUrl } from "./training-media-url";
 import { useTrainingHistoricalFormConfiguration } from "./training-form-configuration.queries";
-import TrainingBlogsTab from "./TrainingBlogsTab";
+import { ContextualModuleBlogsTab } from "@ihp/enterprise-dashboard";
 
 type TrainingDetailsTab = "details" | "content" | "sections" | "enrolments" | "attendance" | "assessments" | "reviews" | "live" | "dashboards" | "blogs";
 
@@ -639,7 +639,7 @@ function TrainingDetailsContent({
       })()} /></div> : null}
       {activeTab === "live" ? <div className="mt-6"><TrainingLiveTab trainingId={trainingId} discussionId={discussionId} /></div> : null}
       {activeTab === "dashboards" ? <div className="mt-6"><TrainingDashboardsTab trainingId={trainingId} /></div> : null}
-      {activeTab === "blogs" ? <TrainingBlogsTab trainingId={trainingId} trainingTitle={training.title ?? "Training"} /> : null}
+      {activeTab === "blogs" ? <ContextualModuleBlogsTab module="trainings" entityId={trainingId} entityTitle={training.title ?? "Training"} /> : null}
     </div>
   );
 }
