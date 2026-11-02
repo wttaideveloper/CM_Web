@@ -260,6 +260,8 @@ function resolveNotificationEventName(notification: NotificationRouteInput): str
   if (entityType === "event" && /\b(enrol|enroll|registration|registered|booking|booked|ticket)\w*\b/.test(text)) return "event_registration";
   if (/\btraining\b/.test(text) && /\b(submitted|submission|approval requested)\b/.test(text)) return "training_submitted";
   if (/\bevent\b/.test(text) && /\b(submitted|submission|approval requested)\b/.test(text)) return "event_submitted";
+  if (/\bebook\b/.test(text) && /\b(submitted|submission|approval requested)\b/.test(text)) return "ebook_submitted";
+  if (/\bblog\b/.test(text) && /\b(submitted|submission|approval requested)\b/.test(text)) return "blog_submitted";
   if (/\btraining\b/.test(text) && /\b(enrol|enroll|registration|registered|booking|booked)\w*\b/.test(text)) return "training_enrollment";
   if (/\bevent\b/.test(text) && /\b(enrol|enroll|registration|registered|booking|booked|ticket)\w*\b/.test(text)) return "event_registration";
   if (/\btraining\b/.test(text)) return "training_notification";
@@ -334,7 +336,11 @@ export function resolveNotificationTarget(
       if (eventName.includes("deleted") || status === "deleted") params.set("show_audit", "true");
       return `/${module === "training" ? "trainings" : `${module}s`}?${params.toString()}`;
     }
-    return platformTrainingTypes.has(eventName) ? "/approval-queue?type=trainings" : null;
+    if (platformTrainingTypes.has(eventName)) return "/approval-queue?type=trainings";
+    const platformText = `${notification.title ?? ""} ${notification.body ?? ""} ${eventName}`.toLocaleLowerCase();
+    if (/\bebook\b/.test(platformText) && /\b(submitted|submission|approval requested)\b/.test(platformText)) return "/approval-queue?type=ebooks";
+    if (/\bblog\b/.test(platformText) && /\b(submitted|submission|approval requested)\b/.test(platformText)) return "/blog-approval-queue";
+    return null;
   }
   if (eventFeedbackTypes.has(eventName)) {
     const eventId = eventIdForRoute(notification);
@@ -401,6 +407,18 @@ export function resolveNotificationTarget(
     const eventId = eventIdForRoute(notification);
     if (!eventId) return null;
     return `/admin/events/${encodeURIComponent(eventId)}?tab=registrations`;
+  }
+  const enterpriseText = `${notification.title ?? ""} ${notification.body ?? ""} ${eventName}`.toLocaleLowerCase();
+  if (/\bebook\b/.test(enterpriseText) && /\b(approved|rejected|changes requested|revision)\b/.test(enterpriseText)) {
+    const trainingId = trainingIdForRoute(notification);
+    return trainingId ? `/admin/trainings/${encodeURIComponent(trainingId)}` : "/admin/trainings";
+  }
+  if (/\bblog\b/.test(enterpriseText) && /\b(approved|rejected|changes requested|revision)\b/.test(enterpriseText)) {
+    const blogId = readNonEmptyString(notificationData(notification).blog_id)
+      ?? readNonEmptyString(notificationData(notification).postId)
+      ?? readNonEmptyString(notificationData(notification).post_id)
+      ?? readNonEmptyString(notificationData(notification).id);
+    return blogId ? `/admin/my-blogs?highlight=${encodeURIComponent(blogId)}` : "/admin/my-blogs";
   }
   if (!enterpriseEventTypes.has(eventName)) return null;
   const eventId = eventIdForRoute(notification);
