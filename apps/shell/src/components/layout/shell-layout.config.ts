@@ -12,6 +12,7 @@ export type NavigationIcon =
   | "training"
   | "program"
   | "chart"
+  | "finance"
   | "integration"
   | "tag"
   | "forms"

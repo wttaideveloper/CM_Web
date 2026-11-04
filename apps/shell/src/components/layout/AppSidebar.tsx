@@ -91,6 +91,14 @@ function ChartIcon() {
   );
 }
 
+function FinanceIcon() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+      <path d="M3 7h18v12H3zM3 10h18M7 15h3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function IntegrationIcon() {
   return (
     <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none">
@@ -157,6 +165,7 @@ const navigationIcons: Record<NavigationIcon, () => React.JSX.Element> = {
   training: TrainingIcon,
   program: ProgramIcon,
   chart: ChartIcon,
+  finance: FinanceIcon,
   integration: IntegrationIcon,
   tag: TagIcon,
   forms: FormsIcon,

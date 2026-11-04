@@ -4,9 +4,9 @@ import { useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import {
-  filterTransactions,
   getTransactionActionLabel,
   getTransactionStatusLabel,
+  filterTransactions,
   transactionFiltersFromQuery,
   transactionPreviews,
   transactionStatuses,
@@ -58,7 +58,7 @@ function TransactionTable({ transactions, page, state = "empty", onPageChange, o
   return <section className="rounded-2xl border border-[#e1ebe6] bg-white shadow-sm" aria-labelledby="transactions-table-title"><div className="border-b border-[#edf3f0] p-5"><h2 id="transactions-table-title" className="text-lg font-bold text-[#06201c]">Transactions</h2><p className="mt-1 text-sm text-[#52736a]">Completed amounts are read-only and remain separated by currency.</p></div><div className="overflow-x-auto"><table className="min-w-[1250px] w-full text-left text-sm"><caption className="sr-only">Commerce transactions</caption><thead className="border-b border-[#e1ebe6] bg-[#f9fcfa] text-xs font-bold uppercase tracking-[0.08em] text-[#52736a]"><tr><th className="px-5 py-3">Transaction ID</th><th className="px-5 py-3">Customer</th><th className="px-5 py-3">Enterprise</th><th className="px-5 py-3">Module</th><th className="px-5 py-3">Original amount</th><th className="px-5 py-3">Payment amount</th><th className="px-5 py-3">Payment status</th><th className="px-5 py-3">Date</th><th className="px-5 py-3">Actions</th></tr></thead><tbody>{visibleTransactions.length > 0 ? visibleTransactions.map((transaction) => <tr key={transaction.id} className="border-b border-[#edf3f0]"><td className="px-5 py-3 font-semibold text-[#06201c]">{transaction.id}</td><td className="px-5 py-3">{transaction.customer}</td><td className="px-5 py-3">{transaction.enterprise}</td><td className="px-5 py-3">{transaction.module}</td><td className="px-5 py-3">{transaction.originalAmount} {transaction.originalCurrency}</td><td className="px-5 py-3">{transaction.paymentAmount} {transaction.paymentCurrency}</td><td className="px-5 py-3"><StatusBadge status={transaction.status} /></td><td className="px-5 py-3">{transaction.date}</td><td className="flex flex-wrap gap-2 px-5 py-3"><button type="button" disabled={!transaction.actions.includes("view_details")} onClick={() => onSelect(transaction)} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-xs font-semibold text-[#1f6a58] disabled:cursor-not-allowed disabled:opacity-50">{getTransactionActionLabel("view_details")}</button>{transaction.actions.filter((action) => action !== "view_details").map((action) => <button key={action} type="button" disabled className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-xs font-semibold text-[#52736a] disabled:cursor-not-allowed disabled:opacity-50">{getTransactionActionLabel(action)}</button>)}</td></tr>) : <tr><td colSpan={9} className="px-5 py-12 text-center"><p className="font-semibold text-[#06201c]">No transactions available</p><p className="mt-1 text-sm text-[#52736a]">No authoritative financial records are loaded. Connect the documented Payments API before displaying transactions.</p></td></tr>}</tbody></table></div><div className="flex items-center justify-between border-t border-[#edf3f0] p-4 text-sm text-[#52736a]"><span>Page {page} · {transactions.length} records</span><div className="flex gap-2"><button type="button" disabled={page <= 1} onClick={() => onPageChange(page - 1)} className="rounded-full border border-[#d7e5df] px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-45">Previous</button><button type="button" disabled={page >= pageCount} onClick={() => onPageChange(page + 1)} className="rounded-full border border-[#d7e5df] px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-45">Next</button></div></div></section>;
 }
 
-export default function PlatformTransactionsScreen() {
+export function LegacyPlatformTransactionsScreen() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -102,3 +102,5 @@ export default function PlatformTransactionsScreen() {
 
   return <div className="space-y-5" aria-labelledby="transactions-page-title"><h2 id="transactions-page-title" className="sr-only">Transactions</h2><FilterBar filters={filters} onChange={updateFilter} onReset={resetFilters} /><TransactionTable transactions={transactions} page={page} onPageChange={setPage} onSelect={setSelectedTransaction} />{selectedTransaction ? <TransactionDetailsPanel transaction={selectedTransaction} onClose={() => setSelectedTransaction(null)} /> : null}<p className="text-xs leading-5 text-[#7f9d94]">Capture, cancel, review resolution, refunds, invoice downloads and gateway transaction links will only be rendered from a backend-provided actions array. No payment mutation is available in this phase.</p></div>;
 }
+
+export { default } from "./PlatformTransactionsLiveScreen";

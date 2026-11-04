@@ -8,6 +8,7 @@ export type EnterpriseNavigationIcon =
   | "training"
   | "program"
   | "chart"
+  | "finance"
   | "settings";
 
 export type EnterpriseNavigationOwner = "enterprise-admin" | "shell";
@@ -47,6 +48,17 @@ export const enterpriseNavigationGroups: readonly EnterpriseNavigationGroup[] = 
       { label: "My Services", href: "/admin/services", icon: "service", owner: "enterprise-admin" },
       { label: "My Events", href: "/admin/events", icon: "calendar", owner: "enterprise-admin" },
       { label: "My Trainings", href: "/admin/trainings", icon: "training", owner: "enterprise-admin" },
+    ],
+  },
+  {
+    title: "FINANCE",
+    items: [
+      { label: "Payments", href: "/admin/finance/payments", icon: "finance", owner: "enterprise-admin" },
+      { label: "Refunds", href: "/admin/finance/refunds", icon: "finance", owner: "enterprise-admin" },
+      { label: "Invoices", href: "/admin/finance/invoices", icon: "finance", owner: "enterprise-admin" },
+      { label: "Settlements", href: "/admin/finance/settlements", icon: "finance", owner: "enterprise-admin" },
+      { label: "Reports", href: "/admin/finance/reports", icon: "chart", owner: "enterprise-admin" },
+      { label: "Tax Profile", href: "/admin/finance/tax-profile", icon: "finance", owner: "enterprise-admin" },
     ],
   },
   {

@@ -5,3 +5,4 @@ export { default as ProductEditScreen } from "./screens/ProductEditScreen";
 export * from "./services/product.service";
 export * from "./types/product.types";
 export * from "./types/product-screen-config.types";
+export { productTaxClassEnglish } from "./product-tax-class.en";

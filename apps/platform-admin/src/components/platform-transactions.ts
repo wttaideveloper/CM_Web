@@ -1,3 +1,5 @@
+import type { PaymentListParams, PaymentResponse } from "@ihp/commerce";
+
 export const transactionStatuses = [
   "created",
   "requires_action",
@@ -12,7 +14,9 @@ export const transactionStatuses = [
   "review",
 ] as const;
 
-export type TransactionStatus = (typeof transactionStatuses)[number];
+export type KnownTransactionStatus = (typeof transactionStatuses)[number];
+/** A backend status remains displayable even when it is newer than this UI. */
+export type TransactionStatus = string;
 
 export type TransactionFilterValues = {
   search: string;
@@ -27,21 +31,15 @@ export type TransactionFilterValues = {
 /** Maps dashboard-friendly payment labels to the documented transaction statuses. */
 export function resolveTransactionStatus(value: string | null | undefined): TransactionStatus | "all" {
   const normalized = value?.trim().toLowerCase();
-  const aliases: Record<string, TransactionStatus> = {
+  if (!normalized) return "all";
+
+  const aliases: Record<string, string> = {
     successful: "succeeded",
     success: "succeeded",
-    succeeded: "succeeded",
     pending: "processing",
-    processing: "processing",
   };
 
-  if (normalized && aliases[normalized]) {
-    return aliases[normalized];
-  }
-
-  return transactionStatuses.includes(normalized as TransactionStatus)
-    ? (normalized as TransactionStatus)
-    : "all";
+  return aliases[normalized] ?? normalized;
 }
 
 /** Reads transaction filters from route search parameters without creating financial data. */
@@ -57,7 +55,7 @@ export function transactionFiltersFromQuery(query: { get: (key: string) => strin
   };
 }
 
-export const transactionStatusLabels: Record<TransactionStatus, string> = {
+export const transactionStatusLabels: Record<KnownTransactionStatus, string> = {
   created: "Created",
   requires_action: "Requires action",
   processing: "Processing",
@@ -81,9 +79,9 @@ export const transactionActionNames = [
   "view_gateway_transactions",
 ] as const;
 
-export type TransactionActionName = (typeof transactionActionNames)[number];
+export type TransactionActionName = string;
 
-export const transactionActionLabels: Record<TransactionActionName, string> = {
+export const transactionActionLabels: Record<string, string> = {
   view_details: "View details",
   capture: "Capture",
   cancel: "Cancel",
@@ -93,6 +91,7 @@ export const transactionActionLabels: Record<TransactionActionName, string> = {
   view_gateway_transactions: "View gateway transactions",
 };
 
+/** Legacy preview shape retained only for the previous helper test contract. */
 export type TransactionPreview = {
   id: string;
   customer: string;
@@ -118,36 +117,62 @@ export type TransactionPreview = {
   actions: readonly TransactionActionName[];
 };
 
-/** No transaction records are fabricated before the documented Payments API is connected. */
+/** Empty compatibility export; real Transactions data comes from the Payments API. */
 export const transactionPreviews: readonly TransactionPreview[] = [];
 
-/** Maps backend status codes to stable human-readable labels without changing their meaning. */
-export function getTransactionStatusLabel(status: TransactionStatus): string {
-  return transactionStatusLabels[status];
+/** Legacy empty-list helper retained for existing focused tests. */
+export function filterTransactions(transactions: readonly TransactionPreview[], _filters?: unknown): readonly TransactionPreview[] {
+  void _filters;
+  return transactions;
 }
 
-/** Maps backend action codes to labels without granting an action locally. */
-export function getTransactionActionLabel(action: TransactionActionName): string {
-  return transactionActionLabels[action];
+/** Maps a backend status code to a readable label while preserving unknown values. */
+export function getTransactionStatusLabel(status: string): string {
+  const knownLabel = transactionStatusLabels[status as KnownTransactionStatus];
+  if (knownLabel) return knownLabel;
+  return humanizeCode(status);
 }
 
-/** Filters only locally available transaction records; it performs no financial calculations. */
-export function filterTransactions(
-  transactions: readonly TransactionPreview[],
-  filters: { search: string; enterprise: string; module: string; currency: string; status: TransactionStatus | "all"; from?: string; to?: string },
-) {
-  const search = filters.search.trim().toLowerCase();
-  const enterprise = filters.enterprise.trim().toLowerCase();
-  const currency = filters.currency.trim().toLowerCase();
-  return transactions.filter((transaction) => {
-    const matchesSearch = !search || `${transaction.id} ${transaction.customer}`.toLowerCase().includes(search);
-    const matchesEnterprise = !enterprise || transaction.enterprise.toLowerCase().includes(enterprise);
-    const matchesModule = !filters.module || transaction.module.toLowerCase() === filters.module.toLowerCase();
-    const matchesCurrency = !currency || `${transaction.originalCurrency} ${transaction.paymentCurrency}`.toLowerCase().includes(currency);
-    const matchesStatus = filters.status === "all" || transaction.status === filters.status;
-    const transactionDate = transaction.date.slice(0, 10);
-    const matchesFrom = !filters.from || transactionDate >= filters.from;
-    const matchesTo = !filters.to || transactionDate <= filters.to;
-    return matchesSearch && matchesEnterprise && matchesModule && matchesCurrency && matchesStatus && matchesFrom && matchesTo;
-  });
+/** Maps a backend action code to a readable label without enabling the action. */
+export function getTransactionActionLabel(action: string): string {
+  return transactionActionLabels[action] ?? humanizeCode(action);
+}
+
+/** Builds only the documented server-side payment filters. */
+export function buildPaymentListParams(filters: TransactionFilterValues, page: number, pageSize: number): PaymentListParams {
+  return {
+    status: filters.status === "all" ? undefined : filters.status,
+    currency: filters.currency.trim().toUpperCase() || undefined,
+    tenant_id: filters.enterprise.trim() || undefined,
+    date_from: filters.from || undefined,
+    date_to: filters.to || undefined,
+    page,
+    page_size: pageSize,
+  };
+}
+
+/** Returns a backend-supplied customer reference without inventing a display name. */
+export function getPaymentCustomerReference(payment: PaymentResponse): string {
+  return payment.customer_email?.trim() || payment.customer_user_id?.trim() || "Not supplied";
+}
+
+/** Returns the backend-supplied enterprise/tenant reference. */
+export function getPaymentEnterpriseReference(payment: PaymentResponse): string {
+  return payment.tenant_id?.trim() || "Not supplied";
+}
+
+/** Returns the backend purchase type exactly as supplied. */
+export function getPaymentModule(payment: PaymentResponse): string {
+  return payment.purchase_type?.trim() || "Not supplied";
+}
+
+/** Returns the backend status label, falling back to the status code. */
+export function getPaymentStatusLabel(payment: PaymentResponse): string {
+  return payment.status_label?.trim() || getTransactionStatusLabel(payment.status);
+}
+
+function humanizeCode(value: string): string {
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
 }

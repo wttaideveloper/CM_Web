@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@ihp/auth": "0.1.0",
+    "@ihp/commerce": "0.1.0",
     "@ihp/enterprises": "0.1.0",
     "@ihp/onboarding-forms": "0.1.0",
     "@ihp/platform-configuration": "0.1.0",

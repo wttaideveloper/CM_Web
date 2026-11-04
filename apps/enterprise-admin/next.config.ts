@@ -6,6 +6,29 @@ const chatApiBaseUrl = process.env.CHAT_API_BASE_URL;
 const eventsApiBaseUrl = process.env.EVENTS_API_BASE_URL;
 const workflowApiBaseUrl = process.env.WORKFLOW_API_BASE_URL;
 
+const commerceProxyResources = [
+  "currencies",
+  "tax",
+  "refunds",
+  "invoices",
+  "settlements",
+  "payment-reports",
+  "finance",
+] as const;
+
+function buildCommerceProxyRoutes(apiBaseUrl: string) {
+  return commerceProxyResources.flatMap((resource) => [
+    {
+      source: `/api/v1/${resource}`,
+      destination: `${apiBaseUrl}/${resource}`,
+    },
+    {
+      source: `/api/v1/${resource}/:path*`,
+      destination: `${apiBaseUrl}/${resource}/:path*`,
+    },
+  ]);
+}
+
 const nextConfig: NextConfig = {
   skipTrailingSlashRedirect: true,
   experimental: {
@@ -15,6 +38,7 @@ const nextConfig: NextConfig = {
     "@ihp/auth",
     "@ihp/attributes",
     "@ihp/chat-runtime",
+    "@ihp/commerce",
     "@ihp/enterprise-analytics",
     "@ihp/enterprise-dashboard",
     "@ihp/enterprise-events",
@@ -51,6 +75,7 @@ const nextConfig: NextConfig = {
     if (chatApiBaseUrl) {
       const chatBaseHttps = chatApiBaseUrl.replace(/^http:/, "https:");
       const chatApiV1Base = /\/api\/v1\/?$/.test(chatBaseHttps) ? chatBaseHttps.replace(/\/$/, "") : `${chatBaseHttps.replace(/\/$/, "")}/api/v1`;
+      fallback.push(...buildCommerceProxyRoutes(chatApiV1Base));
       fallback.push(
         {
           source: "/api/v1/users/me/notifications",

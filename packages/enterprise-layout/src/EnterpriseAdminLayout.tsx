@@ -82,6 +82,10 @@ function ChartIcon() {
   return <Icon path="M4 19.5h16M7 16v-4M12 16V8M17 16v-7" />;
 }
 
+function FinanceIcon() {
+  return <Icon path="M3 7h18v12H3zM3 10h18M7 15h3" />;
+}
+
 function SettingsIcon() {
   return <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none"><path d="M12 8.2A3.8 3.8 0 1 0 12 15.8 3.8 3.8 0 0 0 12 8.2Zm7.4 3.8a7.1 7.1 0 0 0-.1-1l2-1.5-2-3.4-2.4.8a7.2 7.2 0 0 0-1.7-1L15.1 3h-4.2l-.9 2.9a7.2 7.2 0 0 0-1.7 1l-2.4-.8-2 3.4 2 1.5a7.1 7.1 0 0 0 0 2l-2 1.5 2 3.4 2.4-.8a7.2 7.2 0 0 0 1.7 1l.9 2.9h4.2l.9-2.9a7.2 7.2 0 0 0 1.7-1l2.4.8 2-3.4-2-1.5c.1-.3.1-.7.1-1Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>;
 }
@@ -121,6 +125,7 @@ const navigationIcons: Record<EnterpriseNavigationIcon, () => React.JSX.Element>
   training: TrainingIcon,
   program: ProgramIcon,
   chart: ChartIcon,
+  finance: FinanceIcon,
   settings: SettingsIcon,
 };
 

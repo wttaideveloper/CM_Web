@@ -2,6 +2,8 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 
+import PlatformCurrenciesLiveScreen from "./PlatformCurrenciesLiveScreen";
+
 import {
   commercePreviewMutationsDisabled,
   currencyPreviews,
@@ -36,7 +38,7 @@ function SectionHeading({ title, titleId, description, action }: { title: string
   );
 }
 
-function BaseCurrencySection() {
+export function BaseCurrencySection() {
   const [showImpactReview, setShowImpactReview] = useState(false);
 
   return (
@@ -112,7 +114,7 @@ function AddCurrencyPreview({ onClose }: { onClose: () => void }) {
   );
 }
 
-function SupportedCurrenciesSection() {
+export function SupportedCurrenciesSection() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<CurrencyStatusFilter>("all");
   const [showAddCurrency, setShowAddCurrency] = useState(false);
@@ -145,7 +147,7 @@ function SupportedCurrenciesSection() {
   );
 }
 
-function ExchangeRateSection() {
+export function ExchangeRateSection() {
   const [showOverride, setShowOverride] = useState(false);
 
   return (
@@ -215,7 +217,7 @@ function ExchangeRateHistoryDetails({ record }: { record: ExchangeRateHistoryPre
   );
 }
 
-function ExchangeRateHistorySection() {
+export function ExchangeRateHistorySection() {
   const [pair, setPair] = useState("all");
   const [selectedRate, setSelectedRate] = useState<ExchangeRateHistoryPreview | null>(null);
   const visibleHistory = filterExchangeRateHistory(exchangeRateHistoryPreviews, pair);
@@ -229,7 +231,7 @@ function ExchangeRateHistorySection() {
   );
 }
 
-function ProviderSettingsSection() {
+export function ProviderSettingsSection() {
   return (
     <section className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm sm:p-6" aria-labelledby={currencySectionHeadingIds.provider}>
       <SectionHeading title="Exchange Rate Provider Settings" titleId={currencySectionHeadingIds.provider} description="Provider configuration and automatic refresh frequency are intentionally unconfigured until a supported backend contract is available." action={<PreviewBadge />} />
@@ -244,7 +246,7 @@ function ProviderSettingsSection() {
   );
 }
 
-function EnterpriseCurrencySection() {
+export function EnterpriseCurrencySection() {
   return (
     <section className="rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm sm:p-6" aria-labelledby={currencySectionHeadingIds.enterprise}>
       <SectionHeading title="Enterprise Currency Restrictions" titleId={currencySectionHeadingIds.enterprise} description="Configure allowed selling and settlement currencies per enterprise after the enterprise currency contract is confirmed." action={<PreviewBadge />} />
@@ -259,15 +261,5 @@ function EnterpriseCurrencySection() {
 }
 
 export default function PlatformCurrenciesScreen() {
-  return (
-    <div className="space-y-5" aria-labelledby="currencies-page-title">
-      <h2 id="currencies-page-title" className="sr-only">Currencies and Exchange Rates Management</h2>
-      <BaseCurrencySection />
-      <SupportedCurrenciesSection />
-      <ExchangeRateSection />
-      <ExchangeRateHistorySection />
-      <ProviderSettingsSection />
-      <EnterpriseCurrencySection />
-    </div>
-  );
+  return <PlatformCurrenciesLiveScreen />;
 }
