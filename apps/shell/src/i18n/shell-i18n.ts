@@ -5,6 +5,7 @@ import shellEnglish from "./locales/en/shell";
 import { enterpriseEventsEnglish } from "@ihp/enterprise-events";
 import { enterpriseTrainingsEnglish } from "@ihp/enterprise-trainings";
 import { productTaxClassEnglish } from "@ihp/products";
+import { groupChatSpeechEnglish } from "@ihp/messaging/locales/en";
 
 if (!i18n.isInitialized) {
   void i18n.use(initReactI18next).init({
@@ -14,6 +15,7 @@ if (!i18n.isInitialized) {
         enterpriseEvents: enterpriseEventsEnglish,
         enterpriseTrainings: enterpriseTrainingsEnglish,
         productTaxClass: productTaxClassEnglish,
+        groupChatSpeech: groupChatSpeechEnglish,
       },
     },
     lng: "en",
@@ -27,5 +29,6 @@ if (!i18n.isInitialized) {
 i18n.addResourceBundle("en", "enterpriseEvents", enterpriseEventsEnglish, true, true);
 i18n.addResourceBundle("en", "enterpriseTrainings", enterpriseTrainingsEnglish, true, true);
 i18n.addResourceBundle("en", "productTaxClass", productTaxClassEnglish, true, true);
+i18n.addResourceBundle("en", "groupChatSpeech", groupChatSpeechEnglish, true, true);
 
 export default i18n;
