@@ -829,7 +829,18 @@ export function RealtimeProvider({
         existingSocket.disconnect();
       }
 
-      nextSocket = adapter.createSocket(runtimeToken ?? undefined);
+      try {
+        nextSocket = adapter.createSocket(runtimeToken ?? undefined);
+      } catch (error) {
+        // createSocket throws only when realtime is not configured for this deployment
+        // (no NEXT_PUBLIC_CHAT_SOCKET_URL). Stay disconnected instead of crashing the page.
+        realtimeDebug("provider", "socket unavailable", error instanceof Error ? error.message : "unknown error");
+        socketRef.current = null;
+        socketTokenRef.current = null;
+        setSocket(null);
+        setStatus("disconnected");
+        return;
+      }
       socketRef.current = nextSocket;
       socketTokenRef.current = runtimeToken;
       setSocket(nextSocket);
