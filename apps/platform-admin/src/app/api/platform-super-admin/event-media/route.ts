@@ -3,8 +3,9 @@ import {
   buildProtectedMediaRequestHeaders,
   configuredMediaOrigin,
   copyProtectedMediaResponseHeaders,
-  isAllowedProtectedMediaUrl,
+  resolveProtectedMediaFetchUrl,
 } from "@ihp/shared";
+import { resolveMarketplaceOrigin } from "@/lib/marketplace-url";
 import {
   requestSuperAdminUpstreamResponse,
   superAdminErrorResponse,
@@ -13,11 +14,17 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MEDIA_PROXY_ORIGIN = configuredMediaOrigin(process.env.CHAT_API_BASE_URL) ?? "https://chat.wisdomtooth.tech";
-
 async function forward(request: NextRequest): Promise<Response> {
-  const upstreamUrl = request.nextUrl.searchParams.get("url")?.trim();
-  if (!upstreamUrl || !isAllowedProtectedMediaUrl(upstreamUrl, MEDIA_PROXY_ORIGIN)) {
+  const requestedUrl = request.nextUrl.searchParams.get("url")?.trim();
+  // The URL the browser holds carries the public media origin; the connection is made to
+  // the trusted internal origin, never to a host taken from the request.
+  const upstreamUrl = requestedUrl
+    ? resolveProtectedMediaFetchUrl(requestedUrl, {
+        publicOrigin: configuredMediaOrigin(process.env.NEXT_PUBLIC_PROTECTED_MEDIA_ORIGIN),
+        internalOrigin: resolveMarketplaceOrigin(),
+      })
+    : null;
+  if (!upstreamUrl) {
     return NextResponse.json({ detail: "Media URL is not allowed." }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
 

@@ -1,21 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getSuperAdminUpstreamJson, requestSuperAdminUpstreamJson, superAdminErrorResponse, superAdminJsonResponse } from "@/lib/super-admin-server-client";
-
-const MARKETPLACE_API_BASE_URL = process.env.CHAT_API_BASE_URL;
+import { resolveMarketplaceUrl } from "@/lib/marketplace-url";
 
 function eventTypesUrl(): URL | null {
-  if (!MARKETPLACE_API_BASE_URL) return null;
-  try {
-    const url = new URL(MARKETPLACE_API_BASE_URL);
-    if (url.hostname !== "chat.wisdomtooth.tech") return null;
-    url.protocol = "https:";
-    url.pathname = "/api/v1/event-types/";
-    url.search = "";
-    return url;
-  } catch {
-    return null;
-  }
+  return resolveMarketplaceUrl("/api/v1/event-types/");
 }
 
 /** Proxies Event Type reads through the server-only Super Admin session. */
