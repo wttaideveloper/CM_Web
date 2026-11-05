@@ -89,6 +89,10 @@ const nextConfig: NextConfig = {
           destination: `${chatBaseHttps}/search/enterprises`,
         },
         {
+          source: "/api/v1/cms/blogs/:path*",
+          destination: `${chatApiV1Base}/cms/blogs/:path*`,
+        },
+        {
           source: "/api/v1/enterprises",
           destination: `${chatApiBaseUrl}/enterprises/`,
         },

@@ -59,6 +59,7 @@ export interface CreateTrainingFormValues {
   recurring: string;
   schedule_exceptions: string;
   meeting_provider: string;
+  meeting_passcode: string;
   instructor_role: string;
   instructor_notes: string[];
   notes_pdf_url: string;
@@ -130,10 +131,11 @@ export function createEmptyTrainingForm(): CreateTrainingFormValues {
     access_expiry_days: "",
     location_id: "",
     level: "beginner",
-    language: "en",
+    language: "English",
     recurring: "",
     schedule_exceptions: "",
     meeting_provider: "",
+    meeting_passcode: "",
     instructor_role: "",
     instructor_notes: [],
     notes_pdf_url: "",
@@ -150,6 +152,16 @@ export function createEmptyTrainingForm(): CreateTrainingFormValues {
     instructor_credentials: "",
     badges: [],
   };
+}
+
+/** Legacy language codes mapped to full names sent to the API (e.g. en → English). */
+const LANGUAGE_BY_CODE: Record<string, string> = { en: "English", hi: "Hindi", es: "Spanish", fr: "French" };
+
+/** Normalizes a stored language (code or name) to the full name the API expects. */
+function normalizeLanguage(value: unknown, fallback = "English"): string {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return fallback;
+  return LANGUAGE_BY_CODE[raw.toLowerCase()] ?? raw;
 }
 
 /** Maps a Training response into editable form values. */
@@ -215,10 +227,11 @@ export function trainingToFormValues(training: Training): CreateTrainingFormValu
     meeting_link: stringValue("meeting_link"),
     delivery_instructions: stringValue("delivery_instructions"),
     level: stringValue("level", "beginner"),
-    language: stringValue("language", "en"),
+    language: normalizeLanguage(record.language),
     recurring: stringValue("recurring"),
     schedule_exceptions: (() => { const v = record.schedule_exceptions; return Array.isArray(v) ? JSON.stringify(v) : typeof v === "string" ? v : ""; })(),
     meeting_provider: stringValue("meeting_provider"),
+    meeting_passcode: stringValue("meeting_passcode"),
     instructor_role: (() => { const ins = record.instructor as Record<string, unknown> | null; return typeof ins?.role === "string" ? ins.role : stringValue("instructor_role"); })(),
     instructor_notes: Array.isArray(record.instructor_notes) ? (record.instructor_notes as unknown[]).map(n => typeof (n as Record<string, unknown>)?.url === "string" ? (n as Record<string, unknown>).url as string : typeof n === "string" ? n : "").filter(Boolean) : Array.isArray(record.notes_pdf_url) ? [] : [],
     notes_pdf_url: stringValue("notes_pdf_url"),

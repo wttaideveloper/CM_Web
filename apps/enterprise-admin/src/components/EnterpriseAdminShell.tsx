@@ -1,28 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, type ReactNode } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, type ReactNode } from "react";
 
 import { useAuth } from "@ihp/auth";
 import { EnterpriseAdminLayout } from "@ihp/enterprise-layout";
 import { updatePresenceStatus } from "@ihp/messaging";
-import { useRealtime } from "@ihp/realtime";
 
 import EnterpriseRealtimeRouteProviders from "@/providers/EnterpriseRealtimeRouteProviders";
-import { enterpriseWorkflowNotificationsKey, useEnterpriseWorkflowNotifications } from "@/realtime/enterprise-workflow-notifications";
+import { useEnterpriseWorkflowNotifications } from "@/realtime/enterprise-workflow-notifications";
 
 function EnterpriseAdminShellContent({ children }: { children: ReactNode }) {
   const { logout, user } = useAuth();
-  const realtime = useRealtime();
   const workflow = useEnterpriseWorkflowNotifications();
-  const queryClient = useQueryClient();
-  const latestRealtimeNotificationId = realtime.notifications[0]?.id;
-
-  useEffect(() => {
-    if (latestRealtimeNotificationId) {
-      void queryClient.invalidateQueries({ queryKey: enterpriseWorkflowNotificationsKey });
-    }
-  }, [latestRealtimeNotificationId, queryClient]);
 
   const handleLogout = useCallback(async () => {
     try {

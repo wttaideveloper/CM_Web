@@ -14,8 +14,23 @@ import { getTrainingAdminNotes, getTrainingById, downloadTrainingNotesPdf, getTr
 import TrainingCalendarAction from "./TrainingCalendarAction";
 import { getTrainingMediaPreviewUrl } from "./training-media-url";
 import { useTrainingHistoricalFormConfiguration } from "./training-form-configuration.queries";
+import { ContextualModuleBlogsTab } from "@ihp/enterprise-dashboard";
+import { syncBlogGovernanceFromServer } from "@ihp/shared";
 
-type TrainingDetailsTab = "details" | "content" | "sections" | "enrolments" | "attendance" | "assessments" | "reviews" | "live" | "dashboards";
+type TrainingDetailsTab = "details" | "content" | "sections" | "enrolments" | "attendance" | "assessments" | "reviews" | "live" | "dashboards" | "blogs";
+
+function isTrainingBlogsEnabled(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const raw = window.localStorage.getItem("ihp.blogs.governance.v1");
+    if (!raw) return true;
+    const parsed = JSON.parse(raw);
+    const modules = parsed.modules ?? parsed;
+    return typeof modules.trainings === "boolean" ? modules.trainings : true;
+  } catch {
+    return true;
+  }
+}
 
 const trainingDetailsTabs: ReadonlyArray<{ id: TrainingDetailsTab; label: string }> = [
   { id: "details", label: "Details" },
@@ -27,6 +42,7 @@ const trainingDetailsTabs: ReadonlyArray<{ id: TrainingDetailsTab; label: string
   { id: "reviews", label: "Reviews" },
   { id: "live", label: "Live & Discussions" },
   { id: "dashboards", label: "Dashboards" },
+  { id: "blogs", label: "Blogs & News" },
 ];
 
 function formatLearningObjectives(value: unknown): string {
@@ -82,7 +98,7 @@ function AdminNoteBanner({ trainingId, status }: { trainingId: string; status: s
           ) : null}
           {note ? <p className="mt-2 text-sm leading-6 text-[#6b5a1e]">{note}</p> : null}
         </div>
-        {status === "needs_revision" ? (
+        {(status === "needs_revision" || status === "rejected") ? (
           <Link
             href={`/admin/trainings/${trainingId}/edit`}
             className="inline-flex h-10 shrink-0 items-center justify-center rounded-full bg-[#8a5a00] px-4 text-sm font-bold text-white hover:bg-[#704900]"
@@ -94,7 +110,7 @@ function AdminNoteBanner({ trainingId, status }: { trainingId: string; status: s
       <p className="mt-3 text-xs leading-5 text-[#8a6b37]">
         {status === "needs_revision"
           ? "Update the requested details, then choose “Submit for approval” from Training actions."
-          : "This Training was rejected and cannot be resubmitted. Contact a Super Admin if you need this decision reviewed."}
+          : "Update the Training based on the Super Admin feedback, then choose “Submit for approval” from Training actions."}
       </p>
     </section>
   );
@@ -308,6 +324,17 @@ function TrainingDetailsContent({
   );
   const [notificationReviewId, setNotificationReviewId] = useState<string | undefined>(() => searchParams.get("review_id") ?? undefined);
   const [openReviewAudit, setOpenReviewAudit] = useState(() => searchParams.get("show_audit") === "true");
+  const [trainingBlogsActive, setTrainingBlogsActive] = useState(isTrainingBlogsEnabled);
+  useEffect(() => {
+    const handleUpdate = () => setTrainingBlogsActive(isTrainingBlogsEnabled());
+    window.addEventListener("ihp:blogs-governance-updated", handleUpdate);
+    window.addEventListener("storage", handleUpdate);
+    void syncBlogGovernanceFromServer().then(() => setTrainingBlogsActive(isTrainingBlogsEnabled())).catch(() => {});
+    return () => {
+      window.removeEventListener("ihp:blogs-governance-updated", handleUpdate);
+      window.removeEventListener("storage", handleUpdate);
+    };
+  }, []);
   const [discussionId, setDiscussionId] = useState<string | undefined>(() => searchParams.get("discussion_id") ?? undefined);
 
   useEffect(() => {
@@ -357,6 +384,9 @@ function TrainingDetailsContent({
 
   const training = trainingQuery.data;
   const trainingRecord = training as unknown as Record<string, unknown>;
+  const faqsList = Array.isArray(trainingRecord.faqs)
+    ? trainingRecord.faqs.filter((faq): faq is Record<string, unknown> => Boolean(faq) && typeof faq === "object" && !Array.isArray(faq))
+    : [];
   const trainingCustomValues = trainingRecord.custom_values && typeof trainingRecord.custom_values === "object" && !Array.isArray(trainingRecord.custom_values)
     ? trainingRecord.custom_values as Record<string, unknown>
     : {};
@@ -423,6 +453,7 @@ function TrainingDetailsContent({
       <a href="/admin/trainings" className="mb-4 inline-flex h-10 items-center justify-center rounded-full border border-[#d7e5df] bg-white px-5 text-sm font-semibold text-[#1f6a58] hover:bg-[#f4faf7]">
         ← Back to Trainings
       </a>
+      {searchParams.get("notice") === "approval-submitted" ? <p role="status" className="mb-4 rounded-xl border border-[#bce8d1] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#167550]">Training changes submitted for Super Admin approval.</p> : null}
       {primaryImageUrl ? (
         <div className="relative overflow-hidden rounded-2xl border border-[#e1ebe6] shadow-sm">
           <img alt={training.title} className="h-56 w-full object-cover sm:h-64" src={primaryImageUrl} onError={(event) => { (event.currentTarget as HTMLImageElement).style.display = "none" }} />
@@ -464,7 +495,7 @@ function TrainingDetailsContent({
       ) : null}
 
       <div className="mt-6 flex flex-wrap gap-2 border-b border-[#e1ebe6] overflow-x-auto scrollbar-thin">
-        {trainingDetailsTabs.map((tab) => (
+        {trainingDetailsTabs.filter((t) => t.id !== "blogs" || trainingBlogsActive).map((tab) => (
           <button
             key={tab.id}
             type="button"
@@ -563,11 +594,11 @@ function TrainingDetailsContent({
                 </div>
               </div>
             ) : null}
-            {Array.isArray((training as unknown as Record<string, unknown>).faqs) && ((training as unknown as Record<string, unknown>).faqs as unknown[]).length > 0 ? (
+            {faqsList.length > 0 ? (
               <div className="mt-6">
                 <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">FAQs</p>
                 <div className="mt-2 space-y-2">
-                  {((training as unknown as Record<string, unknown>).faqs as Array<Record<string, unknown>>).map((faq, i) => {
+                  {faqsList.map((faq, i) => {
                     const q = typeof faq.question === "string" ? faq.question : typeof faq.q === "string" ? faq.q : "";
                     const a = typeof faq.answer === "string" ? faq.answer : typeof faq.a === "string" ? faq.a : "";
                     return (
@@ -620,6 +651,7 @@ function TrainingDetailsContent({
       })()} /></div> : null}
       {activeTab === "live" ? <div className="mt-6"><TrainingLiveTab trainingId={trainingId} discussionId={discussionId} /></div> : null}
       {activeTab === "dashboards" ? <div className="mt-6"><TrainingDashboardsTab trainingId={trainingId} /></div> : null}
+      {activeTab === "blogs" && trainingBlogsActive ? <ContextualModuleBlogsTab module="trainings" entityId={trainingId} entityTitle={training.title ?? "Training"} /> : null}
     </div>
   );
 }

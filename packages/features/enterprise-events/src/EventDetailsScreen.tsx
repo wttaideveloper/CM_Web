@@ -16,9 +16,12 @@ import EventCommunicationsActions from "./EventCommunicationsActions";
 import EventRefundAction from "./EventRefundAction";
 import EventMediaPreview from "./EventMediaPreview";
 import { mediaItemUrl, type EventMediaItem } from "./event-media";
+import { syncBlogGovernanceFromServer } from "@ihp/shared";
 import EventOrdersSection from "./EventOrdersSection";
 import EventOverviewSection from "./EventOverviewSection";
 import EventReportsSection from "./EventReportsSection";
+import EventSpeakerSelect from "./EventSpeakerSelect";
+import { ContextualModuleBlogsTab } from "@ihp/enterprise-dashboard";
 import { EventReviewsTab, type ReviewStatusFilter, STATUSES as EVENT_REVIEW_STATUSES } from "./EventReviewsTab";
 import SessionAttendancePanel from "./SessionAttendancePanel";
 import {
@@ -92,7 +95,7 @@ type DetailItem = {
   label: string;
   value: string | number | boolean | null | undefined;
 };
-type EventDetailsTab = "overview" | "details" | "sessions" | "registrations" | "attendance" | "reviews" | "reports" | "orders" | "fulfilment";
+type EventDetailsTab = "overview" | "details" | "sessions" | "registrations" | "attendance" | "reviews" | "reports" | "orders" | "fulfilment" | "blogs";
 type RegistrationsSubview = "registered" | "waitlist";
 
 function AdminNoteBanner({ eventId, status }: { eventId: string; status: string }) {
@@ -133,7 +136,20 @@ function AdminNoteBanner({ eventId, status }: { eventId: string; status: string 
   );
 }
 
-const eventDetailsTabs: ReadonlyArray<{ id: EventDetailsTab; label: string }> =
+function isEventBlogsEnabled(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const raw = window.localStorage.getItem("ihp.blogs.governance.v1");
+    if (!raw) return true;
+    const parsed = JSON.parse(raw);
+    const modules = parsed.modules ?? parsed;
+    return typeof modules.events === "boolean" ? modules.events : true;
+  } catch {
+    return true;
+  }
+}
+
+const eventDetailsTabs: ReadonlyArray<{ id: EventDetailsTab; label: string; badge?: string | number }> =
   [
     { id: "overview", label: "Overview" },
     { id: "details", label: "Details" },
@@ -144,6 +160,7 @@ const eventDetailsTabs: ReadonlyArray<{ id: EventDetailsTab; label: string }> =
     { id: "reports", label: "Reports" },
     { id: "orders", label: "Orders" },
     { id: "fulfilment", label: "Fulfilment" },
+    { id: "blogs", label: "Blogs & News" },
   ];
 
 const registrationsSubviews: ReadonlyArray<{
@@ -191,13 +208,25 @@ function EventDetailsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
-  const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
+  const [statusFeedback, setStatusFeedback] = useState<string | null>(() => searchParams.get("notice") === "approval-submitted" ? "Event changes submitted for Super Admin approval." : null);
   const requestedInitialTab = searchParams.get("tab");
   const [activeTab, setActiveTab] = useState<EventDetailsTab>(
     () => (eventDetailsTabs.some((tab) => tab.id === requestedInitialTab) ? (requestedInitialTab as EventDetailsTab) : "overview"),
   );
   const [notificationReviewId, setNotificationReviewId] = useState<string | undefined>(() => searchParams.get("review_id") ?? undefined);
   const [openReviewAudit, setOpenReviewAudit] = useState(() => searchParams.get("show_audit") === "true");
+  const [eventBlogsActive, setEventBlogsActive] = useState(isEventBlogsEnabled);
+  useEffect(() => {
+    const handleUpdate = () => setEventBlogsActive(isEventBlogsEnabled());
+    window.addEventListener("ihp:blogs-governance-updated", handleUpdate);
+    window.addEventListener("storage", handleUpdate);
+    // Fetch latest governance from backend on mount to sync cross-browser
+    void syncBlogGovernanceFromServer().then(() => setEventBlogsActive(isEventBlogsEnabled())).catch(() => {});
+    return () => {
+      window.removeEventListener("ihp:blogs-governance-updated", handleUpdate);
+      window.removeEventListener("storage", handleUpdate);
+    };
+  }, []);
   useEffect(() => {
     const requestedTab = searchParams.get("tab");
     if (eventDetailsTabs.some((tab) => tab.id === requestedTab)) setActiveTab(requestedTab as EventDetailsTab);
@@ -235,7 +264,7 @@ function EventDetailsContent() {
       ]);
       setStatusFeedback("Event resubmitted for approval.");
     },
-    onError: () => setStatusFeedback("Unable to resubmit this Event for approval. Please try again."),
+    onError: (error) => setStatusFeedback(error instanceof Error && error.message ? error.message : "Unable to resubmit this Event for approval. Please try again."),
   });
   useEffect(() => {
     const status = eventQuery.data?.status;
@@ -260,7 +289,7 @@ function EventDetailsContent() {
   const sessionsVisible = sessionsOperational || event.sessions.length > 0;
   const hasHistoricalAttendance = attendanceHistoryQuery.data?.participants.length ? attendanceHistoryQuery.data.participants.length > 0 : false;
   const visibleTabs = hasOperationalDataAccess
-    ? eventDetailsTabs.filter((tab) => (tab.id !== "attendance" || event.modules?.check_in !== false || hasHistoricalAttendance) && (tab.id !== "sessions" || sessionsVisible))
+    ? eventDetailsTabs.filter((tab) => (tab.id !== "attendance" || event.modules?.check_in !== false || hasHistoricalAttendance) && (tab.id !== "sessions" || sessionsVisible) && (tab.id !== "blogs" || eventBlogsActive))
     : eventDetailsTabs.slice(0, 2);
   const effectiveActiveTab = visibleTabs.some((tab) => tab.id === activeTab) ? activeTab : "overview";
   const coordinates = event.venue?.coordinates;
@@ -328,7 +357,7 @@ function EventDetailsContent() {
               Edit Event
             </Link>
           ) : null}
-          {event.status === "needs_revision" ? (
+          {(event.status === "needs_revision" || event.status === "rejected") ? (
             <button type="button" onClick={() => resubmitMutation.mutate()} disabled={resubmitMutation.isPending} className="inline-flex h-11 items-center justify-center rounded-full border border-[#1f6a58] px-5 text-sm font-bold text-[#1f6a58] disabled:cursor-not-allowed disabled:opacity-60">
               {resubmitMutation.isPending ? "Resubmitting..." : "Resubmit for approval"}
             </button>
@@ -560,6 +589,11 @@ function EventDetailsContent() {
         </section>
       ) : null}
       {effectiveActiveTab === "fulfilment" ? <EventFulfilmentSection eventId={event.id} /> : null}
+      {effectiveActiveTab === "blogs" && eventBlogsActive ? (
+        <section id="event-blogs-panel" role="tabpanel" aria-labelledby="event-blogs-tab" className="mt-6">
+          <ContextualModuleBlogsTab module="events" entityId={event.id} entityTitle={event.title} />
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -577,7 +611,7 @@ function EventDetailsTabs({
   activeTab,
   onChange,
 }: {
-  tabs: ReadonlyArray<{ id: EventDetailsTab; label: string }>;
+  tabs: ReadonlyArray<{ id: EventDetailsTab; label: string; badge?: string | number }>;
   activeTab: EventDetailsTab;
   onChange: (tab: EventDetailsTab) => void;
 }) {
@@ -600,7 +634,7 @@ function EventDetailsTabs({
           onKeyDown={(event) => handleTabKeyDown(event, index, onChange)}
           className={`mr-6 border-b-2 px-1 pb-3 text-sm font-bold outline-none transition focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2 ${activeTab === tab.id ? "border-[#1f6a58] text-[#1f6a58]" : "border-transparent text-[#52736a] hover:text-[#06201c]"}`}
         >
-          {tab.label}
+          <span>{tab.label}</span>{tab.badge !== undefined ? <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-[#86f2e4]/30 text-[#006a61] text-[11px] font-mono font-bold">{tab.badge}</span> : null}
         </button>
       ))}
     </div>
@@ -1676,12 +1710,7 @@ function AddSessionDialog({
             <textarea value={values.description} onChange={(event) => setValues((current) => ({ ...current, description: event.target.value }))} className="mt-1 min-h-24 w-full rounded-lg border border-[#d7e5df] px-3 py-2 font-normal" />
           </label> : null}
           <div className="grid gap-4 sm:grid-cols-2">
-            {fieldEnabled("speaker") ? <SessionInput
-              label="Speaker"
-              required={fieldRequired("speaker")}
-              value={values.speaker}
-              onChange={update("speaker")}
-            /> : null}
+            {fieldEnabled("speaker") ? <label className="block text-sm font-bold text-[#06201c]">Speaker{fieldRequired("speaker") ? " *" : ""}<EventSpeakerSelect id="event-session-speaker" value={values.speaker} required={fieldRequired("speaker")} onChange={(value) => setValues((current) => ({ ...current, speaker: value }))} /></label> : null}
             {fieldEnabled("speaker_bio") ? <label className="block text-sm font-bold text-[#06201c]">
               Speaker bio{fieldRequired("speaker_bio") ? " *" : ""}
               <textarea value={values.speaker_bio} onChange={(event) => setValues((current) => ({ ...current, speaker_bio: event.target.value }))} className="mt-1 min-h-24 w-full rounded-lg border border-[#d7e5df] px-3 py-2 font-normal" />

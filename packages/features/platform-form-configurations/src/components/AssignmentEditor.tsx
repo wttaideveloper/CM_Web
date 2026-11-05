@@ -71,6 +71,7 @@ export function AssignmentEditor({
   onTenantIdsChange,
   onEnterpriseIdsChange,
 }: Props) {
+  const showEnterprises = enterprises !== undefined && onEnterpriseIdsChange !== undefined;
   const [search, setSearch] = useState("");
   const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
   const usesEnterpriseAssignments = assignmentMode === "enterprise";

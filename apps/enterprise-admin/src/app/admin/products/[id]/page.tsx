@@ -5,6 +5,7 @@ import CurrentEnterpriseGuard from "@/components/CurrentEnterpriseGuard";
 import { isInternalUserRole, useAuth } from "@ihp/auth";
 import { useParams } from "next/navigation";
 import { EnterpriseCatalogManagement } from "@/components/EnterpriseCatalogManagement";
+import { ContextualModuleBlogsTab } from "@ihp/enterprise-dashboard";
 
 export default function EnterpriseProductDetailsPage() {
   const { roles } = useAuth();
@@ -18,6 +19,7 @@ export default function EnterpriseProductDetailsPage() {
             listHref="/admin/products"
             editHrefBase="/admin/products"
             readOnly={isInternalUserRole(roles?.tenantRole)}
+            blogsTab={(product) => <ContextualModuleBlogsTab module="products" entityId={product.id} entityTitle={product.product_name || "Product"} />}
           />
         </EnterpriseCatalogManagement>
       )}

@@ -10,11 +10,19 @@ const REMEMBER_ME_MAX_AGE = 60 * 60 * 24 * 30;
 const SUPER_ADMIN_AUTH_API_BASE_URL = process.env.SUPER_ADMIN_AUTH_API_BASE_URL?.replace(/\/+$/, "");
 const CHAT_API_BASE_URL = process.env.CHAT_API_BASE_URL?.replace(/\/+$/, "");
 
-type RefreshResponse = { tokens: { accessToken: string; refreshToken?: string } };
 type SuperAdminAccessToken = { accessToken: string; rotatedRefreshToken?: string; rememberMe: boolean };
 
-const refreshRequests = new Map<string, Promise<SuperAdminAccessToken>>();
-const REFRESH_REQUEST_CACHE_MS = 1_000;
+type CachedAccessToken = {
+  accessToken: string;
+  rotatedRefreshToken?: string;
+  rememberMe: boolean;
+  expiresAt: number;
+};
+
+const tokenCache = new Map<string, CachedAccessToken>();
+const refreshInFlight = new Map<string, Promise<SuperAdminAccessToken>>();
+const ACCESS_TOKEN_TTL_MS = 4 * 60 * 1000; // 4 minutes
+const ROTATION_GRACE_MS = 60 * 1000; // 60 seconds grace period
 
 /** Error returned by the dedicated Super Admin gateway after server-side normalization. */
 export class SuperAdminServerError extends Error {
@@ -33,7 +41,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function getCookieDomain(): string | undefined {
   const configuredDomain = process.env.SUPER_ADMIN_SESSION_COOKIE_DOMAIN?.trim().toLowerCase();
-  if (!configuredDomain) return undefined;
+  if (!configuredDomain || configuredDomain === "localhost" || configuredDomain === "127.0.0.1") return undefined;
   if (!/^[a-z0-9.-]+$/.test(configuredDomain)) throw new SuperAdminServerError(503, "Super Admin authentication is not configured.");
   return configuredDomain;
 }
@@ -43,7 +51,7 @@ function sessionCookieOptions(rememberMe = false) {
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "strict" as const,
+    sameSite: "lax" as const,
     secure: process.env.NODE_ENV === "production",
     ...(rememberMe ? { maxAge: REMEMBER_ME_MAX_AGE } : {}),
     ...(domain ? { domain } : {}),
@@ -90,8 +98,11 @@ async function refreshSuperAdminAccessToken(refreshToken: string, rememberMe: bo
   try {
     refreshResponse = await fetch(`${SUPER_ADMIN_AUTH_API_BASE_URL}/api/v1/auth/refresh`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Token-Delivery": "body" },
-      body: JSON.stringify({ refreshToken }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `refresh_token=${refreshToken}`,
+      },
+      body: JSON.stringify({ refreshToken, refresh_token: refreshToken }),
       cache: "no-store",
     });
   } catch {
@@ -99,42 +110,107 @@ async function refreshSuperAdminAccessToken(refreshToken: string, rememberMe: bo
   }
 
   const refreshBody: unknown = await refreshResponse.json().catch(() => null);
-  if (!refreshResponse.ok || !isRecord(refreshBody) || !isRecord(refreshBody.tokens) || typeof refreshBody.tokens.accessToken !== "string" || !refreshBody.tokens.accessToken) {
+  const refreshTokens = isRecord(refreshBody) && isRecord(refreshBody.tokens) ? refreshBody.tokens : null;
+  const accessToken = refreshTokens && typeof refreshTokens.accessToken === "string"
+    ? refreshTokens.accessToken
+    : refreshTokens && typeof refreshTokens.access_token === "string"
+      ? refreshTokens.access_token
+      : null;
+  const rotatedRefreshToken = refreshTokens && typeof refreshTokens.refreshToken === "string"
+    ? refreshTokens.refreshToken
+    : refreshTokens && typeof refreshTokens.refresh_token === "string"
+      ? refreshTokens.refresh_token
+      : undefined;
+  if (!refreshResponse.ok || !accessToken) {
     throw refreshFailure(refreshResponse.status);
   }
-
-  const refresh = refreshBody as RefreshResponse;
   return {
-    accessToken: refresh.tokens.accessToken,
+    accessToken,
     rememberMe,
-    ...(typeof refresh.tokens.refreshToken === "string" && refresh.tokens.refreshToken ? { rotatedRefreshToken: refresh.tokens.refreshToken } : {}),
+    ...(rotatedRefreshToken ? { rotatedRefreshToken } : {}),
   };
+}
+
+/** Pre-populates the memory cache during SSO session handoff. */
+export async function warmSuperAdminSession(refreshToken: string, rememberMe: boolean): Promise<void> {
+  const refreshKey = createHash("sha256").update(refreshToken).digest("hex");
+  const existing = tokenCache.get(refreshKey);
+  if (existing && Date.now() < existing.expiresAt) return;
+
+  try {
+    const result = await refreshSuperAdminAccessToken(refreshToken, rememberMe);
+    const cachedEntry: CachedAccessToken = {
+      accessToken: result.accessToken,
+      rotatedRefreshToken: result.rotatedRefreshToken,
+      rememberMe: result.rememberMe,
+      expiresAt: Date.now() + ACCESS_TOKEN_TTL_MS,
+    };
+    tokenCache.set(refreshKey, cachedEntry);
+    if (result.rotatedRefreshToken) {
+      const newKey = createHash("sha256").update(result.rotatedRefreshToken).digest("hex");
+      tokenCache.set(newKey, cachedEntry);
+      setTimeout(() => {
+        if (tokenCache.get(refreshKey) === cachedEntry) tokenCache.delete(refreshKey);
+      }, ROTATION_GRACE_MS);
+    }
+  } catch {
+    // If warm-up encounters an error, on-demand getSuperAdminAccessToken will handle it
+  }
 }
 
 /** Obtains the short-lived dedicated access token without exposing it outside this server module. */
 async function getSuperAdminAccessToken(): Promise<SuperAdminAccessToken> {
   if (!SUPER_ADMIN_AUTH_API_BASE_URL) throw new SuperAdminServerError(503, "Super Admin authentication is not configured.");
   const requestCookies = await cookies();
-  const refreshToken = requestCookies.get(SESSION_COOKIE_NAME)?.value;
+  const refreshToken =
+    requestCookies.get(SESSION_COOKIE_NAME)?.value ||
+    requestCookies.get("refresh_token")?.value ||
+    requestCookies.get("ihp_refresh_token")?.value;
   if (!refreshToken) throw new SuperAdminServerError(401, "Super Admin authentication is required.");
   const rememberMe = requestCookies.get(REMEMBER_ME_COOKIE_NAME)?.value === "true";
   const refreshKey = createHash("sha256").update(refreshToken).digest("hex");
-  const existingRequest = refreshRequests.get(refreshKey);
-  if (existingRequest) return existingRequest;
 
-  const refreshRequest = refreshSuperAdminAccessToken(refreshToken, rememberMe);
-  refreshRequests.set(refreshKey, refreshRequest);
-  void refreshRequest.then(
-    () => {
-      setTimeout(() => {
-        if (refreshRequests.get(refreshKey) === refreshRequest) refreshRequests.delete(refreshKey);
-      }, REFRESH_REQUEST_CACHE_MS);
-    },
-    () => {
-      if (refreshRequests.get(refreshKey) === refreshRequest) refreshRequests.delete(refreshKey);
-    },
-  );
-  return refreshRequest;
+  // 1. Check in-memory cache for a valid active access token
+  const cached = tokenCache.get(refreshKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    return {
+      accessToken: cached.accessToken,
+      rotatedRefreshToken: cached.rotatedRefreshToken,
+      rememberMe: cached.rememberMe,
+    };
+  }
+
+  // 2. Coalesce in-flight refresh requests to avoid concurrent refresh collisions
+  const existing = refreshInFlight.get(refreshKey);
+  if (existing) return existing;
+
+  // 3. Initiate refresh and cache active access token
+  const refreshPromise = (async () => {
+    try {
+      const result = await refreshSuperAdminAccessToken(refreshToken, rememberMe);
+      const cachedEntry: CachedAccessToken = {
+        accessToken: result.accessToken,
+        rotatedRefreshToken: result.rotatedRefreshToken,
+        rememberMe: result.rememberMe,
+        expiresAt: Date.now() + ACCESS_TOKEN_TTL_MS,
+      };
+
+      tokenCache.set(refreshKey, cachedEntry);
+      if (result.rotatedRefreshToken) {
+        const newKey = createHash("sha256").update(result.rotatedRefreshToken).digest("hex");
+        tokenCache.set(newKey, cachedEntry);
+        setTimeout(() => {
+          if (tokenCache.get(refreshKey) === cachedEntry) tokenCache.delete(refreshKey);
+        }, ROTATION_GRACE_MS);
+      }
+      return result;
+    } finally {
+      refreshInFlight.delete(refreshKey);
+    }
+  })();
+
+  refreshInFlight.set(refreshKey, refreshPromise);
+  return refreshPromise;
 }
 
 /** Calls a dedicated Super Admin endpoint with a server-only bearer token and preserves its HTTP result. */
@@ -259,23 +335,28 @@ export async function requestSuperAdminUpstreamResponse(
   }
 }
 
+/** Applies a rotated server-side session credential to any BFF response type. */
+export function applyRotatedSuperAdminSession(
+  response: NextResponse,
+  rotatedRefreshToken: string | undefined,
+  rememberMe: boolean,
+): NextResponse {
+  if (rotatedRefreshToken) {
+    response.cookies.set(SESSION_COOKIE_NAME, rotatedRefreshToken, sessionCookieOptions(rememberMe));
+    if (rememberMe) response.cookies.set(REMEMBER_ME_COOKIE_NAME, "true", sessionCookieOptions(true));
+  }
+  return response;
+}
+
 
 /** Builds a no-store BFF response and applies a rotated refresh credential only from the server. */
 export function superAdminJsonResponse(result: SuperAdminServerResult & { status?: number }): NextResponse {
   if (result.status === 204) {
     const response = new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
-    if (result.rotatedRefreshToken) {
-      response.cookies.set(SESSION_COOKIE_NAME, result.rotatedRefreshToken, sessionCookieOptions(result.rememberMe));
-      if (result.rememberMe) response.cookies.set(REMEMBER_ME_COOKIE_NAME, "true", sessionCookieOptions(true));
-    }
-    return response;
+    return applyRotatedSuperAdminSession(response, result.rotatedRefreshToken, Boolean(result.rememberMe));
   }
   const response = NextResponse.json(result.body, { status: result.status, headers: { "Cache-Control": "no-store" } });
-  if (result.rotatedRefreshToken) {
-    response.cookies.set(SESSION_COOKIE_NAME, result.rotatedRefreshToken, sessionCookieOptions(result.rememberMe));
-    if (result.rememberMe) response.cookies.set(REMEMBER_ME_COOKIE_NAME, "true", sessionCookieOptions(true));
-  }
-  return response;
+  return applyRotatedSuperAdminSession(response, result.rotatedRefreshToken, Boolean(result.rememberMe));
 }
 
 /** Converts server-client errors into the dedicated BFF's stable client-safe error contract. */
@@ -289,6 +370,8 @@ export function superAdminErrorResponse(error: unknown): NextResponse {
 
 /** Revokes the dedicated gateway refresh credential without disclosing it to the browser. */
 export async function revokeSuperAdminSession(): Promise<{ revocationConfirmed: boolean; upstreamStatus?: number }> {
+  tokenCache.clear();
+  refreshInFlight.clear();
   const refreshToken = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
   if (!refreshToken) return { revocationConfirmed: true };
   if (!SUPER_ADMIN_AUTH_API_BASE_URL) return { revocationConfirmed: false };
@@ -296,8 +379,11 @@ export async function revokeSuperAdminSession(): Promise<{ revocationConfirmed: 
   try {
     const response = await fetch(`${SUPER_ADMIN_AUTH_API_BASE_URL}/api/v1/auth/logout`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Token-Delivery": "body" },
-      body: JSON.stringify({ refreshToken }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `refresh_token=${refreshToken}`,
+      },
+      body: JSON.stringify({ refreshToken, refresh_token: refreshToken }),
       cache: "no-store",
     });
     const revocationConfirmed = response.ok || response.status === 400 || response.status === 401;

@@ -89,7 +89,7 @@ export function TrainingFormConfigurationEditorScreen({ id, mode }: { id?: strin
     if (!isCreate) return updateConfigurationDraft(builder);
     await ensureUniqueName(builder.name);
     const saved = await create.mutateAsync(toTrainingFormConfigurationCreateCandidate(builder));
-    if (builder.scope === "selective" && builder.tenantIds.length > 0) {
+    if (builder.scope === "selective" && ((builder.enterpriseIds ?? []).length > 0 || builder.tenantIds.length > 0)) {
       try {
         await saveAssignments.mutateAsync({ configurationId: saved.id, payload: { tenant_ids: builder.tenantIds } });
         const persistedAssignments = await getTrainingFormConfigurationAssignments(saved.id);

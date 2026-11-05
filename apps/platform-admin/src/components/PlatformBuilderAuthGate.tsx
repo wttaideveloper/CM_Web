@@ -28,9 +28,9 @@ export default function PlatformBuilderAuthGate({ children }: PlatformBuilderAut
       if (!response.ok || typeof body !== "object" || body === null || !("authenticated" in body) || body.authenticated !== true) throw new Error("Unable to verify the Super Admin session.");
       return true;
     },
-    retry: false,
-    staleTime: 0,
-    refetchOnWindowFocus: true,
+    retry: 1,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
   const refetchSession = sessionQuery.refetch;
   const authenticated = sessionQuery.data === true && !sessionQuery.isError;
@@ -102,15 +102,25 @@ export default function PlatformBuilderAuthGate({ children }: PlatformBuilderAut
     if (sessionQuery.isError) {
       return (
         <main className="flex min-h-screen items-center justify-center bg-white px-6">
-          <section role="alert" className="max-w-md rounded-2xl border border-[#f0c8c4] bg-[#fff8f7] p-6 text-center">
+          <section role="alert" className="max-w-md rounded-2xl border border-[#f0c8c4] bg-[#fff8f7] p-6 text-center shadow-sm">
             <p className="text-sm font-semibold text-[#b42318]">Unable to verify your Super Admin session right now.</p>
-            <button
-              type="button"
-              onClick={() => void sessionQuery.refetch()}
-              className="mt-3 text-sm font-bold text-[#1f6a58] underline"
-            >
-              Retry
-            </button>
+            <div className="mt-4 flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => void sessionQuery.refetch()}
+                className="rounded-[11px] border border-[#1f6a58] px-4 py-1.5 text-sm font-bold text-[#1f6a58] transition hover:bg-[#1f6a58]/5"
+              >
+                Retry
+              </button>
+              {shellLoginUrl ? (
+                <a
+                  href={shellLoginUrl}
+                  className="rounded-[11px] bg-[#1f6a58] px-4 py-1.5 text-sm font-bold text-white shadow-sm transition hover:bg-[#185746]"
+                >
+                  Sign In Again &rarr;
+                </a>
+              ) : null}
+            </div>
           </section>
         </main>
       );

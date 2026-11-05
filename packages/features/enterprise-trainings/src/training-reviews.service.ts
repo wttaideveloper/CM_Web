@@ -105,6 +105,7 @@ export function parseTrainingReview(value: unknown): TrainingReview {
     moderation_status: moderationStatus,
     created_at: normalizeUtcDate(typeof value.created_at === "string" ? value.created_at : null),
     updated_at: normalizeUtcDate(typeof value.updated_at === "string" ? value.updated_at : null),
+    reason: typeof (value.reason ?? value.rejection_reason ?? value.moderation_reason) === "string" ? String(value.reason ?? value.rejection_reason ?? value.moderation_reason) : null,
   };
 }
 

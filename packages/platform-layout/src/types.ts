@@ -43,6 +43,8 @@ export type PlatformAdminLayoutProps = {
     approvalQueueHref: string;
     enterpriseRequestCount?: number | null;
     tenantApplicationsHref?: string;
+    blogCount?: number | null;
+    blogApprovalQueueHref?: string;
   };
   messagesHref?: string | null;
   profileHref?: string;

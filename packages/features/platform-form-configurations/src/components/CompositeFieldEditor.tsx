@@ -43,6 +43,7 @@ export function CompositeFieldEditor({ field, core, definition, onChange }: Comp
       <p className="font-semibold text-[#06201c]">{definition.title}</p>
       <p className="mt-1 text-sm text-[#52736a]">{definition.description}</p>
       <p className="mt-2 text-xs text-[#52736a]">Renderer: <code>{field.renderer}</code></p>
+      {field.coreKey === "sessions" ? <p className="mt-2 text-xs text-[#52736a]">Speaker choices are loaded at runtime from the Enterprise Admin&apos;s active internal team members. They are not configured manually here.</p> : null}
     </div>
     <div className="grid gap-3 sm:grid-cols-2">
       {!core || core.configurable.label ? <TextControl label="Label" value={field.label} onChange={(label) => onChange({ label })} /> : null}

@@ -10,7 +10,7 @@ import { clearPersistedDateTimeDrafts, useUnsavedChangesWarning } from "@ihp/ui"
 
 import { TrainingBasicsSection, TrainingCapacitySection, TrainingCourseBuilderSection, TrainingDeliverySection, TrainingMediaSection, TrainingPricingSection, TrainingScheduleSection } from "./CreateTrainingSections";
 import { buildCreateTrainingPayload, buildUpdateTrainingPayload, createEmptyTrainingForm, trainingToFormValues, validateTrainingForm, type CreateTrainingFormValues } from "./create-training-form";
-import { createTraining, TrainingsApiError, updateTraining, type Training } from "./trainings.service";
+import { createTraining, getTrainingById, TrainingsApiError, updateTraining, updateTrainingStatus, type Training } from "./trainings.service";
 import { trainingFormConfigurationQueryKeys, useActiveTrainingFormConfiguration, useTrainingHistoricalFormConfiguration } from "./training-form-configuration.queries";
 import type { TrainingFormConfig, TrainingFormField, TrainingFormSection } from "./training-form-config.service";
 import { useTrainingCategories } from "./training-categories.queries";
@@ -501,7 +501,18 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
         const initialRaw = initialTraining as unknown as Record<string, unknown>;
         const keptSessions = Array.isArray(initialRaw.sessions) ? (initialRaw.sessions as unknown[]) : undefined;
         const updated = await updateTraining(initialTraining.id, { ...baseUpdate, ...(keptSessions ? { sessions: keptSessions } : {}), ...(custom ? { custom_values: custom } : {}) } as Parameters<typeof updateTraining>[1]);
-        return updated;
+        if (initialTraining.status !== "unpublished") return updated;
+        try {
+          return await updateTrainingStatus(initialTraining.id, { status: "pending_approval" });
+        } catch (error) {
+          const latestTraining = await getTrainingById(initialTraining.id).catch(() => null);
+          if (latestTraining?.status === "pending_approval") return latestTraining;
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["trainings", "list"] }),
+            queryClient.invalidateQueries({ queryKey: ["trainings", "detail", initialTraining.id] }),
+          ]);
+          throw new Error("The training changes were saved, but could not be submitted for Super Admin approval. The training remains unpublished. Please reload and try again.", { cause: error });
+        }
       }
       if (!tenantId || !enterpriseId) throw new Error("A tenant and enterprise are required.");
       const basePayload = applyConfiguredPayload(buildCreateTrainingPayload(values, tenantId, enterpriseId) as unknown as Record<string, unknown>);
@@ -517,7 +528,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
       window.scrollTo({ top: 0, behavior: "auto" });
       if (initialTraining) {
         await queryClient.invalidateQueries({ queryKey: ["trainings", "detail", initialTraining.id] });
-        router.push(`/admin/trainings/${initialTraining.id}`);
+        router.push(`/admin/trainings/${initialTraining.id}${initialTraining.status === "unpublished" ? "?notice=approval-submitted" : ""}`);
       } else {
         router.push(`/admin/trainings/${(data as { id: string }).id}`);
       }
@@ -856,7 +867,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
             {activeStep > 0 ? <button type="button" onClick={() => setActiveStep((current) => current - 1)} disabled={saveMutation.isPending} className="h-11 rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a] disabled:opacity-50">Back</button> : null}
             {(activeForm ? activeStep === editorSteps.length - 1 : activeStep === steps.length - 1) ? (
               <button type="button" onClick={submit} disabled={saveMutation.isPending || isResolvingEnterprise || isCreateBlockedByEnterprise || (mode === "edit" && !isDirty)} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm disabled:opacity-60">
-                {saveMutation.isPending ? (mode === "edit" ? "Saving..." : "Creating...") : mode === "edit" ? "Save Changes" : "Create Training"}
+                {saveMutation.isPending ? (mode === "edit" ? (initialTraining?.status === "unpublished" ? "Submitting..." : "Saving...") : "Creating...") : mode === "edit" ? (initialTraining?.status === "unpublished" ? "Save & submit for approval" : "Save Changes") : "Create Training"}
               </button>
             ) : (
               <button type="button" onClick={continueToNext} className="h-11 rounded-full bg-[#1f6a58] px-5 text-sm font-bold text-white shadow-sm">Continue</button>

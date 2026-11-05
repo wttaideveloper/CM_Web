@@ -50,6 +50,12 @@ export const enterpriseNavigationGroups: readonly EnterpriseNavigationGroup[] = 
     ],
   },
   {
+    title: "CONTENT MANAGEMENT",
+    items: [
+      { label: "My Posts", href: "/admin/my-blogs", icon: "details", owner: "enterprise-admin" },
+    ],
+  },
+  {
     title: "ACCOUNT",
     items: [
       { label: "Settings", href: "/admin/settings", icon: "settings", owner: "enterprise-admin" },

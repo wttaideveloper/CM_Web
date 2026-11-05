@@ -70,6 +70,10 @@ const nextConfig: NextConfig = {
           destination: `${chatApiV1Base}/users/me/notifications/:path*`,
         },
         {
+          source: "/api/v1/cms/blogs/:path*",
+          destination: `${chatApiV1Base}/cms/blogs/:path*`,
+        },
+        {
           source: "/api/v1/trainings/form-configuration/:path*",
           destination: `${chatBaseHttps}/trainings/form-configuration/:path*`,
         },

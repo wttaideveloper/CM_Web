@@ -21,6 +21,9 @@ const assetPrefix = process.env.NEXT_PUBLIC_ASSET_PREFIX?.replace(/\/$/, "") || 
 
 const nextConfig: NextConfig = {
   assetPrefix,
+  experimental: {
+    proxyClientMaxBodySize: "310mb",
+  },
   transpilePackages: ["@ihp/attributes", "@ihp/auth", "@ihp/enterprise-trainings", "@ihp/enterprises", "@ihp/onboarding-forms", "@ihp/platform-attributes", "@ihp/platform-configuration", "@ihp/platform-dashboard", "@ihp/platform-enterprises", "@ihp/platform-form-configurations", "@ihp/platform-layout", "@ihp/platform-marketplace-static", "@ihp/platform-users", "@ihp/products", "@ihp/services", "@ihp/shared", "@ihp/ui", "@ihp/workflow-admin", "@ihp/workflow-runtime"],
   async rewrites() {
     const fallback = [

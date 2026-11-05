@@ -23,6 +23,12 @@ const platformAdminSafeReturnPrefixes = [
   "/events",
   "/trainings",
   "/integrations",
+  "/blog-forms",
+  "/blog-form-builder",
+  "/blog-approval-queue",
+  "/blog-categories",
+  "/module-settings",
+  "/all-posts",
 ] as const;
 
 const shellSafeReturnPrefixes = ["/admin", "/trainings", "/training-forms"] as const;
@@ -132,7 +138,6 @@ export function getSafePlatformAdminReturnUrl(value: string | null | undefined) 
       url.origin !== platformAdminOrigin ||
       url.username ||
       url.password ||
-      url.search ||
       url.hash ||
       !platformAdminSafeReturnPrefixes.some((prefix) => url.pathname === prefix || url.pathname.startsWith(`${prefix}/`))
     ) {

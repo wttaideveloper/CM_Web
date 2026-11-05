@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { deleteEvent, duplicateEvent, EventsApiError, updateEventStatus, type Event } from "./events.service";
+import { deleteEvent, duplicateEvent, EventsApiError, resubmitEvent, updateEventStatus, type Event } from "./events.service";
 import { canDeleteEvent, canEditEvent, getEventStatusActions, type EventStatusAction } from "./event-status";
 
 /** Props for the shared Event card/detail contextual action menu. */
@@ -46,7 +46,11 @@ export default function EventActionsMenu({ event, includeNavigation = true, onSt
     window.requestAnimationFrame(() => triggerRef.current?.focus());
   };
   const statusMutation = useMutation({
-    mutationFn: (action: EventStatusAction) => updateEventStatus(event.id, { status: action.targetStatus, ...(action.targetStatus === "cancelled" && cancellationReason.trim() ? { reason: cancellationReason.trim() } : {}) }),
+    mutationFn: (action: EventStatusAction) => {
+      const isResubmit = action.targetStatus === "pending_approval" && (event.status === "rejected" || event.status === "needs_revision" || event.status === "approved");
+      if (isResubmit) return resubmitEvent(event.id) as Promise<Event>;
+      return updateEventStatus(event.id, { status: action.targetStatus, ...(action.targetStatus === "cancelled" && cancellationReason.trim() ? { reason: cancellationReason.trim() } : {}) });
+    },
     onSuccess: async (updatedEvent, action) => { await invalidateEventQueries(queryClient, event.id); closeConfirmation(); onStatusSuccess?.(updatedEvent, action); },
     onError: (error) => { closeConfirmation(); setActionError(getStatusErrorMessage(error)); },
   });
@@ -131,7 +135,7 @@ function EventActionConfirmationDialog({ action, cancellationReason, isPending, 
 }
 
 async function invalidateEventQueries(queryClient: QueryClient, eventId: string) { await Promise.all([queryClient.invalidateQueries({ queryKey: ["events", "list"] }), queryClient.invalidateQueries({ queryKey: ["events", "detail", eventId] })]); }
-function getStatusErrorMessage(error: unknown): string { if (!(error instanceof EventsApiError)) return "Unable to update the event status. Please try again."; if (error.status === 401 || error.status === 403) return "You do not have permission to change this event status."; if (error.status === 404) return "This event no longer exists."; if (error.status === 409) return "This status change is not allowed for the event's current lifecycle state."; if (error.status === 422) return error.fieldErrors.status?.[0] ?? "This status change was not accepted."; return "Unable to update the event status. Please try again."; }
+function getStatusErrorMessage(error: unknown): string { if (!(error instanceof EventsApiError)) return "Unable to update the event status. Please try again."; if (error.status === 401 || error.status === 403) return "You do not have permission to change this event status."; if (error.status === 400) return error.message || "This status change is not allowed. Submit for approval first if required."; if (error.status === 404) return "This event no longer exists."; if (error.status === 409) return "This status change is not allowed for the event's current lifecycle state."; if (error.status === 422) return error.fieldErrors.status?.[0] ?? "This status change was not accepted."; return "Unable to update the event status. Please try again."; }
 function getDuplicateErrorMessage(error: unknown): string { if (!(error instanceof EventsApiError)) return "Unable to duplicate this event. Please try again."; if (error.status === 401 || error.status ===403) return "You do not have permission to duplicate this event."; if (error.status === 404) return "This event no longer exists."; return "Unable to duplicate this event. Please try again."; }
 function getDeleteErrorMessage(error: unknown): string { if (!(error instanceof EventsApiError)) return "Unable to delete this event. Please try again."; if (error.status === 401 || error.status === 403) return "You do not have permission to delete this event."; if (error.status === 404) return "This event no longer exists."; if (error.status === 409) return "This event cannot be deleted because it has related records or lifecycle restrictions."; return "Unable to delete this event. Please try again."; }
 function handleMenuArrowKeys(event: React.KeyboardEvent<HTMLDivElement>) { if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return; const menuItems = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]')); const currentIndex = menuItems.findIndex((item) => item === document.activeElement); const nextIndex = event.key === "ArrowDown" ? (currentIndex + 1 + menuItems.length) % menuItems.length : (currentIndex - 1 + menuItems.length) % menuItems.length; menuItems[nextIndex]?.focus(); event.preventDefault(); }

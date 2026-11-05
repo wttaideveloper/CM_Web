@@ -69,6 +69,7 @@ const CORE_FIELDS: Record<string, keyof CreateTrainingFormValues> = {
   recurring: "recurring",
   schedule_exceptions: "schedule_exceptions",
   meeting_provider: "meeting_provider",
+  meeting_passcode: "meeting_passcode",
   instructor_role: "instructor_role",
   instructor_notes: "instructor_notes",
   notes_pdf_url: "notes_pdf_url",
