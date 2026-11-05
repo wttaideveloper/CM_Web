@@ -47,7 +47,7 @@ export default function TrainingActionsMenu({ training, includeNavigation = true
   };
   const statusMutation = useMutation({
     mutationFn: (action: TrainingStatusAction) => {
-      const isResubmit = action.targetStatus === "pending_approval" && (training.status === "rejected" || training.status === "needs_revision");
+      const isResubmit = action.targetStatus === "pending_approval" && (training.status === "rejected" || training.status === "needs_revision" || training.status === "unpublished");
       if (isResubmit) return resubmitTraining(training.id) as Promise<Training>;
       if (action.targetStatus === "draft" && training.status === "archived") return restoreTraining(training.id) as Promise<Training>;
       return updateTrainingStatus(training.id, { status: action.targetStatus, ...(action.targetStatus === "cancelled" && cancellationReason.trim() ? { reason: cancellationReason.trim() } : {}) });

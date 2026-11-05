@@ -8,6 +8,21 @@ const platformTrainingTypes = new Set([
   "training_submission",
   "training_approval_requested",
 ]);
+const blogWorkflowTypes = new Set([
+  "blog_submitted",
+  "blog_submitted_for_approval",
+  "blog_post_submitted",
+  "blog_post_submitted_for_approval",
+  "blog_submission",
+  "blog_approval_requested",
+  "blog_post_approval_requested",
+  "blog_approved",
+  "blog_published",
+  "blog_rejected",
+  "blog_changes_requested",
+  "blog_revision_requested",
+  "blog_needs_revision",
+]);
 const eventRegistrationTypes = new Set([
   "event_registration",
   "event_registered",
@@ -183,6 +198,19 @@ function trainingIdForRoute(notification: NotificationRouteInput): string | null
   return null;
 }
 
+function blogIdForRoute(notification: NotificationRouteInput): string | null {
+  const data = notificationData(notification);
+  const direct = readNonEmptyString(data.blog_id)
+    ?? readNonEmptyString(data.blogId)
+    ?? readNonEmptyString(data.post_id)
+    ?? readNonEmptyString(data.postId)
+    ?? readNonEmptyString(data.item_id)
+    ?? readNonEmptyString(data.itemId);
+  if (direct) return direct;
+  const blog = recordValue(data.blog ?? data.post);
+  return readNonEmptyString(blog.id) ?? readNonEmptyString(blog.blog_id) ?? readNonEmptyString(blog.post_id);
+}
+
 function reviewModuleForRoute(notification: NotificationRouteInput, eventName: string): "event" | "training" | "product" | "service" | null {
   const data = notificationData(notification);
   const explicitModule = (
@@ -245,6 +273,7 @@ function resolveNotificationEventName(notification: NotificationRouteInput): str
       || enterpriseEventTypes.has(normalizedCandidate)
       || enterpriseTrainingTypes.has(normalizedCandidate)
       || platformTrainingTypes.has(normalizedCandidate)
+      || blogWorkflowTypes.has(normalizedCandidate)
       || eventRegistrationTypes.has(normalizedCandidate)
       || eventFeedbackTypes.has(normalizedCandidate)
       || trainingDiscussionTypes.has(normalizedCandidate)
@@ -261,7 +290,11 @@ function resolveNotificationEventName(notification: NotificationRouteInput): str
   if (/\btraining\b/.test(text) && /\b(submitted|submission|approval requested)\b/.test(text)) return "training_submitted";
   if (/\bevent\b/.test(text) && /\b(submitted|submission|approval requested)\b/.test(text)) return "event_submitted";
   if (/\bebook\b/.test(text) && /\b(submitted|submission|approval requested)\b/.test(text)) return "ebook_submitted";
-  if (/\bblog\b/.test(text) && /\b(submitted|submission|approval requested)\b/.test(text)) return "blog_submitted";
+  if (/\bblog\b/.test(text) && /\bchanges? requested\b/.test(text)) return "blog_changes_requested";
+  if (/\bblog\b/.test(text) && /\b(rejected|denied)\b/.test(text)) return "blog_rejected";
+  if (/\bblog\b/.test(text) && /\bapproved\b/.test(text)) return "blog_approved";
+  if (/\b(blog|news|article|post)\b/.test(text) && /\b(submitted|submission|approval requested|waiting for approval|needs approval|pending approval)\b/.test(text)) return "blog_submitted";
+  if (["blog", "blogs", "news", "article", "articles", "post", "posts"].includes(entityType ?? "") && /\b(submitted|submission|approval requested|waiting for approval|needs approval|pending approval)\b/.test(text)) return "blog_submitted";
   if (/\btraining\b/.test(text) && /\b(enrol|enroll|registration|registered|booking|booked)\w*\b/.test(text)) return "training_enrollment";
   if (/\bevent\b/.test(text) && /\b(enrol|enroll|registration|registered|booking|booked|ticket)\w*\b/.test(text)) return "event_registration";
   if (/\btraining\b/.test(text)) return "training_notification";
@@ -337,10 +370,22 @@ export function resolveNotificationTarget(
       return `/${module === "training" ? "trainings" : `${module}s`}?${params.toString()}`;
     }
     if (platformTrainingTypes.has(eventName)) return "/approval-queue?type=trainings";
+    if (blogWorkflowTypes.has(eventName)) {
+      const blogId = blogIdForRoute(notification);
+      return blogId ? `/blog-approval-queue?post_id=${encodeURIComponent(blogId)}` : "/blog-approval-queue";
+    }
     const platformText = `${notification.title ?? ""} ${notification.body ?? ""} ${eventName}`.toLocaleLowerCase();
     if (/\bebook\b/.test(platformText) && /\b(submitted|submission|approval requested)\b/.test(platformText)) return "/approval-queue?type=ebooks";
-    if (/\bblog\b/.test(platformText) && /\b(submitted|submission|approval requested)\b/.test(platformText)) return "/blog-approval-queue";
+    if (/\b(blog|news|article|post)\b/.test(platformText) && /\b(submitted|submission|approval requested|waiting for approval|needs approval|pending approval)\b/.test(platformText)) return "/blog-approval-queue";
     return null;
+  }
+  if (blogWorkflowTypes.has(eventName)) {
+    const blogId = blogIdForRoute(notification);
+    if (blogId && (eventName === "blog_published" || eventName === "blog_approved")) {
+      return `/admin/my-blogs/${encodeURIComponent(blogId)}`;
+    }
+    if (blogId) return `/admin/my-blogs?edit=${encodeURIComponent(blogId)}`;
+    return "/admin/my-blogs";
   }
   if (eventFeedbackTypes.has(eventName)) {
     const eventId = eventIdForRoute(notification);
@@ -414,11 +459,8 @@ export function resolveNotificationTarget(
     return trainingId ? `/admin/trainings/${encodeURIComponent(trainingId)}` : "/admin/trainings";
   }
   if (/\bblog\b/.test(enterpriseText) && /\b(approved|rejected|changes requested|revision)\b/.test(enterpriseText)) {
-    const blogId = readNonEmptyString(notificationData(notification).blog_id)
-      ?? readNonEmptyString(notificationData(notification).postId)
-      ?? readNonEmptyString(notificationData(notification).post_id)
-      ?? readNonEmptyString(notificationData(notification).id);
-    return blogId ? `/admin/my-blogs?highlight=${encodeURIComponent(blogId)}` : "/admin/my-blogs";
+    const blogId = blogIdForRoute(notification) ?? readNonEmptyString(notificationData(notification).id);
+    return blogId ? `/admin/my-blogs?edit=${encodeURIComponent(blogId)}` : "/admin/my-blogs";
   }
   if (!enterpriseEventTypes.has(eventName)) return null;
   const eventId = eventIdForRoute(notification);
@@ -467,6 +509,48 @@ export function notificationReason(notification: Pick<RealtimeNotification, "dat
     readNonEmptyString(notification.data.admin_note) ??
     readNonEmptyString(notification.metadata?.admin_note);
   return reason && !notification.body.toLocaleLowerCase().includes(reason.toLocaleLowerCase()) ? reason : null;
+}
+
+/** Formats Blog & News workflow notifications for the shared web notification tray. */
+export function formatBlogWorkflowNotification(
+  notification: NotificationRouteInput,
+): { title: string; message: string } | null {
+  const eventName = resolveNotificationEventName(notification);
+  if (!blogWorkflowTypes.has(eventName)) return null;
+  const data = notificationData(notification);
+  const postTitle = [
+    data.blog_title,
+    data.blogTitle,
+    data.post_title,
+    data.postTitle,
+    data.item_title,
+    data.item_name,
+  ].map(readNonEmptyString).find((value): value is string => value !== null);
+  const rawPostType = [data.kind, data.post_type, data.postType, data.content_type, data.contentType]
+    .map(readNonEmptyString)
+    .find((value): value is string => value !== null)
+    ?.toLocaleLowerCase();
+  const postType = rawPostType === "blog" ? "Blog" : rawPostType === "news" ? "News" : rawPostType === "both" ? "Blog & News" : null;
+  const subject = postTitle ? `"${postTitle}"` : `This ${postType ?? "Blog & News"} post`;
+  const excerpt = readNonEmptyString(data.excerpt) ?? readNonEmptyString(data.summary) ?? readNonEmptyString(data.description) ?? readNonEmptyString(data.content_preview);
+  const detail = excerpt ? ` — ${excerpt.slice(0, 120)}${excerpt.length > 120 ? "…" : ""}` : "";
+  const copy: Record<string, { title: string; message: string }> = {
+    blog_submitted: { title: "New Blog & News submission", message: `${subject} was submitted for review.${detail}` },
+    blog_submitted_for_approval: { title: "New Blog & News submission", message: `${subject} was submitted for review.${detail}` },
+    blog_approved: { title: "Blog & News approved", message: `${subject} has been approved.${detail}` },
+    blog_published: { title: `${postType ?? "Blog & News"} published`, message: `${subject} is now published.${detail}` },
+    blog_changes_requested: { title: "Changes requested", message: `Updates are requested for ${subject}.${detail}` },
+    blog_revision_requested: { title: "Changes requested", message: `Updates are requested for ${subject}.${detail}` },
+    blog_needs_revision: { title: "Changes requested", message: `Updates are requested for ${subject}.${detail}` },
+    blog_rejected: { title: "Blog & News rejected", message: `${subject} was rejected.${detail}` },
+  };
+  const formatted = copy[eventName] ?? { title: notification.title ?? "Blog & News update", message: notification.body ?? "A Blog & News post was updated." };
+  // Preserve a backend-authored detailed message when the notification API did not
+  // provide a separate excerpt in metadata.
+  if (!excerpt && notification.body?.trim()) {
+    return { ...formatted, message: notification.body.trim() };
+  }
+  return formatted;
 }
 
 /** Reads attendee and Event labels from Mobile Event feedback notification metadata. */

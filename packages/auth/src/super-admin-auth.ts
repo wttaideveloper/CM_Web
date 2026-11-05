@@ -40,14 +40,19 @@ async function request(path: string, init?: RequestInit, failureKind: "login" | 
     const response = await fetch(`${SUPER_ADMIN_AUTH_PATH}${path}`, { credentials: "include", ...init });
     if (!response.ok) {
       const kind = response.status >= 500 ? "transport" : failureKind;
-      throw new SuperAdminAuthError(
-        kind,
-        response.status,
-        kind === "transport"
+      const upstreamBody: unknown = await response.clone().json().catch(() => null);
+      const upstreamDetail = isRecord(upstreamBody) ? upstreamBody.detail ?? upstreamBody.message : null;
+      const message = typeof upstreamDetail === "string" && upstreamDetail.trim().length > 0
+        ? upstreamDetail.trim().slice(0, 300)
+        : kind === "transport"
           ? "Unable to reach Super Admin authentication."
           : failureKind === "login"
             ? "Unable to sign in with those Super Admin credentials."
-            : "Unable to verify the Super Admin session.",
+            : "Unable to verify the Super Admin session.";
+      throw new SuperAdminAuthError(
+        kind,
+        response.status,
+        message,
       );
     }
     return response;

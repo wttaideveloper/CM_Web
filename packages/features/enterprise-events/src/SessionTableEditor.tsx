@@ -7,6 +7,7 @@ import type { EventSessionRecord } from "./events.service";
 import { getEventSessionDates, getSessionTimeBounds, parseEventLocalDateTime } from "./event-session-date";
 import { createDefaultSessionGenerationRules, nextSessionGenerationRuleId, updateSessionGenerationRule, updateSessionGenerationRuleCount, updateSessionGenerationRuleDuration, type SessionGenerationRule } from "./session-generation-rules";
 import { isProtectedMeetingLink } from "./event-meeting-link";
+import EventSpeakerSelect from "./EventSpeakerSelect";
 
 export type { SessionGenerationRule } from "./session-generation-rules";
 
@@ -220,6 +221,7 @@ function SessionCell({ field, session, eventStart, eventEnd, required, disabled,
   }
   const type = field === "start_time" || field === "end_time" ? "time" : field === "meeting_link" ? "url" : "text";
   const bounds = getSessionTimeBounds(session.session_date, eventStart, eventEnd);
+  if (field === "speaker") return <EventSpeakerSelect value={value} required={required} disabled={disabled} onChange={onChange} className="h-9 min-w-44 rounded-lg border border-[#d7e5df] bg-white px-2" />;
   if (field === "description" || field === "speaker_bio") return <textarea value={value} disabled={disabled} required={required} onChange={(event) => onChange(event.target.value)} className="min-h-20 min-w-40 rounded-lg border border-[#d7e5df] px-2 py-1" />;
   return <input type={type} value={value} disabled={disabled} required={required} min={type === "time" ? bounds.min : undefined} max={type === "time" ? bounds.max : undefined} onChange={(event) => onChange(event.target.value)} placeholder={field === "meeting_link" ? "https://" : undefined} className="h-9 min-w-28 rounded-lg border border-[#d7e5df] px-2" />;
 }

@@ -21,6 +21,7 @@ export class EventTaxonomyApiError extends Error {
 }
 
 const basePath = "/api/platform-super-admin/event-categories";
+const directBasePath = "/api/v1/event-categories/";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -46,7 +47,12 @@ async function errorFor(response: Response, fallback: string): Promise<EventTaxo
 }
 
 async function requestCategory(path = "", init?: RequestInit): Promise<unknown> {
-  const response = await fetch(`${basePath}${path}`, { credentials: "include", cache: "no-store", ...init });
+  let response = await fetch(`${basePath}${path}`, { credentials: "include", cache: "no-store", ...init });
+  // The shared shell does not mount the Platform Admin BFF route. Reads can
+  // safely use its authenticated Event proxy; mutations remain BFF-only.
+  if (response.status === 404 && (!init?.method || init.method === "GET")) {
+    response = await fetch(`${directBasePath}${path.replace(/^\//, "")}`, { credentials: "include", cache: "no-store" });
+  }
   if (!response.ok) throw await errorFor(response, "Unable to manage Event categories.");
   if (response.status === 204) return null;
   return response.json() as Promise<unknown>;

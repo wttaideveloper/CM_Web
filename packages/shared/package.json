@@ -2,6 +2,10 @@
   "name": "@ihp/shared",
   "version": "0.1.0",
   "private": true,
+  "dependencies": {
+    "@ihp/auth": "0.1.0",
+    "isomorphic-dompurify": "^4.6.0"
+  },
   "exports": {
     ".": "./src/index.ts"
   }

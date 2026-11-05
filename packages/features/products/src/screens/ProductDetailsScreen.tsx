@@ -103,6 +103,7 @@ export default function ProductDetailsScreen({
   enterprisesLoader = getEnterprises,
   enterpriseLocationLoader = getLocationById,
   readOnly = false,
+  blogsTab,
 }: ProductDetailsScreenProps = {}) {
   const params = useParams<{ id: string }>();
   const [product, setProduct] = useState<ProductDto | null>(null);
@@ -468,6 +469,7 @@ export default function ProductDetailsScreen({
           </div>
         )}
       </section>
+      {blogsTab ? blogsTab(product) : null}
     </>
   );
 }

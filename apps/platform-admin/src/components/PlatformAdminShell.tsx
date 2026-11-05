@@ -8,6 +8,7 @@ import {
 } from "@ihp/platform-layout";
 import { PlatformApprovalDataProvider, PlatformEnterpriseReadProvider, usePendingEventApprovalCount, usePendingTrainingApprovalCount } from "@ihp/platform-configuration";
 import { getPlatformEnterpriseById } from "@ihp/platform-enterprises";
+import { listAdminBlogQueue } from "@ihp/shared";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { usePathname } from "next/navigation";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
@@ -52,6 +53,13 @@ const platformOwnedNavigationRoutes = new Set([
   "/form-configurations",
   "/training-forms",
   "/training-form-configurations",
+  "/blog-forms",
+  "/blog-form-builder",
+  "/blog-posts",
+  "/blog-approval-queue",
+  "/blog-categories",
+  "/blog-governance",
+  "/module-settings",
   "/enterprise-types",
   "/categories",
   "/sub-admins",
@@ -98,6 +106,16 @@ function PlatformAdminShellContent({ children }: { children: ReactNode }) {
   const pendingEventApprovals = usePendingEventApprovalCount();
   const pendingTrainingApprovals = usePendingTrainingApprovalCount();
   const workflowNotifications = usePlatformWorkflowNotifications();
+  const pendingBlogApprovals = useQuery({
+    queryKey: ["platform", "blog-approval-queue", "pending-count"],
+    queryFn: async () => {
+      const res = await listAdminBlogQueue({ page: 1, pageSize: 1 });
+      return res.pagination.total;
+    },
+    staleTime: 10_000,
+    retry: 1,
+    refetchInterval: 30_000,
+  });
   const pendingEnterpriseRequests = useQuery({
     queryKey: ["platform", "tenant-applications", "under-review-count"],
     queryFn: getPendingEnterpriseRequestCount,
@@ -140,6 +158,10 @@ function PlatformAdminShellContent({ children }: { children: ReactNode }) {
         if (item.href === "/approval-queue") {
           return { ...item, badge: approvalBadge > 0 ? String(approvalBadge) : undefined };
         }
+        if (item.href === "/blog-approval-queue") {
+          const count = pendingBlogApprovals.data ?? 0;
+          return { ...item, badge: count > 0 ? String(count) : undefined };
+        }
         if (item.href === "/tenant-applications") {
           const count = pendingEnterpriseRequests.data ?? 0;
           return { ...item, badge: count > 0 ? (count > 99 ? "99+" : String(count)) : undefined };
@@ -151,6 +173,7 @@ function PlatformAdminShellContent({ children }: { children: ReactNode }) {
     pendingEventApprovals.data,
     pendingTrainingApprovals.data,
     pendingEnterpriseRequests.data,
+    pendingBlogApprovals.data,
   ]);
 
   return (
@@ -164,6 +187,8 @@ function PlatformAdminShellContent({ children }: { children: ReactNode }) {
         approvalQueueHref: "/approval-queue",
         enterpriseRequestCount: pendingEnterpriseRequests.data ?? null,
         tenantApplicationsHref: "/tenant-applications",
+        blogCount: pendingBlogApprovals.data ?? null,
+        blogApprovalQueueHref: "/blog-approval-queue",
       }}
       workflowNotifications={{
         unreadCount: workflowNotifications.unreadCount ?? 0,

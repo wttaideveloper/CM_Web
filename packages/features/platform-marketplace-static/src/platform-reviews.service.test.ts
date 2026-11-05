@@ -46,8 +46,8 @@ describe("Platform review parsing and rules", () => {
   });
   it("treats a resubmitted review as active instead of leaving its old deletion in the deleted list", () => {
     const latest = latestPlatformReviewAuditEntries([
-      { id: "audit-resubmitted", module: "event", review_id: "review-1", item_id: "event-1", item_name: "Event", business_name: "Acme", customer_name: "Reviewer", rating: 5, comment: "Updated review", from_status: "deleted", to_status: "pending", actor_name: "Reviewer", actor_user_id: "user-1", actor_role: "customer", created_at: "2026-10-29T10:00:00Z" },
-      { id: "audit-deleted", module: "event", review_id: "review-1", item_id: "event-1", item_name: "Event", business_name: "Acme", customer_name: "Reviewer", rating: 1, comment: "Old review", from_status: "approved", to_status: "deleted", actor_name: "Super Admin", actor_user_id: "admin-1", actor_role: "super_admin", created_at: "2026-10-28T10:00:00Z" },
+      { id: "audit-resubmitted", module: "event", review_id: "review-1", item_id: "event-1", item_name: "Event", business_name: "Acme", customer_name: "Reviewer", customer_user_id: "customer-1", customer_email: "reviewer@example.com", rating: 5, comment: "Updated review", from_status: "deleted", to_status: "pending", actor_name: "Reviewer", actor_user_id: "user-1", actor_role: "customer", created_at: "2026-10-29T10:00:00Z" },
+      { id: "audit-deleted", module: "event", review_id: "review-1", item_id: "event-1", item_name: "Event", business_name: "Acme", customer_name: "Reviewer", customer_user_id: "customer-1", customer_email: "reviewer@example.com", rating: 1, comment: "Old review", from_status: "approved", to_status: "deleted", actor_name: "Super Admin", actor_user_id: "admin-1", actor_role: "super_admin", created_at: "2026-10-28T10:00:00Z" },
     ]);
 
     expect(latest).toHaveLength(1);
@@ -90,7 +90,7 @@ describe("Platform review parsing and rules", () => {
     );
   });
   it("parses direct and enveloped audit lists while skipping invalid entries", async () => {
-    const valid = { review_id: "review-1", item_id: "item-1", to_status: "rejected", rejection_reason: "Does not meet review guidelines.", created_at: "2026-10-08T10:20:00" };
+    const valid = { review_id: "review-1", item_id: "item-1", customer_id: "customer-1", reviewer_email: "reviewer@example.com", to_status: "rejected", rejection_reason: "Does not meet review guidelines.", created_at: "2026-10-08T10:20:00" };
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => [null, valid] })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ items: [valid] }) })
@@ -105,6 +105,8 @@ describe("Platform review parsing and rules", () => {
     expect(direct[0].id).toBe("audit-1");
     expect(direct[0].created_at).toBe("2026-10-08T10:20:00Z");
     expect(direct[0].reason).toBe("Does not meet review guidelines.");
+    expect(direct[0].customer_user_id).toBe("customer-1");
+    expect(direct[0].customer_email).toBe("reviewer@example.com");
     expect(itemsEnvelope).toHaveLength(1);
     expect(auditEnvelope).toHaveLength(1);
   });

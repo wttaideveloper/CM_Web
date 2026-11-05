@@ -72,6 +72,20 @@ function LoginPageContent() {
     : "Sign In as Enterprise Owner";
   const canSubmit = !isSubmitting && (isSuperAdmin || !isLoading);
 
+  function handleWebPortalLogin() {
+    const platformAdminOrigin = getPlatformAdminAppOrigin();
+    if (!platformAdminOrigin) {
+      setLoginError("Platform Admin origin is not configured.");
+      return;
+    }
+    const targetUrl = platformAdminReturnUrl ?? new URL("/dashboard", platformAdminOrigin).toString();
+    const callbackPath = buildAuthCallbackPath(targetUrl);
+    startLogin({
+      ...(callbackPath === "/auth/validate" ? {} : { callbackPath }),
+      rememberMe,
+    });
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -88,25 +102,30 @@ function LoginPageContent() {
         if (!platformAdminOrigin) {
           throw new Error("Platform Admin origin is not configured.");
         }
-        // Read from the submitted form as well as React state: browser
-        // autofill does not always fire change events, leaving state empty
-        // while the fields look filled (which the API rejects with 400).
         const formData = new FormData(event.currentTarget);
         const email = ((formData.get("email") as string | null) ?? superAdminEmail).trim() || superAdminEmail.trim();
         const password = (formData.get("password") as string | null) ?? superAdminPassword;
-        if (!email || !password) {
-          throw new Error("Enter your Super Admin email and password.");
+
+        if (email && password) {
+          try {
+            setSuperAdminEmail(email);
+            setSuperAdminPassword(password);
+            await loginSuperAdmin({ email, password, rememberMe });
+            window.location.assign(platformAdminReturnUrl ?? new URL("/dashboard", platformAdminOrigin).toString());
+            return;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "";
+            const isWebPortalRequired =
+              message.toLowerCase().includes("web portal") ||
+              message.toLowerCase().includes("external users") ||
+              message.toLowerCase().includes("mobile app");
+            if (!isWebPortalRequired) {
+              throw error;
+            }
+          }
         }
-        if (email.length > 500) {
-          throw new Error("Email must be 500 characters or fewer.");
-        }
-        if (password.length > 500) {
-          throw new Error("Password must be 500 characters or fewer.");
-        }
-        setSuperAdminEmail(email);
-        setSuperAdminPassword(password);
-        await loginSuperAdmin({ email, password, rememberMe });
-        window.location.assign(platformAdminReturnUrl ?? new URL("/dashboard", platformAdminOrigin).toString());
+
+        handleWebPortalLogin();
         return;
       }
 
@@ -120,7 +139,7 @@ function LoginPageContent() {
         error instanceof SuperAdminAuthError && error.kind === "transport"
           ? t("superAdminLogin.networkError")
           : error instanceof SuperAdminAuthError && error.kind === "login"
-            ? "Email or password is incorrect."
+            ? error.message
             : error instanceof Error
               ? error.message
               : "Unable to start secure login.",
@@ -332,7 +351,18 @@ function LoginPageContent() {
             </form> : null}
 
             {!superAdminResetOpen && loginError ? (
-              <p role="alert" className="mt-3 text-sm font-medium text-[#b42318]">{loginError}</p>
+              <div className="mt-3 space-y-2">
+                <p role="alert" className="text-sm font-medium text-[#b42318]">{loginError}</p>
+                {loginError.toLowerCase().includes("web portal") || loginError.toLowerCase().includes("external users") ? (
+                  <button
+                    type="button"
+                    onClick={handleWebPortalLogin}
+                    className="w-full rounded-[13px] bg-[#1f6a58] px-3.5 py-2.5 text-[13px] font-bold text-white shadow-sm transition hover:bg-[#185746]"
+                  >
+                    Continue to Web Portal Sign-In &rarr;
+                  </button>
+                ) : null}
+              </div>
             ) : null}
 
             {!superAdminResetOpen ? <div className="mt-5">
@@ -358,6 +388,13 @@ function LoginPageContent() {
                   </p>
                   <p className="mt-0.5">This portal is restricted to authorized administrators only.</p>
                   <p className="mt-0.5">All actions are logged.</p>
+                  <button
+                    type="button"
+                    onClick={handleWebPortalLogin}
+                    className="mt-2 inline-flex items-center gap-1 text-[12px] font-bold text-[#683f00] underline hover:text-[#422800]"
+                  >
+                    <span>Sign in directly via Web Portal &rarr;</span>
+                  </button>
                 </div>
               ) : (
                 <p className="space-y-2 text-center text-[13px] text-[#55746b]">

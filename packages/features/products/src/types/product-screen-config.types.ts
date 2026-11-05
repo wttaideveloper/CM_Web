@@ -1,4 +1,5 @@
 import type { EnterpriseDto, EnterpriseLocationDto } from "@ihp/enterprises";
+import type { ReactNode } from "react";
 
 export type ProductMode = "super-admin" | "enterprise-admin";
 export type EnterpriseOptionsLoader = () => Promise<EnterpriseDto[]>;
@@ -39,6 +40,7 @@ export type ProductDetailsScreenProps = {
   enterprisesLoader?: EnterpriseOptionsLoader;
   enterpriseLocationLoader?: EnterpriseLocationLoader;
   readOnly?: boolean;
+  blogsTab?: (product: import("../types/product.types").ProductDto) => ReactNode;
 };
 
 export type ProductEditScreenProps = {

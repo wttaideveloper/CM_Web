@@ -38,9 +38,9 @@ body {
 }
 
 .form-configuration-builder-inspector button:not(:disabled):hover {
-  filter: brightness(0.94) saturate(1.08) !important;
-  box-shadow: 0 0 0 2px rgb(31 106 88 / 30%) inset, 0 4px 10px rgb(7 53 45 / 18%) !important;
-  transform: translateY(-1px) !important;
+  filter: brightness(0.98) !important;
+  box-shadow: none !important;
+  transform: none !important;
 }
 
 .form-configuration-builder-inspector button:focus-visible {

@@ -166,6 +166,8 @@ export async function getPlatformReviewsAudit(module: ReviewModule, itemId?: str
       item_name: typeof item.item_name === "string" ? item.item_name : null,
       business_name: typeof item.business_name === "string" ? item.business_name : null,
       customer_name: typeof (item.customer_name ?? item.reviewer_name) === "string" ? String(item.customer_name ?? item.reviewer_name) : null,
+      customer_user_id: typeof (item.customer_user_id ?? item.customer_id ?? item.reviewer_user_id ?? item.reviewer_id ?? item.user_id) === "string" ? String(item.customer_user_id ?? item.customer_id ?? item.reviewer_user_id ?? item.reviewer_id ?? item.user_id) : null,
+      customer_email: typeof (item.customer_email ?? item.reviewer_email) === "string" ? String(item.customer_email ?? item.reviewer_email) : null,
       rating,
       comment: typeof (item.comment ?? item.review_text) === "string" ? String(item.comment ?? item.review_text) : null,
       from_status: typeof item.from_status === "string" ? item.from_status : null,

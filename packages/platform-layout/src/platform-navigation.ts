@@ -18,6 +18,16 @@ export const platformNavigationGroups: readonly PlatformNavigationGroup[] = [
     ],
   },
   {
+    title: "CONTENT MANAGEMENT",
+    items: [
+      { label: "All Posts", href: "/blog-posts", icon: "details" },
+      { label: "Blog Approvals", href: "/blog-approval-queue", icon: "queue" },
+      { label: "Blog Forms", href: "/blog-forms", icon: "forms" },
+      { label: "Blog Categories", href: "/blog-categories", icon: "tag" },
+      { label: "Module Settings", href: "/module-settings", icon: "settings" },
+    ],
+  },
+  {
     title: "MARKETPLACE",
     items: [
       { label: "Enterprises / Tenants", href: "/enterprises", icon: "building" },

@@ -172,7 +172,7 @@ export function getTrainingStatusActions(status: TrainingStatus): readonly Train
   if (status === "rejected") return [submitForApprovalAction];
   if (status === "approved") return [publishTrainingAction, cancelTrainingAction];
   if (status === "published") return [unpublishTrainingAction, suspendTrainingAction, archiveTrainingAction, cancelTrainingAction];
-  if (status === "unpublished") return [publishTrainingAction, cancelTrainingAction];
+  if (status === "unpublished") return [submitForApprovalAction, publishTrainingAction, cancelTrainingAction];
   if (status === "archived") return [restoreTrainingAction];
   if (status === "suspended") return [publishTrainingAction, cancelTrainingAction];
   if (status === "cancelled") return [];

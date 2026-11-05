@@ -47,7 +47,7 @@ export default function EventActionsMenu({ event, includeNavigation = true, onSt
   };
   const statusMutation = useMutation({
     mutationFn: (action: EventStatusAction) => {
-      const isResubmit = action.targetStatus === "pending_approval" && (event.status === "rejected" || event.status === "needs_revision");
+      const isResubmit = action.targetStatus === "pending_approval" && (event.status === "rejected" || event.status === "needs_revision" || event.status === "approved");
       if (isResubmit) return resubmitEvent(event.id) as Promise<Event>;
       return updateEventStatus(event.id, { status: action.targetStatus, ...(action.targetStatus === "cancelled" && cancellationReason.trim() ? { reason: cancellationReason.trim() } : {}) });
     },

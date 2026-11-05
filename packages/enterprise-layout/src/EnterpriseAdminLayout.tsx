@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
   formatEventFeedbackNotificationDetails,
+  formatBlogWorkflowNotification,
   formatNotificationTimestamp,
   formatRelativeBackendTimestamp,
   formatReviewModerationNotificationTitle,
@@ -253,8 +254,9 @@ export function EnterpriseAdminLayout({
               <div className="max-h-96 overflow-y-auto">
                 {displayNotifications.length === 0 ? <p className="px-4 py-6 text-sm text-[#52736a]">No new notifications</p> : displayNotifications.slice(0, 8).map((item) => {
                   const reviewSubmission = formatReviewSubmissionNotification(item);
+                  const blogWorkflow = formatBlogWorkflowNotification(item);
                   const feedbackDetails = formatEventFeedbackNotificationDetails(item);
-                  const notificationTitle = reviewSubmission?.title ?? formatReviewModerationNotificationTitle(item) ?? item.title;
+                  const notificationTitle = blogWorkflow?.title ?? reviewSubmission?.title ?? formatReviewModerationNotificationTitle(item) ?? item.title;
                   const { trainingTitle, senderName, learnerName, enrollmentStatus } = formatTrainingNotificationDetails(item);
                   const review = formatReviewNotificationDetails(item);
                   const reason = notificationReason(item);
@@ -263,7 +265,7 @@ export function EnterpriseAdminLayout({
                       <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${item.is_read ? "bg-[#d0dbd7]" : "bg-[#1f6a58]"}`} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-bold text-[#06201c]">{notificationTitle || "Notification"}</span>
-                        <span className="mt-1 block text-xs text-[#52736a]">{reviewSubmission?.message ?? item.body}</span>
+                        <span className="mt-1 block text-xs text-[#52736a]">{blogWorkflow?.message ?? reviewSubmission?.message ?? item.body}</span>
                         {feedbackDetails?.attendeeName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">Attendee: {feedbackDetails.attendeeName}</span> : null}
                         {feedbackDetails?.eventTitle ? <span className="mt-1 block text-[11px] font-semibold text-[#1f6a58]">Event: {feedbackDetails.eventTitle}</span> : null}
                         {feedbackDetails?.comment ? <span className="mt-1 block whitespace-pre-wrap rounded-lg bg-[#f4faf7] p-2 text-xs text-[#31594d]">{feedbackDetails.comment}</span> : null}

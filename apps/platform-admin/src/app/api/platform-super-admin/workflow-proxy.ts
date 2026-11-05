@@ -21,8 +21,13 @@ export async function proxyWorkflowRequest(request: NextRequest, resource: "form
   const url = workflowUrl(resource, path, request);
   if (!url) return NextResponse.json({ detail: "Workflow API is not configured." }, { status: 503, headers: { "Cache-Control": "no-store" } });
 
-  const body = request.method === "GET" || request.method === "DELETE" ? undefined : await request.text();
   const contentType = request.headers.get("content-type");
+  const isMultipart = Boolean(contentType?.toLowerCase().startsWith("multipart/form-data"));
+  const body = request.method === "GET" || request.method === "DELETE"
+    ? undefined
+    : isMultipart
+      ? await request.arrayBuffer()
+      : await request.text();
   try {
     return superAdminJsonResponse(await requestSuperAdminUpstreamJson(url.toString(), {
       method: request.method,

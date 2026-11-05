@@ -185,6 +185,17 @@ test("Event attendee feedback notifications show context and open the matching E
   }), { attendeeName: "Asha Rao", eventTitle: "Clinical Summit", comment: null });
 });
 
+test("published Blog & News notifications open Enterprise Post Details", () => {
+  assert.equal(
+    resolveNotificationTarget({
+      notification_type: "blog_published",
+      metadata: { post_id: "platform-post-1", post_title: "Healthy habits" },
+      data: {},
+    }, "enterprise"),
+    "/admin/my-blogs/platform-post-1",
+  );
+});
+
 test("review moderation and deletion notifications open the matching Super Admin queue", () => {
   assert.equal(
     resolveNotificationTarget({ notification_type: "automatic", category: "review_moderated", metadata: { entity_type: "training", training_id: "training-1", review_id: "review-1", new_status: "approved" }, data: {} }, "platform"),
@@ -197,6 +208,19 @@ test("review moderation and deletion notifications open the matching Super Admin
   assert.equal(
     resolveNotificationTarget({ notification_type: "automatic", category: "review_deleted", metadata: { entity_type: "review", module: "training", review_id: "review-3", status: "deleted" }, data: {} }, "platform"),
     "/trainings?view=reviews&review_id=review-3&status=deleted&show_audit=true",
+  );
+});
+
+test("Blog approval notifications open the Blog Approval Queue and preserve the post deep link", () => {
+  assert.equal(
+    resolveNotificationTarget({
+      notification_type: "automatic",
+      title: "New post is waiting for approval",
+      body: "A Blog post is ready for review.",
+      metadata: { entity_type: "blog", post_id: "blog-post-1" },
+      data: {},
+    }, "platform"),
+    "/blog-approval-queue?post_id=blog-post-1",
   );
 });
 

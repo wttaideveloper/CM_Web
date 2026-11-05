@@ -98,6 +98,7 @@ export function PlatformAdminHeader({
     ? approvalNotifications.eventCount
       + approvalNotifications.trainingCount
       + (approvalNotifications.tenantApplicationsHref ? approvalNotifications.enterpriseRequestCount ?? 0 : 0)
+      + (approvalNotifications.blogApprovalQueueHref && typeof approvalNotifications.blogCount === "number" ? approvalNotifications.blogCount : 0)
     : null;
   const unreadNotificationCount = workflowNotifications?.unreadCount ?? 0;
 
@@ -149,6 +150,14 @@ export function PlatformAdminHeader({
                             ? t("approvalNotifications.countUnavailable", { defaultValue: "Unavailable" })
                             : t("approvalNotifications.pendingCount", { count: approvalNotifications.trainingCount, defaultValue: "{{count}} pending" })}</span>
                         </Link>
+                        {approvalNotifications.blogApprovalQueueHref ? (
+                          <Link href={approvalNotifications.blogApprovalQueueHref} onClick={closeMenu} className="flex items-center justify-between rounded-xl px-3 py-2 text-sm text-[#1f6a58] transition hover:bg-[#eef7f2]">
+                            <span>{t("approvalNotifications.blogsAndNews", { defaultValue: "Blogs & News" })}</span>
+                            <span className="font-semibold">{approvalNotifications.blogCount === null || approvalNotifications.blogCount === undefined
+                              ? t("approvalNotifications.countUnavailable", { defaultValue: "Unavailable" })
+                              : t("approvalNotifications.pendingCount", { count: approvalNotifications.blogCount, defaultValue: "{{count}} pending" })}</span>
+                          </Link>
+                        ) : null}
                         {approvalNotifications.tenantApplicationsHref ? (
                           <Link href={approvalNotifications.tenantApplicationsHref} onClick={closeMenu} className="flex items-center justify-between rounded-xl px-3 py-2 text-sm text-[#1f6a58] transition hover:bg-[#eef7f2]">
                             <span>{t("approvalNotifications.enterpriseRequests", { defaultValue: "Enterprise requests" })}</span>

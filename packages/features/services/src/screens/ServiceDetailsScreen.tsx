@@ -57,6 +57,7 @@ export default function ServiceDetailsScreen({
   enterprisesLoader = getEnterprises,
   enterpriseLocationLoader = getLocationById,
   readOnly = false,
+  blogsTab,
 }: ServiceDetailsScreenProps = {}) {
   const params = useParams<{ id: string }>();
   const [service, setService] = useState<ServiceDto | null>(null);
@@ -419,6 +420,7 @@ export default function ServiceDetailsScreen({
           </div>
         )}
       </section>
+      {blogsTab ? blogsTab(service) : null}
     </>
   );
 }

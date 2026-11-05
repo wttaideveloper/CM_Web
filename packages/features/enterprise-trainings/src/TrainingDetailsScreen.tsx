@@ -15,6 +15,7 @@ import TrainingCalendarAction from "./TrainingCalendarAction";
 import { getTrainingMediaPreviewUrl } from "./training-media-url";
 import { useTrainingHistoricalFormConfiguration } from "./training-form-configuration.queries";
 import { ContextualModuleBlogsTab } from "@ihp/enterprise-dashboard";
+import { syncBlogGovernanceFromServer } from "@ihp/shared";
 
 type TrainingDetailsTab = "details" | "content" | "sections" | "enrolments" | "attendance" | "assessments" | "reviews" | "live" | "dashboards" | "blogs";
 
@@ -323,6 +324,17 @@ function TrainingDetailsContent({
   );
   const [notificationReviewId, setNotificationReviewId] = useState<string | undefined>(() => searchParams.get("review_id") ?? undefined);
   const [openReviewAudit, setOpenReviewAudit] = useState(() => searchParams.get("show_audit") === "true");
+  const [trainingBlogsActive, setTrainingBlogsActive] = useState(isTrainingBlogsEnabled);
+  useEffect(() => {
+    const handleUpdate = () => setTrainingBlogsActive(isTrainingBlogsEnabled());
+    window.addEventListener("ihp:blogs-governance-updated", handleUpdate);
+    window.addEventListener("storage", handleUpdate);
+    void syncBlogGovernanceFromServer().then(() => setTrainingBlogsActive(isTrainingBlogsEnabled())).catch(() => {});
+    return () => {
+      window.removeEventListener("ihp:blogs-governance-updated", handleUpdate);
+      window.removeEventListener("storage", handleUpdate);
+    };
+  }, []);
   const [discussionId, setDiscussionId] = useState<string | undefined>(() => searchParams.get("discussion_id") ?? undefined);
 
   useEffect(() => {
@@ -483,7 +495,7 @@ function TrainingDetailsContent({
       ) : null}
 
       <div className="mt-6 flex flex-wrap gap-2 border-b border-[#e1ebe6] overflow-x-auto scrollbar-thin">
-        {trainingDetailsTabs.filter((t) => t.id !== "blogs" || isTrainingBlogsEnabled()).map((tab) => (
+        {trainingDetailsTabs.filter((t) => t.id !== "blogs" || trainingBlogsActive).map((tab) => (
           <button
             key={tab.id}
             type="button"
@@ -639,7 +651,7 @@ function TrainingDetailsContent({
       })()} /></div> : null}
       {activeTab === "live" ? <div className="mt-6"><TrainingLiveTab trainingId={trainingId} discussionId={discussionId} /></div> : null}
       {activeTab === "dashboards" ? <div className="mt-6"><TrainingDashboardsTab trainingId={trainingId} /></div> : null}
-      {activeTab === "blogs" ? <ContextualModuleBlogsTab module="trainings" entityId={trainingId} entityTitle={training.title ?? "Training"} /> : null}
+      {activeTab === "blogs" && trainingBlogsActive ? <ContextualModuleBlogsTab module="trainings" entityId={trainingId} entityTitle={training.title ?? "Training"} /> : null}
     </div>
   );
 }

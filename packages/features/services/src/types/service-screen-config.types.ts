@@ -1,4 +1,5 @@
 import type { EnterpriseDto, EnterpriseLocationDto } from "@ihp/enterprises";
+import type { ReactNode } from "react";
 
 export type ServiceMode = "super-admin" | "enterprise-admin";
 export type EnterpriseOptionsLoader = () => Promise<EnterpriseDto[]>;
@@ -42,6 +43,7 @@ export type ServiceDetailsScreenProps = {
   enterprisesLoader?: EnterpriseOptionsLoader;
   enterpriseLocationLoader?: EnterpriseLocationLoader;
   readOnly?: boolean;
+  blogsTab?: (service: import("../types/service.types").ServiceDto) => ReactNode;
 };
 
 export type ServiceEditScreenProps = {

@@ -42,6 +42,8 @@ export interface PlatformReviewAuditEntry {
   item_name: string | null;
   business_name: string | null;
   customer_name: string | null;
+  customer_user_id: string | null;
+  customer_email: string | null;
   rating: StarRating | null;
   comment: string | null;
   from_status: string | null;

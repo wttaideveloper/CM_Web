@@ -16,9 +16,11 @@ import EventCommunicationsActions from "./EventCommunicationsActions";
 import EventRefundAction from "./EventRefundAction";
 import EventMediaPreview from "./EventMediaPreview";
 import { mediaItemUrl, type EventMediaItem } from "./event-media";
+import { syncBlogGovernanceFromServer } from "@ihp/shared";
 import EventOrdersSection from "./EventOrdersSection";
 import EventOverviewSection from "./EventOverviewSection";
 import EventReportsSection from "./EventReportsSection";
+import EventSpeakerSelect from "./EventSpeakerSelect";
 import { ContextualModuleBlogsTab } from "@ihp/enterprise-dashboard";
 import { EventReviewsTab, type ReviewStatusFilter, STATUSES as EVENT_REVIEW_STATUSES } from "./EventReviewsTab";
 import SessionAttendancePanel from "./SessionAttendancePanel";
@@ -213,6 +215,18 @@ function EventDetailsContent() {
   );
   const [notificationReviewId, setNotificationReviewId] = useState<string | undefined>(() => searchParams.get("review_id") ?? undefined);
   const [openReviewAudit, setOpenReviewAudit] = useState(() => searchParams.get("show_audit") === "true");
+  const [eventBlogsActive, setEventBlogsActive] = useState(isEventBlogsEnabled);
+  useEffect(() => {
+    const handleUpdate = () => setEventBlogsActive(isEventBlogsEnabled());
+    window.addEventListener("ihp:blogs-governance-updated", handleUpdate);
+    window.addEventListener("storage", handleUpdate);
+    // Fetch latest governance from backend on mount to sync cross-browser
+    void syncBlogGovernanceFromServer().then(() => setEventBlogsActive(isEventBlogsEnabled())).catch(() => {});
+    return () => {
+      window.removeEventListener("ihp:blogs-governance-updated", handleUpdate);
+      window.removeEventListener("storage", handleUpdate);
+    };
+  }, []);
   useEffect(() => {
     const requestedTab = searchParams.get("tab");
     if (eventDetailsTabs.some((tab) => tab.id === requestedTab)) setActiveTab(requestedTab as EventDetailsTab);
@@ -275,7 +289,7 @@ function EventDetailsContent() {
   const sessionsVisible = sessionsOperational || event.sessions.length > 0;
   const hasHistoricalAttendance = attendanceHistoryQuery.data?.participants.length ? attendanceHistoryQuery.data.participants.length > 0 : false;
   const visibleTabs = hasOperationalDataAccess
-    ? eventDetailsTabs.filter((tab) => (tab.id !== "attendance" || event.modules?.check_in !== false || hasHistoricalAttendance) && (tab.id !== "sessions" || sessionsVisible) && (tab.id !== "blogs" || isEventBlogsEnabled()))
+    ? eventDetailsTabs.filter((tab) => (tab.id !== "attendance" || event.modules?.check_in !== false || hasHistoricalAttendance) && (tab.id !== "sessions" || sessionsVisible) && (tab.id !== "blogs" || eventBlogsActive))
     : eventDetailsTabs.slice(0, 2);
   const effectiveActiveTab = visibleTabs.some((tab) => tab.id === activeTab) ? activeTab : "overview";
   const coordinates = event.venue?.coordinates;
@@ -575,7 +589,7 @@ function EventDetailsContent() {
         </section>
       ) : null}
       {effectiveActiveTab === "fulfilment" ? <EventFulfilmentSection eventId={event.id} /> : null}
-      {effectiveActiveTab === "blogs" ? (
+      {effectiveActiveTab === "blogs" && eventBlogsActive ? (
         <section id="event-blogs-panel" role="tabpanel" aria-labelledby="event-blogs-tab" className="mt-6">
           <ContextualModuleBlogsTab module="events" entityId={event.id} entityTitle={event.title} />
         </section>
@@ -1696,12 +1710,7 @@ function AddSessionDialog({
             <textarea value={values.description} onChange={(event) => setValues((current) => ({ ...current, description: event.target.value }))} className="mt-1 min-h-24 w-full rounded-lg border border-[#d7e5df] px-3 py-2 font-normal" />
           </label> : null}
           <div className="grid gap-4 sm:grid-cols-2">
-            {fieldEnabled("speaker") ? <SessionInput
-              label="Speaker"
-              required={fieldRequired("speaker")}
-              value={values.speaker}
-              onChange={update("speaker")}
-            /> : null}
+            {fieldEnabled("speaker") ? <label className="block text-sm font-bold text-[#06201c]">Speaker{fieldRequired("speaker") ? " *" : ""}<EventSpeakerSelect id="event-session-speaker" value={values.speaker} required={fieldRequired("speaker")} onChange={(value) => setValues((current) => ({ ...current, speaker: value }))} /></label> : null}
             {fieldEnabled("speaker_bio") ? <label className="block text-sm font-bold text-[#06201c]">
               Speaker bio{fieldRequired("speaker_bio") ? " *" : ""}
               <textarea value={values.speaker_bio} onChange={(event) => setValues((current) => ({ ...current, speaker_bio: event.target.value }))} className="mt-1 min-h-24 w-full rounded-lg border border-[#d7e5df] px-3 py-2 font-normal" />

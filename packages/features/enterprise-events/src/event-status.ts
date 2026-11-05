@@ -170,7 +170,7 @@ export function getEventStatusActions(status: EventStatus): readonly EventStatus
   if (status === "draft") return [submitForApprovalAction, cancelEventAction];
   if (status === "pending_approval") return [cancelEventAction];
   if (status === "rejected") return [submitForApprovalAction];
-  if (status === "approved") return [publishEventAction, cancelEventAction];
+  if (status === "approved") return [publishEventAction, submitForApprovalAction, cancelEventAction];
   if (status === "published") return [suspendEventAction, unpublishEventAction, cancelEventAction];
   if (status === "suspended") return [resumeEventAction, cancelEventAction];
   if (status === "cancelled") return [restoreEventAction];

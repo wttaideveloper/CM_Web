@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEnterpriseWorkflowNotifications } from "@/realtime/enterprise-workflow-notifications";
 import {
   formatNotificationTimestamp,
+  formatBlogWorkflowNotification,
   formatEventFeedbackNotificationDetails,
   formatReviewModerationNotificationTitle,
   formatReviewSubmissionNotification,
@@ -62,6 +63,7 @@ export default function WorkflowNotificationsPage() {
               body: item.message,
             }) ?? item.title;
             const reviewSubmission = formatReviewSubmissionNotification({ notification_type: item.notification_type, category: item.category, metadata: item.metadata, data: item.metadata, title: item.title, body: item.message });
+            const blogWorkflow = formatBlogWorkflowNotification({ notification_type: item.notification_type, category: item.category, metadata: item.metadata, data: item.metadata, title: item.title, body: item.message });
             const feedbackDetails = formatEventFeedbackNotificationDetails({ notification_type: item.notification_type, category: item.category, metadata: item.metadata, data: item.metadata, title: item.title, body: item.message });
             const reason = notificationReason({ data: item.metadata, body: item.message });
             const { trainingTitle, senderName, learnerName, enrollmentStatus } = formatTrainingNotificationDetails({
@@ -95,14 +97,14 @@ export default function WorkflowNotificationsPage() {
                 }`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <p className="font-semibold text-[#06201c]">{feedbackDetails ? "New Event attendee feedback" : reviewSubmission?.title ?? notificationTitle}</p>
+                  <p className="font-semibold text-[#06201c]">{feedbackDetails ? "New Event attendee feedback" : blogWorkflow?.title ?? reviewSubmission?.title ?? notificationTitle}</p>
                   {item.created_at ? (
                     <span className="text-xs font-semibold text-[#7f9d94]">
                       {formatNotificationTimestamp(item.created_at)}
                     </span>
                   ) : null}
                 </div>
-                <p className="mt-1 text-sm text-[#52736a]">{reviewSubmission?.message ?? item.message}</p>
+                <p className="mt-1 text-sm text-[#52736a]">{blogWorkflow?.message ?? reviewSubmission?.message ?? item.message}</p>
                 {feedbackDetails?.attendeeName ? <p className="mt-1 text-xs font-semibold text-[#52736a]">Attendee: {feedbackDetails.attendeeName}</p> : null}
                 {feedbackDetails?.eventTitle ? <p className="mt-1 text-xs font-semibold text-[#1f6a58]">Event: {feedbackDetails.eventTitle}</p> : null}
                 {feedbackDetails?.comment ? <p className="mt-2 whitespace-pre-wrap rounded-lg bg-[#f4faf7] p-3 text-sm text-[#31594d]">{feedbackDetails.comment}</p> : null}
