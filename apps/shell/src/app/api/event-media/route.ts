@@ -3,14 +3,28 @@ import {
   buildProtectedMediaRequestHeaders,
   configuredMediaOrigin,
   copyProtectedMediaResponseHeaders,
-  isAllowedEventMediaUrl,
+  EVENT_MEDIA_PATH_PATTERN,
+  firstConfiguredUpstream,
+  resolveProtectedMediaFetchUrl,
 } from "@ihp/shared";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const TOKEN_COOKIE_NAME = "access_token";
-const MEDIA_PROXY_ORIGIN = configuredMediaOrigin(process.env.CHAT_PROXY_TARGET ?? process.env.CHAT_API_BASE_URL) ?? "https://chat.wisdomtooth.tech";
+
+/**
+ * Event media URLs stored with the data carry the *public* backend origin, while the server
+ * must connect to the *internal* one (for example a private Docker service name). Keeping the
+ * two apart means the connection target always comes from configuration, never from the request.
+ */
+function mediaFetchPolicy() {
+  return {
+    publicOrigin: configuredMediaOrigin(process.env.NEXT_PUBLIC_PROTECTED_MEDIA_ORIGIN),
+    internalOrigin: configuredMediaOrigin(firstConfiguredUpstream(process.env, ["CHAT_PROXY_TARGET", "CHAT_API_BASE_URL"]) ?? undefined),
+    pathPattern: EVENT_MEDIA_PATH_PATTERN,
+  };
+}
 
 function invalidRequest(detail: string, status = 400): Response {
   return NextResponse.json({ detail }, { status, headers: { "Cache-Control": "no-store" } });
@@ -20,8 +34,9 @@ async function forward(request: NextRequest): Promise<Response> {
   const token = request.cookies.get(TOKEN_COOKIE_NAME)?.value;
   if (!token) return invalidRequest("Not authenticated", 401);
 
-  const upstreamUrl = request.nextUrl.searchParams.get("url")?.trim();
-  if (!upstreamUrl || !isAllowedEventMediaUrl(upstreamUrl, MEDIA_PROXY_ORIGIN)) return invalidRequest("Media URL is not allowed.");
+  const requestedUrl = request.nextUrl.searchParams.get("url")?.trim();
+  const upstreamUrl = requestedUrl ? resolveProtectedMediaFetchUrl(requestedUrl, mediaFetchPolicy()) : null;
+  if (!upstreamUrl) return invalidRequest("Media URL is not allowed.");
 
   let upstream: Response;
   try {

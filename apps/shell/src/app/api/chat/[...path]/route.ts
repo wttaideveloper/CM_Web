@@ -1,11 +1,21 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { firstConfiguredUpstream, stripApiV1 } from "@ihp/shared/upstream-config";
+
 import { normalizeChatUpstreamPath } from "./proxy-path";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const CHAT_PROXY_TARGET = process.env.CHAT_PROXY_TARGET || "http://127.0.0.1:8000";
+/**
+ * Chat REST upstream. Loopback is a development convenience only; an unconfigured
+ * production deployment answers 503 instead of dialing the container's own localhost.
+ */
+function getChatProxyTarget(): string | null {
+  const configuredTarget = firstConfiguredUpstream(process.env, ["CHAT_PROXY_TARGET"]);
+  if (configuredTarget) return stripApiV1(configuredTarget);
+  return process.env.NODE_ENV === "development" ? "http://127.0.0.1:8000" : null;
+}
 
 const TOKEN_COOKIE_NAME = "access_token";
 
@@ -23,10 +33,15 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
     return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
   }
 
+  const chatProxyTarget = getChatProxyTarget();
+  if (!chatProxyTarget) {
+    return NextResponse.json({ detail: "Chat proxy target is not configured." }, { status: 503 });
+  }
+
   const search = request.nextUrl.search;
   const requestPath = `/${path.join("/")}`;
   const upstreamPath = normalizeChatUpstreamPath(requestPath);
-  const targetUrl = `${CHAT_PROXY_TARGET}/api/v1/${upstreamPath}${search}`;
+  const targetUrl = `${chatProxyTarget}/api/v1/${upstreamPath}${search}`;
 
   const headers = new Headers();
 

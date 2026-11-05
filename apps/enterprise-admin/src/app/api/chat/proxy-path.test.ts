@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-// @ts-expect-error Node's native TypeScript test runner loads this module by its .ts filename.
+// Node's native TypeScript test runner loads this module by its .ts filename; the app tsconfig
+// enables `allowImportingTsExtensions` for that, so no error suppression is needed.
 import { buildEnterpriseChatUpstreamUrl, normalizeEnterpriseChatUpstreamPath } from "./proxy-path.ts";
 
 test("preserves the trailing slash for the Group Chat avatar upload collection", () => {

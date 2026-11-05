@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 
+import { normalizeUpstreamBaseUrl } from "@ihp/shared/upstream-config";
+
 const SESSION_COOKIE_NAME = "ihp_super_admin_refresh";
 const REMEMBER_ME_COOKIE_NAME = "ihp_super_admin_remember_me";
 const REMEMBER_ME_MAX_AGE = 60 * 60 * 24 * 30;
-const SUPER_ADMIN_AUTH_API_BASE_URL = process.env.SUPER_ADMIN_AUTH_API_BASE_URL?.replace(/\/+$/, "");
+// An unset or malformed value leaves the gateway "not configured" (503) instead of guessing a host.
+const SUPER_ADMIN_AUTH_API_BASE_URL = normalizeUpstreamBaseUrl(process.env.SUPER_ADMIN_AUTH_API_BASE_URL) ?? undefined;
+// Handbook §4: every outbound call has an explicit timeout shorter than the caller's budget.
+const SUPER_ADMIN_UPSTREAM_TIMEOUT_MS = 15_000;
 
 type SuperAdminIdentity = {
   id: string;
@@ -95,6 +100,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: payload.email.trim(), password: payload.password, rememberMe: payload.rememberMe === true }),
       cache: "no-store",
+      signal: AbortSignal.timeout(SUPER_ADMIN_UPSTREAM_TIMEOUT_MS),
     });
   } catch {
     return errorResponse(502, "Unable to reach Super Admin authentication.");
@@ -118,6 +124,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     verificationResponse = await fetch(`${SUPER_ADMIN_AUTH_API_BASE_URL}/api/v1/auth/me`, {
       headers: { Authorization: `Bearer ${loginBody.tokens.accessToken}` },
       cache: "no-store",
+      signal: AbortSignal.timeout(SUPER_ADMIN_UPSTREAM_TIMEOUT_MS),
     });
   } catch {
     return errorResponse(502, "Unable to verify the Super Admin session.");
