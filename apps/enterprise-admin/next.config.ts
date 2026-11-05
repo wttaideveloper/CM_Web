@@ -1,12 +1,19 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 
-const authApiBaseUrl =
-  process.env.AUTH_API_BASE_URL ?? "https://admin.apis.invigor8.app";
-const chatApiBaseUrl = process.env.CHAT_API_BASE_URL;
-const eventsApiBaseUrl = process.env.EVENTS_API_BASE_URL;
-const workflowApiBaseUrl = process.env.WORKFLOW_API_BASE_URL;
+import { STATIC_SECURITY_HEADERS } from "../../packages/shared/src/security-headers.ts";
+import { resolveUpstreamUrls, stripApiV1, toApiV1Base } from "../../packages/shared/src/upstream-config.ts";
+
+// `__dirname` exists when the config is loaded as CommonJS; fall back to the working
+// directory (the app folder when run through its npm workspace script) for ESM loaders.
+const appDirectory = typeof __dirname === "string" ? __dirname : process.cwd();
 
 const nextConfig: NextConfig = {
+  // Self-contained server output for the Docker image; the tracing root is the
+  // monorepo root so workspace packages under /packages are traced too.
+  output: "standalone",
+  outputFileTracingRoot: path.join(appDirectory, "../.."),
+  poweredByHeader: false,
   skipTrailingSlashRedirect: true,
   experimental: {
     proxyClientMaxBodySize: "310mb",
@@ -34,7 +41,24 @@ const nextConfig: NextConfig = {
     "@ihp/workflow-admin",
     "@ihp/workflow-runtime",
   ],
+  async headers() {
+    return [{ source: "/:path*", headers: [...STATIC_SECURITY_HEADERS] }];
+  },
   async rewrites() {
+    // Rewrites are evaluated at build time, so these variables must be present when
+    // `next build` runs. There is deliberately no default endpoint (handbook §14).
+    // Identity, Marketplace, Events and Workflow stay independently configurable.
+    const upstreams = resolveUpstreamUrls(process.env, {
+      AUTH_API_BASE_URL: { required: true, purpose: "Identity API serving /api/v1/auth and /api/v1/tenant" },
+      CHAT_API_BASE_URL: { required: true, purpose: "Marketplace API serving enterprises, locations, products, services, attributes and trainings" },
+      EVENTS_API_BASE_URL: { required: false, purpose: "Events API; event rewrites are omitted when this is unset" },
+      WORKFLOW_API_BASE_URL: { required: false, purpose: "Workflow API; form/workflow/media rewrites are omitted when this is unset" },
+    });
+
+    const authApiBaseUrl = upstreams.AUTH_API_BASE_URL;
+    // The scheme is used exactly as configured: an internal http:// upstream must
+    // stay http://, so no http->https conversion is applied here.
+    const chatApiV1Base = toApiV1Base(upstreams.CHAT_API_BASE_URL);
     const fallback = [];
 
     fallback.push(
@@ -48,192 +72,190 @@ const nextConfig: NextConfig = {
       },
     );
 
-    if (chatApiBaseUrl) {
-      const chatBaseHttps = chatApiBaseUrl.replace(/^http:/, "https:");
-      const chatApiV1Base = /\/api\/v1\/?$/.test(chatBaseHttps) ? chatBaseHttps.replace(/\/$/, "") : `${chatBaseHttps.replace(/\/$/, "")}/api/v1`;
-      fallback.push(
-        {
-          source: "/api/v1/users/me/notifications",
-          destination: `${chatApiV1Base}/users/me/notifications`,
-        },
-        {
-          source: "/api/v1/users/me/notifications/:path*",
-          destination: `${chatApiV1Base}/users/me/notifications/:path*`,
-        },
-        {
-          source: "/api/v1/trainings/form-configuration/:path*",
-          destination: `${chatBaseHttps}/trainings/form-configuration/:path*`,
-        },
-        {
-          source: "/api/v1/admin/training-form-configurations/:path*",
-          destination: `${chatBaseHttps}/admin/training-form-configurations/:path*`,
-        },
-        {
-          source: "/api/v1/programs/form-configuration/:path*",
-          destination: `${chatBaseHttps}/programs/form-configuration/:path*`,
-        },
-        {
-          source: "/api/v1/admin/program-form-configurations/:path*",
-          destination: `${chatBaseHttps}/admin/program-form-configurations/:path*`,
-        },
-        {
-          source: "/api/v1/courses/form-configuration/:path*",
-          destination: `${chatBaseHttps}/courses/form-configuration/:path*`,
-        },
-        {
-          source: "/api/v1/admin/course-form-configurations/:path*",
-          destination: `${chatBaseHttps}/admin/course-form-configurations/:path*`,
-        },
-        {
-          source: "/api/v1/search/enterprises",
-          destination: `${chatBaseHttps}/search/enterprises`,
-        },
-        {
-          source: "/api/v1/enterprises",
-          destination: `${chatApiBaseUrl}/enterprises/`,
-        },
-        {
-          source: "/api/v1/enterprises/:path*",
-          destination: `${chatApiBaseUrl}/enterprises/:path*`,
-        },
-        {
-          source: "/api/v1/locations/:path*",
-          destination: `${chatApiBaseUrl}/locations/:path*`,
-        },
-        {
-          source: "/api/v1/products",
-          destination: `${chatApiBaseUrl}/products/`,
-        },
-        {
-          source: "/api/v1/products/:path*",
-          destination: `${chatApiBaseUrl}/products/:path*`,
-        },
-        {
-          source: "/api/v1/services",
-          destination: `${chatApiBaseUrl}/services/`,
-        },
-        {
-          source: "/api/v1/services/:path*",
-          destination: `${chatApiBaseUrl}/services/:path*`,
-        },
-        {
-          source: "/api/v1/attributes",
-          destination: `${chatApiBaseUrl}/attributes`,
-        },
-        {
-          source: "/api/v1/attributes/:path*",
-          destination: `${chatApiBaseUrl}/attributes/:path*`,
-        },
-        {
-          source: "/api/v1/trainings",
-          destination: `${chatApiBaseUrl}/trainings/`,
-        },
-        {
-          source: "/api/v1/reviews/:path*",
-          destination: `${chatApiBaseUrl}/reviews/:path*`,
-        },
-        {
-          source: "/api/v1/trainings/:path*",
-          destination: `${chatApiBaseUrl}/trainings/:path*`,
-        },
-        {
-          source: "/api/v1/training-categories",
-          destination: `${chatApiBaseUrl}/training-categories/`,
-        },
-        {
-          source: "/api/v1/training-categories/:path*",
-          destination: `${chatApiBaseUrl}/training-categories/:path*`,
-        },
-        {
-          source: "/api/v1/search/trainings",
-          destination: `${chatApiBaseUrl}/search/trainings`,
-        },
-        {
-          source: "/api/v1/admin/trainings/:path*",
-          destination: `${chatBaseHttps}/admin/trainings/:path*`,
-        },
-        {
-          source: "/api/v1/programs",
-          destination: `${chatApiBaseUrl}/programs/`,
-        },
-        {
-          source: "/api/v1/programs/:path*",
-          destination: `${chatApiBaseUrl}/programs/:path*`,
-        },
-        {
-          source: "/api/v1/search/programs",
-          destination: `${chatApiBaseUrl}/search/programs`,
-        },
-        {
-          source: "/api/v1/admin/programs/:path*",
-          destination: `${chatApiBaseUrl}/admin/programs/:path*`,
-        },
-        {
-          source: "/api/v1/courses",
-          destination: `${chatApiBaseUrl}/courses/`,
-        },
-        {
-          source: "/api/v1/courses/:path*",
-          destination: `${chatApiBaseUrl}/courses/:path*`,
-        },
-        {
-          source: "/api/v1/search/courses",
-          destination: `${chatApiBaseUrl}/search/courses`,
-        },
-        {
-          source: "/api/v1/admin/courses/:path*",
-          destination: `${chatBaseHttps}/admin/courses/:path*`,
-        },
-      );
-    }
+    fallback.push(
+      {
+        source: "/api/v1/users/me/notifications",
+        destination: `${chatApiV1Base}/users/me/notifications`,
+      },
+      {
+        source: "/api/v1/users/me/notifications/:path*",
+        destination: `${chatApiV1Base}/users/me/notifications/:path*`,
+      },
+      {
+        source: "/api/v1/trainings/form-configuration/:path*",
+        destination: `${chatApiV1Base}/trainings/form-configuration/:path*`,
+      },
+      {
+        source: "/api/v1/admin/training-form-configurations/:path*",
+        destination: `${chatApiV1Base}/admin/training-form-configurations/:path*`,
+      },
+      {
+        source: "/api/v1/programs/form-configuration/:path*",
+        destination: `${chatApiV1Base}/programs/form-configuration/:path*`,
+      },
+      {
+        source: "/api/v1/admin/program-form-configurations/:path*",
+        destination: `${chatApiV1Base}/admin/program-form-configurations/:path*`,
+      },
+      {
+        source: "/api/v1/courses/form-configuration/:path*",
+        destination: `${chatApiV1Base}/courses/form-configuration/:path*`,
+      },
+      {
+        source: "/api/v1/admin/course-form-configurations/:path*",
+        destination: `${chatApiV1Base}/admin/course-form-configurations/:path*`,
+      },
+      {
+        source: "/api/v1/search/enterprises",
+        destination: `${chatApiV1Base}/search/enterprises`,
+      },
+      {
+        source: "/api/v1/enterprises",
+        destination: `${chatApiV1Base}/enterprises/`,
+      },
+      {
+        source: "/api/v1/enterprises/:path*",
+        destination: `${chatApiV1Base}/enterprises/:path*`,
+      },
+      {
+        source: "/api/v1/locations/:path*",
+        destination: `${chatApiV1Base}/locations/:path*`,
+      },
+      {
+        source: "/api/v1/products",
+        destination: `${chatApiV1Base}/products/`,
+      },
+      {
+        source: "/api/v1/products/:path*",
+        destination: `${chatApiV1Base}/products/:path*`,
+      },
+      {
+        source: "/api/v1/services",
+        destination: `${chatApiV1Base}/services/`,
+      },
+      {
+        source: "/api/v1/services/:path*",
+        destination: `${chatApiV1Base}/services/:path*`,
+      },
+      {
+        source: "/api/v1/attributes",
+        destination: `${chatApiV1Base}/attributes`,
+      },
+      {
+        source: "/api/v1/attributes/:path*",
+        destination: `${chatApiV1Base}/attributes/:path*`,
+      },
+      {
+        source: "/api/v1/trainings",
+        destination: `${chatApiV1Base}/trainings/`,
+      },
+      {
+        source: "/api/v1/reviews/:path*",
+        destination: `${chatApiV1Base}/reviews/:path*`,
+      },
+      {
+        source: "/api/v1/trainings/:path*",
+        destination: `${chatApiV1Base}/trainings/:path*`,
+      },
+      {
+        source: "/api/v1/training-categories",
+        destination: `${chatApiV1Base}/training-categories/`,
+      },
+      {
+        source: "/api/v1/training-categories/:path*",
+        destination: `${chatApiV1Base}/training-categories/:path*`,
+      },
+      {
+        source: "/api/v1/search/trainings",
+        destination: `${chatApiV1Base}/search/trainings`,
+      },
+      {
+        source: "/api/v1/admin/trainings/:path*",
+        destination: `${chatApiV1Base}/admin/trainings/:path*`,
+      },
+      {
+        source: "/api/v1/programs",
+        destination: `${chatApiV1Base}/programs/`,
+      },
+      {
+        source: "/api/v1/programs/:path*",
+        destination: `${chatApiV1Base}/programs/:path*`,
+      },
+      {
+        source: "/api/v1/search/programs",
+        destination: `${chatApiV1Base}/search/programs`,
+      },
+      {
+        source: "/api/v1/admin/programs/:path*",
+        destination: `${chatApiV1Base}/admin/programs/:path*`,
+      },
+      {
+        source: "/api/v1/courses",
+        destination: `${chatApiV1Base}/courses/`,
+      },
+      {
+        source: "/api/v1/courses/:path*",
+        destination: `${chatApiV1Base}/courses/:path*`,
+      },
+      {
+        source: "/api/v1/search/courses",
+        destination: `${chatApiV1Base}/search/courses`,
+      },
+      {
+        source: "/api/v1/admin/courses/:path*",
+        destination: `${chatApiV1Base}/admin/courses/:path*`,
+      },
+    );
 
-    if (workflowApiBaseUrl) {
+    if (upstreams.WORKFLOW_API_BASE_URL) {
+      const workflowOrigin = stripApiV1(upstreams.WORKFLOW_API_BASE_URL);
       fallback.push(
         {
           source: "/api/v1/forms/:path*",
-          destination: `${workflowApiBaseUrl}/api/v1/forms/:path*`,
+          destination: `${workflowOrigin}/api/v1/forms/:path*`,
         },
         {
           source: "/api/v1/workflows/:path*",
-          destination: `${workflowApiBaseUrl}/api/v1/workflows/:path*`,
+          destination: `${workflowOrigin}/api/v1/workflows/:path*`,
         },
         {
           source: "/api/v1/media/:path*",
-          destination: `${workflowApiBaseUrl}/api/v1/media/:path*`,
+          destination: `${workflowOrigin}/api/v1/media/:path*`,
         },
       );
     }
 
-    if (eventsApiBaseUrl) {
+    if (upstreams.EVENTS_API_BASE_URL) {
+      const eventsApiV1Base = toApiV1Base(upstreams.EVENTS_API_BASE_URL);
       fallback.push(
         // Preserve the documented collection slash before proxying multipart requests.
         {
           source: "/api/v1/events/media",
-          destination: `${eventsApiBaseUrl}/api/v1/events/media/`,
+          destination: `${eventsApiV1Base}/events/media/`,
         },
         {
           source: "/api/v1/events/media/",
-          destination: `${eventsApiBaseUrl}/api/v1/events/media/`,
+          destination: `${eventsApiV1Base}/events/media/`,
         },
         {
           source: "/api/v1/events",
-          destination: `${eventsApiBaseUrl}/api/v1/events/`,
+          destination: `${eventsApiV1Base}/events/`,
         },
         {
           source: "/api/v1/events/:path*",
-          destination: `${eventsApiBaseUrl}/api/v1/events/:path*`,
+          destination: `${eventsApiV1Base}/events/:path*`,
         },
         {
           source: "/api/v1/event-categories",
-          destination: `${eventsApiBaseUrl}/api/v1/event-categories/`,
+          destination: `${eventsApiV1Base}/event-categories/`,
         },
         {
           source: "/api/v1/event-types",
-          destination: `${eventsApiBaseUrl}/api/v1/event-types/`,
+          destination: `${eventsApiV1Base}/event-types/`,
         },
         {
           source: "/api/v1/event-types/:path*",
-          destination: `${eventsApiBaseUrl}/api/v1/event-types/:path*`,
+          destination: `${eventsApiV1Base}/event-types/:path*`,
         },
       );
     }
