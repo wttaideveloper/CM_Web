@@ -3,3 +3,4 @@ export { formatCurrency } from "./format-currency";
 export * from "./protected-media";
 export * from "./upstream-config";
 export * from "./security-headers";
+export * from "./safe-proxy-path";

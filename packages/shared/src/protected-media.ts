@@ -1,3 +1,4 @@
+import { isSafeRawPathname } from "./safe-proxy-path.ts";
 import { originOf } from "./upstream-config.ts";
 
 const REQUEST_HEADERS_TO_FORWARD = ["accept", "if-range", "range"] as const;
@@ -102,6 +103,8 @@ export interface ProtectedMediaFetchPolicy {
  * origin and its path matches `pathPattern`; the returned URL always uses the
  * configured internal origin, so the connection target is never attacker-controlled.
  * Credentials and non-HTTP schemes are rejected, and the fragment is dropped.
+ * A path carrying encoded separators, encoded dots, double encoding or malformed escapes is
+ * rejected as well, so the pattern cannot be satisfied by something the upstream decodes differently.
  *
  * @returns the internal fetch URL, or `null` when the input is not allowed or the internal
  * origin is unconfigured. A missing public origin only narrows what is accepted: URLs that
@@ -113,9 +116,14 @@ export function resolveProtectedMediaFetchUrl(value: string, policy: ProtectedMe
   if (!url || !internalOrigin) return null;
   if (url.username || url.password) return null;
   if (url.origin !== internalOrigin && url.origin !== publicOrigin) return null;
+  if (!isSafeRawPathname(url.pathname)) return null;
   if (pathPattern && !pathPattern.test(url.pathname)) return null;
   return `${internalOrigin}${url.pathname}${url.search}`;
 }
 
-/** Path pattern for Event media assets served by the Marketplace API. */
-export const EVENT_MEDIA_PATH_PATTERN = /^\/api\/v1\/events\/media(?:\/|$)/;
+/**
+ * Path pattern for ONE Event media asset served by the Marketplace API: exactly one `<asset id>.<ext>`
+ * segment under `/api/v1/events/media/` (the backend route is `/{asset_file}`). Sub-paths, empty names
+ * and the bare collection are not media files and are refused.
+ */
+export const EVENT_MEDIA_PATH_PATTERN = /^\/api\/v1\/events\/media\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;

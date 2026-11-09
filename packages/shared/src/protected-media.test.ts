@@ -111,3 +111,41 @@ test("routes URLs on the configured public origin through the proxy and leaves e
   assert.equal(protectedMediaPreviewUrl(internal, "/api/event-media", origin), `/api/event-media?url=${encodeURIComponent(internal)}`);
   assert.equal(protectedMediaPreviewUrl("https://cdn.example.com/a.png", "/api/event-media", origin), "https://cdn.example.com/a.png");
 });
+
+test("EVENT_MEDIA_PATH_PATTERN accepts exactly one asset segment, as the backend route does", () => {
+  for (const path of ["/api/v1/events/media/a", "/api/v1/events/media/a.png", "/api/v1/events/media/7d2c1c3e-0b0f-4f3b-9d6e-5f6a0c8c9a11.pdf", "/api/v1/events/media/asset-1.mp4"]) {
+    assert.match(path, EVENT_MEDIA_PATH_PATTERN, path);
+  }
+  for (const path of [
+    "/api/v1/events/media", "/api/v1/events/media/", "/api/v1/events/media/a/b", "/api/v1/events/media/a/", "/api/v1/events/media/.hidden",
+    "/api/v1/events/media/-x", "/api/v1/events/media/a b", "/api/v1/events/media/a%20b", "/api/v1/events/media/../users/me",
+    "/api/v1/events/media/policy/../../users", "/api/v1/events/medias/a", "/api/v1/users/me", "/x/api/v1/events/media/a",
+  ]) {
+    assert.doesNotMatch(path, EVENT_MEDIA_PATH_PATTERN, path);
+  }
+});
+
+test("resolveProtectedMediaFetchUrl refuses encoded, double-encoded and malformed traversal in the path", () => {
+  const base = "https://api.staging.example.test/api/v1/events/media/";
+  for (const tail of [
+    "..%2f..%2fusers%2fme", "..%2F..%2Fusers%2Fme", "a%2fb", "a%2Fb", "a%5cb", "a%5Cb", "%2e%2e%2fusers", "a%252e%252e", "%252e%252e%252fusers",
+    "a%25", "a%", "a%zz", "a%c0%af", "a%00b", "a%0d%0ab", "a\\b", "a%5C..%5Cb",
+  ]) {
+    assert.equal(resolveProtectedMediaFetchUrl(`${base}${tail}`, hostingerPolicy), null, tail);
+  }
+});
+
+test("resolveProtectedMediaFetchUrl still serves legitimate event media on either origin", () => {
+  for (const name of ["a", "a.png", "7d2c1c3e-0b0f-4f3b-9d6e-5f6a0c8c9a11.webp", "asset-1.mp4", "Doc_2.pdf"]) {
+    assert.equal(
+      resolveProtectedMediaFetchUrl(`https://api.staging.example.test/api/v1/events/media/${name}?v=3`, hostingerPolicy),
+      `http://classifieds-marketplace-api:8000/api/v1/events/media/${name}?v=3`,
+      name,
+    );
+    assert.equal(
+      resolveProtectedMediaFetchUrl(`http://classifieds-marketplace-api:8000/api/v1/events/media/${name}`, hostingerPolicy),
+      `http://classifieds-marketplace-api:8000/api/v1/events/media/${name}`,
+      name,
+    );
+  }
+});
