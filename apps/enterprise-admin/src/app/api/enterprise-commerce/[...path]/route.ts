@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 
+import { normalizeUpstreamBaseUrl } from "@ihp/shared/upstream-config";
+
 import { enterprisePaymentMethodNotAllowed, forwardEnterpriseCommerceRead } from "@/lib/enterprise-commerce-proxy";
 
 export const runtime = "nodejs";
@@ -14,7 +16,8 @@ export async function GET(request: NextRequest, context: { params: Promise<{ pat
     path,
     requestUrl: request.url,
     accessToken: request.cookies.get(ACCESS_TOKEN_COOKIE)?.value,
-    apiBaseUrl: process.env.CHAT_API_BASE_URL,
+    // Same validation as the chat proxy: https, or cleartext http for a private host only.
+    apiBaseUrl: normalizeUpstreamBaseUrl(process.env.CHAT_API_BASE_URL) ?? undefined,
   });
   return result.response;
 }

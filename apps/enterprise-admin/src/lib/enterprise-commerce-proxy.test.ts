@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-// @ts-expect-error Node's native TypeScript test runner loads this module by its .ts filename.
 import { buildEnterpriseCommerceUpstreamUrl, buildEnterprisePaymentUpstreamUrl, enterprisePaymentMethodNotAllowed, forwardEnterpriseCommerceRead, forwardEnterprisePaymentRead, isEnterpriseCommerceReadPath, isEnterprisePaymentReadPath } from "./enterprise-commerce-proxy.ts";
 
 const PAYMENT_ID = "018f6b54-2a10-7cc4-8b7d-44c5f4b305a1";

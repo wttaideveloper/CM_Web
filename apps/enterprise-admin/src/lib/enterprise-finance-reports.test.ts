@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-// @ts-expect-error Node's native TypeScript test runner loads this module by its .ts filename.
 import { buildEnterpriseFinanceReportParams, enterpriseFinanceReportQueryKey, getEnterpriseReportFields, parseEnterpriseFinanceReport, parseEnterpriseFinanceReportForTenant } from "./enterprise-finance-reports.ts";
 
 test("report request builders pass supported filters and omit tenant and export parameters", () => {

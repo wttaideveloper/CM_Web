@@ -1,10 +1,29 @@
 export const EVENT_MEDIA_FIELDS = ["primary_image", "gallery_images", "videos", "documents"] as const;
 
+function originOrNull(value: string | undefined): string | null {
+  try {
+    return value?.trim() ? new URL(value.trim()).origin : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Public origin that appears in backend-issued media URLs (browser-visible, not a secret).
+ * There is deliberately no default host: when unset, no media is routed through the BFF.
+ * Referenced as a literal so Next.js inlines it into the client bundle.
+ */
+const CONFIGURED_PROTECTED_MEDIA_ORIGIN = originOrNull(process.env.NEXT_PUBLIC_PROTECTED_MEDIA_ORIGIN);
+
 /** Routes protected Chat media through the current app's authenticated BFF. */
-export function protectedMediaPreviewUrl(value: string, proxyPath = "/api/event-media"): string {
+export function protectedMediaPreviewUrl(
+  value: string,
+  proxyPath = "/api/event-media",
+  protectedOrigin: string | null = CONFIGURED_PROTECTED_MEDIA_ORIGIN,
+): string {
   try {
     const url = new URL(value);
-    if ((url.protocol !== "http:" && url.protocol !== "https:") || url.origin !== "https://chat.wisdomtooth.tech") return value;
+    if ((url.protocol !== "http:" && url.protocol !== "https:") || !protectedOrigin || url.origin !== protectedOrigin) return value;
     return `${proxyPath}?url=${encodeURIComponent(url.toString())}`;
   } catch {
     return value;

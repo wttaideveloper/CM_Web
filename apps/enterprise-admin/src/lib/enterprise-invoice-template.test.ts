@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { InvoiceTemplateResponse } from "@ihp/commerce";
 
-// @ts-expect-error Node's native TypeScript test runner loads this module by its .ts filename.
 import { buildInvoiceTemplateDisplayFields, getSafeInvoiceLogoUrl, INVOICE_TEMPLATE_PANEL_DEFAULT_EXPANDED, isInvoiceTemplateQueryEnabled } from "./enterprise-invoice-template.ts";
 
 test("template panel starts expanded and its request requires authenticated Enterprise scope", () => {

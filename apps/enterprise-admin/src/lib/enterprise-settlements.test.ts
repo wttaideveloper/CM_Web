@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-// @ts-expect-error Node's native TypeScript test runner loads this module by its .ts filename.
 import { assertSettlementListTenant, assertSettlementTenant, buildEnterpriseSettlementParams, enterpriseSettlementQueryKeys, hasEnterpriseSettlementScope, normalizeEnterpriseSettlementPage, settlementConfigMatchesTenant, settlementListReference, settlementStatusLabel } from "./enterprise-settlements.ts";
 
 test("settlement list parameters are paginated and never contain a tenant override", () => {

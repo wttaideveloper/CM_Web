@@ -5,8 +5,8 @@ import {
   superAdminErrorResponse,
   superAdminJsonResponse,
 } from "@/lib/super-admin-server-client";
+import { resolveMarketplaceUrl } from "@/lib/marketplace-url";
 
-const MARKETPLACE_API_BASE_URL = process.env.CHAT_API_BASE_URL;
 const MODULES = new Set(["training", "event", "product", "service"]);
 const REVIEW_ACTIONS = new Set(["pending", "approved", "rejected"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -16,17 +16,7 @@ function errorResponse(status: number, detail: string): NextResponse {
 }
 
 function marketplaceUrl(path: string, request: NextRequest): URL | null {
-  if (!MARKETPLACE_API_BASE_URL) return null;
-  try {
-    const base = new URL(MARKETPLACE_API_BASE_URL);
-    if (base.protocol !== "https:" || base.hostname !== "chat.wisdomtooth.tech") return null;
-    const apiBase = /\/api\/v1\/?$/.test(base.pathname) ? base.pathname.replace(/\/$/, "") : `${base.pathname.replace(/\/$/, "")}/api/v1`;
-    base.pathname = `${apiBase}/reviews/${path}`;
-    base.search = request.nextUrl.search;
-    return base;
-  } catch {
-    return null;
-  }
+  return resolveMarketplaceUrl(`/api/v1/reviews/${path}`, request.nextUrl.search);
 }
 
 function validQueueQuery(request: NextRequest, audit: boolean): boolean {

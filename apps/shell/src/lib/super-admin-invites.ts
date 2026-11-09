@@ -1,6 +1,11 @@
 import "server-only";
 
-const SUPER_ADMIN_AUTH_API_BASE_URL = process.env.SUPER_ADMIN_AUTH_API_BASE_URL;
+import { normalizeUpstreamBaseUrl } from "@ihp/shared/upstream-config";
+
+// An unset or malformed value leaves the gateway "not configured" (503) instead of guessing a host.
+const SUPER_ADMIN_AUTH_API_BASE_URL = normalizeUpstreamBaseUrl(process.env.SUPER_ADMIN_AUTH_API_BASE_URL) ?? undefined;
+// Handbook §4: every outbound call has an explicit timeout shorter than the caller's budget.
+const SUPER_ADMIN_UPSTREAM_TIMEOUT_MS = 15_000;
 
 type InviteAcceptPayload = { token: string; email: string; password: string };
 type PasswordResetPayload = { email: string; password?: string; otp?: string };
@@ -37,7 +42,7 @@ export async function previewSuperAdminInvite(token: string): Promise<{ status: 
   url.searchParams.set("token", token);
 
   try {
-    const response = await fetch(url, { cache: "no-store" });
+    const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(SUPER_ADMIN_UPSTREAM_TIMEOUT_MS) });
     return { status: response.status, body: redactSensitiveValues(await response.json().catch(() => null)) };
   } catch {
     return { status: 502, body: { detail: "Unable to reach Super Admin authentication." } };
@@ -55,6 +60,7 @@ export async function acceptSuperAdminInvite(payload: InviteAcceptPayload): Prom
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
       cache: "no-store",
+      signal: AbortSignal.timeout(SUPER_ADMIN_UPSTREAM_TIMEOUT_MS),
     });
     return { status: response.status, body: redactSensitiveValues(await response.json().catch(() => null)) };
   } catch {
@@ -72,6 +78,7 @@ async function postPublicSuperAdminAuth(pathname: string, payload: PasswordReset
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
       cache: "no-store",
+      signal: AbortSignal.timeout(SUPER_ADMIN_UPSTREAM_TIMEOUT_MS),
     });
     return { status: response.status, body: redactSensitiveValues(await response.json().catch(() => null)) };
   } catch {

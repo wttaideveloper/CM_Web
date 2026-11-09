@@ -1,10 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { buildEnterpriseChatUpstreamUrl } from "../proxy-path";
+
+import { firstConfiguredUpstream, stripApiV1 } from "@ihp/shared/upstream-config";
+
+import { buildEnterpriseChatUpstreamUrl, resolveEnterpriseChatUpstreamPath } from "../proxy-path";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const CHAT_TOKEN_UPSTREAM = "https://chat.wisdomtooth.tech";
+const TOKEN_COOKIE_NAME = "access_token";
 const RESPONSE_HEADERS_TO_COPY = [
   "content-type",
   "content-disposition",
@@ -12,42 +15,57 @@ const RESPONSE_HEADERS_TO_COPY = [
   "accept-ranges",
 ] as const;
 
+/**
+ * Chat REST upstream, from configuration only. `CHAT_API_BASE_URL` (mandatory deployment configuration) is a valid second
+ * source when `CHAT_PROXY_TARGET` is unset; both pass the same validation (https, or http for a private host only).
+ * There is no built-in host: an unconfigured production deployment answers 503. Loopback is a development convenience.
+ */
 function getChatProxyTarget(): string | null {
-  const configuredTarget = process.env.CHAT_PROXY_TARGET?.trim();
+  const configuredTarget = firstConfiguredUpstream(process.env, ["CHAT_PROXY_TARGET", "CHAT_API_BASE_URL"]);
   if (configuredTarget) {
-    return configuredTarget.replace(/\/$/, "");
+    return stripApiV1(configuredTarget);
   }
 
-  const configuredChatApi = process.env.CHAT_API_BASE_URL?.trim();
-  if (configuredChatApi) {
-    return configuredChatApi
-      .replace(/\/api\/v1\/?$/, "")
-      .replace(/\/$/, "");
-  }
+  return process.env.NODE_ENV === "development" ? "http://127.0.0.1:8000" : null;
+}
 
-  return CHAT_TOKEN_UPSTREAM;
+/**
+ * Upstream for `POST /auth/chat-token`. It follows the approved chat proxy target unless
+ * `CHAT_TOKEN_UPSTREAM_URL` names a separately hosted token service. There is no built-in
+ * host, so an unconfigured deployment answers 503 instead of calling an unintended backend.
+ */
+function getChatTokenUpstream(): string | null {
+  const configuredUpstream = firstConfiguredUpstream(process.env, ["CHAT_TOKEN_UPSTREAM_URL"]);
+  return configuredUpstream ? stripApiV1(configuredUpstream) : getChatProxyTarget();
 }
 
 async function forward(request: NextRequest, path: string[]): Promise<Response> {
+  // Validate the path before anything else: an invalid or traversal path is never forwarded.
+  const upstreamPath = resolveEnterpriseChatUpstreamPath(path, request.nextUrl.pathname);
+  if (upstreamPath === null) {
+    return NextResponse.json({ detail: "Invalid chat path." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  }
+
+  // A caller-supplied Bearer token wins; otherwise the session's access-token cookie is used. The cookie header is
+  // forwarded as well, because the Chat API also accepts the Web session cookie.
   const requestCookie = request.headers.get("cookie");
   const requestAuthorization = request.headers.get("authorization");
-  const token = requestAuthorization?.replace(/^Bearer\s+/i, "").trim();
-  const requestPath = `/${path.join("/")}`;
-  const isChatTokenRequest = request.method === "POST" && requestPath === "/auth/chat-token";
+  const token = requestAuthorization?.replace(/^Bearer\s+/i, "").trim() || request.cookies.get(TOKEN_COOKIE_NAME)?.value;
 
   if (!token && !requestCookie) {
     return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
   }
 
-  const proxyTarget = getChatProxyTarget();
-  if (!proxyTarget && !isChatTokenRequest) {
+  const requestPath = `/${upstreamPath}`;
+  const isChatTokenRequest = request.method === "POST" && upstreamPath === "auth/chat-token";
+  const proxyTarget = isChatTokenRequest ? getChatTokenUpstream() : getChatProxyTarget();
+  if (!proxyTarget) {
     return NextResponse.json({ detail: "Chat proxy target is not configured." }, { status: 503 });
   }
 
   const upstreamUrl = isChatTokenRequest
-    ? `${CHAT_TOKEN_UPSTREAM}/api/v1/auth/chat-token`
-    : buildEnterpriseChatUpstreamUrl(proxyTarget!, requestPath, request.nextUrl.search);
-  console.info("[chat-proxy] request", { path: requestPath, upstreamUrl });
+    ? `${proxyTarget}/api/v1/auth/chat-token`
+    : buildEnterpriseChatUpstreamUrl(proxyTarget, upstreamPath, request.nextUrl.search);
   const headers = new Headers();
   const contentType = request.headers.get("content-type");
   const accept = request.headers.get("accept");
@@ -121,7 +139,10 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
     return NextResponse.json({ detail: "Chat proxy request failed." }, { status: 502 });
   }
 
-  console.info("[chat-proxy] response", { path: requestPath, upstreamUrl, status: upstream.status });
+  if (upstream.status >= 500) {
+    // Route and status only: the upstream URL carries query parameters that must not be logged.
+    console.error("[chat-proxy] upstream server error", { method: request.method, path: requestPath, status: upstream.status });
+  }
 
   const responseHeaders = new Headers();
   for (const name of RESPONSE_HEADERS_TO_COPY) {

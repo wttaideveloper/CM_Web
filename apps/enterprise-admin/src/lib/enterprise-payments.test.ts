@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-// @ts-expect-error Node's native TypeScript test runner loads this module by its .ts filename.
 import { assertEnterprisePaymentListTenant, assertEnterprisePaymentTenant, buildEnterprisePaymentParams, enterprisePaymentPageCount, enterprisePaymentQueryKeys, enterprisePaymentStatusLabel, formatEnterprisePaymentAmount, hasEnterprisePaymentScope, normalizeEnterprisePaymentList, redactGatewayHistory } from "./enterprise-payments.ts";
-// @ts-expect-error Node's native TypeScript test runner loads this module by its .ts filename.
 import { buildCommerceUrl } from "../../../../packages/features/commerce/src/commerce-url.ts";
 
 test("builds page-based list filters without a client-controlled tenant", () => {

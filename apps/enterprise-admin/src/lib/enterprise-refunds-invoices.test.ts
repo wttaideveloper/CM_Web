@@ -2,9 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { InvoiceResponse, RefundResponse } from "@ihp/commerce";
 
-// @ts-expect-error Node's native TypeScript test runner loads this module by its .ts filename.
 import { assertEnterpriseInvoiceListTenant, assertEnterpriseInvoiceTemplateTenant, assertEnterpriseInvoiceTenant, assertEnterpriseRefundListTenant, assertEnterpriseRefundTenant, buildEnterpriseInvoiceParams, buildEnterpriseRefundParams, enterpriseFinanceAmount, enterpriseFinanceErrorKey, enterpriseFinancePageCount, enterpriseRefundsInvoicesQueryKeys, hasEnterpriseFinanceScope, normalizeEnterpriseFinancePage } from "./enterprise-refunds-invoices.ts";
-// @ts-expect-error Node's native TypeScript test runner loads this module by its .ts filename.
 import { buildCommerceUrl } from "../../../../packages/features/commerce/src/commerce-url.ts";
 
 test("refund and invoice filters use page pagination and omit tenant overrides", () => {
