@@ -24,7 +24,13 @@ export {
 export { AuthRefreshInvalidatedError } from "./session";
 export type { GetWebAuthLogoutOptions } from "./session";
 export { useAuth, useOptionalAuth } from "./useAuth";
-export { isInternalUserRole } from "./capabilities";
+export {
+  getEnterpriseHeaderRoleLabel,
+  getEnterpriseSidebarRoleLabel,
+  isInternalUserRole,
+  resolveEnterprisePortalRole,
+} from "./capabilities";
+export type { EnterprisePortalRole } from "./capabilities";
 export { loginSuperAdmin, SuperAdminAuthError } from "./super-admin-auth";
 export type { SuperAdminIdentity, SuperAdminLoginInput } from "./super-admin-auth";
 export {

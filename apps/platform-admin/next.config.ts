@@ -19,12 +19,36 @@ const platformApiBaseUrl = normalizePlatformApiBaseUrl(
 
 const assetPrefix = process.env.NEXT_PUBLIC_ASSET_PREFIX?.replace(/\/$/, "") || undefined;
 
+const commerceProxyResources = [
+  "payments",
+  "currencies",
+  "tax",
+  "refunds",
+  "invoices",
+  "settlements",
+  "payment-reports",
+  "finance",
+] as const;
+
+function buildCommerceProxyRoutes(apiBaseUrl: string) {
+  return commerceProxyResources.flatMap((resource) => [
+    {
+      source: `/api/v1/${resource}`,
+      destination: `${apiBaseUrl}/${resource}`,
+    },
+    {
+      source: `/api/v1/${resource}/:path*`,
+      destination: `${apiBaseUrl}/${resource}/:path*`,
+    },
+  ]);
+}
+
 const nextConfig: NextConfig = {
   assetPrefix,
   experimental: {
     proxyClientMaxBodySize: "310mb",
   },
-  transpilePackages: ["@ihp/attributes", "@ihp/auth", "@ihp/enterprise-trainings", "@ihp/enterprises", "@ihp/onboarding-forms", "@ihp/platform-attributes", "@ihp/platform-configuration", "@ihp/platform-dashboard", "@ihp/platform-enterprises", "@ihp/platform-form-configurations", "@ihp/platform-layout", "@ihp/platform-marketplace-static", "@ihp/platform-users", "@ihp/products", "@ihp/services", "@ihp/shared", "@ihp/ui", "@ihp/workflow-admin", "@ihp/workflow-runtime"],
+  transpilePackages: ["@ihp/attributes", "@ihp/auth", "@ihp/commerce", "@ihp/enterprise-trainings", "@ihp/enterprises", "@ihp/onboarding-forms", "@ihp/platform-attributes", "@ihp/platform-configuration", "@ihp/platform-dashboard", "@ihp/platform-enterprises", "@ihp/platform-form-configurations", "@ihp/platform-layout", "@ihp/platform-marketplace-static", "@ihp/platform-users", "@ihp/products", "@ihp/services", "@ihp/shared", "@ihp/ui", "@ihp/workflow-admin", "@ihp/workflow-runtime"],
   async rewrites() {
     const fallback = [
       {
@@ -176,6 +200,8 @@ const nextConfig: NextConfig = {
         destination: `${platformApiBaseUrl}/admin/courses/:path*`,
       },
     ];
+
+    fallback.push(...buildCommerceProxyRoutes(platformApiBaseUrl));
 
     if (authApiBaseUrl) {
       fallback.push(

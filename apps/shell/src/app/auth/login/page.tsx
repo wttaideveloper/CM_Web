@@ -66,10 +66,10 @@ function LoginPageContent() {
 
   const subtitle = isSuperAdmin
     ? "Sign in to the Super Admin portal"
-    : "Sign in to your Enterprise Owner portal";
+    : "Sign in to your Enterprise Owner or Staff portal";
   const buttonLabel = isSuperAdmin
     ? "Sign In as Super Admin"
-    : "Sign In as Enterprise Owner";
+    : "Sign In to Enterprise Portal";
   const canSubmit = !isSubmitting && (isSuperAdmin || !isLoading);
 
   function handleWebPortalLogin() {
@@ -313,7 +313,7 @@ function LoginPageContent() {
                         strokeLinecap="round"
                       />
                     </svg>
-                    <span>Enterprise Owner</span>
+                    <span>Enterprise Owner / Staff</span>
                   </span>
                 </button>
               </div>

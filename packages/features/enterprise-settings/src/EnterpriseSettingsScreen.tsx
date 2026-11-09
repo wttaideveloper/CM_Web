@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 
-import { PasswordResetModal, ProfileEditModal, useAuth } from "@ihp/auth";
+import { getEnterpriseSidebarRoleLabel, PasswordResetModal, ProfileEditModal, resolveEnterprisePortalRole, useAuth } from "@ihp/auth";
 import { useTenant } from "@ihp/enterprise-runtime";
 
 import TeamAndUsersCard from "./TeamAndUsersCard";
@@ -42,6 +42,7 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
 /** Renders the authenticated Enterprise owner's account, tenant, and team settings. */
 export default function EnterpriseSettingsScreen() {
   const { user } = useAuth();
+  const roleLabel = getEnterpriseSidebarRoleLabel(resolveEnterprisePortalRole(user?.membership?.tenantRole ?? user?.roles?.tenantRole ?? null));
   const { tenant, isLoadingTenant, tenantError } = useTenant();
   const [isEditing, setIsEditing] = useState(false);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
@@ -53,7 +54,7 @@ export default function EnterpriseSettingsScreen() {
     <>
       <div className="mx-auto w-full max-w-6xl space-y-5">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">ENTERPRISE OWNER</p>
+          <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">{roleLabel}</p>
           <h1 className="mt-1 text-2xl font-bold text-[#06201c]">Enterprise Settings</h1>
           <p className="mt-1 text-sm text-[#5f7a71]">Manage your account and organization settings</p>
         </div>

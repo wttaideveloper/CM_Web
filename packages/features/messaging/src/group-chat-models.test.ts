@@ -88,6 +88,16 @@ test("builds the existing attachment upload contract for a Group conversation", 
   assert.equal(buildGroupChatAttachmentUploadFormData("", file, "image"), null);
 });
 
+test("builds audio uploads with explicit audio attachment type and audio message body", () => {
+  const file = new File([new Blob(["audio"], { type: "audio/webm;codecs=opus" })], "voice.webm", { type: "audio/webm;codecs=opus" });
+  const formData = buildGroupChatAttachmentUploadFormData("group-a", file, "audio");
+  assert.ok(formData);
+  assert.equal(formData.get("conversation_id"), "group-a");
+  assert.equal(formData.get("file"), file);
+  assert.equal(formData.get("attachment_type"), "audio");
+  assert.deepEqual(buildGroupChatAttachmentMessagePayload("audio", "uploaded-audio-id"), { message_type: "audio", attachment_id: "uploaded-audio-id" });
+});
+
 test("normalizes the Direct Chat attachment response fields and builds the Group message body", () => {
   const attachment = normalizeGroupChatAttachmentUploadResponse({ data: { attachment_id: "attachment-1", filename: "report.pdf", attachment_type: "document", download_url: "/attachments/attachment-1", file_size: 42, mime_type: "application/pdf" } }, "document", "fallback.pdf");
   assert.deepEqual(attachment, { id: "attachment-1", file_name: "report.pdf", attachment_type: "document", download_url: "/attachments/attachment-1", file_size: 42, mime_type: "application/pdf" });

@@ -1,0 +1,15 @@
+{
+  "name": "@ihp/commerce",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ihp/auth": "0.1.0",
+    "@ihp/shared": "0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

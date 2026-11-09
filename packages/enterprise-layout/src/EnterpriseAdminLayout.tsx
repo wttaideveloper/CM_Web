@@ -16,6 +16,7 @@ import {
   notificationReason,
   resolveNotificationTarget,
 } from "@ihp/realtime";
+import { getEnterpriseHeaderRoleLabel, getEnterpriseSidebarRoleLabel, resolveEnterprisePortalRole } from "@ihp/auth";
 import { AppFrame, HeaderFrame, SidebarFrame } from "@ihp/ui";
 
 import {
@@ -33,6 +34,7 @@ type EnterpriseAdminLayoutProps = {
   user?: {
     fullName?: string;
     email?: string;
+    tenantRole?: string | null;
   } | null;
   onLogout: () => Promise<void> | void;
   notifications?: Array<{ id: string; notification_type: string; title: string; body: string; is_read: boolean; created_at: string | null; data: Record<string, unknown> }>;
@@ -81,6 +83,10 @@ function ChartIcon() {
   return <Icon path="M4 19.5h16M7 16v-4M12 16V8M17 16v-7" />;
 }
 
+function FinanceIcon() {
+  return <Icon path="M3 7h18v12H3zM3 10h18M7 15h3" />;
+}
+
 function SettingsIcon() {
   return <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none"><path d="M12 8.2A3.8 3.8 0 1 0 12 15.8 3.8 3.8 0 0 0 12 8.2Zm7.4 3.8a7.1 7.1 0 0 0-.1-1l2-1.5-2-3.4-2.4.8a7.2 7.2 0 0 0-1.7-1L15.1 3h-4.2l-.9 2.9a7.2 7.2 0 0 0-1.7 1l-2.4-.8-2 3.4 2 1.5a7.1 7.1 0 0 0 0 2l-2 1.5 2 3.4 2.4-.8a7.2 7.2 0 0 0 1.7 1l.9 2.9h4.2l.9-2.9a7.2 7.2 0 0 0 1.7-1l2.4.8 2-3.4-2-1.5c.1-.3.1-.7.1-1Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>;
 }
@@ -120,6 +126,7 @@ const navigationIcons: Record<EnterpriseNavigationIcon, () => React.JSX.Element>
   training: TrainingIcon,
   program: ProgramIcon,
   chart: ChartIcon,
+  finance: FinanceIcon,
   settings: SettingsIcon,
 };
 
@@ -129,8 +136,8 @@ function isActive(pathname: string, item: EnterpriseNavigationItem) {
   return pathname === item.href || pathname.startsWith(`${item.href}/`);
 }
 
-function Brand() {
-  return <Link href="/admin/dashboard" className="flex items-center gap-3 transition-opacity hover:opacity-90"><div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#1f6a58] text-white"><svg aria-hidden="true" className="h-6 w-6" viewBox="0 0 32 32" fill="none"><path d="M25 7C15.2 7.9 8.3 13.6 7.6 23.7C15.7 24.2 23.1 18.8 25 7Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /><path d="M8.5 22.8C12 19.4 15.4 17.5 20 16.6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg></div><h1 className="text-lg font-bold text-[#07352d]">Invigorate Health</h1></Link>;
+function Brand({ roleLabel }: { roleLabel: string }) {
+  return <Link href="/admin/dashboard" className="flex items-center gap-3 transition-opacity hover:opacity-90"><div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#1f6a58] text-white"><svg aria-hidden="true" className="h-6 w-6" viewBox="0 0 32 32" fill="none"><path d="M25 7C15.2 7.9 8.3 13.6 7.6 23.7C15.7 24.2 23.1 18.8 25 7Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /><path d="M8.5 22.8C12 19.4 15.4 17.5 20 16.6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg></div><div><h1 className="text-lg font-bold text-[#07352d]">Invigorate Health</h1><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8ca69e]">{roleLabel}</p></div></Link>;
 }
 
 export function EnterpriseAdminLayout({
@@ -149,6 +156,9 @@ export function EnterpriseAdminLayout({
   workflowNotifications,
 }: EnterpriseAdminLayoutProps) {
   const pathname = usePathname();
+  const portalRole = resolveEnterprisePortalRole(user?.tenantRole);
+  const sidebarRoleLabel = getEnterpriseSidebarRoleLabel(portalRole);
+  const headerRoleLabel = getEnterpriseHeaderRoleLabel(portalRole);
   const headerRef = useRef<HTMLElement | null>(null);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
@@ -218,7 +228,7 @@ export function EnterpriseAdminLayout({
   const sidebarContent = (onNavigate?: () => void) => (
     <nav className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 pb-6">
       <div className="space-y-6">
-        <div className="px-3 pt-1"><p className="text-sm font-bold uppercase tracking-[0.22em] text-[#6b4fd3]">Enterprise Owner</p></div>
+        <div className="px-3 pt-1"><p className="text-sm font-bold uppercase tracking-[0.22em] text-[#6b4fd3]">{sidebarRoleLabel}</p></div>
         {navigation.map((group) => (
           <div key={group.title}>
             <p className="mb-2 px-3 text-[11px] font-bold uppercase tracking-[0.22em] text-[#8ca69e]">{group.title}</p>
@@ -239,7 +249,7 @@ export function EnterpriseAdminLayout({
   return (
     <AppFrame
       sidebar={<SidebarFrame desktopContent={sidebarContent()} mobileHeader={<><p className="text-sm font-bold text-[#06201c]">Menu</p><button type="button" onClick={() => setMobileSidebarOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f4faf7]" aria-label="Close sidebar"><svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg></button></>} mobileContent={sidebarContent(() => setMobileSidebarOpen(false))} mobileOpen={mobileSidebarOpen} onMobileSidebarClose={() => setMobileSidebarOpen(false)} />}
-      header={<HeaderFrame headerRef={headerRef} left={<><button type="button" onClick={() => setMobileSidebarOpen((current) => !current)} className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4] lg:hidden" aria-label="Open menu"><svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg></button><Brand /></>} right={<>
+      header={<HeaderFrame headerRef={headerRef} left={<><button type="button" onClick={() => setMobileSidebarOpen((current) => !current)} className="flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4] lg:hidden" aria-label="Open menu"><svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg></button><Brand roleLabel={headerRoleLabel} /></>} right={<>
         {notificationsHref ? (
           <div className="relative">
             <button type="button" onClick={() => setOpenMenu((current) => current === "notifications" ? null : "notifications")} className="relative flex h-9 w-9 items-center justify-center rounded-full text-[#52736a] hover:bg-[#f1f7f4]" aria-label="Notifications" title="Notifications" aria-expanded={openMenu === "notifications"}>

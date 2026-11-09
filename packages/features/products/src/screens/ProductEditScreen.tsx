@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useTranslation } from "react-i18next";
 
 import {
   createDynamicAttribute,
@@ -14,6 +15,7 @@ import {
 import { getEnterpriseLocations, type EnterpriseLocationDto } from "@ihp/enterprises";
 
 import { getProductById, updateProduct } from "../services/product.service";
+import { buildProductTaxClassPayload, getProductTaxClassOptions, normalizeProductTaxClass } from "../product-tax-class";
 import { PRODUCT_CATEGORY_OPTIONS } from "../constants/product-category-options";
 import type { ProductDto } from "../types/product.types";
 import type { ProductEditScreenProps, ProductProviderOption } from "../types/product-screen-config.types";
@@ -53,12 +55,6 @@ function optionalNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-const taxClassOptions = [
-  { value: "standard", label: "Standard (8%)" },
-  { value: "reduced", label: "Reduced (4%)" },
-  { value: "zero_rate", label: "Zero Rate (0%)" },
-];
-
 const stockManagementOptions = [
   { value: "track_inventory", label: "Track inventory" },
   { value: "no_tracking", label: "No tracking (unlimited)" },
@@ -93,10 +89,6 @@ function normalizeOptionValue(value: string | undefined, options: { value: strin
   return match?.value ?? value.trim();
 }
 
-  function resolveOptionLabel(value: string, options: { value: string; label: string }[]) {
-    return options.find((option) => option.value === value)?.label || value || "Select";
-  }
-
 function hasCategoryOption(value: string) {
   return categoryOptions.some((option) => option === value);
 }
@@ -129,6 +121,7 @@ export default function ProductEditScreen({
   enterpriseLocationsLoader = getEnterpriseLocations,
   providerOptionsLoader,
 }: ProductEditScreenProps = {}) {
+  const { t: taxClassT } = useTranslation("productTaxClass");
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const [product, setProduct] = useState<ProductDto | null>(null);
@@ -144,6 +137,11 @@ export default function ProductEditScreen({
   const [salePrice, setSalePrice] = useState("");
   const [costPrice, setCostPrice] = useState("");
   const [taxClass, setTaxClass] = useState("");
+  const taxClassOptions = getProductTaxClassOptions({
+    standard: taxClassT("standard"),
+    reduced: taxClassT("reduced"),
+    zeroRate: taxClassT("zeroRate"),
+  }, taxClass);
   const [stockQuantity, setStockQuantity] = useState("");
   const [lowStockAlertThreshold, setLowStockAlertThreshold] = useState("");
   const [stockManagement, setStockManagement] = useState("");
@@ -249,7 +247,7 @@ export default function ProductEditScreen({
       setDimensions(data.dimensions || "");
       setSalePrice(String(data.sale_price ?? ""));
       setCostPrice(String(data.cost_price ?? ""));
-      setTaxClass(normalizeOptionValue(data.tax_class, taxClassOptions));
+      setTaxClass(normalizeProductTaxClass(data.tax_class));
       setStockQuantity(String(data.stock_quantity ?? ""));
       setLowStockAlertThreshold(String(data.low_stock_alert_threshold ?? ""));
       setStockManagement(normalizeOptionValue(data.stock_management, stockManagementOptions));
@@ -299,7 +297,7 @@ export default function ProductEditScreen({
     const trimmedDimensions = optionalText(dimensions);
     const parsedSalePrice = optionalNumber(salePrice);
     const parsedCostPrice = optionalNumber(costPrice);
-    const trimmedTaxClass = optionalText(taxClass);
+    const taxClassPayload = buildProductTaxClassPayload(taxClass);
     const parsedStockQuantity = optionalNumber(stockQuantity);
     const parsedLowStockAlertThreshold = optionalNumber(lowStockAlertThreshold);
     const trimmedStockManagement = optionalText(stockManagement);
@@ -340,7 +338,7 @@ export default function ProductEditScreen({
         ...(trimmedDimensions ? { dimensions: trimmedDimensions } : {}),
         ...(parsedSalePrice !== undefined ? { sale_price: parsedSalePrice } : {}),
         ...(parsedCostPrice !== undefined ? { cost_price: parsedCostPrice } : {}),
-        ...(trimmedTaxClass ? { tax_class: trimmedTaxClass } : {}),
+        ...taxClassPayload,
         ...(parsedStockQuantity !== undefined ? { stock_quantity: parsedStockQuantity } : {}),
         ...(parsedLowStockAlertThreshold !== undefined
           ? { low_stock_alert_threshold: parsedLowStockAlertThreshold }
@@ -662,21 +660,25 @@ export default function ProductEditScreen({
               className={inputClass()}
             />
           </label>
-          <label className="block">
-            <FieldLabel>Tax Class</FieldLabel>
-            <select
-              value={taxClass}
-              onChange={(event) => setTaxClass(normalizeOptionValue(event.target.value, taxClassOptions))}
-              className={inputClass()}
-            >
-              <option value="">Select tax class</option>
-              {taxClassOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div>
+            <label className="block">
+              <FieldLabel>{taxClassT("fieldLabel")}</FieldLabel>
+              <select
+                value={taxClass}
+                aria-describedby="edit-product-tax-class-help"
+                onChange={(event) => setTaxClass(event.target.value)}
+                className={inputClass()}
+              >
+                <option value="">{taxClassT("placeholder")}</option>
+                {taxClassOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span id="edit-product-tax-class-help" className="mt-1 block text-xs text-[#52736a]">{taxClassT("explanation")}</span>
+          </div>
           <label className="block">
             <FieldLabel>Stock Quantity</FieldLabel>
             <input
