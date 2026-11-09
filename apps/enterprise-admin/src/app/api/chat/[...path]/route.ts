@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { firstConfiguredUpstream, stripApiV1 } from "@ihp/shared/upstream-config";
 
-import { buildEnterpriseChatUpstreamUrl } from "../proxy-path";
+import { buildEnterpriseChatUpstreamUrl, resolveEnterpriseChatUpstreamPath } from "../proxy-path";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,14 +35,20 @@ function getChatTokenUpstream(): string | null {
 }
 
 async function forward(request: NextRequest, path: string[]): Promise<Response> {
+  // Validate the path before anything else: an invalid or traversal path is never forwarded.
+  const upstreamPath = resolveEnterpriseChatUpstreamPath(path, request.nextUrl.pathname);
+  if (upstreamPath === null) {
+    return NextResponse.json({ detail: "Invalid chat path." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  }
+
   const token = request.cookies.get(TOKEN_COOKIE_NAME)?.value;
 
   if (!token) {
     return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
   }
 
-  const requestPath = `/${path.join("/")}`;
-  const isChatTokenRequest = request.method === "POST" && requestPath === "/auth/chat-token";
+  const requestPath = `/${upstreamPath}`;
+  const isChatTokenRequest = request.method === "POST" && upstreamPath === "auth/chat-token";
   const proxyTarget = isChatTokenRequest ? getChatTokenUpstream() : getChatProxyTarget();
   if (!proxyTarget) {
     return NextResponse.json({ detail: "Chat proxy target is not configured." }, { status: 503 });
@@ -50,7 +56,7 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
 
   const upstreamUrl = isChatTokenRequest
     ? `${proxyTarget}/api/v1/auth/chat-token`
-    : buildEnterpriseChatUpstreamUrl(proxyTarget, requestPath, request.nextUrl.search);
+    : buildEnterpriseChatUpstreamUrl(proxyTarget, upstreamPath, request.nextUrl.search);
   const headers = new Headers();
   const contentType = request.headers.get("content-type");
   const accept = request.headers.get("accept");

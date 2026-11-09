@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { firstConfiguredUpstream, stripApiV1 } from "@ihp/shared/upstream-config";
 
-import { normalizeChatUpstreamPath } from "./proxy-path";
+import { resolveChatUpstreamPath } from "./proxy-path";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +27,12 @@ const RESPONSE_HEADERS_TO_COPY = [
 ];
 
 async function forward(request: NextRequest, path: string[]): Promise<Response> {
+  // Validate the path before anything else: an invalid or traversal path is never forwarded.
+  const upstreamPath = resolveChatUpstreamPath(path, request.nextUrl.pathname);
+  if (upstreamPath === null) {
+    return NextResponse.json({ detail: "Invalid chat path." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  }
+
   const token = request.cookies.get(TOKEN_COOKIE_NAME)?.value;
 
   if (!token) {
@@ -39,8 +45,6 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   }
 
   const search = request.nextUrl.search;
-  const requestPath = `/${path.join("/")}`;
-  const upstreamPath = normalizeChatUpstreamPath(requestPath);
   const targetUrl = `${chatProxyTarget}/api/v1/${upstreamPath}${search}`;
 
   const headers = new Headers();
