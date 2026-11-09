@@ -4,7 +4,6 @@ import { buildEnterpriseChatUpstreamUrl } from "../proxy-path";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const TOKEN_COOKIE_NAME = "access_token";
 const CHAT_TOKEN_UPSTREAM = "https://chat.wisdomtooth.tech";
 const RESPONSE_HEADERS_TO_COPY = [
   "content-type",
@@ -19,18 +18,27 @@ function getChatProxyTarget(): string | null {
     return configuredTarget.replace(/\/$/, "");
   }
 
-  return process.env.NODE_ENV === "development" ? "http://127.0.0.1:8000" : null;
+  const configuredChatApi = process.env.CHAT_API_BASE_URL?.trim();
+  if (configuredChatApi) {
+    return configuredChatApi
+      .replace(/\/api\/v1\/?$/, "")
+      .replace(/\/$/, "");
+  }
+
+  return CHAT_TOKEN_UPSTREAM;
 }
 
 async function forward(request: NextRequest, path: string[]): Promise<Response> {
-  const token = request.cookies.get(TOKEN_COOKIE_NAME)?.value;
+  const requestCookie = request.headers.get("cookie");
+  const requestAuthorization = request.headers.get("authorization");
+  const token = requestAuthorization?.replace(/^Bearer\s+/i, "").trim();
+  const requestPath = `/${path.join("/")}`;
+  const isChatTokenRequest = request.method === "POST" && requestPath === "/auth/chat-token";
 
-  if (!token) {
+  if (!token && !requestCookie) {
     return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
   }
 
-  const requestPath = `/${path.join("/")}`;
-  const isChatTokenRequest = request.method === "POST" && requestPath === "/auth/chat-token";
   const proxyTarget = getChatProxyTarget();
   if (!proxyTarget && !isChatTokenRequest) {
     return NextResponse.json({ detail: "Chat proxy target is not configured." }, { status: 503 });
@@ -51,7 +59,8 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
     headers.set("Accept", accept);
   }
 
-  headers.set("Authorization", `Bearer ${token}`);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  if (requestCookie) headers.set("Cookie", requestCookie);
 
   let body: BodyInit | undefined;
   if (request.method !== "GET" && request.method !== "HEAD") {
@@ -97,7 +106,7 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
       // Keep diagnostics safe even if configuration contains an invalid URL.
     }
 
-    console.error("[chat-proxy] upstream fetch failed", {
+    console.error("[chat-proxy] upstream fetch failed", JSON.stringify({
       method: request.method,
       path: `/${path.join("/")}`,
       hostname,
@@ -107,7 +116,7 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
       causeCode,
       timedOut,
       failureType,
-    });
+    }));
 
     return NextResponse.json({ detail: "Chat proxy request failed." }, { status: 502 });
   }
