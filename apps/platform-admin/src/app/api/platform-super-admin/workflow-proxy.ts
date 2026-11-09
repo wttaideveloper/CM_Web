@@ -1,30 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { resolveWorkflowUrl, type WorkflowResource } from "@/lib/workflow-url";
 import { requestSuperAdminUpstreamJson, superAdminErrorResponse, superAdminJsonResponse } from "@/lib/super-admin-server-client";
 
-const WORKFLOW_API_BASE_URL = process.env.WORKFLOW_API_BASE_URL;
+const NO_STORE = { "Cache-Control": "no-store" } as const;
 
-function workflowUrl(resource: "forms" | "workflows" | "media", path: readonly string[], request: NextRequest): URL | null {
-  if (!WORKFLOW_API_BASE_URL) return null;
-  try {
-    const base = new URL(WORKFLOW_API_BASE_URL);
-    base.pathname = `/api/v1/${resource}${path.length ? `/${path.map((segment) => encodeURIComponent(segment)).join("/")}` : ""}`;
-    base.search = new URL(request.url).search;
-    return base;
-  } catch {
-    return null;
+/**
+ * Proxies one Workflow API request through the server-only Super Admin bearer bridge.
+ *
+ * The upstream is validated first: an unconfigured or untrusted Workflow origin, or an unsafe path, is
+ * refused before the Super Admin token is even obtained, so the bearer can only reach an allowlisted origin.
+ */
+export async function proxyWorkflowRequest(request: NextRequest, resource: WorkflowResource, path: readonly string[]): Promise<NextResponse> {
+  const target = resolveWorkflowUrl(resource, path, new URL(request.url).search, request.nextUrl.pathname);
+  if (!target.ok) {
+    if (target.reason === "invalid-path") return NextResponse.json({ detail: "Invalid Workflow path." }, { status: 400, headers: NO_STORE });
+    // Untrusted and unconfigured look the same to the caller: the Workflow API is not available.
+    return NextResponse.json({ detail: "Workflow API is not configured." }, { status: 503, headers: NO_STORE });
   }
-}
-
-/** Proxies one Workflow API request through the server-only Super Admin bearer bridge. */
-export async function proxyWorkflowRequest(request: NextRequest, resource: "forms" | "workflows" | "media", path: readonly string[]): Promise<NextResponse> {
-  const url = workflowUrl(resource, path, request);
-  if (!url) return NextResponse.json({ detail: "Workflow API is not configured." }, { status: 503, headers: { "Cache-Control": "no-store" } });
 
   const body = request.method === "GET" || request.method === "DELETE" ? undefined : await request.text();
   const contentType = request.headers.get("content-type");
   try {
-    return superAdminJsonResponse(await requestSuperAdminUpstreamJson(url.toString(), {
+    return superAdminJsonResponse(await requestSuperAdminUpstreamJson(target.url.toString(), {
       method: request.method,
       ...(body ? { body } : {}),
       ...(contentType ? { headers: { "Content-Type": contentType } } : {}),

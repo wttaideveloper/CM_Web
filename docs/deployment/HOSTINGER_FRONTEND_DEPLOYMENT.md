@@ -50,7 +50,7 @@ Full annotated list: `deploy/docker/frontend.env.example`. There are **no defaul
 | `CHAT_PROXY_TARGET` | runtime, required | shell, enterprise-admin | Marketplace API origin for server-side chat/media proxies |
 | `AUTH_API_BASE_URL` | build + runtime, required | all | Identity API (`/api/v1/auth`, `/api/v1/tenant`) |
 | `SUPER_ADMIN_AUTH_API_BASE_URL` | runtime, required | shell, platform-admin | Super Admin gateway |
-| `PLATFORM_TRUSTED_UPSTREAM_ORIGINS` | runtime, required | platform-admin | Exact origins allowed to receive the Super Admin bearer token |
+| `PLATFORM_TRUSTED_UPSTREAM_ORIGINS` | runtime, required | platform-admin | Exact origins allowed to receive the Super Admin bearer token: the Marketplace API origin **and** the Workflow API origin (if `WORKFLOW_API_BASE_URL` is set); an unlisted origin is never sent the token (503) |
 | `EVENTS_API_BASE_URL` | build, optional | shell, enterprise-admin | Shell falls back to `CHAT_API_BASE_URL` |
 | `WORKFLOW_API_BASE_URL` | build + runtime, optional | enterprise-admin, platform-admin | Workflow features off when unset |
 | `CHAT_TOKEN_UPSTREAM_URL` | runtime, optional | enterprise-admin | Only if chat-token is served elsewhere than `CHAT_PROXY_TARGET` |

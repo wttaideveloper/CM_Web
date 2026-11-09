@@ -42,7 +42,10 @@ silent defaults are gone, so AWS builds must now set:
 - `AUTH_API_BASE_URL`, `CHAT_API_BASE_URL` (all apps), `CHAT_PROXY_TARGET` (shell, enterprise-admin) — previously defaulted to AWS hosts.
 - `NEXT_PUBLIC_CHAT_SOCKET_URL` — previously defaulted to the AWS chat host.
 - `NEXT_PUBLIC_PROTECTED_MEDIA_ORIGIN` — previously hard-coded to the AWS chat host (client and server).
-- `PLATFORM_TRUSTED_UPSTREAM_ORIGINS` (platform-admin) — replaces the hard-coded host checks.
+- `PLATFORM_TRUSTED_UPSTREAM_ORIGINS` (platform-admin) — replaces the hard-coded host checks. It must list the Marketplace API origin
+  **and the Workflow API origin** (when `WORKFLOW_API_BASE_URL` is set): the Workflow proxy now refuses an origin that is not listed
+  (HTTP 503, no token sent), whereas it previously sent the Super Admin token to whatever `WORKFLOW_API_BASE_URL` pointed at.
+  An existing AWS deployment that uses the Workflow proxy must add its Workflow origin before it is rebuilt from this branch.
 - `CHAT_TOKEN_UPSTREAM_URL` (enterprise-admin) only if `POST /auth/chat-token` is served by a different origin than `CHAT_PROXY_TARGET`.
 - `CHAT_API_BASE_URL` is now mandatory for Enterprise Admin (it used to silently omit all Marketplace rewrites when unset).
 - Cleartext `http://` upstreams are accepted only for private/internal hosts; a public `http://` value (including the old demo IP) is rejected.
@@ -72,10 +75,11 @@ silent defaults are gone, so AWS builds must now set:
   metadata` in `packages/realtime/src/workflow-notifications.test.ts`). This is **pre-existing**: the identical set of 11
   fails on unmodified `main` (579e7d5: 323 tests, 312 pass, 11 fail; this branch: 368 tests, 357 pass, the same 11 fail).
   They are unrelated to this work; the load failures need a proper test runner and the assertion needs its own fix.
-- `platform-admin` `workflow-proxy.ts` still sends the Super Admin bearer to `WORKFLOW_API_BASE_URL` without the trusted-origin check.
-  Recommended: add it to the same allowlist.
-- The chat proxies append the request path to the upstream without rejecting `..` segments (authenticated users reach other paths
-  on the same upstream with their own token). Recommended hardening, out of scope here.
+- **Resolved after the first review (security-fix commit):** (1) the Shell and Enterprise chat proxies and the Platform Workflow
+  proxy now validate the raw and decoded path and re-encode it (`packages/shared/src/safe-proxy-path.ts`), so `..%2f..%2fadmin`
+  and its encoded, double-encoded, backslash and malformed variants answer 400 and are never forwarded; (2) the Platform Workflow
+  proxy sends the Super Admin bearer only to an origin listed in `PLATFORM_TRUSTED_UPSTREAM_ORIGINS`, checked before the token is
+  even requested; (3) the Platform event-media proxy only fetches one `/api/v1/events/media/<asset>` path from the trusted origin.
 - Container hardening not applied for lack of a way to test it: read-only root filesystem (needs a writable `.next/cache`), image
   scanning and SBOM in CI (handbook §17), a CI pipeline and test-coverage gates (still absent, see `COMPLIANCE_AUDIT.md`).
 - The "frontend deployment readiness report" mentioned in the task is not present in the repository; only `COMPLIANCE_AUDIT.md` was available.

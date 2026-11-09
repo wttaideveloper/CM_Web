@@ -1,11 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
   buildProtectedMediaRequestHeaders,
-  configuredMediaOrigin,
   copyProtectedMediaResponseHeaders,
-  resolveProtectedMediaFetchUrl,
 } from "@ihp/shared";
-import { resolveMarketplaceOrigin } from "@/lib/marketplace-url";
+import { resolvePlatformEventMediaFetchUrl } from "@/lib/event-media-url";
 import {
   requestSuperAdminUpstreamResponse,
   superAdminErrorResponse,
@@ -15,15 +13,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function forward(request: NextRequest): Promise<Response> {
-  const requestedUrl = request.nextUrl.searchParams.get("url")?.trim();
-  // The URL the browser holds carries the public media origin; the connection is made to
-  // the trusted internal origin, never to a host taken from the request.
-  const upstreamUrl = requestedUrl
-    ? resolveProtectedMediaFetchUrl(requestedUrl, {
-        publicOrigin: configuredMediaOrigin(process.env.NEXT_PUBLIC_PROTECTED_MEDIA_ORIGIN),
-        internalOrigin: resolveMarketplaceOrigin(),
-      })
-    : null;
+  // The URL the browser holds carries the public media origin; the connection is made to the trusted
+  // internal origin and only for one Event media asset path, never to a host or path chosen by the request.
+  const upstreamUrl = resolvePlatformEventMediaFetchUrl(
+    request.nextUrl.searchParams.get("url"),
+    process.env.NEXT_PUBLIC_PROTECTED_MEDIA_ORIGIN,
+  );
   if (!upstreamUrl) {
     return NextResponse.json({ detail: "Media URL is not allowed." }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }

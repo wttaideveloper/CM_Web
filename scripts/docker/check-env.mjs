@@ -5,7 +5,7 @@
 //   node check-env.mjs build   <app>   warn about unset browser-visible (NEXT_PUBLIC_*) variables
 //
 // It reuses the same validators as next.config.ts so build-time and start-up rules cannot drift.
-import { findMissingEnv, normalizeUpstreamBaseUrl, parseOriginAllowlist } from "../../packages/shared/src/upstream-config.ts";
+import { findMissingEnv, normalizeUpstreamBaseUrl, originOf, parseOriginAllowlist } from "../../packages/shared/src/upstream-config.ts";
 
 const [phase, app] = process.argv.slice(2);
 
@@ -30,7 +30,7 @@ const RUNTIME = {
   },
   "platform-admin": {
     required: ["AUTH_API_BASE_URL", "CHAT_API_BASE_URL", "SUPER_ADMIN_AUTH_API_BASE_URL", "PLATFORM_TRUSTED_UPSTREAM_ORIGINS"],
-    optional: [["WORKFLOW_API_BASE_URL", "Workflow proxy routes answer 503"]],
+    optional: [["WORKFLOW_API_BASE_URL", "Workflow proxy routes answer 503 (its origin must also be listed in PLATFORM_TRUSTED_UPSTREAM_ORIGINS)"]],
     urls: ["AUTH_API_BASE_URL", "CHAT_API_BASE_URL", "SUPER_ADMIN_AUTH_API_BASE_URL", "WORKFLOW_API_BASE_URL"],
   },
 };
@@ -84,6 +84,15 @@ if (process.env.PLATFORM_TRUSTED_UPSTREAM_ORIGINS?.trim() && parseOriginAllowlis
   problems.push("PLATFORM_TRUSTED_UPSTREAM_ORIGINS contains no valid origin (expected comma-separated scheme://host[:port])");
 }
 if (problems.length > 0) fail(problems);
+
+// The Super Admin bearer is only ever sent to a listed origin. A Workflow origin that is configured but not
+// listed is not an error (the app still starts) but its proxy routes answer 503, so say so by name.
+if (app === "platform-admin") {
+  const workflowOrigin = originOf(normalizeUpstreamBaseUrl(process.env.WORKFLOW_API_BASE_URL) ?? undefined);
+  if (workflowOrigin && !parseOriginAllowlist(process.env.PLATFORM_TRUSTED_UPSTREAM_ORIGINS).has(workflowOrigin)) {
+    console.warn("[check-env] WARNING WORKFLOW_API_BASE_URL has an origin that is not listed in PLATFORM_TRUSTED_UPSTREAM_ORIGINS: Workflow proxy routes will answer 503 and the Super Admin token will not be sent.");
+  }
+}
 
 for (const [name, effect] of RUNTIME[app].optional) {
   if (findMissingEnv(process.env, [name]).length > 0) console.warn(`[check-env] note: ${name} is not set: ${effect}.`);
