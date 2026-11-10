@@ -3,6 +3,10 @@ import type { Metadata } from "next";
 import "./globals.css";
 import PlatformI18nProvider from "@/i18n/PlatformI18nProvider";
 
+// The per-request CSP nonce (see src/proxy.ts) can only be applied to server-rendered
+// HTML, so every page is rendered on demand instead of being prerendered at build time.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "IHP Platform Admin",
   description: "IHP Platform Admin scaffold.",

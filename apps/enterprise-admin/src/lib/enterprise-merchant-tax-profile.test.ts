@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-// @ts-expect-error Node's native TypeScript test runner imports this source file directly.
 import { MERCHANT_TAX_PROFILE_MISSING_DETAIL, enterpriseMerchantTaxProfileQueryKey, formatMerchantTaxProfileDate, getEnterpriseMerchantTaxProfileState, hasEnterpriseMerchantTaxProfileScope, isMissingEnterpriseMerchantTaxProfile, merchantTaxProfileDisplayFields, parseEnterpriseMerchantTaxProfile } from "./enterprise-merchant-tax-profile.ts";
 
 const TENANT_ID = "2122fbf0-64cd-4e3b-8ccb-22913912f1ea";

@@ -1,23 +1,14 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 
-const authApiBaseUrl =
-  process.env.AUTH_API_BASE_URL ?? "https://admin.apis.invigor8.app";
-
-function normalizePlatformApiBaseUrl(value: string): string {
-  const url = new URL(value);
-
-  if (url.hostname === "chat.wisdomtooth.tech") {
-    url.protocol = "https:";
-  }
-
-  return url.toString().replace(/\/$/, "");
-}
-
-const platformApiBaseUrl = normalizePlatformApiBaseUrl(
-  process.env.CHAT_API_BASE_URL ?? "https://chat.wisdomtooth.tech/api/v1",
-);
+import { STATIC_SECURITY_HEADERS } from "../../packages/shared/src/security-headers.ts";
+import { resolveUpstreamUrls, toApiV1Base } from "../../packages/shared/src/upstream-config.ts";
 
 const assetPrefix = process.env.NEXT_PUBLIC_ASSET_PREFIX?.replace(/\/$/, "") || undefined;
+
+// `__dirname` exists when the config is loaded as CommonJS; fall back to the working
+// directory (the app folder when run through its npm workspace script) for ESM loaders.
+const appDirectory = typeof __dirname === "string" ? __dirname : process.cwd();
 
 const commerceProxyResources = [
   "payments",
@@ -44,12 +35,34 @@ function buildCommerceProxyRoutes(apiBaseUrl: string) {
 }
 
 const nextConfig: NextConfig = {
+  // Self-contained server output for the Docker image; the tracing root is the
+  // monorepo root so workspace packages under /packages are traced too.
+  output: "standalone",
+  outputFileTracingRoot: path.join(appDirectory, "../.."),
+  poweredByHeader: false,
   assetPrefix,
   experimental: {
     proxyClientMaxBodySize: "310mb",
   },
   transpilePackages: ["@ihp/attributes", "@ihp/auth", "@ihp/commerce", "@ihp/enterprise-trainings", "@ihp/enterprises", "@ihp/onboarding-forms", "@ihp/platform-attributes", "@ihp/platform-configuration", "@ihp/platform-dashboard", "@ihp/platform-enterprises", "@ihp/platform-form-configurations", "@ihp/platform-layout", "@ihp/platform-marketplace-static", "@ihp/platform-users", "@ihp/products", "@ihp/services", "@ihp/shared", "@ihp/ui", "@ihp/workflow-admin", "@ihp/workflow-runtime"],
+  async headers() {
+    return [{ source: "/:path*", headers: [...STATIC_SECURITY_HEADERS] }];
+  },
   async rewrites() {
+    // Rewrites are evaluated at build time, so these variables must be present when
+    // `next build` runs. There is deliberately no default endpoint (handbook §14).
+    // Super-Admin and Workflow upstreams are read at request time by the BFF routes and
+    // are validated separately; they are intentionally not part of this table.
+    const upstreams = resolveUpstreamUrls(process.env, {
+      AUTH_API_BASE_URL: { required: true, purpose: "Identity API serving /api/v1/auth and /api/v1/tenant" },
+      CHAT_API_BASE_URL: { required: true, purpose: "Marketplace API serving reviews, enterprises, products, services, events and trainings" },
+    });
+
+    const authApiBaseUrl = upstreams.AUTH_API_BASE_URL;
+    // The scheme is used exactly as configured: an internal http:// upstream must
+    // stay http://, so no http->https conversion is applied here.
+    const platformApiBaseUrl = toApiV1Base(upstreams.CHAT_API_BASE_URL);
+
     const fallback = [
       {
         source: "/api/v1/reviews/:path*",
@@ -199,22 +212,17 @@ const nextConfig: NextConfig = {
         source: "/api/v1/admin/courses/:path*",
         destination: `${platformApiBaseUrl}/admin/courses/:path*`,
       },
+      {
+        source: "/api/v1/auth/:path*",
+        destination: `${authApiBaseUrl}/api/v1/auth/:path*`,
+      },
+      {
+        source: "/api/v1/tenant/:path*",
+        destination: `${authApiBaseUrl}/api/v1/tenant/:path*`,
+      },
     ];
 
     fallback.push(...buildCommerceProxyRoutes(platformApiBaseUrl));
-
-    if (authApiBaseUrl) {
-      fallback.push(
-        {
-          source: "/api/v1/auth/:path*",
-          destination: `${authApiBaseUrl}/api/v1/auth/:path*`,
-        },
-        {
-          source: "/api/v1/tenant/:path*",
-          destination: `${authApiBaseUrl}/api/v1/tenant/:path*`,
-        },
-      );
-    }
 
     return { fallback };
   },

@@ -230,9 +230,11 @@ export interface PublicBlogDetail extends PublicBlogItem {
   custom_fields?: Record<string, BlogCustomFieldValue>;
 }
 
+// No built-in backend host: an unset NEXT_PUBLIC_API_BASE_URL resolves to the same-origin `/api/v1` rewrite
+// (the same default as `API_BASE_URL`), so a build never silently calls a hard-coded production host.
 const API_BASE =
   (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_BASE_URL) ||
-  "https://chat.wisdomtooth.tech/api/v1";
+  "/api/v1";
 const apiUrl = (path: string) => `${API_BASE.replace(/\/$/, "")}${path}`;
 
 /** Uses the platform's server-side Super Admin bridge for protected Blog/News admin reads and writes. */

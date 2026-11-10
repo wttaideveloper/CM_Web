@@ -66,11 +66,19 @@ test("normalizes legacy bare document strings and applies documented link rules"
   assert.match(validateEventMediaLink("https://localhost/file.jpg").error ?? "", /public hostname/);
 });
 
+const MEDIA_ORIGIN = "https://chat.wisdomtooth.tech";
+
 test("routes protected uploaded media through the same-origin proxy and keeps external links direct", () => {
   const protectedUrl = "https://chat.wisdomtooth.tech/api/v1/events/media/asset-1.jpg";
-  assert.equal(protectedMediaPreviewUrl(protectedUrl), `/api/event-media?url=${encodeURIComponent(protectedUrl)}`);
-  assert.equal(protectedMediaPreviewUrl("https://cdn.example.com/image.jpg"), "https://cdn.example.com/image.jpg");
-  assert.equal(protectedMediaPreviewUrl(protectedUrl, "/api/platform-super-admin/event-media"), `/api/platform-super-admin/event-media?url=${encodeURIComponent(protectedUrl)}`);
+  assert.equal(protectedMediaPreviewUrl(protectedUrl, "/api/event-media", MEDIA_ORIGIN), `/api/event-media?url=${encodeURIComponent(protectedUrl)}`);
+  assert.equal(protectedMediaPreviewUrl("https://cdn.example.com/image.jpg", "/api/event-media", MEDIA_ORIGIN), "https://cdn.example.com/image.jpg");
+  assert.equal(protectedMediaPreviewUrl(protectedUrl, "/api/platform-super-admin/event-media", MEDIA_ORIGIN), `/api/platform-super-admin/event-media?url=${encodeURIComponent(protectedUrl)}`);
+});
+
+test("does not route any media through the proxy when no public media origin is configured", () => {
+  const url = "https://chat.wisdomtooth.tech/api/v1/events/media/asset-1.jpg";
+  assert.equal(protectedMediaPreviewUrl(url, "/api/event-media", null), url);
+  assert.equal(protectedMediaPreviewUrl(url), url);
 });
 
 test("preserves complete backend media URLs and never invents an extension", () => {
@@ -78,12 +86,12 @@ test("preserves complete backend media URLs and never invents an extension", () 
   const incompleteUrl = "https://chat.wisdomtooth.tech/api/v1/events/media/asset-1";
   assert.equal(mediaItemUrl({ id: "asset-1", url: completeUrl, name: "guide.pdf" }), completeUrl);
   assert.deepEqual(mediaUrlsFromUnknown([{ id: "asset-1", url: completeUrl }, incompleteUrl]), [completeUrl, incompleteUrl]);
-  assert.equal(protectedMediaPreviewUrl(completeUrl), `/api/event-media?url=${encodeURIComponent(completeUrl)}`);
-  assert.equal(protectedMediaPreviewUrl(incompleteUrl), `/api/event-media?url=${encodeURIComponent(incompleteUrl)}`);
+  assert.equal(protectedMediaPreviewUrl(completeUrl, "/api/event-media", MEDIA_ORIGIN), `/api/event-media?url=${encodeURIComponent(completeUrl)}`);
+  assert.equal(protectedMediaPreviewUrl(incompleteUrl, "/api/event-media", MEDIA_ORIGIN), `/api/event-media?url=${encodeURIComponent(incompleteUrl)}`);
 });
 
 test("keeps relative sources unchanged and proxies protected absolute sources", () => {
   const protectedUrl = "https://chat.wisdomtooth.tech/api/v1/events/media/asset-1.mp4";
-  assert.equal(protectedMediaPreviewUrl("/uploads/event-image.png"), "/uploads/event-image.png");
-  assert.equal(protectedMediaPreviewUrl(protectedUrl, "/api/platform-super-admin/event-media"), `/api/platform-super-admin/event-media?url=${encodeURIComponent(protectedUrl)}`);
+  assert.equal(protectedMediaPreviewUrl("/uploads/event-image.png", "/api/event-media", MEDIA_ORIGIN), "/uploads/event-image.png");
+  assert.equal(protectedMediaPreviewUrl(protectedUrl, "/api/platform-super-admin/event-media", MEDIA_ORIGIN), `/api/platform-super-admin/event-media?url=${encodeURIComponent(protectedUrl)}`);
 });

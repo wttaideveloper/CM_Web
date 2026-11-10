@@ -7,14 +7,15 @@ import {
   superAdminErrorResponse,
   superAdminJsonResponse,
 } from "@/lib/super-admin-server-client";
+import { resolveMarketplaceUrl } from "@/lib/marketplace-url";
 import { buildPlatformCommerceProxyRequest, isPlatformCommerceReadPath } from "@/lib/platform-commerce-proxy";
 import { buildPlatformInvoiceDownloadHeaders, isPlatformInvoiceDownloadPath } from "@/lib/platform-invoice-download";
 
-const CHAT_API_BASE_URL = process.env.CHAT_API_BASE_URL?.replace(/\/+$/, "");
-
+/** The Super Admin bearer token is attached to this request, so the target must be the trusted Marketplace origin. */
 function getChatApiV1Base(): string {
-  if (!CHAT_API_BASE_URL) throw new SuperAdminServerError(503, "Commerce API is not configured.");
-  return /\/api\/v1\/?$/.test(CHAT_API_BASE_URL) ? CHAT_API_BASE_URL : `${CHAT_API_BASE_URL}/api/v1`;
+  const upstream = resolveMarketplaceUrl("/api/v1");
+  if (!upstream) throw new SuperAdminServerError(503, "Commerce API is not configured.");
+  return upstream.toString().replace(/\/+$/, "");
 }
 
 /** Proxies read-only Super Admin Commerce APIs through the existing server-side auth bridge. */

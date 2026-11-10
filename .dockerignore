@@ -1,0 +1,43 @@
+# Keep the build context small and keep secrets, caches and local state OUT of every image layer.
+
+# Version control and local tooling / worktrees
+.git
+.gitignore
+.gitattributes
+.kilo
+.vscode
+.idea
+.freebuff*
+
+# Environment and secret files (real values live only on the server)
+.env
+.env.*
+**/.env
+**/.env.*
+*.env
+**/*.env
+**/*.pem
+
+# Dependencies and build output are produced inside the image
+node_modules
+**/node_modules
+.next
+**/.next
+out
+build
+coverage
+**/*.tsbuildinfo
+next-env.d.ts
+**/next-env.d.ts
+
+# Logs and local artifacts
+*.log
+npm-debug.log*
+dev-all.log
+
+# Documentation and deployment files are not part of the runtime image
+docs
+*.md
+deploy
+Dockerfile
+.dockerignore

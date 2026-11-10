@@ -1,17 +1,32 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { configuredMediaOrigin, resolveProtectedMediaFetchUrl } from "@ihp/shared";
+import { firstConfiguredUpstream, stripApiV1 } from "@ihp/shared/upstream-config";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const TOKEN_COOKIE_NAME = "access_token";
-const MEDIA_ORIGIN = (process.env.CHAT_PROXY_TARGET ?? process.env.CHAT_API_BASE_URL ?? "https://chat.wisdomtooth.tech")
-  .replace(/\/$/, "")
-  .replace(/\/api\/v1$/, "");
-const WORKFLOW_ORIGIN = (process.env.WORKFLOW_API_BASE_URL ?? "")
-  .replace(/\/$/, "")
-  .replace(/\/api\/v1$/, "");
+
+/** Internal origin of the Marketplace media service; `null` when unconfigured (no built-in host). */
+function getMediaOrigin(): string | null {
+  const configured = firstConfiguredUpstream(process.env, ["CHAT_PROXY_TARGET", "CHAT_API_BASE_URL"]);
+  return configured ? stripApiV1(configured) : null;
+}
+
+/** Optional Workflow media origin, tried after the Marketplace service answers 404. */
+function getWorkflowOrigin(): string {
+  const configured = firstConfiguredUpstream(process.env, ["WORKFLOW_API_BASE_URL"]);
+  return configured ? stripApiV1(configured) : "";
+}
 
 async function forward(request: NextRequest, assetId: string): Promise<Response> {
+  const MEDIA_ORIGIN = getMediaOrigin();
+  if (!MEDIA_ORIGIN) {
+    return NextResponse.json({ detail: "Media API is not configured" }, { status: 503 });
+  }
+  const WORKFLOW_ORIGIN = getWorkflowOrigin();
+
   let token = request.cookies.get(TOKEN_COOKIE_NAME)?.value;
   const requestCookie = request.headers.get("cookie");
   if (!token && !requestCookie) return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -54,16 +69,16 @@ async function forward(request: NextRequest, assetId: string): Promise<Response>
   let upstreamUrl = `${MEDIA_ORIGIN}/api/v1/media/${encodeURIComponent(assetId)}/file`;
   const sourceUrl = request.nextUrl.searchParams.get("source")?.trim();
   if (sourceUrl) {
-    try {
-      const parsedSource = new URL(sourceUrl);
-      const expectedPath = `/api/v1/media/${encodeURIComponent(assetId)}/file`;
-      if (parsedSource.origin !== MEDIA_ORIGIN || parsedSource.pathname !== expectedPath) {
-        return NextResponse.json({ detail: "Invalid media source URL" }, { status: 400 });
-      }
-      upstreamUrl = parsedSource.toString();
-    } catch {
+    // `assetId` was validated above as [A-Za-z0-9_-], so it is safe inside the pattern.
+    const resolvedSource = resolveProtectedMediaFetchUrl(sourceUrl, {
+      publicOrigin: configuredMediaOrigin(process.env.NEXT_PUBLIC_PROTECTED_MEDIA_ORIGIN),
+      internalOrigin: MEDIA_ORIGIN,
+      pathPattern: new RegExp(`^/api/v1/media/${assetId}/file$`),
+    });
+    if (!resolvedSource) {
       return NextResponse.json({ detail: "Invalid media source URL" }, { status: 400 });
     }
+    upstreamUrl = resolvedSource;
   }
 
   const upstreamUrls = [

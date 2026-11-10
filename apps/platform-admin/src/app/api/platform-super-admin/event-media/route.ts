@@ -1,10 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
   buildProtectedMediaRequestHeaders,
-  configuredMediaOrigin,
   copyProtectedMediaResponseHeaders,
-  isAllowedProtectedMediaUrl,
 } from "@ihp/shared";
+import { resolvePlatformEventMediaFetchUrl } from "@/lib/event-media-url";
 import {
   requestSuperAdminUpstreamResponse,
   superAdminErrorResponse,
@@ -13,11 +12,14 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MEDIA_PROXY_ORIGIN = configuredMediaOrigin(process.env.CHAT_API_BASE_URL) ?? "https://chat.wisdomtooth.tech";
-
 async function forward(request: NextRequest): Promise<Response> {
-  const upstreamUrl = request.nextUrl.searchParams.get("url")?.trim();
-  if (!upstreamUrl || !isAllowedProtectedMediaUrl(upstreamUrl, MEDIA_PROXY_ORIGIN)) {
+  // The URL the browser holds carries the public media origin; the connection is made to the trusted
+  // internal origin and only for one Event media asset path, never to a host or path chosen by the request.
+  const upstreamUrl = resolvePlatformEventMediaFetchUrl(
+    request.nextUrl.searchParams.get("url"),
+    process.env.NEXT_PUBLIC_PROTECTED_MEDIA_ORIGIN,
+  );
+  if (!upstreamUrl) {
     return NextResponse.json({ detail: "Media URL is not allowed." }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
 

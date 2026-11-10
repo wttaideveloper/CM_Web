@@ -1,5 +1,16 @@
 "use client";
 
+/*
+ * LEGACY: temporary bearer-token path for Shell chat/realtime.
+ *
+ * Handbook §7/§8 forbid keeping tokens in web storage, and this module persists one in
+ * sessionStorage. It is intentionally NOT moved to memory here: pages navigate with a full
+ * reload after login, which would silently drop the token and break chat without a replacement.
+ * The token is only ever issued when the server route is explicitly enabled
+ * (MARKETPLACE_DEMO_AUTH_ENABLED=true; default off), so a default deployment stores nothing.
+ * The approved replacement is an Identity-team decision tracked in docs/deployment/BLOCKERS.md.
+ */
+
 export type MarketplaceDemoUser = {
   id: string;
   role: string;

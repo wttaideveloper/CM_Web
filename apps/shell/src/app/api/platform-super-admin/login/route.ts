@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 
+import { normalizeUpstreamBaseUrl } from "@ihp/shared/upstream-config";
+
 const SESSION_COOKIE_NAME = "ihp_super_admin_refresh";
 const REMEMBER_ME_COOKIE_NAME = "ihp_super_admin_remember_me";
 const REMEMBER_ME_MAX_AGE = 60 * 60 * 24 * 30;
-const SUPER_ADMIN_AUTH_API_BASE_URL = process.env.SUPER_ADMIN_AUTH_API_BASE_URL?.replace(/\/+$/, "");
+// An unset or malformed value leaves the gateway "not configured" (503) instead of guessing a host.
+const SUPER_ADMIN_AUTH_API_BASE_URL = normalizeUpstreamBaseUrl(process.env.SUPER_ADMIN_AUTH_API_BASE_URL) ?? undefined;
+// Handbook §4: every outbound call has an explicit timeout shorter than the caller's budget.
+const SUPER_ADMIN_UPSTREAM_TIMEOUT_MS = 15_000;
 
 type SuperAdminIdentity = {
   id: string;
@@ -57,6 +62,11 @@ function normalizeIdentity(value: unknown): SuperAdminIdentity | null {
   };
 }
 
+function tokenValue(value: Record<string, unknown>, ...keys: string[]): string | null {
+  const token = keys.map((key) => value[key]).find((item): item is string => typeof item === "string" && item.length > 0);
+  return token ?? null;
+}
+
 async function upstreamErrorDetail(response: Response): Promise<string> {
   const body: unknown = await response.json().catch(() => null);
   if (!isRecord(body)) return "Unable to sign in with those Super Admin credentials.";
@@ -99,19 +109,8 @@ function errorResponse(status: number, detail: string): NextResponse {
   return NextResponse.json({ detail }, { status, headers: { "Cache-Control": "no-store" } });
 }
 
-function forwardSetCookie(response: NextResponse, cookie: string): void {
-  const attributes = cookie.split(";").map((part) => part.trim()).filter(Boolean);
-  const filtered = attributes.filter((attribute) => {
-    const lower = attribute.toLowerCase();
-    if (lower.startsWith("domain=")) return false;
-    if (process.env.NODE_ENV !== "production" && lower === "secure") return false;
-    return true;
-  });
-  response.headers.append("set-cookie", filtered.join("; "));
-}
-
 /**
- * Authenticates with the dedicated gateway on the server and forwards its HttpOnly session cookie.
+ * Authenticates with the dedicated gateway on the server and issues only its refresh credential as an HttpOnly cookie.
  */
 export async function POST(request: Request): Promise<NextResponse> {
   if (!SUPER_ADMIN_AUTH_API_BASE_URL) {
@@ -136,6 +135,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: payload.email.trim(), password: payload.password, rememberMe: payload.rememberMe === true }),
       cache: "no-store",
+      signal: AbortSignal.timeout(SUPER_ADMIN_UPSTREAM_TIMEOUT_MS),
     });
   } catch {
     return errorResponse(502, "Unable to reach Super Admin authentication.");
@@ -148,9 +148,10 @@ export async function POST(request: Request): Promise<NextResponse> {
   const loginBody: unknown = await loginResponse.json().catch(() => null);
   const loginData = isRecord(loginBody) && isRecord(loginBody.data) ? loginBody.data : null;
   const loginTokens = isRecord(loginBody) && isRecord(loginBody.tokens) ? loginBody.tokens : null;
-  const refreshToken = loginTokens ? (typeof loginTokens.refreshToken === "string" ? loginTokens.refreshToken : typeof loginTokens.refresh_token === "string" ? loginTokens.refresh_token : null) : null;
+  const accessToken = loginTokens ? tokenValue(loginTokens, "accessToken", "access_token") : null;
+  const refreshToken = loginTokens ? tokenValue(loginTokens, "refreshToken", "refresh_token") : null;
   const identity = loginData ? normalizeIdentity(loginData) : null;
-  if (!identity || !refreshToken) {
+  if (!identity || !accessToken || !refreshToken) {
     return errorResponse(502, "Super Admin login returned an unsupported response.");
   }
 
@@ -158,7 +159,24 @@ export async function POST(request: Request): Promise<NextResponse> {
     return errorResponse(403, "This account is not authorized for Super Admin access.");
   }
 
-  const response = NextResponse.json({ data: identity }, { headers: { "Cache-Control": "no-store" } });
+  let verificationResponse: Response;
+  try {
+    verificationResponse = await fetch(`${SUPER_ADMIN_AUTH_API_BASE_URL}/api/v1/auth/me`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(SUPER_ADMIN_UPSTREAM_TIMEOUT_MS),
+    });
+  } catch {
+    return errorResponse(502, "Unable to verify the Super Admin session.");
+  }
+
+  const verificationBody: unknown = await verificationResponse.json().catch(() => null);
+  const verifiedIdentity = isRecord(verificationBody) && isRecord(verificationBody.data) ? normalizeIdentity(verificationBody.data) : null;
+  if (!verificationResponse.ok || !verifiedIdentity) {
+    return errorResponse(401, "Unable to verify the Super Admin session.");
+  }
+
+  const response = NextResponse.json({ data: verifiedIdentity }, { headers: { "Cache-Control": "no-store" } });
   const rememberMe = payload.rememberMe === true;
   response.cookies.set(SESSION_COOKIE_NAME, refreshToken, sessionCookieOptions(rememberMe));
   if (rememberMe) {

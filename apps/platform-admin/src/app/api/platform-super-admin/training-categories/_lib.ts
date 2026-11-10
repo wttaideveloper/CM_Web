@@ -5,23 +5,14 @@ import {
   superAdminErrorResponse,
   superAdminJsonResponse,
 } from "@/lib/super-admin-server-client";
+import { resolveMarketplaceUrl } from "@/lib/marketplace-url";
 
-const MARKETPLACE_API_BASE_URL = process.env.CHAT_API_BASE_URL;
 const categoryIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function trainingCategoryUrl(categoryId?: string): URL | null {
-  if (!MARKETPLACE_API_BASE_URL) return null;
-  try {
-    const url = new URL(MARKETPLACE_API_BASE_URL);
-    if (url.protocol !== "https:" || url.hostname !== "chat.wisdomtooth.tech") return null;
-    url.pathname = categoryId
+  return resolveMarketplaceUrl(categoryId
       ? `/api/v1/training-categories/${encodeURIComponent(categoryId)}`
-      : "/api/v1/training-categories/";
-    url.search = "";
-    return url;
-  } catch {
-    return null;
-  }
+      : "/api/v1/training-categories/");
 }
 
 /** Validates the backend-owned Training Category UUID path parameter. */
