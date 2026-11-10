@@ -12,3 +12,14 @@ export { default as RegistrationServiceSelector } from "./RegistrationServiceSel
 export { default as EventServicesFulfilmentShell } from "./EventServicesFulfilmentShell";
 export { EVENT_STATUSES, PRODUCT_EVENT_STATUSES, canDeleteEvent, canEditEvent, getEventStatusActions, getEventStatusBadgeClass, getEventStatusLabel, isProductEventStatus, type EventStatus, type EventStatusAction, type EventStatusUpdatePayload, type ProductEventStatus } from "./event-status";
 export { default as enterpriseEventsEnglish } from "./locales/en";
+
+export * from "./event-discussions.types";
+export * from "./event-discussions.service";
+export { DiscussionGatingGuard } from "./DiscussionGatingGuard";
+export { MessageCard } from "./MessageCard";
+export { MessageComposer } from "./MessageComposer";
+export { ThreadDetailModal } from "./ThreadDetailModal";
+export { DiscussionFeed } from "./DiscussionFeed";
+export { AdminFlaggedQueue } from "./AdminFlaggedQueue";
+export { EnterpriseEventsDiscussionTab } from "./EnterpriseEventsDiscussionTab";
+

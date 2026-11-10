@@ -2,15 +2,16 @@ import type { EventFormCompositeConfig } from "./event-form-configuration-api.ty
 
 export type FormConfigurationType = "event" | "training" | "program" | "course";
 export type FormConfigurationScope = "global" | "selective";
-export type FormConfigurationStatus = "draft" | "published" | "retired" | "active" | "inactive" | "archived";
+export type FormConfigurationStatus = "draft" | "in_review" | "published" | "retired" | "active" | "inactive" | "archived";
 export type FormRenderer = string;
+export type FormContentVisibility = "published" | "admin_only";
 
 export type BuilderEntityIdentity = { localId: string; serverId: string | null };
 export type FormFieldOption = { value: string; label: string; position: number };
 export type FormFieldValidation = { minLength?: number | null; maxLength?: number | null; min?: number | null; max?: number | null; pattern?: string | null };
-export type FormSection = BuilderEntityIdentity & { stableKey: string; name: string; description: string; enabled: boolean; position: number };
+export type FormSection = BuilderEntityIdentity & { stableKey: string; name: string; description: string; enabled: boolean; position: number; contentVisibility?: FormContentVisibility };
 
-export type ConfiguredField = BuilderEntityIdentity & { stableKey: string | null; source: "core" | "custom"; coreKey: string | null; label: string; sectionLocalId: string; position: number; valueType: string; required: boolean; renderer: FormRenderer; placeholder: string; helpText: string; options: FormFieldOption[]; validation: FormFieldValidation; compositeConfig?: EventFormCompositeConfig | null; enabled: boolean };
+export type ConfiguredField = BuilderEntityIdentity & { stableKey: string | null; source: "core" | "custom"; coreKey: string | null; label: string; sectionLocalId: string; position: number; valueType: string; required: boolean; renderer: FormRenderer; placeholder: string; helpText: string; options: FormFieldOption[]; validation: FormFieldValidation; contentVisibility?: FormContentVisibility; compositeConfig?: EventFormCompositeConfig | null; enabled: boolean };
 
 export type FormConfiguration = {
   id: string; type: FormConfigurationType; name: string; description: string; scope: FormConfigurationScope; status: FormConfigurationStatus; active: boolean; version: number; tenantIds: string[]; enterpriseIds?: string[]; updatedAt: string; sections: FormSection[]; fields: ConfiguredField[];

@@ -57,11 +57,6 @@ function normalizeIdentity(value: unknown): SuperAdminIdentity | null {
   };
 }
 
-function tokenValue(value: Record<string, unknown>, ...keys: string[]): string | null {
-  const token = keys.map((key) => value[key]).find((item): item is string => typeof item === "string" && item.length > 0);
-  return token ?? null;
-}
-
 async function upstreamErrorDetail(response: Response): Promise<string> {
   const body: unknown = await response.json().catch(() => null);
   if (!isRecord(body)) return "Unable to sign in with those Super Admin credentials.";
@@ -104,8 +99,19 @@ function errorResponse(status: number, detail: string): NextResponse {
   return NextResponse.json({ detail }, { status, headers: { "Cache-Control": "no-store" } });
 }
 
+function forwardSetCookie(response: NextResponse, cookie: string): void {
+  const attributes = cookie.split(";").map((part) => part.trim()).filter(Boolean);
+  const filtered = attributes.filter((attribute) => {
+    const lower = attribute.toLowerCase();
+    if (lower.startsWith("domain=")) return false;
+    if (process.env.NODE_ENV !== "production" && lower === "secure") return false;
+    return true;
+  });
+  response.headers.append("set-cookie", filtered.join("; "));
+}
+
 /**
- * Authenticates with the dedicated gateway on the server and issues only its refresh credential as an HttpOnly cookie.
+ * Authenticates with the dedicated gateway on the server and forwards its HttpOnly session cookie.
  */
 export async function POST(request: Request): Promise<NextResponse> {
   if (!SUPER_ADMIN_AUTH_API_BASE_URL) {
@@ -142,10 +148,9 @@ export async function POST(request: Request): Promise<NextResponse> {
   const loginBody: unknown = await loginResponse.json().catch(() => null);
   const loginData = isRecord(loginBody) && isRecord(loginBody.data) ? loginBody.data : null;
   const loginTokens = isRecord(loginBody) && isRecord(loginBody.tokens) ? loginBody.tokens : null;
-  const accessToken = loginTokens ? tokenValue(loginTokens, "accessToken", "access_token") : null;
-  const refreshToken = loginTokens ? tokenValue(loginTokens, "refreshToken", "refresh_token") : null;
+  const refreshToken = loginTokens ? (typeof loginTokens.refreshToken === "string" ? loginTokens.refreshToken : typeof loginTokens.refresh_token === "string" ? loginTokens.refresh_token : null) : null;
   const identity = loginData ? normalizeIdentity(loginData) : null;
-  if (!identity || !accessToken || !refreshToken) {
+  if (!identity || !refreshToken) {
     return errorResponse(502, "Super Admin login returned an unsupported response.");
   }
 
@@ -153,23 +158,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     return errorResponse(403, "This account is not authorized for Super Admin access.");
   }
 
-  let verificationResponse: Response;
-  try {
-    verificationResponse = await fetch(`${SUPER_ADMIN_AUTH_API_BASE_URL}/api/v1/auth/me`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      cache: "no-store",
-    });
-  } catch {
-    return errorResponse(502, "Unable to verify the Super Admin session.");
-  }
-
-  const verificationBody: unknown = await verificationResponse.json().catch(() => null);
-  const verifiedIdentity = isRecord(verificationBody) && isRecord(verificationBody.data) ? normalizeIdentity(verificationBody.data) : null;
-  if (!verificationResponse.ok || !verifiedIdentity) {
-    return errorResponse(401, "Unable to verify the Super Admin session.");
-  }
-
-  const response = NextResponse.json({ data: verifiedIdentity }, { headers: { "Cache-Control": "no-store" } });
+  const response = NextResponse.json({ data: identity }, { headers: { "Cache-Control": "no-store" } });
   const rememberMe = payload.rememberMe === true;
   response.cookies.set(SESSION_COOKIE_NAME, refreshToken, sessionCookieOptions(rememberMe));
   if (rememberMe) {

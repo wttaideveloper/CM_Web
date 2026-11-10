@@ -12,7 +12,7 @@ function isString(value: unknown): value is string { return typeof value === "st
 function isNullableString(value: unknown): value is string | null | undefined { return value === undefined || value === null || isString(value); }
 function isNullableFiniteNumber(value: unknown): boolean { return value === undefined || value === null || (typeof value === "number" && Number.isFinite(value)); }
 function isScope(value: unknown): boolean { return value === "global" || value === "selective"; }
-function isStatus(value: unknown): boolean { return value === "draft" || value === "published" || value === "retired"; }
+function isStatus(value: unknown): boolean { return value === "draft" || value === "in_review" || value === "published" || value === "active" || value === "inactive" || value === "retired"; }
 function isValidation(value: unknown): boolean { return isRecord(value) && isNullableFiniteNumber(value.min_length) && isNullableFiniteNumber(value.max_length) && isNullableFiniteNumber(value.min) && isNullableFiniteNumber(value.max) && isNullableString(value.pattern); }
 function isOption(value: unknown): boolean { return isRecord(value) && isString(value.value) && isString(value.label) && Number.isInteger(value.position); }
 function isStringArray(value: unknown): value is string[] { return Array.isArray(value) && value.every(isString); }

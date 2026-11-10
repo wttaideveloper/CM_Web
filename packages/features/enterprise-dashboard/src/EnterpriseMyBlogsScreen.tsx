@@ -55,6 +55,13 @@ const AUTHORING_CONTEXT_LABELS: Record<AuthoringContext["module"], string> = {
 
 const MAX_BLOG_TAG_LENGTH = 30;
 
+function blogVideoProvider(value: unknown): "YouTube" | "Vimeo" | "Video URL" {
+  const raw = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (/([.]|^)youtube\.com\//.test(raw) || /youtu\.be\//.test(raw)) return "YouTube";
+  if (/([.]|^)vimeo\.com\//.test(raw)) return "Vimeo";
+  return "Video URL";
+}
+
 function isAuthoringModule(value: unknown): value is AuthoringContext["module"] {
   return value === "events" || value === "trainings" || value === "products" || value === "services";
 }
@@ -1630,7 +1637,7 @@ export default function EnterpriseMyBlogsScreen() {
                                   onChange={(value) => setCustomFields((current) => ({ ...current, [field.key]: value }))}
                                   placeholder={field.placeholder?.trim() || "Write formatted content..."}
                                 />
-                              ) : field.type === "textarea" ? (
+                              ) : field.type === "textarea" || field.type === "long_text" ? (
                                 <textarea
                                   rows={3}
                                   value={String(customFields[field.key] ?? "")}
@@ -1701,7 +1708,7 @@ export default function EnterpriseMyBlogsScreen() {
                                     </label>
                                   ))}
                                 </div>
-                              ) : field.type === "select" || field.type === "category" ? (
+                              ) : field.type === "select" || field.type === "dropdown" || field.type === "category" ? (
                                 <select
                                   value={String(customFields[field.key] ?? "")}
                                   onChange={(event) =>
@@ -1763,7 +1770,18 @@ export default function EnterpriseMyBlogsScreen() {
                                   className="mt-1.5 w-full rounded-xl border border-[#d7e5df] bg-white px-3 py-2.5 text-sm focus:border-teal-600 focus:outline-none"
                                   placeholder={field.placeholder?.trim() || "0"}
                                 />
-                              ) : field.type === "url" || field.type === "email" ? (
+                              ) : field.type === "video" ? (
+                                <div className="mt-1.5 space-y-2">
+                                  <input
+                                    type="url"
+                                    value={String(customFields[field.key] ?? "")}
+                                    onChange={(event) => setCustomFields((current) => ({ ...current, [field.key]: event.target.value }))}
+                                    className="w-full rounded-xl border border-[#d7e5df] bg-white px-3 py-2.5 text-sm focus:border-teal-600 focus:outline-none"
+                                    placeholder={field.placeholder?.trim() || "Paste a YouTube, Vimeo, or video URL"}
+                                  />
+                                  {customFields[field.key] ? <span className="inline-flex rounded-full bg-[#eef6f2] px-2.5 py-1 text-xs font-semibold text-[#1f6a58]">{blogVideoProvider(customFields[field.key])}</span> : null}
+                                </div>
+                              ) : field.type === "url" || field.type === "reference_url" || field.type === "email" ? (
                                 <input
                                   type={field.type === "email" ? "email" : "url"}
                                   value={String(customFields[field.key] ?? "")}

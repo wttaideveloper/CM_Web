@@ -15,7 +15,7 @@ const primaryActionClassName = "inline-flex min-h-9 items-center justify-center 
 const destructiveActionClassName = "inline-flex min-h-9 items-center justify-center rounded-lg border border-[#efc7c2] px-3 py-1.5 text-xs font-bold text-[#b42318] transition hover:bg-[#fff1ef] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b42318] disabled:cursor-not-allowed disabled:opacity-50";
 const drawerActionClassName = "rounded-lg p-2 text-sm font-semibold text-[#1f6a58] hover:bg-[#f4faf7] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58]";
 
-function label(value: string): string { return value === "draft" || value === "published" || value === "retired" || value === "global" || value === "selective" ? copy[value] : value; }
+function label(value: string): string { return value === "draft" || value === "in_review" || value === "published" || value === "retired" || value === "global" || value === "selective" ? copy[value] : value; }
 function badgeClassName(tone: "green" | "amber" | "red" | "muted"): string { return tone === "green" ? "bg-[#e5f4ed] text-[#176148]" : tone === "amber" ? "bg-[#fff4d6] text-[#8a5a00]" : tone === "red" ? "bg-[#fff0ee] text-[#a52218]" : "bg-[#eef3f1] text-[#52736a]"; }
 function formatDateTime(value: string | null | undefined): string { return value ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : copy.notAvailable; }
 

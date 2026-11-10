@@ -70,7 +70,7 @@ function LoginPageContent() {
   const buttonLabel = isSuperAdmin
     ? "Sign In as Super Admin"
     : "Sign In to Enterprise Portal";
-  const canSubmit = !isSubmitting && (isSuperAdmin || !isLoading);
+  const canSubmit = !isSubmitting;
 
   function handleWebPortalLogin() {
     const platformAdminOrigin = getPlatformAdminAppOrigin();
@@ -127,6 +127,14 @@ function LoginPageContent() {
 
         handleWebPortalLogin();
         return;
+      }
+
+      if (process.env.NODE_ENV === "development") {
+        const enterpriseAdminOrigin = getEnterpriseAdminAppOrigin();
+        if (enterpriseAdminOrigin) {
+          window.location.assign(new URL("/admin/dashboard", enterpriseAdminOrigin).toString());
+          return;
+        }
       }
 
       const callbackPath = buildAuthCallbackPath(searchParams.get("return_to"));

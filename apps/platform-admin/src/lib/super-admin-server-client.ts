@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 const SESSION_COOKIE_NAME = "ihp_super_admin_refresh";
+const ACCESS_TOKEN_COOKIE_NAME = "access_token";
 const REMEMBER_ME_COOKIE_NAME = "ihp_super_admin_remember_me";
 const REMEMBER_ME_MAX_AGE = 60 * 60 * 24 * 30;
 const SUPER_ADMIN_AUTH_API_BASE_URL = process.env.SUPER_ADMIN_AUTH_API_BASE_URL?.replace(/\/+$/, "");
@@ -61,6 +62,7 @@ function sessionCookieOptions(rememberMe = false) {
 /** Clears the Platform bridge credential using the same scope used when it was issued. */
 export function clearSuperAdminSessionCookie(response: NextResponse): NextResponse {
   response.cookies.set(SESSION_COOKIE_NAME, "", { ...sessionCookieOptions(), maxAge: 0 });
+  response.cookies.set(ACCESS_TOKEN_COOKIE_NAME, "", { ...sessionCookieOptions(), maxAge: 0 });
   response.cookies.set(REMEMBER_ME_COOKIE_NAME, "", { ...sessionCookieOptions(), maxAge: 0 });
   return response;
 }
@@ -162,12 +164,17 @@ export async function warmSuperAdminSession(refreshToken: string, rememberMe: bo
 async function getSuperAdminAccessToken(): Promise<SuperAdminAccessToken> {
   if (!SUPER_ADMIN_AUTH_API_BASE_URL) throw new SuperAdminServerError(503, "Super Admin authentication is not configured.");
   const requestCookies = await cookies();
+  const accessToken = requestCookies.get(ACCESS_TOKEN_COOKIE_NAME)?.value;
+  const rememberMe = requestCookies.get(REMEMBER_ME_COOKIE_NAME)?.value === "true";
+  if (accessToken) {
+    return { accessToken, rememberMe };
+  }
+
   const refreshToken =
     requestCookies.get(SESSION_COOKIE_NAME)?.value ||
     requestCookies.get("refresh_token")?.value ||
     requestCookies.get("ihp_refresh_token")?.value;
   if (!refreshToken) throw new SuperAdminServerError(401, "Super Admin authentication is required.");
-  const rememberMe = requestCookies.get(REMEMBER_ME_COOKIE_NAME)?.value === "true";
   const refreshKey = createHash("sha256").update(refreshToken).digest("hex");
 
   // 1. Check in-memory cache for a valid active access token

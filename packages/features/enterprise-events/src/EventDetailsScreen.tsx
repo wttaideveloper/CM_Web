@@ -23,6 +23,7 @@ import EventReportsSection from "./EventReportsSection";
 import EventSpeakerSelect from "./EventSpeakerSelect";
 import { ContextualModuleBlogsTab } from "@ihp/enterprise-dashboard";
 import { EventReviewsTab, type ReviewStatusFilter, STATUSES as EVENT_REVIEW_STATUSES } from "./EventReviewsTab";
+import { EnterpriseEventsDiscussionTab } from "./EnterpriseEventsDiscussionTab";
 import SessionAttendancePanel from "./SessionAttendancePanel";
 import {
   displayValue,
@@ -95,7 +96,7 @@ type DetailItem = {
   label: string;
   value: string | number | boolean | null | undefined;
 };
-type EventDetailsTab = "overview" | "details" | "sessions" | "registrations" | "attendance" | "reviews" | "reports" | "orders" | "fulfilment" | "blogs";
+type EventDetailsTab = "overview" | "details" | "sessions" | "registrations" | "attendance" | "reviews" | "discussion" | "reports" | "orders" | "fulfilment" | "blogs";
 type RegistrationsSubview = "registered" | "waitlist";
 
 function AdminNoteBanner({ eventId, status }: { eventId: string; status: string }) {
@@ -157,6 +158,7 @@ const eventDetailsTabs: ReadonlyArray<{ id: EventDetailsTab; label: string; badg
     { id: "registrations", label: "Registrations" },
     { id: "attendance", label: "Attendance" },
     { id: "reviews", label: "Reviews & Feedback" },
+    { id: "discussion", label: "Discussions" },
     { id: "reports", label: "Reports" },
     { id: "orders", label: "Orders" },
     { id: "fulfilment", label: "Fulfilment" },
@@ -576,6 +578,16 @@ function EventDetailsContent() {
             return rawStatus && EVENT_REVIEW_STATUSES.includes(rawStatus as ReviewStatusFilter) ? (rawStatus as ReviewStatusFilter) : null;
           })()}
         />
+        </section>
+      ) : null}
+      {effectiveActiveTab === "discussion" ? (
+        <section id="event-discussion-panel" role="tabpanel" aria-labelledby="event-discussion-tab" className="mt-6">
+          <EnterpriseEventsDiscussionTab
+            eventId={event.id}
+            initialSubview={searchParams.get("subview") === "flagged" ? "flagged" : "feed"}
+            initialMessageId={searchParams.get("message_id") ?? searchParams.get("messageId")}
+            initialReplyId={searchParams.get("reply_id") ?? searchParams.get("replyId")}
+          />
         </section>
       ) : null}
       {effectiveActiveTab === "reports" ? (

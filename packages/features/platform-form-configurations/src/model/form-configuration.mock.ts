@@ -84,7 +84,6 @@ export function createSeededFields(registry: readonly CoreFieldRegistryItem[], s
     { key: "coupon_code", section: "section-pricing", label: "Coupon code" },
     // 5. Capacity & Registration — mirrors TrainingCapacitySection:158
     { key: "capacity", section: "section-capacity", label: "Capacity" },
-    { key: "requires_approval", section: "section-capacity", renderer: "checkbox", label: "Requires approval" },
     // 6. Images & Media — mirrors TrainingMediaSection:178
     { key: "primary_image", section: "section-media", renderer: "url", placeholder: "https://…", label: "Primary Image" },
     // 7. Additional Configuration — mirrors TrainingCourseBuilderSection:192

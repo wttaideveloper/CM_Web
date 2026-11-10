@@ -39,6 +39,28 @@ const eventRegistrationTypes = new Set([
   "event_ticket_purchased",
 ]);
 const eventFeedbackTypes = new Set(["event_feedback", "event_feedback_submitted"]);
+const eventDiscussionTypes = new Set([
+  "event_discussion",
+  "event_discussion_new",
+  "event_discussion_created",
+  "event_discussion_reply",
+  "event_discussion_reply_created",
+  "event_discussion_new_reply",
+  "event_discussion_announcement",
+  "event_discussion_admin_announcement",
+  "event_discussion_message_approved",
+  "event_discussion_approved",
+  "event_discussion_message_deleted",
+  "event_discussion_rejected",
+  "event_discussion_not_approved",
+  "event_discussion_flagged",
+  "event_discussion_flagged_for_review",
+  "event_discussion_moderation_required",
+  "event_discussion_pending_review",
+  "event_discussion_unread_reply",
+  "event_discussion_unread_reply_nudge",
+  "event_discussion_pending_nudge",
+]);
 const trainingDiscussionTypes = new Set(["training_question_posted", "training_discussion_new", "training_new_discussion", "training_question"]);
 const reviewSubmissionTypes = new Set([
   "review_submitted",
@@ -135,7 +157,6 @@ const trainingEnrollmentTypes = new Set([
 function readNonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
-
 function recordValue(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
@@ -276,6 +297,7 @@ function resolveNotificationEventName(notification: NotificationRouteInput): str
       || blogWorkflowTypes.has(normalizedCandidate)
       || eventRegistrationTypes.has(normalizedCandidate)
       || eventFeedbackTypes.has(normalizedCandidate)
+      || eventDiscussionTypes.has(normalizedCandidate)
       || trainingDiscussionTypes.has(normalizedCandidate)
       || reviewSubmissionTypes.has(normalizedCandidate)
       || reviewModerationTypes.has(normalizedCandidate);
@@ -284,6 +306,12 @@ function resolveNotificationEventName(notification: NotificationRouteInput): str
 
   const text = `${candidates.join(" ")} ${notification.title ?? ""} ${notification.body ?? ""}`.toLocaleLowerCase();
   const entityType = readNonEmptyString(data.entity_type)?.toLocaleLowerCase();
+  if (entityType === "event" && /\b(discussion|reply|flagged|announcement)\b/.test(text)) {
+    if (text.includes("flagged") || text.includes("review")) return "event_discussion_flagged";
+    if (text.includes("announcement")) return "event_discussion_announcement";
+    if (text.includes("reply")) return "event_discussion_reply";
+    return "event_discussion_new";
+  }
   if (/review.*(moder|delet)|(?:moder|delet).*review/.test(text)) return text.includes("delet") ? "review_deleted" : "review_moderated";
   if (entityType === "training" && /\b(enrol|enroll|registration|registered|booking|booked)\w*\b/.test(text)) return "training_enrollment";
   if (entityType === "event" && /\b(enrol|enroll|registration|registered|booking|booked|ticket)\w*\b/.test(text)) return "event_registration";
@@ -356,6 +384,14 @@ export function resolveNotificationTarget(
       const eventId = eventIdForRoute(notification);
       return eventId ? `/events?view=reviews&item_id=${encodeURIComponent(eventId)}&subview=feedback` : null;
     }
+    if (eventDiscussionTypes.has(eventName) || eventName.startsWith("event_discussion")) {
+      const data = notificationData(notification);
+      const deepLink = readNonEmptyString(data.deep_link) ?? readNonEmptyString(data.target_url);
+      if (deepLink && deepLink.startsWith("/")) return deepLink;
+      const eventId = eventIdForRoute(notification);
+      const messageId = readNonEmptyString(data.message_id) ?? readNonEmptyString(data.messageId) ?? readNonEmptyString(data.discussion_id) ?? readNonEmptyString(data.item_id);
+      return eventId ? `/events?view=discussions&item_id=${encodeURIComponent(eventId)}${messageId ? `&message_id=${encodeURIComponent(messageId)}` : ""}` : null;
+    }
     if (reviewModerationTypes.has(eventName) || reviewSubmissionTypes.has(eventName)) {
       const module = reviewModuleForRoute(notification, eventName) ?? "training";
       const data = notificationData(notification);
@@ -390,6 +426,22 @@ export function resolveNotificationTarget(
   if (eventFeedbackTypes.has(eventName)) {
     const eventId = eventIdForRoute(notification);
     return eventId ? `/admin/events/${encodeURIComponent(eventId)}?tab=reviews&subview=feedback` : null;
+  }
+  if (eventDiscussionTypes.has(eventName) || eventName.startsWith("event_discussion") || (eventName.includes("discussion") && Boolean(eventIdForRoute(notification)))) {
+    const eventId = eventIdForRoute(notification);
+    if (!eventId) return null;
+    const data = notificationData(notification);
+    const deepLink = readNonEmptyString(data.deep_link) ?? readNonEmptyString(data.target_url);
+    if (deepLink && deepLink.startsWith("/")) return deepLink;
+
+    const messageId = readNonEmptyString(data.message_id) ?? readNonEmptyString(data.messageId) ?? readNonEmptyString(data.discussion_id) ?? readNonEmptyString(data.item_id);
+    const replyId = readNonEmptyString(data.reply_id) ?? readNonEmptyString(data.replyId);
+    const isFlaggedOrReview = eventName.includes("flagged") || eventName.includes("pending") || eventName.includes("moderation");
+    const params = new URLSearchParams({ tab: "discussion" });
+    if (isFlaggedOrReview) params.set("subview", "flagged");
+    if (messageId) params.set("message_id", messageId);
+    if (replyId) params.set("reply_id", replyId);
+    return `/admin/events/${encodeURIComponent(eventId)}?${params.toString()}`;
   }
   if (trainingDiscussionTypes.has(eventName)) {
     const trainingId = trainingIdForRoute(notification);
@@ -730,5 +782,67 @@ export function formatReviewSubmissionNotification(
   return {
     title: `${itemType} review ${verb}`,
     message: `${learnerName ?? "A learner"} ${verb} a review${itemName ? ` of \"${itemName}\"` : ""}.${reviewComment}`,
+  };
+}
+
+/** Extracts Event title, sender name, content preview, and announcement flag from discussion notification. */
+export function formatEventDiscussionNotificationDetails(
+  notification: Pick<RealtimeNotification, "notification_type" | "data"> & {
+    category?: string;
+    metadata?: Record<string, unknown>;
+    title?: string;
+    body?: string;
+  },
+): {
+  eventName: string | null;
+  senderName: string | null;
+  messageContent: string | null;
+  isAnnouncement: boolean;
+  isFlagged: boolean;
+  isPendingReview: boolean;
+} {
+  const data = notificationData(notification);
+  const event = recordValue(data.event);
+  const discussion = recordValue(data.discussion);
+  const eventName = [
+    data.event_name,
+    data.eventName,
+    data.event_title,
+    data.eventTitle,
+    data.title,
+    event.name,
+    event.title,
+  ].map(readNonEmptyString).find((v): v is string => v !== null) ?? null;
+
+  const senderName = [
+    data.sender_name,
+    data.senderName,
+    data.author_name,
+    data.authorName,
+    data.participant_name,
+    discussion.sender_name,
+    discussion.author_name,
+  ].map(readNonEmptyString).find((v): v is string => v !== null && !v.includes("@")) ?? null;
+
+  const messageContent = [
+    data.message,
+    data.content,
+    data.comment,
+    discussion.content,
+    discussion.message,
+  ].map(readNonEmptyString).find((v): v is string => v !== null) ?? null;
+
+  const eventType = resolveNotificationEventName(notification);
+  const isAnnouncement = eventType.includes("announcement") || data.is_announcement === true;
+  const isFlagged = eventType.includes("flagged") || eventType.includes("pending");
+  const isPendingReview = eventType.includes("pending") || eventType.includes("moderation") || eventType.includes("flagged_for_review");
+
+  return {
+    eventName,
+    senderName,
+    messageContent,
+    isAnnouncement,
+    isFlagged,
+    isPendingReview,
   };
 }

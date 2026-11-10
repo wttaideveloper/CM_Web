@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
+  formatEventDiscussionNotificationDetails,
   formatEventFeedbackNotificationDetails,
   formatBlogWorkflowNotification,
   formatNotificationTimestamp,
@@ -268,6 +269,7 @@ export function EnterpriseAdminLayout({
                   const feedbackDetails = formatEventFeedbackNotificationDetails(item);
                   const notificationTitle = blogWorkflow?.title ?? reviewSubmission?.title ?? formatReviewModerationNotificationTitle(item) ?? item.title;
                   const { trainingTitle, senderName, learnerName, enrollmentStatus } = formatTrainingNotificationDetails(item);
+                  const discussion = formatEventDiscussionNotificationDetails(item);
                   const review = formatReviewNotificationDetails(item);
                   const reason = notificationReason(item);
                   return (
@@ -276,10 +278,13 @@ export function EnterpriseAdminLayout({
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-bold text-[#06201c]">{notificationTitle || "Notification"}</span>
                         <span className="mt-1 block text-xs text-[#52736a]">{blogWorkflow?.message ?? reviewSubmission?.message ?? item.body}</span>
+                        {discussion.eventName ? <span className="mt-1 block truncate text-[11px] font-semibold text-[#1f6a58]">Event: {discussion.eventName}</span> : null}
+                        {discussion.isAnnouncement ? <span className="mt-0.5 inline-block rounded bg-[#e8f6ee] px-1.5 py-0.5 text-[10px] font-bold text-[#1f6a58]">📢 Announcement</span> : null}
+                        {discussion.isPendingReview ? <span className="mt-0.5 inline-block rounded bg-[#fef3f2] px-1.5 py-0.5 text-[10px] font-bold text-[#b42318]">⏳ Pending Review</span> : null}
                         {feedbackDetails?.attendeeName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">Attendee: {feedbackDetails.attendeeName}</span> : null}
                         {feedbackDetails?.eventTitle ? <span className="mt-1 block text-[11px] font-semibold text-[#1f6a58]">Event: {feedbackDetails.eventTitle}</span> : null}
                         {feedbackDetails?.comment ? <span className="mt-1 block whitespace-pre-wrap rounded-lg bg-[#f4faf7] p-2 text-xs text-[#31594d]">{feedbackDetails.comment}</span> : null}
-                        {senderName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">From: {senderName}</span> : null}
+                        {discussion.senderName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">From: {discussion.senderName}</span> : senderName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">From: {senderName}</span> : null}
                         {learnerName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">Learner: {learnerName}</span> : null}
                         {enrollmentStatus ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">Enrollment status: {enrollmentStatus.replace(/[_-]+/g, " ")}</span> : null}
                         {review.learnerName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">Learner: {review.learnerName}</span> : null}

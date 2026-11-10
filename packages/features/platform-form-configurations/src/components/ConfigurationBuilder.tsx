@@ -25,6 +25,7 @@ const control = "mt-1.5 w-full rounded-lg border border-[#cfe0d8] bg-white px-3 
 const CONFIGURATION_DESCRIPTION_MAX_LENGTH = 1000;
 const HIDDEN_TRAINING_FIELD_KEYS = new Set([
   "group_enrolment", "group_enrollment", "max_group_size", "release_rule", "scheduled_publication",
+  "requires_approval",
   "randomise", "randomize", "is_mandatory", "access_information", "access_days", "access_duration",
   "access_duration_days", "access_expiry", "access_expiry_type", "access_expiry_days", "expiry_days",
   "course_type", "course_types", "badge", "badges", "milestone_badges",
@@ -34,6 +35,7 @@ const HIDDEN_TRAINING_FIELD_KEYS = new Set([
 ]);
 const HIDDEN_TRAINING_FIELD_LABELS = new Set([
   "group enrolment", "group enrollment", "max group size", "release rule", "scheduled publication",
+  "requires approval",
   "randomise", "randomize", "is mandatory", "mandatory lessons", "access information", "access days",
   "access duration", "access duration days", "access duration (days)", "access expiry", "access expiry type",
   "access expiry days", "expiry days", "course type", "course types",
@@ -49,6 +51,9 @@ function isHiddenTrainingField(key: string | null | undefined, label?: string | 
   return HIDDEN_TRAINING_FIELD_KEYS.has(normalizedKey) || HIDDEN_TRAINING_FIELD_LABELS.has(normalizedLabel);
 }
 type InspectorMode = "none" | "edit-section" | "edit-field" | "add-field";
+type InspectorDraft =
+  | { kind: "section"; id: string; value: FormSection }
+  | { kind: "field"; id: string; value: ConfiguredField };
 
 /** Converts an editable label into a stable identifier fragment for new entities only. */
 function slug(value: string): string { return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "field"; }
@@ -78,9 +83,28 @@ function sameTenantIds(left: readonly string[], right: readonly string[]): boole
   return [...left].sort().every((tenantId, index) => tenantId === sortedRight[index]);
 }
 function InspectorDrawer({ open, title, onClose, children }: { open: boolean; title: string; onClose: () => void; children: ReactNode }) {
+  const drawerRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (target instanceof Element && target.closest("[data-inspector-trigger=\"true\"]")) return;
+      if (!drawerRef.current?.contains(target)) onClose();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose, open]);
   if (!open || typeof document === "undefined") return null;
   return createPortal(
-    <aside key={title} role="dialog" aria-modal="false" aria-label={title} className="form-configuration-builder-inspector fixed bottom-0 right-0 top-[72px] z-40 w-full max-w-[420px] overflow-y-auto border-l border-[#dfe9e4] bg-[#f7fbf8] p-5 shadow-[-12px_0_30px_rgba(7,53,45,0.12)] lg:w-[400px]">
+    <aside ref={drawerRef} key={title} role="dialog" aria-modal="false" aria-label={title} className="form-configuration-builder-inspector fixed bottom-0 right-0 top-[72px] z-40 w-full max-w-[420px] overflow-y-auto border-l border-[#dfe9e4] bg-[#f7fbf8] p-5 pb-28 shadow-[-12px_0_30px_rgba(7,53,45,0.12)] lg:w-[400px]">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-bold uppercase tracking-[.14em] text-[#52736a]">{title}</h3>
         <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-sm font-bold text-[#52736a] hover:bg-[#eaf4ef]" aria-label="Close inspector">×</button>
@@ -135,6 +159,8 @@ export function ConfigurationBuilder({ initialConfiguration, coreFieldRegistry, 
   const [inspectorMode, setInspectorMode] = useState<InspectorMode>("none");
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
+  const [inspectorDraft, setInspectorDraft] = useState<InspectorDraft | null>(null);
+  const [inspectorDraftDirty, setInspectorDraftDirty] = useState(false);
   const [addFieldSectionId, setAddFieldSectionId] = useState<string | null>(null);
   const [fieldSource, setFieldSource] = useState<"core" | "custom">("core");
   const [selectedCoreFieldKeys, setSelectedCoreFieldKeys] = useState<Set<string>>(() => new Set());
@@ -197,7 +223,7 @@ export function ConfigurationBuilder({ initialConfiguration, coreFieldRegistry, 
   const [persistedTenantIds, setPersistedTenantIds] = useState<string[]>([]);
   const [persistedEnterpriseIds, setPersistedEnterpriseIds] = useState<string[]>([]);
 
-  useEffect(() => { setConfiguration(withoutUnavailableTrainingFields(initialConfiguration)); setPersistedTenantIds([]); setPersistedEnterpriseIds([]); assignmentsHydrated.current = false; setInspectorMode("none"); setSelectedSectionId(null); setSelectedFieldId(null); setAddFieldSectionId(null); setSelectedCoreFieldKeys(new Set()); }, [initialConfiguration.id]);
+  useEffect(() => { setConfiguration(withoutUnavailableTrainingFields(initialConfiguration)); setPersistedTenantIds([]); setPersistedEnterpriseIds([]); assignmentsHydrated.current = false; setInspectorMode("none"); setSelectedSectionId(null); setSelectedFieldId(null); setInspectorDraft(null); setInspectorDraftDirty(false); setAddFieldSectionId(null); setSelectedCoreFieldKeys(new Set()); }, [initialConfiguration.id]);
   useEffect(() => { if (!assignmentsHydrated.current && assignmentsLoaded) { const tenantIds = [...(assignmentTenantIds ?? [])]; const enterpriseIds = [...(assignmentEnterpriseIds ?? [])]; assignmentsHydrated.current = true; setPersistedTenantIds(tenantIds); setPersistedEnterpriseIds(enterpriseIds); setConfiguration((current) => ({ ...current, tenantIds, enterpriseIds })); } }, [assignmentTenantIds, assignmentEnterpriseIds, assignmentsLoaded]);
 
   useEffect(() => { setConfiguration((current) => ({ ...current, fields: current.fields.map((field) => { if (field.source !== "core" || field.serverId !== null || field.options.length > 0) return field; const definition = coreFieldRegistry.find((item) => item.key === field.coreKey); return definition?.options?.length ? { ...field, options: [...definition.options] } : field; }) })); }, [coreFieldRegistry]);
@@ -207,11 +233,79 @@ export function ConfigurationBuilder({ initialConfiguration, coreFieldRegistry, 
     setFeedback("");
     setConfiguration((current) => ({ ...current, ...patch }));
   };
-  const applyOrder = (sections: readonly FormSection[], fields: readonly ConfiguredField[]) => update(normalizeConfigurationOrder(sections, fields));
+  const applyOrder = (sections: readonly FormSection[], fields: readonly ConfiguredField[]) => {
+    const pendingSection = sections.find((section) => section.name === copy.addSection && !configuration.sections.some((current) => current.localId === section.localId));
+    if (pendingSection) {
+      setInspectorMode("edit-section");
+      setSelectedSectionId(null);
+      setSelectedFieldId(null);
+      setInspectorDraft({ kind: "section", id: pendingSection.localId, value: pendingSection });
+      setInspectorDraftDirty(false);
+      setAddFieldSectionId(null);
+      return;
+    }
+    update(normalizeConfigurationOrder(sections, fields));
+  };
   const selectedSection = selectedSectionId ? configuration.sections.find((section) => section.localId === selectedSectionId) : undefined;
   const selectedField = selectedFieldId ? configuration.fields.find((field) => field.localId === selectedFieldId) : undefined;
   const selection: BuilderSelection = selectedField ? { kind: "field", id: selectedField.localId } : selectedSection ? { kind: "section", id: selectedSection.localId } : null;
-  const selectInspectorItem = (next: BuilderSelection) => { setSelectedCoreFieldKeys(new Set()); if (!next) { setInspectorMode("none"); setSelectedSectionId(null); setSelectedFieldId(null); setAddFieldSectionId(null); return; } if (next.kind === "section") { setInspectorMode("edit-section"); setSelectedSectionId(next.id); setSelectedFieldId(null); setAddFieldSectionId(null); return; } const field = configuration.fields.find((item) => item.localId === next.id); if (!field) return; setInspectorMode("edit-field"); setSelectedSectionId(null); setSelectedFieldId(field.localId); setAddFieldSectionId(null); };
+  const canDiscardInspectorDraft = () => !inspectorDraftDirty || window.confirm("Discard unsaved editor changes?");
+  const clearInspectorDraft = () => { setInspectorDraft(null); setInspectorDraftDirty(false); };
+  const selectInspectorItem = (next: BuilderSelection) => {
+    if (!canDiscardInspectorDraft()) return;
+    clearInspectorDraft();
+    setSelectedCoreFieldKeys(new Set());
+    if (!next) { setInspectorMode("none"); setSelectedSectionId(null); setSelectedFieldId(null); setAddFieldSectionId(null); return; }
+    if (next.kind === "section") {
+      const section = configuration.sections.find((item) => item.localId === next.id);
+      if (!section) return;
+      setInspectorMode("edit-section"); setSelectedSectionId(section.localId); setSelectedFieldId(null); setInspectorDraft({ kind: "section", id: section.localId, value: section }); setAddFieldSectionId(null); return;
+    }
+    const field = configuration.fields.find((item) => item.localId === next.id);
+    if (!field) return;
+    setInspectorMode("edit-field"); setSelectedSectionId(null); setSelectedFieldId(field.localId); setInspectorDraft({ kind: "field", id: field.localId, value: field }); setAddFieldSectionId(null);
+  };
+  const updateSectionDraft = (patch: Partial<FormSection>) => {
+    const currentSection = inspectorDraft?.kind === "section" ? inspectorDraft.value : selectedSection;
+    if (!currentSection) return;
+    setInspectorDraft((current) => ({ kind: "section", id: currentSection.localId, value: { ...(current?.kind === "section" && current.id === currentSection.localId ? current.value : currentSection), ...patch } }));
+    setInspectorDraftDirty(true);
+  };
+  const updateFieldDraft = (patch: Partial<ConfiguredField>) => {
+    if (!selectedField) return;
+    setInspectorDraft((current) => ({ kind: "field", id: selectedField.localId, value: { ...(current?.kind === "field" && current.id === selectedField.localId ? current.value : selectedField), ...patch } }));
+    setInspectorDraftDirty(true);
+  };
+  const saveInspectorDraft = () => {
+    if (!inspectorDraft) return;
+    if (inspectorDraft.kind === "section") {
+      const committedSection = configuration.sections.find((section) => section.localId === inspectorDraft.id);
+      const nextSection = { ...inspectorDraft.value, name: inspectorDraft.value.name.trim() || committedSection?.name || copy.addSection };
+      const nextSections = committedSection ? configuration.sections.map((section) => section.localId === inspectorDraft.id ? nextSection : section) : [...configuration.sections, nextSection];
+      update({ sections: nextSections });
+      setInspectorDraft({ kind: "section", id: nextSection.localId, value: nextSection });
+    } else {
+      const committedField = configuration.fields.find((field) => field.localId === inspectorDraft.id);
+      const registryLabel = committedField?.coreKey ? coreFieldRegistry.find((item) => item.key === committedField.coreKey)?.displayName : undefined;
+      const nextField = { ...inspectorDraft.value, label: inspectorDraft.value.label.trim() || committedField?.label || registryLabel || "Field" };
+      update({ fields: configuration.fields.map((field) => field.localId === inspectorDraft.id ? nextField : field) });
+      setInspectorDraft({ kind: "field", id: nextField.localId, value: nextField });
+    }
+    setInspectorDraftDirty(false);
+  };
+  const cancelInspectorDraft = () => {
+    if (!inspectorDraft) return;
+    const currentValue = inspectorDraft.kind === "section"
+      ? configuration.sections.find((section) => section.localId === inspectorDraft.id)
+      : configuration.fields.find((field) => field.localId === inspectorDraft.id);
+    if (currentValue) setInspectorDraft({ ...inspectorDraft, value: currentValue } as InspectorDraft);
+    else { clearInspectorDraft(); setInspectorMode("none"); setSelectedSectionId(null); setSelectedFieldId(null); }
+    setInspectorDraftDirty(false);
+  };
+  const closeInspector = () => {
+    if (!canDiscardInspectorDraft()) return;
+    clearInspectorDraft(); setInspectorMode("none"); setSelectedSectionId(null); setSelectedFieldId(null); setAddFieldSectionId(null);
+  };
   const availableCoreFields = useMemo(() => coreFieldRegistry.filter((field) => {
     if (isRemovedCreateEventField(field.key, field.displayName)) return false;
     if (isLocationCoreKey(field.key)) return false;
@@ -240,6 +334,11 @@ export function ConfigurationBuilder({ initialConfiguration, coreFieldRegistry, 
 
   const persist = async (action: "save" | "publish") => {
     if (persistInFlightRef.current || isSaving || isPublishing) return;
+    if (inspectorDraftDirty) {
+      setError("");
+      setFeedback("Save the current field or section edits before saving the configuration.");
+      return;
+    }
     if (action === "publish" && hasUnsavedChangesRef.current) {
       setError("");
       setFeedback(detailsCopy.saveBeforePublish);
@@ -383,15 +482,17 @@ export function ConfigurationBuilder({ initialConfiguration, coreFieldRegistry, 
   };
   const targetSection = addFieldSectionId ? configuration.sections.find((section) => section.localId === addFieldSectionId) : undefined;
   const fieldPicker = inspectorMode === "add-field" && targetSection ? <FieldPicker sectionId={targetSection.localId} sectionName={targetSection.name} source={fieldSource} onSourceChange={setFieldSource} search={search} onSearchChange={setSearch} coreFields={availableCoreFields} onAddCore={addCore} onToggleCore={toggleCoreField} onAddSelectedCore={addSelectedCore} selectedCoreCount={selectedCoreFieldKeys.size} isEventConfiguration={configuration.type === "event"} onClearCoreSelection={() => setSelectedCoreFieldKeys(new Set())} customLabel={customLabel} onCustomLabelChange={setCustomLabel} customRenderer={customRenderer} onCustomRendererChange={setCustomRenderer} customRequired={customRequired} onCustomRequiredChange={setCustomRequired} onAddCustom={addCustom} onCancel={() => { setSelectedCoreFieldKeys(new Set()); setAddFieldSectionId(null); setInspectorMode(selectedSection ? "edit-section" : "none"); }} /> : null;
-  const inspector = inspectorMode === "edit-section" && selectedSection ? <SectionEditor section={selectedSection} fieldCount={configuration.fields.filter((field) => field.sectionLocalId === selectedSection.localId).length} isTrainingConfiguration={configuration.type === "training"} onChange={(patch) => update({ sections: configuration.sections.map((section) => section.localId === selectedSection.localId ? { ...section, ...patch } : section) })} /> : inspectorMode === "edit-field" && selectedField ? <FieldEditor field={selectedField} registry={coreFieldRegistry} trainingFields={configuration.type === "training" ? configuration.fields : undefined} isTrainingConfiguration={configuration.type === "training"} validationErrors={validationErrorsByField[selectedField.localId]} onChange={(patch) => updateField(selectedField.localId, patch)} onRemoveFromForm={() => { const removeIds = configuration.type === "event" && isEventDeliveryBundleKey(selectedField.coreKey) ? new Set(configuration.fields.filter((field) => isEventDeliveryBundleKey(field.coreKey)).map((field) => field.localId)) : new Set([selectedField.localId]); applyOrder(configuration.sections, configuration.fields.filter((field) => !removeIds.has(field.localId))); setSelectedFieldId(null); setInspectorMode(selectedSection ? "edit-section" : "none"); }} /> : <p className="rounded-xl border border-dashed border-[#cfe0d8] bg-white p-4 text-sm text-[#52736a]">{copy.selectItem}</p>;
+  const draftSection = inspectorDraft?.kind === "section" ? inspectorDraft.value : selectedSection;
+  const draftField = inspectorDraft?.kind === "field" && inspectorDraft.id === selectedField?.localId ? inspectorDraft.value : selectedField;
+  const editorActions = inspectorDraft ? <div className="fixed bottom-0 right-0 z-50 flex w-full max-w-[420px] justify-end gap-2 border-t border-[#dfe9e4] bg-[#f7fbf8] px-5 py-4 shadow-[0_-8px_18px_rgba(7,53,45,0.06)] lg:w-[400px]"><button type="button" onClick={cancelInspectorDraft} disabled={!inspectorDraftDirty} className="rounded-full border border-[#cfe0d8] bg-white px-4 py-2 text-sm font-bold text-[#1f6a58] disabled:cursor-not-allowed disabled:opacity-50">Cancel</button><button type="button" onClick={saveInspectorDraft} disabled={!inspectorDraftDirty} className="rounded-full bg-[#1f6a58] px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">Save</button></div> : null;
+  const inspector = inspectorMode === "edit-section" && draftSection ? <><SectionEditor section={draftSection} fieldCount={configuration.fields.filter((field) => field.sectionLocalId === draftSection.localId).length} isTrainingConfiguration={configuration.type === "training"} onChange={updateSectionDraft} />{editorActions}</> : inspectorMode === "edit-field" && draftField ? <><FieldEditor field={draftField} registry={coreFieldRegistry} trainingFields={configuration.type === "training" ? configuration.fields : undefined} isTrainingConfiguration={configuration.type === "training"} showContentVisibility validationErrors={validationErrorsByField[draftField.localId]} onChange={updateFieldDraft} onRemoveFromForm={() => { const removeIds = configuration.type === "event" && isEventDeliveryBundleKey(draftField.coreKey) ? new Set(configuration.fields.filter((field) => isEventDeliveryBundleKey(field.coreKey)).map((field) => field.localId)) : new Set([draftField.localId]); applyOrder(configuration.sections, configuration.fields.filter((field) => !removeIds.has(field.localId))); clearInspectorDraft(); setSelectedFieldId(null); setInspectorMode(selectedSection ? "edit-section" : "none"); }} />{editorActions}</> : <p className="rounded-xl border border-dashed border-[#cfe0d8] bg-white p-4 text-sm text-[#52736a]">{copy.selectItem}</p>;
   const drawerOpen = inspectorMode !== "none";
   const inspectorTitle = inspectorMode === "edit-section" ? "Edit Section" : inspectorMode === "edit-field" ? "Edit Field" : "Add Field";
 
-  const typeLabel = configuration.type === "training" ? trainingFormConfigurationCopy.training : copy.event;
   const assignmentEditorProps = { assignmentMode, scope: configuration.scope, tenantIds: configuration.tenantIds, tenants: tenantOptions, enterpriseIds: configuration.enterpriseIds ?? [], enterprises: enterpriseOptions, isLoadingTenants, tenantError, isLoadingEnterprises, enterpriseError, isLoadingAssignments, assignmentError, isPersisted, scopeLocked: isPersisted, scopeHint: isPersisted ? "This form scope cannot be changed after creation. Create a new form if you need a different scope." : "Choose carefully: the scope cannot be changed after this form is saved. Create a new form if you need a different scope.", canSaveAssignments: Boolean(onSaveAssignments), isSaving: isSavingAssignments, savingTarget: isPersistingTenantAssignments ? "tenant" as const : isPersistingEnterpriseAssignments ? "enterprise" as const : null, canSaveEnterpriseAssignments: Boolean(onSaveEnterpriseAssignments), isSavingEnterpriseAssignments, onScopeChange: (scope: FormConfiguration["scope"]) => update({ scope }), onTenantIdsChange: (tenantIds: string[]) => update({ tenantIds }), onEnterpriseIdsChange: (enterpriseIds: string[]) => update({ enterpriseIds }), onSave: () => void persistAssignments(), onSaveEnterprises: () => void persistEnterpriseAssignments() };
   const workspaceControls = <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Configuration workspaces"><button type="button" aria-pressed={workspace === "builder"} onClick={() => setWorkspace("builder")} className={`rounded-full px-4 py-2 text-sm font-bold ${workspace === "builder" ? "bg-[#1f6a58] text-white" : "bg-[#eef6f2] text-[#1f6a58]"}`}>{copy.builderTab}</button><button type="button" aria-pressed={workspace === "preview"} onClick={() => setWorkspace("preview")} className={`rounded-full px-4 py-2 text-sm font-bold ${workspace === "preview" ? "bg-[#1f6a58] text-white" : "bg-[#eef6f2] text-[#1f6a58]"}`}>{copy.previewTab}</button></div>;
   const isConfigurationNameMissing = hasAttemptedSaveOrPublish && !configuration.name.trim();
-  return <div className={`form-configuration-builder space-y-5 ${drawerOpen ? "lg:pr-[420px]" : ""}`}><style>{`.form-configuration-builder button:not(:disabled):hover, .form-configuration-builder-inspector button:not(:disabled):hover { filter: brightness(.94); } .form-configuration-builder button:focus-visible, .form-configuration-builder-inspector button:focus-visible { outline: 2px solid #1f6a58; outline-offset: 2px; }`}</style><section className="rounded-2xl border border-[#dfe9e4] bg-white p-4"><h3 className="text-lg font-bold text-[#06201c]">{detailsCopy.basics}</h3><div className="mt-3 grid gap-3 md:grid-cols-2"><label className="text-sm font-semibold text-[#355a51]">{detailsCopy.configurationName}<input ref={configurationNameInputRef} disabled={readOnly} value={configuration.name} onChange={(event) => update({ name: event.target.value })} placeholder={detailsCopy.configurationNamePlaceholder} aria-invalid={isConfigurationNameMissing || configuration.name.length > 300} aria-describedby={isConfigurationNameMissing ? "configuration-name-required-feedback" : configuration.name.length > 300 ? "configuration-name-feedback" : undefined} className={`${control} ${isConfigurationNameMissing ? "border-[#b42318] focus:border-[#b42318] focus:ring-2 focus:ring-[#b42318]/20" : ""}`} />{isConfigurationNameMissing ? <span id="configuration-name-required-feedback" role="alert" className="mt-1 block text-xs font-semibold text-[#b42318]">{detailsCopy.validationName}</span> : configuration.name.length > 300 ? <span id="configuration-name-feedback" role="alert" className="mt-1 block text-xs font-semibold text-[#b42318]">{detailsCopy.configurationNameTooLong}</span> : null}</label><label className="text-sm font-semibold text-[#355a51]">{detailsCopy.configurationType}<select disabled className={control} aria-label={detailsCopy.configurationType}><option>{typeLabel}</option></select><span className="mt-1 block text-xs font-normal text-[#52736a]">{detailsCopy.configurationTypeHelp}</span></label><label className={`text-sm font-semibold text-[#355a51] md:col-span-1`}>{detailsCopy.descriptionLabel} <span className="font-normal text-[#7f9d94]">(optional)</span><textarea disabled={readOnly} value={configuration.description} onChange={(event) => update({ description: event.target.value })} placeholder={detailsCopy.configurationDescriptionPlaceholder} aria-invalid={configuration.description.length > CONFIGURATION_DESCRIPTION_MAX_LENGTH} aria-describedby={configuration.description.length > CONFIGURATION_DESCRIPTION_MAX_LENGTH ? "configuration-description-count" : undefined} className={`${control} min-h-16`} />{configuration.description.length > CONFIGURATION_DESCRIPTION_MAX_LENGTH ? <span id="configuration-description-count" role="alert" className="mt-1 block text-xs font-semibold text-[#b42318]">{detailsCopy.configurationDescriptionTooLong}</span> : null}</label><AssignmentEditor {...assignmentEditorProps} simplifyForEnterpriseUsers={configuration.type === "training" || assignmentMode === "enterprise"} layout="scope-dropdown" /></div>{validationIssues.length ? <div id="configuration-validation-summary" role="alert" className="mt-3 rounded-xl border border-[#f0c8c4] bg-[#fff8f7] p-3 text-sm text-[#b42318]"><p className="font-bold">Configuration has {validationIssues.length} issue{validationIssues.length === 1 ? "" : "s"}:</p><ul className="mt-1 list-inside list-disc">{validationIssues.map((issue) => <li key={`${issue.code}-${issue.fieldLocalId ?? issue.sectionLocalId ?? "configuration"}`}>{issue.message}</li>)}</ul><p className="mt-2">Save Draft remains available; correct these issues before publishing.</p></div> : null}{error ? <p role="alert" className="mt-3 whitespace-pre-line text-sm font-semibold text-[#b42318]">{error}</p> : null}{feedback ? <p role="status" className="mt-3 text-sm font-semibold text-[#1f6a58]">{feedback}</p> : null}</section>{workspace === "preview" ? <div className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-sm font-bold uppercase tracking-[.14em] text-[#52736a]">Preview</h3>{workspaceControls}</div><ConfigurationPreview configuration={configuration} registry={coreFieldRegistry} /></div> : readOnly ? <ConfigurationPreview configuration={configuration} registry={coreFieldRegistry} /> :   <FormStructureCanvas workspaceControls={workspaceControls} guide={<ConfigurationBuilderGuide formType={configuration.type === "training" ? "Training" : "Event"} />} isTraining={configuration.type === "training"} sections={configuration.sections} fields={configuration.fields} selected={selection} onSelect={selectInspectorItem} onDragEnd={onDragEnd} onAddSection={() => { const suffix = crypto.randomUUID(); const section = { localId: `section-${suffix}`, serverId: null, stableKey: `section_new_section_${suffix.slice(0, 8)}`, name: copy.addSection, description: "", enabled: true, position: configuration.sections.length + 1 }; applyOrder([...configuration.sections, section], configuration.fields); setInspectorMode("edit-section"); setSelectedSectionId(section.localId); setSelectedFieldId(null); setAddFieldSectionId(null); }} onAddField={(sectionId) => { setInspectorMode("add-field"); setSelectedSectionId(sectionId); setSelectedFieldId(null); setAddFieldSectionId(sectionId); setFieldSource("core"); setSearch(""); }} onSectionAction={sectionAction} />}<InspectorDrawer open={drawerOpen} title={inspectorTitle} onClose={() => setInspectorMode("none")}>{fieldPicker ?? inspector}</InspectorDrawer>{!readOnly ? <div className="flex flex-wrap gap-3" aria-busy={isSaving || isPublishing}>{isSaving || isPublishing ? <p role="status" className="w-full rounded-lg bg-[#eef6f2] px-3 py-2 text-sm font-semibold text-[#1f6a58]">{isSaving ? "Saving configuration. Please wait." : "Publishing configuration. Please wait."}</p> : null}<button type="button" disabled={isSaving || isPublishing} onClick={() => void persist("save")} className="rounded-full border border-[#cfe0d8] bg-white px-5 py-2.5 text-sm font-bold text-[#1f6a58] transition hover:border-[#1f6a58] hover:bg-[#eef6f2] hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#1f6a58] disabled:cursor-not-allowed disabled:opacity-60">{isSaving ? "Saving..." : copy.saveDraft}</button><button type="button" disabled={isSaving || isPublishing || !onPublish || validationIssues.length > 0} onClick={() => void persist("publish")} className="rounded-full bg-[#1f6a58] px-5 py-2.5 text-sm font-bold text-white transition hover:bg-[#195646] focus:outline-none focus:ring-2 focus:ring-[#1f6a58] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60" title={validationIssues.length ? "Correct configuration validation issues before publishing." : undefined}>{isPublishing ? "Publishing..." : copy.publish}</button></div> : null}</div>;
+  return <div className={`form-configuration-builder space-y-5 ${drawerOpen ? "lg:pr-[420px]" : ""}`}><style>{`.form-configuration-builder button:not(:disabled):hover, .form-configuration-builder-inspector button:not(:disabled):hover { filter: brightness(.94); } .form-configuration-builder button:focus-visible, .form-configuration-builder-inspector button:focus-visible { outline: 2px solid #1f6a58; outline-offset: 2px; }`}</style><section className="rounded-2xl border border-[#dfe9e4] bg-white p-4"><h3 className="text-lg font-bold text-[#06201c]">{detailsCopy.basics}</h3><div className="mt-3 grid gap-3 md:grid-cols-2"><label className="text-sm font-semibold text-[#355a51]">{detailsCopy.configurationName}<input ref={configurationNameInputRef} disabled={readOnly} value={configuration.name} onChange={(event) => update({ name: event.target.value })} placeholder={detailsCopy.configurationNamePlaceholder} aria-invalid={isConfigurationNameMissing || configuration.name.length > 300} aria-describedby={isConfigurationNameMissing ? "configuration-name-required-feedback" : configuration.name.length > 300 ? "configuration-name-feedback" : undefined} className={`${control} ${isConfigurationNameMissing ? "border-[#b42318] focus:border-[#b42318] focus:ring-2 focus:ring-[#b42318]/20" : ""}`} />{isConfigurationNameMissing ? <span id="configuration-name-required-feedback" role="alert" className="mt-1 block text-xs font-semibold text-[#b42318]">{detailsCopy.validationName}</span> : configuration.name.length > 300 ? <span id="configuration-name-feedback" role="alert" className="mt-1 block text-xs font-semibold text-[#b42318]">{detailsCopy.configurationNameTooLong}</span> : null}</label><label className={`text-sm font-semibold text-[#355a51] md:col-span-1`}>{detailsCopy.descriptionLabel} <span className="font-normal text-[#7f9d94]">(optional)</span><textarea disabled={readOnly} value={configuration.description} onChange={(event) => update({ description: event.target.value })} placeholder={detailsCopy.configurationDescriptionPlaceholder} aria-invalid={configuration.description.length > CONFIGURATION_DESCRIPTION_MAX_LENGTH} aria-describedby={configuration.description.length > CONFIGURATION_DESCRIPTION_MAX_LENGTH ? "configuration-description-count" : undefined} className={`${control} min-h-16`} />{configuration.description.length > CONFIGURATION_DESCRIPTION_MAX_LENGTH ? <span id="configuration-description-count" role="alert" className="mt-1 block text-xs font-semibold text-[#b42318]">{detailsCopy.configurationDescriptionTooLong}</span> : null}</label><div className="md:col-span-2"><AssignmentEditor {...assignmentEditorProps} simplifyForEnterpriseUsers={configuration.type === "training" || assignmentMode === "enterprise"} layout="scope-dropdown" /></div></div>{validationIssues.length ? <div id="configuration-validation-summary" role="alert" className="mt-3 rounded-xl border border-[#f0c8c4] bg-[#fff8f7] p-3 text-sm text-[#b42318]"><p className="font-bold">Configuration has {validationIssues.length} issue{validationIssues.length === 1 ? "" : "s"}:</p><ul className="mt-1 list-inside list-disc">{validationIssues.map((issue) => <li key={`${issue.code}-${issue.fieldLocalId ?? issue.sectionLocalId ?? "configuration"}`}>{issue.message}</li>)}</ul><p className="mt-2">Save Draft remains available; correct these issues before publishing.</p></div> : null}{error ? <p role="alert" className="mt-3 whitespace-pre-line text-sm font-semibold text-[#b42318]">{error}</p> : null}{feedback ? <p role="status" className="mt-3 text-sm font-semibold text-[#1f6a58]">{feedback}</p> : null}</section>{workspace === "preview" ? <div className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-sm font-bold uppercase tracking-[.14em] text-[#52736a]">Preview</h3>{workspaceControls}</div><ConfigurationPreview configuration={configuration} registry={coreFieldRegistry} /></div> : readOnly ? <ConfigurationPreview configuration={configuration} registry={coreFieldRegistry} /> :   <FormStructureCanvas workspaceControls={workspaceControls} guide={<ConfigurationBuilderGuide formType={configuration.type === "training" ? "Training" : "Event"} />} isTraining={configuration.type === "training"} sections={configuration.sections} fields={configuration.fields} selected={selection} onSelect={selectInspectorItem} onDragEnd={onDragEnd} onAddSection={() => { const suffix = crypto.randomUUID(); const section = { localId: `section-${suffix}`, serverId: null, stableKey: `section_new_section_${suffix.slice(0, 8)}`, name: copy.addSection, description: "", enabled: true, position: configuration.sections.length + 1 }; applyOrder([...configuration.sections, section], configuration.fields); setInspectorMode("edit-section"); setSelectedSectionId(section.localId); setSelectedFieldId(null); setAddFieldSectionId(null); }} onAddField={(sectionId) => { setInspectorMode("add-field"); setSelectedSectionId(sectionId); setSelectedFieldId(null); setAddFieldSectionId(sectionId); setFieldSource("core"); setSearch(""); }} onSectionAction={sectionAction} />}<InspectorDrawer open={drawerOpen} title={inspectorTitle} onClose={() => setInspectorMode("none")}>{fieldPicker ?? inspector}</InspectorDrawer>{!readOnly ? <div className="flex flex-wrap gap-3" aria-busy={isSaving || isPublishing}>{isSaving || isPublishing ? <p role="status" className="w-full rounded-lg bg-[#eef6f2] px-3 py-2 text-sm font-semibold text-[#1f6a58]">{isSaving ? "Saving configuration. Please wait." : "Publishing configuration. Please wait."}</p> : null}<button type="button" disabled={isSaving || isPublishing} onClick={() => void persist("save")} className="rounded-full border border-[#cfe0d8] bg-white px-5 py-2.5 text-sm font-bold text-[#1f6a58] transition hover:border-[#1f6a58] hover:bg-[#eef6f2] hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#1f6a58] disabled:cursor-not-allowed disabled:opacity-60">{isSaving ? "Saving..." : copy.saveDraft}</button><button type="button" disabled={isSaving || isPublishing || !onPublish || validationIssues.length > 0} onClick={() => void persist("publish")} className="rounded-full bg-[#1f6a58] px-5 py-2.5 text-sm font-bold text-white transition hover:bg-[#195646] focus:outline-none focus:ring-2 focus:ring-[#1f6a58] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60" title={validationIssues.length ? "Correct configuration validation issues before publishing." : undefined}>{isPublishing ? "Publishing..." : copy.publish}</button></div> : null}</div>;
 }
 
 function FieldPicker({ sectionId, sectionName, source, onSourceChange, search, onSearchChange, coreFields, onAddCore, onToggleCore, onAddSelectedCore, selectedCoreCount, isEventConfiguration, onClearCoreSelection, customLabel, onCustomLabelChange, customRenderer, onCustomRendererChange, customRequired, onCustomRequiredChange, onAddCustom, onCancel }: { sectionId: string; sectionName: string; source: "core" | "custom"; onSourceChange: (source: "core" | "custom") => void; search: string; onSearchChange: (value: string) => void; coreFields: readonly { key: string; displayName: string; configuredSectionId?: string; configuredSectionName?: string; alreadyInCurrentSection: boolean; selected: boolean }[]; onAddCore: (key: string) => void; onToggleCore: (key: string) => void; onAddSelectedCore: () => void; selectedCoreCount: number; isEventConfiguration: boolean; onClearCoreSelection: () => void; customLabel: string; onCustomLabelChange: (value: string) => void; customRenderer: FormRenderer; onCustomRendererChange: (renderer: FormRenderer) => void; customRequired: boolean; onCustomRequiredChange: (required: boolean) => void; onAddCustom: () => void; onCancel: () => void }) {

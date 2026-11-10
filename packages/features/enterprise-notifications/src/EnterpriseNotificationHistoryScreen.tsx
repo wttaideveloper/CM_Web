@@ -9,6 +9,7 @@ import {
   createWorkflowNotificationClient,
   formatNotificationDateTime,
   formatRelativeBackendTimestamp,
+  formatEventDiscussionNotificationDetails,
   formatEventFeedbackNotificationDetails,
   formatReviewModerationNotificationTitle,
   formatReviewNotificationDetails,
@@ -185,6 +186,14 @@ export default function EnterpriseNotificationHistoryScreen({ audience, messages
                 body: notification.message,
                 data: notification.metadata,
               });
+              const discussion = formatEventDiscussionNotificationDetails({
+                notification_type: notification.notification_type,
+                category: notification.category,
+                metadata: notification.metadata,
+                data: notification.metadata,
+                title: notification.title,
+                body: notification.message,
+              });
               return <button
                 key={notification.id}
                 type="button"
@@ -203,9 +212,17 @@ export default function EnterpriseNotificationHistoryScreen({ audience, messages
                       {notification.created_at ? <span className="mt-0.5 block text-[11px] font-normal text-[#8ca69e]">{formatNotificationDateTime(notification.created_at)}</span> : null}
                     </span>
                   </span>
-                  <span className="mt-2 block text-xs font-semibold uppercase tracking-[0.12em] text-[#7f9d94]">
-                    {notification.category || notification.notification_type}
+                  <span className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#7f9d94]">
+                    <span>{notification.category || notification.notification_type}</span>
+                    {discussion.isAnnouncement ? (
+                      <span className="rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[10px] font-bold text-[#1f6a58]">📢 Announcement</span>
+                    ) : null}
+                    {discussion.isFlagged ? (
+                      <span className="rounded-full bg-[#fff4d6] px-2 py-0.5 text-[10px] font-bold text-[#805900]">⏳ Pending Review</span>
+                    ) : null}
                   </span>
+                  {discussion.eventName ? <span className="mt-1 block text-xs font-semibold text-[#1f6a58]">Event: {discussion.eventName}</span> : null}
+                  {discussion.senderName ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">From: {discussion.senderName}</span> : null}
                   {audience === "enterprise" && feedbackDetails?.attendeeName ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">Attendee: {feedbackDetails.attendeeName}</span> : null}
                   {audience === "enterprise" && feedbackDetails?.eventTitle ? <span className="mt-1 block text-xs font-semibold text-[#1f6a58]">Event: {feedbackDetails.eventTitle}</span> : null}
                   {audience === "enterprise" && feedbackDetails?.comment ? <span className="mt-2 block whitespace-pre-wrap rounded-lg bg-[#f4faf7] p-3 text-sm text-[#31594d]">{feedbackDetails.comment}</span> : null}

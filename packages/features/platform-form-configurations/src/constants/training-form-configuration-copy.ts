@@ -12,7 +12,7 @@ export const trainingFormConfigurationCopy = {
   viewTitle: "Training Form Configuration",
   type: "Type", name: "Name", descriptionLabel: "Description", scope: "Scope", status: "Status", active: "Active", version: "Version", assignedTenants: "Assigned Tenants", updatedAt: "Updated At", actions: "Actions",
   unsavedChangesWarning: "You have unsaved changes. Leave this form and lose those changes?",
-  training: "Training", global: "Global", selective: "Selective Tenants", draft: "Draft", published: "Published", retired: "Retired", activeLabel: "Active", inactive: "Inactive",
+  training: "Training", global: "Global", selective: "Selective Tenants", draft: "Draft", in_review: "In review", published: "Published", retired: "Retired", activeLabel: "Active", inactive: "Inactive",
   lifecycleNoticeTitle: "About Training form configuration lifecycle",
   lifecycleNoticeDescription: "Configurations already referenced by Trainings are retained for historical consistency and should be retired instead of deleted.",
   basics: "Configuration details", builder: "Form builder", assignment: "Assignment", preview: "Preview as Enterprise Admin",
