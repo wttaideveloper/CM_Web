@@ -2,7 +2,7 @@
 export type TrainingFormConfigurationScope = "global" | "selective";
 
 /** Lifecycle state returned for a Training form configuration or version. */
-export type TrainingFormConfigurationStatus = "draft" | "published" | "retired" | "active" | "inactive" | "archived";
+export type TrainingFormConfigurationStatus = "draft" | "in_review" | "published" | "retired" | "active" | "inactive" | "archived";
 
 /** Backend-defined renderer identifier. */
 export type TrainingFormRenderer = string;
@@ -34,6 +34,8 @@ export interface TrainingFormFrontendSettings {
   visibility?: TrainingFormVisibilityCondition | null;
   upload?: TrainingFormUploadSettings | null;
   input_mode?: "text" | "tags";
+  content_visibility?: "published" | "admin_only";
+  [key: string]: unknown;
 }
 
 /** Composite Training metadata accepted by the Training Form Configuration API. */
@@ -48,7 +50,7 @@ export interface TrainingFormCompositeConfig {
 export interface TrainingFormField { id: string; source: "core" | "custom"; core_key: string | null; stable_key: string | null; label: string; renderer: TrainingFormRenderer; value_type: TrainingFormValueType; required: boolean; is_enabled: boolean; position: number; placeholder: string | null; help_text: string | null; options: TrainingFormFieldOption[]; validation: TrainingFormFieldValidation; composite_config?: TrainingFormCompositeConfig | null; }
 
 /** A section and its ordered fields in a persisted configuration version. */
-export interface TrainingFormSection { id: string; stable_key: string; label: string; description: string | null; position: number; is_enabled: boolean; fields: TrainingFormField[]; }
+export interface TrainingFormSection { id: string; stable_key: string; label: string; description: string | null; position: number; is_enabled: boolean; content_visibility?: "published" | "admin_only"; fields: TrainingFormField[]; }
 
 /** An immutable version of a Training form configuration. */
 export interface TrainingFormConfigurationVersion { id: string; configuration_id: string; version: number; status: TrainingFormConfigurationStatus; sections: TrainingFormSection[]; created_by: string | null; created_at: string | null; published_at: string | null; }
@@ -75,7 +77,7 @@ export interface TrainingFormAssignment { id: string; configuration_id: string; 
 export interface TrainingFormAuditEntry { id: string; configuration_id: string; action: string; actor_id: string | null; created_at: string; metadata: Record<string, unknown> | null; }
 
 /** Writable section shape shared by create and update requests. */
-export interface TrainingFormSectionInput { id?: string | null; stable_key: string; label: string; description: string | null; position: number; is_enabled: boolean; fields: TrainingFormFieldInput[]; }
+export interface TrainingFormSectionInput { id?: string | null; stable_key: string; label: string; description: string | null; position: number; is_enabled: boolean; content_visibility?: "published" | "admin_only"; fields: TrainingFormFieldInput[]; }
 
 /** Writable field shape shared by create and update requests. */
 export interface TrainingFormFieldInput { id?: string | null; source: "core" | "custom"; core_key: string | null; stable_key: string | null; label: string; renderer: TrainingFormRenderer; value_type: TrainingFormValueType; required: boolean; is_enabled: boolean; position: number; placeholder: string | null; help_text: string | null; options: TrainingFormFieldOption[]; validation: TrainingFormFieldValidation; composite_config?: TrainingFormCompositeConfig | null; }

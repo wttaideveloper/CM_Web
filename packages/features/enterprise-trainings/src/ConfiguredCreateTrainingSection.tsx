@@ -143,6 +143,51 @@ function OptionalTrainingMediaField({
   );
 }
 
+function UiOnlyRichTextField({
+  label,
+  value,
+  required,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  required: string;
+  onChange: (value: string) => void;
+}) {
+  const [active, setActive] = useState<Record<"bold" | "italic" | "underline", boolean>>({ bold: false, italic: false, underline: false });
+  const applyFormat = (command: "bold" | "italic" | "underline") => {
+    document.execCommand(command);
+    setActive((current) => ({ ...current, [command]: !current[command] }));
+  };
+  return <div className="block text-sm font-semibold text-[#06201c]"><label>{label}{required}</label><div className="mt-1.5 flex flex-wrap gap-1 rounded-t-xl border border-b-0 border-[#d7e5df] bg-[#f4faf7] p-2">{(["bold", "italic", "underline"] as const).map((command) => <button key={command} type="button" aria-pressed={active[command]} onMouseDown={(event) => event.preventDefault()} onClick={() => applyFormat(command)} className={`rounded-lg px-3 py-1.5 text-sm font-bold text-[#1f6a58] ${active[command] ? "bg-[#d6eee1]" : "bg-white"}`}>{command === "bold" ? "B" : command === "italic" ? "I" : "U"}</button>)}</div><div contentEditable suppressContentEditableWarning dangerouslySetInnerHTML={{ __html: value }} onInput={(event) => onChange(event.currentTarget.innerHTML)} className="min-h-28 rounded-b-xl border border-[#d7e5df] bg-white px-3 py-2 text-sm font-normal outline-none focus:border-[#1f6a58]" /></div>;
+}
+
+function RepeatableMediaField({
+  label,
+  rowsValue,
+  accept,
+  onChange,
+}: {
+  label: string;
+  rowsValue: unknown;
+  accept: string;
+  onChange: (value: string[]) => void;
+}) {
+  const initialRows = Array.isArray(rowsValue) ? rowsValue.map((item) => String(item)) : rowsValue ? [String(rowsValue)] : [""];
+  const [rows, setRows] = useState<string[]>(initialRows);
+  const updateRow = (index: number, value: string) => {
+    const next = rows.map((row, rowIndex) => rowIndex === index ? value : row);
+    setRows(next);
+    onChange(next);
+  };
+  const addRow = () => {
+    const next = [...rows, ""];
+    setRows(next);
+    onChange(next);
+  };
+  return <div className="block text-sm font-semibold text-[#06201c]"><p>{label}</p><div className="mt-2 space-y-3">{rows.map((row, index) => <div key={`${label}-${index}`} className="rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-3"><label className="block text-xs font-semibold text-[#52736a]">{label} URL<input value={row} onChange={(event) => updateRow(index, event.target.value)} placeholder="https://…" className={inputClass} /></label><label className="mt-2 inline-flex cursor-pointer items-center rounded-full border border-[#cfe0d8] bg-white px-3 py-2 text-xs font-bold text-[#1f6a58]">Upload file<input type="file" accept={accept} onChange={(event) => { const file = event.target.files?.[0]; if (file) updateRow(index, file.name); }} className="sr-only" /></label>{row && !row.startsWith("http") ? <span className="ml-2 text-xs font-normal text-[#52736a]">{row}</span> : null}</div>)}</div><button type="button" onClick={addRow} className="mt-3 text-sm font-bold text-[#1f6a58]">+ Add {label.toLowerCase()}</button></div>;
+}
+
 function scalar(value: unknown): string {
   return typeof value === "string" || typeof value === "number" ? String(value) : "";
 }
@@ -291,6 +336,14 @@ export default function ConfiguredCreateTrainingSection({
       <div className="grid min-w-0 gap-4 md:grid-cols-[repeat(2,minmax(0,1fr))]">
         {fields.map((field) => (
           <div key={field.id} className="min-w-0 break-words" data-training-field={field.key}>
+            <div className="mb-2 flex flex-wrap items-center gap-2 text-xs" aria-label={`${field.label} content visibility`}>
+              <span className={`rounded-full px-2 py-1 font-semibold ${field.frontendSettings?.contentVisibility === "admin_only" ? "bg-[#f4eafd] text-[#6f4296]" : "bg-[#eef6f2] text-[#1f6a58]"}`}>
+                {field.frontendSettings?.contentVisibility === "admin_only" ? "Enterprise Admin Only" : "Published content"}
+              </span>
+              <span className="text-[#718d84]">
+                {field.frontendSettings?.contentVisibility === "admin_only" ? "Enterprise Admin can enter the value • Not included in published content." : "Included in published content."}
+              </span>
+            </div>
             <ConfiguredField
               field={field}
               tenantId={tenantId}
@@ -440,6 +493,14 @@ function ConfiguredField({
       setRangeAdjustment(adjusted.bound);
       setValue(adjusted.value);
     };
+    const coreOptions = field.configuredOptions?.length ? field.configuredOptions : (field.options ?? []).map((option, index) => ({ value: option, label: option, position: index + 1 }));
+    if (field.type === "rich_text") return <UiOnlyRichTextField label={field.label} required={required} value={value} onChange={setValue} />;
+    if (field.type === "radio") return <fieldset className="block text-sm font-semibold text-[#06201c]"><legend>{field.label}{required}</legend><div className="mt-2 space-y-2">{coreOptions.map((option) => <label key={option.value} className="flex items-center gap-2 text-sm font-normal"><input type="radio" name={`training-radio-${field.id}`} value={option.value} checked={value === option.value || value === option.label} onChange={() => setValue(option.value)} />{option.label}</label>)}</div>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</fieldset>;
+    if (field.type === "media_upload" || field.type === "file_upload" || field.type === "video") {
+      const mediaLabel = field.type === "video" ? "Video" : field.type === "file_upload" ? "Supporting document" : "Additional image";
+      const accept = field.type === "video" ? "video/*" : field.type === "file_upload" ? ".pdf,.doc,.docx,application/pdf" : "image/*";
+      return <RepeatableMediaField label={mediaLabel} rowsValue={rawCoreValue} accept={accept} onChange={(next) => setValue(next.join(", "))} />;
+    }
     if (coreField === "faqs") {
       return <TrainingFaqEditor label={field.label} value={values.faqs} onChange={(next) => update("faqs", next)} required={field.required} helpText={field.helpText} error={error} />;
     }
@@ -771,10 +832,17 @@ function ConfiguredField({
     ? field.configuredOptions
     : options.map((option, index) => ({ value: option, label: option, position: index + 1 }));
   const setValue = (next: string | boolean | number | string[] | null) => setCustomValues({ ...customValues, [key]: next });
+  if (field.type === "rich_text") return <UiOnlyRichTextField label={field.label} required={required} value={value} onChange={(next) => setValue(next)} />;
   if (isBoolean) return <div><label className="flex items-center gap-2 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={raw === true || raw === "true"} aria-invalid={Boolean(error) || undefined} onChange={(e) => setValue(e.target.checked)} />{field.label}{required}</label>{error ? <p role="alert" className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</div>;
+  if (field.type === "radio") return <fieldset className="block text-sm font-semibold text-[#06201c]"><legend>{field.label}{required}</legend><div className="mt-2 space-y-2">{configuredOptions.map((option) => <label key={option.value} className="flex items-center gap-2 text-sm font-normal"><input type="radio" name={`training-radio-${field.id}`} value={option.value} checked={value === option.value || raw === option.label} onChange={() => setValue(customSelectExpectsArray ? [option.value] : option.value)} />{option.label}</label>)}</div>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</fieldset>;
   if (field.type === "multiselect") {
     const selected = Array.isArray(raw) ? raw.map(String) : [];
     return <fieldset className="block text-sm font-semibold text-[#06201c]"><legend>{field.label}{required}</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{configuredOptions.map((option) => <label key={option.value} className="flex items-center gap-2 text-sm font-normal"><input type="checkbox" checked={selected.includes(option.value) || selected.includes(option.label)} onChange={(event) => setValue(event.target.checked ? [...selected.filter((item) => item !== option.label), option.value] : selected.filter((item) => item !== option.value && item !== option.label))} />{option.label}</label>)}</div>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</fieldset>;
+  }
+  if (field.type === "media_upload" || field.type === "file_upload" || field.type === "video") {
+    const mediaLabel = field.type === "video" ? "Video" : field.type === "file_upload" ? "Supporting document" : "Additional image";
+    const accept = field.type === "video" ? "video/*" : field.type === "file_upload" ? ".pdf,.doc,.docx,application/pdf" : "image/*";
+    return <RepeatableMediaField label={mediaLabel} rowsValue={raw} accept={accept} onChange={(next) => setValue(next)} />;
   }
   if (field.type === "url") {
     return <ConfiguredTrainingUrlField

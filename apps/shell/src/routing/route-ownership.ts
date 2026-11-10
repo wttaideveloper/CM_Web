@@ -38,6 +38,7 @@ export const ROUTE_PATHS = {
     trainings: "/trainings",
     programs: "/programs",
     integrations: "/integrations",
+    commerce: "/commerce",
   },
   enterprise: {
     dashboard: "/admin/dashboard",
@@ -91,6 +92,7 @@ const platformRouteRoots = [
   ROUTE_PATHS.platform.trainings,
   ROUTE_PATHS.platform.programs,
   ROUTE_PATHS.platform.integrations,
+  ROUTE_PATHS.platform.commerce,
 ] as const;
 
 const realtimeCompatibilityPaths = [

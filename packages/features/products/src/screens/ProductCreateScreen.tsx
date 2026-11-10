@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslation } from "react-i18next";
 
 import { createDynamicAttribute } from "@ihp/attributes";
 import { getEnterpriseLocations, getEnterprises } from "@ihp/enterprises";
@@ -9,6 +10,7 @@ import { formatCurrency } from "@ihp/shared";
 
 import { createProduct } from "../services/product.service";
 import { PRODUCT_CATEGORY_OPTIONS } from "../constants/product-category-options";
+import { buildProductTaxClassPayload, getProductTaxClassOptions } from "../product-tax-class";
 import type { ProductCreateScreenProps, ProductProviderOption } from "../types/product-screen-config.types";
 import { clearProductCreateDraft, getProductCreateDraft, productCreateDraftKey, saveProductCreateDraft } from "../product-create-draft-memory";
 
@@ -61,12 +63,6 @@ function optionalNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-const taxClassOptions = [
-  { value: "standard", label: "Standard (8%)" },
-  { value: "reduced", label: "Reduced (4%)" },
-  { value: "zero_rate", label: "Zero Rate (0%)" },
-];
-
 const stockManagementOptions = [
   { value: "track_inventory", label: "Track inventory" },
   { value: "no_tracking", label: "No tracking (unlimited)" },
@@ -118,6 +114,7 @@ export default function ProductCreateScreen({
   enterpriseLocationsLoader = getEnterpriseLocations,
   providerOptionsLoader,
 }: ProductCreateScreenProps = {}) {
+  const { t: taxClassT } = useTranslation("productTaxClass");
   const router = useRouter();
   const isEnterpriseAdmin = mode === "enterprise-admin";
   const draftKey = productCreateDraftKey(mode, ownerTenantId, ownerEnterpriseId);
@@ -143,6 +140,11 @@ export default function ProductCreateScreen({
   const [salePrice, setSalePrice] = useState(restoredDraft?.salePrice ?? "");
   const [costPrice, setCostPrice] = useState(restoredDraft?.costPrice ?? "");
   const [taxClass, setTaxClass] = useState(restoredDraft?.taxClass ?? "");
+  const taxClassOptions = getProductTaxClassOptions({
+    standard: taxClassT("standard"),
+    reduced: taxClassT("reduced"),
+    zeroRate: taxClassT("zeroRate"),
+  }, taxClass);
   const [stockQuantity, setStockQuantity] = useState(restoredDraft?.stockQuantity ?? "");
   const [lowStockAlertThreshold, setLowStockAlertThreshold] = useState(restoredDraft?.lowStockAlertThreshold ?? "");
   const [stockManagement, setStockManagement] = useState(restoredDraft?.stockManagement ?? "");
@@ -350,7 +352,7 @@ export default function ProductCreateScreen({
     const trimmedDimensions = optionalText(dimensions);
     const parsedSalePrice = optionalNumber(salePrice);
     const parsedCostPrice = optionalNumber(costPrice);
-    const trimmedTaxClass = optionalText(taxClass);
+    const taxClassPayload = buildProductTaxClassPayload(taxClass);
     const parsedStockQuantity = optionalNumber(stockQuantity);
     const parsedLowStockAlertThreshold = optionalNumber(lowStockAlertThreshold);
     const trimmedStockManagement = optionalText(stockManagement);
@@ -395,7 +397,7 @@ export default function ProductCreateScreen({
         ...(trimmedDimensions ? { dimensions: trimmedDimensions } : {}),
         ...(parsedSalePrice !== undefined ? { sale_price: parsedSalePrice } : {}),
         ...(parsedCostPrice !== undefined ? { cost_price: parsedCostPrice } : {}),
-        ...(trimmedTaxClass ? { tax_class: trimmedTaxClass } : {}),
+        ...taxClassPayload,
         ...(parsedStockQuantity !== undefined ? { stock_quantity: parsedStockQuantity } : {}),
         ...(parsedLowStockAlertThreshold !== undefined
           ? { low_stock_alert_threshold: parsedLowStockAlertThreshold }
@@ -699,23 +701,25 @@ export default function ProductCreateScreen({
                   className={inputClass()}
                 />
               </label>
-              <label className="block">
-                <FieldLabel>Tax Class</FieldLabel>
-                <select
-                  className={inputClass()}
-                  value={taxClass}
-                  onChange={(event) =>
-                    setTaxClass(resolveOptionValue(event.target.value, taxClassOptions))
-                  }
-                >
-                  <option value="">Select tax class</option>
-                  {taxClassOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div>
+                <label className="block">
+                  <FieldLabel>{taxClassT("fieldLabel")}</FieldLabel>
+                  <select
+                    className={inputClass()}
+                    value={taxClass}
+                    aria-describedby="create-product-tax-class-help"
+                    onChange={(event) => setTaxClass(event.target.value)}
+                  >
+                    <option value="">{taxClassT("placeholder")}</option>
+                    {taxClassOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <span id="create-product-tax-class-help" className="mt-1 block text-xs text-[#52736a]">{taxClassT("explanation")}</span>
+              </div>
               <label className="block">
                 <FieldLabel>Stock Quantity</FieldLabel>
                 <input

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { useCurrentEnterprise } from "@ihp/enterprise-runtime";
+import { getEnterpriseSidebarRoleLabel, resolveEnterprisePortalRole, useAuth } from "@ihp/auth";
 
 type EventsSummary = { total_events: number; by_status: Record<string, number>; by_category: Record<string, number>; by_delivery_mode: Record<string, number>; upcoming_events: number; past_events: number; total_registrations: number; total_attended: number; average_rating: number | null; };
 type TrainingsSummary = {
@@ -32,11 +33,13 @@ async function getTrainingsSummary(): Promise<TrainingsSummary> {
 
 export default function EnterpriseAnalyticsScreen() {
   const [activeTab, setActiveTab] = useState<"events" | "trainings">("events");
+  const { membership, roles } = useAuth();
+  const roleLabel = getEnterpriseSidebarRoleLabel(resolveEnterprisePortalRole(membership?.tenantRole ?? roles?.tenantRole ?? null));
   return (
     <div className="min-h-[calc(100vh-72px)] bg-[#f7fbf8] px-6 py-6">
       <div className="mx-auto w-full max-w-7xl space-y-5">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">ENTERPRISE OWNER · PINNACLE WELLNESS</p>
+          <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">{roleLabel} · PINNACLE WELLNESS</p>
           <h1 className="mt-1 text-2xl font-bold text-[#06201c]">My Analytics</h1>
           <p className="mt-1 text-sm text-[#5f7a71]">Track your enterprise performance and growth metrics</p>
         </div>

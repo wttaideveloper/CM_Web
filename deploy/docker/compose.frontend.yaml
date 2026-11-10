@@ -1,0 +1,138 @@
+# IHP frontends (Shell, Enterprise Admin, Platform Admin) on the Hostinger VPS.
+#
+# This file ONLY defines the three frontend containers. It never touches the existing backend stack:
+# it attaches to the already-running external network instead of creating or changing it.
+#
+#   docker compose --env-file deploy/docker/frontend.env -f deploy/docker/compose.frontend.yaml build
+#   docker compose --env-file deploy/docker/frontend.env -f deploy/docker/compose.frontend.yaml up -d
+#
+# Host ports are bound to 127.0.0.1 ONLY. Public exposure (Nginx, DNS, TLS) is intentionally out of
+# scope until the domain is confirmed. Copy frontend.env.example to frontend.env and fill it in on
+# the server; frontend.env is git-ignored and must never be committed.
+
+name: ihp-frontend
+
+x-frontend-common: &frontend-common
+  restart: unless-stopped
+  init: true                      # tini as PID 1: reaps zombies and forwards stop signals
+  stop_grace_period: 20s
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 512
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+  networks:
+    - classifieds-marketplace-internal
+  healthcheck:
+    test: ["CMD", "node", "/app/scripts/docker/healthcheck.mjs"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+    start_period: 40s
+
+x-build-args: &build-args
+  # Non-secret, build-time configuration (Next.js bakes rewrites and NEXT_PUBLIC_* into the image).
+  AUTH_API_BASE_URL: ${AUTH_API_BASE_URL:?AUTH_API_BASE_URL is required (Identity API)}
+  CHAT_API_BASE_URL: ${CHAT_API_BASE_URL:?CHAT_API_BASE_URL is required (Marketplace API, e.g. http://classifieds-marketplace-api:8000/api/v1)}
+  EVENTS_API_BASE_URL: ${EVENTS_API_BASE_URL:-}
+  WORKFLOW_API_BASE_URL: ${WORKFLOW_API_BASE_URL:-}
+  NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-}
+  NEXT_PUBLIC_CHAT_API_BASE_URL: ${NEXT_PUBLIC_CHAT_API_BASE_URL:-/api/chat}
+  NEXT_PUBLIC_CHAT_SOCKET_URL: ${NEXT_PUBLIC_CHAT_SOCKET_URL:-}
+  NEXT_PUBLIC_PROTECTED_MEDIA_ORIGIN: ${NEXT_PUBLIC_PROTECTED_MEDIA_ORIGIN:-}
+  NEXT_PUBLIC_SHELL_ORIGIN: ${NEXT_PUBLIC_SHELL_ORIGIN:-}
+  NEXT_PUBLIC_ENTERPRISE_ADMIN_ORIGIN: ${NEXT_PUBLIC_ENTERPRISE_ADMIN_ORIGIN:-}
+  NEXT_PUBLIC_PLATFORM_ADMIN_ORIGIN: ${NEXT_PUBLIC_PLATFORM_ADMIN_ORIGIN:-}
+  NEXT_PUBLIC_GROUP_CHAT_REALTIME_ENABLED: ${NEXT_PUBLIC_GROUP_CHAT_REALTIME_ENABLED:-}
+  NEXT_PUBLIC_ASSET_PREFIX: ${NEXT_PUBLIC_ASSET_PREFIX:-}
+
+services:
+  shell:
+    <<: *frontend-common
+    image: ihp-shell:${SHELL_IMAGE_TAG:-hostinger-staging}
+    container_name: ihp-frontend-shell
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        <<: *build-args
+        APP_NAME: shell
+        APP_PORT: "3000"
+    ports:
+      - "127.0.0.1:3100:3000"     # loopback only; never publish on 0.0.0.0
+    environment:
+      AUTH_API_BASE_URL: ${AUTH_API_BASE_URL}
+      CHAT_API_BASE_URL: ${CHAT_API_BASE_URL}
+      EVENTS_API_BASE_URL: ${EVENTS_API_BASE_URL:-}
+      CHAT_PROXY_TARGET: ${CHAT_PROXY_TARGET:?CHAT_PROXY_TARGET is required (internal Marketplace API origin)}
+      SUPER_ADMIN_AUTH_API_BASE_URL: ${SUPER_ADMIN_AUTH_API_BASE_URL:?SUPER_ADMIN_AUTH_API_BASE_URL is required (Super Admin gateway)}
+      SUPER_ADMIN_SESSION_COOKIE_DOMAIN: ${SUPER_ADMIN_SESSION_COOKIE_DOMAIN:-}
+      MARKETPLACE_DEMO_AUTH_ENABLED: ${MARKETPLACE_DEMO_AUTH_ENABLED:-false}
+      MARKETPLACE_API_BASE_URL: ${MARKETPLACE_API_BASE_URL:-}
+      CSP_REPORT_ONLY: ${CSP_REPORT_ONLY:-false}
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1g }
+        reservations: { memory: 256m }
+
+  enterprise-admin:
+    <<: *frontend-common
+    image: ihp-enterprise-admin:${ENTERPRISE_ADMIN_IMAGE_TAG:-hostinger-staging}
+    container_name: ihp-frontend-enterprise-admin
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        <<: *build-args
+        APP_NAME: enterprise-admin
+        APP_PORT: "3001"
+    ports:
+      - "127.0.0.1:3101:3001"
+    environment:
+      AUTH_API_BASE_URL: ${AUTH_API_BASE_URL}
+      CHAT_API_BASE_URL: ${CHAT_API_BASE_URL}
+      EVENTS_API_BASE_URL: ${EVENTS_API_BASE_URL:-}
+      WORKFLOW_API_BASE_URL: ${WORKFLOW_API_BASE_URL:-}
+      CHAT_PROXY_TARGET: ${CHAT_PROXY_TARGET:?CHAT_PROXY_TARGET is required (internal Marketplace API origin)}
+      CHAT_TOKEN_UPSTREAM_URL: ${CHAT_TOKEN_UPSTREAM_URL:-}
+      CSP_REPORT_ONLY: ${CSP_REPORT_ONLY:-false}
+    deploy:
+      resources:
+        # Larger limits: uploads of up to 310 MB are buffered by the media/chat proxies.
+        limits: { cpus: "1.5", memory: 2g }
+        reservations: { memory: 384m }
+
+  platform-admin:
+    <<: *frontend-common
+    image: ihp-platform-admin:${PLATFORM_ADMIN_IMAGE_TAG:-hostinger-staging}
+    container_name: ihp-frontend-platform-admin
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        <<: *build-args
+        APP_NAME: platform-admin
+        APP_PORT: "3002"
+    ports:
+      - "127.0.0.1:3102:3002"
+    environment:
+      AUTH_API_BASE_URL: ${AUTH_API_BASE_URL}
+      CHAT_API_BASE_URL: ${CHAT_API_BASE_URL}
+      WORKFLOW_API_BASE_URL: ${WORKFLOW_API_BASE_URL:-}
+      SUPER_ADMIN_AUTH_API_BASE_URL: ${SUPER_ADMIN_AUTH_API_BASE_URL:?SUPER_ADMIN_AUTH_API_BASE_URL is required (Super Admin gateway)}
+      SUPER_ADMIN_SESSION_COOKIE_DOMAIN: ${SUPER_ADMIN_SESSION_COOKIE_DOMAIN:-}
+      SUPER_ADMIN_UPSTREAM_TIMEOUT_MS: ${SUPER_ADMIN_UPSTREAM_TIMEOUT_MS:-15000}
+      PLATFORM_TRUSTED_UPSTREAM_ORIGINS: ${PLATFORM_TRUSTED_UPSTREAM_ORIGINS:?PLATFORM_TRUSTED_UPSTREAM_ORIGINS is required (origins that may receive the Super Admin bearer token)}
+      CSP_REPORT_ONLY: ${CSP_REPORT_ONLY:-false}
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1g }
+        reservations: { memory: 256m }
+
+networks:
+  classifieds-marketplace-internal:
+    external: true               # created by the existing backend stack; this file must not (re)create it

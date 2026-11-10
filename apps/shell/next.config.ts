@@ -1,17 +1,19 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 
-const authApiBaseUrl = process.env.AUTH_API_BASE_URL;
-const resolvedAuthApiBaseUrl = authApiBaseUrl ?? "https://admin.apis.invigor8.app";
-const chatApiBaseUrl = process.env.CHAT_API_BASE_URL ?? "https://chat.wisdomtooth.tech/api/v1";
-const eventsApiBaseUrl = process.env.EVENTS_API_BASE_URL ?? chatApiBaseUrl;
+import { STATIC_SECURITY_HEADERS } from "../../packages/shared/src/security-headers.ts";
+import { resolveUpstreamUrls, toApiV1Base } from "../../packages/shared/src/upstream-config.ts";
 
-if (process.env.NODE_ENV === "development") {
-  console.log("[AUTH PROXY DEBUG] AUTH_API_BASE_URL:", authApiBaseUrl ?? "(unset; using default)");
-  console.log("[AUTH PROXY DEBUG] /api/v1/auth/:path* ->", `${resolvedAuthApiBaseUrl}/api/v1/auth/:path*`);
-  console.log("[AUTH PROXY DEBUG] /api/v1/tenant/:path* ->", `${resolvedAuthApiBaseUrl}/api/v1/tenant/:path*`);
-}
+// `__dirname` exists when the config is loaded as CommonJS; fall back to the working
+// directory (the app folder when run through its npm workspace script) for ESM loaders.
+const appDirectory = typeof __dirname === "string" ? __dirname : process.cwd();
 
 const nextConfig: NextConfig = {
+  // Self-contained server output for the Docker image; the tracing root is the
+  // monorepo root so workspace packages under /packages are traced too.
+  output: "standalone",
+  outputFileTracingRoot: path.join(appDirectory, "../.."),
+  poweredByHeader: false,
   experimental: {
     cpus: 1,
   },
@@ -44,22 +46,33 @@ const nextConfig: NextConfig = {
     "@ihp/shared",
     "@ihp/ui",
   ],
+  async headers() {
+    return [{ source: "/:path*", headers: [...STATIC_SECURITY_HEADERS] }];
+  },
   async rewrites() {
-    const chatBaseHttps = chatApiBaseUrl.replace(/^http:/, "https:");
-    const chatApiV1Base = /\/api\/v1\/?$/.test(chatBaseHttps)
-      ? chatBaseHttps.replace(/\/$/, "")
-      : `${chatBaseHttps.replace(/\/$/, "")}/api/v1`;
-    const eventsBaseHttps = eventsApiBaseUrl.replace(/^http:/, "https:");
-    const eventsApiV1Base = /\/api\/v1\/?$/.test(eventsBaseHttps) ? eventsBaseHttps.replace(/\/$/, "") : `${eventsBaseHttps.replace(/\/$/, "")}/api/v1`;
+    // Rewrites are evaluated at build time, so these variables must be present when
+    // `next build` runs. There is deliberately no default endpoint (handbook §14).
+    const upstreams = resolveUpstreamUrls(process.env, {
+      AUTH_API_BASE_URL: { required: true, purpose: "Identity API serving /api/v1/auth and /api/v1/tenant" },
+      CHAT_API_BASE_URL: { required: true, purpose: "Marketplace API serving trainings, programs, courses and notifications" },
+      EVENTS_API_BASE_URL: { required: false, purpose: "Events API; CHAT_API_BASE_URL is used when this is unset" },
+    });
+
+    const authApiBaseUrl = upstreams.AUTH_API_BASE_URL;
+    // The scheme is used exactly as configured: an internal http:// upstream must
+    // stay http://, so no http->https conversion is applied here.
+    const chatApiV1Base = toApiV1Base(upstreams.CHAT_API_BASE_URL);
+    const eventsApiV1Base = toApiV1Base(upstreams.EVENTS_API_BASE_URL ?? upstreams.CHAT_API_BASE_URL);
+
     return {
       fallback: [
         {
           source: "/api/v1/auth/:path*",
-          destination: `${resolvedAuthApiBaseUrl}/api/v1/auth/:path*`,
+          destination: `${authApiBaseUrl}/api/v1/auth/:path*`,
         },
         {
           source: "/api/v1/tenant/:path*",
-          destination: `${resolvedAuthApiBaseUrl}/api/v1/tenant/:path*`,
+          destination: `${authApiBaseUrl}/api/v1/tenant/:path*`,
         },
         {
           source: "/api/v1/users/me/notifications",
@@ -75,75 +88,75 @@ const nextConfig: NextConfig = {
         },
         {
           source: "/api/v1/trainings/form-configuration/:path*",
-          destination: `${chatBaseHttps}/trainings/form-configuration/:path*`,
+          destination: `${chatApiV1Base}/trainings/form-configuration/:path*`,
         },
         {
           source: "/api/v1/admin/training-form-configurations/:path*",
-          destination: `${chatBaseHttps}/admin/training-form-configurations/:path*`,
+          destination: `${chatApiV1Base}/admin/training-form-configurations/:path*`,
         },
         {
           source: "/api/v1/programs/form-configuration/:path*",
-          destination: `${chatBaseHttps}/programs/form-configuration/:path*`,
+          destination: `${chatApiV1Base}/programs/form-configuration/:path*`,
         },
         {
           source: "/api/v1/admin/program-form-configurations/:path*",
-          destination: `${chatBaseHttps}/admin/program-form-configurations/:path*`,
+          destination: `${chatApiV1Base}/admin/program-form-configurations/:path*`,
         },
         {
           source: "/api/v1/courses/form-configuration/:path*",
-          destination: `${chatBaseHttps}/courses/form-configuration/:path*`,
+          destination: `${chatApiV1Base}/courses/form-configuration/:path*`,
         },
         {
           source: "/api/v1/admin/course-form-configurations/:path*",
-          destination: `${chatBaseHttps}/admin/course-form-configurations/:path*`,
+          destination: `${chatApiV1Base}/admin/course-form-configurations/:path*`,
         },
         {
           source: "/api/v1/trainings",
-          destination: `${chatBaseHttps}/trainings/`,
+          destination: `${chatApiV1Base}/trainings/`,
         },
         {
           source: "/api/v1/trainings/:path*",
-          destination: `${chatBaseHttps}/trainings/:path*`,
+          destination: `${chatApiV1Base}/trainings/:path*`,
         },
         {
           source: "/api/v1/search/trainings",
-          destination: `${chatBaseHttps}/search/trainings`,
+          destination: `${chatApiV1Base}/search/trainings`,
         },
         {
           source: "/api/v1/admin/trainings/:path*",
-          destination: `${chatBaseHttps}/admin/trainings/:path*`,
+          destination: `${chatApiV1Base}/admin/trainings/:path*`,
         },
         {
           source: "/api/v1/programs",
-          destination: `${chatApiBaseUrl}/programs/`,
+          destination: `${chatApiV1Base}/programs/`,
         },
         {
           source: "/api/v1/programs/:path*",
-          destination: `${chatApiBaseUrl}/programs/:path*`,
+          destination: `${chatApiV1Base}/programs/:path*`,
         },
         {
           source: "/api/v1/search/programs",
-          destination: `${chatApiBaseUrl}/search/programs`,
+          destination: `${chatApiV1Base}/search/programs`,
         },
         {
           source: "/api/v1/admin/programs/:path*",
-          destination: `${chatApiBaseUrl}/admin/programs/:path*`,
+          destination: `${chatApiV1Base}/admin/programs/:path*`,
         },
         {
           source: "/api/v1/courses",
-          destination: `${chatBaseHttps}/courses/`,
+          destination: `${chatApiV1Base}/courses/`,
         },
         {
           source: "/api/v1/courses/:path*",
-          destination: `${chatBaseHttps}/courses/:path*`,
+          destination: `${chatApiV1Base}/courses/:path*`,
         },
         {
           source: "/api/v1/search/courses",
-          destination: `${chatBaseHttps}/search/courses`,
+          destination: `${chatApiV1Base}/search/courses`,
         },
         {
           source: "/api/v1/admin/courses/:path*",
-          destination: `${chatBaseHttps}/admin/courses/:path*`,
+          destination: `${chatApiV1Base}/admin/courses/:path*`,
         },
         // Preserve the documented collection slash before proxying multipart Event media requests.
         {

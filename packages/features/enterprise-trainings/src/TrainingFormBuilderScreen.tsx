@@ -157,7 +157,7 @@ function TrainingFormBuilderContent() {
                 <button type="button" onClick={async () => { await deactivateTrainingFormConfig(selectedId); }} className="h-9 rounded-full border border-[#d7e5df] px-4 text-xs font-bold text-[#52736a]">Deactivate</button>
               </div>
             ) : null}
-            <p className="text-[11px] text-[#7f9d94]">Enterprise Create Training reads <code>GET /trainings/form-configuration/active</code> (selective → global → static fallback) and maps field <code>key</code>s to <code>TrainingCreate</code> + <code>custom_values</code>. Backend needs to add trainings form-config routes (mirrors events). Until then this builder saves to admin routes and falls back gracefully on 404.</p>
+            <p className="text-[11px] text-[#7f9d94]">Enterprise Create Training reads the common active configuration first, then falls back to the legacy resolver when needed. Field <code>key</code>s map to <code>TrainingCreate</code> and <code>custom_values</code>; the builder preserves the backend field type, visibility, validation, and lifecycle metadata.</p>
           </main>
         )}
       </div>

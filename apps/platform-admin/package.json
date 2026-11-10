@@ -3,13 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 3002",
+    "dev": "next dev --webpack --hostname 127.0.0.1 --port 3002",
     "build": "next build",
     "start": "next start --port 3002",
     "lint": "eslint ."
   },
   "dependencies": {
     "@ihp/auth": "0.1.0",
+    "@ihp/commerce": "0.1.0",
     "@ihp/enterprises": "0.1.0",
     "@ihp/onboarding-forms": "0.1.0",
     "@ihp/platform-configuration": "0.1.0",

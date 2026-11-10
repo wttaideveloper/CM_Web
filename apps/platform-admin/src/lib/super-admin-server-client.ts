@@ -4,11 +4,39 @@ import { createHash } from "node:crypto";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { normalizeUpstreamBaseUrl } from "@ihp/shared/upstream-config";
+
+import { resolveMarketplaceUrl } from "./marketplace-url";
+
 const SESSION_COOKIE_NAME = "ihp_super_admin_refresh";
+const ACCESS_TOKEN_COOKIE_NAME = "access_token";
 const REMEMBER_ME_COOKIE_NAME = "ihp_super_admin_remember_me";
 const REMEMBER_ME_MAX_AGE = 60 * 60 * 24 * 30;
-const SUPER_ADMIN_AUTH_API_BASE_URL = process.env.SUPER_ADMIN_AUTH_API_BASE_URL?.replace(/\/+$/, "");
-const CHAT_API_BASE_URL = process.env.CHAT_API_BASE_URL?.replace(/\/+$/, "");
+// An unset or malformed value leaves the gateway "not configured" (503) instead of guessing a host.
+const SUPER_ADMIN_AUTH_API_BASE_URL = normalizeUpstreamBaseUrl(process.env.SUPER_ADMIN_AUTH_API_BASE_URL) ?? undefined;
+
+// Handbook §4: every outbound call has an explicit timeout shorter than the caller's budget.
+const JSON_UPSTREAM_TIMEOUT_MS = boundedTimeoutMs(process.env.SUPER_ADMIN_UPSTREAM_TIMEOUT_MS, 15_000);
+const MEDIA_UPSTREAM_TIMEOUT_MS = boundedTimeoutMs(process.env.SUPER_ADMIN_MEDIA_TIMEOUT_MS, 30_000);
+
+function boundedTimeoutMs(configured: string | undefined, fallbackMs: number): number {
+  const value = Number(configured);
+  return Number.isInteger(value) && value >= 1_000 && value <= 120_000 ? value : fallbackMs;
+}
+
+/**
+ * Starts a fetch that is aborted if response *headers* have not arrived in time. The timer
+ * stops once headers arrive, so a large media body that is still streaming is not truncated.
+ */
+async function fetchUntilHeaders(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 type SuperAdminAccessToken = { accessToken: string; rotatedRefreshToken?: string; rememberMe: boolean };
 
@@ -61,6 +89,7 @@ function sessionCookieOptions(rememberMe = false) {
 /** Clears the Platform bridge credential using the same scope used when it was issued. */
 export function clearSuperAdminSessionCookie(response: NextResponse): NextResponse {
   response.cookies.set(SESSION_COOKIE_NAME, "", { ...sessionCookieOptions(), maxAge: 0 });
+  response.cookies.set(ACCESS_TOKEN_COOKIE_NAME, "", { ...sessionCookieOptions(), maxAge: 0 });
   response.cookies.set(REMEMBER_ME_COOKIE_NAME, "", { ...sessionCookieOptions(), maxAge: 0 });
   return response;
 }
@@ -104,6 +133,7 @@ async function refreshSuperAdminAccessToken(refreshToken: string, rememberMe: bo
       },
       body: JSON.stringify({ refreshToken, refresh_token: refreshToken }),
       cache: "no-store",
+      signal: AbortSignal.timeout(JSON_UPSTREAM_TIMEOUT_MS),
     });
   } catch {
     throw new SuperAdminServerError(502, "Unable to load tenant data.");
@@ -162,12 +192,17 @@ export async function warmSuperAdminSession(refreshToken: string, rememberMe: bo
 async function getSuperAdminAccessToken(): Promise<SuperAdminAccessToken> {
   if (!SUPER_ADMIN_AUTH_API_BASE_URL) throw new SuperAdminServerError(503, "Super Admin authentication is not configured.");
   const requestCookies = await cookies();
+  const accessToken = requestCookies.get(ACCESS_TOKEN_COOKIE_NAME)?.value;
+  const rememberMe = requestCookies.get(REMEMBER_ME_COOKIE_NAME)?.value === "true";
+  if (accessToken) {
+    return { accessToken, rememberMe };
+  }
+
   const refreshToken =
     requestCookies.get(SESSION_COOKIE_NAME)?.value ||
     requestCookies.get("refresh_token")?.value ||
     requestCookies.get("ihp_refresh_token")?.value;
   if (!refreshToken) throw new SuperAdminServerError(401, "Super Admin authentication is required.");
-  const rememberMe = requestCookies.get(REMEMBER_ME_COOKIE_NAME)?.value === "true";
   const refreshKey = createHash("sha256").update(refreshToken).digest("hex");
 
   // 1. Check in-memory cache for a valid active access token
@@ -228,6 +263,7 @@ export async function requestSuperAdminJson(
       headers: { ...init.headers, Authorization: `Bearer ${accessToken}` },
       body: init.body,
       cache: "no-store",
+      signal: AbortSignal.timeout(JSON_UPSTREAM_TIMEOUT_MS),
     });
   } catch {
     throw new SuperAdminServerError(502, "Unable to load tenant data.");
@@ -249,16 +285,17 @@ export async function getSuperAdminWorkflowJson(
   path: string,
   init: Pick<RequestInit, "body" | "headers" | "method"> = {},
 ): Promise<SuperAdminServerResult & { status: number }> {
-  if (!CHAT_API_BASE_URL) throw new SuperAdminServerError(503, "Chat API is not configured.");
-  const chatApiV1Base = /\/api\/v1\/?$/.test(CHAT_API_BASE_URL) ? CHAT_API_BASE_URL : `${CHAT_API_BASE_URL}/api/v1`;
-  const result = await requestSuperAdminUpstreamJson(`${chatApiV1Base}${path}`, init);
+  // `path` may carry a query string; split it so the trusted-origin helper owns the final URL.
+  const queryStart = path.indexOf("?");
+  const apiPath = queryStart === -1 ? path : path.slice(0, queryStart);
+  const search = queryStart === -1 ? "" : path.slice(queryStart);
+  const upstreamUrl = resolveMarketplaceUrl(`/api/v1${apiPath}`, search);
+  if (!upstreamUrl) throw new SuperAdminServerError(503, "Chat API is not configured.");
+  const result = await requestSuperAdminUpstreamJson(upstreamUrl.toString(), init);
   if (result.status < 200 || result.status >= 300) {
-    const upstreamDetail = safeUpstreamDetail(result.body);
-    console.error("Platform workflow notification upstream failure", {
-      url: `${chatApiV1Base}${path}`,
-      status: result.status,
-      detail: upstreamDetail,
-    });
+    // Log the route and status only: the full URL carries query parameters and the
+    // upstream detail text can echo user input, neither of which belongs in logs.
+    console.error("Platform workflow notification upstream failure", { path: apiPath, status: result.status });
   }
   return result;
 }
@@ -302,6 +339,7 @@ export async function requestSuperAdminUpstreamJson(
       headers: { ...init.headers, Authorization: `Bearer ${accessToken}` },
       body: init.body,
       cache: "no-store",
+      signal: AbortSignal.timeout(JSON_UPSTREAM_TIMEOUT_MS),
     });
   } catch {
     throw new SuperAdminServerError(502, "Unable to load enterprise proof data.");
@@ -323,12 +361,12 @@ export async function requestSuperAdminUpstreamResponse(
 ): Promise<{ response: Response; rotatedRefreshToken?: string; rememberMe: boolean }> {
   const { accessToken, rotatedRefreshToken, rememberMe } = await getSuperAdminAccessToken();
   try {
-    const response = await fetch(upstreamUrl, {
+    const response = await fetchUntilHeaders(upstreamUrl, {
       method: init.method,
       headers: { ...init.headers, Authorization: `Bearer ${accessToken}` },
       cache: "no-store",
       redirect: "manual",
-    });
+    }, MEDIA_UPSTREAM_TIMEOUT_MS);
     return { response, rememberMe, ...(rotatedRefreshToken ? { rotatedRefreshToken } : {}) };
   } catch {
     throw new SuperAdminServerError(502, "Unable to load event media.");
@@ -385,6 +423,7 @@ export async function revokeSuperAdminSession(): Promise<{ revocationConfirmed: 
       },
       body: JSON.stringify({ refreshToken, refresh_token: refreshToken }),
       cache: "no-store",
+      signal: AbortSignal.timeout(JSON_UPSTREAM_TIMEOUT_MS),
     });
     const revocationConfirmed = response.ok || response.status === 400 || response.status === 401;
     return revocationConfirmed ? { revocationConfirmed } : { revocationConfirmed, upstreamStatus: response.status };

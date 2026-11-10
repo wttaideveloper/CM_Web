@@ -1,10 +1,20 @@
 import { strict as assert } from "node:assert";
 import test from "node:test";
 
-import { formatEventFeedbackNotificationDetails, formatTrainingNotificationDetails, handleNotificationClick, resolveNotificationTarget } from "./event-notification-routing.ts";
+import {
+  formatEventDiscussionNotificationDetails,
+  formatEventFeedbackNotificationDetails,
+  formatTrainingNotificationDetails,
+  handleNotificationClick,
+  resolveNotificationTarget,
+} from "./event-notification-routing.ts";
+import { formatEventDiscussionNotificationDetails as formatPublicEventDiscussionNotificationDetails } from "./index.ts";
 
 const resubmittedEventId = "6784cc71-f2c7-4712-a732-29bcffdb849f";
 
+test("public realtime package exports event discussion notification details", () => {
+  assert.equal(formatPublicEventDiscussionNotificationDetails, formatEventDiscussionNotificationDetails);
+});
 test("Event notification targets use the Event metadata ID", () => {
   assert.equal(
     resolveNotificationTarget({ notification_type: "event_submitted", data: { event_id: "event-1" } }, "platform"),
@@ -267,5 +277,83 @@ test("training application notifications expose learner, training, and pending s
     senderName: null,
     learnerName: "Taylor Learner",
     enrollmentStatus: "pending_approval",
+  });
+});
+
+test("Event discussion reply and announcement notifications route to exact discussion thread in enterprise", () => {
+  assert.equal(
+    resolveNotificationTarget({
+      notification_type: "event_discussion_reply_created",
+      data: {
+        event_id: "evt-101",
+        message_id: "msg-001",
+        reply_id: "reply-501",
+      },
+    }, "enterprise"),
+    "/admin/events/evt-101?tab=discussion&message_id=msg-001&reply_id=reply-501",
+  );
+  assert.equal(
+    resolveNotificationTarget({
+      notification_type: "event_discussion_announcement",
+      data: {
+        event_id: "evt-101",
+        message_id: "msg-001",
+      },
+    }, "enterprise"),
+    "/admin/events/evt-101?tab=discussion&message_id=msg-001",
+  );
+});
+
+test("Event discussion flagged review notifications open the flagged moderation subview", () => {
+  assert.equal(
+    resolveNotificationTarget({
+      notification_type: "event_discussion_flagged",
+      data: {
+        event_id: "evt-101",
+        message_id: "msg-002",
+      },
+    }, "enterprise"),
+    "/admin/events/evt-101?tab=discussion&subview=flagged&message_id=msg-002",
+  );
+  assert.equal(
+    resolveNotificationTarget({
+      notification_type: "event_discussion_pending_nudge",
+      data: {
+        event_id: "evt-101",
+      },
+    }, "enterprise"),
+    "/admin/events/evt-101?tab=discussion&subview=flagged",
+  );
+});
+
+test("Super Admin platform notifications open event discussion oversight view", () => {
+  assert.equal(
+    resolveNotificationTarget({
+      notification_type: "event_discussion_new",
+      data: {
+        event_id: "evt-101",
+        message_id: "msg-001",
+      },
+    }, "platform"),
+    "/events?view=discussions&item_id=evt-101&message_id=msg-001",
+  );
+});
+
+test("formatEventDiscussionNotificationDetails extracts metadata correctly", () => {
+  const details = formatEventDiscussionNotificationDetails({
+    notification_type: "event_discussion_flagged",
+    data: {
+      event_title: "Healthcare Innovation Summit",
+      sender_name: "Kavitha Raman",
+      message: "Is there hands-on labs?",
+    },
+  });
+  assert.deepEqual(details, {
+    eventName: "Healthcare Innovation Summit",
+    senderName: "Kavitha Raman",
+    messageContent: "Is there hands-on labs?",
+    isAnnouncement: false,
+    isFlagged: true,
+    isPendingReview: false,
   });
 });

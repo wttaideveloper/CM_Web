@@ -3,9 +3,11 @@
 import { validateFieldConfiguration } from "./blog-form-validator";
 import { BlogConfirmationModal } from "./BlogConfirmationModal";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import type { DragEndEvent } from "@dnd-kit/core";
+import { FieldEditor, FormStructureCanvas, type BuilderSelection, type ConfiguredField, type CoreFieldRegistryItem, type FormSection } from "@ihp/platform-form-configurations";
 import { BlogFormActivationDialog, BlogFormDetailsDialog } from "./BlogFormDialogs";
 import {
   createAdminBlogFormDraft,
@@ -150,6 +152,26 @@ function renumberSections(sectionItems: FormSectionDef[]): FormSectionDef[] {
     ...section,
     name: `${index + 1}. ${section.name.replace(/^\d+\.\s*/, "").trim() || "Untitled Section"}`,
   }));
+}
+
+function blogRendererLabel(type: SchemaFieldItem["type"]): string {
+  const labels: Partial<Record<SchemaFieldItem["type"], string>> = {
+    text: "Short Text",
+    textarea: "Long Text",
+    rich_text: "Rich Text Field",
+    select: "Dropdown",
+    radio: "Radio Button",
+    checkbox: "Checkbox / Multi-select",
+    multi_select: "Checkbox / Multi-select",
+    number: "Number",
+    date: "Date",
+    time: "Time",
+    url: "Reference URL",
+    media_upload: "Additional Images",
+    file_upload: "Supporting Document",
+    video: "Videos",
+  };
+  return labels[type] ?? type;
 }
 
 // Note: validateFieldConfiguration is imported from ./blog-form-validator
@@ -491,10 +513,16 @@ export default function PlatformBlogFormBuilderScreen() {
   const [sections, setSections] = useState<FormSectionDef[]>(INITIAL_SECTIONS);
   const [fields, setFields] = useState<SchemaFieldItem[]>(INITIAL_FIELDS);
   const [selectedSectionId, setSelectedSectionId] = useState<string>("sec-core-1");
-  const [selectedFieldId, setSelectedFieldId] = useState<string | null>("f-title-01");
+  const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
+  const [isInspectorOpen, setIsInspectorOpen] = useState(false);
+  const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
+  const [draggedSectionId, setDraggedSectionId] = useState<string | null>(null);
+  const [fieldDrafts, setFieldDrafts] = useState<Record<string, SchemaFieldItem>>({});
+  const [sectionDrafts, setSectionDrafts] = useState<Record<string, FormSectionDef>>({});
   const [fieldToDelete, setFieldToDelete] = useState<SchemaFieldItem | null>(null);
   const [confirmDeleteSection, setConfirmDeleteSection] = useState<FormSectionDef | null>(null);
   const [schemaVersion, setSchemaVersion] = useState("v1");
+  const [formRevision, setFormRevision] = useState<number | null>(null);
   const [showSavedDraftModal, setShowSavedDraftModal] = useState(false);
   const [showFormDetailsModal, setShowFormDetailsModal] = useState(false);
   const [showReviewSubmitModal, setShowReviewSubmitModal] = useState(false);
@@ -530,6 +558,7 @@ export default function PlatformBlogFormBuilderScreen() {
       setFormMode("configurable");
       setFormStatus(form.status);
       setSchemaVersion(`v${Math.max(1, form.version)}`);
+      setFormRevision(typeof form.revision === "number" ? form.revision : null);
       const sourceCoreSection = form.sections.find((section: BlogFormSection) =>
         section.fields.some((field) => isProtectedSystemFieldKey(field.key)),
       );
@@ -595,7 +624,8 @@ export default function PlatformBlogFormBuilderScreen() {
       setSections(nextSections);
       setFields(resolvedFields);
       setSelectedSectionId(coreSectionId);
-      setSelectedFieldId(resolvedFields.find((f) => f.sectionId === coreSectionId)?.id ?? resolvedFields[0]?.id ?? "f-title-01");
+      setSelectedFieldId(null);
+      setIsInspectorOpen(false);
       setSavedSnapshot(JSON.stringify({ formTitle: form.name, formMode: form.mode, sections: nextSections, fields: resolvedFields }));
       setIsFormLoaded(true);
     }).catch(() => {
@@ -642,9 +672,10 @@ export default function PlatformBlogFormBuilderScreen() {
   const selectedField = useMemo(
     () => {
       if (!selectedFieldId) return null;
-      return fields.find((item) => item.id === selectedFieldId) ?? null;
+      const field = fields.find((item) => item.id === selectedFieldId);
+      return field ? fieldDrafts[field.id] ?? field : null;
     },
-    [fields, selectedFieldId]
+    [fields, fieldDrafts, selectedFieldId]
   );
 
   const displayedSections = sections;
@@ -662,9 +693,110 @@ export default function PlatformBlogFormBuilderScreen() {
   }, [fields, selectedField]);
 
   const selectedSection = useMemo(
-    () => displayedSections.find((section) => section.id === selectedSectionId) ?? displayedSections[0] ?? null,
-    [displayedSections, selectedSectionId]
+    () => {
+      const section = displayedSections.find((item) => item.id === selectedSectionId) ?? displayedSections[0] ?? null;
+      return section ? sectionDrafts[section.id] ?? section : null;
+    },
+    [displayedSections, sectionDrafts, selectedSectionId]
   );
+
+  const builderSections = useMemo<readonly FormSection[]>(
+    () => displayedSections.map((section, index) => ({
+      localId: section.id,
+      serverId: null,
+      stableKey: section.id,
+      name: section.name.replace(/^\d+\.\s*/, ""),
+      description: section.description,
+      enabled: section.isActive,
+      position: index + 1,
+      contentVisibility: section.visibilityScope === "admin_only" ? "admin_only" : "published",
+    })),
+    [displayedSections],
+  );
+
+  const builderFields = useMemo<readonly ConfiguredField[]>(
+    () => fields.map((rawField, index) => {
+      const field = fieldDrafts[rawField.id] ?? rawField;
+      return ({
+      localId: field.id,
+      serverId: null,
+      stableKey: field.key,
+      coreKey: field.isLocked ? field.key : null,
+      source: field.isLocked ? "core" : "custom",
+      label: field.label,
+      sectionLocalId: field.sectionId,
+      position: index + 1,
+      valueType: field.type === "number" ? "number" : field.type === "checkbox" ? "boolean" : "string",
+      required: field.isRequired,
+      renderer: field.type,
+      placeholder: field.placeholder,
+      helpText: field.description,
+      options: String(field.validation?.options ?? "").split(",").map((label) => label.trim()).filter(Boolean).map((label, optionIndex) => ({ value: label, label, position: optionIndex + 1 })),
+      validation: {
+        minLength: typeof field.validation?.min_length === "number" ? field.validation.min_length : null,
+        maxLength: typeof field.validation?.max_length === "number" ? field.validation.max_length : null,
+        min: typeof field.validation?.min === "number" ? field.validation.min : null,
+        max: typeof field.validation?.max === "number" ? field.validation.max : null,
+        pattern: typeof field.validation?.pattern === "string" ? field.validation.pattern : null,
+      },
+      contentVisibility: field.visibilityScope === "admin_only" ? "admin_only" : "published",
+      compositeConfig: null,
+      enabled: field.isActive,
+      });
+    }),
+    [fieldDrafts, fields],
+  );
+
+  const blogFieldRegistry = useMemo<readonly CoreFieldRegistryItem[]>(
+    () => fields.filter((field) => field.isLocked).map((field) => ({
+      key: field.key,
+      displayName: field.label,
+      valueType: field.type === "number" ? "number" : "string",
+      allowedRenderers: PALETTE_ITEMS.map((item) => item.type),
+      defaultRenderer: field.type,
+      requiredByDomain: field.isRequired,
+      removable: false,
+      hideable: false,
+      options: String(field.validation?.options ?? "").split(",").map((label) => label.trim()).filter(Boolean).map((label, optionIndex) => ({ value: label, label, position: optionIndex + 1 })),
+      configurable: { label: true, section: true, position: true, required: false, renderer: true, placeholder: true, helpText: true, validation: true },
+    })),
+    [fields],
+  );
+
+  const selectedBuilderField = selectedFieldId ? builderFields.find((field) => field.localId === selectedFieldId) ?? null : null;
+
+  const inspectorOpen = isInspectorOpen && Boolean(selectedField || selectedSection);
+  const inspectorRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!inspectorOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (target instanceof Element && target.closest("[data-inspector-trigger=\"true\"]")) return;
+      if (!inspectorRef.current?.contains(target)) {
+        if (selectedField) discardFieldDraft(selectedField.id);
+        if (selectedSection) discardSectionDraft(selectedSection.id);
+        setSelectedFieldId(null);
+        setSelectedSectionId("");
+        setIsInspectorOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (selectedField) discardFieldDraft(selectedField.id);
+      if (selectedSection) discardSectionDraft(selectedSection.id);
+      setSelectedFieldId(null);
+      setSelectedSectionId("");
+      setIsInspectorOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [inspectorOpen, selectedField, selectedSection]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -778,9 +910,40 @@ export default function PlatformBlogFormBuilderScreen() {
       showToast("Field labels must be unique within the selected section.");
       return;
     }
-    setFields((prev) =>
-      prev.map((f) => (f.id === selectedField.id ? { ...f, ...patch } : f))
-    );
+    setFieldDrafts((prev) => ({
+      ...prev,
+      [selectedField.id]: { ...selectedField, ...patch },
+    }));
+  };
+
+  const handleUpdateSharedField = (patch: Partial<ConfiguredField>) => {
+    if (!selectedField) return;
+    if (patch.contentVisibility === "admin_only" && selectedField.isLocked) {
+      showToast("Protected core fields must remain included in published content.");
+      return;
+    }
+    const nextValidation = patch.validation
+      ? {
+          ...(selectedField.validation ?? {}),
+          ...(patch.validation.minLength !== undefined ? { min_length: patch.validation.minLength } : {}),
+          ...(patch.validation.maxLength !== undefined ? { max_length: patch.validation.maxLength } : {}),
+          ...(patch.validation.min !== undefined ? { min: patch.validation.min } : {}),
+          ...(patch.validation.max !== undefined ? { max: patch.validation.max } : {}),
+          ...(patch.validation.pattern !== undefined ? { pattern: patch.validation.pattern } : {}),
+        }
+      : selectedField.validation;
+    const nextOptions = patch.options ? patch.options.map((option) => option.label).join(", ") : undefined;
+    handleUpdateSelectedField({
+      ...(patch.label !== undefined ? { label: patch.label } : {}),
+      ...(patch.placeholder !== undefined ? { placeholder: patch.placeholder } : {}),
+      ...(patch.helpText !== undefined ? { description: patch.helpText } : {}),
+      ...(patch.renderer !== undefined ? { type: patch.renderer } : {}),
+      ...(patch.required !== undefined ? { isRequired: patch.required } : {}),
+      ...(patch.enabled !== undefined ? { isActive: patch.enabled } : {}),
+      ...(patch.sectionLocalId !== undefined ? { sectionId: patch.sectionLocalId } : {}),
+      ...(patch.contentVisibility !== undefined ? { visibilityScope: patch.contentVisibility === "admin_only" ? "admin_only" : "customer_visible" } : {}),
+      ...(nextOptions !== undefined ? { validation: { ...(nextValidation ?? {}), options: nextOptions } } : nextValidation !== selectedField.validation ? { validation: nextValidation } : {}),
+    });
   };
 
   const handleChangeSelectedFieldType = (type: string) => {
@@ -867,6 +1030,96 @@ export default function PlatformBlogFormBuilderScreen() {
       updated[idxB] = temp;
       return updated;
     });
+  };
+
+  const handleDropFieldOnSection = (fieldId: string, sectionId: string) => {
+    setFields((prev) => {
+      const field = prev.find((item) => item.id === fieldId);
+      if (!field || field.sectionId === sectionId) return prev;
+      return prev.map((item) => item.id === fieldId ? { ...item, sectionId, visibilityScope: sections.find((section) => section.id === sectionId)?.visibilityScope === "admin_only" ? "admin_only" : item.visibilityScope } : item);
+    });
+    setSelectedSectionId(sectionId);
+    setSelectedFieldId(fieldId);
+    setIsInspectorOpen(true);
+    setDraggedFieldId(null);
+    showToast("Field moved to the selected section.");
+  };
+
+  const handleDropSectionOnSection = (sourceId: string, targetId: string) => {
+    if (sourceId === targetId) return;
+    setSections((prev) => {
+      const sourceIndex = prev.findIndex((section) => section.id === sourceId);
+      const targetIndex = prev.findIndex((section) => section.id === targetId);
+      if (sourceIndex < 0 || targetIndex < 0) return prev;
+      if (prev[sourceIndex].isProtected || prev[targetIndex].isProtected) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(sourceIndex, 1);
+      next.splice(targetIndex, 0, moved);
+      return renumberSections(next);
+    });
+    setDraggedSectionId(null);
+    setSelectedSectionId(sourceId);
+    setSelectedFieldId(null);
+    setIsInspectorOpen(true);
+    showToast("Section order updated.");
+  };
+
+  const handleSharedSelection = (selection: BuilderSelection) => {
+    if (!selection) {
+      setSelectedFieldId(null);
+      setIsInspectorOpen(false);
+      return;
+    }
+    if (selection.kind === "section") {
+      setSelectedSectionId(selection.id);
+      setSelectedFieldId(null);
+    } else {
+      const field = fields.find((item) => item.id === selection.id);
+      if (!field) return;
+      setSelectedSectionId(field.sectionId);
+      setSelectedFieldId(field.id);
+    }
+    setIsInspectorOpen(true);
+  };
+
+  const handleSharedDragEnd = (event: DragEndEvent) => {
+    const activeId = String(event.active.id);
+    const overId = event.over ? String(event.over.id) : "";
+    if (!overId || activeId === overId) return;
+    if (activeId.startsWith("section-") && overId.startsWith("section-")) {
+      handleDropSectionOnSection(activeId.replace(/^section-/, ""), overId.replace(/^section-/, ""));
+      return;
+    }
+    if (!activeId.startsWith("field-")) return;
+    const fieldId = activeId.replace(/^field-/, "");
+    const targetFieldId = overId.replace(/^field-/, "");
+    if (overId.startsWith("field-")) {
+      const source = fields.find((field) => field.id === fieldId);
+      const target = fields.find((field) => field.id === targetFieldId);
+      if (!source || !target) return;
+      if (source.sectionId !== target.sectionId) {
+        handleDropFieldOnSection(fieldId, target.sectionId);
+        return;
+      }
+      setFields((prev) => {
+        const ordered = prev.filter((field) => field.sectionId === source.sectionId);
+        const sourceIndex = ordered.findIndex((field) => field.id === fieldId);
+        const targetIndex = ordered.findIndex((field) => field.id === targetFieldId);
+        if (sourceIndex < 0 || targetIndex < 0) return prev;
+        const nextOrdered = [...ordered];
+        const [moved] = nextOrdered.splice(sourceIndex, 1);
+        nextOrdered.splice(targetIndex, 0, moved);
+        let cursor = 0;
+        return prev.map((field) => field.sectionId === source.sectionId ? nextOrdered[cursor++] : field);
+      });
+      setSelectedSectionId(source.sectionId);
+      setSelectedFieldId(fieldId);
+      setIsInspectorOpen(true);
+      return;
+    }
+    if (overId.startsWith("drop-")) {
+      handleDropFieldOnSection(fieldId, overId.replace(/^drop-/, ""));
+    }
   };
 
   const handleDuplicateField = (field: SchemaFieldItem) => {
@@ -983,21 +1236,40 @@ export default function PlatformBlogFormBuilderScreen() {
 
     // Rule 1: If a section is Enterprise Admin Only, all its child fields are also restricted.
     if (patch.visibilityScope === "admin_only") {
-      setFields((prev) =>
-        prev.map((field) =>
-          field.sectionId === selectedSection.id
-            ? { ...field, visibilityScope: "admin_only" }
-            : field
-        )
-      );
+      setFieldDrafts((prev) => {
+        const next = { ...prev };
+        fields.filter((field) => field.sectionId === selectedSection.id).forEach((field) => {
+          next[field.id] = { ...(prev[field.id] ?? field), visibilityScope: "admin_only" };
+        });
+        return next;
+      });
     }
 
-    setSections((prev) => prev.map((section) => (
-      section.id === selectedSection.id ? { ...section, ...patch } : section
-    )));
+    setSectionDrafts((prev) => ({
+      ...prev,
+      [selectedSection.id]: { ...selectedSection, ...patch },
+    }));
   };
 
-  const buildSections = (): BlogFormSection[] => sections.map((section, sectionIndex) => ({
+  const applyFieldDraft = (fieldId: string) => {
+    const draft = fieldDrafts[fieldId];
+    if (!draft) return;
+    setFields((prev) => prev.map((field) => field.id === fieldId ? draft : field));
+    setFieldDrafts((prev) => { const next = { ...prev }; delete next[fieldId]; return next; });
+  };
+  const discardFieldDraft = (fieldId: string) => setFieldDrafts((prev) => { const next = { ...prev }; delete next[fieldId]; return next; });
+  const applySectionDraft = (sectionId: string) => {
+    const draft = sectionDrafts[sectionId];
+    if (!draft) return;
+    setSections((prev) => prev.map((section) => section.id === sectionId ? draft : section));
+    setSectionDrafts((prev) => { const next = { ...prev }; delete next[sectionId]; return next; });
+  };
+  const discardSectionDraft = (sectionId: string) => setSectionDrafts((prev) => { const next = { ...prev }; delete next[sectionId]; return next; });
+
+  const buildSections = (): BlogFormSection[] => {
+    const effectiveSections = sections.map((section) => sectionDrafts[section.id] ?? section);
+    const effectiveFields = fields.map((field) => fieldDrafts[field.id] ?? field);
+    return effectiveSections.map((section, sectionIndex) => ({
     id: section.id,
     title: section.name.replace(/^\d+\.\s*/, ""),
     description: section.description,
@@ -1005,7 +1277,7 @@ export default function PlatformBlogFormBuilderScreen() {
     order: sectionIndex + 1,
     visible: section.isProtected || section.isActive,
     visibility_scope: section.visibilityScope,
-    fields: fields
+    fields: effectiveFields
       .filter((field) => field.sectionId === section.id)
       .map((field, fieldIndex) => ({
         id: field.id,
@@ -1020,9 +1292,12 @@ export default function PlatformBlogFormBuilderScreen() {
         validation: field.validation ?? null,
         order: fieldIndex + 1,
       })),
-  }));
+    }));
+  };
 
   const saveForm = async (publish: boolean): Promise<boolean> => {
+    const effectiveSections = sections.map((section) => sectionDrafts[section.id] ?? section);
+    const effectiveFields = fields.map((field) => fieldDrafts[field.id] ?? field);
     if (publish) setPublicationError(null);
     if (!formId) {
       showToast("Create the form first, then open the builder to save it.");
@@ -1032,12 +1307,12 @@ export default function PlatformBlogFormBuilderScreen() {
       showToast("Enter a form name before saving.");
       return false;
     }
-    const unnamedSection = sections.find((section) => !section.name.trim());
+    const unnamedSection = effectiveSections.find((section) => !section.name.trim());
     if (unnamedSection) {
       showToast("Enter a name for every section before saving.");
       return false;
     }
-    const invalidField = fields
+    const invalidField = effectiveFields
       .map((field) => ({ field, error: validateFieldConfiguration(field) }))
       .find((result) => result.error);
     if (invalidField?.error) {
@@ -1046,12 +1321,12 @@ export default function PlatformBlogFormBuilderScreen() {
       showToast(invalidField.error);
       return false;
     }
-    const duplicateField = fields.find((field, index) => fields.some((other, otherIndex) => otherIndex > index && other.sectionId === field.sectionId && other.label.trim().toLowerCase() === field.label.trim().toLowerCase()));
+    const duplicateField = effectiveFields.find((field, index) => effectiveFields.some((other, otherIndex) => otherIndex > index && other.sectionId === field.sectionId && other.label.trim().toLowerCase() === field.label.trim().toLowerCase()));
     if (duplicateField) {
       showToast(`Field labels must be unique within each section. Rename “${duplicateField.label}”.`);
       return false;
     }
-    const emptySection = sections.find((section) => !fields.some((field) => field.sectionId === section.id));
+    const emptySection = effectiveSections.find((section) => !effectiveFields.some((field) => field.sectionId === section.id));
     if (emptySection) {
       showToast(`Add at least one field to “${emptySection.name.replace(/^\d+\.\s*/, "")}” before saving.`);
       return false;
@@ -1068,11 +1343,12 @@ export default function PlatformBlogFormBuilderScreen() {
       const workingFormId = formStatus === "draft"
         ? formId
         : (await createAdminBlogFormDraft(formId)).id;
-      const updated = await updateAdminBlogForm(workingFormId, { name: formTitle.trim(), type: formType, mode: formMode, sections: buildSections() });
+      const updated = await updateAdminBlogForm(workingFormId, { name: formTitle.trim(), type: formType, mode: formMode, sections: buildSections(), ...(formRevision !== null ? { base_revision: formRevision } : {}) });
       setSchemaVersion(`v${updated.version}`);
+      setFormRevision(typeof updated.revision === "number" ? updated.revision : formRevision);
       setFormStatus(updated.status);
       if (publish) {
-        const published = await publishAdminBlogForm(workingFormId);
+        const published = await publishAdminBlogForm(workingFormId, formRevision ?? undefined);
         setSchemaVersion(`v${published.version}`);
         setFormStatus(published.status);
         showToast("Configuration published successfully.");
@@ -1084,7 +1360,11 @@ export default function PlatformBlogFormBuilderScreen() {
       if (workingFormId !== formId) {
         router.replace(`/blog-form-builder?id=${encodeURIComponent(workingFormId)}`);
       }
-      setSavedSnapshot(JSON.stringify({ formTitle: formTitle.trim(), formMode, sections, fields }));
+      setSavedSnapshot(JSON.stringify({ formTitle: formTitle.trim(), formMode, sections: effectiveSections, fields: effectiveFields }));
+      setFields(effectiveFields);
+      setSections(effectiveSections);
+      setFieldDrafts({});
+      setSectionDrafts({});
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to save this form.";
@@ -1486,7 +1766,12 @@ export default function PlatformBlogFormBuilderScreen() {
     : false;
 
   return (
-    <div className="form-configuration-builder-inspector w-full bg-slate-50 min-h-screen text-slate-800">
+    <div className="form-configuration-builder-inspector blog-form-builder w-full bg-[#f4faf7] min-h-screen text-[#06201c]
+      [&_.bg-slate-50]:bg-[#f8fbf9] [&_.bg-slate-100]:bg-[#eef6f2] [&_.bg-slate-200]:bg-[#e5efea]
+      [&_.border-slate-100]:border-[#edf3f0] [&_.border-slate-200]:border-[#dfe9e4] [&_.border-slate-300]:border-[#cfe0d8]
+      [&_.text-slate-900]:text-[#06201c] [&_.text-slate-800]:text-[#284940] [&_.text-slate-700]:text-[#355a51]
+      [&_.text-slate-600]:text-[#52736a] [&_.text-slate-500]:text-[#718d84] [&_.text-slate-400]:text-[#8ca69e]">
+      <style>{`.blog-form-builder button:focus-visible,.blog-form-builder input:focus-visible,.blog-form-builder select:focus-visible,.blog-form-builder textarea:focus-visible{outline:2px solid #1f6a58;outline-offset:2px}.blog-form-builder .shadow-sm{box-shadow:0 1px 3px rgba(31,106,88,.08),0 1px 2px rgba(6,32,28,.04)}.blog-form-builder .hover\\:bg-slate-50:hover{background:#f4faf7}.blog-form-builder .hover\\:bg-slate-100:hover{background:#eef6f2}.blog-form-builder .blog-field-palette{display:none!important}.blog-form-builder .blog-builder-toolbar{display:none!important}.blog-form-builder .blog-field-actions>div,.blog-form-builder .blog-field-actions>button:not(:first-child){display:none!important}`}</style>
       {/* Toast Notification */}
       {toastMessage && (
         <div
@@ -1500,7 +1785,7 @@ export default function PlatformBlogFormBuilderScreen() {
       )}
 
       {/* Subheader / Action Bar */}
-      <div className="sticky top-0 z-30 bg-white border-b border-slate-200 px-6 py-3 flex flex-wrap items-center justify-between gap-4 shadow-sm">
+      <div className="blog-builder-toolbar sticky top-0 z-30 bg-white border-b border-slate-200 px-6 py-3 flex flex-wrap items-center justify-between gap-4 shadow-sm">
         {/* Left Meta & Titles */}
         <div className="flex items-center gap-3 flex-wrap">
           <Link
@@ -1515,12 +1800,7 @@ export default function PlatformBlogFormBuilderScreen() {
           </Link>
           <span className="h-4 w-px bg-slate-200"></span>
           <div className="flex items-center gap-2.5 flex-wrap">
-            <input
-              value={formTitle}
-              onChange={(event) => setFormTitle(event.target.value)}
-              aria-label="Form name"
-              className="min-w-[280px] max-w-[460px] flex-1 rounded-lg border border-transparent px-2 py-1 text-base font-bold tracking-tight text-slate-900 hover:border-slate-200 focus:border-teal-500 focus:outline-none"
-            />
+            <span className="text-base font-bold tracking-tight text-slate-900">Blog Form Configuration</span>
           </div>
           <div className="flex items-center gap-1.5 ml-1">
             <span className="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
@@ -1601,14 +1881,45 @@ export default function PlatformBlogFormBuilderScreen() {
         </div>
       )}
 
+      {/* Configuration details, matching the Training/Event builder hierarchy */}
+      <section className="mx-auto mt-5 w-full max-w-7xl rounded-2xl border border-[#dfe9e4] bg-white p-5 shadow-sm sm:p-6">
+        <Link href="/blog-forms" className="mb-4 inline-flex items-center gap-1 text-sm font-semibold text-[#52736a] hover:text-[#1f6a58]">← Back to Blog &amp; News Forms</Link>
+        <h1 className="text-2xl font-bold text-[#06201c]">Blog Form Configurations</h1>
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <label className="block text-sm font-semibold text-[#355a51]">
+            Configuration name
+            <input
+              value={formTitle}
+              onChange={(event) => setFormTitle(event.target.value)}
+              aria-label="Form name"
+              className="mt-1.5 h-11 w-full rounded-xl border border-[#cfe0d8] bg-white px-3 font-normal text-[#06201c] outline-none focus:border-[#1f6a58]"
+            />
+          </label>
+          <label className="block text-sm font-semibold text-[#355a51]">
+            Description <span className="font-normal text-[#7f9d94]">(optional)</span>
+            <textarea
+              value={`${formType === "both" ? "Blog and News" : formType === "blog" ? "Blog" : "News"} submission form for Enterprise Admins.`}
+              readOnly
+              aria-label="Form description"
+              className="mt-1.5 min-h-11 w-full resize-y rounded-xl border border-[#cfe0d8] bg-white px-3 py-2 font-normal text-[#52736a] outline-none"
+            />
+          </label>
+        </div>
+        <div className="mt-4">
+          <p className="text-sm font-semibold text-[#355a51]">Who can use this form?</p>
+          <div className="mt-1.5 rounded-xl border border-[#dfe9e4] bg-[#f4faf7] px-3 py-3 text-sm text-[#355a51]">All enterprises</div>
+          <p className="mt-1 text-xs text-[#7f9d94]">This choice is available when creating a new form and cannot be changed after saving.</p>
+        </div>
+      </section>
+
       {/* Main Three-Panel Workbench */}
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 p-4 sm:p-6 lg:flex-row lg:items-start lg:min-h-[calc(100vh-7rem)]">
         {/* LEFT PANEL: Section Structure & Palette (280px) */}
-        <aside className="flex w-full shrink-0 flex-col gap-4 lg:w-72">
+        <aside className="blog-legacy-sidebar hidden flex w-full shrink-0 flex-col gap-4 lg:w-72">
           {/* Section Tree */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col gap-3">
+          <div className="rounded-2xl border border-[#dfe9e4] bg-white p-4 shadow-sm flex flex-col gap-3">
             <div className="flex items-center justify-between pb-1 border-b border-slate-100">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Form Sections</span>
+              <span className="text-[11px] font-bold uppercase tracking-[.14em] text-[#52736a]">Sections</span>
               <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
                 {displayedSections.length} Defined
               </span>
@@ -1620,20 +1931,31 @@ export default function PlatformBlogFormBuilderScreen() {
                 return (
                   <div
                     key={sec.id}
+                    draggable={!sec.isProtected}
+                    onDragStart={() => { if (!sec.isProtected) setDraggedSectionId(sec.id); }}
+                    onDragEnd={() => setDraggedSectionId(null)}
                     onClick={() => {
                       setSelectedSectionId(sec.id);
                       setSelectedFieldId(null);
+                      setIsInspectorOpen(true);
                     }}
-                    className={`flex items-start gap-2 p-2.5 rounded-lg text-left transition-colors cursor-pointer ${
-                      selectedSectionId === sec.id ? "bg-white shadow-sm" : ""
-                    } ${
-                      sec.type === "core_protected"
-                        ? "bg-slate-50 hover:bg-slate-100 border border-slate-100"
+                    onDragOver={(event) => { if (draggedFieldId || draggedSectionId) event.preventDefault(); }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      if (draggedFieldId) handleDropFieldOnSection(draggedFieldId, sec.id);
+                      else if (draggedSectionId) handleDropSectionOnSection(draggedSectionId, sec.id);
+                    }}
+                    data-inspector-trigger="true"
+                    className={`flex items-start gap-2 rounded-xl border p-2.5 text-left transition-colors cursor-pointer ${
+                      selectedSectionId === sec.id
+                        ? "border-[#1f6a58] bg-[#e9f4ee] shadow-sm"
                         : sec.type === "admin_notes"
-                        ? "bg-purple-50/50 hover:bg-purple-100/60 border border-purple-200"
-                        : "bg-teal-50/40 hover:bg-teal-50 border border-teal-200"
+                          ? "border-[#eadcf5] bg-[#faf6ff] hover:border-[#c9a9e1]"
+                          : "border-[#dfe9e4] bg-white hover:border-[#b9d4c8]"
                     }`}
                   >
+                    <span aria-hidden="true" className={`mt-1 select-none text-base leading-none text-[#8ca69e] ${sec.isProtected ? "opacity-50" : "cursor-grab"}`}>⠿</span>
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#eef6f2] text-[10px] font-bold text-[#52736a]">{sectionIndex + 1}</span>
                     <div className="flex flex-col min-w-0 flex-1">
                       <span className="text-xs font-bold text-slate-900 line-clamp-2 leading-snug break-words">{sec.name}</span>
                       <div className="flex items-center gap-2 mt-0.5 text-[10px]">
@@ -1660,41 +1982,11 @@ export default function PlatformBlogFormBuilderScreen() {
                         type="button"
                         aria-label={`Remove ${sec.name}`}
                         onClick={() => handleDeleteSection(sec)}
-                        className="rounded px-1.5 py-1 text-[10px] font-bold text-rose-600 hover:bg-rose-50"
+                        className="hidden rounded px-1.5 py-1 text-[10px] font-bold text-rose-600 hover:bg-rose-50"
                       >
                         Remove
                       </button>
                     ) : null}
-                    <div className="flex flex-col gap-0.5">
-                      <button
-                        type="button"
-                        aria-label={`Move ${sec.name} up`}
-                        disabled={sectionIndex <= 1 || sec.isProtected}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleMoveSection(sec.id, "up");
-                        }}
-                        className="rounded p-1 text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-30"
-                      >
-                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 15l7-7 7 7" />
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Move ${sec.name} down`}
-                        disabled={sectionIndex === sections.length - 1 || sec.isProtected}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleMoveSection(sec.id, "down");
-                        }}
-                        className="rounded p-1 text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-30"
-                      >
-                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </button>
-                    </div>
                   </div>
                 );
               })}
@@ -1705,14 +1997,14 @@ export default function PlatformBlogFormBuilderScreen() {
               onClick={() => {
                 setShowAddSectionModal(true);
               }}
-              className="w-full mt-1 py-2 px-3 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+              className="mt-1 w-full rounded-xl border border-[#cfe0d8] bg-white px-3 py-2 text-sm font-bold text-[#1f6a58] transition-colors hover:bg-[#f4faf7]"
             >
               <span>+ Add Form Section</span>
             </button>
           </div>
 
           {/* Field Component Palette */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col gap-2.5 flex-1">
+          <div className="blog-field-palette hidden bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col gap-2.5 flex-1">
             <div className="flex items-center justify-between pb-1 border-b border-slate-100">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Field Palette</span>
               <span className="text-[10px] text-teal-700 font-bold uppercase">Click to add</span>
@@ -1740,18 +2032,56 @@ export default function PlatformBlogFormBuilderScreen() {
         {/* CENTER CANVAS: Drag & Drop Interactive Canvas (Flex-1) */}
         <main className="flex-1 flex flex-col gap-4 min-w-0">
           {/* Canvas Control Header */}
-          <div className="bg-white rounded-xl border border-slate-200 px-4 py-2.5 flex items-center justify-between shadow-sm">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-900">Form Canvas</span>
-              <span className="text-xs text-slate-400">Preview of the form layout</span>
-            </div>
-
-            <div className="flex items-center gap-3">
+          <div className="blog-legacy-canvas-header hidden rounded-2xl border border-[#dfe9e4] bg-[#f7fbf8] px-4 py-3 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold uppercase tracking-[.14em] text-[#52736a]">Form structure</h2>
+                <p className="mt-1 text-sm text-[#52736a]">Add sections and fields to build the Blog and News form.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-[#1f6a58] px-4 py-2 text-sm font-bold text-white">Builder</span>
+                <button type="button" onClick={() => setShowPreviewModal(true)} className="rounded-full bg-white px-4 py-2 text-sm font-bold text-[#1f6a58] shadow-sm hover:bg-[#eef6f2]">Preview</button>
+              </div>
             </div>
           </div>
 
-          {/* Form Canvas Workspace */}
-          <div className="w-full mx-auto">
+          <FormStructureCanvas
+            sections={builderSections}
+            fields={builderFields}
+            selected={selectedFieldId ? { kind: "field", id: selectedFieldId } : selectedSectionId ? { kind: "section", id: selectedSectionId } : null}
+            onSelect={handleSharedSelection}
+            onDragEnd={handleSharedDragEnd}
+            onAddSection={() => setShowAddSectionModal(true)}
+            onAddField={(sectionId) => handleAddFieldFromPalette(PALETTE_ITEMS[0], sectionId)}
+            domainLabel="Blog"
+            onSectionAction={(sectionId, action) => {
+              const section = sections.find((item) => item.id === sectionId);
+              if (!section) return;
+              if (action === "delete") handleDeleteSection(section);
+              if (action === "toggle") {
+                setSelectedSectionId(sectionId);
+                setIsInspectorOpen(true);
+                handleToggleSectionActive(section);
+              }
+              if (action === "duplicate") {
+                const duplicateId = `sec-dup-${Date.now()}`;
+                const duplicate = { ...section, id: duplicateId, name: `${sections.length + 1}. ${section.name.replace(/^\d+\.\s*/, "")} (Copy)`, isProtected: false, type: "configurable" as const };
+                setSections((current) => renumberSections([...current, duplicate]));
+                setSelectedSectionId(duplicateId);
+                setSelectedFieldId(null);
+                setIsInspectorOpen(true);
+              }
+            }}
+            workspaceControls={
+              <>
+                <span className="rounded-full bg-[#1f6a58] px-4 py-2 text-sm font-bold text-white">Builder</span>
+                <button type="button" onClick={() => setShowPreviewModal(true)} className="rounded-full bg-white px-4 py-2 text-sm font-bold text-[#1f6a58] shadow-sm hover:bg-[#eef6f2]">Preview</button>
+              </>
+            }
+          />
+
+          {/* Legacy Blog canvas retained only for the existing preview/edit flow. */}
+          <div className="blog-legacy-canvas hidden w-full mx-auto">
             <div className="flex flex-col gap-6">
               {displayedSections.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center shadow-sm">
@@ -1789,20 +2119,10 @@ export default function PlatformBlogFormBuilderScreen() {
                       }`}
                     >
                       <div className="flex items-center gap-2.5">
-                        <div
-                          className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs ${
-                            isCore
-                              ? "bg-teal-50 text-teal-700 border border-teal-200"
-                              : isAdminOnly
-                              ? "bg-purple-100 text-purple-800"
-                              : "bg-slate-100 text-slate-700"
-                          }`}
-                        >
-                          {isCore ? "SEC" : "CFG"}
-                        </div>
                         <div className="flex flex-col">
                           <div className="flex items-center gap-2">
-                            <h2 className="text-sm font-bold text-slate-900">{section.name}</h2>
+                            <span aria-hidden="true" className="select-none text-base leading-none text-[#8ca69e]">⠿</span>
+                            <h2 className="text-lg font-bold text-slate-900">{section.name}</h2>
                             <span
                               className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
                                 !section.isActive
@@ -1823,6 +2143,7 @@ export default function PlatformBlogFormBuilderScreen() {
                                 : "Published Section"}
                             </span>
                           </div>
+                          <span className="mt-1 block text-xs text-[#7f9d94]">{sectionFields.length} fields · Select to edit this section. Drag the handle to change its order.</span>
                           <span className="text-xs text-slate-500">{section.description}</span>
                         </div>
                       </div>
@@ -1841,38 +2162,40 @@ export default function PlatformBlogFormBuilderScreen() {
                     </div>
 
                     {/* Section Fields */}
-                    <div className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-2 pl-6">
                       {sectionFields.map((field, fieldIndex) => {
                         const isSelected = selectedFieldId === field.id;
 
                         return (
                           <div
                             key={field.id}
+                            draggable
+                            onDragStart={() => setDraggedFieldId(field.id)}
+                            onDragEnd={() => setDraggedFieldId(null)}
                             onClick={() => {
                               setSelectedSectionId(section.id);
                               setSelectedFieldId(field.id);
+                              setIsInspectorOpen(true);
                             }}
-                            className={`relative flex flex-col gap-2 p-4 rounded-xl border transition-all cursor-pointer ${
+                            data-inspector-trigger="true"
+                            className={`relative flex flex-col gap-2 rounded-xl border p-4 transition-colors cursor-pointer ${
                               isSelected
-                                ? "bg-white border border-teal-300 shadow-sm"
-                                : "bg-slate-50 border-slate-200 hover:border-slate-300"
+                                ? "bg-[#e9f4ee] border-[#dfe9e4]"
+                                : "bg-white border-[#dfe9e4] hover:bg-[#f8fbf9]"
                             }`}
                           >
-                            {isSelected && (
-                              <div className="absolute -left-1 top-2 bottom-2 w-1.5 bg-teal-600 rounded-full"></div>
-                            )}
-
                             <div className="flex items-center justify-between gap-3">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <label className="text-xs font-bold text-slate-900 flex items-center gap-1 truncate">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <span aria-hidden="true" className="select-none text-base leading-none text-[#8ca69e] cursor-grab">⠿</span>
+                                <label className="flex min-w-0 items-center gap-1 truncate text-sm font-semibold text-slate-900">
                                   <span>{field.label}</span>
                                   {field.isRequired && <span className="text-rose-600 font-bold">*</span>}
                                 </label>
-                                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 uppercase font-semibold shrink-0">
-                                  {field.type}
+                                <span className="shrink-0 rounded-full bg-[#eef6f2] px-2 py-0.5 text-[10px] font-bold uppercase text-[#176347]">
+                                  {blogRendererLabel(field.type)}
                                 </span>
                                 {(field.isLocked || isProtectedSystemFieldKey(field.key)) && (
-                                  <span className="inline-flex items-center gap-1 rounded bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-800 border border-teal-200 shrink-0">
+                                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#eef6f2] px-2 py-0.5 text-[10px] font-semibold text-[#176347]">
                                     <span>Core Field</span>
                                   </span>
                                 )}
@@ -1881,36 +2204,37 @@ export default function PlatformBlogFormBuilderScreen() {
                                     Disabled (Hidden)
                                   </span>
                                 ) : field.visibilityScope === "admin_only" ? (
-                                  <span className="inline-flex items-center rounded bg-purple-50 px-2 py-0.5 text-[10px] font-semibold text-purple-700 border border-purple-200 shrink-0">
+                                  <span className="inline-flex shrink-0 items-center rounded-full bg-[#f3ecfb] px-2 py-0.5 text-[10px] font-semibold text-[#6b3f91]">
                                     Enterprise Admin Only
                                   </span>
                                 ) : (
-                                  <span className="inline-flex items-center rounded bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-700 border border-teal-200 shrink-0">
+                                  <span className="inline-flex shrink-0 items-center rounded-full bg-[#eef6f2] px-2 py-0.5 text-[10px] font-semibold text-[#176347]">
                                     Published
                                   </span>
                                 )}
                               </div>
 
                               {/* Action Buttons for Field: Edit & Delete */}
-                              <div className="flex items-center gap-1.5 shrink-0">
+                              <div className="blog-field-actions flex items-center gap-1.5 shrink-0">
                                 <button
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setSelectedSectionId(section.id);
                                     setSelectedFieldId(field.id);
+                                    setIsInspectorOpen(true);
                                   }}
-                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                                  className={`rounded-lg px-2 py-1 text-sm font-bold transition-colors ${
                                     isSelected
-                                      ? "bg-teal-700 text-white shadow-sm"
-                                      : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-teal-700"
+                                      ? "text-[#1f6a58]"
+                                      : "text-[#1f6a58] hover:bg-[#eef6f2]"
                                   }`}
                                   title="Edit field settings"
+                                  aria-label={`Edit ${field.label}`}
                                 >
-                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                   </svg>
-                                  <span>Edit</span>
                                 </button>
 
                                 <div className="flex items-center border-l border-slate-200 pl-1.5 ml-0.5 gap-0.5">
@@ -1979,79 +2303,20 @@ export default function PlatformBlogFormBuilderScreen() {
                               </div>
                             </div>
 
-                            {/* Field Interactive Content Preview */}
-                            {field.type === "multi_select" && field.tags ? (
-                              <div className="flex flex-wrap items-center gap-1.5 p-2 rounded-lg bg-white border border-slate-200 min-h-[38px]">
-                                {field.tags.map((t) => (
-                                  <span
-                                    key={t}
-                                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs font-medium"
-                                  >
-                                    <span>{t}</span>
-                                    <span className="text-[10px] text-slate-400">&times;</span>
-                                  </span>
-                                ))}
-                                <span className="text-slate-400 text-xs px-1">+ Add tag...</span>
-                              </div>
-                            ) : field.type === "media_upload" ? (
-                              <div className="p-4 rounded-lg bg-slate-100 border border-slate-200 flex flex-col items-center justify-center text-center">
-                                <span className="text-xs font-semibold text-slate-700">
-                                  {field.key === "additional_images" ? "Upload additional images" : "Aspect Ratio 16:9 Standard"}
-                                </span>
-                                <span className="text-[11px] text-slate-400 mt-0.5">
-                                  {field.key === "additional_images"
-                                    ? "Optional supporting images • PNG, WebP, JPG"
-                                    : "Min 1200 × 675px • Max 5MB (PNG, WebP, JPG)"}
-                                </span>
-                              </div>
-                            ) : field.type === "rich_text" ? (
-                              <div className="rounded-lg overflow-hidden border border-slate-200 bg-white">
-                                <div className="bg-slate-100 px-3 py-1 flex items-center gap-2 text-slate-500 text-xs border-b border-slate-200">
-                                  <span className="font-bold">B</span>
-                                  <span className="italic">I</span>
-                                  <span className="underline">U</span>
-                                  <span className="h-3 w-px bg-slate-300"></span>
-                                  <span className="font-bold">H2</span>
-                                  <span className="font-bold">H3</span>
-                                  <span className="h-3 w-px bg-slate-300"></span>
-                                  <span>List</span>
-                                  <span>Quote</span>
-                                  <span>Link</span>
-                                </div>
-                                <div className="p-3 text-slate-400 italic font-normal text-xs min-h-[70px]">
-                                  {field.placeholder?.trim() || getFieldDefaultPlaceholder(field)}
-                                </div>
-                              </div>
-                            ) : field.type === "file_upload" ? (
-                              <div className="p-3 rounded-lg bg-white border border-slate-200 flex items-center justify-between">
-                                <div className="flex flex-col">
-                                  <span className="text-xs font-semibold text-slate-800">
-                                    {field.placeholder?.trim() || getFieldDefaultPlaceholder(field)}
-                                  </span>
-                                  <span className="text-[11px] text-slate-400">PDF format only, maximum 25MB</span>
-                                </div>
-                                <span className="px-2.5 py-1 rounded bg-slate-100 text-slate-700 text-xs font-semibold">
-                                  Browse Files
-                                </span>
-                              </div>
-                            ) : (
-                              <div className="w-full bg-white border border-slate-200 px-3 py-2 rounded-lg text-slate-400 italic font-normal text-xs">
-                                {field.placeholder?.trim() || getFieldDefaultPlaceholder(field)}
-                              </div>
-                            )}
-
-                            <span className="text-[11px] text-slate-400">{field.description}</span>
+                            <p className="text-xs text-[#7f9d94]">Select to view or edit this field.</p>
                           </div>
                         );
                       })}
 
-                      {/* Dropzone / Add Prompt */}
-                      <div
-                        onClick={() => handleAddFieldFromPalette(PALETTE_ITEMS[0], section.id)}
-                        className="py-3 px-4 rounded-lg border border-dashed border-slate-300 hover:border-teal-500 bg-slate-50 hover:bg-teal-50/30 flex items-center justify-center gap-2 text-slate-500 hover:text-teal-700 cursor-pointer transition-colors"
-                      >
-                        <span className="font-bold text-xs">+</span>
-                        <span className="text-xs font-medium">Add or drop fields here from the left palette</span>
+                      <div className="flex items-center gap-3 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => handleAddFieldFromPalette(PALETTE_ITEMS[0], section.id)}
+                          className="text-sm font-bold text-[#1f6a58] hover:underline"
+                        >
+                          + Add field
+                        </button>
+                        <span className="text-xs text-[#7f9d94]">Choose the details to collect in this section.</span>
                       </div>
                     </div>
                   </div>
@@ -2062,13 +2327,13 @@ export default function PlatformBlogFormBuilderScreen() {
         </main>
 
         {/* RIGHT PANEL: Field Properties Inspector (320px) */}
-        <aside className="flex w-full shrink-0 flex-col gap-4 lg:w-80">
-          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-col gap-3.5 sticky top-20">
+        {inspectorOpen ? <aside ref={inspectorRef} className="fixed bottom-0 right-0 top-[72px] z-40 flex w-full shrink-0 flex-col gap-4 overflow-hidden border-l border-[#dfe9e4] bg-[#f7fbf8] p-5 shadow-[-12px_0_30px_rgba(7,53,45,0.12)] lg:w-[400px]">
+          <div className="flex min-h-0 flex-1 flex-col gap-3.5">
             {/* Header */}
             <div className="flex items-start justify-between pb-2 border-b border-slate-100">
               <div className="flex flex-col">
                 <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                  {selectedField ? "Field Properties" : "Section Settings"}
+                  {selectedField ? "Edit field" : "Edit section"}
                 </span>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span className="text-[11px] text-slate-400">Selected:</span>
@@ -2077,9 +2342,54 @@ export default function PlatformBlogFormBuilderScreen() {
                   </span>
                 </div>
               </div>
+              <button
+                type="button"
+                aria-label="Close editor"
+                title="Close editor"
+                onClick={() => { if (selectedField) discardFieldDraft(selectedField.id); if (selectedSection) discardSectionDraft(selectedSection.id); setSelectedFieldId(null); setIsInspectorOpen(false); }}
+                className="rounded-lg px-2 py-1 text-sm font-bold text-slate-500 transition-colors hover:bg-slate-100 hover:text-teal-700"
+              >
+                ×
+              </button>
             </div>
 
-            {selectedField && (
+            {selectedBuilderField ? (
+              <div className="flex min-h-0 flex-1 flex-col gap-3">
+                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                  <FieldEditor
+                    field={selectedBuilderField}
+                    registry={blogFieldRegistry}
+                    formLabel="Blog"
+                    showContentVisibility
+                    validationErrors={[]}
+                    onChange={handleUpdateSharedField}
+                    onRemoveFromForm={() => { if (selectedField) handleDeleteField(selectedField); }}
+                  />
+                </div>
+                <div className="shrink-0 -mx-5 flex gap-2 border-t border-[#dfe9e4] bg-[#f7fbf8] px-5 py-4 shadow-[0_-8px_18px_rgba(7,53,45,0.06)]">
+                  <button
+                    type="button"
+                    onClick={() => { if (selectedField) discardFieldDraft(selectedField.id); setSelectedFieldId(null); setIsInspectorOpen(false); }}
+                    className="flex-1 rounded-full border border-[#cfe0d8] bg-white px-4 py-2 text-sm font-bold text-[#1f6a58]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!selectedField) return;
+                      const error = validateFieldConfiguration(selectedField);
+                      if (error) { showToast(error); return; }
+                      applyFieldDraft(selectedField.id);
+                      showToast(`Changes applied to “${selectedField.label}”. Click Save Draft to persist.`);
+                    }}
+                    className="flex-1 rounded-full bg-[#1f6a58] px-4 py-2 text-sm font-bold text-white"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            ) : selectedField && !selectedBuilderField && (
               <>
                 {/* Configuration Inputs */}
                 <div className="flex flex-col gap-3">
@@ -2574,6 +2884,7 @@ export default function PlatformBlogFormBuilderScreen() {
                         showToast(validationError);
                         return;
                       }
+                      applyFieldDraft(selectedField.id);
                       showToast(`Changes applied to “${selectedField.label}”. Click Save Draft to persist.`);
                     }}
                     className="w-full py-2 px-3 rounded-lg bg-teal-600 text-white hover:bg-teal-700 text-xs font-semibold shadow-sm transition-colors"
@@ -2706,6 +3017,10 @@ export default function PlatformBlogFormBuilderScreen() {
                     </div>
                   </label>
                 </div>
+                <div className="flex gap-2 border-t border-slate-100 pt-3">
+                  <button type="button" onClick={() => { if (selectedSection) { applySectionDraft(selectedSection.id); showToast("Section changes applied."); } }} className="flex-1 rounded-lg bg-teal-600 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-700">Save</button>
+                  <button type="button" onClick={() => { if (selectedSection) discardSectionDraft(selectedSection.id); setSelectedFieldId(null); setIsInspectorOpen(false); }} className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+                </div>
                 {!selectedSection.isProtected ? (
                   <button
                     type="button"
@@ -2718,7 +3033,12 @@ export default function PlatformBlogFormBuilderScreen() {
               </div>
             ) : null}
           </div>
-        </aside>
+        </aside> : null}
+      </div>
+
+      <div className="sticky bottom-0 z-30 mt-6 flex flex-wrap items-center gap-3 border-t border-[#dfe9e4] bg-white px-5 py-4 shadow-[0_-8px_24px_rgba(7,53,45,0.08)] sm:px-6">
+        <button type="button" onClick={handleSaveDraft} disabled={isSaving} className="rounded-full border border-[#cfe0d8] bg-white px-5 py-2.5 text-sm font-bold text-[#1f6a58] hover:bg-[#f4faf7] disabled:opacity-50">{isSaving ? "Saving…" : "Save Draft"}</button>
+        <button type="button" onClick={() => void handleReviewAndSubmit()} disabled={isSaving} className="rounded-full bg-[#1f6a58] px-5 py-2.5 text-sm font-bold text-white hover:bg-[#175245] disabled:opacity-50">Review &amp; Submit</button>
       </div>
 
       {showAddFieldModal && newFieldDraft ? (

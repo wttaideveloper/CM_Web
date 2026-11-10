@@ -5,3 +5,6 @@ export * from "./blogs-store";
 export * from "./blogs-api";
 export * from "./blogs-governance";
 export * from "./blogs-sanitizer";
+export * from "./upstream-config";
+export * from "./security-headers";
+export * from "./safe-proxy-path";

@@ -1,12 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type FormEvent, type RefObject } from "react";
 import { useAuth } from "@ihp/auth";
+import { useTranslation } from "react-i18next";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { addGroupChatMessageReaction, createGroupChatReport, downloadGroupChatAttachment, editGroupChatMessage, getGroupChatMessageReadStatus, getGroupChatReactions, hideGroupChatMessage, listGroupChatMessages, listGroupChatPinnedMessages, markGroupChatRead, pinGroupChatMessage, removeGroupChatMessageReaction, retractGroupChatMessage, sendGroupChatAttachmentMessage, sendGroupChatTextMessage, unpinGroupChatMessage, uploadGroupChatAttachment } from "./group-chat/group-chat.service";
 import { groupChatReadStatusQueryKey, mergeGroupChatReadStatusCache, reconcileGroupChatReadState, resolveGroupChatReadThroughBoundary, shouldForceGroupChatReadStatusRefresh, shouldQueueGroupChatReadStatuses, shouldReconcileGroupChatReadAfterReconnect, type GroupChatReadReconciliationState } from "./group-chat/group-chat-read-state";
 import { buildEditGroupChatMessagePayload, buildGroupChatReportPayload, canEditGroupChatMessage, canHideGroupChatMessage, canPinGroupChatMessage, canReactToGroupChatMessage, canReplyToGroupChatMessage, canReportGroupChatMessage, canRetractGroupChatMessage, canSendGroupChatMessage, canShowGroupChatReadStatusIndicator, canViewGroupChatReadStatus, formatGroupChatAttachmentSummary, getGroupChatMessageDisplayText, getGroupChatPostingRestrictionState, getGroupChatReadStatusMemberNames, getGroupChatReadStatusTickState, getGroupChatReadSummaryTickState, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, GROUP_CHAT_REPORT_REASONS, isGroupChatReactionSelected, mergeGroupChatMessagePages, normalizeGroupChatReactionCounts, resolveGroupChatAttachmentMetadata, shouldFetchGroupChatMessageReadStatus } from "./group-chat-models";
 import { getGroupChatScrollTopAfterPrepend, isGroupChatNearBottom, shouldFollowGroupChatLatest, shouldScrollGroupChatToLatestOnEntry, GROUP_CHAT_SCROLL_TOP_THRESHOLD, type GroupChatScrollMetrics } from "./group-chat-scroll";
+import { createBrowserGroupChatSpeechRecognition, createGroupChatSpeechController, toggleGroupChatSpeech, type GroupChatSpeechController, type GroupChatSpeechError } from "./group-chat-speech";
+import { GroupChatAudioPlayer, GroupChatVoiceComposer } from "./GroupChatVoiceMessage";
+import { GroupChatAnchoredPopup } from "./GroupChatAnchoredPopup";
+import { dismissGroupChatPopup, toggleGroupChatPopup } from "./group-chat-popup-position";
+import { getGroupChatCenteredScrollTop, getGroupChatPinnedListMaxHeight, getGroupChatPinnedNavigationStage, GROUP_CHAT_PINNED_HIGHLIGHT_MS } from "./group-chat-pinned-navigation";
 import type { GroupChatAttachment, GroupChatAttachmentType, GroupChatMember, GroupChatMessage, GroupChatMessageReadStatus, GroupChatReadSummary, GroupChatReactionSettings } from "./group-chat/group-chat.types";
 
 type Props = {
@@ -74,6 +80,7 @@ function GroupChatAttachmentMessage({ message }: { message: GroupChatMessage }) 
   const attachmentId = message.attachment_id;
   const attachmentType = getMessageAttachmentType(message);
   const isImage = attachmentType === "image" || message.mime_type?.toLowerCase().startsWith("image/") || message.attachment?.mime_type?.toLowerCase().startsWith("image/");
+  const isAudio = attachmentType === "audio" || message.message_type.trim().toLowerCase() === "audio";
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [metadata, setMetadata] = useState(() => resolveGroupChatAttachmentMetadata(message));
@@ -81,7 +88,7 @@ function GroupChatAttachmentMessage({ message }: { message: GroupChatMessage }) 
   useEffect(() => {
     let active = true;
     let objectUrl: string | null = null;
-    if (!attachmentId) return undefined;
+    if (!attachmentId || isAudio) return undefined;
 
     void downloadGroupChatAttachment(attachmentId).then((response) => {
       if (!active) return;
@@ -98,7 +105,7 @@ function GroupChatAttachmentMessage({ message }: { message: GroupChatMessage }) 
       active = false;
       if (objectUrl) window.URL.revokeObjectURL(objectUrl);
     };
-  }, [attachmentId, isImage, message]);
+  }, [attachmentId, isAudio, isImage, message]);
 
   const openAttachment = async (download: boolean) => {
     if (!attachmentId) return;
@@ -125,6 +132,7 @@ function GroupChatAttachmentMessage({ message }: { message: GroupChatMessage }) 
 
   return <div className="mt-1 max-w-[320px] rounded-xl border border-[#d7e5df] bg-[#f8fbf9] p-2 text-[#16332b]">
     {isImage && previewUrl ? <img src={previewUrl} alt={getMessageAttachmentFileName(message)} className="max-h-56 w-full rounded-lg object-contain" onError={() => { setPreviewUrl(null); setPreviewError("Image preview unavailable"); }} /> : null}
+    {isAudio && attachmentId ? <GroupChatAudioPlayer key={attachmentId} attachmentId={attachmentId} label={getMessageAttachmentFileName(message)} /> : null}
     {isImage && !previewUrl && !previewError ? <p className="px-1 py-3 text-xs text-[#52736a]">Loading image preview...</p> : null}
     {previewError ? <p className="px-1 py-1 text-xs text-[#8f3b2f]">{previewError}</p> : null}
     <div className="mt-1 flex items-center justify-between gap-2">
@@ -153,9 +161,10 @@ type ReactionControlsProps = {
   mutationPending: boolean;
   onTogglePicker: () => void;
   onToggleReaction: (emoji: string) => void;
+  triggerRef: RefObject<HTMLButtonElement | null>;
 };
 
-function GroupChatReactionControls({ message, settings, pickerOpen, mutationPending, onTogglePicker, onToggleReaction }: ReactionControlsProps) {
+function GroupChatReactionControls({ message, settings, pickerOpen, mutationPending, onTogglePicker, onToggleReaction, triggerRef }: ReactionControlsProps) {
   const counts = normalizeGroupChatReactionCounts(message.reactions);
   const entries = Object.entries(counts);
   const canControl = settings?.enabled === true && settings.emojis.length > 0 && canReactToGroupChatMessage(message);
@@ -168,12 +177,7 @@ function GroupChatReactionControls({ message, settings, pickerOpen, mutationPend
       const canToggleExisting = canControl && (settings?.emojis.includes(emoji) || isSelected);
       return canToggleExisting ? <button key={emoji} type="button" disabled={mutationPending} aria-pressed={isSelected} onClick={() => onToggleReaction(emoji)} className={`rounded-full border px-1.5 py-0.5 text-[11px] transition ${isSelected ? "border-[#1f6a58] bg-[#d8f3e4] text-[#16332b]" : "border-[#d7e5df] bg-white/80 text-[#52736a]"} disabled:opacity-50`}>{emoji} {count}</button> : <span key={emoji} className="rounded-full border border-[#d7e5df] bg-white/70 px-1.5 py-0.5 text-[11px] text-[#52736a]">{emoji} {count}</span>;
     })}
-    {canControl ? <div className="relative">
-      <button type="button" aria-label="Add reaction" aria-expanded={pickerOpen} disabled={mutationPending} onClick={onTogglePicker} className="rounded-full border border-[#d7e5df] bg-white/80 px-1.5 py-0.5 text-[11px] font-semibold text-[#52736a] hover:border-[#1f6a58] hover:text-[#1f6a58] disabled:opacity-50">+</button>
-      {pickerOpen ? <div className="absolute bottom-7 left-0 z-20 flex max-w-56 flex-wrap gap-1 rounded-xl border border-[#d7e5df] bg-white p-2 shadow-lg" role="menu" aria-label="Available reactions">
-        {settings.emojis.map((emoji) => { const isSelected = selected.has(emoji); return <button key={emoji} type="button" role="menuitem" aria-label={isSelected ? `Remove ${emoji} reaction` : `React with ${emoji}`} aria-pressed={isSelected} disabled={mutationPending} onClick={() => onToggleReaction(emoji)} className={`rounded-lg px-2 py-1 text-base hover:bg-[#e8f6ee] ${isSelected ? "bg-[#d8f3e4]" : ""}`}>{emoji}</button>; })}
-      </div> : null}
-    </div> : null}
+    {canControl ? <button ref={triggerRef} type="button" aria-label="Add reaction" aria-haspopup="menu" aria-expanded={pickerOpen} disabled={mutationPending} onClick={onTogglePicker} className="rounded-full border border-[#d7e5df] bg-white/80 px-1.5 py-0.5 text-[11px] font-semibold text-[#52736a] hover:border-[#1f6a58] hover:text-[#1f6a58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] disabled:opacity-50">+</button> : null}
   </div>;
 }
 
@@ -192,6 +196,8 @@ type MessageBubbleProps = {
   replyTarget: GroupChatMessage | null;
   highlighted: boolean;
   onToggleMenu: () => void;
+  onCloseMenu: () => void;
+  onCloseReactionPicker: () => void;
   onSelectAction: (action: MessageAction) => void;
   onReplyReference: (messageId: string) => void;
   onEditDraftChange: (value: string) => void;
@@ -216,9 +222,12 @@ type MessageBubbleProps = {
   onRetryReadStatus: () => void;
   onCloseReadStatus: () => void;
   messageRef?: (node: HTMLElement | null) => void;
+  popupBoundaryRef: RefObject<HTMLElement | null>;
 };
 
-function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen, pendingAction, editMode, editDraft, editError, hideReason, mutationPending, replyTarget, highlighted, onToggleMenu, onSelectAction, onReplyReference, onEditDraftChange, onSaveEdit, onCancelEdit, onHideReasonChange, onConfirmAction, onCancelAction, reactionSettings, reactionPickerOpen, reactionMutationPending, onToggleReactionPicker, onToggleReaction, readStatusEligible, readStatusOpen, readStatus, readSummary, readStatusLoading, readStatusError, readStatusNames, onToggleReadStatus, onRetryReadStatus, onCloseReadStatus, messageRef }: MessageBubbleProps) {
+function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen, pendingAction, editMode, editDraft, editError, hideReason, mutationPending, replyTarget, highlighted, onToggleMenu, onCloseMenu, onCloseReactionPicker, onSelectAction, onReplyReference, onEditDraftChange, onSaveEdit, onCancelEdit, onHideReasonChange, onConfirmAction, onCancelAction, reactionSettings, reactionPickerOpen, reactionMutationPending, onToggleReactionPicker, onToggleReaction, readStatusEligible, readStatusOpen, readStatus, readSummary, readStatusLoading, readStatusError, readStatusNames, onToggleReadStatus, onRetryReadStatus, onCloseReadStatus, messageRef, popupBoundaryRef }: MessageBubbleProps) {
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const reactionTriggerRef = useRef<HTMLButtonElement | null>(null);
   const isSystemMessage = message.message_type.trim().toLowerCase() === "system";
   const status = message.status.trim().toLowerCase();
   const unavailable = status === "retracted" || status === "removed_by_admin";
@@ -227,6 +236,13 @@ function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen
   const readStatusTickClass = readStatusTickState === "double-blue" ? "text-[#7dd3fc]" : readStatusTickState === "double-neutral" ? "text-[#cbd5d1]" : readStatusTickState === "unknown" ? "text-[#9bb3aa]" : "text-[#d8f3e4]";
   const messageClasses = `max-w-[85%] rounded-2xl px-2.5 py-1.5 text-sm shadow-sm ${actions.length > 0 ? "pr-12" : ""} ${highlighted ? "ring-2 ring-[#f0b429]" : ""} ${isOwnMessage ? "bg-[#1f6a58] text-white" : "border border-[#e1ebe6] bg-white text-[#16332b]"}`;
   const menuLabel = pendingAction === "retract" ? "Retract this message?" : pendingAction === "hide" ? "Hide this message?" : pendingAction === "report" ? "Report this message?" : null;
+  useEffect(() => {
+    if (!menuOpen || !pendingAction) return undefined;
+    const frameId = window.requestAnimationFrame(() => {
+      document.getElementById(`group-message-menu-${message.id}`)?.querySelector<HTMLButtonElement>("button:not([disabled])")?.focus();
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [menuOpen, message.id, pendingAction]);
   return <div className="group">
     {isFirstUnread ? <div className="my-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-[#1f6a58]"><span className="h-px flex-1 bg-[#b7dfc7]" />Unread messages<span className="h-px flex-1 bg-[#b7dfc7]" /></div> : null}
     {isSystemMessage ? <div className="flex justify-center py-0.5">
@@ -238,14 +254,7 @@ function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen
     {!isSystemMessage ? <div className={`flex ${isOwnMessage ? "justify-end" : "justify-start"}`}>
       <article ref={messageRef} data-group-message-id={message.id} className={`relative ${messageClasses}`}>
         {actions.length > 0 ? <div className="absolute right-1 top-1 z-10">
-          <button type="button" aria-label={`Message actions for ${message.sender_name}`} aria-haspopup="menu" aria-expanded={menuOpen} title="Message actions" disabled={mutationPending} onClick={onToggleMenu} className="flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-[#52736a] opacity-75 shadow-sm transition-opacity hover:bg-white hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"><svg aria-hidden="true" viewBox="0 0 18 6" className="h-2.5 w-4" fill="currentColor"><circle cx="3" cy="3" r="1.5" /><circle cx="9" cy="3" r="1.5" /><circle cx="15" cy="3" r="1.5" /></svg></button>
-          {menuOpen ? <div role="menu" aria-label="Message actions" className={`absolute ${isOwnMessage ? "right-0" : "left-0"} top-8 z-30 w-56 rounded-xl border border-[#d7e5df] bg-white p-2 text-sm text-[#16332b] shadow-lg`}>
-            {pendingAction === null ? actions.map((action) => <button key={action} type="button" role="menuitem" onClick={() => onSelectAction(action)} className="block w-full rounded-lg px-3 py-2 text-left font-semibold hover:bg-[#e8f6ee] focus-visible:bg-[#e8f6ee] focus-visible:outline-none">{action === "reply" ? "Reply to message" : action === "edit" ? "Edit message" : action === "retract" ? "Retract message" : action === "hide" ? "Hide message" : action === "report" ? "Report message" : action === "pin" ? "Pin message" : action === "unpin" ? "Unpin message" : "Read status"}</button>) : <div>
-              <p className="px-2 py-1 font-semibold">{menuLabel}</p>
-              {pendingAction === "retract" ? <p className="px-2 py-1 text-xs text-[#52736a]">The original message will remain available for audit and will no longer be visible here.</p> : pendingAction === "report" ? <label className="mt-2 block px-2 text-xs font-semibold text-[#52736a]">Reason<select required value={hideReason} onChange={(event) => onHideReasonChange(event.target.value)} disabled={mutationPending} className="mt-1 h-9 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-sm font-normal text-[#16332b] outline-none focus:border-[#1f6a58]"><option value="">Select a reason</option>{GROUP_CHAT_REPORT_REASONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label> : <label className="mt-2 block px-2 text-xs font-semibold text-[#52736a]">Reason<textarea value={hideReason} maxLength={255} onChange={(event) => onHideReasonChange(event.target.value)} disabled={mutationPending} className="mt-1 min-h-20 w-full rounded-lg border border-[#d7e5df] p-2 text-sm font-normal text-[#16332b] outline-none focus:border-[#1f6a58]" /></label>}
-              <div className="mt-2 flex gap-2 px-2 pb-1"><button type="button" disabled={mutationPending || ((pendingAction === "hide" || pendingAction === "report") && !hideReason.trim())} onClick={onConfirmAction} className="rounded-full bg-[#1f6a58] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{mutationPending ? pendingAction === "retract" ? "Retracting..." : pendingAction === "hide" ? "Hiding..." : "Submitting..." : "Confirm"}</button><button type="button" disabled={mutationPending} onClick={onCancelAction} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-xs font-semibold text-[#16332b]">Cancel</button></div>
-            </div>}
-          </div> : null}
+          <button ref={menuTriggerRef} type="button" aria-label={`Message actions for ${message.sender_name}`} aria-haspopup="menu" aria-expanded={menuOpen} aria-controls={`group-message-menu-${message.id}`} title="Message actions" disabled={mutationPending} onClick={onToggleMenu} className="flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-[#52736a] opacity-75 shadow-sm transition-opacity hover:bg-white hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"><svg aria-hidden="true" viewBox="0 0 18 6" className="h-2.5 w-4" fill="currentColor"><circle cx="3" cy="3" r="1.5" /><circle cx="9" cy="3" r="1.5" /><circle cx="15" cy="3" r="1.5" /></svg></button>
         </div> : null}
         <div className={`mb-0.5 flex min-w-0 items-center gap-1.5 text-[11px] leading-4 ${isOwnMessage ? "text-[#d8f3e4]" : "text-[#7f9d94]"}`}>
           <span className="min-w-0 truncate font-semibold">{message.sender_name}</span>
@@ -259,13 +268,23 @@ function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen
         {!unavailable && message.reply_to ? <div className={`mb-1.5 border-l-2 pl-2 text-xs ${isOwnMessage ? "border-[#d8f3e4] text-[#e5f8eb]" : "border-[#8ccaa2] text-[#52736a]"}`}>
           {replyTarget ? <button type="button" onClick={() => onReplyReference(message.reply_to!.id)} className="block max-w-full text-left hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d8f3e4]"><span className={`block truncate font-semibold ${isOwnMessage ? "text-white" : "text-[#1f6a58]"}`}>{message.reply_to.sender_name}</span><span className="block truncate">{getGroupChatReplyReferencePreview(message.reply_to, replyTarget)}</span></button> : <div><span className={`block truncate font-semibold ${isOwnMessage ? "text-white" : "text-[#1f6a58]"}`}>{message.reply_to.sender_name}</span><span className="block truncate">{getGroupChatReplyReferencePreview(message.reply_to)}</span></div>}
         </div> : null}
-        {editMode ? <div><label className="sr-only" htmlFor={`edit-group-message-${message.id}`}>Edit message</label><textarea id={`edit-group-message-${message.id}`} value={editDraft} onChange={(event) => onEditDraftChange(event.target.value)} disabled={mutationPending} className="min-h-20 w-full resize-y rounded-lg border border-[#b7dfc7] bg-white p-2 text-sm text-[#16332b] outline-none focus:border-[#1f6a58]" />{editError ? <p className="mt-1 text-xs text-[#b42318]" role="alert">{editError}</p> : null}<div className="mt-2 flex gap-2"><button type="button" disabled={mutationPending || !editDraft.trim()} onClick={onSaveEdit} className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#1f6a58] disabled:opacity-50">{mutationPending ? "Saving..." : "Save"}</button><button type="button" disabled={mutationPending} onClick={onCancelEdit} className="rounded-full border border-white/70 px-3 py-1.5 text-xs font-semibold text-current">Cancel</button></div></div> : unavailable ? <p className="italic opacity-80">{getGroupChatMessageDisplayText(message)}</p> : message.attachment_id ? <GroupChatAttachmentMessage message={message} /> : <div className="flex flex-wrap items-end gap-x-1.5 gap-y-1"><p className="min-w-0 flex-[1_1_auto] whitespace-pre-wrap break-words">{getGroupChatMessageDisplayText(message)}</p><GroupChatReactionControls message={message} settings={reactionSettings} pickerOpen={reactionPickerOpen} mutationPending={reactionMutationPending} onTogglePicker={onToggleReactionPicker} onToggleReaction={onToggleReaction} /></div>}
-        {editMode || unavailable || message.attachment_id ? <GroupChatReactionControls message={message} settings={reactionSettings} pickerOpen={reactionPickerOpen} mutationPending={reactionMutationPending} onTogglePicker={onToggleReactionPicker} onToggleReaction={onToggleReaction} /> : null}
+        {editMode ? <div><label className="sr-only" htmlFor={`edit-group-message-${message.id}`}>Edit message</label><textarea id={`edit-group-message-${message.id}`} value={editDraft} onChange={(event) => onEditDraftChange(event.target.value)} disabled={mutationPending} className="min-h-20 w-full resize-y rounded-lg border border-[#b7dfc7] bg-white p-2 text-sm text-[#16332b] outline-none focus:border-[#1f6a58]" />{editError ? <p className="mt-1 text-xs text-[#b42318]" role="alert">{editError}</p> : null}<div className="mt-2 flex gap-2"><button type="button" disabled={mutationPending || !editDraft.trim()} onClick={onSaveEdit} className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#1f6a58] disabled:opacity-50">{mutationPending ? "Saving..." : "Save"}</button><button type="button" disabled={mutationPending} onClick={onCancelEdit} className="rounded-full border border-white/70 px-3 py-1.5 text-xs font-semibold text-current">Cancel</button></div></div> : unavailable ? <p className="italic opacity-80">{getGroupChatMessageDisplayText(message)}</p> : message.attachment_id ? <GroupChatAttachmentMessage message={message} /> : <div className="flex flex-wrap items-end gap-x-1.5 gap-y-1"><p className="min-w-0 flex-[1_1_auto] whitespace-pre-wrap break-words">{getGroupChatMessageDisplayText(message)}</p><GroupChatReactionControls message={message} settings={reactionSettings} pickerOpen={reactionPickerOpen} mutationPending={reactionMutationPending} onTogglePicker={onToggleReactionPicker} onToggleReaction={onToggleReaction} triggerRef={reactionTriggerRef} /></div>}
+        {editMode || unavailable || message.attachment_id ? <GroupChatReactionControls message={message} settings={reactionSettings} pickerOpen={reactionPickerOpen} mutationPending={reactionMutationPending} onTogglePicker={onToggleReactionPicker} onToggleReaction={onToggleReaction} triggerRef={reactionTriggerRef} /> : null}
         {readStatusOpen ? <div className="absolute right-2 top-full z-20 mt-1 w-64 rounded-xl border border-[#d7e5df] bg-white p-3 text-left text-[#16332b] shadow-lg" aria-label="Read status">
           <div className="flex items-start justify-between gap-3"><p className="text-xs font-bold uppercase tracking-wide text-[#52736a]">Read status</p><button type="button" aria-label="Close read status" onClick={onCloseReadStatus} className="rounded-full px-1 text-sm text-[#52736a] hover:bg-[#e8f6ee]">×</button></div>
           {readSummary ? <div className="mt-2 text-sm"><p className="font-semibold">{readSummary.all_read ? "Read by all recipients" : "Not read by all recipients"}</p><p className="text-xs text-[#52736a]">{readSummary.read_count} of {readSummary.recipient_count} recipients seen</p></div> : readStatusLoading && !readStatus ? <p className="mt-2 text-sm text-[#52736a]">Loading read status...</p> : readStatus ? <div className="mt-2 text-sm">{readStatusError ? <p className="mb-1 text-xs text-[#7a271a]" role="alert">Unable to refresh read status. Showing the last confirmed status.</p> : null}<p className="font-semibold">{readStatus.label}</p><p className="text-xs text-[#52736a]">{readStatus.seen_by_count} of {readStatus.recipient_count} recipients seen</p>{readStatusNames.length > 0 ? <p className="mt-1 text-xs text-[#52736a]">Seen by: {readStatusNames.join(", ")}</p> : readStatus.seen_by_count === 0 ? <p className="mt-1 text-xs text-[#52736a]">No members have seen this message yet.</p> : <p className="mt-1 text-xs text-[#52736a]">Seen-by member names unavailable.</p>}</div> : readStatusError ? <div className="mt-2 text-sm text-[#7a271a]" role="alert"><p>Read status is unavailable for this message.</p><button type="button" onClick={onRetryReadStatus} className="mt-1 font-semibold underline">Try again</button></div> : null}
         </div> : null}
       </article>
+      {menuOpen ? <GroupChatAnchoredPopup anchorRef={menuTriggerRef} boundaryRef={popupBoundaryRef} alignment={isOwnMessage ? "end" : "start"} className="w-56 rounded-xl border border-[#d7e5df] bg-white p-2 text-sm text-[#16332b] shadow-xl" id={`group-message-menu-${message.id}`} role="menu" ariaLabel="Message actions" onDismiss={onCloseMenu}>
+        {pendingAction === null ? actions.map((action) => <button key={action} type="button" role="menuitem" onClick={() => onSelectAction(action)} className="block w-full rounded-lg px-3 py-2 text-left font-semibold hover:bg-[#e8f6ee] focus-visible:bg-[#e8f6ee] focus-visible:outline-none">{action === "reply" ? "Reply to message" : action === "edit" ? "Edit message" : action === "retract" ? "Retract message" : action === "hide" ? "Hide message" : action === "report" ? "Report message" : action === "pin" ? "Pin message" : action === "unpin" ? "Unpin message" : "Read status"}</button>) : <div>
+          <p className="px-2 py-1 font-semibold">{menuLabel}</p>
+          {pendingAction === "retract" ? <p className="px-2 py-1 text-xs text-[#52736a]">The original message will remain available for audit and will no longer be visible here.</p> : pendingAction === "report" ? <label className="mt-2 block px-2 text-xs font-semibold text-[#52736a]">Reason<select required value={hideReason} onChange={(event) => onHideReasonChange(event.target.value)} disabled={mutationPending} className="mt-1 h-9 w-full rounded-lg border border-[#d7e5df] bg-white px-2 text-sm font-normal text-[#16332b] outline-none focus:border-[#1f6a58]"><option value="">Select a reason</option>{GROUP_CHAT_REPORT_REASONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label> : <label className="mt-2 block px-2 text-xs font-semibold text-[#52736a]">Reason<textarea value={hideReason} maxLength={255} onChange={(event) => onHideReasonChange(event.target.value)} disabled={mutationPending} className="mt-1 min-h-20 w-full rounded-lg border border-[#d7e5df] p-2 text-sm font-normal text-[#16332b] outline-none focus:border-[#1f6a58]" /></label>}
+          <div className="mt-2 flex gap-2 px-2 pb-1"><button type="button" disabled={mutationPending || ((pendingAction === "hide" || pendingAction === "report") && !hideReason.trim())} onClick={onConfirmAction} className="rounded-full bg-[#1f6a58] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{mutationPending ? pendingAction === "retract" ? "Retracting..." : pendingAction === "hide" ? "Hiding..." : "Submitting..." : "Confirm"}</button><button type="button" disabled={mutationPending} onClick={onCancelAction} className="rounded-full border border-[#d7e5df] px-3 py-1.5 text-xs font-semibold text-[#16332b]">Cancel</button></div>
+        </div>}
+      </GroupChatAnchoredPopup> : null}
+      {reactionPickerOpen && reactionSettings?.enabled ? <GroupChatAnchoredPopup anchorRef={reactionTriggerRef} boundaryRef={popupBoundaryRef} className="w-56 rounded-xl border border-[#d7e5df] bg-white p-2 shadow-xl" id={`group-reaction-picker-${message.id}`} role="menu" ariaLabel="Available reactions" onDismiss={onCloseReactionPicker}>
+        <div className="flex flex-wrap gap-1">{reactionSettings.emojis.map((emoji) => { const isSelected = message.my_reactions.includes(emoji); return <button key={emoji} type="button" role="menuitemcheckbox" aria-label={isSelected ? `Remove ${emoji} reaction` : `React with ${emoji}`} aria-checked={isSelected} disabled={reactionMutationPending} onClick={() => onToggleReaction(emoji)} className={`rounded-lg px-2 py-1 text-base hover:bg-[#e8f6ee] ${isSelected ? "bg-[#d8f3e4]" : ""}`}>{emoji}</button>; })}</div>
+      </GroupChatAnchoredPopup> : null}
     </div> : null}
   </div>;
 }
@@ -273,8 +292,20 @@ function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen
 /** Renders REST-only Group Chat history and text messaging without using Direct Chat or Socket.IO. */
 export default function GroupChatMessages({ groupId, userScope, tenantScope, groupStatus, groupKind, memberDirectory, canPost, postingMuted, canHideMessages, canPinMessages, canReport, currentMemberKind, currentMemberStatus, lifecycleRefreshPending = false, readStatusRefreshKey, reconnectRefreshKey, readThroughMessageId, conversationEntryKey = 0 }: Props) {
   const { userId } = useAuth();
+  const { t } = useTranslation("groupChatSpeech");
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState("");
+  const [speechListening, setSpeechListening] = useState(false);
+  const [voiceRecordingActive, setVoiceRecordingActive] = useState(false);
+  const [speechError, setSpeechError] = useState<GroupChatSpeechError | null>(null);
+  const [speechController] = useState<GroupChatSpeechController>(() =>
+    createGroupChatSpeechController({
+      createRecognition: createBrowserGroupChatSpeechRecognition,
+      onTranscript: setDraft,
+      onListeningChange: setSpeechListening,
+      onError: setSpeechError,
+    }),
+  );
   const [readError, setReadError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -287,7 +318,7 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
   const handledConversationEntryKey = useRef(0);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const replyHighlightTimer = useRef<number | null>(null);
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [openPopup, setOpenPopup] = useState<{ kind: "menu" | "reaction"; messageId: string } | null>(null);
   const [pendingAction, setPendingAction] = useState<{ messageId: string; action: "retract" | "hide" | "report" } | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
@@ -300,8 +331,11 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<GroupChatMessage | null>(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
-  const [openReactionPickerId, setOpenReactionPickerId] = useState<string | null>(null);
-  const [pinnedPanelOpen, setPinnedPanelOpen] = useState(false);
+  const [pinnedPanelOpenConversation, setPinnedPanelOpenConversation] = useState<string | null>(null);
+  const [pinnedNavigation, setPinnedNavigation] = useState<{ messageId: string; groupId: string; requestId: number } | null>(null);
+  const [pinnedNavigationError, setPinnedNavigationError] = useState<{ groupId: string; message: string } | null>(null);
+  const pinnedNavigationRequestRef = useRef(0);
+  const pinnedNavigationPageRequestRef = useRef<number | null>(null);
   const [readStatusSelection, setReadStatusSelection] = useState<{ groupId: string; messageId: string } | null>(null);
   const [readStatusByMessage, setReadStatusByMessage] = useState<Record<string, GroupChatMessageReadStatus>>({});
   const readStatusQueueRef = useRef<string[]>([]);
@@ -319,6 +353,8 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
   const processReadStatusQueueRef = useRef<() => void>(() => undefined);
   const queueReadStatusRef = useRef<(messageId: string, forceRefresh?: boolean) => boolean>(() => false);
   currentGroupIdRef.current = groupId;
+  const pinnedConversationKey = `${groupId}:${conversationEntryKey}`;
+  const pinnedPanelOpen = pinnedPanelOpenConversation === pinnedConversationKey;
   readStatusByMessageRef.current = readStatusByMessage;
   const groupIsClosed = groupStatus?.trim().toLowerCase() === "closed";
   const postingRestriction = getGroupChatPostingRestrictionState(groupStatus, canPost, postingMuted, lifecycleRefreshPending);
@@ -463,7 +499,7 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
     retry: false,
     onSuccess: async (_message, variables) => {
       if (variables.groupId !== groupId) return;
-      setOpenMenuId(null);
+        setOpenPopup(dismissGroupChatPopup());
       setPendingAction(null);
       setActionError(null);
       await refreshMessages();
@@ -477,7 +513,7 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
     retry: false,
     onSuccess: async (_message, variables) => {
       if (variables.groupId !== groupId) return;
-      setOpenMenuId(null);
+      setOpenPopup(null);
       setPendingAction(null);
       setHideReason("");
       setActionError(null);
@@ -496,7 +532,7 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
     retry: false,
     onSuccess: (_report, variables) => {
       if (variables.groupId !== groupId) return;
-      setOpenMenuId(null);
+      setOpenPopup(null);
       setPendingAction(null);
       setHideReason("");
       setActionError("Report submitted. It has not been resolved yet.");
@@ -510,7 +546,7 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
     retry: false,
     onSuccess: async (_result, variables) => {
       if (variables.groupId !== groupId) return;
-      setOpenReactionPickerId(null);
+      setOpenPopup(null);
       setActionError(null);
       await queryClient.invalidateQueries({ queryKey: messageKey(groupId) });
     },
@@ -523,7 +559,7 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
     retry: false,
     onSuccess: async (_message, variables) => {
       if (variables.groupId !== groupId) return;
-      setOpenMenuId(null);
+      setOpenPopup(null);
       setActionError(null);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: messageKey(groupId) }),
@@ -566,7 +602,7 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
     setShowJumpToLatest(false);
     setDraft("");
     setReadError(null);
-    setOpenMenuId(null);
+    setOpenPopup(dismissGroupChatPopup());
     setPendingAction(null);
     setEditingMessageId(null);
     setEditDraft("");
@@ -578,8 +614,11 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
     setAttachmentError(null);
     setReplyingTo(null);
     setHighlightedMessageId(null);
-    setOpenReactionPickerId(null);
-    setPinnedPanelOpen(false);
+    pinnedNavigationRequestRef.current += 1;
+    pinnedNavigationPageRequestRef.current = null;
+    setPinnedNavigation(null);
+    setPinnedNavigationError(null);
+    setPinnedPanelOpenConversation(null);
     setReadStatusSelection(null);
     setReadStatusByMessage({});
     attachmentUploadMutation.reset();
@@ -675,6 +714,7 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
   }, [groupId, readStatusQuery.data, readStatusSelection, tenantScope, userScope]);
 
   useEffect(() => () => {
+    pinnedNavigationRequestRef.current += 1;
     if (replyHighlightTimer.current !== null) window.clearTimeout(replyHighlightTimer.current);
   }, []);
 
@@ -689,20 +729,6 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
   }, [attachmentFile]);
 
   useEffect(() => {
-    if (!openMenuId) return undefined;
-    const closeMenu = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpenMenuId(null);
-        setPendingAction(null);
-        setHideReason("");
-        setActionError(null);
-      }
-    };
-    document.addEventListener("keydown", closeMenu);
-    return () => document.removeEventListener("keydown", closeMenu);
-  }, [openMenuId]);
-
-  useEffect(() => {
     const node = composerRef.current;
     if (!node) return;
     const maxHeight = 128;
@@ -715,8 +741,84 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
     const node = scrollRef.current;
     if (!node || !historyQuery.hasNextPage || historyQuery.isFetchingNextPage) return;
     previousScroll.current = { height: node.scrollHeight, top: node.scrollTop };
-    void historyQuery.fetchNextPage();
+    return historyQuery.fetchNextPage();
   }, [historyQuery]);
+
+  const jumpToPinnedMessage = (messageId: string) => {
+    const requestId = ++pinnedNavigationRequestRef.current;
+    setPinnedNavigationError(null);
+    setPinnedPanelOpenConversation(null);
+    setPinnedNavigation({ messageId, groupId, requestId });
+  };
+
+  useEffect(() => {
+    if (!pinnedNavigation || pinnedNavigationRequestRef.current !== pinnedNavigation.requestId) return;
+    const targetIsLoaded = messages.some((message) => message.id === pinnedNavigation.messageId);
+    const stage = getGroupChatPinnedNavigationStage({ sameGroup: pinnedNavigation.groupId === groupId, panelOpen: pinnedPanelOpen, targetLoaded: targetIsLoaded, historyLoading: historyQuery.isPending, pageFetching: historyQuery.isFetchingNextPage, hasNextPage: historyQuery.hasNextPage });
+    if (stage === "stale" || stage === "wait-for-panel" || stage === "scroll" || stage === "wait-for-history") return;
+    if (stage === "not-found") {
+      const requestId = pinnedNavigation.requestId;
+      const frame = window.requestAnimationFrame(() => {
+        if (pinnedNavigationRequestRef.current !== requestId || currentGroupIdRef.current !== pinnedNavigation.groupId) return;
+        setPinnedNavigationError({ groupId, message: "This pinned message could not be found in the available conversation history." });
+        setPinnedNavigation(null);
+      });
+      return () => window.cancelAnimationFrame(frame);
+    }
+    if (stage !== "fetch-next-page") return;
+    const requestId = pinnedNavigation.requestId;
+    if (pinnedNavigationPageRequestRef.current === requestId) return;
+    const request = loadOlder();
+    if (!request) return;
+    pinnedNavigationPageRequestRef.current = requestId;
+    void request.then((result) => {
+      if (pinnedNavigationPageRequestRef.current === requestId) pinnedNavigationPageRequestRef.current = null;
+      if (result.isFetchNextPageError && pinnedNavigationRequestRef.current === requestId && currentGroupIdRef.current === pinnedNavigation.groupId) {
+        setPinnedNavigationError({ groupId, message: "Conversation history could not be loaded, so this pinned message could not be located." });
+        setPinnedNavigation(null);
+      }
+    }).catch(() => {
+      if (pinnedNavigationPageRequestRef.current === requestId) pinnedNavigationPageRequestRef.current = null;
+      if (pinnedNavigationRequestRef.current !== requestId || currentGroupIdRef.current !== pinnedNavigation.groupId) return;
+      setPinnedNavigationError({ groupId, message: "Conversation history could not be loaded, so this pinned message could not be located." });
+      setPinnedNavigation(null);
+    });
+  }, [groupId, historyQuery.hasNextPage, historyQuery.isFetchingNextPage, historyQuery.isPending, loadOlder, messages, pinnedNavigation, pinnedPanelOpen]);
+
+  useLayoutEffect(() => {
+    if (!pinnedNavigation || pinnedNavigationRequestRef.current !== pinnedNavigation.requestId) return;
+    const stage = getGroupChatPinnedNavigationStage({ sameGroup: pinnedNavigation.groupId === groupId, panelOpen: pinnedPanelOpen, targetLoaded: messages.some((message) => message.id === pinnedNavigation.messageId), historyLoading: historyQuery.isPending, pageFetching: historyQuery.isFetchingNextPage, hasNextPage: historyQuery.hasNextPage });
+    if (stage !== "scroll") return;
+    const requestId = pinnedNavigation.requestId;
+    // The panel has committed closed before this frame; measure only after the history viewport has reflowed.
+    const frame = window.requestAnimationFrame(() => {
+      if (pinnedNavigationRequestRef.current !== requestId || currentGroupIdRef.current !== pinnedNavigation.groupId) return;
+      const node = scrollRef.current;
+      const target = Array.from(node?.querySelectorAll<HTMLElement>("[data-group-message-id]") ?? []).find((element) => element.dataset.groupMessageId === pinnedNavigation.messageId);
+      if (!node || !target) {
+        setPinnedNavigationError({ groupId, message: "This pinned message is in history but could not be displayed." });
+        setPinnedNavigation(null);
+        return;
+      }
+      const containerRect = node.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      node.scrollTo({
+        top: getGroupChatCenteredScrollTop({
+          scrollTop: node.scrollTop,
+          scrollHeight: node.scrollHeight,
+          clientHeight: node.clientHeight,
+          targetTop: targetRect.top - containerRect.top,
+          targetHeight: targetRect.height,
+        }),
+        behavior: "smooth",
+      });
+      setHighlightedMessageId(`${pinnedNavigation.groupId}:${pinnedNavigation.messageId}`);
+      if (replyHighlightTimer.current !== null) window.clearTimeout(replyHighlightTimer.current);
+      replyHighlightTimer.current = window.setTimeout(() => setHighlightedMessageId(null), GROUP_CHAT_PINNED_HIGHLIGHT_MS);
+      setPinnedNavigation(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [groupId, historyQuery.hasNextPage, historyQuery.isFetchingNextPage, historyQuery.isPending, messages, pinnedNavigation, pinnedPanelOpen]);
 
   const handleScroll = useCallback(() => {
     const node = scrollRef.current;
@@ -816,7 +918,7 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
     const target = Array.from(scrollRef.current?.querySelectorAll<HTMLElement>("[data-group-message-id]") ?? []).find((element) => element.dataset.groupMessageId === messageId);
     if (!target) return;
     target.scrollIntoView({ behavior: "smooth", block: "center" });
-    setHighlightedMessageId(messageId);
+    setHighlightedMessageId(`${groupId}:${messageId}`);
     if (replyHighlightTimer.current !== null) window.clearTimeout(replyHighlightTimer.current);
     replyHighlightTimer.current = window.setTimeout(() => setHighlightedMessageId(null), 1800);
   };
@@ -860,6 +962,39 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
     sendMutation.mutate({ content: draft, replyToId: replyingTo?.id });
   };
   const postingDisabled = !canSendGroupChatMessage(groupStatus, effectiveCanPost, postingMuted === true);
+  const speechScopeToken = JSON.stringify([groupId, userScope, tenantScope, userId]);
+  const speechAllowed =
+    !postingDisabled &&
+    !voiceRecordingActive &&
+    currentMemberStatus?.trim().toLowerCase() === "active" &&
+    !editingMessageId &&
+    !attachmentFile &&
+    !attachmentUploadMutation.isPending &&
+    !attachmentSendMutation.isPending &&
+    !sendMutation.isPending;
+  useLayoutEffect(() => {
+    speechController.activate();
+    speechController.updateScope(speechScopeToken, speechAllowed);
+  }, [speechAllowed, speechController, speechScopeToken]);
+  useEffect(() => {
+    speechController.activate();
+    return () => speechController.dispose();
+  }, [speechController]);
+  const toggleSpeechToText = useCallback(() => {
+    setSpeechError(null);
+    toggleGroupChatSpeech(speechController, speechListening, speechAllowed, draft, speechScopeToken);
+  }, [draft, speechAllowed, speechController, speechListening, speechScopeToken]);
+  const voiceEnabled =
+    !postingDisabled &&
+    currentMemberStatus?.trim().toLowerCase() === "active" &&
+    !speechListening &&
+    !editingMessageId &&
+    !attachmentFile &&
+    !replyingTo &&
+    !sendMutation.isPending &&
+    !attachmentUploadMutation.isPending &&
+    !attachmentSendMutation.isPending;
+  const handleVoiceRecordingStateChange = useCallback((active: boolean) => setVoiceRecordingActive(active), []);
   const restrictionMessage = postingRestriction.message;
   const mutationPending = editMutation.isPending || retractMutation.isPending || hideMutation.isPending || reportMutation.isPending || attachmentUploadMutation.isPending || attachmentSendMutation.isPending || pinMutation.isPending;
   const reactionSettings = reactionQuery.data ?? null;
@@ -885,11 +1020,13 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
   return <div className="flex min-h-0 flex-1 flex-col" aria-label="Group conversation">
     {pages[0]?.unread_count ? <div className="flex shrink-0 justify-end"><span className="rounded-full bg-[#e8f6ee] px-2.5 py-1 text-xs font-semibold text-[#1f6a58]">{pages[0].unread_count} unread</span></div> : null}
     <div className="mt-0.5 shrink-0">
-      <button type="button" aria-expanded={pinnedPanelOpen} onClick={() => setPinnedPanelOpen((open) => !open)} className="rounded-full border border-[#d7e5df] bg-[#f8fbf9] px-2.5 py-1 text-[11px] font-semibold text-[#1f6a58] hover:border-[#1f6a58]">Pinned messages ({pinnedCount})</button>
+      <button type="button" aria-expanded={pinnedPanelOpen} onClick={() => setPinnedPanelOpenConversation((openConversation) => openConversation === pinnedConversationKey ? null : pinnedConversationKey)} className="rounded-full border border-[#d7e5df] bg-[#f8fbf9] px-2.5 py-1 text-[11px] font-semibold text-[#1f6a58] hover:border-[#1f6a58]">Pinned messages ({pinnedCount})</button>
       {pinnedPanelOpen ? <section className="mt-2 rounded-xl border border-[#d7e5df] bg-[#f8fbf9] p-2" aria-label="Pinned messages">
-        {pinnedQuery.isPending ? <p className="p-2 text-xs text-[#52736a]">Loading pinned messages...</p> : pinnedQuery.isError ? <div className="p-2 text-xs text-[#7a271a]" role="alert"><p>Pinned messages are unavailable right now.</p><button type="button" onClick={() => void pinnedQuery.refetch()} className="mt-1 font-semibold underline">Try again</button></div> : pinnedMessages.length === 0 ? <p className="p-2 text-xs text-[#52736a]">No pinned messages.</p> : <div className="space-y-1">{pinnedMessages.map((message) => { const loaded = messages.some((candidate) => candidate.id === message.id); return <div key={message.id} className="flex items-center gap-2 rounded-lg bg-white px-2 py-1.5"><button type="button" disabled={!loaded} onClick={() => locateReplyTarget(message.id)} className="min-w-0 flex-1 text-left disabled:cursor-default disabled:opacity-70"><span className="block truncate text-xs font-semibold text-[#16332b]">{message.sender_name}</span><span className="block truncate text-xs text-[#52736a]">{getPinnedMessagePreview(message)}</span></button>{loaded ? <span className="text-[10px] font-semibold text-[#1f6a58]">Jump</span> : <span className="text-[10px] text-[#7f9d94]">Not loaded</span>}</div>; })}</div>}
+        {pinnedQuery.isPending ? <p className="p-2 text-xs text-[#52736a]">Loading pinned messages...</p> : pinnedQuery.isError ? <div className="p-2 text-xs text-[#7a271a]" role="alert"><p>Pinned messages are unavailable right now.</p><button type="button" onClick={() => void pinnedQuery.refetch()} className="mt-1 font-semibold underline">Try again</button></div> : pinnedMessages.length === 0 ? <p className="p-2 text-xs text-[#52736a]">No pinned messages.</p> : <div className="space-y-1 overflow-y-auto overscroll-contain" style={{ maxHeight: getGroupChatPinnedListMaxHeight(pinnedMessages.length) }} aria-label="Pinned message list">{pinnedMessages.map((message) => <div key={message.id} className="flex h-11 shrink-0 items-center gap-2 rounded-lg bg-white px-2"><button type="button" onClick={() => jumpToPinnedMessage(message.id)} aria-label={`Jump to ${message.sender_name}'s pinned message`} className="min-w-0 flex-1 text-left"><span className="block truncate text-xs font-semibold text-[#16332b]">{message.sender_name}</span><span className="block truncate text-xs text-[#52736a]">{getPinnedMessagePreview(message)}</span></button><span aria-hidden="true" className="text-[10px] font-semibold text-[#1f6a58]">Jump</span></div>)}</div>}
       </section> : null}
     </div>
+    {pinnedNavigation?.groupId === groupId && !messages.some((message) => message.id === pinnedNavigation.messageId) ? <p className="mt-1 shrink-0 text-xs text-[#52736a]" role="status" aria-live="polite">Finding pinned message in conversation history...</p> : null}
+    {pinnedNavigationError?.groupId === groupId ? <p className="mt-1 shrink-0 rounded-lg border border-[#f3d5d1] bg-[#fff7f6] p-2 text-xs text-[#7a271a]" role="alert">{pinnedNavigationError.message}</p> : null}
     {restrictionMessage ? <p className={`mt-1 shrink-0 rounded-lg p-2 text-xs [@media(min-height:801px)]:mt-2 ${postingRestriction.reason === "muted" ? "border border-[#f3d5d1] bg-[#fff7f6] text-[#7a271a]" : groupIsClosed || postingRestriction.reason === "permission-refresh" ? "border border-[#f1d8ad] bg-[#fffaf0] text-[#8b5e00]" : "border border-[#d7e5df] bg-white text-[#52736a]"}`} role="status">{restrictionMessage}</p> : null}
     {readError ? <p className="mt-1 shrink-0 rounded-lg border border-[#f3d5d1] bg-[#fff7f6] p-2 text-xs [@media(min-height:801px)]:mt-2" role="alert">{readError}</p> : null}
     {actionError ? <p className="mt-1 shrink-0 rounded-lg border border-[#f3d5d1] bg-[#fff7f6] p-2 text-xs [@media(min-height:801px)]:mt-2" role="alert">{actionError}</p> : null}
@@ -911,7 +1048,116 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
         const messageReadStatus = message.read_summary ? null : (readStatusOpen && readStatusQuery.data?.message_id === message.id ? readStatusQuery.data : null) ?? readStatusByMessage[readStatusKey(groupId, userScope, tenantScope, message.id)] ?? queryClient.getQueryData<GroupChatMessageReadStatus>(groupChatReadStatusQueryKey(groupId, userScope, tenantScope, message.id)) ?? null;
         const messageReadSummary = message.read_summary ?? null;
         const messageReadStatusNames = messageReadStatus ? getGroupChatReadStatusMemberNames(messageReadStatus, memberDirectory) : [];
-        return <MessageBubble key={message.id} message={message} messageRef={(node) => registerReadStatusElement(message.id, node)} isOwnMessage={message.sender_id === userId} isFirstUnread={message.id === firstUnreadMessageId} actions={actions} menuOpen={openMenuId === message.id} pendingAction={messagePendingAction} editMode={messageIsEditing} editDraft={editDraft} editError={messageIsEditing ? editError : null} hideReason={hideReason} mutationPending={mutationPending} replyTarget={message.reply_to ? messages.find((candidate) => candidate.id === message.reply_to?.id) ?? null : null} highlighted={highlightedMessageId === message.id} reactionSettings={reactionSettings} reactionPickerOpen={openReactionPickerId === message.id} reactionMutationPending={reactionMutationPending} onToggleReactionPicker={() => { if (!reactionMutationPending && reactionSettings?.enabled) setOpenReactionPickerId((current) => current === message.id ? null : message.id); }} onToggleReaction={(emoji) => toggleReaction(message, emoji)} onToggleMenu={() => { if (!mutationPending) { setOpenMenuId((current) => current === message.id ? null : message.id); setPendingAction(null); setActionError(null); } }} onReplyReference={locateReplyTarget} onSelectAction={(action) => { setActionError(null); if (action === "reply") { setReplyingTo(message); setOpenMenuId(null); setPendingAction(null); return; } if (action === "edit") { setEditingMessageId(message.id); setEditDraft(message.content ?? ""); setEditError(null); setPendingAction(null); setOpenMenuId(null); return; } if (action === "read-status") { setReadStatusSelection({ groupId, messageId: message.id }); setOpenMenuId(null); setPendingAction(null); return; } if (action === "pin" || action === "unpin") { setOpenMenuId(null); setPendingAction(null); pinMutation.mutate({ groupId, messageId: message.id, pinned: action === "pin" }); return; } setPendingAction({ messageId: message.id, action }); setOpenMenuId(message.id); if (action === "hide" || action === "report") setHideReason(""); }} onEditDraftChange={(value) => { setEditDraft(value); setEditError(null); }} onSaveEdit={() => { const payload = buildEditGroupChatMessagePayload(editDraft); if (!payload) { setEditError("Message content cannot be empty."); return; } editMutation.mutate({ groupId, messageId: message.id, content: payload.content }); }} onCancelEdit={() => { setEditingMessageId(null); setEditDraft(""); setEditError(null); setActionError(null); }} onHideReasonChange={(value) => { setHideReason(value); setActionError(null); }} onConfirmAction={() => { if (messagePendingAction === "retract") retractMutation.mutate({ groupId, messageId: message.id }); if (messagePendingAction === "hide" && hideReason.trim()) hideMutation.mutate({ groupId, messageId: message.id, reason: hideReason }); if (messagePendingAction === "report" && hideReason.trim()) reportMutation.mutate({ groupId, messageId: message.id, reason: hideReason, details: "" }); }} onCancelAction={() => { setOpenMenuId(null); setPendingAction(null); setHideReason(""); setActionError(null); }} readStatusEligible={readStatusIndicatorEligible} readStatusOpen={readStatusOpen} readStatus={messageReadStatus} readSummary={messageReadSummary} readStatusLoading={readStatusOpen && readStatusQuery.isPending && !messageReadStatus} readStatusError={readStatusOpen && readStatusQuery.isError} readStatusNames={messageReadStatusNames} onToggleReadStatus={() => { setReadStatusSelection((current) => current?.groupId === groupId && current.messageId === message.id ? null : { groupId, messageId: message.id }); setOpenMenuId(null); setPendingAction(null); }} onRetryReadStatus={() => void readStatusQuery.refetch()} onCloseReadStatus={() => setReadStatusSelection(null)} />;
+        return <MessageBubble
+          key={message.id}
+          message={message}
+          messageRef={(node) => registerReadStatusElement(message.id, node)}
+          popupBoundaryRef={scrollRef}
+          isOwnMessage={message.sender_id === userId}
+          isFirstUnread={message.id === firstUnreadMessageId}
+          actions={actions}
+          menuOpen={openPopup?.kind === "menu" && openPopup.messageId === message.id}
+          pendingAction={messagePendingAction}
+          editMode={messageIsEditing}
+          editDraft={editDraft}
+          editError={messageIsEditing ? editError : null}
+          hideReason={hideReason}
+          mutationPending={mutationPending}
+          replyTarget={message.reply_to ? messages.find((candidate) => candidate.id === message.reply_to?.id) ?? null : null}
+          highlighted={highlightedMessageId === `${groupId}:${message.id}`}
+          reactionSettings={reactionSettings}
+          reactionPickerOpen={openPopup?.kind === "reaction" && openPopup.messageId === message.id}
+          reactionMutationPending={reactionMutationPending}
+          onToggleReactionPicker={() => {
+            if (reactionMutationPending || !reactionSettings?.enabled) return;
+            const next = toggleGroupChatPopup(openPopup, { kind: "reaction", messageId: message.id });
+            setOpenPopup(next);
+            if (next?.kind === "reaction") {
+              setPendingAction(null);
+              setHideReason("");
+              setActionError(null);
+            }
+          }}
+          onToggleReaction={(emoji) => {
+            setOpenPopup(dismissGroupChatPopup());
+            toggleReaction(message, emoji);
+          }}
+          onToggleMenu={() => {
+            if (mutationPending) return;
+            const next = toggleGroupChatPopup(openPopup, { kind: "menu", messageId: message.id });
+            setOpenPopup(next);
+            setPendingAction(null);
+            setHideReason("");
+            setActionError(null);
+          }}
+          onCloseMenu={() => {
+            setOpenPopup(dismissGroupChatPopup());
+            setPendingAction(null);
+            setHideReason("");
+            setActionError(null);
+          }}
+          onCloseReactionPicker={() => setOpenPopup(dismissGroupChatPopup())}
+          onReplyReference={locateReplyTarget}
+          onSelectAction={(action) => {
+            setActionError(null);
+            if (action === "reply") {
+              setReplyingTo(message);
+              setOpenPopup(dismissGroupChatPopup());
+              setPendingAction(null);
+              return;
+            }
+            if (action === "edit") {
+              setEditingMessageId(message.id);
+              setEditDraft(message.content ?? "");
+              setEditError(null);
+              setPendingAction(null);
+              setOpenPopup(dismissGroupChatPopup());
+              return;
+            }
+            if (action === "read-status") {
+              setReadStatusSelection({ groupId, messageId: message.id });
+              setOpenPopup(dismissGroupChatPopup());
+              setPendingAction(null);
+              return;
+            }
+            if (action === "pin" || action === "unpin") {
+              setOpenPopup(dismissGroupChatPopup());
+              setPendingAction(null);
+              pinMutation.mutate({ groupId, messageId: message.id, pinned: action === "pin" });
+              return;
+            }
+            setPendingAction({ messageId: message.id, action });
+            if (action === "hide" || action === "report") setHideReason("");
+          }}
+          onEditDraftChange={(value) => { setEditDraft(value); setEditError(null); }}
+          onSaveEdit={() => {
+            const payload = buildEditGroupChatMessagePayload(editDraft);
+            if (!payload) { setEditError("Message content cannot be empty."); return; }
+            editMutation.mutate({ groupId, messageId: message.id, content: payload.content });
+          }}
+          onCancelEdit={() => { setEditingMessageId(null); setEditDraft(""); setEditError(null); setActionError(null); }}
+          onHideReasonChange={(value) => { setHideReason(value); setActionError(null); }}
+          onConfirmAction={() => {
+            if (messagePendingAction === "retract") retractMutation.mutate({ groupId, messageId: message.id });
+            if (messagePendingAction === "hide" && hideReason.trim()) hideMutation.mutate({ groupId, messageId: message.id, reason: hideReason });
+            if (messagePendingAction === "report" && hideReason.trim()) reportMutation.mutate({ groupId, messageId: message.id, reason: hideReason, details: "" });
+          }}
+          onCancelAction={() => { setOpenPopup(dismissGroupChatPopup()); setPendingAction(null); setHideReason(""); setActionError(null); }}
+          readStatusEligible={readStatusIndicatorEligible}
+          readStatusOpen={readStatusOpen}
+          readStatus={messageReadStatus}
+          readSummary={messageReadSummary}
+          readStatusLoading={readStatusOpen && readStatusQuery.isPending && !messageReadStatus}
+          readStatusError={readStatusOpen && readStatusQuery.isError}
+          readStatusNames={messageReadStatusNames}
+          onToggleReadStatus={() => {
+            setReadStatusSelection((current) => current?.groupId === groupId && current.messageId === message.id ? null : { groupId, messageId: message.id });
+            setOpenPopup(dismissGroupChatPopup());
+            setPendingAction(null);
+          }}
+          onRetryReadStatus={() => void readStatusQuery.refetch()}
+          onCloseReadStatus={() => setReadStatusSelection(null)}
+        />;
       })}
       </div>
       </div>
@@ -932,8 +1178,14 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
       <button type="button" onClick={() => attachmentInputRef.current?.click()} disabled={postingDisabled || attachmentUploadMutation.isPending || attachmentSendMutation.isPending || Boolean(attachmentFile) || Boolean(replyingTo)} aria-label="Attach file" title={replyingTo ? "Cancel reply before attaching a file" : "Attach file"} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#d7e5df] bg-[#f8fbf9] text-[#52736a] transition hover:border-[#1f6a58] hover:text-[#1f6a58] disabled:cursor-not-allowed disabled:opacity-50">+</button>
       <input ref={attachmentInputRef} type="file" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,audio/*,video/*" className="hidden" onChange={handleAttachmentSelected} />
       <textarea ref={composerRef} id={`group-message-${groupId}`} value={draft} onChange={(event) => setDraft(event.target.value)} disabled={postingDisabled || sendMutation.isPending || attachmentUploadMutation.isPending || attachmentSendMutation.isPending || Boolean(attachmentFile)} placeholder={postingDisabled ? "Messaging is unavailable" : attachmentFile ? "Remove attachment to write a message" : "Write a message..."} rows={1} className="min-h-11 max-h-32 min-w-0 flex-1 resize-none overflow-hidden rounded-xl border border-[#d7e5df] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f6a58] disabled:cursor-not-allowed disabled:bg-[#f4faf7]" />
+      <button type="button" onClick={toggleSpeechToText} disabled={!speechAllowed} aria-label={t(speechListening ? "stopVoiceToText" : "voiceToText")} aria-pressed={speechListening} title={t(speechListening ? "stopVoiceToText" : "voiceToText")} className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border text-[#1f6a58] transition disabled:cursor-not-allowed disabled:opacity-50 ${speechListening ? "border-[#1f6a58] bg-[#e8f6ee] ring-2 ring-[#b7dfc7]" : "border-[#d7e5df] bg-[#f8fbf9] hover:border-[#1f6a58]"}`}>
+        <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="3" width="6" height="12" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3m-4 0h8" /></svg>
+      </button>
+      <GroupChatVoiceComposer key={JSON.stringify([speechScopeToken, postingDisabled, currentMemberStatus])} groupId={groupId} scopeToken={speechScopeToken} enabled={voiceEnabled} onRecordingStateChange={handleVoiceRecordingStateChange} />
       <button type="submit" disabled={postingDisabled || sendMutation.isPending || attachmentUploadMutation.isPending || attachmentSendMutation.isPending || (!pendingAttachment && !draft.trim())} className="self-end rounded-full bg-[#1f6a58] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{attachmentSendMutation.isPending ? "Sending..." : sendMutation.isPending ? "Sending..." : pendingAttachment ? "Send file" : "Send"}</button>
     </form>
+    {speechListening ? <p className="mt-1 text-xs font-semibold text-[#1f6a58]" role="status" aria-live="polite">{t("listening")}</p> : null}
+    {speechError ? <p className="mt-1 text-xs text-[#b42318]" role="alert">{t(`errors.${speechError}`)}</p> : null}
     {sendMutation.isError ? <p className="mt-2 text-sm text-[#b42318]" role="alert">{sendMutation.error.message}</p> : null}
   </div>;
 }

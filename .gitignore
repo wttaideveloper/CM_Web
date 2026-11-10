@@ -36,6 +36,11 @@ yarn-error.log*
 .env*
 !.env.example
 
+# Docker deployment env files hold real server values and must never be committed
+# (the committed template is deploy/docker/frontend.env.example)
+*.env
+!*.env.example
+
 # vercel
 .vercel
 

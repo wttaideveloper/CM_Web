@@ -2,7 +2,7 @@
 export type EventFormConfigurationScope = "global" | "selective";
 
 /** Lifecycle state returned for an Event form configuration or version. */
-export type EventFormConfigurationStatus = "draft" | "published" | "retired";
+export type EventFormConfigurationStatus = "draft" | "in_review" | "published" | "active" | "inactive" | "retired";
 
 /** Backend-defined renderer identifier. */
 export type EventFormRenderer = string;
@@ -20,6 +20,7 @@ export interface EventFormFieldValidation { min_length?: number | null; max_leng
 export interface EventFormCompositeConfig {
   enabled_fields?: string[];
   required_fields?: string[];
+  frontend_settings?: { content_visibility?: "published" | "admin_only"; [key: string]: unknown } | null;
   [key: string]: unknown;
 }
 
@@ -27,7 +28,7 @@ export interface EventFormCompositeConfig {
 export interface EventFormField { id: string; source: "core" | "custom"; core_key: string | null; stable_key: string | null; label: string; renderer: EventFormRenderer; value_type: EventFormValueType; required: boolean; is_enabled: boolean; position: number; placeholder: string | null; help_text: string | null; options: EventFormFieldOption[]; validation: EventFormFieldValidation; composite_config?: EventFormCompositeConfig | null; }
 
 /** A section and its ordered fields in a persisted configuration version. */
-export interface EventFormSection { id: string; stable_key: string; label: string; description: string | null; position: number; is_enabled: boolean; fields: EventFormField[]; }
+export interface EventFormSection { id: string; stable_key: string; label: string; description: string | null; position: number; is_enabled: boolean; content_visibility?: "published" | "admin_only"; fields: EventFormField[]; }
 
 /** An immutable version of an Event form configuration. */
 export interface EventFormConfigurationVersion { id: string; configuration_id: string; version: number; status: EventFormConfigurationStatus; sections: EventFormSection[]; created_by: string | null; created_at: string | null; published_at: string | null; }
@@ -57,7 +58,7 @@ export interface EventFormAssignmentsResponse { configuration_id: string; assign
 export interface EventFormAuditEntry { id: string; configuration_id: string; action: string; actor_id: string | null; created_at: string; metadata: Record<string, unknown> | null; }
 
 /** Writable section shape shared by create and update requests. */
-export interface EventFormSectionInput { id?: string | null; stable_key: string; label: string; description: string | null; position: number; is_enabled: boolean; fields: EventFormFieldInput[]; }
+export interface EventFormSectionInput { id?: string | null; stable_key: string; label: string; description: string | null; position: number; is_enabled: boolean; content_visibility?: "published" | "admin_only"; fields: EventFormFieldInput[]; }
 
 /** Writable field shape shared by create and update requests. */
 export interface EventFormFieldInput { id?: string | null; source: "core" | "custom"; core_key: string | null; stable_key: string | null; label: string; renderer: EventFormRenderer; value_type: EventFormValueType; required: boolean; is_enabled: boolean; position: number; placeholder: string | null; help_text: string | null; options: EventFormFieldOption[]; validation: EventFormFieldValidation; composite_config?: EventFormCompositeConfig | null; }

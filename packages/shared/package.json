@@ -7,6 +7,10 @@
     "isomorphic-dompurify": "^4.6.0"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./upstream-config": "./src/upstream-config.ts",
+    "./security-headers": "./src/security-headers.ts",
+    "./safe-proxy-path": "./src/safe-proxy-path.ts",
+    "./protected-media": "./src/protected-media.ts"
   }
 }

@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { resolveSafeProxyPath } from "@ihp/shared/safe-proxy-path";
+
+import { resolveMarketplaceUrl } from "@/lib/marketplace-url";
 import {
   applyRotatedSuperAdminSession,
   requestSuperAdminUpstreamJson,
@@ -11,23 +14,21 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const CHAT_API_BASE_URL = process.env.CHAT_API_BASE_URL;
 const BLOGS_PREFIX = ["cms", "blogs"];
 
 type RouteContext = { params: Promise<{ path: string[] }> };
 
-function upstreamUrl(path: readonly string[], search: string): URL | null {
-  if (!CHAT_API_BASE_URL || path.length < BLOGS_PREFIX.length) return null;
+/**
+ * Builds the Blogs upstream URL. The path is validated (no dot segments, encoded separators or double encoding) and
+ * re-encoded, and the target must be the trusted Marketplace origin: the Super Admin bearer token is attached to this request.
+ */
+function upstreamUrl(path: readonly string[], search: string, rawPathname: string): URL | null {
+  if (path.length < BLOGS_PREFIX.length) return null;
   if (path[0] !== BLOGS_PREFIX[0] || path[1] !== BLOGS_PREFIX[1]) return null;
 
-  try {
-    const url = new URL(CHAT_API_BASE_URL);
-    url.pathname = `/api/v1/${path.map((segment) => encodeURIComponent(segment)).join("/")}`;
-    url.search = search;
-    return url;
-  } catch {
-    return null;
-  }
+  const safePath = resolveSafeProxyPath(path, { rawPathname });
+  if (safePath === null) return null;
+  return resolveMarketplaceUrl(`/api/v1/${safePath}`, search);
 }
 
 function invalidPathResponse(): NextResponse {
@@ -41,7 +42,7 @@ async function proxy(
   request: NextRequest,
   path: readonly string[],
 ): Promise<NextResponse> {
-  const url = upstreamUrl(path, request.nextUrl.search);
+  const url = upstreamUrl(path, request.nextUrl.search, request.nextUrl.pathname);
   if (!url) return invalidPathResponse();
 
   // Uploaded images/documents are protected binary resources. Do not parse

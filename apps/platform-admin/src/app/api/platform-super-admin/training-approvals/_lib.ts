@@ -5,25 +5,15 @@ import {
   superAdminErrorResponse,
   superAdminJsonResponse,
 } from "@/lib/super-admin-server-client";
+import { resolveMarketplaceUrl } from "@/lib/marketplace-url";
 
-const MARKETPLACE_API_BASE_URL = process.env.CHAT_API_BASE_URL;
 const UUID_SEGMENT = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const APPROVALS_PATH = new RegExp(`^(pending|${UUID_SEGMENT}(/(approve|reject|publish|request-changes))?)$`, "i");
 const ALLOWED_LIST_STATUSES = new Set(["pending_approval", "needs_revision", "approved"]);
 const MAX_LIST_PAGE_SIZE = 100;
 
 function marketplaceUrl(pathname: string, search: string): URL | null {
-  if (!MARKETPLACE_API_BASE_URL) return null;
-
-  try {
-    const url = new URL(MARKETPLACE_API_BASE_URL);
-    if (url.protocol !== "https:" || url.hostname !== "chat.wisdomtooth.tech") return null;
-    url.pathname = pathname;
-    url.search = search;
-    return url;
-  } catch {
-    return null;
-  }
+  return resolveMarketplaceUrl(pathname, search);
 }
 
 function invalidPathResponse(): NextResponse {

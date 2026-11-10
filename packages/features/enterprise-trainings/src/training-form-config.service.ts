@@ -4,7 +4,7 @@ import { authenticatedFetch } from "@ihp/auth";
 
 const fetch = authenticatedFetch;
 
-export type TrainingFormFieldType = "text" | "textarea" | "select" | "multiselect" | "number" | "date" | "datetime" | "time" | "url" | "checkbox";
+export type TrainingFormFieldType = "text" | "rich_text" | "textarea" | "select" | "radio" | "multiselect" | "number" | "date" | "datetime" | "time" | "url" | "media_upload" | "file_upload" | "video" | "checkbox";
 export interface TrainingFormOption { value: string; label: string; position: number; }
 
 const NUMERIC_TRAINING_FIELD_TYPES = new Set(["number", "numeric", "integer", "decimal", "float", "number_input", "numeric_input"]);
@@ -23,11 +23,20 @@ function trainingFormFieldType(field: Record<string, unknown>): TrainingFormFiel
         ? field.value_type
         : "text";
   const normalizedType = configuredType.trim().toLowerCase().replace(/[\s-]+/g, "_");
-  if (["multi_select", "multiselect"].includes(normalizedType)) return "multiselect";
+  if (["multi_select", "multiselect", "checkbox_group"].includes(normalizedType)) return "multiselect";
+  if (["short_text", "text_input"].includes(normalizedType)) return "text";
+  if (["long_text"].includes(normalizedType)) return "textarea";
+  if (["rich_text_editor"].includes(normalizedType)) return "rich_text";
+  if (["dropdown"].includes(normalizedType)) return "select";
+  if (["reference_url", "url_input"].includes(normalizedType)) return "url";
+  if (["additional_images", "image_uploader"].includes(normalizedType)) return "media_upload";
+  if (["supporting_document", "document_uploader"].includes(normalizedType)) return "file_upload";
+  if (["video_input"].includes(normalizedType)) return "video";
+  if (["tags", "tag_input"].includes(normalizedType)) return "text";
   if (NUMERIC_TRAINING_FIELD_TYPES.has(normalizedType)) return "number";
   if (["datetime", "datetime_local"].includes(normalizedType)) return "datetime";
   if (["boolean", "bool"].includes(normalizedType)) return "checkbox";
-  if (["text", "textarea", "select", "date", "time", "url", "checkbox"].includes(normalizedType)) {
+  if (["text", "rich_text", "textarea", "select", "radio", "date", "time", "url", "media_upload", "file_upload", "video", "checkbox"].includes(normalizedType)) {
     return normalizedType as TrainingFormFieldType;
   }
   return "text";
@@ -67,6 +76,7 @@ export interface TrainingFormFrontendSettings {
   visibility?: TrainingFormVisibilityCondition | null;
   upload?: TrainingFormUploadSettings | null;
   inputMode?: "text" | "tags";
+  contentVisibility?: "published" | "admin_only";
   enabledFields?: string[];
   requiredFields?: string[];
 }
@@ -138,7 +148,16 @@ function parseFrontendSettings(field: Record<string, unknown>): TrainingFormFron
   const rendererInputMode = usesTagListInput && (renderer === "tags" || configurableListKeys.includes("learning_objectives"))
     ? "tags"
     : undefined;
-  if (composite === undefined || composite === null) return rendererInputMode ? { inputMode: rendererInputMode } : undefined;
+  const directVisibility = field.visibility === "admin_only" || field.visibility === "enterprise_admin_only"
+    ? "admin_only"
+    : field.visibility === "published" || field.visibility === "public"
+      ? "published"
+      : undefined;
+  if (composite === undefined || composite === null) {
+    return rendererInputMode || directVisibility
+      ? { ...(rendererInputMode ? { inputMode: rendererInputMode } : {}), ...(directVisibility ? { contentVisibility: directVisibility } : {}) }
+      : undefined;
+  }
   if (typeof composite !== "object" || Array.isArray(composite)) {
     throw new Error("Training Form API returned invalid field configuration metadata.");
   }
@@ -160,7 +179,11 @@ function parseFrontendSettings(field: Record<string, unknown>): TrainingFormFron
     ...(isStringArray(enabledFields) ? { enabledFields } : {}),
     ...(isStringArray(requiredFields) ? { requiredFields } : {}),
     ...(inputMode ? { inputMode } : {}),
+    ...(directVisibility ? { contentVisibility: directVisibility } : {}),
   };
+  if (source.content_visibility === "published" || source.content_visibility === "admin_only") {
+    result.contentVisibility = source.content_visibility;
+  }
   const visibility = source.visibility;
   if (visibility !== undefined && visibility !== null) {
     if (typeof visibility !== "object" || Array.isArray(visibility)) {
@@ -242,6 +265,7 @@ function mapSimpleTrainingFormSections(rawSections: Array<Record<string, unknown
     title: resolveTrainingSectionTitle(sec, sIdx),
     description: typeof sec.description === "string" && sec.description.trim() ? sec.description : undefined,
     enabled: sec.is_enabled !== false && sec.enabled !== false,
+    contentVisibility: sec.content_visibility === "admin_only" || sec.visibility === "enterprise_admin_only" || sec.visibility === "internal" ? "admin_only" : "published",
     order: typeof sec.position === "number" ? sec.position : typeof sec.order === "number" ? sec.order as number : sIdx,
     fields: mapTrainingFormFields(sec.fields),
   }));
@@ -317,6 +341,7 @@ export interface TrainingFormSection {
   title: string;
   description?: string;
   enabled?: boolean;
+  contentVisibility?: "published" | "admin_only";
   order: number;
   fields: TrainingFormField[];
 }
@@ -325,7 +350,7 @@ export interface TrainingFormConfig {
   id: string;
   title: string;
   description?: string | null;
-  status: "draft" | "published" | "active" | "inactive" | "retired";
+  status: "draft" | "in_review" | "published" | "active" | "inactive" | "retired";
   is_global: boolean;
   enterprise_ids: string[]; // empty if global
   sections: TrainingFormSection[];
@@ -348,6 +373,7 @@ export class TrainingFormConfigApiError extends Error {
 
 const ADMIN_BASE = "/api/v1/trainings/form-configuration/admin";
 const ACTIVE_PATH = "/api/v1/trainings/form-configuration/active";
+const COMMON_ACTIVE_PATH = "/api/v1/trainings/form-configuration/active/common";
 
 function uid() { return Math.random().toString(36).slice(2, 9); }
 
@@ -381,7 +407,8 @@ export async function listTrainingFormConfigs(): Promise<TrainingFormConfig[]> {
 
 /** Enterprise: historical form for edit — immutable version used when training was created, never the current active. */
 export async function getTrainingHistoricalFormConfiguration(trainingId: string): Promise<TrainingFormConfig | null> {
-  const res = await fetch(`/api/v1/trainings/${encodeURIComponent(trainingId)}/form-configuration`, { credentials: "include", cache: "no-store" });
+  const commonRes = await fetch(`/api/v1/trainings/${encodeURIComponent(trainingId)}/form/common`, { credentials: "include", cache: "no-store" });
+  const res = commonRes.status === 404 ? await fetch(`/api/v1/trainings/${encodeURIComponent(trainingId)}/form-configuration`, { credentials: "include", cache: "no-store" }) : commonRes;
   if (res.status === 404 || res.status === 204) return null;
   if (!res.ok) throw new TrainingFormConfigApiError(`Unable to load historical form (HTTP ${res.status})`, res.status);
   const text = await res.text();
@@ -402,6 +429,7 @@ export async function getTrainingHistoricalFormConfiguration(trainingId: string)
           title,
           description: typeof sec.description === "string" && sec.description.trim() ? sec.description : null,
           enabled: sec.is_enabled !== false && sec.enabled !== false,
+          contentVisibility: sec.content_visibility === "admin_only" || sec.visibility === "enterprise_admin_only" || sec.visibility === "internal" ? "admin_only" : "published",
           order: typeof sec.position === "number" ? sec.position : sIdx,
               fields: Array.isArray(sec.fields) ? (sec.fields as Array<Record<string, unknown>>).map((fld, fIdx) => ({
                 id: typeof fld.id === "string" ? fld.id : `fld-${fIdx}`,
@@ -450,7 +478,8 @@ export async function getTrainingHistoricalFormConfiguration(trainingId: string)
 /** Enterprise: active config resolves selective → global → legacy — handles both simple and full platform shapes + global fallback. */
 export async function getTrainingFormConfigActive(): Promise<TrainingFormConfig | null> {
   // 1) Try the dedicated active resolver (simple or full shape)
-  const res = await fetch(ACTIVE_PATH, { credentials: "include", cache: "no-store" });
+  const commonRes = await fetch(COMMON_ACTIVE_PATH, { credentials: "include", cache: "no-store" });
+  const res = commonRes.status === 404 ? await fetch(ACTIVE_PATH, { credentials: "include", cache: "no-store" }) : commonRes;
   if (res.status !== 404 && res.status !== 204) {
     if (!res.ok) throw new TrainingFormConfigApiError(`Unable to load active form (HTTP ${res.status})`, res.status);
     const text = await res.text();
@@ -523,7 +552,8 @@ export async function getTrainingFormConfigActive(): Promise<TrainingFormConfig 
             id: typeof sec.id === "string" ? sec.id : `sec-${sIdx}`,
             title: t,
             description: typeof sec.description === "string" && sec.description.trim() ? sec.description : undefined,
-            enabled: sec.is_enabled !== false && sec.enabled !== false,
+          enabled: sec.is_enabled !== false && sec.enabled !== false,
+          contentVisibility: sec.content_visibility === "admin_only" || sec.visibility === "enterprise_admin_only" || sec.visibility === "internal" ? "admin_only" : "published",
             order: typeof sec.position === "number" ? sec.position : typeof (sec as Record<string, unknown>).order === "number" ? (sec as Record<string, unknown>).order as number : sIdx,
             fields: Array.isArray(sec.fields) ? (sec.fields as Array<Record<string, unknown>>).map((fld, fIdx) => ({
               id: typeof fld.id === "string" ? fld.id : `fld-${fIdx}`,
@@ -589,7 +619,8 @@ export async function getTrainingFormConfigActive(): Promise<TrainingFormConfig 
                 id: typeof sec.id === "string" ? sec.id : `sec-${sIdx}`,
                 title: t2,
                 description: typeof sec.description === "string" && sec.description.trim() ? sec.description : null,
-                enabled: sec.is_enabled !== false && sec.enabled !== false,
+            enabled: sec.is_enabled !== false && sec.enabled !== false,
+            contentVisibility: sec.content_visibility === "admin_only" || sec.visibility === "enterprise_admin_only" || sec.visibility === "internal" ? "admin_only" : "published",
                 order: typeof sec.position === "number" ? sec.position : typeof sec.order === "number" ? sec.order : sIdx,
               fields: Array.isArray(sec.fields) ? (sec.fields as Array<Record<string, unknown>>).map((fld, fIdx) => ({
                 id: typeof fld.id === "string" ? fld.id : `fld-${fIdx}`,

@@ -10,3 +10,7 @@ export * from "./model/event-form-configuration-api.types";
 export * from "./model/training-form-configuration-api.types";
 export { toBuilderFormConfiguration, toEventFormConfigurationCreateCandidate, toEventFormConfigurationPatchCandidate } from "./model/form-configuration.mappers";
 export { toBuilderTrainingFormConfiguration, toTrainingFormConfigurationCreateCandidate, toTrainingFormConfigurationPatchCandidate } from "./model/training-form-configuration.mappers";
+export { FormStructureCanvas } from "./components/FormStructureCanvas";
+export type { BuilderSelection } from "./components/FormStructureCanvas";
+export type { ConfiguredField, FormSection, CoreFieldRegistryItem } from "./model/form-configuration.types";
+export { FieldEditor } from "./components/FieldEditor";

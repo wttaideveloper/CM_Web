@@ -4,7 +4,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { HeaderFrame } from "@ihp/ui";
-import { formatReviewNotificationDetails, formatTrainingNotificationDetails } from "@ihp/realtime";
+import { getEnterpriseHeaderRoleLabel, resolveEnterprisePortalRole } from "@ihp/auth";
+import {
+  formatEventDiscussionNotificationDetails,
+  formatReviewNotificationDetails,
+  formatTrainingNotificationDetails,
+  resolveNotificationTarget,
+} from "@ihp/realtime";
 
 import { useAdminSocket } from "@/contexts/AdminSocketContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -111,12 +117,30 @@ function clampBadge(value: number) {
 
 function TrainingNotificationDetails({ notification }: { notification: NotificationLike }) {
   const { trainingTitle, senderName, learnerName, enrollmentStatus } = formatTrainingNotificationDetails(notification);
+  const discussion = formatEventDiscussionNotificationDetails(notification);
   const review = formatReviewNotificationDetails(notification);
-  if (!trainingTitle && !senderName && !learnerName && !enrollmentStatus && !review.learnerName && !review.itemName && review.rating === null) return null;
+  if (
+    !trainingTitle &&
+    !senderName &&
+    !learnerName &&
+    !enrollmentStatus &&
+    !review.learnerName &&
+    !review.itemName &&
+    review.rating === null &&
+    !discussion.eventName &&
+    !discussion.senderName &&
+    !discussion.isAnnouncement &&
+    !discussion.isPendingReview
+  ) {
+    return null;
+  }
 
   return (
     <>
-      {senderName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">From: {senderName}</span> : null}
+      {discussion.eventName ? <span className="mt-1 block truncate text-[11px] font-semibold text-[#1f6a58]">Event: {discussion.eventName}</span> : null}
+      {discussion.isAnnouncement ? <span className="mt-0.5 inline-block rounded bg-[#e8f6ee] px-1.5 py-0.5 text-[10px] font-bold text-[#1f6a58]">📢 Announcement</span> : null}
+      {discussion.isPendingReview ? <span className="mt-0.5 inline-block rounded bg-[#fef3f2] px-1.5 py-0.5 text-[10px] font-bold text-[#b42318]">⏳ Pending Review</span> : null}
+      {discussion.senderName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">From: {discussion.senderName}</span> : senderName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">From: {senderName}</span> : null}
       {learnerName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">Learner: {learnerName}</span> : null}
       {enrollmentStatus ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">Enrollment status: {enrollmentStatus.replace(/[_-]+/g, " ")}</span> : null}
       {review.learnerName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">Reviewer: {review.learnerName}</span> : null}
@@ -176,6 +200,9 @@ function AppHeaderContent({
 }: AppHeaderProps & { realtime?: HeaderRealtimeState }) {
   const router = useRouter();
   const { logout, user } = useAuth();
+  const enterpriseRoleLabel = header.portal === "enterprise"
+    ? getEnterpriseHeaderRoleLabel(resolveEnterprisePortalRole(user?.membership?.tenantRole ?? user?.roles?.tenantRole ?? null))
+    : null;
   const headerRef = useRef<HTMLElement | null>(null);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const notificationsRoute = header.notificationsHref;
@@ -263,6 +290,12 @@ function AppHeaderContent({
     closeMenu();
     void markNotificationAsRead(notification.id).catch(() => undefined);
 
+    const target = resolveNotificationTarget(notification, "enterprise");
+    if (target) {
+      router.push(target);
+      return;
+    }
+
     const conversationId = getNotificationConversationId(notification);
     if (!conversationId || !messagesRoute) {
       return;
@@ -311,7 +344,7 @@ function AppHeaderContent({
               />
             </svg>
           </div>
-          <h1 className="text-lg font-bold text-[#07352d]">Invigorate Health</h1>
+          <div><h1 className="text-lg font-bold text-[#07352d]">Invigorate Health</h1>{enterpriseRoleLabel ? <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8ca69e]">{enterpriseRoleLabel}</p> : null}</div>
         </Link>
         </>
       )}

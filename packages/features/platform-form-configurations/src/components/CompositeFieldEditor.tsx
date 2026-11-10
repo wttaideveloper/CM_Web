@@ -9,12 +9,17 @@ type CompositeFieldEditorProps = {
   core?: CoreFieldRegistryItem;
   definition: EventCompositeFieldDefinition;
   onChange: (patch: Partial<ConfiguredField>) => void;
+  rendererOptions?: readonly string[];
+  showRenderer?: boolean;
+  rendererDisabled?: boolean;
+  onRendererChange?: (renderer: string) => void;
 };
 
 const configuredSubfieldKeys = (field: ConfiguredField, definition: EventCompositeFieldDefinition): string[] => field.compositeConfig?.enabled_fields ?? definition.subfields.map((subfield) => subfield.key);
 
 /** Edits backend-persisted semantic settings for a recognised composite Event core field. */
-export function CompositeFieldEditor({ field, core, definition, onChange }: CompositeFieldEditorProps) {
+export function CompositeFieldEditor({ field, core, definition, onChange, rendererOptions = [], showRenderer = false, rendererDisabled = false, onRendererChange }: CompositeFieldEditorProps) {
+  const isSystemDefaultField = field.source === "core";
   const enabledFields = configuredSubfieldKeys(field, definition);
   const requiredFields = field.compositeConfig?.required_fields ?? [];
   const updateCompositeConfig = (nextEnabledFields: string[], nextRequiredFields: string[]) => {
@@ -42,11 +47,12 @@ export function CompositeFieldEditor({ field, core, definition, onChange }: Comp
     <div className="rounded-xl border border-[#dfe9e4] bg-[#f7fbf8] p-3">
       <p className="font-semibold text-[#06201c]">{definition.title}</p>
       <p className="mt-1 text-sm text-[#52736a]">{definition.description}</p>
-      <p className="mt-2 text-xs text-[#52736a]">Renderer: <code>{field.renderer}</code></p>
+      {!isSystemDefaultField ? <p className="mt-2 text-xs text-[#52736a]">Renderer: <code>{field.renderer}</code></p> : null}
       {field.coreKey === "sessions" ? <p className="mt-2 text-xs text-[#52736a]">Speaker choices are loaded at runtime from the Enterprise Admin&apos;s active internal team members. They are not configured manually here.</p> : null}
     </div>
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="mt-4 grid gap-3 sm:grid-cols-2">
       {!core || core.configurable.label ? <TextControl label="Label" value={field.label} onChange={(label) => onChange({ label })} /> : null}
+      {showRenderer && rendererOptions.length > 0 && onRendererChange ? <label className="text-sm font-semibold text-[#355a51]"><span>Renderer</span><select value={field.renderer} disabled={rendererDisabled} onChange={(event) => onRendererChange(event.target.value)} className="mt-1.5 w-full rounded-lg border border-[#cfe0d8] bg-white px-3 py-2 font-normal disabled:cursor-not-allowed disabled:bg-[#f4faf7] disabled:text-[#7f9d94]">{rendererOptions.map((renderer) => <option key={renderer} value={renderer}>{renderer}</option>)}</select><span className="mt-1 block text-xs font-normal leading-5 text-[#7f9d94]">Choose the kind of answer this field accepts.</span></label> : null}
       {!core || core.configurable.helpText ? <TextControl label="Help text" value={field.helpText} onChange={(helpText) => onChange({ helpText })} /> : null}
       <CheckboxControl label={core && !core.configurable.required ? "Required (managed by the field definition)" : "Required"} checked={field.required} disabled={Boolean(core && (!core.configurable.required || core.requiredByDomain && field.required))} onChange={(required) => onChange({ required: core?.requiredByDomain ? true : required })} />
       <CheckboxControl label="Enabled" checked={field.enabled} disabled={Boolean(core && !core.hideable)} onChange={(enabled) => onChange({ enabled })} />

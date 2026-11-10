@@ -4,6 +4,10 @@ import EnterpriseAdminProviders from "@/providers/EnterpriseAdminProviders";
 
 import "./globals.css";
 
+// The per-request CSP nonce (see src/proxy.ts) can only be applied to server-rendered
+// HTML, so every page is rendered on demand instead of being prerendered at build time.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "IHP Enterprise Admin",
   description: "IHP Enterprise Admin.",

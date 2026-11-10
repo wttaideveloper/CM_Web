@@ -1,20 +1,25 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { firstConfiguredUpstream, toApiV1Base } from "@ihp/shared/upstream-config";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const TOKEN_COOKIE_NAME = "access_token";
 const RESPONSE_HEADERS_TO_COPY = ["content-type", "content-disposition", "content-length"] as const;
 
-function eventMediaTarget(): string {
-  const configured = process.env.EVENTS_API_BASE_URL ?? process.env.CHAT_PROXY_TARGET ?? process.env.CHAT_API_BASE_URL ?? "https://chat.wisdomtooth.tech";
-  const base = configured.replace(/\/$/, "");
-  return /\/api\/v1$/.test(base) ? `${base}/events/media/` : `${base}/api/v1/events/media/`;
+/** Event media upload endpoint. There is no built-in host: an unconfigured deployment answers 503. */
+function eventMediaTarget(): string | null {
+  const configured = firstConfiguredUpstream(process.env, ["EVENTS_API_BASE_URL", "CHAT_PROXY_TARGET", "CHAT_API_BASE_URL"]);
+  return configured ? `${toApiV1Base(configured)}/events/media/` : null;
 }
 
 async function forward(request: NextRequest): Promise<Response> {
   const token = request.cookies.get(TOKEN_COOKIE_NAME)?.value;
   if (!token) return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
+
+  const target = eventMediaTarget();
+  if (!target) return NextResponse.json({ detail: "Event media API is not configured." }, { status: 503 });
 
   const headers = new Headers({ Authorization: `Bearer ${token}` });
   const contentType = request.headers.get("content-type");
@@ -24,7 +29,7 @@ async function forward(request: NextRequest): Promise<Response> {
 
   let upstream: Response;
   try {
-    upstream = await fetch(eventMediaTarget(), {
+    upstream = await fetch(target, {
       method: "POST",
       headers,
       body: await request.arrayBuffer(),

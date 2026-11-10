@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { getAuthMe, ProfileEditModal, type AuthMeResponse, type AuthUser, useAuth } from "@ihp/auth";
+import { getAuthMe, getEnterpriseSidebarRoleLabel, ProfileEditModal, resolveEnterprisePortalRole, type AuthMeResponse, type AuthUser, useAuth } from "@ihp/auth";
 
 const PROFILE_QUERY_KEY = ["auth", "me", "profile"] as const;
 
@@ -63,6 +63,7 @@ export default function EnterpriseProfileScreen() {
   const displayedProfile = profileQuery.data?.data ?? sessionUser;
   const membership = displayedProfile?.membership;
   const role = membership?.tenantRole ?? displayedProfile?.roles?.tenantRole;
+  const roleLabel = getEnterpriseSidebarRoleLabel(resolveEnterprisePortalRole(role));
   const tenantName = membership?.tenantName ?? displayedProfile?.roles?.tenantName;
   const email = displayedProfile?.email ?? "";
   const fullName = displayedProfile?.fullName ?? "";
@@ -79,7 +80,7 @@ export default function EnterpriseProfileScreen() {
     <>
       <div className="mx-auto w-full max-w-6xl space-y-5">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">ENTERPRISE OWNER</p>
+          <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#7f9d94]">{roleLabel}</p>
           <h1 className="mt-1 text-2xl font-bold text-[#06201c]">My Profile</h1>
           <p className="mt-1 text-sm text-[#5f7a71]">Manage your personal account information</p>
         </div>

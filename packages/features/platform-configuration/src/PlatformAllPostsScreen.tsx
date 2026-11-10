@@ -244,7 +244,13 @@ function renderContentHtml(value: string): string {
 function resolveImagePreviewUrl(url: string | null | undefined): string {
   if (!url) return "";
   if (url.startsWith("data:") || url.startsWith("blob:")) return url;
-  if (url.includes("chat.wisdomtooth.tech") || url.includes("/cms/blogs/files/")) {
+  // Blog uploads are protected files: fetch them through the Blogs bridge, which allows only `cms/blogs/...` paths on the
+  // trusted API origin. (The Event media proxy accepts only `/api/v1/events/media/<asset>` and would refuse them.)
+  const blogFile = /^(?:https?:\/\/[^/?#]+)?\/api\/v1\/(cms\/blogs\/files\/[^?#]+)$/i.exec(url);
+  if (blogFile?.[1]) {
+    return `/api/platform-super-admin/blogs/${blogFile[1]}`;
+  }
+  if (/^(?:https?:\/\/[^/?#]+)?\/api\/v1\/events\/media\//i.test(url)) {
     return `/api/platform-super-admin/event-media?url=${encodeURIComponent(url)}`;
   }
   return url;

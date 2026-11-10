@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
+import { getEnterpriseSidebarRoleLabel, resolveEnterprisePortalRole, useAuth } from "@ihp/auth";
 import { SidebarFrame } from "@ihp/ui";
 
 import type {
@@ -90,6 +91,14 @@ function ChartIcon() {
   );
 }
 
+function FinanceIcon() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+      <path d="M3 7h18v12H3zM3 10h18M7 15h3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function IntegrationIcon() {
   return (
     <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none">
@@ -156,6 +165,7 @@ const navigationIcons: Record<NavigationIcon, () => React.JSX.Element> = {
   training: TrainingIcon,
   program: ProgramIcon,
   chart: ChartIcon,
+  finance: FinanceIcon,
   integration: IntegrationIcon,
   tag: TagIcon,
   forms: FormsIcon,
@@ -187,10 +197,12 @@ function SidebarContent({
   layout,
   pathname,
   onNavigate,
+  sidebarLabel,
 }: {
   layout: ShellLayoutConfig;
   pathname: string;
   onNavigate?: () => void;
+  sidebarLabel: string;
 }) {
   const navGroups = layout.navigationGroups;
 
@@ -199,7 +211,7 @@ function SidebarContent({
       <div className="space-y-6">
         <div className="px-3 pt-1">
           <p className={`text-sm font-bold uppercase tracking-[0.22em] ${layout.sidebarLabelClassName}`}>
-            {layout.sidebarLabel}
+            {sidebarLabel}
           </p>
         </div>
         {navGroups.map((group) => (
@@ -260,6 +272,12 @@ function SidebarContent({
 }
 
 export default function AppSidebar({ layout, pathname, mobileOpen, onClose }: AppSidebarProps) {
+  const { authReady, membership, roles } = useAuth();
+  const isEnterpriseLayout = layout.id === "enterprise-admin" || layout.id === "realtime-enterprise";
+  const sidebarLabel = isEnterpriseLayout
+    ? getEnterpriseSidebarRoleLabel(resolveEnterprisePortalRole(authReady ? membership?.tenantRole ?? roles?.tenantRole : null))
+    : layout.sidebarLabel;
+
   useEffect(() => {
     document.body.style.overflow = mobileOpen ? "hidden" : "";
 
@@ -270,7 +288,7 @@ export default function AppSidebar({ layout, pathname, mobileOpen, onClose }: Ap
 
   return (
     <SidebarFrame
-      desktopContent={<SidebarContent layout={layout} pathname={pathname} />}
+      desktopContent={<SidebarContent layout={layout} pathname={pathname} sidebarLabel={sidebarLabel} />}
       mobileHeader={(
         <>
           <p className="text-sm font-bold text-[#06201c]">Menu</p>
@@ -286,7 +304,7 @@ export default function AppSidebar({ layout, pathname, mobileOpen, onClose }: Ap
           </button>
         </>
       )}
-      mobileContent={<SidebarContent layout={layout} pathname={pathname} onNavigate={onClose} />}
+      mobileContent={<SidebarContent layout={layout} pathname={pathname} sidebarLabel={sidebarLabel} onNavigate={onClose} />}
       mobileOpen={mobileOpen}
       onMobileSidebarClose={onClose}
     />

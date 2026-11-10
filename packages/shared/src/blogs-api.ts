@@ -199,7 +199,7 @@ export interface BlogForm {
   type: BlogKind | "both";
   mode: "standard" | "configurable";
   version: number;
-  status: "draft" | "published" | "active" | "inactive";
+  status: "draft" | "in_review" | "published" | "active" | "inactive";
   scope: "global" | "selected" | "unassigned";
   tenant_ids?: string[];
   assigned_count?: number;
@@ -230,9 +230,11 @@ export interface PublicBlogDetail extends PublicBlogItem {
   custom_fields?: Record<string, BlogCustomFieldValue>;
 }
 
+// No built-in backend host: an unset NEXT_PUBLIC_API_BASE_URL resolves to the same-origin `/api/v1` rewrite
+// (the same default as `API_BASE_URL`), so a build never silently calls a hard-coded production host.
 const API_BASE =
   (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_BASE_URL) ||
-  "https://chat.wisdomtooth.tech/api/v1";
+  "/api/v1";
 const apiUrl = (path: string) => `${API_BASE.replace(/\/$/, "")}${path}`;
 
 /** Uses the platform's server-side Super Admin bridge for protected Blog/News admin reads and writes. */
@@ -465,7 +467,7 @@ function normalizeForm(value: unknown): BlogForm {
   const rawVersion = raw.version ?? raw.current_version ?? raw.schema_version;
   const parsedVersion = typeof rawVersion === "string" ? Number.parseInt(rawVersion.replace(/^v/i, ""), 10) : rawVersion;
   const version = numberValue(parsedVersion, 1);
-  const statuses: BlogForm["status"][] = ["draft", "published", "active", "inactive"];
+  const statuses: BlogForm["status"][] = ["draft", "in_review", "published", "active", "inactive"];
   const responseStatus = statuses.includes(raw.status as BlogForm["status"])
     ? (raw.status as BlogForm["status"])
     : "draft";
@@ -493,26 +495,41 @@ function normalizeForm(value: unknown): BlogForm {
     const fieldsRaw = Array.isArray(section.fields) ? section.fields : [];
     return {
       id: stringValue(section.id, `section-${sectionIndex + 1}`),
-      title: stringValue(section.title || section.name, `Section ${sectionIndex + 1}`),
+      title: stringValue(section.title || section.label || section.name, `Section ${sectionIndex + 1}`),
       description: typeof section.description === "string" ? section.description : null,
       type: typeof section.type === "string" ? section.type : null,
       order: numberValue(section.order, sectionIndex + 1),
       visible: booleanValue(section.visible ?? section.enabled, true),
-      visibility_scope: typeof section.visibility_scope === "string" ? section.visibility_scope : null,
+      visibility_scope: typeof section.visibility_scope === "string"
+        ? section.visibility_scope
+        : section.visibility === "internal" || section.visibility === "enterprise_admin_only" ? "admin_only" : null,
       fields: fieldsRaw.filter(isRecord).map((field, fieldIndex): BlogFormField => {
         const key = stringValue(field.key || field.field_key, `field_${fieldIndex + 1}`);
-        const rawType = stringValue(field.type || field.field_type, ["category", "category_id"].includes(key) ? "select" : "text");
+        const rawType = stringValue(field.type || field.field_type || field.renderer, ["category", "category_id"].includes(key) ? "select" : "text");
         const fieldLabel = stringValue(field.label || field.name, `Field ${fieldIndex + 1}`);
         const fieldHelpText = typeof field.help_text === "string" ? field.help_text : "";
         const explicitPresentationType = stringValue(
           field.ui_type || field.presentation_type || field.editor || field.widget,
         ).toLowerCase();
         const typeAliases: Record<string, string> = {
+          short_text: "text",
+          text_input: "text",
+          long_text: "textarea",
           richtext: "rich_text",
+          rich_text_editor: "rich_text",
+          dropdown: "select",
+          radio_group: "radio",
           multiselect: "multi_select",
+          checkbox_group: "multi_select",
           image: "media_upload",
           image_list: "media_upload",
+          additional_images: "media_upload",
           documents: "file_upload",
+          document_uploader: "file_upload",
+          supporting_document: "file_upload",
+          url_input: "url",
+          reference_url: "url",
+          video_input: "video",
         };
         const fieldValidation = isRecord(field.validation) ? { ...field.validation } : {};
         const options = Array.isArray(field.options)
@@ -523,8 +540,10 @@ function normalizeForm(value: unknown): BlogForm {
         if (options.length > 0) fieldValidation.options = options.join(",");
         const visibilityScope = typeof field.visibility_scope === "string"
           ? field.visibility_scope
-          : field.visibility === "internal" || field.enterprise_only === true ? "admin_only" : "customer_visible";
+          : field.visibility === "internal" || field.visibility === "enterprise_admin_only" || field.enterprise_only === true ? "admin_only" : "customer_visible";
         const normalizedType = typeAliases[rawType] ?? rawType;
+        const rawRenderer = stringValue(field.renderer || field.ui_type || field.presentation_type).toLowerCase().replace(/[\s-]+/g, "_");
+        const normalizedRenderer = typeAliases[rawRenderer] ?? rawRenderer;
         const searchablePresentationText = `${fieldLabel} ${fieldHelpText}`.toLowerCase();
         const stableKey = key.toLowerCase();
         const isMediaUploadKey = stableKey.includes("media_upload") || stableKey.includes("image_upload") || stableKey.includes("image_list");
@@ -532,15 +551,19 @@ function normalizeForm(value: unknown): BlogForm {
         // The CMS accepts textarea/text for several UI controls. Preserve the
         // intended authoring experience when the published schema carries the
         // descriptive label/help text but not a separate presentation type.
-        const presentationType = explicitPresentationType.includes("radio") || searchablePresentationText.includes("radio button")
+        const presentationType = normalizedRenderer === "radio" || explicitPresentationType.includes("radio") || searchablePresentationText.includes("radio button")
           ? "radio"
-          : explicitPresentationType.includes("rich") || searchablePresentationText.includes("rich text") || searchablePresentationText.includes("wysiwyg") || searchablePresentationText.includes("markdown")
+          : normalizedRenderer === "rich_text" || explicitPresentationType.includes("rich") || searchablePresentationText.includes("rich text") || searchablePresentationText.includes("wysiwyg") || searchablePresentationText.includes("markdown")
           ? "rich_text"
-          : isMediaUploadKey || explicitPresentationType.includes("media") || explicitPresentationType.includes("image") || searchablePresentationText.includes("additional images")
+          : normalizedRenderer === "media_upload" || isMediaUploadKey || explicitPresentationType.includes("media") || explicitPresentationType.includes("image") || searchablePresentationText.includes("additional images")
             ? "media_upload"
-            : isFileUploadKey || explicitPresentationType.includes("document") || explicitPresentationType.includes("file") || searchablePresentationText.includes("supporting document")
+            : normalizedRenderer === "file_upload" || isFileUploadKey || explicitPresentationType.includes("document") || explicitPresentationType.includes("file") || searchablePresentationText.includes("supporting document")
               ? "file_upload"
-              : explicitPresentationType.includes("time") || (normalizedType === "text" && searchablePresentationText.trim().startsWith("time"))
+              : normalizedRenderer === "video" || normalizedType === "video" || explicitPresentationType.includes("video")
+                ? "video"
+                : normalizedRenderer === "url" || normalizedType === "url" || normalizedType === "reference_url" || explicitPresentationType.includes("url")
+                ? "url"
+                : explicitPresentationType.includes("time") || (normalizedType === "text" && searchablePresentationText.trim().startsWith("time"))
                 ? "time"
                 : normalizedType;
         return {
@@ -3117,7 +3140,7 @@ export function createAdminBlogFormDraft(id: string): Promise<BlogForm> {
 
 export function updateAdminBlogForm(
   id: string,
-  payload: Partial<Pick<BlogForm, "name" | "type" | "mode" | "sections">>,
+  payload: Partial<Pick<BlogForm, "name" | "type" | "mode" | "sections">> & { base_revision?: number },
 ): Promise<BlogForm> {
   const isStandard = payload.mode === "standard";
   return safeRequest(
@@ -3128,6 +3151,7 @@ export function updateAdminBlogForm(
           ...(payload.name !== undefined ? { name: payload.name } : {}),
           ...(payload.type !== undefined ? { form_type: payload.type } : {}),
           ...(payload.mode !== undefined ? { mode: payload.mode } : {}),
+          ...(payload.base_revision !== undefined ? { base_revision: payload.base_revision } : {}),
           ...(payload.sections !== undefined && !isStandard
             ? { definition: serializeFormDefinition(payload.sections) }
             : {}),
@@ -3165,12 +3189,12 @@ export function updateAdminBlogForm(
   );
 }
 
-export function publishAdminBlogForm(id: string): Promise<BlogForm> {
+export function publishAdminBlogForm(id: string, baseRevision?: number): Promise<BlogForm> {
   return safeRequest(
     async () =>
       normalizeForm(await request(`/cms/blogs/admin/forms/${encodeURIComponent(id)}/publish`, {
         method: "POST",
-        body: "{}",
+        body: JSON.stringify(baseRevision === undefined ? {} : { base_revision: baseRevision }),
       })),
     () => {
       const forms = getStoredForms();

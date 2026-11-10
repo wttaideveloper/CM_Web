@@ -66,11 +66,11 @@ function LoginPageContent() {
 
   const subtitle = isSuperAdmin
     ? "Sign in to the Super Admin portal"
-    : "Sign in to your Enterprise Owner portal";
+    : "Sign in to your Enterprise Owner or Staff portal";
   const buttonLabel = isSuperAdmin
     ? "Sign In as Super Admin"
-    : "Sign In as Enterprise Owner";
-  const canSubmit = !isSubmitting && (isSuperAdmin || !isLoading);
+    : "Sign In to Enterprise Portal";
+  const canSubmit = !isSubmitting;
 
   function handleWebPortalLogin() {
     const platformAdminOrigin = getPlatformAdminAppOrigin();
@@ -127,6 +127,14 @@ function LoginPageContent() {
 
         handleWebPortalLogin();
         return;
+      }
+
+      if (process.env.NODE_ENV === "development") {
+        const enterpriseAdminOrigin = getEnterpriseAdminAppOrigin();
+        if (enterpriseAdminOrigin) {
+          window.location.assign(new URL("/admin/dashboard", enterpriseAdminOrigin).toString());
+          return;
+        }
       }
 
       const callbackPath = buildAuthCallbackPath(searchParams.get("return_to"));
@@ -313,7 +321,7 @@ function LoginPageContent() {
                         strokeLinecap="round"
                       />
                     </svg>
-                    <span>Enterprise Owner</span>
+                    <span>Enterprise Owner / Staff</span>
                   </span>
                 </button>
               </div>
