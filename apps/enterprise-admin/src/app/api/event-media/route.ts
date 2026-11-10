@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const TOKEN_COOKIE_NAME = "access_token";
-const MEDIA_PROXY_ORIGIN = configuredMediaOrigin(process.env.CHAT_PROXY_TARGET ?? process.env.CHAT_API_BASE_URL) ?? "https://chat.wisdomtooth.tech";
+const MEDIA_PROXY_ORIGIN = configuredMediaOrigin(process.env.CHAT_PROXY_TARGET ?? process.env.CHAT_API_BASE_URL, { allowLocalhost: true }) ?? "https://chat.wisdomtooth.tech";
 
 function invalidRequest(detail: string, status = 400): Response {
   return NextResponse.json({ detail }, { status, headers: { "Cache-Control": "no-store" } });

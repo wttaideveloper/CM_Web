@@ -1,4 +1,6 @@
 const PROTECTED_MEDIA_ORIGIN = "https://chat.wisdomtooth.tech";
+const STAGING_PROTECTED_MEDIA_ORIGIN = "https://marketplace-api.wisdomtoothstage.tech";
+const APPROVED_PROTECTED_MEDIA_ORIGINS = new Set([PROTECTED_MEDIA_ORIGIN, STAGING_PROTECTED_MEDIA_ORIGIN]);
 
 const REQUEST_HEADERS_TO_FORWARD = ["accept", "if-range", "range"] as const;
 const RESPONSE_HEADERS_TO_COPY = [
@@ -15,21 +17,18 @@ const RESPONSE_HEADERS_TO_COPY = [
 function parseHttpUrl(value: string): URL | null {
   try {
     const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:" ? url : null;
+    return (url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password && !url.hash ? url : null;
   } catch {
     return null;
   }
 }
 
 /** Returns true only for the configured protected media service, not pasted external links. */
-export function isProtectedMediaUrl(value: string, protectedOrigin = PROTECTED_MEDIA_ORIGIN): boolean {
+export function isProtectedMediaUrl(value: string, protectedOrigin?: string): boolean {
   const url = parseHttpUrl(value);
   if (!url) return false;
-  try {
-    return url.origin === new URL(protectedOrigin).origin;
-  } catch {
-    return false;
-  }
+  if (protectedOrigin) return url.origin === configuredMediaOrigin(protectedOrigin, { allowLocalhost: true });
+  return APPROVED_PROTECTED_MEDIA_ORIGINS.has(url.origin);
 }
 
 /** Routes protected media through the app BFF while leaving external links direct. */
@@ -60,10 +59,18 @@ export function copyProtectedMediaResponseHeaders(source: Headers): Headers {
   return headers;
 }
 
-export function configuredMediaOrigin(value: string | undefined): string | null {
+/** Resolves only an approved protected-media origin, with an explicit localhost development escape hatch. */
+export function configuredMediaOrigin(value: string | undefined, options: { allowLocalhost?: boolean } = {}): string | null {
   if (!value) return null;
   try {
-    return new URL(value).origin;
+    const url = new URL(value);
+    const isLocalhost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+    if (options.allowLocalhost && isLocalhost) {
+      if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password || url.hash) return null;
+      return url.origin;
+    }
+    if (url.protocol !== "https:" || url.username || url.password || url.hash || url.port || !APPROVED_PROTECTED_MEDIA_ORIGINS.has(url.origin)) return null;
+    return url.origin;
   } catch {
     return null;
   }
@@ -71,11 +78,13 @@ export function configuredMediaOrigin(value: string | undefined): string | null 
 
 export function isAllowedProtectedMediaUrl(value: string, configuredOrigin: string | null): boolean {
   const url = parseHttpUrl(value);
-  return Boolean(url && configuredOrigin && url.origin === configuredOrigin);
+  const safeOrigin = configuredMediaOrigin(configuredOrigin ?? undefined, { allowLocalhost: true });
+  return Boolean(url && safeOrigin && url.origin === safeOrigin);
 }
 
 /** Returns true only for Event media paths on the configured protected media service. */
 export function isAllowedEventMediaUrl(value: string, configuredOrigin: string | null): boolean {
   const url = parseHttpUrl(value);
-  return Boolean(url && configuredOrigin && url.origin === configuredOrigin && /^\/api\/v1\/events\/media(?:\/|$)/.test(url.pathname));
+  const safeOrigin = configuredMediaOrigin(configuredOrigin ?? undefined, { allowLocalhost: true });
+  return Boolean(url && safeOrigin && url.origin === safeOrigin && /^\/api\/v1\/events\/media(?:\/|$)/.test(url.pathname));
 }

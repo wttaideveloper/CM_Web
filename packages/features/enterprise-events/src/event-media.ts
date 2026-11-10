@@ -1,10 +1,14 @@
 export const EVENT_MEDIA_FIELDS = ["primary_image", "gallery_images", "videos", "documents"] as const;
+const PROTECTED_MEDIA_ORIGINS = new Set([
+  "https://chat.wisdomtooth.tech",
+  "https://marketplace-api.wisdomtoothstage.tech",
+]);
 
 /** Routes protected Chat media through the current app's authenticated BFF. */
 export function protectedMediaPreviewUrl(value: string, proxyPath = "/api/event-media"): string {
   try {
     const url = new URL(value);
-    if ((url.protocol !== "http:" && url.protocol !== "https:") || url.origin !== "https://chat.wisdomtooth.tech") return value;
+    if (url.protocol !== "https:" || url.username || url.password || url.hash || url.port || !PROTECTED_MEDIA_ORIGINS.has(url.origin)) return value;
     return `${proxyPath}?url=${encodeURIComponent(url.toString())}`;
   } catch {
     return value;

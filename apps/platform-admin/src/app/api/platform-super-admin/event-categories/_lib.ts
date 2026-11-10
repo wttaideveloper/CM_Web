@@ -5,21 +5,18 @@ import {
   superAdminErrorResponse,
   superAdminJsonResponse,
 } from "@/lib/super-admin-server-client";
+import { getAllowedPlatformApiUrl } from "@/lib/platform-api-url";
 
 const MARKETPLACE_API_BASE_URL = process.env.CHAT_API_BASE_URL;
 const categoryIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function eventCategoryUrl(categoryId?: string): URL | null {
   if (!MARKETPLACE_API_BASE_URL) return null;
-  try {
-    const url = new URL(MARKETPLACE_API_BASE_URL);
-    if (url.protocol !== "https:" || url.hostname !== "chat.wisdomtooth.tech") return null;
-    url.pathname = categoryId ? `/api/v1/event-categories/${encodeURIComponent(categoryId)}` : "/api/v1/event-categories/";
-    url.search = "";
-    return url;
-  } catch {
-    return null;
-  }
+  const url = getAllowedPlatformApiUrl(MARKETPLACE_API_BASE_URL);
+  if (!url) return null;
+  url.pathname = categoryId ? `/api/v1/event-categories/${encodeURIComponent(categoryId)}` : "/api/v1/event-categories/";
+  url.search = "";
+  return url;
 }
 
 /** Validates the backend-owned Event Category UUID path parameter. */

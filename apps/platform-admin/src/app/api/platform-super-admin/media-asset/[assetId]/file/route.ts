@@ -12,7 +12,7 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MEDIA_ORIGIN = configuredMediaOrigin(process.env.CHAT_API_BASE_URL);
+const MEDIA_ORIGIN = configuredMediaOrigin(process.env.CHAT_API_BASE_URL, { allowLocalhost: true });
 const ASSET_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 async function forward(request: NextRequest, assetId: string): Promise<Response> {

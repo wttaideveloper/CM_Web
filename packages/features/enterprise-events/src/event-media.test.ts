@@ -68,7 +68,9 @@ test("normalizes legacy bare document strings and applies documented link rules"
 
 test("routes protected uploaded media through the same-origin proxy and keeps external links direct", () => {
   const protectedUrl = "https://chat.wisdomtooth.tech/api/v1/events/media/asset-1.jpg";
+  const stagingProtectedUrl = "https://marketplace-api.wisdomtoothstage.tech/api/v1/events/media/staging-asset-1.jpg";
   assert.equal(protectedMediaPreviewUrl(protectedUrl), `/api/event-media?url=${encodeURIComponent(protectedUrl)}`);
+  assert.equal(protectedMediaPreviewUrl(stagingProtectedUrl), `/api/event-media?url=${encodeURIComponent(stagingProtectedUrl)}`);
   assert.equal(protectedMediaPreviewUrl("https://cdn.example.com/image.jpg"), "https://cdn.example.com/image.jpg");
   assert.equal(protectedMediaPreviewUrl(protectedUrl, "/api/platform-super-admin/event-media"), `/api/platform-super-admin/event-media?url=${encodeURIComponent(protectedUrl)}`);
 });

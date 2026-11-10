@@ -7,6 +7,7 @@ import {
   superAdminErrorResponse,
   superAdminJsonResponse,
 } from "@/lib/super-admin-server-client";
+import { getAllowedPlatformApiUrl } from "@/lib/platform-api-url";
 
 const MARKETPLACE_API_BASE_URL = process.env.CHAT_API_BASE_URL;
 
@@ -19,10 +20,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   }
 
   try {
-    const marketplaceUrl = new URL(MARKETPLACE_API_BASE_URL ?? "");
-    if (marketplaceUrl.protocol !== "https:" || marketplaceUrl.hostname !== "chat.wisdomtooth.tech") {
-      throw new Error("Invalid Marketplace API URL");
-    }
+    const marketplaceUrl = getAllowedPlatformApiUrl(MARKETPLACE_API_BASE_URL);
+    if (!marketplaceUrl) throw new Error("Invalid Marketplace API URL");
     marketplaceUrl.pathname = `/api/v1/enterprises/${enterpriseId}/locations`;
     marketplaceUrl.search = "";
     return superAdminJsonResponse(await getSuperAdminUpstreamJson(marketplaceUrl.toString()));
@@ -39,8 +38,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
   if (!isTenantUuid(enterpriseId)) return NextResponse.json({ detail: "A valid enterprise identifier is required." }, { status: 400 });
 
   try {
-    const marketplaceUrl = new URL(MARKETPLACE_API_BASE_URL ?? "");
-    if (marketplaceUrl.protocol !== "https:" || marketplaceUrl.hostname !== "chat.wisdomtooth.tech") throw new Error("Invalid Marketplace API URL");
+    const marketplaceUrl = getAllowedPlatformApiUrl(MARKETPLACE_API_BASE_URL);
+    if (!marketplaceUrl) throw new Error("Invalid Marketplace API URL");
     marketplaceUrl.pathname = `/api/v1/enterprises/${enterpriseId}/locations`;
     marketplaceUrl.search = "";
     const body = await request.text();

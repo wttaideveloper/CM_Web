@@ -1,12 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { configuredMediaOrigin } from "@ihp/shared";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const TOKEN_COOKIE_NAME = "access_token";
-const MEDIA_ORIGIN = (process.env.CHAT_PROXY_TARGET ?? process.env.CHAT_API_BASE_URL ?? "https://chat.wisdomtooth.tech")
-  .replace(/\/$/, "")
-  .replace(/\/api\/v1$/, "");
+const MEDIA_ORIGIN = configuredMediaOrigin(
+  process.env.CHAT_PROXY_TARGET ?? process.env.CHAT_API_BASE_URL ?? "https://chat.wisdomtooth.tech",
+  { allowLocalhost: true },
+) ?? "https://chat.wisdomtooth.tech";
 const WORKFLOW_ORIGIN = (process.env.WORKFLOW_API_BASE_URL ?? "")
   .replace(/\/$/, "")
   .replace(/\/api\/v1$/, "");
@@ -57,7 +59,14 @@ async function forward(request: NextRequest, assetId: string): Promise<Response>
     try {
       const parsedSource = new URL(sourceUrl);
       const expectedPath = `/api/v1/media/${encodeURIComponent(assetId)}/file`;
-      if (parsedSource.origin !== MEDIA_ORIGIN || parsedSource.pathname !== expectedPath) {
+      if (
+        parsedSource.origin !== MEDIA_ORIGIN
+        || parsedSource.pathname !== expectedPath
+        || parsedSource.username
+        || parsedSource.password
+        || parsedSource.hash
+        || parsedSource.port
+      ) {
         return NextResponse.json({ detail: "Invalid media source URL" }, { status: 400 });
       }
       upstreamUrl = parsedSource.toString();

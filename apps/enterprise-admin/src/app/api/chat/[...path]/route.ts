@@ -1,10 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { buildEnterpriseChatUpstreamUrl } from "../proxy-path";
+import {
+  buildEnterpriseChatTokenUpstreamUrl,
+  buildEnterpriseChatUpstreamUrl,
+  resolveEnterpriseChatProxyTarget,
+} from "../proxy-path";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const CHAT_TOKEN_UPSTREAM = "https://chat.wisdomtooth.tech";
 const RESPONSE_HEADERS_TO_COPY = [
   "content-type",
   "content-disposition",
@@ -13,19 +16,10 @@ const RESPONSE_HEADERS_TO_COPY = [
 ] as const;
 
 function getChatProxyTarget(): string | null {
-  const configuredTarget = process.env.CHAT_PROXY_TARGET?.trim();
-  if (configuredTarget) {
-    return configuredTarget.replace(/\/$/, "");
-  }
-
-  const configuredChatApi = process.env.CHAT_API_BASE_URL?.trim();
-  if (configuredChatApi) {
-    return configuredChatApi
-      .replace(/\/api\/v1\/?$/, "")
-      .replace(/\/$/, "");
-  }
-
-  return CHAT_TOKEN_UPSTREAM;
+  return resolveEnterpriseChatProxyTarget(
+    process.env.CHAT_PROXY_TARGET,
+    process.env.CHAT_API_BASE_URL,
+  );
 }
 
 async function forward(request: NextRequest, path: string[]): Promise<Response> {
@@ -45,7 +39,7 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   }
 
   const upstreamUrl = isChatTokenRequest
-    ? `${CHAT_TOKEN_UPSTREAM}/api/v1/auth/chat-token`
+    ? buildEnterpriseChatTokenUpstreamUrl(proxyTarget!)
     : buildEnterpriseChatUpstreamUrl(proxyTarget!, requestPath, request.nextUrl.search);
   console.info("[chat-proxy] request", { path: requestPath, upstreamUrl });
   const headers = new Headers();

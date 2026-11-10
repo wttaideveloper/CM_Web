@@ -1,15 +1,18 @@
 import type { NextConfig } from "next";
 
+import { getAllowedPlatformApiUrl } from "./src/lib/platform-api-url";
+
 const authApiBaseUrl =
   process.env.AUTH_API_BASE_URL ?? "https://admin.apis.invigor8.app";
 
 function normalizePlatformApiBaseUrl(value: string): string {
-  const url = new URL(value);
-
-  if (url.hostname === "chat.wisdomtooth.tech") {
-    url.protocol = "https:";
+  const parsedUrl = new URL(value);
+  if (parsedUrl.hostname === "chat.wisdomtooth.tech" && parsedUrl.protocol === "http:") {
+    parsedUrl.protocol = "https:";
   }
 
+  const url = getAllowedPlatformApiUrl(parsedUrl.toString(), { allowLocalhost: true });
+  if (!url) throw new Error("CHAT_API_BASE_URL must use an approved HTTPS Platform API origin.");
   return url.toString().replace(/\/$/, "");
 }
 

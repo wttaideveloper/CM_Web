@@ -6,6 +6,7 @@ import {
   superAdminErrorResponse,
   superAdminJsonResponse,
 } from "@/lib/super-admin-server-client";
+import { getAllowedPlatformApiUrl } from "@/lib/platform-api-url";
 
 const MARKETPLACE_API_BASE_URL = process.env.CHAT_API_BASE_URL;
 const configurationIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -13,15 +14,11 @@ const configurationIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}
 function marketplaceUrl(pathname: string): URL | null {
   if (!MARKETPLACE_API_BASE_URL) return null;
 
-  try {
-    const url = new URL(MARKETPLACE_API_BASE_URL);
-    if (url.protocol !== "https:" || url.hostname !== "chat.wisdomtooth.tech") return null;
-    url.pathname = pathname;
-    url.search = "";
-    return url;
-  } catch {
-    return null;
-  }
+  const url = getAllowedPlatformApiUrl(MARKETPLACE_API_BASE_URL);
+  if (!url) return null;
+  url.pathname = pathname;
+  url.search = "";
+  return url;
 }
 
 export function isTrainingConfigurationId(value: string): boolean {

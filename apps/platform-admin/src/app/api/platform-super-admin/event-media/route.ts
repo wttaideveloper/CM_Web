@@ -13,7 +13,7 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MEDIA_PROXY_ORIGIN = configuredMediaOrigin(process.env.CHAT_API_BASE_URL) ?? "https://chat.wisdomtooth.tech";
+const MEDIA_PROXY_ORIGIN = configuredMediaOrigin(process.env.CHAT_API_BASE_URL, { allowLocalhost: true }) ?? "https://chat.wisdomtooth.tech";
 
 async function forward(request: NextRequest): Promise<Response> {
   const upstreamUrl = request.nextUrl.searchParams.get("url")?.trim();
