@@ -1805,6 +1805,14 @@ export function isSupportedGroupAvatarFile(file: File): boolean {
   return file.type.startsWith("image/");
 }
 
+/** Accepts only the image formats approved for the Event Group local preview. */
+export function isSupportedEventGroupAvatarFile(file: Pick<File, "name" | "type">): boolean {
+  const supportedMimeTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
+  const normalizedType = file.type.trim().toLowerCase();
+  if (normalizedType) return supportedMimeTypes.has(normalizedType);
+  return /\.(png|jpe?g|webp)$/i.test(file.name.trim());
+}
+
 /** Builds the documented multipart fields for a Group Chat avatar upload. */
 export function buildGroupAvatarUploadFormData(file: File): FormData {
   const formData = new FormData();

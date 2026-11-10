@@ -588,17 +588,36 @@ export interface GroupAvatarUploadResponse {
   url: string;
 }
 
-/** Payload accepted by POST /groups. */
-export interface CreateGroupPayload {
+/** Payload accepted by POST /groups for the existing Training flow. */
+export interface TrainingGroupCreatePayload {
   name: string;
   kind: "program";
   context_type: "training";
   context_id: string;
-  description: string;
-  invitees: Array<{ user_id: string }>;
-  admins_only_posting: boolean;
+  description?: string | null;
+  invitees?: Array<{ user_id: string }>;
+  admins_only_posting?: boolean | null;
   avatar_url?: string;
+  invite_all_enrolled?: boolean;
+  exclude_user_ids?: string[];
 }
+
+/** Payload accepted by POST /groups for an Event context; kept distinct from Training at the type level. */
+export interface EventContextGroupCreatePayload {
+  name: string;
+  kind: "program";
+  context_type: "event";
+  context_id: string;
+  description?: string | null;
+  invitees?: Array<{ user_id: string }>;
+  admins_only_posting?: boolean | null;
+  avatar_url?: string | null;
+  invite_all_registered?: boolean;
+  exclude_user_ids?: string[];
+}
+
+/** Type-safe context union for the existing Group creation service. */
+export type CreateGroupPayload = TrainingGroupCreatePayload | EventContextGroupCreatePayload;
 
 /** One additional member accepted by POST /groups/{group_id}/members. */
 export interface GroupChatInvitee {
