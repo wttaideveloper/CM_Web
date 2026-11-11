@@ -1,0 +1,1801 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "IHP Event Group Chat - extracted from user-supplied OpenAPI",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/groups": {
+      "post": {
+        "tags": [
+          "Group Chat",
+          "Group Chat"
+        ],
+        "summary": "Create a group",
+        "description": "Verified providers and clinic admins only; patients get 403. Every group is linked to a program, an appointment series or a care episode (`context_type` + `context_id`). The creator is the owner. The name must not contain a patient's name or a health condition (422). Each invitee gets an invitation and is **not** a member, and sees nothing, until they accept.",
+        "operationId": "create_group_api_v1_groups_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Group Chat",
+          "Group Chat"
+        ],
+        "summary": "My groups (the Groups tab)",
+        "description": "Groups the caller is an active member of. `archived=true` lists the ones they archived (use `PATCH /conversations/{id}/archive`).",
+        "operationId": "list_groups_api_v1_groups_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(care|program)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "archived",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Archived"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/groups/events": {
+      "get": {
+        "tags": [
+          "Group Chat",
+          "Group Chat"
+        ],
+        "summary": "Events I can start a group for",
+        "description": "Step 1 of creating an event group. The Enterprise Admin's own enterprise's events (never another enterprise's), with the number of online registrants (confirmed or attended) and of groups each already has. `can_create_group` is true for a published or completed event. 403 for anyone who is not an Enterprise Admin.",
+        "operationId": "group_events_api_v1_groups_events_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventsForGroupsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/groups/events/{event_id}/attendees": {
+      "get": {
+        "tags": [
+          "Group Chat",
+          "Group Chat"
+        ],
+        "summary": "Registrants of an event to invite (searchable, paged)",
+        "description": "Step 2. Each row has the platform `user_id` to invite (null = no chat account found, `can_invite` false), the registration and payment status, `can_invite` with a `reason`, and `group_state` (none | invited | member | declined | left | removed). Eligible = online registration `confirmed` or `attended`, payment `paid` or `free`, with an account, one per person. Walk-ins are never listed (`walk_in_excluded` counts them). `q` searches name and email. By default only people who can be invited are listed; `eligible_only=false`, `registration_status` or `payment_status` shows the others with the reason. `not_in_group=true` hides everyone already in or invited to a group of this event (or to `group_id`). Without `group_id` the list is for a NEW group (`can_invite` ignores other groups); with `group_id` it is about that group (`already_member` / `already_invited`). 403 unless the caller is the Enterprise Admin of the enterprise that owns the event (Providers, speakers, the Super Admin and attendees never manage an event group).",
+        "operationId": "group_event_attendees_api_v1_groups_events__event_id__attendees_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Event Id"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "eligible_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Eligible Only"
+            }
+          },
+          {
+            "name": "registration_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(confirmed|attended|cancelled|no_show)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Registration Status"
+            }
+          },
+          {
+            "name": "payment_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(free|paid|unpaid|pending|failed|cancelled|refund_requested|refunded)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Payment Status"
+            }
+          },
+          {
+            "name": "not_in_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Not In Group"
+            }
+          },
+          {
+            "name": "group_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventAttendeesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/groups/events/{event_id}/providers": {
+      "get": {
+        "tags": [
+          "Group Chat",
+          "Group Chat"
+        ],
+        "summary": "Verified Providers I can add to an event group",
+        "description": "Step 3. The enterprise's verified Providers, who join as ordinary members (never admins). Speakers and organisers typed into the event form are text only: nobody is added from them. 403 unless the caller is the Enterprise Admin of the enterprise that owns the event (Providers, speakers, the Super Admin and attendees never manage an event group).",
+        "operationId": "group_event_providers_api_v1_groups_events__event_id__providers_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Event Id"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventProvidersResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/groups/events/{event_id}/groups": {
+      "get": {
+        "tags": [
+          "Group Chat",
+          "Group Chat"
+        ],
+        "summary": "Groups already made for an event",
+        "description": "Every group of this event, open and closed (details only, never messages of a group the caller is not in). 403 unless the caller is the Enterprise Admin of the enterprise that owns the event (Providers, speakers, the Super Admin and attendees never manage an event group).",
+        "operationId": "group_event_groups_api_v1_groups_events__event_id__groups_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Event Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/groups/{group_id}/members/invite-registered": {
+      "post": {
+        "tags": [
+          "Group Chat",
+          "Group Chat"
+        ],
+        "summary": "Event groups: invite registrants without sending every id",
+        "description": "Owner of a group linked to an event (the Enterprise Admin of the owning enterprise; checked again on every call). Send `user_ids` (each must have an eligible registration for the event, or be a verified Provider of the enterprise; otherwise 422 `INVITEE_NOT_ELIGIBLE` with `invalid_user_ids` and a `reasons` entry for each) or `all_eligible: true` (everyone eligible, one per person, who is not in or invited to this group, oldest registration first, up to the free places). Someone already a member or already invited is skipped (`skipped`), never invited twice. `not_invited_group_full` counts the people left out because the group is full: make another group for them. A full group refuses new named invitations (409). Use it again later to invite people who registered afterwards.",
+        "operationId": "invite_registered_api_v1_groups__group_id__members_invite_registered_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteRegistered"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteEnrolledResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "GroupCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "description": "Must not contain a patient's name or a health condition."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "care",
+              "program"
+            ],
+            "title": "Kind",
+            "description": "care = one patient's care team; program = several patients in one program."
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url",
+            "description": "The group icon: the `url` returned by POST /api/v1/uploads/ (for example /api/v1/uploads/group-avatars/ab12.png), or an https:// address. Anything else is a 422."
+          },
+          "context_type": {
+            "type": "string",
+            "enum": [
+              "program",
+              "appointment_series",
+              "care_episode",
+              "training",
+              "event"
+            ],
+            "title": "Context Type",
+            "description": "Every group follows a program, an appointment series or a care episode."
+          },
+          "context_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Context Id"
+          },
+          "invitees": {
+            "items": {
+              "$ref": "#/components/schemas/GroupInvitee"
+            },
+            "type": "array",
+            "title": "Invitees"
+          },
+          "admins_only_posting": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admins Only Posting",
+            "description": "Default: on for a program group, off for a care group."
+          },
+          "invite_all_enrolled": {
+            "type": "boolean",
+            "title": "Invite All Enrolled",
+            "description": "Training groups only: also invite every eligible enrolled learner of the training, up to the group limit (the people in `invitees` come first). The answer is the group; `GET /groups/{id}/members` shows who was invited.",
+            "default": false
+          },
+          "invite_all_registered": {
+            "type": "boolean",
+            "title": "Invite All Registered",
+            "description": "Event groups only: also invite every eligible registrant of the event (confirmed or attended online registration, paid or free, one per person), up to the group limit (the people in `invitees` come first). The answer is the group; `GET /groups/{id}/members` shows who was invited.",
+            "default": false
+          },
+          "exclude_user_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Exclude User Ids",
+            "description": "With invite_all_enrolled / invite_all_registered: people to leave out."
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "context_type",
+          "context_id"
+        ],
+        "title": "GroupCreate",
+        "example": {
+          "context_id": "550e8400-e29b-41d4-a716-446655440010",
+          "context_type": "program",
+          "description": "Class updates and questions",
+          "invitees": [
+            {
+              "user_id": "550e8400-e29b-41d4-a716-446655440020"
+            }
+          ],
+          "kind": "program",
+          "name": "Yoga batch Oct 2026"
+        }
+      },
+      "GroupInvitee": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name",
+            "description": "The name other patients will see in a program group. The invited person can change it when they accept."
+          },
+          "is_minor": {
+            "type": "boolean",
+            "title": "Is Minor",
+            "description": "Under 18: the invitation must be accepted with a parent's or guardian's consent.",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id"
+        ],
+        "title": "GroupInvitee"
+      },
+      "GroupResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "care",
+              "program"
+            ],
+            "title": "Kind"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "context_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Type"
+          },
+          "context_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Id"
+          },
+          "context_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Name",
+            "description": "Training and event groups: the title of the linked training or event."
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "closed"
+            ],
+            "title": "Status"
+          },
+          "admins_only_posting": {
+            "type": "boolean",
+            "title": "Admins Only Posting"
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Created By"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "member_count": {
+            "type": "integer",
+            "title": "Member Count",
+            "description": "Active members: the people who can see this group."
+          },
+          "visibility_notice": {
+            "type": "string",
+            "title": "Visibility Notice",
+            "description": "\"N people can see this\" - show it on every group."
+          },
+          "emergency_notice": {
+            "$ref": "#/components/schemas/EmergencyNotice"
+          },
+          "forwarding_blocked": {
+            "type": "boolean",
+            "title": "Forwarding Blocked",
+            "default": true
+          },
+          "screenshots_blocked": {
+            "type": "boolean",
+            "title": "Screenshots Blocked",
+            "description": "A hint to the app: block screenshots where the phone allows it.",
+            "default": true
+          },
+          "limits": {
+            "$ref": "#/components/schemas/GroupLimits"
+          },
+          "my_role": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "owner",
+                  "admin",
+                  "member"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "My Role"
+          },
+          "my_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "provider",
+                  "patient"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "My Kind"
+          },
+          "permissions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GroupPermissions"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What the caller can do with this group. Use it instead of working permissions out from my_role."
+          },
+          "muted": {
+            "type": "boolean",
+            "title": "Muted",
+            "default": false
+          },
+          "pinned": {
+            "type": "boolean",
+            "title": "Pinned",
+            "default": false
+          },
+          "is_archived": {
+            "type": "boolean",
+            "title": "Is Archived",
+            "default": false
+          },
+          "unread_count": {
+            "type": "integer",
+            "title": "Unread Count",
+            "default": 0
+          },
+          "last_message_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Message At"
+          },
+          "last_message_preview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Message Preview"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "closed_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed Reason"
+          },
+          "retention_started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retention Started At"
+          },
+          "retention_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retention Until"
+          },
+          "legal_hold": {
+            "type": "boolean",
+            "title": "Legal Hold",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "status",
+          "admins_only_posting",
+          "created_by",
+          "created_at",
+          "member_count",
+          "visibility_notice",
+          "emergency_notice",
+          "limits"
+        ],
+        "title": "GroupResponse"
+      },
+      "EmergencyNotice": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "number": {
+            "type": "string",
+            "title": "Number"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text",
+          "number"
+        ],
+        "title": "EmergencyNotice"
+      },
+      "GroupLimits": {
+        "properties": {
+          "max_members": {
+            "type": "integer",
+            "title": "Max Members"
+          },
+          "max_admins": {
+            "type": "integer",
+            "title": "Max Admins"
+          },
+          "edit_window_minutes": {
+            "type": "integer",
+            "title": "Edit Window Minutes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "max_members",
+          "max_admins",
+          "edit_window_minutes"
+        ],
+        "title": "GroupLimits"
+      },
+      "GroupPermissions": {
+        "properties": {
+          "can_post": {
+            "type": "boolean",
+            "title": "Can Post",
+            "description": "Send a message (false when closed, muted, or posting is for providers only and the caller is not one)."
+          },
+          "can_edit_group": {
+            "type": "boolean",
+            "title": "Can Edit Group",
+            "description": "Change the name, description and picture (PATCH /groups/{id})."
+          },
+          "can_change_settings": {
+            "type": "boolean",
+            "title": "Can Change Settings",
+            "description": "Change who can send messages (PATCH /groups/{id}/settings)."
+          },
+          "can_invite": {
+            "type": "boolean",
+            "title": "Can Invite",
+            "description": "Invite people (POST /groups/{id}/members and /members/invite-enrolled)."
+          },
+          "can_view_members": {
+            "type": "boolean",
+            "title": "Can View Members"
+          },
+          "can_view_pending_invitations": {
+            "type": "boolean",
+            "title": "Can View Pending Invitations",
+            "description": "The members list also returns people who were invited and have not answered."
+          },
+          "can_remove_members": {
+            "type": "boolean",
+            "title": "Can Remove Members"
+          },
+          "can_make_admin": {
+            "type": "boolean",
+            "title": "Can Make Admin"
+          },
+          "can_remove_admin": {
+            "type": "boolean",
+            "title": "Can Remove Admin",
+            "description": "Take admin away from someone (owner or compliance; a reason is required)."
+          },
+          "can_mute_members": {
+            "type": "boolean",
+            "title": "Can Mute Members",
+            "description": "Stop a member posting (POST .../mute-posting)."
+          },
+          "can_hide_messages": {
+            "type": "boolean",
+            "title": "Can Hide Messages",
+            "description": "Remove any message from view, with a reason."
+          },
+          "can_pin_messages": {
+            "type": "boolean",
+            "title": "Can Pin Messages"
+          },
+          "can_close": {
+            "type": "boolean",
+            "title": "Can Close"
+          },
+          "can_reopen": {
+            "type": "boolean",
+            "title": "Can Reopen",
+            "description": "The group is closed and the caller is its owner or compliance."
+          },
+          "can_transfer_ownership": {
+            "type": "boolean",
+            "title": "Can Transfer Ownership"
+          },
+          "can_reassign_owner": {
+            "type": "boolean",
+            "title": "Can Reassign Owner",
+            "description": "Compliance only."
+          },
+          "can_leave": {
+            "type": "boolean",
+            "title": "Can Leave",
+            "description": "Any active member except the owner (who hands the group over first)."
+          },
+          "can_withdraw_consent": {
+            "type": "boolean",
+            "title": "Can Withdraw Consent",
+            "description": "Take consent back (POST /groups/{id}/consent/withdraw). Same rule as can_leave: false for the owner, who must hand the group over first (otherwise 409)."
+          },
+          "can_view_audit": {
+            "type": "boolean",
+            "title": "Can View Audit",
+            "description": "The owner and compliance."
+          },
+          "can_set_legal_hold": {
+            "type": "boolean",
+            "title": "Can Set Legal Hold",
+            "description": "Compliance only."
+          },
+          "can_report": {
+            "type": "boolean",
+            "title": "Can Report"
+          },
+          "can_mute_group": {
+            "type": "boolean",
+            "title": "Can Mute Group",
+            "description": "Mute notifications or pin the group for myself (PATCH /groups/{id}/preferences)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "can_post",
+          "can_edit_group",
+          "can_change_settings",
+          "can_invite",
+          "can_view_members",
+          "can_view_pending_invitations",
+          "can_remove_members",
+          "can_make_admin",
+          "can_remove_admin",
+          "can_mute_members",
+          "can_hide_messages",
+          "can_pin_messages",
+          "can_close",
+          "can_reopen",
+          "can_transfer_ownership",
+          "can_reassign_owner",
+          "can_leave",
+          "can_withdraw_consent",
+          "can_view_audit",
+          "can_set_legal_hold",
+          "can_report",
+          "can_mute_group"
+        ],
+        "title": "GroupPermissions",
+        "description": "What the caller can do with this group right now. Built by the server from the caller's role, the kind of member\nthey are, whether the group is open and the group's posting rules, so the app does not have to work it out."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "GroupListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GroupResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "GroupListResponse"
+      },
+      "EventsForGroupsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EventForGroupResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "EventsForGroupsResponse"
+      },
+      "EventForGroupResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "delivery_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Mode"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "registered_count": {
+            "type": "integer",
+            "title": "Registered Count",
+            "description": "Confirmed or attended online registrations (walk-ins excluded). Payment is checked in the attendees list, not here.",
+            "default": 0
+          },
+          "group_count": {
+            "type": "integer",
+            "title": "Group Count",
+            "description": "Open and closed groups already linked to this event.",
+            "default": 0
+          },
+          "can_create_group": {
+            "type": "boolean",
+            "title": "Can Create Group",
+            "description": "true for a published or completed event."
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason",
+            "description": "Why can_create_group is false: event_not_open."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "can_create_group"
+        ],
+        "title": "EventForGroupResponse"
+      },
+      "EventAttendeesResponse": {
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Event Id"
+          },
+          "event_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Title"
+          },
+          "event_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Status"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EventAttendeeCandidate"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          },
+          "eligible_total": {
+            "type": "integer",
+            "title": "Eligible Total",
+            "description": "Registrations of the event that could be invited, whatever the filters."
+          },
+          "walk_in_excluded": {
+            "type": "integer",
+            "title": "Walk In Excluded",
+            "description": "Walk-in registrations: never part of Event Group Chat, never listed.",
+            "default": 0
+          },
+          "max_members": {
+            "type": "integer",
+            "title": "Max Members",
+            "description": "The group limit, owner and pending invitations included."
+          }
+        },
+        "type": "object",
+        "required": [
+          "event_id",
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "eligible_total",
+          "max_members"
+        ],
+        "title": "EventAttendeesResponse"
+      },
+      "EventAttendeeCandidate": {
+        "properties": {
+          "registration_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Registration Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email",
+            "description": "For the enterprise's staff, as in the attendee list."
+          },
+          "registration_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registration Status",
+            "description": "confirmed | attended | cancelled | no_show"
+          },
+          "payment_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Status",
+            "description": "free | paid | unpaid | pending | failed | cancelled | refund_requested | refunded (derived from the paired order)."
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id",
+            "description": "The registrant's platform user id: the id to invite. null = no chat account found, `can_invite` false."
+          },
+          "can_invite": {
+            "type": "boolean",
+            "title": "Can Invite"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "registration_cancelled",
+                  "registration_no_show",
+                  "registration_not_active",
+                  "payment_unpaid",
+                  "payment_pending",
+                  "payment_failed",
+                  "payment_cancelled",
+                  "payment_refund_requested",
+                  "payment_refunded",
+                  "no_account",
+                  "duplicate_registration",
+                  "already_member",
+                  "already_invited"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason",
+            "description": "Why can_invite is false."
+          },
+          "group_state": {
+            "type": "string",
+            "enum": [
+              "none",
+              "invited",
+              "member",
+              "declined",
+              "left",
+              "removed"
+            ],
+            "title": "Group State",
+            "default": "none"
+          },
+          "group_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Group Ids",
+            "description": "Groups of this event the person is invited to or a member of."
+          },
+          "registered_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registered At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "registration_id",
+          "can_invite"
+        ],
+        "title": "EventAttendeeCandidate"
+      },
+      "EventProvidersResponse": {
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Event Id"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EventProviderResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "event_id",
+          "items",
+          "total"
+        ],
+        "title": "EventProvidersResponse"
+      },
+      "EventProviderResponse": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "registration_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registration Number"
+          },
+          "is_me": {
+            "type": "boolean",
+            "title": "Is Me",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id"
+        ],
+        "title": "EventProviderResponse"
+      },
+      "InviteRegistered": {
+        "properties": {
+          "user_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Ids",
+            "description": "Invite exactly these registrants (and verified providers)."
+          },
+          "all_eligible": {
+            "type": "boolean",
+            "title": "All Eligible",
+            "description": "Invite every eligible registrant who is not already in or invited to this group, up to the free places.",
+            "default": false
+          },
+          "exclude_user_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Exclude User Ids",
+            "description": "With all_eligible: people to leave out."
+          }
+        },
+        "type": "object",
+        "title": "InviteRegistered",
+        "description": "Invite registrants of an event group's event without sending thousands of ids."
+      },
+      "InviteEnrolledResponse": {
+        "properties": {
+          "invited": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Invited"
+          },
+          "skipped": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Skipped",
+            "description": "Already active, already invited, or the caller."
+          },
+          "not_invited_group_full": {
+            "type": "integer",
+            "title": "Not Invited Group Full",
+            "description": "Eligible learners left out because the group reached its limit. Make another group for them.",
+            "default": 0
+          },
+          "no_account": {
+            "type": "integer",
+            "title": "No Account",
+            "description": "Eligible enrolments with no chat account (no user id could be found).",
+            "default": 0
+          },
+          "free_places": {
+            "type": "integer",
+            "title": "Free Places",
+            "description": "Places left in the group after these invitations."
+          }
+        },
+        "type": "object",
+        "required": [
+          "invited",
+          "free_places"
+        ],
+        "title": "InviteEnrolledResponse"
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT **access token** for authenticated API requests.\n\n## Primary — Invigorate Auth (Production)\n\n1. Login: `POST https://admin.apis.invigor8.app/api/v1/auth/login`\n2. Copy: `tokens.access_token` from the response\n3. Click **Authorize** above and paste the token (Swagger adds `Bearer ` automatically)\n4. Call any protected endpoint on this marketplace API\n\n| Setting | Value |\n|---------|-------|\n| Algorithm | RS256 |\n| Issuer (`iss`) | `https://auth.invigor8.app/realms/invigorate-healthcare` |\n| Audience (`aud`) | `invigorate-api` **or** `azp=invigorate-api` |\n| JWKS | `https://auth.invigor8.app/realms/invigorate-healthcare/protocol/openid-connect/certs` |\n| User ID claim | `sub` (Keycloak user ID) |\n| App User UUID | `GET /api/v1/auth/me` on auth API (different from `sub`) |\n\n**Role claims:** `isSuperAdmin` (Platform Super Admin login → `super_admin`), `tenant_role`, `user_role`, `tenant_rbac_roles`, `tenant_permissions`\n\nSee **Authentication** → `GET /api/v1/auth/integration` for full reference.\n\n**Dual auth (same routes, no duplicate APIs):**\n- **Enterprise Admin portal** — HttpOnly cookie `access_token` (`credentials: include`)\n- **Platform Super Admin portal** — `Authorization: Bearer <access_token>` from dedicated Super Admin login\n\nBoth use the same JWT validation path (`get_current_user`). Public catalog GETs (products, services) remain unauthenticated.\n\n## Fallback — Local dev token (Testing only)\n\n`GET /api/v1/auth/dev-token` when `ENABLE_DEV_TOKEN=true` — local HS256 token, not Invigorate auth."
+      }
+    }
+  }
+}

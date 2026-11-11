@@ -2,7 +2,11 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { firstConfiguredUpstream, stripApiV1 } from "@ihp/shared/upstream-config";
 
-import { buildEnterpriseChatUpstreamUrl, resolveEnterpriseChatUpstreamPath } from "../proxy-path";
+import {
+  buildEnterpriseChatTokenUpstreamUrl,
+  buildEnterpriseChatUpstreamUrl,
+  resolveEnterpriseChatUpstreamPath,
+} from "../proxy-path";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,7 +68,7 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   }
 
   const upstreamUrl = isChatTokenRequest
-    ? `${proxyTarget}/api/v1/auth/chat-token`
+    ? buildEnterpriseChatTokenUpstreamUrl(proxyTarget)
     : buildEnterpriseChatUpstreamUrl(proxyTarget, upstreamPath, request.nextUrl.search);
   const headers = new Headers();
   const contentType = request.headers.get("content-type");

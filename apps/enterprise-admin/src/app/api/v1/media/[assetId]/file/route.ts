@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-
 import { configuredMediaOrigin, resolveProtectedMediaFetchUrl } from "@ihp/shared";
 import { firstConfiguredUpstream, stripApiV1 } from "@ihp/shared/upstream-config";
 
@@ -7,7 +6,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const TOKEN_COOKIE_NAME = "access_token";
-
 /** Internal origin of the Marketplace media service; `null` when unconfigured (no built-in host). */
 function getMediaOrigin(): string | null {
   const configured = firstConfiguredUpstream(process.env, ["CHAT_PROXY_TARGET", "CHAT_API_BASE_URL"]);

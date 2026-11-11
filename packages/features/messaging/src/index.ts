@@ -12,3 +12,7 @@ export { default as GroupChatWorkspace } from "./GroupChatWorkspace";
 export * from "./group-chat/group-chat.service";
 export * from "./group-chat/group-chat.types";
 export * from "./group-chat/group-chat-socket";
+export * from "./group-chat/event-group.service";
+export * from "./group-chat/event-group.types";
+export * from "./group-chat/event-group.models";
+export * from "./group-chat/event-group.queries";

@@ -3,16 +3,14 @@ import {
   buildProtectedMediaRequestHeaders,
   configuredMediaOrigin,
   copyProtectedMediaResponseHeaders,
-  EVENT_MEDIA_PATH_PATTERN,
-  firstConfiguredUpstream,
-  resolveProtectedMediaFetchUrl,
+  resolveAllowedEventMediaUrl,
 } from "@ihp/shared";
+import { firstConfiguredUpstream } from "@ihp/shared/upstream-config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const TOKEN_COOKIE_NAME = "access_token";
-
 /**
  * Event media URLs stored with the data carry the *public* backend origin, while the server
  * must connect to the *internal* one (for example a private Docker service name). Keeping the
@@ -21,8 +19,7 @@ const TOKEN_COOKIE_NAME = "access_token";
 function mediaFetchPolicy() {
   return {
     publicOrigin: configuredMediaOrigin(process.env.NEXT_PUBLIC_PROTECTED_MEDIA_ORIGIN),
-    internalOrigin: configuredMediaOrigin(firstConfiguredUpstream(process.env, ["CHAT_PROXY_TARGET", "CHAT_API_BASE_URL"]) ?? undefined),
-    pathPattern: EVENT_MEDIA_PATH_PATTERN,
+    internalOrigin: configuredMediaOrigin(firstConfiguredUpstream(process.env, ["EVENTS_API_BASE_URL", "CHAT_PROXY_TARGET", "CHAT_API_BASE_URL"]) ?? undefined),
   };
 }
 
@@ -35,7 +32,10 @@ async function forward(request: NextRequest): Promise<Response> {
   if (!token) return invalidRequest("Not authenticated", 401);
 
   const requestedUrl = request.nextUrl.searchParams.get("url")?.trim();
-  const upstreamUrl = requestedUrl ? resolveProtectedMediaFetchUrl(requestedUrl, mediaFetchPolicy()) : null;
+  const policy = mediaFetchPolicy();
+  const upstreamUrl = requestedUrl && policy.internalOrigin
+    ? resolveAllowedEventMediaUrl(requestedUrl, policy.internalOrigin, policy.publicOrigin)
+    : null;
   if (!upstreamUrl) return invalidRequest("Media URL is not allowed.");
 
   let upstream: Response;

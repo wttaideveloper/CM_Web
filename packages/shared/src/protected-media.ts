@@ -1,6 +1,11 @@
 import { isSafeRawPathname } from "./safe-proxy-path.ts";
 import { originOf } from "./upstream-config.ts";
 
+/** Exact legacy public origin whose approved Event/Blog paths may be migrated to staging. */
+export const LEGACY_PROTECTED_MEDIA_ORIGIN = "https://chat.wisdomtooth.tech";
+/** Exact Hostinger staging API origin used by the approved legacy-media resolver. */
+export const STAGING_PROTECTED_MEDIA_ORIGIN = "https://marketplace-api.wisdomtoothstage.tech";
+
 const REQUEST_HEADERS_TO_FORWARD = ["accept", "if-range", "range"] as const;
 const RESPONSE_HEADERS_TO_COPY = [
   "accept-ranges",
@@ -26,7 +31,7 @@ const CONFIGURED_PROTECTED_MEDIA_ORIGIN = originOf(process.env.NEXT_PUBLIC_PROTE
 function parseHttpUrl(value: string): URL | null {
   try {
     const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:" ? url : null;
+    return (url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password && !url.hash ? url : null;
   } catch {
     return null;
   }
@@ -77,13 +82,48 @@ export function configuredMediaOrigin(value: string | undefined): string | null 
 
 export function isAllowedProtectedMediaUrl(value: string, configuredOrigin: string | null): boolean {
   const url = parseHttpUrl(value);
-  return Boolean(url && configuredOrigin && url.origin === configuredOrigin);
+  const safeOrigin = configuredMediaOrigin(configuredOrigin ?? undefined);
+  return Boolean(url && safeOrigin && url.origin === safeOrigin);
 }
 
 /** Returns true only for Event media paths on the configured protected media service. */
 export function isAllowedEventMediaUrl(value: string, configuredOrigin: string | null): boolean {
   const url = parseHttpUrl(value);
-  return Boolean(url && configuredOrigin && url.origin === configuredOrigin && /^\/api\/v1\/events\/media(?:\/|$)/.test(url.pathname));
+  const safeOrigin = configuredMediaOrigin(configuredOrigin ?? undefined);
+  return Boolean(url && safeOrigin && url.origin === safeOrigin && EVENT_MEDIA_PATH_PATTERN.test(url.pathname));
+}
+
+export const BLOG_MEDIA_PATH_PATTERN = /^\/api\/v1\/cms\/blogs\/files\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
+/**
+ * Resolves a stored Event media URL to the configured protected media origin.
+ *
+ * The staging backend serves the legacy Event media paths, so only the exact
+ * approved legacy origin may be translated to the approved Hostinger origin.
+ * Other hosts, protocols, ports, and paths remain rejected.
+ */
+export function resolveAllowedEventMediaUrl(value: string, configuredOrigin: string | null, publicOrigin?: string | null): string | null {
+  const safeOrigin = configuredMediaOrigin(configuredOrigin ?? undefined);
+  if (!safeOrigin) return null;
+  return resolveProtectedMediaFetchUrl(value, {
+    publicOrigin: configuredMediaOrigin(publicOrigin ?? undefined) ?? (safeOrigin === STAGING_PROTECTED_MEDIA_ORIGIN ? LEGACY_PROTECTED_MEDIA_ORIGIN : null),
+    internalOrigin: safeOrigin,
+    legacyPublicOrigins: safeOrigin === STAGING_PROTECTED_MEDIA_ORIGIN ? [LEGACY_PROTECTED_MEDIA_ORIGIN] : [],
+    pathPattern: EVENT_MEDIA_PATH_PATTERN,
+  });
+}
+
+
+/** Resolves only approved legacy Blog media paths to the configured Hostinger origin. */
+export function resolveAllowedBlogMediaUrl(value: string, configuredOrigin: string | null, publicOrigin?: string | null): string | null {
+  const safeOrigin = configuredMediaOrigin(configuredOrigin ?? undefined);
+  if (!safeOrigin) return null;
+  return resolveProtectedMediaFetchUrl(value, {
+    publicOrigin: configuredMediaOrigin(publicOrigin ?? undefined) ?? (safeOrigin === STAGING_PROTECTED_MEDIA_ORIGIN ? LEGACY_PROTECTED_MEDIA_ORIGIN : null),
+    internalOrigin: safeOrigin,
+    legacyPublicOrigins: safeOrigin === STAGING_PROTECTED_MEDIA_ORIGIN ? [LEGACY_PROTECTED_MEDIA_ORIGIN] : [],
+    pathPattern: BLOG_MEDIA_PATH_PATTERN,
+  });
 }
 
 /** Where a server may fetch protected media from, and which URLs it accepts as input. */
@@ -94,6 +134,8 @@ export interface ProtectedMediaFetchPolicy {
   readonly internalOrigin: string | null;
   /** Optional restriction on the URL path, applied to the incoming URL. */
   readonly pathPattern?: RegExp;
+  /** Additional exact public origins allowed only for an explicitly approved compatibility path. */
+  readonly legacyPublicOrigins?: readonly string[];
 }
 
 /**
@@ -111,11 +153,12 @@ export interface ProtectedMediaFetchPolicy {
  * already carry the internal origin still resolve.
  */
 export function resolveProtectedMediaFetchUrl(value: string, policy: ProtectedMediaFetchPolicy): string | null {
-  const { publicOrigin, internalOrigin, pathPattern } = policy;
+  const { publicOrigin, internalOrigin, legacyPublicOrigins = [], pathPattern } = policy;
   const url = parseHttpUrl(value);
   if (!url || !internalOrigin) return null;
   if (url.username || url.password) return null;
-  if (url.origin !== internalOrigin && url.origin !== publicOrigin) return null;
+  const allowedOrigins = new Set([internalOrigin, publicOrigin, ...legacyPublicOrigins].filter((origin): origin is string => Boolean(origin)));
+  if (!allowedOrigins.has(url.origin)) return null;
   if (!isSafeRawPathname(url.pathname)) return null;
   if (pathPattern && !pathPattern.test(url.pathname)) return null;
   return `${internalOrigin}${url.pathname}${url.search}`;

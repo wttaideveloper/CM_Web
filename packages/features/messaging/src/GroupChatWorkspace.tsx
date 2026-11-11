@@ -14,9 +14,11 @@ import GroupChatMessages from "./GroupChatMessages";
 import { useGroupChatRealtimeSubscription } from "./GroupChatRealtimeSubscription";
 import { groupChatReadStatusQueryKey } from "./group-chat/group-chat-read-state";
 import { groupChatMembershipRemovalRefreshQueryKey, groupChatPostingRefreshQueryKey } from "./group-chat/group-chat-notification";
+import EventGroupInvitePanel from "./EventGroupInvitePanel";
+import { canManageEventGroupInvitations, getGroupWorkspaceContextLabel, isEventGroupWorkspaceContext } from "./event-group-wizard-models";
 
 type GroupChatLayoutMode = "conversation" | "management";
-type Props = { groupId: string; onClose?: () => void; onGroupRemoved?: (groupName: string) => void; onOpenAudit?: () => void; onOpenSecureReview?: (groupId: string) => void; onLayoutModeChange?: (mode: GroupChatLayoutMode) => void };
+type Props = { groupId: string; enterpriseAdminAuthorized: boolean; onClose?: () => void; onGroupRemoved?: (groupName: string) => void; onOpenAudit?: () => void; onOpenSecureReview?: (groupId: string) => void; onLayoutModeChange?: (mode: GroupChatLayoutMode) => void };
 const groupKey = (groupId: string, userScope?: string) => userScope ? ["group-chat", "group", groupId, userScope] : ["group-chat", "group", groupId];
 const currentMemberKey = (groupId: string, userScope: string) => ["group-chat", "current-member", groupId, userScope] as const;
 const memberKey = (groupId: string, search: string) => ["group-chat", "members", groupId, search];
@@ -270,9 +272,13 @@ function SearchMessages({ groupId, onNavigateToLoadedMessage }: { groupId: strin
 }
 
 type GroupDetailsTab = "overview" | "members" | "invite" | "search" | "files" | "settings";
-function GroupDetailsPanel({ group, groupId, userScope, tenantScope, canViewMembers, canInviteMembers, ownerResolution, ownerRosterState, onClose, onLeave, onNavigateToLoadedMessage, onOpenAudit, onOpenSecureReview }: { group: GroupChatDetails; groupId: string; userScope: string; tenantScope: string; canViewMembers: boolean; canInviteMembers: boolean; ownerResolution: GroupChatOwnerResolution; ownerRosterState: OwnerRosterState; onClose: () => void; onLeave: () => void; onNavigateToLoadedMessage: (messageId: string) => void; onOpenAudit?: () => void; onOpenSecureReview?: (groupId: string) => void }) {
+function GroupDetailsPanel({ group, groupId, userScope, tenantScope, canViewMembers, canInviteMembers, enterpriseAdminAuthorized, ownerResolution, ownerRosterState, onClose, onLeave, onNavigateToLoadedMessage, onOpenAudit, onOpenSecureReview }: { group: GroupChatDetails; groupId: string; userScope: string; tenantScope: string; canViewMembers: boolean; canInviteMembers: boolean; enterpriseAdminAuthorized: boolean; ownerResolution: GroupChatOwnerResolution; ownerRosterState: OwnerRosterState; onClose: () => void; onLeave: () => void; onNavigateToLoadedMessage: (messageId: string) => void; onOpenAudit?: () => void; onOpenSecureReview?: (groupId: string) => void }) {
   const [tab, setTab] = useState<GroupDetailsTab>("overview");
   const groupIsClosed = group.status?.trim().toLowerCase() === "closed";
+  const isEventGroup = isEventGroupWorkspaceContext(group);
+  const canManageEventInvitations = canManageEventGroupInvitations({ ...group, can_invite: group.permissions.can_invite, enterpriseAdminAuthorized });
+  const contextLabel = getGroupWorkspaceContextLabel(group);
+  const tabs: readonly (readonly [GroupDetailsTab, string])[] = [["overview", "Overview"], ["members", "Members"], ...(!isEventGroup || canManageEventInvitations ? [["invite", "Invite members"] as const] : []), ["search", "Search"], ["files", "Shared Files"], ["settings", "Settings"]];
   return <section className="flex flex-col bg-white" aria-label="Group details">
     <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[#e1ebe6] px-3 py-2.5 sm:px-4">
       <div className="min-w-0">
@@ -285,7 +291,7 @@ function GroupDetailsPanel({ group, groupId, userScope, tenantScope, canViewMemb
       <GroupAvatarDisplay name={group.name} url={group.avatar_url} size="medium" />
       <div className="min-w-0 flex-1">
         <h4 className="truncate text-base font-bold text-[#16332b]">{group.name}</h4>
-        <p className="mt-0.5 text-xs text-[#52736a]">{group.member_count ?? "—"} members · {group.training_title || group.context_name || "Training context"}</p>
+        <p className="mt-0.5 text-xs text-[#52736a]">{group.member_count ?? "—"} members · {contextLabel}</p>
         <p className="mt-2 line-clamp-2 text-sm text-[#52736a]">{group.description || "No description provided."}</p>
         <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${groupIsClosed ? "bg-[#fff3d6] text-[#8b5e00]" : "bg-[#e8f6ee] text-[#1f6a58]"}`}>{groupIsClosed ? "Closed" : group.status || "Active"}</span>
       </div>
@@ -294,10 +300,10 @@ function GroupDetailsPanel({ group, groupId, userScope, tenantScope, canViewMemb
       <PersonalMembershipActions group={group} groupId={groupId} userScope={userScope} tenantScope={tenantScope} onLeave={onLeave} />
     </div>
     <div className="flex shrink-0 flex-wrap gap-1.5 border-b border-[#e1ebe6] px-3 py-2 sm:px-4" role="tablist" aria-label="Group management">
-      {([["overview", "Overview"], ["members", "Members"], ["invite", "Invite members"], ["search", "Search"], ["files", "Shared Files"], ["settings", "Settings"]] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={tab === value ? "rounded-full bg-[#1f6a58] px-3 py-1.5 text-xs font-semibold text-white" : "rounded-full bg-[#f4faf7] px-3 py-1.5 text-xs font-semibold text-[#52736a]"}>{label}</button>)}
+      {tabs.map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={tab === value ? "rounded-full bg-[#1f6a58] px-3 py-1.5 text-xs font-semibold text-white" : "rounded-full bg-[#f4faf7] px-3 py-1.5 text-xs font-semibold text-[#52736a]"}>{label}</button>)}
     </div>
     <div className="p-3 sm:p-4">
-      {tab === "overview" ? <GroupDetailsOverview group={group} groupId={groupId} userScope={userScope} ownerResolution={ownerResolution} ownerRosterState={ownerRosterState} onOpenAudit={onOpenAudit} onOpenSecureReview={onOpenSecureReview} /> : tab === "members" ? <Members groupId={groupId} ownerUserId={ownerResolution.state === "resolved" ? ownerResolution.userId : group.owner_user_id} currentUserRole={group.my_role} groupStatus={group.status} permissions={group.permissions} canViewMembers={canViewMembers} /> : tab === "invite" ? <Invite group={group} groupId={groupId} canInviteMembers={canInviteMembers} /> : tab === "search" ? <SearchMessages key={groupId} groupId={groupId} onNavigateToLoadedMessage={onNavigateToLoadedMessage} /> : tab === "files" ? <SharedFiles key={groupId} groupId={groupId} /> : <Settings group={group} groupId={groupId} />}
+      {tab === "overview" ? <GroupDetailsOverview group={group} groupId={groupId} userScope={userScope} ownerResolution={ownerResolution} ownerRosterState={ownerRosterState} onOpenAudit={onOpenAudit} onOpenSecureReview={onOpenSecureReview} /> : tab === "members" ? <Members groupId={groupId} ownerUserId={ownerResolution.state === "resolved" ? ownerResolution.userId : group.owner_user_id} currentUserRole={group.my_role} groupStatus={group.status} permissions={group.permissions} canViewMembers={canViewMembers} /> : tab === "invite" ? (isEventGroup ? <EventGroupInvitePanel group={group} groupId={groupId} eventId={group.context_id!} canManage={canManageEventInvitations} /> : <Invite group={group} groupId={groupId} canInviteMembers={canInviteMembers} />) : tab === "search" ? <SearchMessages key={groupId} groupId={groupId} onNavigateToLoadedMessage={onNavigateToLoadedMessage} /> : tab === "files" ? <SharedFiles key={groupId} groupId={groupId} /> : <Settings group={group} groupId={groupId} />}
     </div>
   </section>;
 }
@@ -445,6 +451,7 @@ function PersonalMembershipActions({ group, groupId, userScope, tenantScope, onL
   const queryClient = useQueryClient();
   const [confirmation, setConfirmation] = useState<"leave" | "withdraw" | null>(null);
   const isProgramGroup = group.kind?.trim().toLowerCase() === "program";
+  const isTrainingGroup = isProgramGroup && group.context_type?.trim().toLowerCase() === "training";
   const canLeave = group.permissions.can_leave === true;
   const leaveAction = getGroupChatLeaveAction({ myRole: group.my_role, ownerUserId: group.owner_user_id, currentUserId: userScope, canLeave });
   const leaveMutation = useMutation({
@@ -501,7 +508,7 @@ function PersonalMembershipActions({ group, groupId, userScope, tenantScope, onL
     <div className="mt-3 flex flex-wrap gap-2">
       {leaveAction !== "hidden" ? <button type="button" disabled={pending || leaveAction !== "enabled"} onClick={() => setConfirmation("leave")} className="rounded-full border border-[#b54708] px-3 py-1.5 text-xs font-semibold text-[#b54708] disabled:cursor-not-allowed disabled:opacity-50">Leave Group</button> : null}
       {leaveAction === "disabled-owner" ? <p className="basis-full text-sm text-[#8b5e00]">Transfer group ownership to another eligible provider before you can leave this group.</p> : null}
-      {isProgramGroup ? <button type="button" disabled={pending} onClick={() => setConfirmation("withdraw")} className="rounded-full border border-[#7a271a] px-3 py-1.5 text-xs font-semibold text-[#7a271a] disabled:opacity-50">Withdraw consent</button> : null}
+      {isTrainingGroup ? <button type="button" disabled={pending} onClick={() => setConfirmation("withdraw")} className="rounded-full border border-[#7a271a] px-3 py-1.5 text-xs font-semibold text-[#7a271a] disabled:opacity-50">Withdraw consent</button> : null}
     </div>
     {confirmation ? <div className="mt-3 rounded-lg border border-[#f1d8ad] bg-[#fffaf0] p-3 text-sm" role="alertdialog" aria-label={confirmation === "leave" ? "Confirm leaving group" : "Confirm withdrawing consent"}>
       <p className="font-semibold text-[#8b5e00]">{confirmation === "leave" ? "Leave this Group Chat?" : "Withdraw Group Chat consent?"}</p>
@@ -514,7 +521,7 @@ function PersonalMembershipActions({ group, groupId, userScope, tenantScope, onL
   </section>;
 }
 
-export default function GroupChatWorkspace({ groupId, onClose, onGroupRemoved, onOpenAudit, onOpenSecureReview, onLayoutModeChange }: Props) {
+export default function GroupChatWorkspace({ groupId, enterpriseAdminAuthorized, onClose, onGroupRemoved, onOpenAudit, onOpenSecureReview, onLayoutModeChange }: Props) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const userScope = user?.userId ?? user?.id ?? "";
@@ -740,7 +747,7 @@ export default function GroupChatWorkspace({ groupId, onClose, onGroupRemoved, o
         {membershipSuspendedAt !== null ? <div className="flex min-h-0 flex-1 items-center justify-center rounded-xl border border-[#f1d8ad] bg-[#fffaf0] p-5 text-center text-sm text-[#8b5e00]" role={membershipRevalidationError ? "alert" : "status"}><p>{membershipRevalidationError ?? "Group membership changed. Access is being revalidated before private messages can be shown."}</p>{membershipRevalidationError ? <button type="button" onClick={() => { setMembershipRevalidationError(null); void currentMemberQuery.refetch(); }} className="ml-2 font-semibold underline">Try again</button> : null}</div> : <GroupChatMessages key={`${group.id}:${userScope}:${tenantScope}`} groupId={group.id} userScope={userScope} tenantScope={tenantScope} groupStatus={group.status} groupKind={group.kind} memberDirectory={currentMemberQuery.data ?? []} canPost={group.permissions.can_post} postingMuted={currentMember?.posting_muted ?? null} canHideMessages={group.permissions.can_hide_messages} canPinMessages={group.permissions.can_pin_messages} canReport={group.permissions.can_report} currentMemberKind={currentMember?.member_kind ?? null} currentMemberStatus={currentMember?.membership_status ?? null} lifecycleRefreshPending={lifecycleRefreshPending} readStatusRefreshKey={readStatusRefreshKey} reconnectRefreshKey={reconnectRefreshKey} readThroughMessageId={readThroughMessageId} conversationEntryKey={conversationEntryKey} />}
       </div>
     </div>
-    {detailsOpen ? <GroupDetailsPanel key={groupId} group={group} groupId={groupId} userScope={userScope} tenantScope={tenantScope} canViewMembers={canViewMembers} canInviteMembers={canInviteMembers} ownerResolution={ownerResolution} ownerRosterState={ownerRosterState} onClose={enterConversation} onLeave={() => { onLayoutModeChange?.("conversation"); setDetailsOpen(false); onClose?.(); }} onNavigateToLoadedMessage={navigateToLoadedMessage} onOpenAudit={onOpenAudit} onOpenSecureReview={onOpenSecureReview} /> : null}
+    {detailsOpen ? <GroupDetailsPanel key={groupId} group={group} groupId={groupId} userScope={userScope} tenantScope={tenantScope} canViewMembers={canViewMembers} canInviteMembers={canInviteMembers} enterpriseAdminAuthorized={enterpriseAdminAuthorized} ownerResolution={ownerResolution} ownerRosterState={ownerRosterState} onClose={enterConversation} onLeave={() => { onLayoutModeChange?.("conversation"); setDetailsOpen(false); onClose?.(); }} onNavigateToLoadedMessage={navigateToLoadedMessage} onOpenAudit={onOpenAudit} onOpenSecureReview={onOpenSecureReview} /> : null}
   </section>;
 }
 function SearchInput({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {

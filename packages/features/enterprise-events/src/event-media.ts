@@ -1,4 +1,5 @@
 export const EVENT_MEDIA_FIELDS = ["primary_image", "gallery_images", "videos", "documents"] as const;
+import { LEGACY_PROTECTED_MEDIA_ORIGIN, STAGING_PROTECTED_MEDIA_ORIGIN } from "@ihp/shared/protected-media";
 
 function originOrNull(value: string | undefined): string | null {
   try {
@@ -23,7 +24,16 @@ export function protectedMediaPreviewUrl(
 ): string {
   try {
     const url = new URL(value);
-    if ((url.protocol !== "http:" && url.protocol !== "https:") || !protectedOrigin || url.origin !== protectedOrigin) return value;
+    const configuredOrigin = originOrNull(protectedOrigin ?? undefined);
+    if (
+      url.protocol !== "https:"
+      || url.username
+      || url.password
+      || url.hash
+      || url.port
+      || !configuredOrigin
+      || (url.origin !== configuredOrigin && !(configuredOrigin === STAGING_PROTECTED_MEDIA_ORIGIN && url.origin === LEGACY_PROTECTED_MEDIA_ORIGIN))
+    ) return value;
     return `${proxyPath}?url=${encodeURIComponent(url.toString())}`;
   } catch {
     return value;

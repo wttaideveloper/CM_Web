@@ -10,6 +10,13 @@ import {
   DEFAULT_BLOG_GOVERNANCE,
 } from "./blogs-governance";
 import { authenticatedFetch } from "@ihp/auth";
+import {
+  buildBlogsApiQuery,
+  buildBlogsApiUrl,
+  resolveBlogsApiBase,
+} from "./blogs-routing";
+
+export { buildBlogsApiQuery, buildBlogsApiUrl, resolveBlogsApiBase } from "./blogs-routing";
 
 export type BlogKind = "blog" | "news" | "both";
 export type BlogSource = "platform" | "merchant";
@@ -232,10 +239,10 @@ export interface PublicBlogDetail extends PublicBlogItem {
 
 // No built-in backend host: an unset NEXT_PUBLIC_API_BASE_URL resolves to the same-origin `/api/v1` rewrite
 // (the same default as `API_BASE_URL`), so a build never silently calls a hard-coded production host.
-const API_BASE =
-  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_BASE_URL) ||
-  "/api/v1";
-const apiUrl = (path: string) => `${API_BASE.replace(/\/$/, "")}${path}`;
+const API_BASE = resolveBlogsApiBase(
+  typeof process !== "undefined" ? process.env.NEXT_PUBLIC_API_BASE_URL : undefined,
+);
+const apiUrl = (path: string) => buildBlogsApiUrl(API_BASE, path);
 
 /** Uses the platform's server-side Super Admin bridge for protected Blog/News admin reads and writes. */
 function requestUrl(path: string): string {
@@ -344,13 +351,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 function query(params: Record<string, string | number | undefined>): string {
-  const values = new URLSearchParams();
-  Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && String(value).trim() !== "")
-      values.set(key, String(value));
-  });
-  const encoded = values.toString();
-  return encoded ? `?${encoded}` : "";
+  return buildBlogsApiQuery(params);
 }
 
 function paginate<T>(

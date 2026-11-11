@@ -4,7 +4,7 @@ export { default as EventDetailsScreen } from "./EventDetailsScreen";
 export { default as EditEventScreen } from "./EditEventScreen";
 export { useActiveEventFormConfiguration, useEventHistoricalFormConfiguration } from "./event-form-configuration.queries";
 export { useEventCategories } from "./event-categories.queries";
-export { getActiveEventFormConfiguration, getEventHistoricalFormConfiguration, getEventCategories, type ActiveEventFormConfiguration, type EventCategory } from "./events.service";
+export { getActiveEventFormConfiguration, getEventHistoricalFormConfiguration, getEventCategories, getEventAttendees, listEvents, type ActiveEventFormConfiguration, type Event, type EventAttendee, type EventAttendeeFilters, type EventAttendeesResponse, type EventCategory, type EventListParams, type EventListResponse } from "./events.service";
 export { default as EventServicesEditor, EventServiceOptionEditor, EventServiceOptionsEditor } from "./EventServicesEditor";
 export { default as ServiceOptionCard } from "./ServiceOptionCard";
 export { default as PriceBreakdown } from "./PriceBreakdown";
