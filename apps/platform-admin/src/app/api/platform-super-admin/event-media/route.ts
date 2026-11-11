@@ -4,6 +4,8 @@ import {
   configuredMediaOrigin,
   copyProtectedMediaResponseHeaders,
   isAllowedProtectedMediaUrl,
+  resolveAllowedBlogMediaUrl,
+  resolveAllowedEventMediaUrl,
 } from "@ihp/shared";
 import {
   requestSuperAdminUpstreamResponse,
@@ -16,8 +18,13 @@ export const dynamic = "force-dynamic";
 const MEDIA_PROXY_ORIGIN = configuredMediaOrigin(process.env.CHAT_API_BASE_URL, { allowLocalhost: true }) ?? "https://chat.wisdomtooth.tech";
 
 async function forward(request: NextRequest): Promise<Response> {
-  const upstreamUrl = request.nextUrl.searchParams.get("url")?.trim();
-  if (!upstreamUrl || !isAllowedProtectedMediaUrl(upstreamUrl, MEDIA_PROXY_ORIGIN)) {
+  const requestedUrl = request.nextUrl.searchParams.get("url")?.trim();
+  const upstreamUrl = requestedUrl
+    ? resolveAllowedEventMediaUrl(requestedUrl, MEDIA_PROXY_ORIGIN)
+      ?? resolveAllowedBlogMediaUrl(requestedUrl, MEDIA_PROXY_ORIGIN)
+      ?? (isAllowedProtectedMediaUrl(requestedUrl, MEDIA_PROXY_ORIGIN) ? requestedUrl : null)
+    : null;
+  if (!upstreamUrl) {
     return NextResponse.json({ detail: "Media URL is not allowed." }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
 

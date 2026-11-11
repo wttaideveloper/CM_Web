@@ -86,5 +86,48 @@ export function isAllowedProtectedMediaUrl(value: string, configuredOrigin: stri
 export function isAllowedEventMediaUrl(value: string, configuredOrigin: string | null): boolean {
   const url = parseHttpUrl(value);
   const safeOrigin = configuredMediaOrigin(configuredOrigin ?? undefined, { allowLocalhost: true });
-  return Boolean(url && safeOrigin && url.origin === safeOrigin && /^\/api\/v1\/events\/media(?:\/|$)/.test(url.pathname));
+  return Boolean(url && safeOrigin && url.origin === safeOrigin && isEventMediaPath(url.pathname));
+}
+
+function isEventMediaPath(pathname: string): boolean {
+  return /^\/api\/v1\/events\/media(?:\/|$)/.test(pathname);
+}
+
+function isBlogMediaPath(pathname: string): boolean {
+  return /^\/api\/v1\/cms\/blogs\/files(?:\/|$)/.test(pathname);
+}
+
+/**
+ * Resolves a stored Event media URL to the configured protected media origin.
+ *
+ * The staging backend serves the legacy Event media paths, so only the exact
+ * approved legacy origin may be translated to the approved Hostinger origin.
+ * Other hosts, protocols, ports, and paths remain rejected.
+ */
+export function resolveAllowedEventMediaUrl(value: string, configuredOrigin: string | null): string | null {
+  const url = parseHttpUrl(value);
+  const safeOrigin = configuredMediaOrigin(configuredOrigin ?? undefined, { allowLocalhost: true });
+  if (!url || !safeOrigin || !isEventMediaPath(url.pathname)) return null;
+  if (url.origin === safeOrigin) return url.toString();
+  if (url.origin !== PROTECTED_MEDIA_ORIGIN || safeOrigin !== STAGING_PROTECTED_MEDIA_ORIGIN) return null;
+
+  const resolved = new URL(safeOrigin);
+  resolved.pathname = url.pathname;
+  resolved.search = url.search;
+  return resolved.toString();
+}
+
+
+/** Resolves only approved legacy Blog media paths to the configured Hostinger origin. */
+export function resolveAllowedBlogMediaUrl(value: string, configuredOrigin: string | null): string | null {
+  const url = parseHttpUrl(value);
+  const safeOrigin = configuredMediaOrigin(configuredOrigin ?? undefined, { allowLocalhost: true });
+  if (!url || !safeOrigin || !isBlogMediaPath(url.pathname)) return null;
+  if (url.origin === safeOrigin) return url.toString();
+  if (url.origin !== PROTECTED_MEDIA_ORIGIN || safeOrigin !== STAGING_PROTECTED_MEDIA_ORIGIN) return null;
+
+  const resolved = new URL(safeOrigin);
+  resolved.pathname = url.pathname;
+  resolved.search = url.search;
+  return resolved.toString();
 }
