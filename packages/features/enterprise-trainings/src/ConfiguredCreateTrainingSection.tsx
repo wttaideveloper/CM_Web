@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { getTenantMembers } from "@ihp/enterprise-runtime";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 
@@ -143,6 +143,35 @@ function OptionalTrainingMediaField({
   );
 }
 
+type RichTextCommand = "bold" | "italic" | "underline";
+type RichTextState = Record<RichTextCommand, boolean>;
+const EMPTY_RICH_TEXT_STATE: RichTextState = { bold: false, italic: false, underline: false };
+const RICH_TEXT_TAGS = new Set(["BR", "EM", "I", "P", "STRONG", "U", "B"]);
+
+function sanitizeFormRichText(html: string): string {
+  if (typeof DOMParser === "undefined") return "";
+  const document = new DOMParser().parseFromString(html, "text/html");
+  const walk = (node: Node) => {
+    [...node.childNodes].forEach((child) => {
+      if (child.nodeType === Node.ELEMENT_NODE) {
+        const element = child as HTMLElement;
+        if (!RICH_TEXT_TAGS.has(element.tagName)) {
+          element.replaceWith(document.createTextNode(element.textContent ?? ""));
+          return;
+        }
+        [...element.attributes].forEach((attribute) => element.removeAttribute(attribute.name));
+        walk(element);
+      }
+    });
+  };
+  walk(document.body);
+  return document.body.innerHTML;
+}
+
+function isEmptyRichText(value: string): boolean {
+  return !value.replace(/<br\s*\/?>(\s*)/gi, "").replace(/&nbsp;/gi, " ").replace(/<[^>]*>/g, "").trim();
+}
+
 function UiOnlyRichTextField({
   label,
   value,
@@ -154,38 +183,130 @@ function UiOnlyRichTextField({
   required: string;
   onChange: (value: string) => void;
 }) {
-  const [active, setActive] = useState<Record<"bold" | "italic" | "underline", boolean>>({ bold: false, italic: false, underline: false });
-  const applyFormat = (command: "bold" | "italic" | "underline") => {
-    document.execCommand(command);
-    setActive((current) => ({ ...current, [command]: !current[command] }));
-  };
-  return <div className="block text-sm font-semibold text-[#06201c]"><label>{label}{required}</label><div className="mt-1.5 flex flex-wrap gap-1 rounded-t-xl border border-b-0 border-[#d7e5df] bg-[#f4faf7] p-2">{(["bold", "italic", "underline"] as const).map((command) => <button key={command} type="button" aria-pressed={active[command]} onMouseDown={(event) => event.preventDefault()} onClick={() => applyFormat(command)} className={`rounded-lg px-3 py-1.5 text-sm font-bold text-[#1f6a58] ${active[command] ? "bg-[#d6eee1]" : "bg-white"}`}>{command === "bold" ? "B" : command === "italic" ? "I" : "U"}</button>)}</div><div contentEditable suppressContentEditableWarning dangerouslySetInnerHTML={{ __html: value }} onInput={(event) => onChange(event.currentTarget.innerHTML)} className="min-h-28 rounded-b-xl border border-[#d7e5df] bg-white px-3 py-2 text-sm font-normal outline-none focus:border-[#1f6a58]" /></div>;
+  const editorRef = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState<RichTextState>(EMPTY_RICH_TEXT_STATE);
+  useEffect(() => { const editor = editorRef.current; const safeValue = sanitizeFormRichText(value); if (editor && editor.innerHTML !== safeValue) editor.innerHTML = safeValue; }, [value]);
+  const syncActive = () => { try { setActive({ bold: document.queryCommandState("bold"), italic: document.queryCommandState("italic"), underline: document.queryCommandState("underline") }); } catch { setActive(EMPTY_RICH_TEXT_STATE); } };
+  const commit = () => { const editor = editorRef.current; if (!editor) return; const safeValue = sanitizeFormRichText(editor.innerHTML); if (editor.innerHTML !== safeValue) editor.innerHTML = safeValue; onChange(isEmptyRichText(safeValue) ? "" : safeValue); syncActive(); };
+  const applyFormat = (command: RichTextCommand) => { const editor = editorRef.current; if (!editor) return; editor.focus(); document.execCommand(command, false); commit(); };
+  return <div className="block text-sm font-semibold text-[#06201c]"><label>{label}{required}</label><div className="mt-1.5 flex flex-wrap gap-1 rounded-t-xl border border-b-0 border-[#d7e5df] bg-[#f4faf7] p-2" role="toolbar" aria-label={`${label} formatting`}>{(["bold", "italic", "underline"] as const).map((command) => <button key={command} type="button" aria-label={command} aria-pressed={active[command]} onMouseDown={(event) => event.preventDefault()} onClick={() => applyFormat(command)} className={`rounded-lg px-3 py-1.5 text-sm font-bold text-[#1f6a58] ${active[command] ? "bg-[#d6eee1]" : "bg-white"}`}>{command === "bold" ? "B" : command === "italic" ? "I" : "U"}</button>)}</div><div ref={editorRef} contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" onInput={commit} onKeyUp={syncActive} onMouseUp={syncActive} className="min-h-28 rounded-b-xl border border-[#d7e5df] bg-white px-3 py-2 text-sm font-normal outline-none focus:border-[#1f6a58]" /></div>;
 }
 
 function RepeatableMediaField({
   label,
+  fieldKey,
   rowsValue,
+  kind,
   accept,
+  purpose,
+  allowedMimeTypes,
+  maxFileSizeMb,
+  placeholder,
   onChange,
 }: {
   label: string;
+  fieldKey?: string;
   rowsValue: unknown;
+  kind: "image" | "video" | "document";
   accept: string;
+  purpose: "image" | "lesson_video" | "lesson_document";
+  allowedMimeTypes?: readonly string[];
+  maxFileSizeMb?: number | null;
+  placeholder?: string;
   onChange: (value: string[]) => void;
 }) {
-  const initialRows = Array.isArray(rowsValue) ? rowsValue.map((item) => String(item)) : rowsValue ? [String(rowsValue)] : [""];
-  const [rows, setRows] = useState<string[]>(initialRows);
+  const initialRows = Array.isArray(rowsValue)
+    ? rowsValue.map((item) => String(item).trim()).filter(Boolean)
+    : typeof rowsValue === "string" && rowsValue.trim()
+      ? rowsValue.split(",").map((item) => item.trim()).filter(Boolean)
+      : [];
+  const [rows, setRows] = useState<string[]>(initialRows.length > 0 ? initialRows : [""]);
+
+  useEffect(() => {
+    const updated = Array.isArray(rowsValue)
+      ? rowsValue.map((item) => String(item).trim()).filter(Boolean)
+      : typeof rowsValue === "string" && rowsValue.trim()
+        ? rowsValue.split(",").map((item) => item.trim()).filter(Boolean)
+        : [];
+    if (updated.length > 0) {
+      setRows(updated);
+    }
+  }, [rowsValue]);
+
   const updateRow = (index: number, value: string) => {
-    const next = rows.map((row, rowIndex) => rowIndex === index ? value : row);
+    const next = rows.map((row, rowIndex) => (rowIndex === index ? value : row));
     setRows(next);
-    onChange(next);
+    onChange(next.filter((item) => item.trim().length > 0));
   };
+
+  const removeRow = (index: number) => {
+    const next = rows.filter((_, rowIndex) => rowIndex !== index);
+    const safeNext = next.length > 0 ? next : [""];
+    setRows(safeNext);
+    onChange(safeNext.filter((item) => item.trim().length > 0));
+  };
+
   const addRow = () => {
-    const next = [...rows, ""];
-    setRows(next);
-    onChange(next);
+    setRows((current) => [...current, ""]);
   };
-  return <div className="block text-sm font-semibold text-[#06201c]"><p>{label}</p><div className="mt-2 space-y-3">{rows.map((row, index) => <div key={`${label}-${index}`} className="rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-3"><label className="block text-xs font-semibold text-[#52736a]">{label} URL<input value={row} onChange={(event) => updateRow(index, event.target.value)} placeholder="https://…" className={inputClass} /></label><label className="mt-2 inline-flex cursor-pointer items-center rounded-full border border-[#cfe0d8] bg-white px-3 py-2 text-xs font-bold text-[#1f6a58]">Upload file<input type="file" accept={accept} onChange={(event) => { const file = event.target.files?.[0]; if (file) updateRow(index, file.name); }} className="sr-only" /></label>{row && !row.startsWith("http") ? <span className="ml-2 text-xs font-normal text-[#52736a]">{row}</span> : null}</div>)}</div><button type="button" onClick={addRow} className="mt-3 text-sm font-bold text-[#1f6a58]">+ Add {label.toLowerCase()}</button></div>;
+
+  const itemNoun = kind === "image" ? "image" : kind === "video" ? "video" : "document";
+
+  return (
+    <div className="block min-w-0 text-sm font-semibold text-[#06201c]">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p>{label}</p>
+        <button
+          type="button"
+          onClick={addRow}
+          className="text-xs font-bold text-[#1f6a58] hover:text-[#175345]"
+        >
+          + Add {itemNoun}
+        </button>
+      </div>
+      <div className="mt-2 space-y-3">
+        {rows.map((row, index) => (
+          <div key={`${label}-${index}`} className="relative rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-3">
+            <div className="flex items-start justify-between gap-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-[#7f9d94]">
+                {label} #{index + 1}
+              </span>
+              {rows.length > 1 || row ? (
+                <button
+                  type="button"
+                  onClick={() => removeRow(index)}
+                  className="text-xs font-semibold text-[#b42318] hover:underline"
+                >
+                  Remove
+                </button>
+              ) : null}
+            </div>
+            <div className="mt-2">
+              <TrainingMediaField
+                fieldKey={fieldKey || ""}
+                label={`${label} ${index + 1}`}
+                value={row}
+                kind={kind}
+                accept={accept}
+                purpose={purpose}
+                allowedMimeTypes={allowedMimeTypes}
+                maxFileSizeMb={maxFileSizeMb}
+                placeholder={placeholder ?? "https://…"}
+                onChange={(url) => updateRow(index, url)}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={addRow}
+        className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-[#1f6a58] hover:text-[#175345]"
+      >
+        + Add another {itemNoun}
+      </button>
+    </div>
+  );
 }
 
 function scalar(value: unknown): string {
@@ -228,15 +349,31 @@ function getNumberInputHint(
 }
 
 function trainingInputType(field: TrainingFormField, key: string): string {
-  if (key === "start_time" || key === "end_time" || field.type === "time") return "time";
+  const normKey = key.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  const normLabel = (field.label ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (
+    normKey === "start_time" ||
+    normKey === "end_time" ||
+    field.type === "time" ||
+    /(^|_)time(_|$)/i.test(normKey) ||
+    /(^|_)time(_|$)/i.test(normLabel)
+  ) return "time";
+
   const isDateTime = [field.type, field.valueType].some((value) =>
     typeof value === "string"
     && (value.trim().toLowerCase().replace(/[-_ ]/g, "") === "datetime" || value.trim().toLowerCase() === "datetime-local"),
   );
   if (isDateTime) return "datetime-local";
-  if (field.type === "date" || field.valueType === "date") return "date";
-  if (field.type === "number") return "number";
-  if (field.type === "url") return "url";
+
+  if (
+    field.type === "date" ||
+    field.valueType === "date" ||
+    /(^|_)date(_|$)/i.test(normKey) ||
+    /(^|_)date(_|$)/i.test(normLabel)
+  ) return "date";
+
+  if (field.type === "number" || /(^|_)num(ber)?(_|$)/i.test(normKey) || /(^|_)num(ber)?(_|$)/i.test(normLabel)) return "number";
+  if (field.type === "url" || /(^|_)url(_|$)/i.test(normKey) || /(^|_)url(_|$)/i.test(normLabel)) return "url";
   return "text";
 }
 
@@ -496,10 +633,34 @@ function ConfiguredField({
     const coreOptions = field.configuredOptions?.length ? field.configuredOptions : (field.options ?? []).map((option, index) => ({ value: option, label: option, position: index + 1 }));
     if (field.type === "rich_text") return <UiOnlyRichTextField label={field.label} required={required} value={value} onChange={setValue} />;
     if (field.type === "radio") return <fieldset className="block text-sm font-semibold text-[#06201c]"><legend>{field.label}{required}</legend><div className="mt-2 space-y-2">{coreOptions.map((option) => <label key={option.value} className="flex items-center gap-2 text-sm font-normal"><input type="radio" name={`training-radio-${field.id}`} value={option.value} checked={value === option.value || value === option.label} onChange={() => setValue(option.value)} />{option.label}</label>)}</div>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</fieldset>;
-    if (field.type === "media_upload" || field.type === "file_upload" || field.type === "video") {
-      const mediaLabel = field.type === "video" ? "Video" : field.type === "file_upload" ? "Supporting document" : "Additional image";
-      const accept = field.type === "video" ? "video/*" : field.type === "file_upload" ? ".pdf,.doc,.docx,application/pdf" : "image/*";
-      return <RepeatableMediaField label={mediaLabel} rowsValue={rawCoreValue} accept={accept} onChange={(next) => setValue(next.join(", "))} />;
+    const isCoreVideo = field.type === "video" || /videos?/i.test(`${field.key} ${field.label}`);
+    const isCoreDoc = field.type === "file_upload" || /doc(ument)?s?|supporting_documents?|files?/i.test(`${field.key} ${field.label}`);
+    const isCoreImage = field.type === "media_upload" || /ima(ge|he)s?|photos?|additional_images/i.test(`${field.key} ${field.label}`);
+    if (isCoreVideo || isCoreDoc || isCoreImage) {
+      const kind = isCoreVideo ? "video" : isCoreDoc ? "document" : "image";
+      const mediaLabel = isCoreVideo ? "Video" : isCoreDoc ? "Supporting document" : "Additional image";
+      const accept = isCoreVideo ? "video/*" : isCoreDoc ? ".pdf,.doc,.docx,application/pdf" : "image/*";
+      const purpose = isCoreVideo ? "lesson_video" : isCoreDoc ? "lesson_document" : "image";
+      return (
+        <RepeatableMediaField
+          label={field.label || mediaLabel}
+          fieldKey={field.key}
+          rowsValue={rawCoreValue}
+          accept={accept}
+          kind={kind}
+          purpose={purpose}
+          allowedMimeTypes={field.frontendSettings?.upload?.allowed_mime_types}
+          maxFileSizeMb={field.frontendSettings?.upload?.max_file_size_mb}
+          placeholder={field.placeholder}
+          onChange={(next) => {
+            if (Array.isArray(rawCoreValue)) {
+              setValue(next as unknown as never);
+            } else {
+              setValue(next.join(", ") as never);
+            }
+          }}
+        />
+      );
     }
     if (coreField === "faqs") {
       return <TrainingFaqEditor label={field.label} value={values.faqs} onChange={(next) => update("faqs", next)} required={field.required} helpText={field.helpText} error={error} />;
@@ -832,17 +993,68 @@ function ConfiguredField({
     ? field.configuredOptions
     : options.map((option, index) => ({ value: option, label: option, position: index + 1 }));
   const setValue = (next: string | boolean | number | string[] | null) => setCustomValues({ ...customValues, [key]: next });
-  if (field.type === "rich_text") return <UiOnlyRichTextField label={field.label} required={required} value={value} onChange={(next) => setValue(next)} />;
+  if (field.type === "tags") {
+    const selectedTags = Array.isArray(raw) ? raw.map(String) : value.split(",").map((item) => item.trim()).filter(Boolean);
+    return <div className="block text-sm font-semibold text-[#06201c] md:col-span-2"><label htmlFor={`training-field-${field.id}`}>{field.label}{required}</label><input id={`training-field-${field.id}`} type="text" value={selectedTags.join(", ")} placeholder={field.placeholder ?? "Separate tags with commas"} onChange={(event) => setValue(event.target.value.split(",").map((item) => item.trim()).filter(Boolean))} className={inputClass} />{field.helpText ? <p className="mt-1 text-xs font-normal text-[#7f9d94]">{field.helpText}</p> : null}{error ? <p role="alert" className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</div>;
+  }
+  const isCustomRichText = field.type === "rich_text" || /rich(_text)?/i.test(`${field.key} ${field.label}`);
+  if (isCustomRichText) return <UiOnlyRichTextField label={field.label} required={required} value={value} onChange={(next) => setValue(next)} />;
   if (isBoolean) return <div><label className="flex items-center gap-2 text-sm font-semibold text-[#06201c]"><input type="checkbox" checked={raw === true || raw === "true"} aria-invalid={Boolean(error) || undefined} onChange={(e) => setValue(e.target.checked)} />{field.label}{required}</label>{error ? <p role="alert" className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</div>;
-  if (field.type === "radio") return <fieldset className="block text-sm font-semibold text-[#06201c]"><legend>{field.label}{required}</legend><div className="mt-2 space-y-2">{configuredOptions.map((option) => <label key={option.value} className="flex items-center gap-2 text-sm font-normal"><input type="radio" name={`training-radio-${field.id}`} value={option.value} checked={value === option.value || raw === option.label} onChange={() => setValue(customSelectExpectsArray ? [option.value] : option.value)} />{option.label}</label>)}</div>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</fieldset>;
+  const isCustomRadio = field.type === "radio" || /radio/i.test(`${field.key} ${field.label}`);
+  if (isCustomRadio) {
+    const radioOptions = configuredOptions.length > 0
+      ? configuredOptions
+      : [
+          { value: "option_1", label: "Option 1", position: 1 },
+          { value: "option_2", label: "Option 2", position: 2 },
+        ];
+    return (
+      <fieldset className="block text-sm font-semibold text-[#06201c]">
+        <legend>{field.label}{required}</legend>
+        <div className="mt-2 space-y-2">
+          {radioOptions.map((option) => (
+            <label key={option.value} className="flex items-center gap-2 text-sm font-normal">
+              <input
+                type="radio"
+                name={`training-radio-${field.id}`}
+                value={option.value}
+                checked={value === option.value || raw === option.label}
+                onChange={() => setValue(customSelectExpectsArray ? [option.value] : option.value)}
+              />
+              {option.label}
+            </label>
+          ))}
+        </div>
+        {error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}
+      </fieldset>
+    );
+  }
   if (field.type === "multiselect") {
     const selected = Array.isArray(raw) ? raw.map(String) : [];
     return <fieldset className="block text-sm font-semibold text-[#06201c]"><legend>{field.label}{required}</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{configuredOptions.map((option) => <label key={option.value} className="flex items-center gap-2 text-sm font-normal"><input type="checkbox" checked={selected.includes(option.value) || selected.includes(option.label)} onChange={(event) => setValue(event.target.checked ? [...selected.filter((item) => item !== option.label), option.value] : selected.filter((item) => item !== option.value && item !== option.label))} />{option.label}</label>)}</div>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</fieldset>;
   }
-  if (field.type === "media_upload" || field.type === "file_upload" || field.type === "video") {
-    const mediaLabel = field.type === "video" ? "Video" : field.type === "file_upload" ? "Supporting document" : "Additional image";
-    const accept = field.type === "video" ? "video/*" : field.type === "file_upload" ? ".pdf,.doc,.docx,application/pdf" : "image/*";
-    return <RepeatableMediaField label={mediaLabel} rowsValue={raw} accept={accept} onChange={(next) => setValue(next)} />;
+  const isCustomVideo = field.type === "video" || /videos?/i.test(`${field.key} ${field.label}`);
+  const isCustomDoc = field.type === "file_upload" || /doc(ument)?s?|supporting_documents?|files?/i.test(`${field.key} ${field.label}`);
+  const isCustomImage = field.type === "media_upload" || /ima(ge|he)s?|photos?|additional_images/i.test(`${field.key} ${field.label}`);
+  if (isCustomVideo || isCustomDoc || isCustomImage) {
+    const kind = isCustomVideo ? "video" : isCustomDoc ? "document" : "image";
+    const mediaLabel = isCustomVideo ? "Video" : isCustomDoc ? "Supporting document" : "Additional image";
+    const accept = isCustomVideo ? "video/*" : isCustomDoc ? ".pdf,.doc,.docx,application/pdf" : "image/*";
+    const purpose = isCustomVideo ? "lesson_video" : isCustomDoc ? "lesson_document" : "image";
+    return (
+      <RepeatableMediaField
+        label={field.label || mediaLabel}
+        fieldKey={field.key}
+        rowsValue={raw}
+        accept={accept}
+        kind={kind}
+        purpose={purpose}
+        allowedMimeTypes={field.frontendSettings?.upload?.allowed_mime_types}
+        maxFileSizeMb={field.frontendSettings?.upload?.max_file_size_mb}
+        placeholder={field.placeholder}
+        onChange={(next) => setValue(next)}
+      />
+    );
   }
   if (field.type === "url") {
     return <ConfiguredTrainingUrlField

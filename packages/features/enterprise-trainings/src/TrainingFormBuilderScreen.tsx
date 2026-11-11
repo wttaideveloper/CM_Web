@@ -119,7 +119,22 @@ function TrainingFormBuilderContent() {
                     <input value={fld.label} onChange={(e) => { const next = [...cfg.sections]; const fs = [...next[sIdx].fields]; fs[fIdx] = { ...fld, label: e.target.value }; next[sIdx] = { ...next[sIdx], fields: fs }; updateCfg({ sections: next }); }} className={inputClass} placeholder="Label" />
                     <input value={fld.key} onChange={(e) => { const next = [...cfg.sections]; const fs = [...next[sIdx].fields]; fs[fIdx] = { ...fld, key: e.target.value }; next[sIdx] = { ...next[sIdx], fields: fs }; updateCfg({ sections: next }); }} className={inputClass} placeholder="key e.g. title" />
                     <select value={fld.type} onChange={(e) => { const next = [...cfg.sections]; const fs = [...next[sIdx].fields]; fs[fIdx] = { ...fld, type: e.target.value as TrainingFormField["type"] }; next[sIdx] = { ...next[sIdx], fields: fs }; updateCfg({ sections: next }); }} className={inputClass}>
-                      <option value="text">text</option><option value="textarea">textarea</option><option value="select">select</option><option value="multiselect">multiselect</option><option value="number">number</option><option value="date">date</option><option value="datetime">datetime</option><option value="time">time</option><option value="url">url</option><option value="checkbox">checkbox</option>
+                      <option value="text">text (short text)</option>
+                      <option value="textarea">textarea (long text)</option>
+                      <option value="rich_text">rich_text</option>
+                      <option value="select">select (dropdown)</option>
+                      <option value="radio">radio</option>
+                      <option value="multiselect">multiselect (checkbox group)</option>
+                      <option value="number">number</option>
+                      <option value="date">date</option>
+                      <option value="datetime">datetime</option>
+                      <option value="time">time</option>
+                      <option value="url">url</option>
+                      <option value="checkbox">checkbox</option>
+                      <option value="media_upload">media_upload (images)</option>
+                      <option value="file_upload">file_upload (documents)</option>
+                      <option value="video">video</option>
+                      <option value="tags">tags</option>
                     </select>
                     <span className="flex items-center gap-1">
                       <button type="button" onClick={() => moveField(sIdx, fIdx, -1)} className="h-7 w-7 rounded border text-xs">↑</button>
@@ -131,7 +146,7 @@ function TrainingFormBuilderContent() {
                       <input value={fld.placeholder ?? ""} onChange={(e) => { const next = [...cfg.sections]; const fs = [...next[sIdx].fields]; fs[fIdx] = { ...fld, placeholder: e.target.value || undefined }; next[sIdx] = { ...next[sIdx], fields: fs }; updateCfg({ sections: next }); }} placeholder="Placeholder" className={inputClass} />
                       <input value={fld.helpText ?? ""} onChange={(e) => { const next = [...cfg.sections]; const fs = [...next[sIdx].fields]; fs[fIdx] = { ...fld, helpText: e.target.value || null }; next[sIdx] = { ...next[sIdx], fields: fs }; updateCfg({ sections: next }); }} placeholder="Help text" className={inputClass} />
                     </div>
-                    {fld.type === "select" || fld.type === "multiselect" ? <input value={(fld.options ?? []).join(", ")} onChange={(e) => { const next = [...cfg.sections]; const fs = [...next[sIdx].fields]; fs[fIdx] = { ...fld, options: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) }; next[sIdx] = { ...next[sIdx], fields: fs }; updateCfg({ sections: next }); }} placeholder="Options, comma-separated" className={`${inputClass} col-span-4`} /> : null}
+                    {fld.type === "select" || fld.type === "multiselect" || fld.type === "radio" ? <input value={(fld.options ?? []).join(", ")} onChange={(e) => { const next = [...cfg.sections]; const fs = [...next[sIdx].fields]; fs[fIdx] = { ...fld, options: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) }; next[sIdx] = { ...next[sIdx], fields: fs }; updateCfg({ sections: next }); }} placeholder="Options, comma-separated" className={`${inputClass} col-span-4`} /> : null}
                     {["text", "textarea", "url"].includes(fld.type) ? (
                       <div className="col-span-4 grid gap-1 md:grid-cols-3">
                         <input type="number" min="0" value={fld.validation?.minLength ?? ""} onChange={(e) => { const next = [...cfg.sections]; const fs = [...next[sIdx].fields]; fs[fIdx] = { ...fld, validation: { ...fld.validation, minLength: e.target.value ? Number(e.target.value) : null } }; next[sIdx] = { ...next[sIdx], fields: fs }; updateCfg({ sections: next }); }} placeholder="Min length" className={inputClass} />

@@ -77,7 +77,7 @@ import {
   type EventSession,
   type UpdateEventSessionPayload,
 } from "./events.service";
-import { useEventHistoricalFormConfiguration } from "./event-form-configuration.queries";
+import { useActiveEventFormConfiguration, useEventHistoricalFormConfiguration } from "./event-form-configuration.queries";
 import SessionTableEditor, { type SessionDraft } from "./SessionTableEditor";
 import {
   formatEventTicketOptionLabel,
@@ -246,6 +246,7 @@ function EventDetailsContent() {
     eventQuery.data?.id,
     Boolean(eventQuery.data?.form_configuration_id && eventQuery.data?.form_configuration_version_id),
   );
+  const activeConfiguration = useActiveEventFormConfiguration(Boolean(eventQuery.data?.id));
   const attendanceHistoryQuery = useQuery({
     queryKey: ["event-attendance", eventId],
     queryFn: () => getEventAttendance(eventId),
@@ -397,8 +398,8 @@ function EventDetailsContent() {
         hidden={effectiveActiveTab !== "details"}
         className="mt-6 space-y-5"
       >
-        {historicalConfiguration.data ? <ConfiguredEventDetails
-          configuration={historicalConfiguration.data}
+        {(historicalConfiguration.data ?? activeConfiguration.data) ? <ConfiguredEventDetails
+          configuration={historicalConfiguration.data ?? activeConfiguration.data!}
           event={event}
           sessionsSection={historicalSessionsField ? <SessionsSection
             eventId={event.id}

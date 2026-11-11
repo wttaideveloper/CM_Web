@@ -911,16 +911,33 @@ function normalizeEventRenderer(typeValue: unknown, rendererValue: unknown): str
   return aliases[normalized] ?? normalized;
 }
 
+function unwrapEventFormContract(value: unknown): Record<string, unknown> | null {
+  if (!isRecord(value)) return null;
+  if (Array.isArray(value.sections)) return value;
+
+  // The common read API and the legacy Event endpoint have used several
+  // response envelopes over time. Keep the Enterprise reader tolerant of
+  // those envelopes while still validating the normalized result below.
+  const envelopeKeys = ["configuration", "form", "active_form", "active_configuration", "published_version", "active_version", "data"];
+  for (const key of envelopeKeys) {
+    const nested = unwrapEventFormContract(value[key]);
+    if (nested) return nested;
+  }
+  return null;
+}
+
 function normalizeEventFormContract(value: unknown): unknown {
-  if (!isRecord(value) || !Array.isArray(value.sections)) return value;
+  const source = unwrapEventFormContract(value);
+  if (!source) return value;
+  const valueWithSource = source;
   return {
-    ...value,
-    configuration_id: typeof value.configuration_id === "string" ? value.configuration_id : typeof value.form_id === "string" ? value.form_id : typeof value.id === "string" ? value.id : "active-event-form",
-    version_id: typeof value.version_id === "string" ? value.version_id : typeof value.revision === "number" ? `revision-${value.revision}` : typeof value.version === "number" ? `version-${value.version}` : "active-event-form-version",
-    name: typeof value.name === "string" ? value.name : typeof value.title === "string" ? value.title : typeof value.form_name === "string" ? value.form_name : "Active Event Form",
-    scope: value.scope === "selective" ? "selective" : "global",
-    version: typeof value.version === "number" ? value.version : typeof value.revision === "number" ? value.revision : 1,
-    sections: value.sections.filter(isRecord).map((section, sectionIndex) => ({
+    ...valueWithSource,
+    configuration_id: typeof valueWithSource.configuration_id === "string" ? valueWithSource.configuration_id : typeof valueWithSource.form_id === "string" ? valueWithSource.form_id : typeof valueWithSource.id === "string" ? valueWithSource.id : "active-event-form",
+    version_id: typeof valueWithSource.version_id === "string" ? valueWithSource.version_id : typeof valueWithSource.revision === "number" ? `revision-${valueWithSource.revision}` : typeof valueWithSource.version === "number" ? `version-${valueWithSource.version}` : "active-event-form-version",
+    name: typeof valueWithSource.name === "string" ? valueWithSource.name : typeof valueWithSource.title === "string" ? valueWithSource.title : typeof valueWithSource.form_name === "string" ? valueWithSource.form_name : "Active Event Form",
+    scope: valueWithSource.scope === "selective" ? "selective" : "global",
+    version: typeof valueWithSource.version === "number" ? valueWithSource.version : typeof valueWithSource.revision === "number" ? valueWithSource.revision : 1,
+    sections: (valueWithSource.sections as unknown[]).filter(isRecord).map((section, sectionIndex) => ({
       ...section,
       id: typeof section.id === "string" ? section.id : `section-${sectionIndex + 1}`,
       stable_key: typeof section.stable_key === "string" ? section.stable_key : typeof section.key === "string" ? section.key : `section_${sectionIndex + 1}`,
@@ -931,7 +948,12 @@ function normalizeEventFormContract(value: unknown): unknown {
       fields: Array.isArray(section.fields) ? section.fields.filter(isRecord).map((field, fieldIndex) => {
         const typeValue = typeof field.type === "string" ? field.type : field.field_type;
         const renderer = normalizeEventRenderer(typeValue, field.renderer);
-        const options = Array.isArray(field.options) ? field.options.flatMap((option, optionIndex) => {
+        const optionSource = field.options
+          ?? field.configured_options
+          ?? field.configuredOptions
+          ?? field.choices
+          ?? (isRecord(field.frontend_settings) ? field.frontend_settings.options : undefined);
+        const options = Array.isArray(optionSource) ? optionSource.flatMap((option, optionIndex) => {
           if (typeof option === "string") return [{ value: option, label: option, position: optionIndex + 1 }];
           return isRecord(option) && typeof (option.value ?? option.label) === "string"
             ? [{ value: String(option.value ?? option.label), label: String(option.label ?? option.value), position: Number.isInteger(option.position) ? Number(option.position) : optionIndex + 1 }]
@@ -1432,13 +1454,21 @@ export async function listEvents(params: EventListParams): Promise<EventListResp
 
 /** Resolves the active Event form for the authenticated Enterprise Admin without client-provided tenancy. */
 export async function getActiveEventFormConfiguration(): Promise<ActiveEventFormConfiguration | null> {
-  const commonResponse = await fetch(`${eventsBasePath}form-configuration/active/common`, { credentials: "include", cache: "no-store" });
-  const response = commonResponse.status === 404 ? await fetch(`${eventsBasePath}form-configuration/active`, { credentials: "include", cache: "no-store" }) : commonResponse;
-  if (response.status === 404 || response.status === 204) return null;
-  if (!response.ok) throw await createEventsApiError(response, "resolve the active Event form configuration");
-  const value = normalizeEventFormContract((await response.json()) as unknown);
-  if (!isActiveEventFormConfiguration(value)) throw new EventsApiError("Events API returned an invalid active Event form configuration.", response.status);
-  return value;
+  const paths = ["form-configuration/active/common", "form-configuration/active"];
+  let lastInvalidStatus = 200;
+
+  for (const path of paths) {
+    const response = await fetch(`${eventsBasePath}${path}`, { credentials: "include", cache: "no-store" });
+    if (response.status === 404) continue;
+    if (response.status === 204) return null;
+    if (!response.ok) throw await createEventsApiError(response, "resolve the active Event form configuration");
+
+    const value = normalizeEventFormContract((await response.json()) as unknown);
+    if (isActiveEventFormConfiguration(value)) return value;
+    lastInvalidStatus = response.status;
+  }
+
+  throw new EventsApiError("Events API returned an invalid active Event form configuration.", lastInvalidStatus);
 }
 
 /** Retrieves the immutable form version associated with one Event, never the current active form. */

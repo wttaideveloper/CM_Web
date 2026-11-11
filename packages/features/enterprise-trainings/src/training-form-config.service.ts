@@ -4,7 +4,7 @@ import { authenticatedFetch } from "@ihp/auth";
 
 const fetch = authenticatedFetch;
 
-export type TrainingFormFieldType = "text" | "rich_text" | "textarea" | "select" | "radio" | "multiselect" | "number" | "date" | "datetime" | "time" | "url" | "media_upload" | "file_upload" | "video" | "checkbox";
+export type TrainingFormFieldType = "text" | "rich_text" | "textarea" | "select" | "radio" | "multiselect" | "number" | "date" | "datetime" | "time" | "url" | "media_upload" | "file_upload" | "video" | "checkbox" | "tags";
 export interface TrainingFormOption { value: string; label: string; position: number; }
 
 const NUMERIC_TRAINING_FIELD_TYPES = new Set(["number", "numeric", "integer", "decimal", "float", "number_input", "numeric_input"]);
@@ -21,24 +21,45 @@ function trainingFormFieldType(field: Record<string, unknown>): TrainingFormFiel
       ? field.type
       : typeof field.value_type === "string"
         ? field.value_type
-        : "text";
+        : "";
   const normalizedType = configuredType.trim().toLowerCase().replace(/[\s-]+/g, "_");
+
+  // 1. Explicit normalized types (including renderer aliases from builder / DB)
   if (["multi_select", "multiselect", "checkbox_group"].includes(normalizedType)) return "multiselect";
-  if (["short_text", "text_input"].includes(normalizedType)) return "text";
-  if (["long_text"].includes(normalizedType)) return "textarea";
-  if (["rich_text_editor"].includes(normalizedType)) return "rich_text";
-  if (["dropdown"].includes(normalizedType)) return "select";
-  if (["reference_url", "url_input"].includes(normalizedType)) return "url";
-  if (["additional_images", "image_uploader"].includes(normalizedType)) return "media_upload";
-  if (["supporting_document", "document_uploader"].includes(normalizedType)) return "file_upload";
-  if (["video_input"].includes(normalizedType)) return "video";
-  if (["tags", "tag_input"].includes(normalizedType)) return "text";
+  if (["rich_text_editor", "rich_text", "richtext", "html", "formatted_text"].includes(normalizedType)) return "rich_text";
+  if (["radio_group", "radio", "radio_button"].includes(normalizedType)) return "radio";
+  if (["dropdown", "select", "select_input"].includes(normalizedType)) return "select";
+  if (["reference_url", "url_input", "url"].includes(normalizedType)) return "url";
+  if (["additional_images", "image_uploader", "media_upload", "images", "image", "photos", "photo"].includes(normalizedType)) return "media_upload";
+  if (["supporting_document", "document_uploader", "file_upload", "document", "documents", "files", "file", "docs", "doc"].includes(normalizedType)) return "file_upload";
+  if (["video_input", "video", "videos", "video_uploader"].includes(normalizedType)) return "video";
+  if (["tags", "tag_input", "tag"].includes(normalizedType)) return "tags";
+  if (["datetime", "datetime_local", "datetime_picker", "datetime_input"].includes(normalizedType)) return "datetime";
+  if (["date", "date_picker", "date_input"].includes(normalizedType)) return "date";
+  if (["time", "time_picker", "time_input"].includes(normalizedType)) return "time";
+  if (["boolean", "bool", "checkbox"].includes(normalizedType)) return "checkbox";
+  if (["long_text", "textarea"].includes(normalizedType)) return "textarea";
   if (NUMERIC_TRAINING_FIELD_TYPES.has(normalizedType)) return "number";
-  if (["datetime", "datetime_local"].includes(normalizedType)) return "datetime";
-  if (["boolean", "bool"].includes(normalizedType)) return "checkbox";
-  if (["text", "rich_text", "textarea", "select", "radio", "date", "time", "url", "media_upload", "file_upload", "video", "checkbox"].includes(normalizedType)) {
-    return normalizedType as TrainingFormFieldType;
-  }
+
+  // 2. Infer from key, label, title, or name when renderer is generic (e.g. "text", "text_input", "short_text", or empty)
+  const keyAndLabel = [field.key, field.label, field.apiKey, field.stable_key, field.title, field.name]
+    .filter((v): v is string => typeof v === "string")
+    .map((v) => v.trim().toLowerCase().replace(/[\s-]+/g, "_"));
+
+  if (keyAndLabel.some((v) => /rich(_text)?/i.test(v))) return "rich_text";
+  if (keyAndLabel.some((v) => /radio/i.test(v))) return "radio";
+  if (keyAndLabel.some((v) => /(^|_)date(_|$)/i.test(v))) return "date";
+  if (keyAndLabel.some((v) => /(^|_)time(_|$)/i.test(v))) return "time";
+  if (keyAndLabel.some((v) => /ima(ge|he)s?|photos?|additional_images/i.test(v))) return "media_upload";
+  if (keyAndLabel.some((v) => /doc(ument)?s?|supporting_documents?|files?/i.test(v))) return "file_upload";
+  if (keyAndLabel.some((v) => /videos?/i.test(v))) return "video";
+  if (keyAndLabel.some((v) => /tags?/i.test(v))) return "tags";
+  if (keyAndLabel.some((v) => /drop(down)?/i.test(v))) return "select";
+  if (keyAndLabel.some((v) => /long(_text)?|textarea/i.test(v))) return "textarea";
+  if (keyAndLabel.some((v) => /num(ber|eric)?/i.test(v))) return "number";
+
+  if (["short_text", "text_input", "text"].includes(normalizedType)) return "text";
+
   return "text";
 }
 
@@ -285,7 +306,8 @@ function extractConfigurationItems(raw: unknown): Array<Record<string, unknown>>
 function isPublishedActiveGlobalConfiguration(configuration: Record<string, unknown>): boolean {
   const status = typeof configuration.status === "string" ? configuration.status.toLowerCase() : "";
   const scope = typeof configuration.scope === "string" ? configuration.scope.toLowerCase() : "";
-  return configuration.is_active === true
+  const active = configuration.is_active === true || configuration.active === true || status === "active";
+  return active
     && (configuration.is_global === true || scope === "global")
     && (status === "published" || status === "active" || status === "");
 }
@@ -294,6 +316,35 @@ function isUsableActiveConfigurationResponse(configuration: Record<string, unkno
   const status = typeof configuration.status === "string" ? configuration.status.toLowerCase() : "";
   if (configuration.is_active === false || ["draft", "inactive", "retired", "archived"].includes(status)) return false;
   return true;
+}
+
+function unwrapTrainingConfigurationResponse(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  for (const key of ["configuration", "form_configuration", "data"]) {
+    const nested = record[key];
+    if (nested && typeof nested === "object" && !Array.isArray(nested)) return nested;
+  }
+  return value;
+}
+
+function normalizeActiveTrainingConfigurationResponse(value: unknown): unknown {
+  const unwrapped = unwrapTrainingConfigurationResponse(value);
+  if (!unwrapped || typeof unwrapped !== "object" || Array.isArray(unwrapped)) return unwrapped;
+  const record = unwrapped as Record<string, unknown>;
+  const definition = record.definition;
+  const definitionSections = definition && typeof definition === "object" && !Array.isArray(definition)
+    ? (definition as Record<string, unknown>).sections
+    : undefined;
+  const sections = Array.isArray(record.sections) ? record.sections : definitionSections;
+  if (!Array.isArray(sections)) return record;
+  return {
+    ...record,
+    id: typeof record.id === "string" ? record.id : typeof record.configuration_id === "string" ? record.configuration_id : "active",
+    status: typeof record.status === "string" ? record.status : typeof record.lifecycle === "string" ? record.lifecycle : "active",
+    is_active: typeof record.is_active === "boolean" ? record.is_active : true,
+    sections,
+  };
 }
 
 export interface TrainingFormField {
@@ -374,6 +425,7 @@ export class TrainingFormConfigApiError extends Error {
 const ADMIN_BASE = "/api/v1/trainings/form-configuration/admin";
 const ACTIVE_PATH = "/api/v1/trainings/form-configuration/active";
 const COMMON_ACTIVE_PATH = "/api/v1/trainings/form-configuration/active/common";
+const PUBLIC_ACTIVE_PATH = "/api/v1/trainings/form-configuration/public/active";
 
 function uid() { return Math.random().toString(36).slice(2, 9); }
 
@@ -472,23 +524,25 @@ export async function getTrainingHistoricalFormConfiguration(trainingId: string)
       updated_at: typeof simple.updated_at === "string" ? simple.updated_at : null,
     } as TrainingFormConfig;
   }
-  return raw as TrainingFormConfig;
+  return null;
 }
 
 /** Enterprise: active config resolves selective → global → legacy — handles both simple and full platform shapes + global fallback. */
-export async function getTrainingFormConfigActive(): Promise<TrainingFormConfig | null> {
+export async function getTrainingFormConfigActive(enterpriseId?: string | null): Promise<TrainingFormConfig | null> {
   // 1) Try the dedicated active resolver (simple or full shape)
-  const commonRes = await fetch(COMMON_ACTIVE_PATH, { credentials: "include", cache: "no-store" });
-  const res = commonRes.status === 404 ? await fetch(ACTIVE_PATH, { credentials: "include", cache: "no-store" }) : commonRes;
+  const query = enterpriseId ? `?enterprise_id=${encodeURIComponent(enterpriseId)}` : "";
+  const commonRes = await fetch(`${COMMON_ACTIVE_PATH}${query}`, { credentials: "include", cache: "no-store" });
+  const activeRes = commonRes.status === 404 ? await fetch(`${ACTIVE_PATH}${query}`, { credentials: "include", cache: "no-store" }) : commonRes;
+  const res = activeRes.status === 404 ? await fetch(`${PUBLIC_ACTIVE_PATH}${query}`, { credentials: "include", cache: "no-store" }) : activeRes;
   if (res.status !== 404 && res.status !== 204) {
     if (!res.ok) throw new TrainingFormConfigApiError(`Unable to load active form (HTTP ${res.status})`, res.status);
     const text = await res.text();
     if (text) {
-      const raw = JSON.parse(text) as unknown;
+      const raw = normalizeActiveTrainingConfigurationResponse(JSON.parse(text) as unknown);
       if (raw && typeof raw === "object" && !isUsableActiveConfigurationResponse(raw as Record<string, unknown>)) {
         return null;
       }
-      if (raw && typeof raw === "object" && "draft_version" in (raw as Record<string, unknown>)) {
+      if (raw && typeof raw === "object" && ("draft_version" in (raw as Record<string, unknown>) || "published_version" in (raw as Record<string, unknown>))) {
         const full = raw as Record<string, unknown>;
         const draft = ((full as Record<string, unknown>).published_version ?? full.draft_version) as Record<string, unknown> | null | undefined;
         if (draft && Array.isArray((draft as Record<string, unknown>).sections)) {

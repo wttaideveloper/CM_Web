@@ -18,6 +18,7 @@ import { canEditTraining } from "./training-status";
 import ConfiguredCreateTrainingSection from "./ConfiguredCreateTrainingSection";
 import { isTrainingFormFieldVisible, TRAINING_OTHER_OPTION_VALUE } from "./training-form-field-settings";
 import { getRequiredTrainingDeliverySubfields, getRequiredTrainingDeliveryValueKeys, getTrainingDeliveryCompositeKey, getTrainingDeliveryCompositeValueKeys, isTrainingAccessInformationField } from "./training-delivery-fields";
+import { sanitizeEbookHtml } from "./ebook-html-sanitizer";
 
 const steps = ["Basic Information", "Schedule", "Location & Host", "Pricing & Tickets", "Capacity & Registration", "Images & Media", "Additional Configuration"] as const;
 const stepFields: ReadonlyArray<readonly string[]> = [
@@ -87,8 +88,8 @@ function applyActiveListRenderersToHistoricalForm(
   if (!historicalForm || !currentForm) return historicalForm;
 
   const currentFieldsByRendererKey = new Map<string, TrainingFormField>();
-  for (const section of currentForm.sections) {
-    for (const field of section.fields) {
+  for (const section of (Array.isArray(currentForm.sections) ? currentForm.sections : [])) {
+    for (const field of (Array.isArray(section.fields) ? section.fields : [])) {
       const rendererKey = configurableListRendererKey(field);
       if (rendererKey) currentFieldsByRendererKey.set(rendererKey, field);
     }
@@ -96,9 +97,9 @@ function applyActiveListRenderersToHistoricalForm(
 
   return {
     ...historicalForm,
-    sections: historicalForm.sections.map((section) => ({
+    sections: (Array.isArray(historicalForm.sections) ? historicalForm.sections : []).map((section) => ({
       ...section,
-      fields: section.fields.map((field) => {
+      fields: (Array.isArray(section.fields) ? section.fields : []).map((field) => {
         const rendererKey = configurableListRendererKey(field);
         const currentField = rendererKey ? currentFieldsByRendererKey.get(rendererKey) : undefined;
         if (!currentField) return field;
@@ -270,15 +271,29 @@ function validateConfiguredSection(
 function hydrateConfiguredCustomValues(initialTraining: Training | undefined, activeForm: TrainingFormConfig | null): Record<string, unknown> {
   if (!initialTraining || !activeForm) return {};
   const raw = initialTraining as unknown as Record<string, unknown>;
-  const cv = (raw.custom_values ?? raw.customValues) as Record<string, unknown> | Array<{ field_id: string; value: unknown }> | undefined;
+  const cv = (raw.custom_values ?? raw.customValues) as Record<string, unknown> | Array<Record<string, unknown>> | undefined;
   let hydrated: Record<string, unknown> = {};
   if (Array.isArray(cv)) {
-    const byId = new Map(cv.map((entry) => [entry.field_id, entry.value]));
-    for (const section of activeForm.sections) {
-      for (const field of section.fields) {
+    const byId = new Map<string, unknown>();
+    const byKey = new Map<string, unknown>();
+    for (const entry of cv) {
+      if (entry && typeof entry === "object") {
+        const rec = entry as Record<string, unknown>;
+        if (typeof rec.field_id === "string") byId.set(rec.field_id, rec.value);
+        if (typeof rec.id === "string") byId.set(rec.id, rec.value);
+        if (typeof rec.key === "string") byKey.set(rec.key, rec.value);
+        if (typeof rec.field_key === "string") byKey.set(rec.field_key, rec.value);
+        if (typeof rec.stable_key === "string") byKey.set(rec.stable_key, rec.value);
+      }
+    }
+    for (const section of (Array.isArray(activeForm.sections) ? activeForm.sections : [])) {
+      for (const field of (Array.isArray(section.fields) ? section.fields : [])) {
         const fieldKey = field.key ?? field.apiKey ?? "";
         if (!fieldKey) continue;
-        const value = byId.get(field.id) ?? (cv as unknown as Record<string, unknown>)[fieldKey] ?? (field.apiKey ? (cv as unknown as Record<string, unknown>)[field.apiKey] : undefined);
+        const value = (field.id ? byId.get(field.id) : undefined)
+          ?? byKey.get(fieldKey)
+          ?? (field.apiKey ? byKey.get(field.apiKey) : undefined)
+          ?? (field.stable_key ? byKey.get(field.stable_key) : undefined);
         if (value !== undefined) hydrated[fieldKey] = value;
       }
     }
@@ -306,9 +321,9 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
     ? activeFormQ.data ?? null
     : applyActiveListRenderersToHistoricalForm(historicalFormQ.data ?? null, activeFormQ.data ?? null),
   [mode, activeFormQ.data, historicalFormQ.data]);
-  const trainingFormSections = useMemo(() => activeForm?.sections.filter((section) => section.enabled !== false).map((section) => ({
+  const trainingFormSections = useMemo(() => (Array.isArray(activeForm?.sections) ? activeForm.sections : []).filter((section) => section.enabled !== false).map((section) => ({
     ...section,
-    fields: section.fields.filter((field) => !isTrainingScheduleTimeField(field)),
+    fields: (Array.isArray(section.fields) ? section.fields : []).filter((field) => !isTrainingScheduleTimeField(field)),
   })).filter((section) => section.fields.length > 0) ?? [], [activeForm]);
   const formConfigLoading = mode === "create" ? activeFormQ.isLoading : historicalFormQ.isLoading || activeFormQ.isLoading;
   const formConfigError = mode === "create" ? activeFormQ.error : historicalFormQ.error;
@@ -330,7 +345,7 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
     setCustomValues((current) => ({ ...hydratedCustomValues, ...current }));
 
     const scheduleKeys = new Set(["start_date", "end_date", "start_time", "end_time", "enrolment_start", "enrolment_end"]);
-    const customScheduleValues = activeForm.sections.filter((section) => section.enabled !== false).flatMap((section) => section.fields).flatMap((field) => {
+    const customScheduleValues = (Array.isArray(activeForm.sections) ? activeForm.sections : []).filter((section) => section.enabled !== false).flatMap((section) => (Array.isArray(section.fields) ? section.fields : [])).flatMap((field) => {
       const aliases = [...getTrainingFieldAliases(field), field.id, field.label]
         .map(normalizeTrainingFieldKey);
       const scheduleKey = aliases.find((alias) => scheduleKeys.has(alias));
@@ -848,8 +863,9 @@ export default function CreateTrainingScreen({ mode = "create", initialTraining 
                       <div className="mt-2 space-y-1 text-sm text-[#52736a]">
                         {sec.fields.filter((field) => !isTrainingAccessInformationField(field) && isConfiguredTrainingFieldApplicable(field, values.delivery_mode, values.pricing_type) && isTrainingFormFieldVisible(field, trainingFormSections.flatMap((section) => section.fields), values, customValues)).map((field) => {
                           const raw = field.key in values ? values[field.key as keyof CreateTrainingFormValues] : customValues[field.key];
+                          const isRichText = field.type === "rich_text";
                           const displayValue = Array.isArray(raw) ? raw.join(", ") : typeof raw === "boolean" ? (raw ? "Yes" : "No") : raw === null || raw === undefined || raw === "" ? "Not provided" : String(raw);
-                          return <p key={field.id}><span className="font-semibold text-[#06201c]">{field.label}:</span> {displayValue}</p>;
+                          return <p key={field.id}><span className="font-semibold text-[#06201c]">{field.label}:</span>{isRichText && displayValue !== "Not provided" ? <span className="prose prose-sm ml-1 inline max-w-none text-[#52736a]" dangerouslySetInnerHTML={{ __html: sanitizeEbookHtml(displayValue) }} /> : <span className="ml-1">{displayValue}</span>}</p>;
                         })}
                       </div>
                     </div>

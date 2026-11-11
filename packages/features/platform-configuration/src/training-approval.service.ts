@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import {
   isTrainingApprovalReview,
   type TrainingApprovalReview,
@@ -99,4 +100,29 @@ export async function getTrainingModerationHistory(trainingId: string): Promise<
   if (body && typeof body === "object" && Array.isArray(body.history)) return body.history as ModerationHistoryEntry[];
   if (body && typeof body === "object" && Array.isArray(body.items)) return body.items as ModerationHistoryEntry[];
   return [];
+}
+
+/** Provides non-blocking historical metadata for one Training approval review. */
+export function useHistoricalTrainingFormConfigurationVersion(
+  configurationId: string | null | undefined,
+  versionId: string | null | undefined,
+  trainingId?: string,
+) {
+  return useQuery({
+    queryKey: ["platform", "training-approval", "form-version", configurationId ?? "", versionId ?? "", trainingId ?? ""],
+    queryFn: async () => {
+      if (configurationId && versionId) {
+        const res = await fetch(`/api/platform-super-admin/training-form-configurations/${encodeURIComponent(configurationId)}/versions/${encodeURIComponent(versionId)}`, { credentials: "include", cache: "no-store" });
+        if (res.ok) return (await res.json()) as Record<string, unknown>;
+      }
+      if (trainingId) {
+        const res = await fetch(`/api/v1/trainings/${encodeURIComponent(trainingId)}/form-configuration`, { credentials: "include", cache: "no-store" });
+        if (res.ok) return (await res.json()) as Record<string, unknown>;
+      }
+      return null;
+    },
+    enabled: Boolean((configurationId && versionId) || trainingId),
+    retry: 1,
+    staleTime: 5 * 60 * 1000,
+  });
 }

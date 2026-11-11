@@ -29,9 +29,11 @@ function previewType(url: string, contentType?: string | null, fileName?: string
   if (contentType?.startsWith("video/")) return "video";
   if (contentType === "application/pdf" || contentType?.startsWith("text/")) return "document";
   const path = `${fileName ?? ""} ${url.split(/[?#]/, 1)[0]}`.toLowerCase();
-  if (/\.(?:png|jpe?g|gif|webp|avif|svg)$/.test(path)) return "image";
-  if (/\.(?:mp4|webm|mov|m4v|ogv)$/.test(path)) return "video";
-  if (/\.(?:pdf|txt|md|rtf)$/.test(path)) return "document";
+  if (/\.(?:png|jpe?g|gif|webp|avif|svg)$/i.test(path)) return "image";
+  if (/\.(?:mp4|webm|mov|m4v|ogv)$/i.test(path)) return "video";
+  if (/\.(?:pdf|txt|md|rtf|docx?|xlsx?|pptx?)$/i.test(path)) return "document";
+  if (path.includes("image") || path.includes("photo")) return "image";
+  if (path.includes("video")) return "video";
   return "link";
 }
 
@@ -78,17 +80,26 @@ export function ConfiguredTrainingUrlField({
           maxFileSizeMb={maxFileSizeMb}
           onUploaded={(file) => { setUploadedFile({ type: file.type ?? null, name: file.name }); onChange(file.url); setLinkInputOpen(false); }}
         />
-        {linkInputOpen && previewUrl ? <button type="button" onClick={() => setLinkInputOpen(false)} className="text-xs font-semibold text-[#1f6a58] underline">Preview link</button> : null}
         {value ? <button type="button" onClick={() => { setUploadedFile(null); onChange(""); setLinkInputOpen(true); }} className="text-xs font-semibold text-[#b42318] underline hover:text-[#8f1c13]">Remove</button> : null}
       </div>
       {error ? <p role="alert" className="mt-1 text-xs text-[#b42318]">{error}</p> : null}
-      {!linkInputOpen && previewUrl ? (
+      {previewUrl ? (
         <div className="mt-3 overflow-hidden rounded-xl border border-[#d7e5df] bg-[#f9fcfa]">
           {kind === "image" ? <img src={previewUrl} alt={`${label} preview`} referrerPolicy="no-referrer" className="max-h-72 w-full object-contain" /> : null}
           {kind === "video" ? <video src={previewUrl} controls preload="metadata" className="max-h-72 w-full" aria-label={`${label} preview`} /> : null}
           {kind === "document" && (uploadedFile?.type === "application/pdf" || /^data:application\/pdf;base64,/i.test(value) || /\.pdf(?:$|[?#])/i.test(`${uploadedFile?.name ?? ""} ${value}`)) ? <iframe src={previewUrl} title={`${label} preview`} sandbox="" className="h-72 w-full bg-white" /> : null}
-          {kind === "document" && uploadedFile?.type !== "application/pdf" && !/^data:application\/pdf;base64,/i.test(value) && !/\.pdf(?:$|[?#])/i.test(`${uploadedFile?.name ?? ""} ${value}`) ? <p className="px-3 py-3 text-xs text-[#52736a]">Document uploaded. Open it to preview.</p> : null}
-          {kind === "link" ? <p className="px-3 py-3 text-xs text-[#52736a]">Link added. Open it to preview.</p> : null}
+          {kind === "document" && uploadedFile?.type !== "application/pdf" && !/^data:application\/pdf;base64,/i.test(value) && !/\.pdf(?:$|[?#])/i.test(`${uploadedFile?.name ?? ""} ${value}`) ? (
+            <div className="flex items-center gap-2 p-3 text-xs text-[#52736a]">
+              <span className="rounded bg-white px-2 py-1 font-bold text-[#1f6a58] border border-[#d7e5df]">Document</span>
+              <span>{uploadedFile?.name || "Document uploaded"}</span>
+            </div>
+          ) : null}
+          {kind === "link" ? (
+            <div className="flex items-center gap-2 p-3 text-xs text-[#52736a]">
+              <span className="rounded bg-white px-2 py-1 font-bold text-[#1f6a58] border border-[#d7e5df]">Link</span>
+              <span className="truncate">{value}</span>
+            </div>
+          ) : null}
           <div className="border-t border-[#d7e5df] px-3 py-2"><a href={previewUrl} target="_blank" rel="noopener noreferrer" className="break-all text-xs font-semibold text-[#1f6a58] underline">Open {label.toLowerCase()}</a></div>
         </div>
       ) : null}

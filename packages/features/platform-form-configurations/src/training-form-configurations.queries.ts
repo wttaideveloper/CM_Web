@@ -25,8 +25,11 @@ export const trainingFormConfigurationListQueryKey = trainingFormConfigurationKe
 /** Backward-compatible key for the existing field-registry screen. */
 export const trainingFormFieldRegistryQueryKey = trainingFormConfigurationKeys.fieldRegistry();
 
+function toBuilderRegistryRenderer(renderer: string): string {
+  return ({ select: "dropdown", radio_group: "radio", rich_text_editor: "rich_text", time_picker: "time", image_uploader: "media_upload", media: "media_upload", document_uploader: "file_upload", video_input: "video", tag_input: "tags" }[renderer] ?? renderer);
+}
 function toBuilderRegistryItem(field: Awaited<ReturnType<typeof getTrainingFormFieldRegistry>>[number]): CoreFieldRegistryItem {
-  return { key: field.key, displayName: field.display_name, valueType: field.value_type, allowedRenderers: field.allowed_renderers, defaultRenderer: field.default_renderer, requiredByDomain: field.required_by_domain, removable: field.removable, hideable: field.hideable, options: field.options ?? [], valueSource: field.value_source, sourceEndpoint: field.source_endpoint, dependsOn: field.depends_on, configurable: { label: field.configurable.label, section: field.configurable.section, position: field.configurable.position, required: field.configurable.required, renderer: field.configurable.renderer, placeholder: field.configurable.placeholder, helpText: field.configurable.help_text, validation: field.configurable.validation } };
+  return { key: field.key, displayName: field.display_name, valueType: field.value_type, allowedRenderers: field.allowed_renderers.map(toBuilderRegistryRenderer), defaultRenderer: toBuilderRegistryRenderer(field.default_renderer), requiredByDomain: field.required_by_domain, removable: field.removable, hideable: field.hideable, options: field.options ?? [], valueSource: field.value_source, sourceEndpoint: field.source_endpoint, dependsOn: field.depends_on, configurable: { label: field.configurable.label, section: field.configurable.section, position: field.configurable.position, required: field.configurable.required, renderer: field.configurable.renderer, placeholder: field.configurable.placeholder, helpText: field.configurable.help_text, validation: field.configurable.validation } };
 }
 
 function isRemovedTrainingScheduleTimeField(field: Awaited<ReturnType<typeof getTrainingFormFieldRegistry>>[number]): boolean {

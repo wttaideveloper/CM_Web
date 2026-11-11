@@ -129,6 +129,9 @@ export function buildCreateEventPayload(
 ): CreateEventPayload {
   if (currencyPolicy) assertEventCurrencyConsistency(values, currencyPolicy);
   const synchronizedValues = synchronizeCreateEventServiceWindows(synchronizeServicePayloadValues(values, currencyPolicy));
+  const resolvedPayloadCurrency = synchronizedValues.currency.trim()
+    || (currencyPolicy ? eventCurrencyForSource(synchronizedValues, resolveEventCurrencySource(synchronizedValues, currencyPolicy, null)) : "")
+    || "USD";
   const eventType = values.event_type.trim();
   if (!eventType) throw new Error("Select an Event Type before creating this Event.");
   const venue: CreateEventVenue = buildEventVenue(values.venue_name, values.venue_address, values.venue_city);
@@ -158,7 +161,10 @@ export function buildCreateEventPayload(
     meeting_provider: values.delivery_mode === "in_person" ? null : values.meeting_provider.trim() || null,
     price: values.pricing_type === "free" ? null : values.price.trim(),
     pricing_type: values.pricing_type,
-    currency: synchronizedValues.pricing_type === "free" ? "" : synchronizedValues.currency.trim(),
+    // The Enterprise UI correctly hides currency for Free Events, but the
+    // Event API still requires the currency field in the create contract.
+    // Keep it out of the UI while supplying a harmless default on the wire.
+    currency: synchronizedValues.pricing_type === "free" ? resolvedPayloadCurrency : synchronizedValues.currency.trim(),
     ticket_types: synchronizedValues.pricing_type === "free" ? [] : synchronizedValues.ticket_types,
     capacity: toOptionalNumericString(values.capacity),
     min_participants: toOptionalNumericString(values.min_participants),

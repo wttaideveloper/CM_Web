@@ -101,9 +101,11 @@ function getTrainingImageUploadFieldKeys(configurations: readonly (TrainingFormC
   };
 
   configurations.forEach((configuration) => {
-    configuration?.sections
-      .filter((section) => section.enabled !== false)
-      .forEach((section) => section.fields.forEach(addCandidate));
+    if (Array.isArray(configuration?.sections)) {
+      configuration.sections
+        .filter((section) => section && section.enabled !== false)
+        .forEach((section) => (Array.isArray(section.fields) ? section.fields : []).forEach(addCandidate));
+    }
   });
   return [...keys];
 }

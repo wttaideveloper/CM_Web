@@ -517,8 +517,9 @@ function normalizeForm(value: unknown): BlogForm {
           long_text: "textarea",
           richtext: "rich_text",
           rich_text_editor: "rich_text",
-          dropdown: "select",
           radio_group: "radio",
+          time_picker: "time",
+          dropdown: "select",
           multiselect: "multi_select",
           checkbox_group: "multi_select",
           image: "media_upload",
@@ -527,9 +528,12 @@ function normalizeForm(value: unknown): BlogForm {
           documents: "file_upload",
           document_uploader: "file_upload",
           supporting_document: "file_upload",
+          image_uploader: "media_upload",
+          tag_input: "tags",
           url_input: "url",
           reference_url: "url",
-          video_input: "video",
+          video_input: "text",
+          video: "text",
         };
         const fieldValidation = isRecord(field.validation) ? { ...field.validation } : {};
         const options = Array.isArray(field.options)
@@ -560,7 +564,7 @@ function normalizeForm(value: unknown): BlogForm {
             : normalizedRenderer === "file_upload" || isFileUploadKey || explicitPresentationType.includes("document") || explicitPresentationType.includes("file") || searchablePresentationText.includes("supporting document")
               ? "file_upload"
               : normalizedRenderer === "video" || normalizedType === "video" || explicitPresentationType.includes("video")
-                ? "video"
+                ? "text"
                 : normalizedRenderer === "url" || normalizedType === "url" || normalizedType === "reference_url" || explicitPresentationType.includes("url")
                 ? "url"
                 : explicitPresentationType.includes("time") || (normalizedType === "text" && searchablePresentationText.trim().startsWith("time"))
@@ -640,13 +644,11 @@ function serializeFormDefinition(sections: BlogFormSection[] | undefined) {
         // The API does not support custom file_upload fields. Treat every
         // document upload control as the built-in supporting_documents field
         // when persisting a form version.
-        const canonicalKey = field.type === "file_upload"
-          ? "supporting_documents"
-          : canonicalBlogFormFieldKey(field.key);
+        const canonicalKey = canonicalBlogFormFieldKey(field.key);
         const backendType = canonicalKey === "supporting_documents"
           ? "documents"
           : canonicalBlogFormFieldType(field.type);
-        const options = ["select", "multiselect", "checkbox"].includes(backendType) && typeof field.validation?.options === "string"
+        const options = ["select", "radio_group", "multi_select", "multiselect", "checkbox"].includes(backendType) && typeof field.validation?.options === "string"
           ? field.validation.options.split(",").map((option) => option.trim()).filter(Boolean).map((option) => ({ value: option, label: option }))
           : undefined;
         const validation = field.validation && typeof field.validation === "object"
@@ -699,17 +701,16 @@ function canonicalBlogFormFieldKey(key: string): string {
 /** Maps builder presentation types to the field types accepted by the CMS API. */
 function canonicalBlogFormFieldType(type: string): string {
   const aliases: Record<string, string> = {
-    rich_text: "textarea",
-    radio: "select",
-    multi_select: "multiselect",
-    time: "text",
-    // The Blogs API supports media_upload as a first-class custom field type.
-    // Preserve it so image fields are not persisted as generic text fields.
-    media_upload: "media_upload",
-    // Legacy custom file fields remain text for backwards compatibility;
-    // new document uploads are serialized through the built-in
-    // supporting_documents field above.
-    file_upload: "text",
+    rich_text: "rich_text_editor",
+    radio: "radio_group",
+    multi_select: "multi_select",
+    checkbox: "multi_select",
+    time: "time_picker",
+    media_upload: "image_uploader",
+    file_upload: "document_uploader",
+    // Blog intentionally excludes the Video renderer; legacy video values are treated as text.
+    video: "text",
+    tags: "tag_input",
   };
   return aliases[type] ?? type;
 }
@@ -721,8 +722,8 @@ function isProtectedBlogFormFieldKey(key: string): boolean {
 // -------------------------------------------------------------
 // Local cache used only when the API is temporarily unavailable. It starts empty.
 // -------------------------------------------------------------
-const STORAGE_FORMS_KEY = "ihp.blogs.admin_forms.v2";
-const STORAGE_FORM_VERSIONS_KEY = "ihp.blogs.admin_form_versions.v2";
+const STORAGE_FORMS_KEY = "ihp.blogs.admin_forms.v3";
+const STORAGE_FORM_VERSIONS_KEY = "ihp.blogs.admin_form_versions.v3";
 const STORAGE_POSTS_KEY = "ihp.blogs.posts_data.v2";
 const STORAGE_BLOG_AUDIT_KEY = "ihp.blogs.audit.v1";
 const STORAGE_BLOG_CONFIGURATION_AUDIT_KEY = "ihp.blogs.configuration_audit.v1";
@@ -879,8 +880,8 @@ const SEED_FORMS: BlogForm[] = [
     mode: "configurable",
     version: 1,
     status: "active",
-    scope: "selected",
-    tenant_ids: ["ent-greenlife", "ent-careplus"],
+    scope: "global",
+    tenant_ids: [],
     created_at: "2026-10-26T09:00:00.000Z",
     updated_at: "2026-10-26T11:20:00.000Z",
     created_by: "Super Admin",
@@ -988,7 +989,7 @@ const SEED_FORMS: BlogForm[] = [
     type: "blog",
     mode: "standard",
     version: 1,
-    status: "published",
+    status: "active",
     scope: "global",
     tenant_ids: [],
     created_at: "2026-10-24T08:00:00.000Z",
@@ -1097,8 +1098,8 @@ const SEED_FORMS: BlogForm[] = [
     type: "news",
     mode: "standard",
     version: 1,
-    status: "draft",
-    scope: "unassigned",
+    status: "active",
+    scope: "global",
     tenant_ids: [],
     created_at: "2026-10-28T10:15:00.000Z",
     updated_at: "2026-10-28T10:15:00.000Z",
@@ -3486,98 +3487,44 @@ function applyLocalFormAssignment(
 
 export function getMyBlogForm(kind: BlogKind, enterpriseId?: string): Promise<BlogForm> {
   const resolveLocalActiveForm = (): BlogForm => {
-    // Critical Rule 4: Draft and inactive forms must not appear for enterprise use.
     // Only active forms are eligible.
     const activeForms = getStoredForms().filter((f) => f.status === "active");
 
-    // Critical Rule 1 & 2: Only one effective active form per tenant and post type.
-    // Selected tenant assignment overrides the global default.
+    // Priority 1: Specific tenant custom form with exact post type match
     if (enterpriseId) {
-      // Priority 1A: Specific tenant custom form with exact post type match (Blog-specific or News-specific or Both)
       const specificExact = activeForms.find(
         (f) => f.scope === "selected" && f.type === kind && f.tenant_ids?.includes(enterpriseId),
       );
       if (specificExact) return specificExact;
-
-      // Priority 1B: Specific tenant custom form with "both" post type
-      if (kind !== "both") {
-        const specificBoth = activeForms.find(
-          (f) => f.scope === "selected" && f.type === "both" && f.tenant_ids?.includes(enterpriseId),
-        );
-        if (specificBoth) return specificBoth;
-      }
     }
 
-    // Priority 2A: Global default form with exact post type match (Blog-specific or News-specific or Both)
+    // Priority 2: Global default form with exact post type match
     const globalExact = activeForms.find(
       (f) => f.scope === "global" && f.type === kind,
     );
     if (globalExact) return globalExact;
 
-    // Priority 2B: Global default form with "both" post type
-    if (kind !== "both") {
-      const globalBoth = activeForms.find(
-        (f) => f.scope === "global" && f.type === "both",
-      );
-      if (globalBoth) return globalBoth;
-    }
-
-    // Priority 2C: If requesting "both" and no "both" form is active, fallback to global blog or news form
-    if (kind === "both") {
-      const globalBlogOrNews = activeForms.find(
-        (f) => f.scope === "global" && (f.type === "blog" || f.type === "news"),
-      );
-      if (globalBlogOrNews) return globalBlogOrNews;
-    }
-
-    // Critical Rule 3: Other tenants must not see a selectively assigned form.
-    // Situation: No applicable active form -> Creation unavailable with clear message.
     const postTypeName = kind === "blog" ? "Blog" : kind === "news" ? "News" : "Blog & News";
     throw new BlogsApiError(
-      `Creation unavailable. No active ${postTypeName} form configuration has been assigned to your enterprise. Please contact your platform administrator.`,
+      `There is no active form configured for ${postTypeName}.`,
       404,
     );
   };
 
   return safeRequest(
     async () => {
-      // The remote backend expects "blog" or "news" for the query param
-      const queryKind = kind === "both" ? "blog" : kind;
-      let remoteForm: BlogForm | null = null;
+      const queryKind = kind;
       try {
-        remoteForm = normalizeForm(
+        const remoteForm = normalizeForm(
           await request(`/cms/blogs/my/form${query({ kind: queryKind, enterprise_id: enterpriseId })}`),
         );
-      } catch (err) {
-        if (kind === "both") {
-          try {
-            remoteForm = normalizeForm(
-              await request(`/cms/blogs/my/form${query({ kind: "news", enterprise_id: enterpriseId })}`),
-            );
-          } catch {
-            return resolveLocalActiveForm();
-          }
-        } else {
-          try {
-            return resolveLocalActiveForm();
-          } catch {
-            throw err;
-          }
+        if (remoteForm && remoteForm.type === kind && remoteForm.status === "active") {
+          return remoteForm;
         }
+        return resolveLocalActiveForm();
+      } catch {
+        return resolveLocalActiveForm();
       }
-
-      // If kind was "both" and remote returned a blog-specific form, check if local storage
-      // has an active "both" form configured by platform superadmin:
-      if (kind === "both" && remoteForm && remoteForm.type !== "both") {
-        try {
-          const localBoth = resolveLocalActiveForm();
-          if (localBoth.type === "both") return localBoth;
-        } catch {
-          // fallback to remote form
-        }
-      }
-
-      return remoteForm;
     },
     () => resolveLocalActiveForm(),
   );

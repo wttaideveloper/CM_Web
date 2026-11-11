@@ -15,6 +15,7 @@ function previewOptionKey(option: FormFieldOption, index: number): string {
 
 function PreviewField({ field, registry, isTraining }: { field: ConfiguredField; registry: readonly CoreFieldRegistryItem[]; isTraining: boolean }) {
   const base = "mt-1.5 w-full rounded-lg border border-[#cfe0d8] bg-white px-3 py-2 text-sm";
+  const renderer = field.renderer.trim().toLowerCase().replace(/[\s-]+/g, "_");
   const compositeDefinition = isTraining
     ? getTrainingCompositeFieldDefinition(field.coreKey ?? field.stableKey, field.label)
     : field.source === "core" ? getEventCompositeFieldDefinition(field.coreKey) : undefined;
@@ -36,15 +37,18 @@ function PreviewField({ field, registry, isTraining }: { field: ConfiguredField;
   }
   if (taxonomySemantic && isEventCoreFieldRuntimeSourced(field.coreKey)) return <div><select aria-label={field.label} disabled className={base}><option>{taxonomySemantic.optionsSource === "event_categories" ? "Event Categories (loaded at runtime)" : "Enterprise locations (loaded at runtime)"}</option></select><span className="mt-1 block text-xs font-normal text-[#52736a]">{taxonomySemantic.description}</span></div>;
   if (registryRuntimeSourced && !trainingDeliveryMode) return <div><select aria-label={field.label} disabled className={base}><option>Training values (loaded at runtime)</option></select><span className="mt-1 block text-xs font-normal text-[#52736a]">Values are supplied by the Training runtime source.</span></div>;
-  if (field.renderer === "textarea") return <textarea aria-label={field.label} placeholder={field.placeholder} className={`${base} min-h-20`} />;
-  if (field.renderer === "dropdown" || field.renderer === "select" || field.renderer === "multi_select") {
-    const multiSelect = field.renderer === "multi_select";
-    const selectClass = multiSelect ? `${base} min-h-24 max-h-40 overflow-y-auto leading-7` : base;
+  if (["rich_text", "rich_text_editor"].includes(renderer)) return <div className="mt-1.5 overflow-hidden rounded-lg border border-[#cfe0d8] bg-white"><div className="flex flex-wrap gap-1 border-b border-[#dfe9e4] bg-[#f7fbf8] p-2 text-xs font-bold text-[#1f6a58]"><span className="rounded bg-white px-2 py-1">B</span><span className="rounded bg-white px-2 py-1 italic">I</span><span className="rounded bg-white px-2 py-1 underline">U</span><span className="rounded bg-white px-2 py-1">H2</span><span className="rounded bg-white px-2 py-1">Link</span></div><textarea aria-label={field.label} placeholder={field.placeholder || "Write formatted content..."} className="min-h-24 w-full resize-y border-0 px-3 py-2 text-sm outline-none" /></div>;
+  if (["textarea", "long_text"].includes(renderer)) return <textarea aria-label={field.label} placeholder={field.placeholder} className={`${base} min-h-20`} />;
+  if (["dropdown", "select"].includes(renderer)) {
     const options = trainingDeliveryMode ? TRAINING_DELIVERY_MODE_OPTIONS : field.options;
-    return <select aria-label={field.label} multiple={multiSelect} className={selectClass}>{!multiSelect && field.placeholder ? <option value="" disabled hidden>{field.placeholder}</option> : null}{options.map((option, index) => <option key={previewOptionKey(option, index)}>{option.label}</option>)}</select>;
+    return <select aria-label={field.label} className={base}>{field.placeholder ? <option value="" disabled hidden>{field.placeholder}</option> : null}{options.map((option, index) => <option key={previewOptionKey(option, index)}>{option.label}</option>)}</select>;
   }
-  if (field.renderer === "checkbox") return <input aria-label={field.label} type="checkbox" className="ml-2 mt-1.5 inline-block h-4 w-4 align-middle accent-[#1f6a58]" />;
-  if (field.renderer === "datetime") return <span className="mt-1.5 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+  if (renderer === "radio") return <fieldset className="mt-2 space-y-2 rounded-lg border border-[#dfe9e4] bg-[#fbfdfc] p-3"><legend className="sr-only">{field.label}</legend>{(field.options.length ? field.options : [{ value: "", label: "No options configured", position: 0 }]).map((option, index) => <label key={previewOptionKey(option, index)} className="flex items-center gap-2 text-sm font-normal"><input aria-label={option.label} type="radio" name={`preview-radio-${field.localId}`} disabled={!option.value} />{option.label}</label>)}</fieldset>;
+  if (["multi_select", "multiselect", "checkbox_group"].includes(renderer)) return <fieldset className="mt-2 space-y-2 rounded-lg border border-[#dfe9e4] bg-[#fbfdfc] p-3"><legend className="sr-only">{field.label}</legend>{(field.options.length ? field.options : [{ value: "", label: "No options configured", position: 0 }]).map((option, index) => <label key={previewOptionKey(option, index)} className="flex items-center gap-2 text-sm font-normal"><input aria-label={option.label} type="checkbox" disabled={!option.value} />{option.label}</label>)}</fieldset>;
+  if (renderer === "checkbox") return <input aria-label={field.label} type="checkbox" className="ml-2 mt-1.5 inline-block h-4 w-4 align-middle accent-[#1f6a58]" />;
+  if (renderer === "tags") return <div className={`${base} flex min-h-10 flex-wrap items-center gap-2`}><span className="rounded-full bg-[#e8f6ee] px-2 py-1 text-xs font-semibold text-[#1f6a58]">Example tag</span><span className="text-xs font-normal text-[#7f9d94]">{field.placeholder || "Type a tag and press Enter"}</span></div>;
+  if (["additional_images", "media_upload", "supporting_document", "file_upload", "video"].includes(renderer)) return <RepeatablePreviewUpload renderer={renderer} label={field.label} placeholder={field.placeholder} />;
+  if (renderer === "datetime") return <span className="mt-1.5 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
     <span className="min-w-0">
       <span className="block text-xs font-normal text-[#52736a]">{copy.previewDate}</span>
       <input aria-label={`${field.label} ${copy.previewDate}`} type="date" className={`${base} mt-1 min-w-0`} />
@@ -54,8 +58,25 @@ function PreviewField({ field, registry, isTraining }: { field: ConfiguredField;
       <input aria-label={`${field.label} ${copy.previewTime}`} type="time" className={`${base} mt-1 min-w-0`} />
     </span>
   </span>;
-  return <input aria-label={field.label} type={field.renderer} placeholder={field.placeholder} className={base} />;
+  return <input aria-label={field.label} type={renderer === "reference_url" || renderer === "url" ? "url" : renderer === "short_text" || renderer === "text_input" ? "text" : renderer} placeholder={field.placeholder} className={base} />;
 }
+
+function RepeatablePreviewUpload({ renderer, label, placeholder }: { renderer: string; label: string; placeholder: string }) {
+  const [rows, setRows] = useState(() => [""]);
+  const isImage = ["additional_images", "media_upload"].includes(renderer);
+  const isDocument = ["supporting_document", "file_upload"].includes(renderer);
+  const accept = isImage ? "image/*" : isDocument ? ".pdf,.doc,.docx,.zip" : "video/*";
+  const updateRow = (index: number, value: string) => setRows((current) => current.map((row, rowIndex) => rowIndex === index ? value : row));
+  return <div className="mt-1.5 space-y-2">
+    {rows.map((row, index) => <div key={`${label}-${index}`} className="rounded-lg border border-[#dfe9e4] bg-[#fbfdfc] p-2">
+      <input aria-label={`${label} URL ${index + 1}`} type="url" value={row} onChange={(event) => updateRow(index, event.target.value)} placeholder={placeholder || (renderer === "video" ? "Paste a YouTube, Vimeo, or video URL" : "Paste a URL or upload a file")} className={basePreviewInput} />
+      <label className="mt-2 inline-flex cursor-pointer items-center rounded-full border border-[#cfe0d8] bg-white px-3 py-1.5 text-xs font-bold text-[#1f6a58]">Upload {isImage ? "image" : isDocument ? "document" : "video"}<input type="file" accept={accept} className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) updateRow(index, file.name); }} /></label>
+    </div>)}
+    <button type="button" onClick={() => setRows((current) => [...current, ""])} className="text-sm font-bold text-[#1f6a58]">+ Add {isImage ? "image" : isDocument ? "document" : "video"}</button>
+  </div>;
+}
+
+const basePreviewInput = "mt-1.5 h-10 w-full rounded-lg border border-[#cfe0d8] bg-white px-3 text-sm outline-none focus:border-[#1f6a58]";
 
 function fieldIdentifiers(field: ConfiguredField): string[] {
   return [field.coreKey ?? "", field.stableKey ?? "", field.label].map((value) => value.trim().toLowerCase().replace(/[\s-]+/g, "_"));
@@ -110,7 +131,7 @@ export function ConfigurationPreview({ configuration, registry = [] }: { configu
         .filter((field) => field.sectionLocalId === section.localId && field.enabled)
         .filter((field) => !isTraining || isTrainingFieldVisible(field, deliveryMode, pricingType))
         .sort((a, b) => a.position - b.position);
-      return <div key={section.localId} className="rounded-xl border border-[#dfe9e4] bg-white p-4"><h4 className="font-bold text-[#06201c]">{section.name}</h4>{section.description ? <p className="mt-1 text-sm text-[#52736a]">{section.description}</p> : null}<div className="mt-4 grid gap-4 md:grid-cols-2">{fields.length ? fields.map((field) => <fieldset key={field.localId} disabled className="min-w-0"><label className="text-sm font-semibold text-[#355a51]">{field.label}{field.required ? " *" : ""}<PreviewField field={field} registry={registry} isTraining={isTraining} />{field.helpText ? <span className="mt-1 block text-xs font-normal text-[#52736a]">{field.helpText}</span> : null}</label></fieldset>) : <p className="text-sm text-[#52736a]">{copy.noFields}</p>}</div></div>;
+      return <div key={section.localId} className="rounded-xl border border-[#dfe9e4] bg-white p-4"><h4 className="font-bold text-[#06201c]">{section.name}</h4>{section.description ? <p className="mt-1 text-sm text-[#52736a]">{section.description}</p> : null}<div className="mt-4 grid gap-4 md:grid-cols-2">{fields.length ? fields.map((field) => <fieldset key={field.localId} className="min-w-0"><label className="text-sm font-semibold text-[#355a51]">{field.label}{field.required ? " *" : ""}<PreviewField field={field} registry={registry} isTraining={isTraining} />{field.helpText ? <span className="mt-1 block text-xs font-normal text-[#52736a]">{field.helpText}</span> : null}</label></fieldset>) : <p className="text-sm text-[#52736a]">{copy.noFields}</p>}</div></div>;
     })}</div>
   </section>;
 }

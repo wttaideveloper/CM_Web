@@ -18,7 +18,7 @@ export function useActiveTrainingFormConfiguration(enabled = true) {
   const { enterpriseId } = useCurrentEnterprise();
   return useQuery({
     queryKey: trainingFormConfigurationQueryKeys.active(tenantId, enterpriseId),
-    queryFn: getTrainingFormConfigActive,
+    queryFn: () => getTrainingFormConfigActive(enterpriseId),
     enabled: enabled && authReady,
     staleTime: 0,
     retry: 1,

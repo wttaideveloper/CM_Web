@@ -1,5 +1,5 @@
-﻿"use client";
-import { useState } from "react";
+"use client";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { CreateEventFormValues, EventCustomFieldFormValue, EventTicketFormValue } from "./create-event-form";
@@ -14,9 +14,12 @@ import { eventFieldMaxLength } from "./event-field-limits";
 import { DateLocalInput, DateTimeLocalInput } from "@ihp/ui";
 import { resolveNewEventCurrency, type EventCurrencySource, type EventCurrencyUiState } from "./event-currency";
 import { isProtectedMeetingLink } from "./event-meeting-link";
+import { RepeatableEventMediaField } from "./EventMediaField";
+import { getEventFormFieldType, isEventMediaRenderer, getEventMediaKind, getEventMediaAccept } from "./event-form-field-type";
 
 type UpdateForm = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => void;
-type Props = { section: ActiveEventFormSection; values: CreateEventFormValues; update: UpdateForm; errors: Record<string, string[]>; customValues: Record<string, string | string[] | boolean | number | null>; setCustomValues: (next: Record<string, string | string[] | boolean | number | null>) => void; categories: readonly EventCategory[]; categoriesLoading: boolean; categoriesError: boolean; eventTypes?: readonly EventTypeDefinition[]; eventTypesLoading?: boolean; eventTypesError?: boolean; currencyOptions?: readonly ActiveEventFormFieldOption[]; currencyState?: EventCurrencyUiState; createMode?: boolean; allowPastTemporalValues?: boolean; modules?: CreateEventFormValues["modules"]; selectedEventType?: EventTypeDefinition; mediaPolicy?: EventMediaPolicy; policyError?: string; uploads?: readonly EventMediaUploadState[]; onMediaLinkChange?: (field: EventMediaField, index: number, value: string) => void; onMediaAddLink?: (field: EventMediaField) => void; onMediaRemove?: (field: EventMediaField, index: number) => void; onMediaUpload?: (field: EventMediaField, file: File, replaceIndex?: number) => void; onMediaRetry?: (uploadId: string) => void; onMediaUploadRemove?: (uploadId: string) => void; sessionGenerationRules?: readonly SessionGenerationRule[]; onSessionGenerationRulesChange?: (rules: SessionGenerationRule[]) => void; };
+export type CustomMediaPreview = { name: string; url: string; kind: "image" | "video" | "document" };
+type Props = { section: ActiveEventFormSection; values: CreateEventFormValues; update: UpdateForm; errors: Record<string, string[]>; customValues: Record<string, string | string[] | boolean | number | null>; setCustomValues: (next: Record<string, string | string[] | boolean | number | null>) => void; categories: readonly EventCategory[]; categoriesLoading: boolean; categoriesError: boolean; eventTypes?: readonly EventTypeDefinition[]; eventTypesLoading?: boolean; eventTypesError?: boolean; currencyOptions?: readonly ActiveEventFormFieldOption[]; currencyState?: EventCurrencyUiState; createMode?: boolean; allowPastTemporalValues?: boolean; modules?: CreateEventFormValues["modules"]; selectedEventType?: EventTypeDefinition; mediaPolicy?: EventMediaPolicy; policyError?: string; uploads?: readonly EventMediaUploadState[]; onMediaLinkChange?: (field: EventMediaField, index: number, value: string) => void; onMediaAddLink?: (field: EventMediaField) => void; onMediaRemove?: (field: EventMediaField, index: number) => void; onMediaUpload?: (field: EventMediaField, file: File, replaceIndex?: number) => void; onMediaRetry?: (uploadId: string) => void; onMediaUploadRemove?: (uploadId: string) => void; customMediaPreviews?: Readonly<Record<string, readonly CustomMediaPreview[]>>; onCustomMediaPreviewChange?: (fieldKey: string, preview: CustomMediaPreview) => void; sessionGenerationRules?: readonly SessionGenerationRule[]; onSessionGenerationRulesChange?: (rules: SessionGenerationRule[]) => void; };
 
 const inputClass = "mt-1.5 h-10 w-full min-w-0 max-w-full rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3 text-sm font-normal text-[#06201c] outline-none focus:border-[#1f6a58]";
 const NUMERIC_FIELD_TYPES = new Set(["number", "numeric", "integer", "decimal", "float", "number_input", "numeric_input"]);
@@ -62,16 +65,29 @@ function isDateTimeType(value: string | null | undefined): boolean {
   return value?.trim().toLowerCase().replace(/[-_ ]/g, "") === "datetime"
     || value?.trim().toLowerCase() === "datetime-local";
 }
-function isComplexField(field: ActiveEventFormField): boolean { const key = keyFor(field); return key === "venue" || key === "ticket_types" || key === "sessions" || ["custom_fields", "registration_questions", "registration_fields", "media", "gallery_images", "videos", "documents"].includes(key) || ["ticket_types", "sessions", "registration_fields"].includes(field.renderer); }
+function isComplexField(field: ActiveEventFormField): boolean {
+  const key = keyFor(field);
+  return (
+    key === "venue" ||
+    key === "ticket_types" ||
+    key === "sessions" ||
+    ["custom_fields", "registration_questions", "registration_fields", "media", "gallery_images", "videos", "documents"].includes(key) ||
+    ["ticket_types", "sessions", "registration_fields"].includes(field.renderer) ||
+    isEventMediaRenderer(getEventFormFieldType(field))
+  );
+}
 function isDeliveryFieldApplicable(key: string, deliveryMode: string): boolean { if (!deliveryMode) return true; if (["venue", "location", "location_id"].includes(key)) return deliveryMode !== "online"; if (["meeting_provider", "meeting_link"].includes(key)) return deliveryMode === "online" || deliveryMode === "hybrid"; return true; }
 function fieldType(field: ActiveEventFormField, key: string): string {
+  const normKey = key.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  const normLabel = (field.label ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  const renderer = field.renderer?.trim().toLowerCase().replace(/[\s-]+/g, "_");
   if (["start_date", "start_datetime", "end_date", "end_datetime", "registration_cutoff", "registration_open_at", "registration_close_at"].includes(key)) return "datetime-local";
   if (isDateTimeType(field.renderer) || isDateTimeType(field.value_type)) return "datetime-local";
-  if (field.renderer?.trim().toLowerCase() === "date" || field.value_type?.trim().toLowerCase() === "date" || ["date", "session_date"].includes(key)) return "date";
-  if (["start_time", "end_time"].includes(key)) return "time";
-  if (field.renderer?.trim().toLowerCase() === "textarea") return "textarea";
+  if (["date", "date_input", "date_picker"].includes(renderer) || field.value_type?.trim().toLowerCase() === "date" || ["date", "session_date"].includes(key) || /(^|_)date(_|$)/i.test(normKey) || /(^|_)date(_|$)/i.test(normLabel)) return "date";
+  if (["start_time", "end_time"].includes(key) || ["time", "time_picker", "time_input"].includes(renderer) || field.value_type?.trim().toLowerCase() === "time" || /(^|_)time(_|$)/i.test(normKey) || /(^|_)time(_|$)/i.test(normLabel)) return "time";
+  if (["textarea", "long_text"].includes(renderer)) return "textarea";
   if (isNumericField(field) || ["price", "capacity", "min_participants", "max_participants"].includes(key)) return "number";
-  if (field.renderer?.trim().toLowerCase() === "url" || field.value_type?.trim().toLowerCase() === "url" || ["primary_image", "gallery_images", "videos", "documents", "meeting_link"].includes(key)) return "url";
+  if (["url", "reference_url"].includes(renderer) || field.value_type?.trim().toLowerCase() === "url" || ["primary_image", "gallery_images", "videos", "documents", "meeting_link"].includes(key)) return "url";
   return "text";
 }
 function toDateTimeLocalNow(): string { const now = new Date(); now.setSeconds(0, 0); const offset = now.getTimezoneOffset() * 60_000; return new Date(now.getTime() - offset).toISOString().slice(0, 16); }
@@ -80,15 +96,74 @@ function validDateTimeBounds(bounds: { min?: string; max?: string }): { min?: st
   if (bounds.min && bounds.max && bounds.min > bounds.max) return { min: bounds.min };
   return bounds;
 }
-function UiOnlyEventRichTextField({ label, value, required, onChange }: { label: string; value: string; required: string; onChange: (value: string) => void }) {
-  const [active, setActive] = useState<Record<"bold" | "italic" | "underline", boolean>>({ bold: false, italic: false, underline: false });
-  const applyFormat = (command: "bold" | "italic" | "underline") => { document.execCommand(command); setActive((current) => ({ ...current, [command]: !current[command] })); };
-  return <div className="block text-sm font-semibold text-[#06201c]"><label>{label}{required}</label><div className="mt-1.5 flex flex-wrap gap-1 rounded-t-xl border border-b-0 border-[#d7e5df] bg-[#f4faf7] p-2">{(["bold", "italic", "underline"] as const).map((command) => <button key={command} type="button" aria-pressed={active[command]} onMouseDown={(event) => event.preventDefault()} onClick={() => applyFormat(command)} className={`rounded-lg px-3 py-1.5 text-sm font-bold text-[#1f6a58] ${active[command] ? "bg-[#d6eee1]" : "bg-white"}`}>{command === "bold" ? "B" : command === "italic" ? "I" : "U"}</button>)}</div><div contentEditable suppressContentEditableWarning dangerouslySetInnerHTML={{ __html: value }} onInput={(event) => onChange(event.currentTarget.innerHTML)} className="min-h-28 rounded-b-xl border border-[#d7e5df] bg-white px-3 py-2 text-sm font-normal outline-none focus:border-[#1f6a58]" /></div>;
+type RichTextCommand = "bold" | "italic" | "underline";
+type RichTextState = Record<RichTextCommand, boolean>;
+const EMPTY_RICH_TEXT_STATE: RichTextState = { bold: false, italic: false, underline: false };
+const RICH_TEXT_TAGS = new Set(["BR", "EM", "I", "P", "STRONG", "U", "B"]);
+
+function sanitizeFormRichText(html: string): string {
+  if (typeof DOMParser === "undefined") return "";
+  const document = new DOMParser().parseFromString(html, "text/html");
+  const walk = (node: Node) => {
+    [...node.childNodes].forEach((child) => {
+      if (child.nodeType === Node.ELEMENT_NODE) {
+        const element = child as HTMLElement;
+        if (!RICH_TEXT_TAGS.has(element.tagName)) {
+          const text = document.createTextNode(element.textContent ?? "");
+          element.replaceWith(text);
+          return;
+        }
+        [...element.attributes].forEach((attribute) => element.removeAttribute(attribute.name));
+        walk(element);
+      }
+    });
+  };
+  walk(document.body);
+  return document.body.innerHTML;
 }
-function UiOnlyEventMediaField({ label, value, accept, onChange }: { label: string; value: string; accept: string; onChange: (value: string) => void }) {
-  const [rows, setRows] = useState<string[]>(() => value ? value.split(",").map((item) => item.trim()).filter(Boolean) : [""]);
-  const updateRow = (index: number, nextValue: string) => { const next = rows.map((row, rowIndex) => rowIndex === index ? nextValue : row); setRows(next); onChange(next.filter(Boolean).join(", ")); };
-  return <div className="block text-sm font-semibold text-[#06201c]"><p>{label}</p><div className="mt-2 space-y-3">{rows.map((row, index) => <div key={`${label}-${index}`} className="rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-3"><label className="block text-xs font-semibold text-[#52736a]">{label} URL<input value={row} onChange={(event) => updateRow(index, event.target.value)} placeholder="https://…" className={inputClass} /></label><label className="mt-2 inline-flex cursor-pointer items-center rounded-full border border-[#cfe0d8] bg-white px-3 py-2 text-xs font-bold text-[#1f6a58]">Upload file<input type="file" accept={accept} onChange={(event) => { const file = event.target.files?.[0]; if (file) updateRow(index, file.name); }} className="sr-only" /></label></div>)}</div><button type="button" onClick={() => setRows((current) => [...current, ""])} className="mt-3 text-sm font-bold text-[#1f6a58]">+ Add {label.toLowerCase()}</button></div>;
+
+function isEmptyRichText(value: string): boolean {
+  return !value.replace(/<br\s*\/?>(\s*)/gi, "").replace(/&nbsp;/gi, " ").replace(/<[^>]*>/g, "").trim();
+}
+
+function UiOnlyEventRichTextField({ label, value, required, onChange }: { label: string; value: string; required: string; onChange: (value: string) => void }) {
+  const editorRef = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState<RichTextState>(EMPTY_RICH_TEXT_STATE);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    const safeValue = sanitizeFormRichText(value);
+    if (editor && editor.innerHTML !== safeValue) editor.innerHTML = safeValue;
+  }, [value]);
+
+  const syncActive = () => {
+    try {
+      setActive({ bold: document.queryCommandState("bold"), italic: document.queryCommandState("italic"), underline: document.queryCommandState("underline") });
+    } catch {
+      setActive(EMPTY_RICH_TEXT_STATE);
+    }
+  };
+
+  const commit = () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const safeValue = sanitizeFormRichText(editor.innerHTML);
+    if (editor.innerHTML !== safeValue) editor.innerHTML = safeValue;
+    onChange(isEmptyRichText(safeValue) ? "" : safeValue);
+    syncActive();
+  };
+
+  const applyFormat = (command: RichTextCommand) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    document.execCommand(command, false);
+    commit();
+  };
+
+  return <div className="block text-sm font-semibold text-[#06201c]"><label>{label}{required}</label><div className="mt-1.5 flex flex-wrap gap-1 rounded-t-xl border border-b-0 border-[#d7e5df] bg-[#f4faf7] p-2" role="toolbar" aria-label={`${label} formatting`}>
+    {(["bold", "italic", "underline"] as const).map((command) => <button key={command} type="button" aria-label={command} aria-pressed={active[command]} onMouseDown={(event) => event.preventDefault()} onClick={() => applyFormat(command)} className={`rounded-lg px-3 py-1.5 text-sm font-bold text-[#1f6a58] ${active[command] ? "bg-[#d6eee1]" : "bg-white"}`}>{command === "bold" ? "B" : command === "italic" ? "I" : "U"}</button>)}
+  </div><div ref={editorRef} contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" onInput={commit} onKeyUp={syncActive} onMouseUp={syncActive} className="min-h-28 rounded-b-xl border border-[#d7e5df] bg-white px-3 py-2 text-sm font-normal outline-none focus:border-[#1f6a58]" /></div>;
 }
 function temporalBounds(key: string, type: string, values: CreateEventFormValues, allowPastTemporalValues: boolean): { min?: string; max?: string } {
   if (type !== "datetime-local") return {};
@@ -103,7 +178,7 @@ function temporalBounds(key: string, type: string, values: CreateEventFormValues
 }
 
 /** Renders one server-authoritative Event form section in configured field order. */
-export default function ConfiguredCreateEventSection({ section, values, update, errors, customValues, setCustomValues, categories, categoriesLoading, categoriesError, eventTypes, eventTypesLoading = false, eventTypesError = false, currencyOptions, currencyState, createMode = false, allowPastTemporalValues = false, mediaPolicy, policyError, uploads = [], onMediaLinkChange, onMediaAddLink, onMediaRemove, onMediaUpload, onMediaRetry, onMediaUploadRemove, sessionGenerationRules, onSessionGenerationRulesChange }: Props) {
+export default function ConfiguredCreateEventSection({ section, values, update, errors, customValues, setCustomValues, categories, categoriesLoading, categoriesError, eventTypes, eventTypesLoading = false, eventTypesError = false, currencyOptions, currencyState, createMode = false, allowPastTemporalValues = false, mediaPolicy, policyError, uploads = [], onMediaLinkChange, onMediaAddLink, onMediaRemove, onMediaUpload, onMediaRetry, onMediaUploadRemove, customMediaPreviews, onCustomMediaPreviewChange, sessionGenerationRules, onSessionGenerationRulesChange }: Props) {
   const fields = section.fields.filter((field) => field.is_enabled !== false && !isRemovedCreateEventField(field.core_key ?? field.stable_key, field.label)).sort((left, right) => left.position - right.position);
   const eventTypesQuery = useEventTypes(fields.some((field) => keyFor(field) === "event_type"));
   eventTypes = eventTypesQuery.data ?? eventTypes;
@@ -112,13 +187,13 @@ export default function ConfiguredCreateEventSection({ section, values, update, 
   const selectedEventType = eventTypes?.find((item) => item.key === values.event_type);
   const dependent = fields.some((field) => ["venue", "location", "location_id", "meeting_provider", "meeting_link"].includes(keyFor(field)));
   const guidance = !values.delivery_mode ? "These fields depend on Delivery Mode. Online events use meeting details, In-Person events use venue details, and Hybrid events can use both. Their visibility may change after you choose a Delivery Mode." : values.delivery_mode === "online" ? values.modules?.online_meeting === false ? "This event is Online. Go to Schedule and check Online Meeting under Event Capabilities to use the online fields." : "This event is Online. Venue and physical-location fields are not applicable." : values.delivery_mode === "hybrid" ? values.modules?.online_meeting === false ? "This event is Hybrid. Go to Schedule and check Online Meeting under Event Capabilities to use the online fields." : "This event is Hybrid. Both physical venue and online meeting details can be provided." : "This event is In Person. Online meeting fields are not applicable.";
-  return <><section className="min-w-0 space-y-4"><div className="min-w-0 break-words"><h2 className="break-words text-xl font-bold text-[#06201c]">{section.label}</h2>{section.description ? <p className="mt-1 break-words text-sm text-[#52736a]">{section.description}</p> : null}</div>{dependent ? <p className="rounded-xl bg-[#f4faf7] px-3 py-2 text-xs text-[#52736a]">{guidance}</p> : null}<div className="grid min-w-0 gap-4 md:grid-cols-[repeat(2,minmax(0,1fr))]">{fields.map((field) => { const key = keyFor(field); if (values.pricing_type === "free" && ["price", "currency", "ticket_types"].includes(key)) return null; if (!isDeliveryFieldApplicable(key, values.delivery_mode)) return null; const hasError = Boolean(errors[key]?.length); const adminOnly = field.composite_config?.frontend_settings?.content_visibility === "admin_only"; return <div key={field.id} data-event-field={key} data-event-invalid={hasError ? "true" : undefined} className={`min-w-0 break-words ${isComplexField(field) ? "md:col-span-2" : ""} ${hasError ? "rounded-xl ring-2 ring-inset ring-[#f3d0cb]" : ""}`}><div className="mb-2 flex flex-wrap items-center gap-2 text-xs"><span className={`rounded-full px-2 py-1 font-semibold ${adminOnly ? "bg-[#f4eafd] text-[#6f4296]" : "bg-[#eef6f2] text-[#1f6a58]"}`}>{adminOnly ? "Enterprise Admin Only" : "Published content"}</span><span className="text-[#718d84]">{adminOnly ? "Enterprise Admin can enter the value • Not included in published content." : "Included in published content."}</span></div><ConfiguredField field={field} values={values} update={update} errors={errors} customValues={customValues} setCustomValues={setCustomValues} categories={categories} categoriesLoading={categoriesLoading} categoriesError={categoriesError} eventTypes={eventTypes} eventTypesLoading={eventTypesLoading} eventTypesError={eventTypesError} currencyOptions={currencyOptions} currencyState={currencyState} allowPastTemporalValues={allowPastTemporalValues} selectedEventType={selectedEventType} mediaPolicy={mediaPolicy} policyError={policyError} uploads={uploads} onMediaLinkChange={onMediaLinkChange} onMediaAddLink={onMediaAddLink} onMediaRemove={onMediaRemove} onMediaUpload={onMediaUpload} onMediaRetry={onMediaRetry} onMediaUploadRemove={onMediaUploadRemove} sessionGenerationRules={sessionGenerationRules} onSessionGenerationRulesChange={onSessionGenerationRulesChange} /></div>; })}</div></section>{fields.some((field) => keyFor(field) === "event_type") ? <EventServicesEditor values={values} update={update} createMode={createMode} defaultCurrency={createMode ? undefined : values.currency} currencyOptions={currencyOptions} currencyState={currencyState} errors={errors} /> : null}</>;
+  return <><section className="min-w-0 space-y-4"><div className="min-w-0 break-words"><h2 className="break-words text-xl font-bold text-[#06201c]">{section.label}</h2>{section.description ? <p className="mt-1 break-words text-sm text-[#52736a]">{section.description}</p> : null}</div>{dependent ? <p className="rounded-xl bg-[#f4faf7] px-3 py-2 text-xs text-[#52736a]">{guidance}</p> : null}<div className="grid min-w-0 gap-4 md:grid-cols-[repeat(2,minmax(0,1fr))]">{fields.map((field) => { const key = keyFor(field); if (values.pricing_type === "free" && ["price", "currency", "ticket_types"].includes(key)) return null; if (!isDeliveryFieldApplicable(key, values.delivery_mode)) return null; const hasError = Boolean(errors[key]?.length); const adminOnly = field.composite_config?.frontend_settings?.content_visibility === "admin_only"; return <div key={field.id} data-event-field={key} data-event-invalid={hasError ? "true" : undefined} className={`min-w-0 break-words ${isComplexField(field) ? "md:col-span-2" : ""} ${hasError ? "rounded-xl ring-2 ring-inset ring-[#f3d0cb]" : ""}`}><div className="mb-2 flex flex-wrap items-center gap-2 text-xs"><span className={`rounded-full px-2 py-1 font-semibold ${adminOnly ? "bg-[#f4eafd] text-[#6f4296]" : "bg-[#eef6f2] text-[#1f6a58]"}`}>{adminOnly ? "Enterprise Admin Only" : "Published content"}</span><span className="text-[#718d84]">{adminOnly ? "Enterprise Admin can enter the value • Not included in published content." : "Included in published content."}</span></div><ConfiguredField field={field} values={values} update={update} errors={errors} customValues={customValues} setCustomValues={setCustomValues} categories={categories} categoriesLoading={categoriesLoading} categoriesError={categoriesError} eventTypes={eventTypes} eventTypesLoading={eventTypesLoading} eventTypesError={eventTypesError} currencyOptions={currencyOptions} currencyState={currencyState} allowPastTemporalValues={allowPastTemporalValues} selectedEventType={selectedEventType} mediaPolicy={mediaPolicy} policyError={policyError} uploads={uploads} onMediaLinkChange={onMediaLinkChange} onMediaAddLink={onMediaAddLink} onMediaRemove={onMediaRemove} onMediaUpload={onMediaUpload} onMediaRetry={onMediaRetry} onMediaUploadRemove={onMediaUploadRemove} customMediaPreviews={customMediaPreviews} onCustomMediaPreviewChange={onCustomMediaPreviewChange} sessionGenerationRules={sessionGenerationRules} onSessionGenerationRulesChange={onSessionGenerationRulesChange} /></div>; })}</div></section>{fields.some((field) => keyFor(field) === "event_type") ? <EventServicesEditor values={values} update={update} createMode={createMode} defaultCurrency={createMode ? undefined : values.currency} currencyOptions={currencyOptions} currencyState={currencyState} errors={errors} /> : null}</>;
 }
 
 function ConfiguredField(props: Omit<Props, "section"> & { field: ActiveEventFormField; selectedEventType?: EventTypeDefinition }) {
   const [rangeAdjustment, setRangeAdjustment] = useState<"minimum" | "maximum" | null>(null);
   const { t } = useTranslation("enterpriseEvents");
-  const { field, values, update, errors, customValues, setCustomValues, categories, categoriesLoading, categoriesError, eventTypes = [], eventTypesLoading = false, eventTypesError = false, currencyOptions, currencyState, allowPastTemporalValues = false, selectedEventType, mediaPolicy, policyError, uploads = [], onMediaLinkChange, onMediaAddLink, onMediaRemove, onMediaUpload, onMediaRetry, onMediaUploadRemove } = props;
+  const { field, values, update, errors, customValues, setCustomValues, categories, categoriesLoading, categoriesError, eventTypes = [], eventTypesLoading = false, eventTypesError = false, currencyOptions, currencyState, allowPastTemporalValues = false, selectedEventType, mediaPolicy, policyError, uploads = [], onMediaLinkChange, onMediaAddLink, onMediaRemove, onMediaUpload, onMediaRetry, onMediaUploadRemove, onCustomMediaPreviewChange } = props;
   const key = keyFor(field); const required = field.required ? " *" : ""; const error = errors[key]?.[0]; const moduleDisabledMessage = disabledModuleFor(key, values); const moduleDisabled = Boolean(moduleDisabledMessage);
   if (field.source === "core" && ["location", "location_id"].includes(key.replace(/^(core_|custom_)/, "").trim().toLowerCase())) return null;
   if (field.source === "core" && (key === "category" || key === "subcategory")) return <CategoryTaxonomySelect field={field} keyName={key} values={values} update={update} error={error} categories={categories} loading={categoriesLoading} hasError={categoriesError} />;
@@ -142,13 +217,75 @@ function ConfiguredField(props: Omit<Props, "section"> & { field: ActiveEventFor
   const isCoreCurrency = field.source === "core" && key === "currency";
   if (["time_zone", "timezone"].includes(key) && !configuredOptions.some((option) => option.value === "America/New_York")) configuredOptions.unshift({ value: "America/New_York", label: "America/New_York", position: 0 });
   const options = configuredOptions.sort((left, right) => left.position - right.position);
-  if (field.source === "custom" && field.renderer === "rich_text") return <UiOnlyEventRichTextField label={field.label} required={required} value={value} onChange={setValue} />;
-  if (field.source === "custom" && field.renderer === "radio") return <fieldset className="block text-sm font-semibold text-[#06201c]"><legend>{field.label}{required}</legend><div className="mt-2 space-y-2">{options.map((option) => <label key={option.value} className="flex items-center gap-2 text-sm font-normal"><input type="radio" name={`event-radio-${field.id}`} value={option.value} checked={value === option.value || value === option.label} onChange={() => setValue(option.value)} />{option.label}</label>)}</div>{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</fieldset>;
-  if (field.source === "custom" && ["media_upload", "file_upload", "video"].includes(field.renderer)) return <UiOnlyEventMediaField label={field.renderer === "video" ? "Video" : field.renderer === "file_upload" ? "Supporting document" : "Additional image"} value={value} accept={field.renderer === "video" ? "video/*" : field.renderer === "file_upload" ? ".pdf,.doc,.docx,application/pdf" : "image/*"} onChange={setValue} />;
-  if (field.renderer === "multi_select") return <MultiSelectField field={field} value={Array.isArray(customValues[key]) ? customValues[key] as string[] : value ? [value] : []} onChange={(next) => setCustomValues({ ...customValues, [key]: next })} error={error} />;
+  const effectiveType = getEventFormFieldType(field);
+  if (effectiveType === "tags") return <label className="block text-sm font-semibold text-[#06201c] md:col-span-2">{field.label}{required}<input value={value} placeholder={field.placeholder ?? "Separate tags with commas"} onChange={(event) => setValue(event.target.value)} className={inputClass} />{field.help_text ? <span className="mt-1 block text-xs font-normal text-[#7f9d94]">{field.help_text}</span> : null}{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
+  if (["rich_text", "rich_text_editor"].includes(effectiveType)) return <UiOnlyEventRichTextField label={field.label} required={required} value={value} onChange={setValue} />;
+  if (effectiveType === "radio") {
+    const radioOptions = options.length > 0
+      ? options
+      : [
+          { value: "option_1", label: "Option 1", position: 1 },
+          { value: "option_2", label: "Option 2", position: 2 },
+        ];
+    return (
+      <fieldset className="block text-sm font-semibold text-[#06201c]">
+        <legend>{field.label}{required}</legend>
+        <div className="mt-2 space-y-2">
+          {radioOptions.map((option) => (
+            <label key={option.value} className="flex items-center gap-2 text-sm font-normal">
+              <input
+                type="radio"
+                name={`event-radio-${field.id}`}
+                value={option.value}
+                checked={value === option.value || value === option.label}
+                onChange={() => setValue(option.value)}
+              />
+              {option.label}
+            </label>
+          ))}
+        </div>
+        {error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}
+      </fieldset>
+    );
+  }
+  if (isEventMediaRenderer(effectiveType)) {
+    const kind = getEventMediaKind(effectiveType);
+    const accept = getEventMediaAccept(kind);
+    const mediaValue = coreField ? values[coreField] : customValues[key];
+    return (
+      <div className="md:col-span-2">
+        <RepeatableEventMediaField
+          label={field.label}
+          fieldKey={key}
+          rowsValue={mediaValue}
+          kind={kind}
+          accept={accept}
+          placeholder={field.placeholder || "https://…"}
+          onChange={(items) => {
+            if (coreField) {
+              if (["gallery_images", "videos", "documents"].includes(coreField)) {
+                update(coreField, items as CreateEventFormValues[typeof coreField]);
+              } else {
+                update(coreField, items.join(", ") as CreateEventFormValues[typeof coreField]);
+              }
+            } else {
+              setCustomValues({
+                ...customValues,
+                [key]: items.length > 0 ? items : "",
+              });
+            }
+          }}
+          onUploadPreview={(preview) => onCustomMediaPreviewChange?.(key, preview)}
+        />
+        {error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}
+      </div>
+    );
+  }
+  const renderer = field.renderer?.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (["multi_select", "multiselect", "checkbox_group"].includes(renderer)) return <MultiSelectField field={field} value={Array.isArray(customValues[key]) ? customValues[key] as string[] : value ? [value] : []} onChange={(next) => setCustomValues({ ...customValues, [key]: next })} error={error} />;
   const type = fieldType(field, key);
   const bounds = temporalBounds(key, type, values, allowPastTemporalValues);
-  const isTemporal = type === "date" || type === "datetime-local";
+  const isTemporal = type === "date" || type === "datetime-local" || type === "time";
   const id = `event-field-${key.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
   if (isBoolean) {
     const booleanValue = coreField ? values[coreField] : customValues[key];

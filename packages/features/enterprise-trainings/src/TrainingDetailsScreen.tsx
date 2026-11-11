@@ -14,6 +14,7 @@ import { getTrainingAdminNotes, getTrainingById, downloadTrainingNotesPdf, getTr
 import TrainingCalendarAction from "./TrainingCalendarAction";
 import { getTrainingMediaPreviewUrl } from "./training-media-url";
 import { useTrainingHistoricalFormConfiguration } from "./training-form-configuration.queries";
+import { sanitizeEbookHtml } from "./ebook-html-sanitizer";
 import { ContextualModuleBlogsTab } from "@ihp/enterprise-dashboard";
 import { syncBlogGovernanceFromServer } from "@ihp/shared";
 
@@ -279,6 +280,139 @@ function DetailGroupHeading({ children }: { children: string }) {
   );
 }
 
+function TrainingConfiguredFieldItem({
+  label,
+  value,
+  type,
+}: {
+  label: string;
+  value: unknown;
+  type?: string;
+}) {
+  if (value === null || value === undefined || value === "") return null;
+
+  const isRich = type === "rich_text" || (typeof value === "string" && /<\/?[a-z][\s\S]*>/i.test(value));
+  const isImage =
+    type === "image" ||
+    (typeof value === "string" &&
+      (/\.(jpg|jpeg|png|webp|gif|svg)(\?.*)?$/i.test(value) || value.startsWith("data:image/")));
+  const isVideo = type === "video" || (typeof value === "string" && /\.(mp4|webm|ogg|mov)(\?.*)?$/i.test(value));
+  const isDoc = type === "document" || (typeof value === "string" && /\.(pdf|doc|docx|zip)(\?.*)?$/i.test(value));
+  const isUrl = type === "url" || (typeof value === "string" && /^https?:\/\//i.test(value));
+  const isArrayOrTags = Array.isArray(value) || type === "tags";
+  const isBool = typeof value === "boolean";
+
+  return (
+    <div className="training-detail-item min-w-0">
+      <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">{label}</p>
+      <div className="mt-1 text-sm text-[#06201c]">
+        {isRich ? (
+          <div
+            className="prose prose-sm max-w-none rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-3 text-[#284940]"
+            dangerouslySetInnerHTML={{ __html: sanitizeEbookHtml(String(value)) }}
+          />
+        ) : isImage ? (
+          <div className="mt-1 flex flex-wrap gap-2">
+            {(Array.isArray(value) ? value : [value]).map((imgUrl, i) => (
+              <div key={i} className="group relative overflow-hidden rounded-xl border border-[#e1ebe6] bg-[#f9fcfa]">
+                <img
+                  src={String(imgUrl)}
+                  alt={`${label} ${i + 1}`}
+                  className="h-28 w-28 object-cover sm:h-36 sm:w-36"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).style.display = "none";
+                  }}
+                />
+                <a
+                  href={String(imgUrl)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block px-2 py-1 text-center text-xs font-semibold text-[#1f6a58] hover:underline"
+                >
+                  View full
+                </a>
+              </div>
+            ))}
+          </div>
+        ) : isVideo ? (
+          <div className="mt-1 space-y-2">
+            {(Array.isArray(value) ? value : [value]).map((vidUrl, i) => (
+              <div key={i} className="max-w-md rounded-xl border border-[#e1ebe6] bg-black/5 p-2">
+                <video controls preload="metadata" src={String(vidUrl)} className="max-h-60 w-full rounded-lg" />
+                <a
+                  href={String(vidUrl)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-1 block text-xs font-semibold text-[#1f6a58] hover:underline"
+                >
+                  Open video link
+                </a>
+              </div>
+            ))}
+          </div>
+        ) : isDoc ? (
+          <div className="mt-1 flex flex-wrap gap-2">
+            {(Array.isArray(value) ? value : [value]).map((docUrl, i) => {
+              const urlStr = String(docUrl);
+              const filename = urlStr.split("/").pop()?.split("?")[0] || `${label} ${i + 1}`;
+              return (
+                <a
+                  key={i}
+                  href={urlStr}
+                  target="_blank"
+                  rel="noreferrer"
+                  download
+                  className="inline-flex items-center gap-2 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-3.5 py-2 text-xs font-bold text-[#1f6a58] hover:bg-white hover:shadow-xs"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                    />
+                  </svg>
+                  <span className="max-w-[200px] truncate">{filename}</span>
+                </a>
+              );
+            })}
+          </div>
+        ) : isUrl ? (
+          <a
+            href={String(value)}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 break-all font-semibold text-[#1f6a58] underline hover:text-[#195646]"
+          >
+            {String(value)}
+            <svg className="inline-block h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </a>
+        ) : isArrayOrTags ? (
+          <div className="flex flex-wrap gap-1.5">
+            {(Array.isArray(value) ? value : String(value).split(",").map((s) => s.trim()).filter(Boolean)).map(
+              (item, i) => (
+                <span key={i} className="rounded-full bg-[#edf3f0] px-3 py-0.5 text-xs font-semibold text-[#284940]">
+                  {String(item)}
+                </span>
+              ),
+            )}
+          </div>
+        ) : isBool ? (
+          <span
+            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ${value ? "bg-[#e8f6ee] text-[#1f6a58]" : "bg-[#f3f4f6] text-[#6b7280]"}`}
+          >
+            {value ? "Yes" : "No"}
+          </span>
+        ) : (
+          <p className="whitespace-pre-wrap break-words font-medium">{String(value)}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function formatConfiguredTrainingValue(value: unknown): string {
   if (Array.isArray(value)) return value.map((item) => typeof item === "string" || typeof item === "number" ? String(item) : "").filter(Boolean).join(", ");
   if (typeof value === "boolean") return value ? "Yes" : "No";
@@ -391,7 +525,7 @@ function TrainingDetailsContent({
     ? trainingRecord.custom_values as Record<string, unknown>
     : {};
   const rawTrainingCustomValues = trainingRecord.custom_values ?? trainingRecord.customValues;
-  const configuredFields = historicalFormQuery.data?.sections.flatMap((section) => section.fields) ?? [];
+  const configuredFields = (Array.isArray(historicalFormQuery.data?.sections) ? historicalFormQuery.data.sections : []).flatMap((section) => (Array.isArray(section.fields) ? section.fields : []));
   const getScheduleValue = (key: "start_date" | "end_date" | "start_time" | "end_time"): string | null => {
     const camelKey = key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
     const scheduleRecord = trainingRecord.schedule && typeof trainingRecord.schedule === "object" && !Array.isArray(trainingRecord.schedule)
@@ -415,20 +549,119 @@ function TrainingDetailsContent({
       .find((candidate): candidate is string => typeof candidate === "string" && candidate.trim().length > 0);
     return customValue ?? null;
   };
-  const configuredCustomSections = (historicalFormQuery.data?.sections ?? []).flatMap((section) => {
-    const fields = section.fields.flatMap((field) => {
-      const isCustomField = field.source === "custom" || field.stable_key?.startsWith("custom_") === true || field.apiKey?.startsWith("custom_") === true;
-      if (!isCustomField || field.enabled === false) return [];
-      const arrayValue = Array.isArray(rawTrainingCustomValues)
-        ? rawTrainingCustomValues.find((entry) => entry && typeof entry === "object" && "field_id" in entry && entry.field_id === field.id)?.value
-        : undefined;
-      const value = arrayValue
-        ?? [field.stable_key, field.apiKey, field.key, field.id].map((key) => key ? trainingCustomValues[key] : undefined).find((candidate) => candidate !== undefined);
-      const formattedValue = formatConfiguredTrainingValue(value);
-      return formattedValue ? [{ field, formattedValue }] : [];
+  const formSections = Array.isArray(historicalFormQuery.data?.sections) ? historicalFormQuery.data.sections : [];
+  const formFields = formSections.flatMap((s) => Array.isArray(s.fields) ? s.fields.map((f) => ({ ...f, sectionTitle: s.title, sectionId: s.id })) : []);
+
+  const displayedCoreKeys = new Set([
+    "title", "description", "category", "subcategory", "tags", "learning_objectives",
+    "delivery_mode", "price", "currency", "promo_price", "coupon_code", "capacity",
+    "instructor_id", "instructor_name", "instructor_bio", "venue", "address", "meeting_link",
+    "delivery_instructions", "start_date", "start_time", "end_date", "end_time", "time_zone",
+    "duration", "enrolment_start", "enrolment_end", "requirements", "faqs", "created_at", "updated_at",
+  ]);
+
+  const customEntriesMap = new Map<string, { label?: string; value: unknown; type?: string; fieldId?: string }>();
+  if (Array.isArray(rawTrainingCustomValues)) {
+    for (let i = 0; i < rawTrainingCustomValues.length; i++) {
+      const entry = rawTrainingCustomValues[i];
+      if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+        const rec = entry as Record<string, unknown>;
+        if ("value" in rec) {
+          const key = String(rec.key ?? rec.field_key ?? rec.stable_key ?? rec.field_id ?? `field_${i}`);
+          customEntriesMap.set(key, {
+            label: typeof rec.label === "string" ? rec.label : undefined,
+            value: rec.value,
+            type: typeof rec.type === "string" ? rec.type : undefined,
+            fieldId: typeof rec.field_id === "string" ? rec.field_id : undefined,
+          });
+        } else {
+          for (const [k, v] of Object.entries(rec)) {
+            if (v !== undefined && v !== null && v !== "") {
+              customEntriesMap.set(k, { value: v });
+            }
+          }
+        }
+      }
+    }
+  } else if (rawTrainingCustomValues && typeof rawTrainingCustomValues === "object") {
+    for (const [k, v] of Object.entries(rawTrainingCustomValues as Record<string, unknown>)) {
+      if (v !== undefined && v !== null && v !== "") {
+        customEntriesMap.set(k, { value: v });
+      }
+    }
+  }
+
+  // Group resolved fields by section
+  const customSectionsMap = new Map<string, Array<{ id: string; label: string; value: unknown; type?: string }>>();
+  const matchedKeys = new Set<string>();
+
+  for (const f of formFields) {
+    const candidates = [f.id, f.key, f.apiKey, f.stable_key].filter(Boolean) as string[];
+    let foundEntry: { label?: string; value: unknown; type?: string; fieldId?: string } | undefined;
+    let matchedKeyName: string | undefined;
+
+    for (const c of candidates) {
+      if (customEntriesMap.has(c)) {
+        foundEntry = customEntriesMap.get(c);
+        matchedKeyName = c;
+        break;
+      }
+      const cNorm = c.toLowerCase().replace(/[^a-z0-9]/g, "");
+      for (const [k, entry] of customEntriesMap.entries()) {
+        if (k.toLowerCase().replace(/[^a-z0-9]/g, "") === cNorm) {
+          foundEntry = entry;
+          matchedKeyName = k;
+          break;
+        }
+      }
+      if (foundEntry) break;
+    }
+
+    if (foundEntry && foundEntry.value !== undefined && foundEntry.value !== null && foundEntry.value !== "") {
+      if (matchedKeyName) matchedKeys.add(matchedKeyName);
+      const sectionName = f.sectionTitle || "Additional Configuration";
+      if (!customSectionsMap.has(sectionName)) customSectionsMap.set(sectionName, []);
+      customSectionsMap.get(sectionName)!.push({
+        id: f.id || matchedKeyName || f.key,
+        label: f.label || foundEntry.label || humanizeLabel(f.key),
+        value: foundEntry.value,
+        type: f.type || foundEntry.type,
+      });
+    }
+  }
+
+  for (const [k, entry] of customEntriesMap.entries()) {
+    if (matchedKeys.has(k) || displayedCoreKeys.has(k.toLowerCase().replace(/[^a-z0-9]/g, ""))) continue;
+    const sectionName = "Additional Configuration";
+    if (!customSectionsMap.has(sectionName)) customSectionsMap.set(sectionName, []);
+    const normK = k.toLowerCase();
+    const inferredType = entry.type
+      || (normK.includes("rich") ? "rich_text" : normK.includes("image") || normK.includes("imah") ? "image" : normK.includes("video") ? "video" : normK.includes("doc") ? "document" : normK.includes("url") ? "url" : normK.includes("tag") ? "tags" : undefined);
+    customSectionsMap.get(sectionName)!.push({
+      id: entry.fieldId || k,
+      label: entry.label || humanizeLabel(k),
+      value: entry.value,
+      type: inferredType,
     });
-    return fields.length ? [{ id: section.id, title: section.title, fields }] : [];
-  });
+  }
+
+  const galleryImages = Array.isArray(trainingRecord.gallery_images)
+    ? (trainingRecord.gallery_images as unknown[]).filter((img): img is string => typeof img === "string" && img.trim().length > 0)
+    : [];
+  const promoVideo = typeof trainingRecord.promotional_video === "string" && trainingRecord.promotional_video.trim()
+    ? trainingRecord.promotional_video.trim()
+    : typeof trainingRecord.promotional_video_url === "string" && trainingRecord.promotional_video_url.trim()
+      ? trainingRecord.promotional_video_url.trim()
+      : null;
+  const docsList = Array.isArray(trainingRecord.documents)
+    ? (trainingRecord.documents as unknown[])
+    : Array.isArray(trainingRecord.notes_documents)
+      ? (trainingRecord.notes_documents as unknown[])
+      : [];
+  const notesPdf = typeof trainingRecord.notes_pdf_url === "string" && trainingRecord.notes_pdf_url.trim()
+    ? trainingRecord.notes_pdf_url.trim()
+    : null;
+  const hasExtraMedia = galleryImages.length > 0 || promoVideo !== null || docsList.length > 0 || notesPdf !== null;
   const promoPrice = trainingRecord.promo_price ?? trainingRecord.promoPrice ?? trainingCustomValues.promo_price ?? trainingCustomValues.promoPrice;
   const couponCode = trainingRecord.coupon_code ?? trainingRecord.couponCode ?? trainingCustomValues.coupon_code ?? trainingCustomValues.couponCode;
   const pricingType = [trainingRecord.pricing_type, trainingRecord.pricingType]
@@ -565,14 +798,92 @@ function TrainingDetailsContent({
               <DetailItem label="Time zone" value={displayValue((training as unknown as Record<string, unknown>).time_zone as string)} />
               <DetailItem label="Enrolment start" value={displayValue((training as unknown as Record<string, unknown>).enrolment_start as string)} />
               <DetailItem label="Enrolment end" value={displayValue((training as unknown as Record<string, unknown>).enrolment_end as string)} />
-              <DetailGroupHeading>Additional Configuration</DetailGroupHeading>
+              <DetailGroupHeading>Record Information</DetailGroupHeading>
               <DetailItem label="Created" value={formatTrainingDate(training.created_at)} />
               <DetailItem label="Updated" value={formatTrainingDate(training.updated_at)} />
             </div>
-            {configuredCustomSections.map((section) => (
-              <div key={section.id} className="mt-4 grid gap-5 sm:grid-cols-2">
-                <DetailGroupHeading>{section.title}</DetailGroupHeading>
-                {section.fields.map(({ field, formattedValue }) => <DetailItem key={field.id} label={field.label} value={formattedValue} />)}
+            {hasExtraMedia ? (
+              <div className="mt-4 grid gap-5 sm:grid-cols-2">
+                <DetailGroupHeading>Images, Videos & Documents</DetailGroupHeading>
+                {galleryImages.length > 0 ? (
+                  <div className="training-detail-item sm:col-span-2">
+                    <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Gallery Images</p>
+                    <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      {galleryImages.map((image, index) => (
+                        <div key={`${image}-${index}`} className="group relative overflow-hidden rounded-xl border border-[#e1ebe6] bg-[#f9fcfa]">
+                          <img src={image} alt={`Gallery ${index + 1}`} className="h-32 w-full object-cover" />
+                          <a href={image} target="_blank" rel="noreferrer" className="block px-2 py-1 text-center text-xs font-semibold text-[#1f6a58] hover:underline">
+                            View full
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {promoVideo ? (
+                  <div className="training-detail-item sm:col-span-2">
+                    <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Promotional Video</p>
+                    <div className="mt-2 max-w-lg rounded-xl border border-[#e1ebe6] bg-[#f9fcfa] p-2">
+                      {/\.(mp4|webm|ogg|mov)(\?.*)?$/i.test(promoVideo) ? (
+                        <video controls preload="metadata" src={promoVideo} className="max-h-64 w-full rounded-lg" />
+                      ) : null}
+                      <a href={promoVideo} target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs font-semibold text-[#1f6a58] underline">
+                        Open video link
+                      </a>
+                    </div>
+                  </div>
+                ) : null}
+                {docsList.length > 0 || notesPdf ? (
+                  <div className="training-detail-item sm:col-span-2">
+                    <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Documents & Course Notes</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {docsList.map((doc, idx) => {
+                        const docUrl = typeof doc === "string" ? doc : (doc as { url?: string })?.url;
+                        const docName = typeof doc === "string" ? doc.split("/").pop()?.split("?")[0] : (doc as { name?: string })?.name ?? `Document ${idx + 1}`;
+                        if (!docUrl) return null;
+                        return (
+                          <a
+                            key={idx}
+                            href={docUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            download
+                            className="inline-flex items-center gap-2 rounded-xl border border-[#d7e5df] bg-[#f9fcfa] px-4 py-2 text-xs font-bold text-[#1f6a58] hover:bg-white hover:shadow-xs"
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <span>{docName}</span>
+                          </a>
+                        );
+                      })}
+                      {notesPdf ? (
+                        <a
+                          href={notesPdf}
+                          target="_blank"
+                          rel="noreferrer"
+                          download
+                          className="inline-flex items-center gap-2 rounded-xl border border-[#8a5a00] bg-[#fffaf0] px-4 py-2 text-xs font-bold text-[#8a5a00] hover:bg-white"
+                        >
+                          <span>Notes PDF</span>
+                        </a>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {Array.from(customSectionsMap.entries()).map(([sectionTitle, fields]) => (
+              <div key={sectionTitle} className="mt-4 grid gap-5 sm:grid-cols-2">
+                <DetailGroupHeading>{sectionTitle}</DetailGroupHeading>
+                {fields.map((field) => (
+                  <TrainingConfiguredFieldItem
+                    key={field.id}
+                    label={field.label}
+                    value={field.value}
+                    type={field.type}
+                  />
+                ))}
               </div>
             ))}
             {training.description?.trim() ? (

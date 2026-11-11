@@ -10,8 +10,8 @@ export type TrainingFormConfigurationCreateCandidate = CreateTrainingFormConfigu
 export type TrainingFormConfigurationPatchCandidate = UpdateTrainingFormConfigurationRequest;
 
 const mapValidation = (validation: FormFieldValidation) => ({ min_length: validation.minLength, max_length: validation.maxLength, min: validation.min, max: validation.max, pattern: validation.pattern });
-const mapTrainingRendererForApi = (renderer: string) => renderer === "dropdown" ? "select" : renderer;
-const mapTrainingRendererForBuilder = (renderer: string) => renderer === "select" ? "dropdown" : renderer;
+const mapTrainingRendererForApi = (renderer: string): string => ({ rich_text: "rich_text_editor", dropdown: "select", radio: "radio_group", checkbox: "multi_select", time: "time_picker", media_upload: "image_uploader", document_uploader: "document_uploader", file_upload: "document_uploader", video: "video_input", tags: "tag_input" }[renderer] ?? renderer);
+const mapTrainingRendererForBuilder = (renderer: string): string => ({ rich_text_editor: "rich_text", select: "dropdown", radio_group: "radio", time_picker: "time", image_uploader: "media_upload", media: "media_upload", document_uploader: "file_upload", video_input: "video", tag_input: "tags" }[renderer] ?? renderer);
 const mapField = (field: ConfiguredField, includeServerId: boolean): TrainingFormFieldCandidate => {
   const currentComposite = field.compositeConfig && typeof field.compositeConfig === "object" && !Array.isArray(field.compositeConfig) ? field.compositeConfig : {};
   const currentFrontendSettings = currentComposite.frontend_settings && typeof currentComposite.frontend_settings === "object" && !Array.isArray(currentComposite.frontend_settings) ? currentComposite.frontend_settings : {};

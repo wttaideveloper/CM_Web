@@ -2361,6 +2361,7 @@ export default function PlatformBlogFormBuilderScreen() {
                     registry={blogFieldRegistry}
                     formLabel="Blog"
                     showContentVisibility
+                    excludedRenderers={["video"]}
                     validationErrors={[]}
                     onChange={handleUpdateSharedField}
                     onRemoveFromForm={() => { if (selectedField) handleDeleteField(selectedField); }}

@@ -13,7 +13,7 @@ import { TrainingFieldSettingsEditor } from "./TrainingFieldSettingsEditor";
 import type { StandardReferenceField } from "../model/standard-reference-options";
 import { isTrainingInstructorField } from "../model/training-instructor-field";
 
-const renderers: FormRenderer[] = ["text", "rich_text", "textarea", "dropdown", "select", "radio", "multi_select", "checkbox", "number", "date", "time", "url", "media_upload", "file_upload", "video"];
+const renderers: FormRenderer[] = ["text", "rich_text", "textarea", "dropdown", "select", "radio", "multi_select", "checkbox", "number", "date", "time", "url", "media_upload", "file_upload", "video", "tags"];
 const textEntryRenderers = new Set(["text", "textarea", "url"]);
 const trainingFieldsWithoutRendererOrValidation = new Set(["title", "description", "category", "subcategory", "delivery_mode", "venue", "meeting_link", "instructor_name", "currency"]);
 const rendererLabels: Record<string, string> = {
@@ -32,13 +32,12 @@ const rendererLabels: Record<string, string> = {
   media_upload: "Additional Images",
   file_upload: "Supporting Document",
   video: "Videos",
+  tags: "Tags",
 };
 
 function normalizeRendererOption(renderer: string, isTrainingConfiguration: boolean): string {
-  if (!isTrainingConfiguration) return renderer;
-  if (renderer === "select") return "dropdown";
-  if (renderer === "checkbox") return "multi_select";
-  return renderer;
+  const normalized = renderer.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  return ({ select: "dropdown", checkbox: "multi_select", rich_text_editor: "rich_text", radio_group: "radio", time_picker: "time", image_uploader: "media_upload", media: "media_upload", document_uploader: "file_upload", video_input: "video", tag_input: "tags" }[normalized] ?? normalized);
 }
 
 function isTrainingTagInputField(field: ConfiguredField): boolean {
@@ -70,7 +69,7 @@ function valueTypeForRenderer(renderer: FormRenderer): string {
 }
 
 /** Edits a selected field while preserving registry and taxonomy constraints. */
-export function FieldEditor({ field, registry, trainingFields, isTrainingConfiguration = false, formLabel = isTrainingConfiguration ? "Training" : "Event", showContentVisibility = isTrainingConfiguration, validationErrors = [], onChange, onRemoveFromForm }: { field: ConfiguredField; registry: readonly CoreFieldRegistryItem[]; trainingFields?: readonly ConfiguredField[]; isTrainingConfiguration?: boolean; formLabel?: string; showContentVisibility?: boolean; validationErrors?: readonly string[]; onChange: (patch: Partial<ConfiguredField>) => void; onRemoveFromForm: () => void }) {
+export function FieldEditor({ field, registry, trainingFields, isTrainingConfiguration = false, formLabel = isTrainingConfiguration ? "Training" : "Event", showContentVisibility = isTrainingConfiguration, excludedRenderers = [], validationErrors = [], onChange, onRemoveFromForm }: { field: ConfiguredField; registry: readonly CoreFieldRegistryItem[]; trainingFields?: readonly ConfiguredField[]; isTrainingConfiguration?: boolean; formLabel?: string; showContentVisibility?: boolean; excludedRenderers?: readonly FormRenderer[]; validationErrors?: readonly string[]; onChange: (patch: Partial<ConfiguredField>) => void; onRemoveFromForm: () => void }) {
   const core = field.coreKey ? registry.find((item) => item.key === field.coreKey) : undefined;
   const taxonomySemantic = field.source === "core" ? getEventCoreFieldSemantic(field.coreKey) : undefined;
   const trainingDeliveryMode = isTrainingConfiguration && isTrainingDeliveryModeField(field);
@@ -82,6 +81,22 @@ export function FieldEditor({ field, registry, trainingFields, isTrainingConfigu
   const trainingTaxonomyField = isTrainingConfiguration
     && field.source === "core"
     && (field.coreKey === "category" || field.coreKey === "subcategory");
+  const eventTaxonomyField = !isTrainingConfiguration
+    && field.source === "core"
+    && taxonomySemantic?.optionsSource === "event_categories";
+  const eventEventTypeField = !isTrainingConfiguration
+    && field.source === "core"
+    && field.coreKey === "event_type";
+  const eventSystemSelectField = !isTrainingConfiguration
+    && field.source === "core"
+    && ["event_type", "time_zone", "timezone", "delivery_mode", "meeting_provider", "pricing_type", "currency"].includes(field.coreKey ?? field.stableKey ?? "");
+  // Frontend-only alignment: Event category/subcategory is registry-marked as
+  // "managed by the field definition" (configurable.required = false), but the
+  // Training equivalent is configurable. Treat it as configurable in the UI so
+  // the card matches Training without a backend registry change. Domain-required
+  // locking (requiredByDomain) is still honoured, so a domain-required field
+  // stays required and cannot be un-required.
+  const eventTaxonomyRequiredConfigurable = eventTaxonomyField;
   const registryRuntimeSourced = Boolean(core?.valueSource || core?.sourceEndpoint);
   const runtimeSourced = field.source === "core" && !trainingDeliveryMode && (trainingInstructorField || isEventCoreFieldRuntimeSourced(field.coreKey) || registryRuntimeSourced);
   const trainingTagInputField = isTrainingConfiguration && isTrainingTagInputField(field);
@@ -95,14 +110,17 @@ export function FieldEditor({ field, registry, trainingFields, isTrainingConfigu
     : configuredInputMode === "text" || configuredInputMode === "tags"
     ? configuredInputMode
     : field.renderer === "tags" || field.label.trim().toLowerCase() === "learning objectives" ? "tags" : "text";
-  const allowedRenderers = [...new Set((core?.allowedRenderers ?? renderers)
+  // Keep the complete common renderer catalog available in both Event and Training.
+  // The registry can still add backend-specific renderers, while domain rules below
+  // continue to control whether a protected field may change renderer at all.
+  const allowedRenderers = [...new Set([...renderers, ...(core?.allowedRenderers ?? [])]
     .map((renderer) => normalizeRendererOption(renderer, isTrainingConfiguration)))];
-  const fieldRenderers = trainingTagInputField
-    ? trainingTagsField ? ["tags"] : [...new Set(["text", ...allowedRenderers, "tags"])]
-    : allowedRenderers;
+  const fieldRenderers = allowedRenderers.filter((renderer) => !excludedRenderers.includes(renderer));
   const displayedRenderer = trainingTagInputField
     ? trainingInputMode === "tags" ? "tags" : fieldRenderers.includes(field.renderer) ? field.renderer : "text"
-    : normalizeRendererOption(field.renderer, isTrainingConfiguration);
+    : fieldRenderers.includes(normalizeRendererOption(field.renderer, isTrainingConfiguration))
+      ? normalizeRendererOption(field.renderer, isTrainingConfiguration)
+      : fieldRenderers[0] ?? "text";
   const optionsReadOnly = trainingDeliveryMode || taxonomySemantic?.optionsSource === "domain_owned";
   const compositeDefinition = isTrainingConfiguration
     ? getTrainingCompositeFieldDefinition(field.coreKey ?? field.stableKey, field.label)
@@ -128,10 +146,12 @@ export function FieldEditor({ field, registry, trainingFields, isTrainingConfigu
   const isDeliveryDependent = !isTrainingConfiguration && isEventDeliveryDependentKey(field.coreKey);
   const canRemoveFromForm = field.source === "custom" || !core || (core.removable && !isDeliveryDependent);
   const trainingTagsMode = trainingTagInputField && displayedRenderer === "tags";
-  const showRendererControl = !excludedTrainingField && rendererCanChange;
+  const showRendererControl = !excludedTrainingField && !eventTaxonomyField && !eventSystemSelectField && rendererCanChange;
   const contentVisibility = field.contentVisibility ?? "published";
   const textValidation = !excludedTrainingField && !trainingTagsMode && (field.valueType === "string" || field.valueType === "url") && textEntryRenderers.has(field.renderer) && !runtimeSourced && !trainingDeliveryMode;
   const numberValidation = !excludedTrainingField && !trainingTagsMode && field.valueType === "number";
+  const optionRenderer = normalizeRendererOption(field.renderer, isTrainingConfiguration);
+  const supportsConfiguredOptions = ["dropdown", "radio", "multi_select"].includes(optionRenderer);
   const updateOption = (index: number, patch: Partial<FormFieldOption>) => onChange({ options: normalizeOptionPositions(field.options.map((option, optionIndex) => optionIndex === index ? { ...option, ...patch } : option)) });
   const moveOption = (index: number, amount: number) => { const target = index + amount; if (target < 0 || target >= field.options.length) return; const options = [...field.options]; [options[index], options[target]] = [options[target], options[index]]; onChange({ options: normalizeOptionPositions(options) }); };
   const setValidation = (patch: Partial<FormFieldValidation>) => onChange({ validation: { ...field.validation, ...patch } });
@@ -152,9 +172,9 @@ export function FieldEditor({ field, registry, trainingFields, isTrainingConfigu
           {!core || core.configurable.placeholder ? <TextControl label={copy.placeholder} value={field.placeholder} hint={copy.fieldPlaceholderTip} onChange={(placeholder) => onChange({ placeholder })} /> : null}
           {!core || core.configurable.helpText ? <TextAreaControl label={copy.helpText} value={field.helpText} hint={copy.fieldHelpTextTip(formLabel)} onChange={(helpText) => onChange({ helpText })} /> : null}
           <label className="flex items-start gap-2 pt-6 text-sm text-[#355a51]">
-            <input className="mt-1" type="checkbox" checked={field.required} disabled={Boolean(core && (!core.configurable.required || (core.requiredByDomain && field.required)))} onChange={(event) => onChange({ required: core?.requiredByDomain ? true : event.target.checked })} />
+            <input className="mt-1" type="checkbox" checked={field.required} disabled={Boolean(core && (!(core.configurable.required || eventTaxonomyRequiredConfigurable) || (core.requiredByDomain && field.required)))} onChange={(event) => onChange({ required: core?.requiredByDomain ? true : event.target.checked })} />
             <span>{copy.required}<span className="mt-1 block text-xs font-normal text-[#7f9d94]">{copy.fieldRequiredTip(formLabel)}</span>
-            {core && !core.configurable.required ? <span className="text-xs text-[#52736a]">(managed by the field definition)</span> : null}
+            {core && !(core.configurable.required || eventTaxonomyRequiredConfigurable) ? <span className="text-xs text-[#52736a]">(managed by the field definition)</span> : null}
             </span>
           </label>
           <label className="flex items-start gap-2 pt-6 text-sm text-[#355a51]">
@@ -163,7 +183,7 @@ export function FieldEditor({ field, registry, trainingFields, isTrainingConfigu
           </label>
           {!isTrainingConfiguration ? <p className="md:col-span-2 text-xs leading-5 text-[#52736a]">{copy.fieldEnabledHelp}</p> : null}
         </div>
-        {!trainingReferenceField && ((!runtimeSourced && (field.renderer === "dropdown" || (!isTrainingConfiguration && (field.renderer === "select" || field.renderer === "multi_select")))) ? (optionsReadOnly ? <ReadOnlyOptionEditor options={trainingDeliveryMode ? TRAINING_DELIVERY_MODE_OPTIONS : field.options} domainName={trainingDeliveryMode ? "Training" : "Event"} /> : <OptionEditor options={field.options} onChange={(options) => onChange({ options: normalizeOptionPositions(options) })} onUpdate={updateOption} onMove={moveOption} />) : null)}
+        {!trainingReferenceField && (!runtimeSourced && supportsConfiguredOptions ? (optionsReadOnly ? <ReadOnlyOptionEditor options={trainingDeliveryMode ? TRAINING_DELIVERY_MODE_OPTIONS : field.options} domainName={trainingDeliveryMode ? "Training" : "Event"} /> : <OptionEditor options={field.options} onChange={(options) => onChange({ options: normalizeOptionPositions(options) })} onUpdate={updateOption} onMove={moveOption} />) : null)}
       </>
     )}
     {showContentVisibility ? (
@@ -186,12 +206,21 @@ export function FieldEditor({ field, registry, trainingFields, isTrainingConfigu
         </div>
       </fieldset>
     ) : null}
-    {trainingTaxonomyField ? (
+    {(trainingTaxonomyField || eventTaxonomyField) ? (
       <fieldset className="mt-4 rounded-xl border border-[#edf3f0] bg-[#f7fbf8] p-3">
         <legend className="px-1 text-sm font-semibold text-[#355a51]">System-provided choices</legend>
-        <p className="text-sm text-[#52736a]">Training categories and subcategories are managed in the Training taxonomy.</p>
-        <a href="/categories" className="mt-3 inline-flex rounded-full border border-[#1f6a58] px-3 py-2 text-sm font-bold text-[#1f6a58] hover:bg-[#e8f6ee]">
-          Manage Training categories
+        <p className="text-sm text-[#52736a]">{isTrainingConfiguration ? "Training categories and subcategories are managed in the Training taxonomy." : "Event categories and subcategories are managed in the Event taxonomy."}</p>
+        <a href={isTrainingConfiguration ? "/categories?module=trainings" : "/categories?module=events"} className="mt-3 inline-flex rounded-full border border-[#1f6a58] px-3 py-2 text-sm font-bold text-[#1f6a58] hover:bg-[#e8f6ee]">
+          {isTrainingConfiguration ? "Manage Training categories" : "Manage Event categories"}
+        </a>
+      </fieldset>
+    ) : null}
+    {eventEventTypeField ? (
+      <fieldset className="mt-4 rounded-xl border border-[#edf3f0] bg-[#f7fbf8] p-3">
+        <legend className="px-1 text-sm font-semibold text-[#355a51]">System-provided choices</legend>
+        <p className="text-sm text-[#52736a]">Event Types are managed in the Event Types configuration.</p>
+        <a href="/form-configurations/event-types" className="mt-3 inline-flex rounded-full border border-[#1f6a58] px-3 py-2 text-sm font-bold text-[#1f6a58] hover:bg-[#e8f6ee]">
+          Manage Event Types
         </a>
       </fieldset>
     ) : null}

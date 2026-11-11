@@ -113,8 +113,9 @@ export function TrainingFormConfigurationEditorScreen({ id, mode }: { id?: strin
   };
   const publishConfiguration = async (builder: FormConfiguration): Promise<FormConfiguration> => {
     if (!id) throw new Error("Save this configuration before publishing it.");
+    const normalizedDraft = await updateConfigurationDraft(builder);
     const published = await publish.mutateAsync(id);
-    return { ...builder, status: published.configuration.status, active: published.configuration.is_active, version: published.version.version };
+    return { ...normalizedDraft, status: published.configuration.status, active: published.configuration.is_active, version: published.version.version };
   };
   const persistAssignments = async (tenantIds: string[]): Promise<readonly string[]> => {
     if (!id) throw new Error("Save this configuration before assigning tenants.");

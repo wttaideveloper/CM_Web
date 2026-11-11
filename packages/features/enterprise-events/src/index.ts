@@ -22,4 +22,6 @@ export { ThreadDetailModal } from "./ThreadDetailModal";
 export { DiscussionFeed } from "./DiscussionFeed";
 export { AdminFlaggedQueue } from "./AdminFlaggedQueue";
 export { EnterpriseEventsDiscussionTab } from "./EnterpriseEventsDiscussionTab";
+export { default as EventMediaField, RepeatableEventMediaField, EventMediaUploadButton } from "./EventMediaField";
+export { getEventFormFieldType, isEventMediaRenderer, getEventMediaKind, getEventMediaAccept } from "./event-form-field-type";
 

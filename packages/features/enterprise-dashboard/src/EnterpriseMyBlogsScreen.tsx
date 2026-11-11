@@ -461,7 +461,7 @@ export default function EnterpriseMyBlogsScreen() {
         }
       }
       if (!msg || msg.includes("literal_error") || msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
-        msg = `Creation unavailable. No active ${postTypeLabel(kind)} form configuration has been assigned to your enterprise. Please contact your platform administrator.`;
+        msg = `There is no active form configured for ${postTypeLabel(kind)}.`;
       }
       setActiveFormError(msg);
     } finally {
@@ -1370,12 +1370,8 @@ export default function EnterpriseMyBlogsScreen() {
               ) : !editing && activeFormError ? (
                 <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-xs text-amber-950 flex flex-col gap-1.5" role="alert">
                   <div className="flex items-center gap-2 font-bold text-amber-900 text-sm">
-                    Creation Unavailable
+                    {activeFormError}
                   </div>
-                  <p className="leading-relaxed font-medium">{activeFormError}</p>
-                  <p className="text-[11px] text-amber-800">
-                    Your enterprise cannot author or submit new {postTypeLabel(form.type)} posts until an active form configuration is assigned by your platform administrator.
-                  </p>
                 </div>
               ) : null}
               {isConfiguredFieldVisible(["title", "post_title_slug"]) && <label className="block text-sm font-medium">
@@ -1631,7 +1627,15 @@ export default function EnterpriseMyBlogsScreen() {
                                 )}
                               </div>
 
-                              {field.type === "rich_text" || field.type === "richtext" ? (
+                              {field.type === "tags" ? (
+                                <input
+                                  type="text"
+                                  value={String(customFields[field.key] ?? "")}
+                                  onChange={(event) => setCustomFields((current) => ({ ...current, [field.key]: event.target.value }))}
+                                  className="mt-1.5 w-full rounded-xl border border-[#d7e5df] bg-white px-3 py-2.5 text-sm focus:border-teal-600 focus:outline-none"
+                                  placeholder={field.placeholder?.trim() || "Separate tags with commas"}
+                                />
+                              ) : field.type === "rich_text" || field.type === "richtext" ? (
                                 <RichTextEditor
                                   value={String(customFields[field.key] ?? "")}
                                   onChange={(value) => setCustomFields((current) => ({ ...current, [field.key]: value }))}
@@ -1789,14 +1793,14 @@ export default function EnterpriseMyBlogsScreen() {
                                   className="mt-1.5 w-full rounded-xl border border-[#d7e5df] bg-white px-3 py-2.5 text-sm focus:border-teal-600 focus:outline-none"
                                   placeholder={field.placeholder?.trim() || (field.type === "email" ? "name@example.com" : "https://example.com")}
                                 />
-                              ) : field.type === "file_upload" || field.type === "media_upload" || field.type === "image" || field.type === "image_list" ? (
+                              ) : field.type === "file_upload" || field.type === "supporting_document" || field.type === "media_upload" || field.type === "additional_images" || field.type === "image" || field.type === "image_list" ? (
                                 <div className="mt-1.5 flex flex-col gap-2 rounded-xl border border-dashed border-[#b6dfce] bg-[#f8fbf9] p-3.5">
                                   <div className="flex flex-wrap items-center justify-between gap-2">
                                     <div className="flex flex-col">
                                       <span className="text-xs font-semibold text-slate-800">
                                         {customFields[field.key]
-                                          ? (field.type === "media_upload" || field.type === "image" || field.type === "image_list" ? "Attached images" : "Attached document")
-                                          : field.placeholder || (field.type === "media_upload" || field.type === "image" || field.type === "image_list" ? "Select images" : "Select internal file (PDF, DOCX, ZIP)")}
+                                          ? (field.type === "media_upload" || field.type === "additional_images" || field.type === "image" || field.type === "image_list" ? "Attached images" : "Attached document")
+                                          : field.placeholder || (field.type === "media_upload" || field.type === "additional_images" || field.type === "image" || field.type === "image_list" ? "Select images" : "Select internal file (PDF, DOCX, ZIP)")}
                                       </span>
                                       <span className="text-[11px] text-[#52736a]">
                                         {isFieldAdminOnly
@@ -1805,13 +1809,13 @@ export default function EnterpriseMyBlogsScreen() {
                                       </span>
                                     </div>
                                     <label className="cursor-pointer rounded-lg border border-[#d7e5df] bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors shadow-xs">
-                                      {field.type === "media_upload" || field.type === "image" || field.type === "image_list"
+                                      {field.type === "media_upload" || field.type === "additional_images" || field.type === "image" || field.type === "image_list"
                                         ? (customFields[field.key] ? "Add another image" : "Browse image")
                                         : (customFields[field.key] ? "Add another document" : "Browse File")}
                                       <input
                                         type="file"
                                         multiple
-                                        accept={field.type === "media_upload" || field.type === "image" || field.type === "image_list" ? "image/jpeg,image/png,image/webp,image/gif" : ".pdf,.doc,.docx,.zip"}
+                                        accept={field.type === "media_upload" || field.type === "additional_images" || field.type === "image" || field.type === "image_list" ? "image/jpeg,image/png,image/webp,image/gif" : ".pdf,.doc,.docx,.zip"}
                                         className="sr-only"
                                         onChange={async (e) => {
                                           const files = Array.from(e.target.files ?? []);
@@ -1825,7 +1829,7 @@ export default function EnterpriseMyBlogsScreen() {
                                           setUploading(true);
                                           setError("");
                                           try {
-                                            const purpose = field.type === "media_upload" || field.type === "image" || field.type === "image_list" ? "image" : "document";
+                                            const purpose = field.type === "media_upload" || field.type === "additional_images" || field.type === "image" || field.type === "image_list" ? "image" : "document";
                                             const uploaded = await Promise.all(files.map((file) => uploadBlogAsset(file, purpose)));
                                             const urls = uploaded.map((asset, index) => asset.url || files[index]?.name).filter(Boolean);
                                             const existingUrls = String(customFields[field.key] ?? "")
@@ -1849,7 +1853,7 @@ export default function EnterpriseMyBlogsScreen() {
                                   {customFields[field.key] ? (
                                     <div className="flex items-center justify-between rounded-lg bg-white border border-[#d7e5df] px-3 py-2 text-xs">
                                       <div className="flex min-w-0 flex-1 items-center gap-2 truncate">
-                                        {field.type === "media_upload" || field.type === "image" || field.type === "image_list" ? (
+                                        {field.type === "media_upload" || field.type === "additional_images" || field.type === "image" || field.type === "image_list" ? (
                                           <div className="grid grid-cols-3 gap-2">
                                             {String(customFields[field.key]).split(",").map((url) => url.trim()).filter(Boolean).map((url) => (
                                               <div key={url} className="relative">
@@ -1924,7 +1928,7 @@ export default function EnterpriseMyBlogsScreen() {
                                       placeholder="Or enter file path / URL directly..."
                                     />
                                   )}
-                                  {customImagePreviewUrl && (field.type === "media_upload" || field.type === "image" || field.type === "image_list") ? (
+                                  {customImagePreviewUrl && (field.type === "media_upload" || field.type === "additional_images" || field.type === "image" || field.type === "image_list") ? (
                                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="presentation" onClick={() => setCustomImagePreviewUrl(null)}>
                                       <div className="relative max-h-[90vh] max-w-3xl overflow-hidden rounded-2xl bg-white p-4 shadow-2xl" onClick={(event) => event.stopPropagation()}>
                                         <button type="button" onClick={() => setCustomImagePreviewUrl(null)} className="absolute right-3 top-3 rounded-lg bg-white/90 px-2 py-1 text-sm font-bold text-slate-700 shadow">Close</button>
@@ -2123,7 +2127,7 @@ export default function EnterpriseMyBlogsScreen() {
                         </div>
                       );
                     }
-                    if (field.type === "media_upload" || field.type === "image" || field.type === "image_list") {
+                    if (field.type === "media_upload" || field.type === "additional_images" || field.type === "image" || field.type === "image_list") {
                       const imageUrls = Array.isArray(val) ? val : String(val).split(",").map((item) => item.trim()).filter(Boolean);
                       return (
                         <div key={field.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-2xs">
@@ -2134,7 +2138,7 @@ export default function EnterpriseMyBlogsScreen() {
                         </div>
                       );
                     }
-                    if (field.type === "file_upload" || field.type === "document") {
+                    if (field.type === "file_upload" || field.type === "supporting_document" || field.type === "document") {
                       return (
                         <div
                           key={field.id}
@@ -2246,7 +2250,7 @@ export default function EnterpriseMyBlogsScreen() {
                             </div>
                           );
                         }
-                        if (field.type === "media_upload" || field.type === "image" || field.type === "image_list") {
+                        if (field.type === "media_upload" || field.type === "additional_images" || field.type === "image" || field.type === "image_list") {
                           const imageUrls = Array.isArray(val) ? val : String(val).split(",").map((item) => item.trim()).filter(Boolean);
                           return (
                             <div key={field.id} className="rounded-xl border border-[#d7e5df] bg-white p-3 shadow-2xs">
@@ -2257,7 +2261,7 @@ export default function EnterpriseMyBlogsScreen() {
                             </div>
                           );
                         }
-                        if (field.type === "file_upload" || field.type === "document") {
+                        if (field.type === "file_upload" || field.type === "supporting_document" || field.type === "document") {
                           return (
                             <div
                               key={field.id}

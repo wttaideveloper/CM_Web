@@ -100,8 +100,9 @@ export function FormConfigurationEditorScreen({ id, mode }: { id?: string; mode:
   };
   const publishConfiguration = async (builder: FormConfiguration): Promise<FormConfiguration> => {
     if (!id) throw new Error("Save this configuration before publishing it.");
+    const normalizedDraft = await updateConfigurationDraft(builder);
     const published = await publish.mutateAsync(id);
-    return { ...builder, status: published.status, active: false, version: published.version };
+    return { ...normalizedDraft, status: published.status, active: false, version: published.version };
   };
   const persistAssignments = async (tenantIds: string[]): Promise<string[]> => {
     if (!id) throw new Error("Save this configuration before assigning tenants.");

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   createAdminBlogPost,
@@ -20,6 +21,7 @@ import {
   type BlogForm,
   type BlogFormField,
   type BlogHistoryItem,
+  type BlogKind,
   type BlogCustomFieldValue,
   type BlogManageDetail,
   type BlogManageItem,
@@ -32,7 +34,7 @@ type PostStatus =
   | "Pending Approval"
   | "Rejected"
   | "Unpublished";
-type PostType = "Blog" | "News";
+type PostType = "Blog" | "News" | "Blog & News";
 
 interface Post {
   id: string;
@@ -80,7 +82,7 @@ const EMPTY_CREATE_STATE: CreatePostFormState = {
 const toDisplayPost = (post: BlogManageItem | BlogManageDetail): Post => ({
   id: post.id,
   title: post.title,
-  type: post.kind === "news" ? "News" : "Blog",
+  type: post.kind === "news" ? "News" : post.kind === "both" ? "Blog & News" : "Blog",
   category: post.category ?? "Uncategorized",
   categoryId: post.category_id ?? null,
   author: post.author_name ?? "Platform Admin",
@@ -375,8 +377,14 @@ export default function PlatformAllPostsScreen() {
     setIsLoading(true);
     setLoadError("");
     try {
-      const kind =
-        typeFilter === "Blog" ? "blog" : typeFilter === "News" ? "news" : undefined;
+      const kind: BlogKind | undefined =
+        typeFilter === "Blog"
+          ? "blog"
+          : typeFilter === "News"
+          ? "news"
+          : typeFilter === "Blog & News"
+          ? "both"
+          : undefined;
       const status =
         statusFilter === "Published"
           ? "published"
@@ -426,7 +434,7 @@ export default function PlatformAllPostsScreen() {
       setActiveFormsLoading(true);
       void listAdminBlogForms({ pageSize: 100 })
         .then((res) => {
-          const activeItems = res.items.filter((f) => f.status === "active");
+          const activeItems = res.items.filter((f) => f.status === "active" || f.status === "published");
           return Promise.all(activeItems.map((form) => getAdminBlogForm(form.id).catch(() => form)));
         })
         .then(setActiveForms)
@@ -469,24 +477,23 @@ export default function PlatformAllPostsScreen() {
 
   // Resolve applicable form for Section 14 Create Post based on selected PostType
   const applicableForm = useMemo(() => {
-    const postKind = createDraft.type === "News" ? "news" : "blog";
+    const postKind: BlogKind =
+      createDraft.type === "News"
+        ? "news"
+        : createDraft.type === "Blog & News"
+        ? "both"
+        : "blog";
     return (
       activeForms.find(
         (f) =>
-          f.status === "active" &&
+          (f.status === "active" || f.status === "published") &&
           f.type === postKind &&
           f.scope === "global",
       ) ||
       activeForms.find(
         (f) =>
-          f.status === "active" &&
-          (f.type === postKind || f.type === "both") &&
-          f.scope === "global",
-      ) ||
-      activeForms.find(
-        (f) =>
-          f.status === "active" &&
-          (f.type === postKind || f.type === "both"),
+          (f.status === "active" || f.status === "published") &&
+          f.type === postKind,
       ) ||
       null
     );
@@ -508,24 +515,23 @@ export default function PlatformAllPostsScreen() {
       const match = activeForms.find((f) => f.id === editingPost.formId);
       if (match) return match;
     }
-    const postKind = editDraft.type === "News" ? "news" : "blog";
+    const postKind: BlogKind =
+      editDraft.type === "News"
+        ? "news"
+        : editDraft.type === "Blog & News"
+        ? "both"
+        : "blog";
     return (
       activeForms.find(
         (f) =>
-          f.status === "active" &&
+          (f.status === "active" || f.status === "published") &&
           f.type === postKind &&
           f.scope === "global",
       ) ||
       activeForms.find(
         (f) =>
-          f.status === "active" &&
-          (f.type === postKind || f.type === "both") &&
-          f.scope === "global",
-      ) ||
-      activeForms.find(
-        (f) =>
-          f.status === "active" &&
-          (f.type === postKind || f.type === "both"),
+          (f.status === "active" || f.status === "published") &&
+          f.type === postKind,
       ) ||
       null
     );
@@ -546,24 +552,23 @@ export default function PlatformAllPostsScreen() {
       const match = activeForms.find((f) => f.id === viewingPost.formId);
       if (match) return match;
     }
-    const postKind = viewingPost.type === "News" ? "news" : "blog";
+    const postKind: BlogKind =
+      viewingPost.type === "News"
+        ? "news"
+        : viewingPost.type === "Blog & News"
+        ? "both"
+        : "blog";
     return (
       activeForms.find(
         (f) =>
-          f.status === "active" &&
+          (f.status === "active" || f.status === "published") &&
           f.type === postKind &&
           f.scope === "global",
       ) ||
       activeForms.find(
         (f) =>
-          f.status === "active" &&
-          (f.type === postKind || f.type === "both") &&
-          f.scope === "global",
-      ) ||
-      activeForms.find(
-        (f) =>
-          f.status === "active" &&
-          (f.type === postKind || f.type === "both"),
+          (f.status === "active" || f.status === "published") &&
+          f.type === postKind,
       ) ||
       null
     );
@@ -811,7 +816,12 @@ export default function PlatformAllPostsScreen() {
         .filter(Boolean);
 
       const saved = await createAdminBlogPost({
-        kind: createDraft.type === "News" ? "news" : "blog",
+        kind:
+          createDraft.type === "News"
+            ? "news"
+            : createDraft.type === "Blog & News"
+            ? "both"
+            : "blog",
         title: createDraft.title.trim(),
         excerpt: createDraft.summary.trim() || null,
         content: createDraft.content.trim(),
@@ -869,7 +879,12 @@ export default function PlatformAllPostsScreen() {
       // Super Admin does not need approval to publish platform content.
       // Posts are published immediately: status: "published", is_live: true.
       const saved = await createAdminBlogPost({
-        kind: createDraft.type === "News" ? "news" : "blog",
+        kind:
+          createDraft.type === "News"
+            ? "news"
+            : createDraft.type === "Blog & News"
+            ? "both"
+            : "blog",
         title: createDraft.title.trim(),
         excerpt: createDraft.summary.trim() || null,
         content: createDraft.content.trim(),
@@ -1127,7 +1142,12 @@ export default function PlatformAllPostsScreen() {
     try {
       const updated = await updateAdminBlogPost(editingPost.id, {
         title: editDraft.title.trim(),
-        kind: editDraft.type === "News" ? "news" : "blog",
+        kind:
+          editDraft.type === "News"
+            ? "news"
+            : editDraft.type === "Blog & News"
+            ? "both"
+            : "blog",
         excerpt: editDraft.summary.trim() || null,
         content: editDraft.content.trim(),
         category_id: editDraft.category || null,
@@ -1200,7 +1220,7 @@ export default function PlatformAllPostsScreen() {
               setActiveFormsLoading(true);
               void listAdminBlogForms({ pageSize: 100 })
                 .then((res) => {
-                  const activeItems = res.items.filter((f) => f.status === "active");
+                  const activeItems = res.items.filter((f) => f.status === "active" || f.status === "published");
                   return Promise.all(activeItems.map((form) => getAdminBlogForm(form.id).catch(() => form)));
                 })
                 .then(setActiveForms)
@@ -1286,9 +1306,10 @@ export default function PlatformAllPostsScreen() {
                 onChange={(event) => setTypeFilter(event.target.value as typeof typeFilter)}
                 className="rounded-xl border border-[#d7e5df] bg-white px-3 py-2.5 text-sm"
               >
-                <option value="all">Blog &amp; News</option>
+                <option value="all">All Types</option>
                 <option value="Blog">Blog</option>
                 <option value="News">News</option>
+                <option value="Blog & News">Blog &amp; News</option>
               </select>
             </label>
 
@@ -1397,6 +1418,8 @@ export default function PlatformAllPostsScreen() {
                           className={`rounded px-2 py-0.5 text-xs font-semibold ${
                             post.type === "News"
                               ? "bg-sky-50 text-sky-800 border border-sky-200"
+                              : post.type === "Blog & News"
+                              ? "bg-purple-50 text-purple-800 border border-purple-200"
                               : "bg-teal-50 text-teal-800 border border-teal-200"
                           }`}
                         >
@@ -1698,7 +1721,7 @@ export default function PlatformAllPostsScreen() {
                     Super Admin Authoring
                   </p>
                   <h2 className="mt-1 text-xl font-bold text-[#06201c]">
-                    Create Platform {createDraft.type === "News" ? "News Bulletin" : "Blog Article"}
+                    Create Platform {createDraft.type === "News" ? "News Bulletin" : createDraft.type === "Blog & News" ? "Blog & News Post" : "Blog Article"}
                   </h2>
                 </div>
                 <button
@@ -1770,12 +1793,12 @@ export default function PlatformAllPostsScreen() {
                   </div>
                 )}
 
-                {/* 1. SELECT BLOG OR NEWS */}
+                {/* 1. SELECT BLOG, NEWS, OR BOTH */}
                 <div>
                   <span className="block text-xs font-bold uppercase tracking-wider text-[#52736a] mb-2">
                     Select Content Type
                   </span>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <button
                       type="button"
                       onClick={() => {
@@ -1825,13 +1848,74 @@ export default function PlatformAllPostsScreen() {
                         Platform announcements, medical bulletins, and company releases.
                       </p>
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCreateDraft({ ...createDraft, type: "Blog & News" });
+                        setCreateErrors({});
+                      }}
+                      className={`rounded-xl border p-3 text-left transition-all ${
+                        createDraft.type === "Blog & News"
+                          ? "border-purple-600 bg-purple-50/60 ring-2 ring-purple-600/20"
+                          : "border-[#d7e5df] bg-white hover:bg-slate-50"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-bold text-[#06201c]">Blog &amp; News</span>
+                        <span
+                          className={`h-2.5 w-2.5 rounded-full ${
+                            createDraft.type === "Blog & News" ? "bg-purple-600" : "bg-slate-300"
+                          }`}
+                        />
+                      </div>
+                      <p className="mt-1 text-xs text-[#52736a]">
+                        Hybrid content published across both blog and news channels.
+                      </p>
+                    </button>
                   </div>
                 </div>
+
+                {/* Warning when no active form is configured for the chosen type */}
+                {!applicableForm && (
+                  <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-xs text-amber-950 flex items-start justify-between gap-3" role="alert">
+                    <div className="flex items-start gap-2.5">
+                      <svg
+                        className="h-5 w-5 text-amber-600 shrink-0 mt-0.5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="2"
+                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                        />
+                      </svg>
+                      <div>
+                        <p className="text-sm font-bold text-amber-900">
+                          There is no active form configured for {createDraft.type === "News" ? "News" : createDraft.type === "Blog & News" ? "Blog & News" : "Blog"}.
+                        </p>
+                        <p className="text-xs text-amber-700 mt-0.5">
+                          Activate a template for this type in Form Builder to enable post authoring.
+                        </p>
+                      </div>
+                    </div>
+                    <Link
+                      href="/blog-forms"
+                      className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-50 shadow-xs shrink-0"
+                    >
+                      Configure Forms
+                    </Link>
+                  </div>
+                )}
 
                 {/* 2. CORE DETAILS */}
                 <div className="space-y-4 rounded-xl border border-[#edf3f0] bg-[#fbfdfc] p-4">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-[#175245]">
-                    {createDraft.type === "News" ? "News Bulletin Details" : "Blog Article Details"}
+                    {createDraft.type === "News" ? "News Bulletin Details" : createDraft.type === "Blog & News" ? "Blog & News Details" : "Blog Article Details"}
                   </h3>
 
                   <div className="grid gap-4 sm:grid-cols-2">
@@ -2297,10 +2381,12 @@ export default function PlatformAllPostsScreen() {
                       className={`rounded px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider ${
                         createDraft.type === "News"
                           ? "bg-sky-50 text-sky-800 border border-sky-200"
+                          : createDraft.type === "Blog & News"
+                          ? "bg-purple-50 text-purple-800 border border-purple-200"
                           : "bg-teal-50 text-teal-800 border border-teal-200"
                       }`}
                     >
-                      {createDraft.type === "News" ? "News Bulletin" : "Blog Article"}
+                      {createDraft.type === "News" ? "News Bulletin" : createDraft.type === "Blog & News" ? "Blog & News Post" : "Blog Article"}
                     </span>
                     {createDraft.customFields.is_urgent === "true" && (
                       <span className="rounded px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-300">
@@ -2535,7 +2621,7 @@ export default function PlatformAllPostsScreen() {
                 {/* Save Draft */}
                 <button
                   type="button"
-                  disabled={actionId !== null}
+                  disabled={actionId !== null || !applicableForm}
                   onClick={() => void handleSaveDraft()}
                   className="rounded-xl border border-[#1f6a58] px-4 py-2.5 text-xs font-semibold text-[#175245] hover:bg-[#f4faf7] transition-colors disabled:opacity-50"
                 >
@@ -2554,7 +2640,7 @@ export default function PlatformAllPostsScreen() {
                 {/* Publish Button */}
                 <button
                   type="button"
-                  disabled={actionId !== null}
+                  disabled={actionId !== null || !applicableForm}
                   onClick={handleInitiatePublish}
                   className="rounded-xl bg-[#1f6a58] px-5 py-2.5 text-xs font-semibold text-white hover:bg-[#185345] shadow-xs transition-colors disabled:opacity-50"
                 >
@@ -2659,6 +2745,8 @@ export default function PlatformAllPostsScreen() {
                     className={`rounded px-2 py-0.5 text-xs font-bold uppercase tracking-wider ${
                       viewingPost.type === "News"
                         ? "bg-sky-50 text-sky-800 border border-sky-200"
+                        : viewingPost.type === "Blog & News"
+                        ? "bg-purple-50 text-purple-800 border border-purple-200"
                         : "bg-teal-50 text-teal-800 border border-teal-200"
                     }`}
                   >
@@ -3058,7 +3146,7 @@ export default function PlatformAllPostsScreen() {
                   <span className="block text-xs font-bold uppercase tracking-wider text-[#52736a] mb-2">
                     Content Type
                   </span>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <button
                       type="button"
                       onClick={() => {
@@ -3108,13 +3196,74 @@ export default function PlatformAllPostsScreen() {
                         Platform announcements, medical bulletins, and company releases.
                       </p>
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditDraft({ ...editDraft, type: "Blog & News" });
+                        setEditErrors({});
+                      }}
+                      className={`rounded-xl border p-3 text-left transition-all ${
+                        editDraft.type === "Blog & News"
+                          ? "border-purple-600 bg-purple-50/60 ring-2 ring-purple-600/20"
+                          : "border-[#d7e5df] bg-white hover:bg-slate-50"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-bold text-[#06201c]">Blog &amp; News</span>
+                        <span
+                          className={`h-2.5 w-2.5 rounded-full ${
+                            editDraft.type === "Blog & News" ? "bg-purple-600" : "bg-slate-300"
+                          }`}
+                        />
+                      </div>
+                      <p className="mt-1 text-xs text-[#52736a]">
+                        Hybrid content published across both blog and news channels.
+                      </p>
+                    </button>
                   </div>
                 </div>
+
+                {/* Warning when no active form is configured for the chosen type */}
+                {!editApplicableForm && (
+                  <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-xs text-amber-950 flex items-start justify-between gap-3" role="alert">
+                    <div className="flex items-start gap-2.5">
+                      <svg
+                        className="h-5 w-5 text-amber-600 shrink-0 mt-0.5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="2"
+                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                        />
+                      </svg>
+                      <div>
+                        <p className="text-sm font-bold text-amber-900">
+                          There is no active form configured for {editDraft.type === "News" ? "News" : editDraft.type === "Blog & News" ? "Blog & News" : "Blog"}.
+                        </p>
+                        <p className="text-xs text-amber-700 mt-0.5">
+                          Activate a template for this type in Form Builder to enable editing.
+                        </p>
+                      </div>
+                    </div>
+                    <Link
+                      href="/blog-forms"
+                      className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-50 shadow-xs shrink-0"
+                    >
+                      Configure Forms
+                    </Link>
+                  </div>
+                )}
 
                 {/* 2. CORE DETAILS */}
                 <div className="space-y-4 rounded-xl border border-[#edf3f0] bg-[#fbfdfc] p-4">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-[#175245]">
-                    {editDraft.type === "News" ? "News Bulletin Details" : "Blog Article Details"}
+                    {editDraft.type === "News" ? "News Bulletin Details" : editDraft.type === "Blog & News" ? "Blog & News Details" : "Blog Article Details"}
                   </h3>
 
                   <div className="grid gap-4 sm:grid-cols-2">
@@ -3796,7 +3945,7 @@ export default function PlatformAllPostsScreen() {
                 {/* Save Changes */}
                 <button
                   type="button"
-                  disabled={actionId !== null}
+                  disabled={actionId !== null || !editApplicableForm}
                   onClick={() => void handleEditSubmit(false)}
                   className="rounded-xl border border-[#1f6a58] px-4 py-2.5 text-xs font-semibold text-[#175245] hover:bg-[#f4faf7] transition-colors disabled:opacity-50"
                 >
@@ -3807,7 +3956,7 @@ export default function PlatformAllPostsScreen() {
                 {editingPost.status !== "Published" && (
                   <button
                     type="button"
-                    disabled={actionId !== null}
+                    disabled={actionId !== null || !editApplicableForm}
                     onClick={() => void handleEditSubmit(true)}
                     className="rounded-xl bg-[#1f6a58] px-5 py-2.5 text-xs font-semibold text-white hover:bg-[#185345] shadow-xs transition-colors disabled:opacity-50"
                   >

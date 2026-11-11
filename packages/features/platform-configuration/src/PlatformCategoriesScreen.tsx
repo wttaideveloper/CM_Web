@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useCreateEventTaxonomyCategory, useDeleteEventTaxonomyCategory, useEventTaxonomyCategories, useUpdateEventTaxonomyCategory } from "./event-category-taxonomy.queries";
@@ -18,9 +18,10 @@ function kindLabel(category: TaxonomyCategory, t: (key: string) => string): stri
 function errorMessage(error: unknown, fallback: string): string { return error instanceof EventTaxonomyApiError || error instanceof TrainingTaxonomyApiError ? error.message : fallback; }
 
 /** Module-based taxonomy management with independent Event and Training contracts. */
-export default function PlatformCategoriesScreen() {
+export default function PlatformCategoriesScreen({ initialModule = "events" }: { initialModule?: Module }) {
   const { t } = useTranslation("platform");
-  const [module, setModule] = useState<Module>("events");
+  const [module, setModule] = useState<Module>(initialModule);
+  useEffect(() => { setModule(initialModule); }, [initialModule]);
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [editor, setEditor] = useState<Editor>(null);

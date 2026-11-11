@@ -1015,11 +1015,28 @@ export async function uploadTrainingMedia(
   formData.append("file", uploadFile);
   formData.append("purpose", purpose);
   if (fieldKey) formData.append("field_key", fieldKey);
-  const res = await fetch(`${trainingsBasePath}upload`, {
+  let res = await fetch(`${trainingsBasePath}upload`, {
     method: "POST",
     body: formData,
     credentials: "include",
   });
+  if (!res.ok && res.status === 400 && fieldKey) {
+    const errorClone = res.clone();
+    const errorText = await errorClone.text().catch(() => "");
+    if (errorText.toLowerCase().includes("field_key")) {
+      const fallbackData = new FormData();
+      fallbackData.append("file", uploadFile);
+      fallbackData.append("purpose", purpose);
+      const fallbackRes = await fetch(`${trainingsBasePath}upload`, {
+        method: "POST",
+        body: fallbackData,
+        credentials: "include",
+      });
+      if (fallbackRes.ok) {
+        res = fallbackRes;
+      }
+    }
+  }
   if (!res.ok) throw await createTrainingsApiError(res, "upload training media");
   const response = (await res.json()) as unknown;
   const unwrapped = unwrapApiData(response);
