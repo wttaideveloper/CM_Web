@@ -35,3 +35,26 @@ body {
   color: #06201c;
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.group-chat-messaging-surface input,
+.group-chat-messaging-surface select,
+.group-chat-messaging-surface textarea {
+  color: #16332b;
+}
+
+.group-chat-messaging-surface input::placeholder,
+.group-chat-messaging-surface textarea::placeholder {
+  color: #7f9d94;
+  opacity: 1;
+}
+
+.group-chat-messaging-surface select option {
+  color: #16332b !important;
+  background-color: #ffffff !important;
+}
+
+.group-chat-messaging-surface select {
+  color: #16332b !important;
+  color-scheme: light;
+  -webkit-text-fill-color: #16332b;
+}

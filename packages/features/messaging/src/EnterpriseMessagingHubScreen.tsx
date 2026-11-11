@@ -22,7 +22,7 @@ export default function EnterpriseMessagingHubScreen() {
   const [reviewContext, setReviewContext] = useState<{ groupId?: string; messageId?: string }>({});
   const openAudit = (groupId?: string, action?: string) => { setAuditContext({ groupId, action }); setView("group-audit"); };
   const openReview = (groupId: string, messageId: string) => { setReviewContext({ groupId, messageId }); setView("secure-message-review"); };
-  return <div className="space-y-2">
+  return <div className="group-chat-messaging-surface space-y-2">
     <nav aria-label="Messages views" className="flex flex-wrap gap-1.5 border-b border-[#e1ebe6] pb-2">
       <button type="button" role="tab" aria-selected={view === "direct"} onClick={() => setView("direct")} className={`rounded-full px-3 py-1.5 text-sm font-semibold ${view === "direct" ? "bg-[#1f6a58] text-white" : "bg-[#f4faf7] text-[#52736a]"}`}>Direct Messages</button>
       <button type="button" role="tab" aria-selected={view === "groups"} onClick={() => setView("groups")} className={`rounded-full px-3 py-1.5 text-sm font-semibold ${view === "groups" ? "bg-[#1f6a58] text-white" : "bg-[#f4faf7] text-[#52736a]"}`}>Groups</button>
