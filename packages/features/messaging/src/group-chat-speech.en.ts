@@ -58,6 +58,8 @@ export const groupChatSpeechEnglish = {
     eventLabel: "Event Group",
     eventTitle: "Event Group",
     eventDescription: "Create an Event Group from an eligible Event, registered attendees, and verified Providers.",
+    wipLabel: "Work in Progress",
+    wipDescription: "This feature is under development. Group creation and invitations are not yet available.",
     continueEvent: "Prepare Event Group",
     stepEvent: "Step 1 of 4 · Event",
     chooseEvent: "Choose an Event",
