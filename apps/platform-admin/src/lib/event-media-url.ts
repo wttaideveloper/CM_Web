@@ -1,4 +1,4 @@
-import { configuredMediaOrigin, EVENT_MEDIA_PATH_PATTERN, resolveProtectedMediaFetchUrl } from "@ihp/shared/protected-media";
+import { BLOG_MEDIA_PATH_PATTERN, configuredMediaOrigin, EVENT_MEDIA_PATH_PATTERN, LEGACY_PROTECTED_MEDIA_ORIGIN, STAGING_PROTECTED_MEDIA_ORIGIN, resolveProtectedMediaFetchUrl } from "@ihp/shared/protected-media";
 import type { EnvSource } from "@ihp/shared/upstream-config";
 
 import { resolveMarketplaceOrigin } from "./marketplace-url.ts";
@@ -27,6 +27,24 @@ export function resolvePlatformEventMediaFetchUrl(
   return resolveProtectedMediaFetchUrl(value, {
     publicOrigin: configuredMediaOrigin(publicMediaOrigin),
     internalOrigin: resolveMarketplaceOrigin(env),
+    legacyPublicOrigins: resolveMarketplaceOrigin(env) === STAGING_PROTECTED_MEDIA_ORIGIN ? [LEGACY_PROTECTED_MEDIA_ORIGIN] : [],
     pathPattern: EVENT_MEDIA_PATH_PATTERN,
+  });
+}
+
+/** Resolves approved legacy or native Blog media through the trusted Marketplace origin. */
+export function resolvePlatformBlogMediaFetchUrl(
+  requestedUrl: string | null | undefined,
+  publicMediaOrigin: string | undefined,
+  env: EnvSource = process.env,
+): string | null {
+  const value = requestedUrl?.trim();
+  const internalOrigin = resolveMarketplaceOrigin(env);
+  if (!value || !internalOrigin) return null;
+  return resolveProtectedMediaFetchUrl(value, {
+    publicOrigin: configuredMediaOrigin(publicMediaOrigin),
+    internalOrigin,
+    legacyPublicOrigins: internalOrigin === STAGING_PROTECTED_MEDIA_ORIGIN ? [LEGACY_PROTECTED_MEDIA_ORIGIN] : [],
+    pathPattern: BLOG_MEDIA_PATH_PATTERN,
   });
 }

@@ -3,7 +3,7 @@ import test from "node:test";
 
 // Node's native TypeScript test runner loads this module by its .ts filename; the app tsconfig
 // enables `allowImportingTsExtensions` for that, so no error suppression is needed.
-import { buildEnterpriseChatUpstreamUrl, normalizeEnterpriseChatUpstreamPath } from "./proxy-path.ts";
+import { buildEnterpriseChatTokenUpstreamUrl, buildEnterpriseChatUpstreamUrl, normalizeEnterpriseChatUpstreamPath, resolveEnterpriseChatUpstreamPath } from "./proxy-path.ts";
 
 test("preserves the trailing slash for the Group Chat avatar upload collection", () => {
   assert.equal(normalizeEnterpriseChatUpstreamPath("/uploads"), "uploads/");
@@ -23,8 +23,6 @@ test("does not change unrelated Chat paths", () => {
   assert.equal(normalizeEnterpriseChatUpstreamPath("/attachments/upload"), "attachments/upload");
   assert.equal(normalizeEnterpriseChatUpstreamPath("/uploads/thumbnails"), "uploads/thumbnails");
 });
-
-import { resolveEnterpriseChatUpstreamPath } from "./proxy-path.ts";
 
 const rawChatPath = (path: string) => `/api/chat/${path}`;
 const resolveRaw = (rawPath: string) =>
@@ -56,4 +54,11 @@ test("resolveEnterpriseChatUpstreamPath refuses traversal in plain, encoded, dou
   ]) {
     assert.equal(resolveRaw(rawChatPath(value)), null, value);
   }
+});
+
+test("builds the Chat-token endpoint exactly once from the configured origin", () => {
+  assert.equal(
+    buildEnterpriseChatTokenUpstreamUrl("https://marketplace-api.wisdomtoothstage.tech"),
+    "https://marketplace-api.wisdomtoothstage.tech/api/v1/auth/chat-token",
+  );
 });

@@ -73,6 +73,10 @@ test("routes protected uploaded media through the same-origin proxy and keeps ex
   assert.equal(protectedMediaPreviewUrl(protectedUrl, "/api/event-media", MEDIA_ORIGIN), `/api/event-media?url=${encodeURIComponent(protectedUrl)}`);
   assert.equal(protectedMediaPreviewUrl("https://cdn.example.com/image.jpg", "/api/event-media", MEDIA_ORIGIN), "https://cdn.example.com/image.jpg");
   assert.equal(protectedMediaPreviewUrl(protectedUrl, "/api/platform-super-admin/event-media", MEDIA_ORIGIN), `/api/platform-super-admin/event-media?url=${encodeURIComponent(protectedUrl)}`);
+  const stagingOrigin = "https://marketplace-api.wisdomtoothstage.tech";
+  const stagingProtectedUrl = `${stagingOrigin}/api/v1/events/media/staging-asset-1.jpg`;
+  assert.equal(protectedMediaPreviewUrl(protectedUrl, "/api/event-media", stagingOrigin), `/api/event-media?url=${encodeURIComponent(protectedUrl)}`);
+  assert.equal(protectedMediaPreviewUrl(stagingProtectedUrl, "/api/event-media", stagingOrigin), `/api/event-media?url=${encodeURIComponent(stagingProtectedUrl)}`);
 });
 
 test("does not route any media through the proxy when no public media origin is configured", () => {

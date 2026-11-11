@@ -15,6 +15,11 @@ export function normalizeEnterpriseChatUpstreamPath(requestPath: string): string
   return pathWithoutLeadingSlash;
 }
 
+/** Builds the authenticated Chat-token endpoint from an origin-only proxy target. */
+export function buildEnterpriseChatTokenUpstreamUrl(proxyTarget: string): string {
+  return `${proxyTarget}/api/v1/auth/chat-token`;
+}
+
 /** Builds an Enterprise Chat upstream URL without changing unrelated route paths. */
 export function buildEnterpriseChatUpstreamUrl(proxyTarget: string, requestPath: string, search = ""): string {
   return `${proxyTarget}/api/v1/${normalizeEnterpriseChatUpstreamPath(requestPath)}${search}`;
