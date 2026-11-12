@@ -1,4 +1,5 @@
 import type { EventGroupAttendee, EventGroupAttendeeListParams, EventGroupAttendeeListResponse, EventGroupAttendeeReason, EventGroupEvent, EventGroupEventListParams, EventGroupProvider } from "./group-chat/event-group.types";
+import { isValidEventGroupUserId } from "./group-chat/event-group.models.ts";
 
 export const EVENT_GROUP_PAGE_SIZE = 10;
 export const EVENT_GROUP_ATTENDEE_PAGE_SIZE = 25;
@@ -92,9 +93,15 @@ export function summarizeEventGroupAttendeeEligibility(response: Pick<EventGroup
 }
 
 /** Adds one registration to a cross-page selection without creating duplicate entries. */
+export function canSelectEventGroupAttendee(attendee: Pick<EventGroupAttendee, "user_id" | "can_invite" | "group_state">): boolean {
+  return Boolean(attendee.user_id) && isValidEventGroupUserId(attendee.user_id) && attendee.can_invite && attendee.group_state !== "member" && attendee.group_state !== "invited";
+}
+
+/** Adds one registration to a cross-page selection without creating duplicate entries. */
 export function addEventAttendeeSelection(selection: Readonly<Record<string, EventGroupAttendee>>, attendee: EventGroupAttendee): Readonly<Record<string, EventGroupAttendee>> {
-  if (!attendee.user_id || !attendee.can_invite) return selection;
-  return selection[attendee.user_id] ? selection : { ...selection, [attendee.user_id]: attendee };
+  const userId = attendee.user_id;
+  if (!userId || !canSelectEventGroupAttendee(attendee)) return selection;
+  return selection[userId] ? selection : { ...selection, [userId]: attendee };
 }
 
 /** Removes one platform user from a cross-page selection. */
@@ -107,15 +114,16 @@ export function removeEventAttendeeSelection(selection: Readonly<Record<string, 
 
 /** Toggles a platform user while preserving selections made on other attendee pages. */
 export function toggleEventAttendeeSelection(selection: Readonly<Record<string, EventGroupAttendee>>, attendee: EventGroupAttendee): Readonly<Record<string, EventGroupAttendee>> {
-  if (!attendee.user_id || !attendee.can_invite) return selection;
-  return selection[attendee.user_id]
-    ? removeEventAttendeeSelection(selection, attendee.user_id)
+  const userId = attendee.user_id;
+  if (!userId || !canSelectEventGroupAttendee(attendee)) return selection;
+  return selection[userId]
+    ? removeEventAttendeeSelection(selection, userId)
     : addEventAttendeeSelection(selection, attendee);
 }
 
 /** Toggles a verified Provider by platform user ID and never promotes the current account. */
 export function toggleEventGroupProviderSelection(selection: Readonly<Record<string, EventGroupProvider>>, provider: EventGroupProvider): Readonly<Record<string, EventGroupProvider>> {
-  if (provider.is_me) return selection;
+  if (provider.is_me || !isValidEventGroupUserId(provider.user_id)) return selection;
   if (selection[provider.user_id]) {
     const next = { ...selection };
     delete next[provider.user_id];
@@ -137,14 +145,9 @@ export function getEventAttendeeEligibilityReason(attendee: Pick<EventGroupAtten
   return attendee.reason ?? "not_eligible";
 }
 
-/** Creation is intentionally unavailable until the backend supports Event Group Chat. */
-export function isEventGroupCreationEnabled(): false {
-  return false;
-}
-
-/** Event management is intentionally unavailable until an authorized test environment is approved. */
-export function isEventGroupInvitationEnabled(): false {
-  return false;
+/** Enables the Event-specific invitation UI; the backend remains authoritative for authorization. */
+export function isEventGroupInvitationEnabled(): true {
+  return true;
 }
 
 /** Detects Event Groups only from authoritative Group detail fields. */
@@ -153,8 +156,8 @@ export function isEventGroupWorkspaceContext(group: { kind: string | null; conte
 }
 
 /** Uses backend Group role and permission fields for Event invitation management visibility. */
-export function canManageEventGroupInvitations(group: { kind: string | null; context_type: string | null; context_id: string | null; my_role: string | null; can_invite: boolean | null; enterpriseAdminAuthorized: boolean }): boolean {
-  return group.enterpriseAdminAuthorized && isEventGroupWorkspaceContext(group) && group.my_role === "owner" && group.can_invite === true;
+export function canManageEventGroupInvitations(group: { kind: string | null; context_type: string | null; context_id: string | null; status?: string | null; my_role: string | null; can_invite: boolean | null; enterpriseAdminAuthorized: boolean }): boolean {
+  return group.enterpriseAdminAuthorized && group.status?.trim().toLowerCase() !== "closed" && isEventGroupWorkspaceContext(group) && group.my_role === "owner" && group.can_invite === true;
 }
 
 /** Provides a context-safe label without exposing Training-only metadata for Event Groups. */
@@ -174,7 +177,9 @@ export function eventGroupInvitationInvalidationQueryKeys(eventId: string, group
     ["group-chat", "groups"],
     ["event-group"],
     ["event-group", "attendees", eventId],
+    ["event-group", "providers", eventId],
     ["event-group", "groups", eventId],
+    ["event-group", "workspace-members", groupId],
   ];
 }
 

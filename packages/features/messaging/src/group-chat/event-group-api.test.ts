@@ -122,10 +122,45 @@ test("POST invite-registered sends the exact payload and normalizes capacity out
   let capturedPath = "";
   let capturedBody = "";
   const request: EventGroupApiRequest = async (path, init) => { capturedPath = path; capturedBody = String(init?.body); return jsonResponse({ invited: [userId], skipped: [], not_invited_group_full: 2, no_account: 1, free_places: 4 }, 201); };
-  const result = await createEventGroupApiClient(request).inviteRegistered(groupId, buildInviteRegisteredPayload({ user_ids: [userId, ` ${userId} `], all_eligible: true, exclude_user_ids: ["other-user"] }));
+  const excludedUserId = "550e8400-e29b-41d4-a716-446655440013";
+  const result = await createEventGroupApiClient(request).inviteRegistered(groupId, buildInviteRegisteredPayload({ user_ids: [userId, ` ${userId} `], all_eligible: true, exclude_user_ids: [excludedUserId] }));
   assert.equal(capturedPath, `/groups/${groupId}/members/invite-registered`);
-  assert.deepEqual(JSON.parse(capturedBody), { user_ids: [userId], all_eligible: true, exclude_user_ids: ["other-user"] });
+  assert.deepEqual(JSON.parse(capturedBody), { user_ids: [userId], all_eligible: true, exclude_user_ids: [excludedUserId] });
   assert.deepEqual(result, { invited: [userId], skipped: [], not_invited_group_full: 2, no_account: 1, free_places: 4 });
+});
+
+test("POST invite-registered supports verified Provider-only invitations through the Event endpoint", async () => {
+  let capturedPath = "";
+  let capturedBody = "";
+  const request: EventGroupApiRequest = async (path, init) => { capturedPath = path; capturedBody = String(init?.body); return jsonResponse({ invited: [userId], skipped: [], free_places: 3 }, 201); };
+  const result = await createEventGroupApiClient(request).inviteRegistered(groupId, buildInviteRegisteredPayload({ user_ids: [userId] }));
+  assert.equal(capturedPath, `/groups/${groupId}/members/invite-registered`);
+  assert.deepEqual(JSON.parse(capturedBody), { user_ids: [userId] });
+  assert.deepEqual(result, { invited: [userId], skipped: [], not_invited_group_full: 0, no_account: 0, free_places: 3 });
+});
+
+test("POST invite-registered supports mixed attendee and verified Provider identities", async () => {
+  let capturedPath = "";
+  let capturedBody = "";
+  const providerId = "550e8400-e29b-41d4-a716-446655440014";
+  const request: EventGroupApiRequest = async (path, init) => {
+    capturedPath = path;
+    capturedBody = String(init?.body);
+    return jsonResponse({ invited: [userId, providerId], skipped: [], free_places: 2 }, 201);
+  };
+  const result = await createEventGroupApiClient(request).inviteRegistered(groupId, buildInviteRegisteredPayload({ user_ids: [userId, providerId] }));
+  assert.equal(capturedPath, `/groups/${groupId}/members/invite-registered`);
+  assert.deepEqual(JSON.parse(capturedBody), { user_ids: [userId, providerId] });
+  assert.deepEqual(result, { invited: [userId, providerId], skipped: [], not_invited_group_full: 0, no_account: 0, free_places: 2 });
+});
+
+test("invite-registered rejects empty or invalid platform identity payloads before making a request", async () => {
+  let requestCount = 0;
+  const request: EventGroupApiRequest = async () => { requestCount += 1; return jsonResponse({ invited: [], free_places: 0 }, 201); };
+  const client = createEventGroupApiClient(request);
+  await assert.rejects(() => client.inviteRegistered(groupId, buildInviteRegisteredPayload({ user_ids: [] })), (error: unknown) => error instanceof EventGroupApiError && error.status === 422);
+  await assert.rejects(() => client.inviteRegistered(groupId, buildInviteRegisteredPayload({ user_ids: ["provider-not-a-uuid"] })), (error: unknown) => error instanceof EventGroupApiError && error.status === 422);
+  assert.equal(requestCount, 0);
 });
 
 test("normalizers fail closed for missing required fields while preserving eligibility reasons", () => {
@@ -134,6 +169,7 @@ test("normalizers fail closed for missing required fields while preserving eligi
   assert.equal(attendees?.items[0]?.user_id, null);
   assert.equal(normalizeEventGroupEventsResponse({ items: [], total: 0, page: 1 }), null);
   assert.equal(normalizeEventGroupProvidersResponse({ items: [], total: 0 }), null);
+  assert.equal(normalizeEventGroupProvidersResponse({ event_id: eventId, items: [{ user_id: "provider-not-a-uuid", name: "Unverified" }], total: 1 })?.items.length, 0);
 });
 
 test("HTTP failures retain status and do not silently succeed", async () => {

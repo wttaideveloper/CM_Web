@@ -3,7 +3,7 @@ import test from "node:test";
 import type { EventGroupAttendee, EventGroupProvider } from "./group-chat/event-group.types.ts";
 import { buildEventGroupCreatePayload, buildInviteRegisteredPayload, validateEventGroupCreatePayload } from "./group-chat/event-group.models.ts";
 import { isSupportedEventGroupAvatarFile } from "./group-chat-models.ts";
-import { addEventAttendeeSelection, buildEventGroupAttendeeFilters, buildEventGroupListParams, canContinueEventGroupAttendeeStep, canManageEventGroupInvitations, eventGroupInvitationInvalidationQueryKeys, formatEventGroupAvatarFileSize, getEventAttendeeEligibilityReason, getEventAttendeeIdentityStatus, getGroupWorkspaceContextLabel, isEventGroupCreationEnabled, isEventGroupInvitationEnabled, isEventGroupWorkspaceContext, resolveEventGroupQueryState, summarizeEventGroupAttendeeEligibility, summarizeEventGroupCapacity, toggleEventAttendeeSelection, toggleEventGroupProviderSelection, validateEventGroupReview } from "./event-group-wizard-models.ts";
+import { addEventAttendeeSelection, buildEventGroupAttendeeFilters, buildEventGroupListParams, canContinueEventGroupAttendeeStep, canManageEventGroupInvitations, canSelectEventGroupAttendee, eventGroupInvitationInvalidationQueryKeys, formatEventGroupAvatarFileSize, getEventAttendeeEligibilityReason, getEventAttendeeIdentityStatus, getGroupWorkspaceContextLabel, isEventGroupInvitationEnabled, isEventGroupWorkspaceContext, resolveEventGroupQueryState, summarizeEventGroupAttendeeEligibility, summarizeEventGroupCapacity, toggleEventAttendeeSelection, toggleEventGroupProviderSelection, validateEventGroupReview } from "./event-group-wizard-models.ts";
 import { normalizeGroupChatSocketEvent } from "./group-chat/group-chat-socket.ts";
 import { isGroupChatRealtimeActiveStatus } from "./group-chat/group-chat-socket-controller.ts";
 
@@ -13,7 +13,7 @@ const attendee = (registrationId: string, name = registrationId): EventGroupAtte
   email: `${registrationId}@example.test`,
   registration_status: "confirmed",
   payment_status: "paid",
-  user_id: `user-${registrationId}`,
+  user_id: `550e8400-e29b-41d4-a716-44665544${String(Number(registrationId.match(/\d+$/)?.[0] ?? 1)).padStart(4, "0")}`,
   can_invite: true,
   reason: null,
   group_state: "none",
@@ -37,7 +37,7 @@ test("attendee selection persists across pages and deduplicates by platform user
   const selected = addEventAttendeeSelection(addEventAttendeeSelection(addEventAttendeeSelection({}, first), duplicateRegistration), second);
   assert.equal(Object.keys(selected).length, 2);
   assert.equal(Object.keys(addEventAttendeeSelection(selected, first)).length, 2);
-  assert.deepEqual(Object.keys(toggleEventAttendeeSelection(selected, first)), ["user-registration-2"]);
+  assert.deepEqual(Object.keys(toggleEventAttendeeSelection(selected, first)), ["550e8400-e29b-41d4-a716-446655440002"]);
 });
 
 test("registration eligibility is separate from inviteable platform accounts", () => {
@@ -53,6 +53,14 @@ test("attendee selection remains disabled for null identities and backend denial
   assert.deepEqual(addEventAttendeeSelection({}, noAccount), {});
   assert.deepEqual(toggleEventAttendeeSelection({}, noAccount), {});
   assert.equal(getEventAttendeeIdentityStatus(noAccount), "not_invitable");
+  assert.deepEqual(addEventAttendeeSelection({}, { ...attendee("invalid-id"), user_id: "not-a-uuid" }), {});
+});
+
+test("attendee selection excludes existing and pending Event Group identities", () => {
+  assert.equal(canSelectEventGroupAttendee(attendee("available")), true);
+  assert.equal(canSelectEventGroupAttendee({ ...attendee("member"), group_state: "member" }), false);
+  assert.equal(canSelectEventGroupAttendee({ ...attendee("pending"), group_state: "invited" }), false);
+  assert.deepEqual(addEventAttendeeSelection({}, { ...attendee("pending"), group_state: "invited" }), {});
 });
 
 test("zero-attendee Event responses can continue to Provider selection", () => {
@@ -71,6 +79,7 @@ test("confirmed free registrations remain selectable only with a platform identi
 test("final review permits Admin plus Provider-only drafts without silently requiring invite-all", () => {
   const eventId = "550e8400-e29b-41d4-a716-446655440010";
   assert.equal(validateEventGroupReview({ eventId, groupName: "Provider Event Group", description: "", attendeeUserIds: [], providerUserIds: ["550e8400-e29b-41d4-a716-446655440011"], inviteAllRegistered: false, maxMembers: 50 }), null);
+  assert.equal(validateEventGroupReview({ eventId, groupName: "Mixed Event Group", description: "", attendeeUserIds: ["550e8400-e29b-41d4-a716-446655440012"], providerUserIds: ["550e8400-e29b-41d4-a716-446655440013"], inviteAllRegistered: false, maxMembers: 50 }), null);
   assert.equal(validateEventGroupReview({ eventId, groupName: "Empty draft", description: "", attendeeUserIds: [], providerUserIds: [], inviteAllRegistered: false, maxMembers: 50 }), "invitee_required");
   assert.equal(validateEventGroupReview({ eventId, groupName: "Invite all draft", description: "", attendeeUserIds: [], providerUserIds: [], inviteAllRegistered: true, maxMembers: 50 }), null);
 });
@@ -81,11 +90,10 @@ test("final review rejects duplicate platform IDs and capacity overflow", () => 
   assert.equal(validateEventGroupReview({ eventId, groupName: "Full draft", description: "", attendeeUserIds: [], providerUserIds: ["550e8400-e29b-41d4-a716-446655440011"], inviteAllRegistered: false, maxMembers: 1 }), "capacity_exceeded");
 });
 
-test("identity and creation remain backend-blocked", () => {
+test("Event Group attendee identity and invitation gates remain authoritative", () => {
   assert.equal(getEventAttendeeIdentityStatus(attendee("registration-1")), "platform_identity_available");
   assert.equal(getEventAttendeeIdentityStatus({ ...attendee("registration-2"), user_id: null }), "pending_backend_verification");
-  assert.equal(isEventGroupCreationEnabled(), false);
-  assert.equal(isEventGroupInvitationEnabled(), false);
+  assert.equal(isEventGroupInvitationEnabled(), true);
 });
 
 test("Event workspace context requires the authoritative kind, type, and ID", () => {
@@ -94,6 +102,7 @@ test("Event workspace context requires the authoritative kind, type, and ID", ()
   assert.equal(isEventGroupWorkspaceContext({ kind: "care", context_type: "event", context_id: "event-1" }), false);
   assert.equal(isEventGroupWorkspaceContext({ kind: "program", context_type: "event", context_id: null }), false);
   assert.equal(canManageEventGroupInvitations({ kind: "program", context_type: "event", context_id: "event-1", my_role: "owner", can_invite: true, enterpriseAdminAuthorized: true }), true);
+  assert.equal(canManageEventGroupInvitations({ kind: "program", context_type: "event", context_id: "event-1", status: "closed", my_role: "owner", can_invite: true, enterpriseAdminAuthorized: true }), false);
   assert.equal(canManageEventGroupInvitations({ kind: "program", context_type: "event", context_id: "event-1", my_role: "owner", can_invite: true, enterpriseAdminAuthorized: false }), false);
   assert.equal(canManageEventGroupInvitations({ kind: "program", context_type: "event", context_id: "event-1", my_role: "member", can_invite: true, enterpriseAdminAuthorized: true }), false);
   assert.equal(canManageEventGroupInvitations({ kind: "program", context_type: "event", context_id: "event-1", my_role: "owner", can_invite: false, enterpriseAdminAuthorized: true }), false);
@@ -102,13 +111,13 @@ test("Event workspace context requires the authoritative kind, type, and ID", ()
 });
 
 test("registered invitation payloads support explicit IDs, invite-all, exclusions, and later registrations", () => {
-  assert.deepEqual(buildInviteRegisteredPayload({ user_ids: ["user-1", "user-1"] }), { user_ids: ["user-1"] });
-  assert.deepEqual(buildInviteRegisteredPayload({ all_eligible: true, exclude_user_ids: ["user-2", "user-2"] }), { all_eligible: true, exclude_user_ids: ["user-2"] });
+  assert.deepEqual(buildInviteRegisteredPayload({ user_ids: ["550e8400-e29b-41d4-a716-446655440012", "550e8400-e29b-41d4-a716-446655440012"] }), { user_ids: ["550e8400-e29b-41d4-a716-446655440012"] });
+  assert.deepEqual(buildInviteRegisteredPayload({ all_eligible: true, exclude_user_ids: ["550e8400-e29b-41d4-a716-446655440013", "550e8400-e29b-41d4-a716-446655440013"] }), { all_eligible: true, exclude_user_ids: ["550e8400-e29b-41d4-a716-446655440013"] });
 });
 
 test("Event invitation success refreshes Group and Event query prefixes", () => {
   assert.deepEqual(eventGroupInvitationInvalidationQueryKeys("event-1", "group-1"), [
-    ["group-chat", "group", "group-1"], ["group-chat", "members", "group-1"], ["group-chat", "current-member", "group-1"], ["group-chat", "invite-members", "group-1"], ["group-chat", "groups"], ["event-group"], ["event-group", "attendees", "event-1"], ["event-group", "groups", "event-1"],
+    ["group-chat", "group", "group-1"], ["group-chat", "members", "group-1"], ["group-chat", "current-member", "group-1"], ["group-chat", "invite-members", "group-1"], ["group-chat", "groups"], ["event-group"], ["event-group", "attendees", "event-1"], ["event-group", "providers", "event-1"], ["event-group", "groups", "event-1"], ["event-group", "workspace-members", "group-1"],
   ]);
 });
 
@@ -139,10 +148,11 @@ test("capacity reserves the owner and does not promise invite-all delivery", () 
 
 test("Provider selection uses platform IDs and excludes the current account", () => {
   const provider = (user_id: string, is_me = false): EventGroupProvider => ({ user_id, name: user_id, registration_number: null, is_me });
-  const selected = toggleEventGroupProviderSelection({}, provider("provider-1"));
+  const selected = toggleEventGroupProviderSelection({}, provider("550e8400-e29b-41d4-a716-446655440014"));
   assert.equal(Object.keys(selected).length, 1);
-  assert.equal(Object.keys(toggleEventGroupProviderSelection(selected, provider("provider-1"))).length, 0);
-  assert.equal(Object.keys(toggleEventGroupProviderSelection(selected, provider("current", true))).length, 1);
+  assert.equal(Object.keys(toggleEventGroupProviderSelection(selected, provider("550e8400-e29b-41d4-a716-446655440014"))).length, 0);
+  assert.equal(Object.keys(toggleEventGroupProviderSelection(selected, provider("550e8400-e29b-41d4-a716-446655440015", true))).length, 1);
+  assert.equal(Object.keys(toggleEventGroupProviderSelection({}, provider("provider-not-a-uuid"))).length, 0);
 });
 
 test("Event avatar preview accepts PNG, JPG, and WebP while rejecting unsupported formats", () => {
