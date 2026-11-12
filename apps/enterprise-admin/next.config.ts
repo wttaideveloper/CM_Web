@@ -255,40 +255,38 @@ const nextConfig: NextConfig = {
       );
     }
 
-    if (upstreams.EVENTS_API_BASE_URL) {
-      const eventsApiV1Base = toApiV1Base(upstreams.EVENTS_API_BASE_URL);
-      fallback.push(
-        // Preserve the documented collection slash before proxying multipart requests.
-        {
-          source: "/api/v1/events/media",
-          destination: `${eventsApiV1Base}/events/media/`,
-        },
-        {
-          source: "/api/v1/events/media/",
-          destination: `${eventsApiV1Base}/events/media/`,
-        },
-        {
-          source: "/api/v1/events",
-          destination: `${eventsApiV1Base}/events/`,
-        },
-        {
-          source: "/api/v1/events/:path*",
-          destination: `${eventsApiV1Base}/events/:path*`,
-        },
-        {
-          source: "/api/v1/event-categories",
-          destination: `${eventsApiV1Base}/event-categories/`,
-        },
-        {
-          source: "/api/v1/event-types",
-          destination: `${eventsApiV1Base}/event-types/`,
-        },
-        {
-          source: "/api/v1/event-types/:path*",
-          destination: `${eventsApiV1Base}/event-types/:path*`,
-        },
-      );
-    }
+    const eventsApiV1Base = toApiV1Base(upstreams.EVENTS_API_BASE_URL ?? upstreams.CHAT_API_BASE_URL);
+    fallback.push(
+      // Preserve the documented collection slash before proxying multipart requests.
+      {
+        source: "/api/v1/events/media",
+        destination: `${eventsApiV1Base}/events/media/`,
+      },
+      {
+        source: "/api/v1/events/media/",
+        destination: `${eventsApiV1Base}/events/media/`,
+      },
+      {
+        source: "/api/v1/events",
+        destination: `${eventsApiV1Base}/events/`,
+      },
+      {
+        source: "/api/v1/events/:path*",
+        destination: `${eventsApiV1Base}/events/:path*`,
+      },
+      {
+        source: "/api/v1/event-categories",
+        destination: `${eventsApiV1Base}/event-categories/`,
+      },
+      {
+        source: "/api/v1/event-types",
+        destination: `${eventsApiV1Base}/event-types/`,
+      },
+      {
+        source: "/api/v1/event-types/:path*",
+        destination: `${eventsApiV1Base}/event-types/:path*`,
+      },
+    );
 
     return { fallback };
   },
