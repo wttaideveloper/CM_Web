@@ -68,6 +68,19 @@ if (!RUNTIME[app] || (phase !== "runtime" && phase !== "build")) {
 }
 
 if (phase === "build") {
+  // Cross-app login redirects cannot resolve without these browser-visible origins, so
+  // treat them as hard build requirements (not mere warnings) for every app that uses them.
+  const requiredBuildOrigins = {
+    shell: ["NEXT_PUBLIC_SHELL_ORIGIN", "NEXT_PUBLIC_ENTERPRISE_ADMIN_ORIGIN", "NEXT_PUBLIC_PLATFORM_ADMIN_ORIGIN"],
+    "enterprise-admin": ["NEXT_PUBLIC_SHELL_ORIGIN", "NEXT_PUBLIC_ENTERPRISE_ADMIN_ORIGIN"],
+    "platform-admin": ["NEXT_PUBLIC_SHELL_ORIGIN", "NEXT_PUBLIC_PLATFORM_ADMIN_ORIGIN"],
+  }[app] ?? [];
+  const missingRequiredOrigins = requiredBuildOrigins.filter((name) => findMissingEnv(process.env, [name]).length > 0);
+  if (missingRequiredOrigins.length > 0) {
+    console.error(`[check-env] Refusing to build: required browser-visible origin(s) not set: ${missingRequiredOrigins.join(", ")}.`);
+    console.error("  Cross-app login redirects cannot resolve without them. See deploy/docker/frontend.env.example.");
+    process.exit(1);
+  }
   const unset = BUILD_PUBLIC[app].filter(([name]) => findMissingEnv(process.env, [name]).length > 0);
   for (const [name, effect] of unset) console.warn(`[check-env] WARNING ${name} is not set: ${effect}.`);
   process.exit(0);
