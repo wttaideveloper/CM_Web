@@ -23,7 +23,13 @@ function LoginPageContent() {
   const { t } = useTranslation("shell");
   const searchParams = useSearchParams();
   const { authenticated, isLoading } = useAuth();
-  const [loginType, setLoginType] = useState<"super-admin" | "admin">("super-admin");
+  const [loginType, setLoginType] = useState<"super-admin" | "admin">(() =>
+    // A return_to aimed at the Enterprise Admin app means the visitor is an
+    // enterprise owner/staff member, so land them on the Enterprise tab.
+    getSafeEnterpriseAdminReturnUrl(searchParams.get("return_to"))
+      ? "admin"
+      : "super-admin",
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [superAdminEmail, setSuperAdminEmail] = useState("");
@@ -129,14 +135,24 @@ function LoginPageContent() {
         return;
       }
 
-      if (process.env.NODE_ENV === "development") {
-        const enterpriseAdminOrigin = getEnterpriseAdminAppOrigin();
-        if (enterpriseAdminOrigin) {
-          window.location.assign(new URL("/admin/dashboard", enterpriseAdminOrigin).toString());
-          return;
+      // Enterprise sign-in completes on the Enterprise Admin origin so the
+      // Invigorate session cookie is scoped to that host. The Shell never
+      // handles enterprise credentials.
+      const enterpriseAdminOrigin = getEnterpriseAdminAppOrigin();
+      if (enterpriseAdminOrigin) {
+        const enterpriseLoginUrl = new URL("/auth/login", enterpriseAdminOrigin);
+        if (enterpriseAdminReturnUrl) {
+          enterpriseLoginUrl.searchParams.set("return_to", enterpriseAdminReturnUrl);
         }
+        if (rememberMe) {
+          enterpriseLoginUrl.searchParams.set("rememberMe", "true");
+        }
+        window.location.assign(enterpriseLoginUrl.toString());
+        return;
       }
 
+      // Fallback when the Enterprise Admin origin is not configured: keep the
+      // Shell-hosted OIDC flow.
       const callbackPath = buildAuthCallbackPath(searchParams.get("return_to"));
       startLogin({
         ...(callbackPath === "/auth/validate" ? {} : { callbackPath }),
