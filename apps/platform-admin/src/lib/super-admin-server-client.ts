@@ -9,7 +9,6 @@ import { normalizeUpstreamBaseUrl } from "@ihp/shared/upstream-config";
 import { resolveMarketplaceUrl } from "./marketplace-url";
 
 const SESSION_COOKIE_NAME = "ihp_super_admin_refresh";
-const ACCESS_TOKEN_COOKIE_NAME = "access_token";
 const REMEMBER_ME_COOKIE_NAME = "ihp_super_admin_remember_me";
 const REMEMBER_ME_MAX_AGE = 60 * 60 * 24 * 30;
 // An unset or malformed value leaves the gateway "not configured" (503) instead of guessing a host.
@@ -86,10 +85,16 @@ function sessionCookieOptions(rememberMe = false) {
   };
 }
 
-/** Clears the Platform bridge credential using the same scope used when it was issued. */
+/**
+ * Clears the Platform bridge credential using the same scope used when it was issued.
+ *
+ * Only the `ihp_super_admin_*` cookies are touched. The generic `access_token` and
+ * `refresh_token` names belong to the Web Auth (enterprise) service; on a shared
+ * development host such as `localhost` those cookies are visible to every port, so
+ * clearing them here would also sign the user out of the Enterprise Admin app.
+ */
 export function clearSuperAdminSessionCookie(response: NextResponse): NextResponse {
   response.cookies.set(SESSION_COOKIE_NAME, "", { ...sessionCookieOptions(), maxAge: 0 });
-  response.cookies.set(ACCESS_TOKEN_COOKIE_NAME, "", { ...sessionCookieOptions(), maxAge: 0 });
   response.cookies.set(REMEMBER_ME_COOKIE_NAME, "", { ...sessionCookieOptions(), maxAge: 0 });
   return response;
 }
@@ -192,16 +197,14 @@ export async function warmSuperAdminSession(refreshToken: string, rememberMe: bo
 async function getSuperAdminAccessToken(): Promise<SuperAdminAccessToken> {
   if (!SUPER_ADMIN_AUTH_API_BASE_URL) throw new SuperAdminServerError(503, "Super Admin authentication is not configured.");
   const requestCookies = await cookies();
-  const accessToken = requestCookies.get(ACCESS_TOKEN_COOKIE_NAME)?.value;
   const rememberMe = requestCookies.get(REMEMBER_ME_COOKIE_NAME)?.value === "true";
-  if (accessToken) {
-    return { accessToken, rememberMe };
-  }
 
-  const refreshToken =
-    requestCookies.get(SESSION_COOKIE_NAME)?.value ||
-    requestCookies.get("refresh_token")?.value ||
-    requestCookies.get("ihp_refresh_token")?.value;
+  // Only the Platform bridge credential is trusted here. The generic `access_token`,
+  // `refresh_token` and `ihp_refresh_token` cookies are issued by the Web Auth service
+  // for the Enterprise Admin app; cookies ignore ports, so on a shared host such as
+  // `localhost` reading them would send an enterprise token to the Super Admin gateway
+  // and bounce every Platform Admin route back to the sign-in page.
+  const refreshToken = requestCookies.get(SESSION_COOKIE_NAME)?.value;
   if (!refreshToken) throw new SuperAdminServerError(401, "Super Admin authentication is required.");
   const refreshKey = createHash("sha256").update(refreshToken).digest("hex");
 
