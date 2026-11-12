@@ -20,7 +20,8 @@ import {
   normalizeEventGroupListResponse,
   normalizeEventGroupProvidersResponse,
   normalizeInviteRegisteredResponse,
-} from "./event-group.models";
+  isValidEventGroupUserId,
+} from "./event-group.models.ts";
 
 const DEFAULT_EVENT_PAGE_SIZE = 20;
 const DEFAULT_ATTENDEE_PAGE_SIZE = 50;
@@ -123,6 +124,17 @@ function requireId(value: string, label: string): string {
   return id;
 }
 
+function validateInviteRegisteredPayload(payload: InviteRegisteredPayload): void {
+  const userIds = payload.user_ids ?? [];
+  const excludedUserIds = payload.exclude_user_ids ?? [];
+  if (payload.all_eligible !== true && userIds.length === 0) {
+    throw new EventGroupApiError(422, "Select at least one eligible Event attendee or verified Provider.");
+  }
+  if (userIds.some((userId) => !isValidEventGroupUserId(userId)) || excludedUserIds.some((userId) => !isValidEventGroupUserId(userId))) {
+    throw new EventGroupApiError(422, "Event invitation identities must be valid platform user IDs.");
+  }
+}
+
 export function createEventGroupApiClient(request: EventGroupApiRequest = defaultEventGroupRequest) {
   return {
     async listEvents(params: EventGroupEventListParams = {}): Promise<EventGroupEventListResponse> {
@@ -191,6 +203,7 @@ export function createEventGroupApiClient(request: EventGroupApiRequest = defaul
     async inviteRegistered(groupId: string, payload: InviteRegisteredPayload): Promise<InviteRegisteredResponse> {
       const id = requireId(groupId, "The Group identifier");
       const body = buildInviteRegisteredPayload(payload);
+      validateInviteRegisteredPayload(body);
       const raw = await requestJson<unknown>(request, `/groups/${encodeURIComponent(id)}/members/invite-registered`, { method: "POST", body: JSON.stringify(body) }, 201);
       const normalized = normalizeInviteRegisteredResponse(raw);
       if (!normalized) throw new EventGroupApiError(502, "The Event Group invitation response was invalid.");
