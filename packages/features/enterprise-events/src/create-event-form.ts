@@ -15,7 +15,7 @@ import type {
 import { buildEventMediaPayload, buildEventMediaUpdatePayload, normalizeDocumentEntries, validateEventMediaLink, type EventDocumentEntry } from "./event-media";
 import { validateSessions } from "./SessionTableEditor";
 import { EVENT_DESCRIPTION_MAX_LENGTH, eventServiceOptionLengthError } from "./event-field-limits";
-import { assertEventCurrencyConsistency, eventCurrencyForSource, normalizeEventFormCurrency, resolveEventCurrencySource, synchronizeEventCurrencies, synchronizeEventServiceEnablement, type EventCurrencyPolicy } from "./event-currency";
+import { assertEventCurrencyConsistency, DEFAULT_EVENT_CURRENCY, eventCurrencyForSource, normalizeEventFormCurrency, normalizeEventPricingPayload, resolveEventCurrencySource, synchronizeEventCurrencies, synchronizeEventServiceEnablement, type EventCurrencyPolicy } from "./event-currency";
 import { deriveEventPurchaseWindow, syncPurchaseWindows } from "./event-service-purchase-window";
 import { buildEventVenue } from "./event-location";
 import {
@@ -87,7 +87,7 @@ export function createEmptyEventForm(): CreateEventFormValues {
     organiser_contact: "", start_date: "", end_date: "", duration_type: "", registration_cutoff: "",
     registration_open_at: "", registration_close_at: "", time_zone: "America/New_York", event_type: "", delivery_mode: "in_person",
     venue_name: "", venue_address: "", venue_city: "",
-    meeting_link: "", meeting_provider: "", price: "", pricing_type: "paid", currency: "", ticket_types: [], capacity: "",
+    meeting_link: "", meeting_provider: "", price: "", pricing_type: "paid", currency: DEFAULT_EVENT_CURRENCY, ticket_types: [], capacity: "",
     min_participants: "", max_participants: "", primary_image: "", gallery_images: [], videos: [], documents: [],
     custom_fields: [], sessions: [], modules: null, meals: null, accommodation: null,
   };
@@ -137,6 +137,7 @@ export function buildCreateEventPayload(
   const venue: CreateEventVenue = buildEventVenue(values.venue_name, values.venue_address, values.venue_city);
 
   const mediaPayload = buildEventMediaPayload(values);
+  const pricingPayload = normalizeEventPricingPayload(synchronizedValues);
   const payload: CreateEventPayload = {
     tenant_id: tenantId,
     enterprise_id: enterpriseId,
@@ -159,13 +160,10 @@ export function buildCreateEventPayload(
     venue: values.delivery_mode === "online" ? null : venue,
     meeting_link: values.delivery_mode === "in_person" ? null : values.meeting_link.trim() || null,
     meeting_provider: values.delivery_mode === "in_person" ? null : values.meeting_provider.trim() || null,
-    price: values.pricing_type === "free" ? null : values.price.trim(),
-    pricing_type: values.pricing_type,
-    // The Enterprise UI correctly hides currency for Free Events, but the
-    // Event API still requires the currency field in the create contract.
-    // Keep it out of the UI while supplying a harmless default on the wire.
-    currency: synchronizedValues.pricing_type === "free" ? resolvedPayloadCurrency : synchronizedValues.currency.trim(),
-    ticket_types: synchronizedValues.pricing_type === "free" ? [] : synchronizedValues.ticket_types,
+    price: pricingPayload.price,
+    pricing_type: pricingPayload.pricing_type,
+    currency: pricingPayload.currency,
+    ticket_types: pricingPayload.ticket_types,
     capacity: toOptionalNumericString(values.capacity),
     min_participants: toOptionalNumericString(values.min_participants),
     max_participants: toOptionalNumericString(values.max_participants),
@@ -211,7 +209,7 @@ export function eventToFormValues(event: Event): CreateEventFormValues {
     registration_close_at: toDateTimeLocal(event.registration_close_at), time_zone: event.time_zone, event_type: event.event_type ?? "", delivery_mode: event.delivery_mode,
     venue_name: event.venue?.name ?? "", venue_address: event.venue?.address ?? "", venue_city: event.venue?.city ?? "",
     meeting_link: event.meeting_link ?? "", meeting_provider: event.meeting_provider ?? "", price: event.price ?? "", pricing_type: pricingType,
-    currency: normalizeEventFormCurrency(pricingType, event.currency), ticket_types: event.ticket_types, capacity: event.capacity,
+    currency: normalizeEventFormCurrency(event.currency), ticket_types: event.ticket_types, capacity: event.capacity,
     min_participants: event.min_participants, max_participants: event.max_participants, primary_image: event.primary_image ?? "",
     gallery_images: event.gallery_images, videos: event.videos, documents: normalizeDocumentEntries(event.documents),
     custom_fields: event.custom_fields, sessions: event.sessions.map((session) => ({ ...(session.id ? { id: session.id } : {}), session_date: session.session_date ?? "", title: session.title, description: session.description ?? "", speaker: session.speaker ?? "", speaker_bio: session.speaker_bio ?? "", start_time: session.start_time ?? "", end_time: session.end_time ?? "", location: session.location ?? "", meeting_link: session.meeting_link ?? null })),

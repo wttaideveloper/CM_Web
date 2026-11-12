@@ -177,3 +177,11 @@ test("required fields disabled by the selected Event Type do not block submissio
   const values = { ...emptyValues, modules: { registration: true, tickets: false, sessions: false, check_in: false, online_meeting: false, custom_questions: false, meals: false, accommodation: false } };
   assert.deepEqual(validateRequiredConfiguredEventFields(configuration(tickets), values, {}), {});
 });
+
+test("Free Events do not require the hidden Event currency field", () => {
+  const currency = field({ source: "core", core_key: "currency", stable_key: "currency", label: "Event currency" });
+  assert.deepEqual(validateRequiredConfiguredEventFields(configuration(currency), { ...emptyValues, pricing_type: "free" }, {}), {});
+  assert.deepEqual(validateRequiredConfiguredEventFields(configuration(currency), { ...emptyValues, pricing_type: "paid" }, {}), {
+    currency: ["Event currency is required."],
+  });
+});

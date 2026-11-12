@@ -27,6 +27,14 @@ export type GroupChatMemberRoleAction = "make-admin" | "remove-admin";
 export type GroupChatMemberAction = GroupChatMemberRoleAction | "remove-member" | "cancel-invitation" | "mute-posting" | "unmute-posting" | "transfer-ownership";
 export type GroupChatMemberPostingAction = "mute-posting" | "unmute-posting";
 
+/** Returns whether the authenticated tenant role may enter Event Group creation. */
+export function canCreateEventGroup(roles: AuthRoles | null | undefined): boolean {
+  if (!roles) return false;
+  const roleValues = [roles.tenantRole, ...roles.tenantRbacRoles].map((role) => role.trim().toLowerCase());
+  if (roleValues.includes("internal_user")) return false;
+  return roleValues.includes("tenant_owner") || roleValues.includes("tenant_admin");
+}
+
 export type GroupLearner = {
   id: string;
   name: string;

@@ -13,14 +13,14 @@ import { buildEventGroupCreatePayload, validateEventGroupCreatePayload } from ".
 import type { EventGroupAttendee, EventGroupEvent, EventGroupProvider } from "./group-chat/event-group.types";
 import { uploadGroupAvatar } from "./group-chat/group-chat.service";
 import { isSupportedEventGroupAvatarFile } from "./group-chat-models";
-import { eventGroupReviewLabel, formatEventGroupAvatarFileSize, isEventGroupCreationEnabled, type EventGroupCreationStep, summarizeEventGroupCapacity, toggleEventAttendeeSelection, toggleEventGroupProviderSelection, validateEventGroupReview } from "./event-group-wizard-models";
+import { eventGroupReviewLabel, formatEventGroupAvatarFileSize, type EventGroupCreationStep, summarizeEventGroupCapacity, toggleEventAttendeeSelection, toggleEventGroupProviderSelection, validateEventGroupReview } from "./event-group-wizard-models";
 
 interface EventGroupWizardProps {
   onClose: () => void;
   onCreated?: (groupId: string) => void;
 }
 
-/** Provides the complete Event Group preparation flow with a hard-disabled production creation gate. */
+/** Provides the Event Group creation flow with backend-authoritative eligibility checks. */
 export default function EventGroupWizard({ onClose, onCreated }: EventGroupWizardProps) {
   const { t } = useTranslation("groupChatSpeech");
   const queryClient = useQueryClient();
@@ -50,7 +50,7 @@ export default function EventGroupWizard({ onClose, onCreated }: EventGroupWizar
   };
   const createMutation = useMutation({
     mutationFn: async () => {
-      if (!event || !isEventGroupCreationEnabled()) throw new Error("Event Group creation is not enabled for this environment.");
+      if (!event || !event.can_create_group) throw new Error("The selected Event is not eligible for Group creation.");
       const attendeeInvitees = inviteAllRegistered ? [] : Object.values(selectedAttendees).map((attendee) => ({ user_id: attendee.user_id as string }));
       const providerInvitees = Object.values(selectedProviders).map((provider) => ({ user_id: provider.user_id, display_name: provider.name }));
       const basePayload = buildEventGroupCreatePayload({ name: groupName, contextId: event.id, description, invitees: [...attendeeInvitees, ...providerInvitees], adminsOnlyPosting, inviteAllRegistered, excludeUserIds: inviteAllRegistered ? Object.keys(selectedAttendees) : undefined });
@@ -66,7 +66,7 @@ export default function EventGroupWizard({ onClose, onCreated }: EventGroupWizar
       onCreated?.(created.id);
     },
   });
-  const handleCreate = () => { if (!isEventGroupCreationEnabled() || createMutation.isPending) return; createMutation.mutate(); };
+  const handleCreate = () => { if (!event?.can_create_group || createMutation.isPending) return; createMutation.mutate(); };
   const updateCapacity = useCallback((value: number | null) => setMaxMembers(value), []);
   if (!event || step === "event") return <EventGroupEventPicker onBack={onClose} onSelect={selectEvent} />;
   if (step === "attendees") return <EventGroupAttendeePicker event={event} selectedAttendees={selectedAttendees} inviteAllRegistered={inviteAllRegistered} onBack={() => setStep("event")} onContinue={() => setStep("details")} onCapacityChange={updateCapacity} onInviteAllRegisteredChange={setInviteAllRegistered} onToggle={toggleAttendee} />;
@@ -86,12 +86,64 @@ interface ReviewStepProps { event: EventGroupEvent; attendees: readonly EventGro
 
 function ReviewStep({ event, attendees, providers, groupName, description, adminsOnlyPosting, avatarPreviewUrl, avatarFileName, avatarFileSize, inviteAllRegistered, maxMembers, isCreating, error, onBack, onClose, onCreate }: ReviewStepProps) {
   const { t } = useTranslation("groupChatSpeech");
-  const creationEnabled = isEventGroupCreationEnabled();
   const capacity = summarizeEventGroupCapacity({ maxMembers, selectedAttendeeCount: inviteAllRegistered ? 0 : attendees.length, selectedProviderCount: providers.length, inviteAllRegistered });
   const individualSelectionFits = capacity.maxMembers === null || capacity.selectedMemberCount <= Math.max(0, capacity.maxMembers - capacity.ownerReserved);
   const reviewValidationError = validateEventGroupReview({ eventId: event.id, groupName, description, attendeeUserIds: attendees.map((attendee) => attendee.user_id).filter((userId): userId is string => Boolean(userId)), providerUserIds: providers.map((provider) => provider.user_id), inviteAllRegistered, maxMembers });
   const reviewValidationMessage = reviewValidationError ? t(`eventGroup.reviewValidation.${reviewValidationError}`) : null;
-  return <div className="mx-auto w-full max-w-4xl space-y-5"><StepHeading label={t("eventGroup.stepReview")} title={t("eventGroup.reviewTitle")} description={t("eventGroup.reviewDescription")} /><div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]"><section className="space-y-4 rounded-2xl border border-[#d7e5df] bg-white p-5 shadow-sm"><div><p className="text-xs font-bold uppercase tracking-[0.12em] text-[#52736a]">{t("eventGroup.selectedEvent")}</p><h2 className="mt-1 text-lg font-bold text-[#16332b]">{eventGroupReviewLabel(event)}</h2><p className="text-sm text-[#52736a]">{event.status?.replace(/[_-]+/g, " ") ?? t("eventGroup.statusUnavailable")}</p></div><div><p className="text-xs font-bold uppercase tracking-[0.12em] text-[#52736a]">{t("eventGroup.groupDetails")}</p><div className="mt-2 flex items-center gap-3"><GroupAvatarDisplay name={groupName || "Event Group"} url={avatarPreviewUrl} size="medium" /><div className="min-w-0 text-sm text-[#52736a]"><p className="font-semibold text-[#16332b]">{t("eventGroup.avatar")}</p><p>{avatarFileName ? `${avatarFileName} · ${formatEventGroupAvatarFileSize(avatarFileSize)}` : t("eventGroup.notSelected")}</p></div></div><dl className="mt-3 space-y-1 text-sm text-[#16332b]"><div><dt className="inline font-semibold">{t("eventGroup.groupName")}:</dt> <dd className="inline">{groupName}</dd></div><div><dt className="inline font-semibold">{t("eventGroup.description")}:</dt> <dd className="inline">{description || t("eventGroup.notProvided")}</dd></div><div><dt className="inline font-semibold">{t("eventGroup.adminsOnlyPosting")}:</dt> <dd className="inline">{adminsOnlyPosting ? t("eventGroup.enabled") : t("eventGroup.disabled")}</dd></div></dl></div><div><p className="text-xs font-bold uppercase tracking-[0.12em] text-[#52736a]">{t("eventGroup.invitationMode")}</p><p className="mt-1 text-sm text-[#16332b]">{inviteAllRegistered ? t("eventGroup.inviteAllRegisteredSummary", { count: attendees.length }) : t("eventGroup.individualInvitationSummary", { attendees: attendees.length, providers: providers.length })}</p></div></section><aside className="space-y-3"><div className="rounded-2xl border border-[#d7e5df] bg-white p-4 text-sm text-[#52736a]"><h2 className="font-bold text-[#16332b]">{t("eventGroup.capacityTitle")}</h2><p className="mt-1">{capacity.maxMembers === null ? t("eventGroup.capacityUnavailable") : t("eventGroup.capacitySummary", { maxMembers: capacity.maxMembers, selected: capacity.selectedMemberCount, remaining: capacity.remainingMemberSlots })}</p>{inviteAllRegistered ? <p className="mt-2 text-xs text-[#805900]">{t("eventGroup.inviteAllCapacityNotice")}</p> : null}</div><div className="rounded-2xl border border-[#d7e5df] bg-white p-4 text-sm text-[#52736a]"><h2 className="font-bold text-[#16332b]">{t("eventGroup.providersTitle")}</h2><p className="mt-1">{t("eventGroup.providersCount", { count: providers.length })}</p></div></aside></div>{reviewValidationMessage ? <p className="rounded-xl border border-[#f1d8ad] bg-[#fff8e8] p-3 text-sm text-[#805900]" role="alert">{reviewValidationMessage}</p> : null}{error ? <p className="rounded-xl border border-[#f3d5d1] bg-[#fff7f6] p-3 text-sm text-[#7a271a]" role="alert">{error}</p> : null}<div className="flex flex-wrap justify-between gap-2"><button type="button" onClick={onBack} disabled={isCreating} className="rounded-full border border-[#d7e5df] px-4 py-2 text-sm font-semibold text-[#52736a] disabled:opacity-50">{t("eventGroup.back")}</button><div className="flex gap-2"><button type="button" onClick={onClose} disabled={isCreating} className="rounded-full border border-[#d7e5df] px-4 py-2 text-sm font-semibold text-[#52736a] disabled:opacity-50">{t("eventGroup.close")}</button><button type="button" disabled={!creationEnabled || Boolean(reviewValidationError) || !individualSelectionFits || isCreating} onClick={onCreate} className="rounded-full bg-[#1f6a58] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">{isCreating ? t("eventGroup.creatingGroup") : t("eventGroup.createGroup")}</button></div></div><p className="rounded-xl border border-[#f1dfab] bg-[#fff8e8] p-3 text-center text-sm font-semibold text-[#805900]">{creationEnabled ? t("eventGroup.creationGateTestOnly") : t("eventGroup.creationBlocked")}</p></div>;
+  return (
+    <div className="mx-auto w-full max-w-4xl space-y-5">
+      <StepHeading label={t("eventGroup.stepReview")} title={t("eventGroup.reviewTitle")} description={t("eventGroup.reviewDescription")} />
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <section className="space-y-4 rounded-2xl border border-[#d7e5df] bg-white p-5 shadow-sm">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#52736a]">{t("eventGroup.selectedEvent")}</p>
+            <h2 className="mt-1 text-lg font-bold text-[#16332b]">{eventGroupReviewLabel(event)}</h2>
+            <p className="text-sm text-[#52736a]">{event.status?.replace(/[_-]+/g, " ") ?? t("eventGroup.statusUnavailable")}</p>
+          </div>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#52736a]">{t("eventGroup.groupDetails")}</p>
+            <div className="mt-2 flex items-center gap-3">
+              <GroupAvatarDisplay name={groupName || "Event Group"} url={avatarPreviewUrl} size="medium" />
+              <div className="min-w-0 text-sm text-[#52736a]">
+                <p className="font-semibold text-[#16332b]">{t("eventGroup.avatar")}</p>
+                <p>{avatarFileName ? `${avatarFileName} · ${formatEventGroupAvatarFileSize(avatarFileSize)}` : t("eventGroup.notSelected")}</p>
+              </div>
+            </div>
+            <dl className="mt-3 space-y-1 text-sm text-[#16332b]">
+              <div><dt className="inline font-semibold">{t("eventGroup.groupName")}:</dt> <dd className="inline">{groupName}</dd></div>
+              <div><dt className="inline font-semibold">{t("eventGroup.description")}:</dt> <dd className="inline">{description || t("eventGroup.notProvided")}</dd></div>
+              <div><dt className="inline font-semibold">{t("eventGroup.adminsOnlyPosting")}:</dt> <dd className="inline">{adminsOnlyPosting ? t("eventGroup.enabled") : t("eventGroup.disabled")}</dd></div>
+            </dl>
+          </div>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#52736a]">{t("eventGroup.invitationMode")}</p>
+            <p className="mt-1 text-sm text-[#16332b]">{inviteAllRegistered ? t("eventGroup.inviteAllRegisteredSummary", { count: attendees.length }) : t("eventGroup.individualInvitationSummary", { attendees: attendees.length, providers: providers.length })}</p>
+          </div>
+        </section>
+        <aside className="space-y-3">
+          <div className="rounded-2xl border border-[#d7e5df] bg-white p-4 text-sm text-[#52736a]">
+            <h2 className="font-bold text-[#16332b]">{t("eventGroup.capacityTitle")}</h2>
+            <p className="mt-1">{capacity.maxMembers === null ? t("eventGroup.capacityUnavailable") : t("eventGroup.capacitySummary", { maxMembers: capacity.maxMembers, selected: capacity.selectedMemberCount, remaining: capacity.remainingMemberSlots })}</p>
+            {inviteAllRegistered ? <p className="mt-2 text-xs text-[#805900]">{t("eventGroup.inviteAllCapacityNotice")}</p> : null}
+          </div>
+          <div className="rounded-2xl border border-[#d7e5df] bg-white p-4 text-sm text-[#52736a]">
+            <h2 className="font-bold text-[#16332b]">{t("eventGroup.providersTitle")}</h2>
+            <p className="mt-1">{t("eventGroup.providersCount", { count: providers.length })}</p>
+          </div>
+        </aside>
+      </div>
+      {reviewValidationMessage ? <p className="rounded-xl border border-[#f1d8ad] bg-[#fff8e8] p-3 text-sm text-[#805900]" role="alert">{reviewValidationMessage}</p> : null}
+      {error ? <p className="rounded-xl border border-[#f3d5d1] bg-[#fff7f6] p-3 text-sm text-[#7a271a]" role="alert">{error}</p> : null}
+      <div className="flex flex-wrap justify-between gap-2">
+        <button type="button" onClick={onBack} disabled={isCreating} className="rounded-full border border-[#d7e5df] px-4 py-2 text-sm font-semibold text-[#52736a] disabled:opacity-50">{t("eventGroup.back")}</button>
+        <div className="flex gap-2">
+          <button type="button" onClick={onClose} disabled={isCreating} className="rounded-full border border-[#d7e5df] px-4 py-2 text-sm font-semibold text-[#52736a] disabled:opacity-50">{t("eventGroup.close")}</button>
+          <button type="button" disabled={!event.can_create_group || Boolean(reviewValidationError) || !individualSelectionFits || isCreating} onClick={onCreate} className="rounded-full bg-[#1f6a58] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">{isCreating ? t("eventGroup.creatingGroup") : t("eventGroup.createGroup")}</button>
+        </div>
+      </div>
+      <p className="rounded-xl border border-[#d7e5df] bg-[#f4faf7] p-3 text-center text-sm font-semibold text-[#1f6a58]">{t("eventGroup.creationReady")}</p>
+    </div>
+  );
 }
 
 function StepHeading({ label, title, description }: { label: string; title: string; description: string }) {

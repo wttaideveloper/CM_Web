@@ -6,7 +6,7 @@ import {
   listEventGroupEvents,
   listEventGroupGroups,
   listEventGroupProviders,
-} from "./event-group.service";
+} from "./event-group.service.ts";
 import type {
   EventGroupAttendeeListParams,
   EventGroupEventListParams,

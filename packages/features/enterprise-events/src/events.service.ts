@@ -4,6 +4,7 @@ import { parseEventOrdersResponse, type EventOrder } from "./event-orders-parser
 import { parseEventReview, parseManagedEventReviews, normalizeUtcDate } from "./event-reviews.service";
 import type { EnterpriseEventReviewsParams, EventFeedbackAnswer, EventFeedbackItem, EventFeedbackReportResponse, EventReview, EventReviewAuditEntry, EventReviewsManageResponse, EventStarRating, ReviewModerationStatus } from "./event-reviews.types";
 import { normalizeEventVenue } from "./event-location";
+import { isActiveEventFormConfiguration, isActiveEventFormField, normalizeEventFormContract } from "./event-form-configuration-normalizer";
 
 export type { EventOrder } from "./event-orders-parser";
 
@@ -888,6 +889,7 @@ export class EventsApiError extends Error {
 }
 
 const eventsBasePath = "/api/v1/events/";
+const eventsCollectionPath = eventsBasePath.slice(0, -1);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -996,6 +998,7 @@ function isActiveEventFormCompositeConfig(value: unknown): value is ActiveEventF
 function isActiveEventFormField(value: unknown): value is ActiveEventFormField { return isRecord(value) && typeof value.id === "string" && (value.source === "core" || value.source === "custom") && isNullableString(value.core_key) && isNullableString(value.stable_key) && typeof value.label === "string" && typeof value.renderer === "string" && typeof value.value_type === "string" && typeof value.required === "boolean" && Number.isInteger(value.position) && (value.is_enabled === undefined || typeof value.is_enabled === "boolean") && isNullableString(value.placeholder) && isNullableString(value.help_text) && Array.isArray(value.options) && value.options.every(isActiveEventFormFieldOption) && isActiveEventFormFieldValidation(value.validation) && isActiveEventFormCompositeConfig(value.composite_config ?? null); }
 function isActiveEventFormSection(value: unknown): value is ActiveEventFormSection { return isRecord(value) && typeof value.id === "string" && typeof value.stable_key === "string" && typeof value.label === "string" && isNullableString(value.description) && Number.isInteger(value.position) && typeof value.is_enabled === "boolean" && Array.isArray(value.fields) && value.fields.every(isActiveEventFormField); }
 function isActiveEventFormConfiguration(value: unknown): value is ActiveEventFormConfiguration { return isRecord(value) && typeof value.configuration_id === "string" && typeof value.version_id === "string" && typeof value.name === "string" && (value.scope === "global" || value.scope === "selective") && Number.isInteger(value.version) && Array.isArray(value.sections) && value.sections.every(isActiveEventFormSection); }
+
 function isEventCustomValue(value: unknown): value is EventCustomValue { return isRecord(value) && typeof value.field_id === "string" && (value.value === null || typeof value.value === "string" || typeof value.value === "number" || typeof value.value === "boolean" || isStringArray(value.value)); }
 function isEventCategory(value: unknown): value is EventCategory { return isRecord(value) && typeof value.id === "string" && typeof value.name === "string" && isNullableString(value.parent_id) && isNullableString(value.description) && typeof value.created_at === "string"; }
 
@@ -1441,7 +1444,7 @@ function toSearchParams(params: EventListParams): URLSearchParams {
 /** Lists Events scoped by the caller's authenticated enterprise context. */
 export async function listEvents(params: EventListParams): Promise<EventListResponse> {
   const searchParams = toSearchParams(params);
-  const response = await fetch(`${eventsBasePath}?${searchParams.toString()}`, {
+  const response = await fetch(`${eventsCollectionPath}?${searchParams.toString()}`, {
     credentials: "include",
   });
 

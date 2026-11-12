@@ -63,6 +63,13 @@ function requiredString(value: unknown): string | null {
   return stringValue(value);
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** Returns whether a value is a platform user identifier accepted by the Event API contract. */
+export function isValidEventGroupUserId(value: unknown): value is string {
+  return typeof value === "string" && UUID_PATTERN.test(value.trim());
+}
+
 function normalizeEmergencyNotice(value: unknown): EventGroupEmergencyNotice | null {
   if (!isRecord(value)) return null;
   const text = stringValue(value.text);
@@ -158,7 +165,7 @@ export function normalizeEventGroupAttendeesResponse(value: unknown): EventGroup
 export function normalizeEventGroupProvider(value: unknown): EventGroupProvider | null {
   if (!isRecord(value)) return null;
   const userId = requiredString(value.user_id);
-  if (!userId) return null;
+  if (!userId || !isValidEventGroupUserId(userId)) return null;
   return { user_id: userId, name: nullableString(value.name), registration_number: nullableString(value.registration_number), is_me: booleanValue(value.is_me, false) };
 }
 
