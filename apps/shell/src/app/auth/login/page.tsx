@@ -123,8 +123,7 @@ function LoginPageContent() {
             const message = error instanceof Error ? error.message : "";
             const isWebPortalRequired =
               message.toLowerCase().includes("web portal") ||
-              message.toLowerCase().includes("external users") ||
-              message.toLowerCase().includes("mobile app");
+              message.toLowerCase().includes("external users");
             if (!isWebPortalRequired) {
               throw error;
             }
