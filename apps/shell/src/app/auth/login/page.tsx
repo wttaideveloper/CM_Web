@@ -129,14 +129,6 @@ function LoginPageContent() {
         return;
       }
 
-      if (process.env.NODE_ENV === "development") {
-        const enterpriseAdminOrigin = getEnterpriseAdminAppOrigin();
-        if (enterpriseAdminOrigin) {
-          window.location.assign(new URL("/admin/dashboard", enterpriseAdminOrigin).toString());
-          return;
-        }
-      }
-
       const callbackPath = buildAuthCallbackPath(searchParams.get("return_to"));
       startLogin({
         ...(callbackPath === "/auth/validate" ? {} : { callbackPath }),

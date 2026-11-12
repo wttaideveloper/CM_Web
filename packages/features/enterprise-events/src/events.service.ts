@@ -4,6 +4,7 @@ import { parseEventOrdersResponse, type EventOrder } from "./event-orders-parser
 import { parseEventReview, parseManagedEventReviews, normalizeUtcDate } from "./event-reviews.service";
 import type { EnterpriseEventReviewsParams, EventFeedbackAnswer, EventFeedbackItem, EventFeedbackReportResponse, EventReview, EventReviewAuditEntry, EventReviewsManageResponse, EventStarRating, ReviewModerationStatus } from "./event-reviews.types";
 import { normalizeEventVenue } from "./event-location";
+import { isActiveEventFormConfiguration, isActiveEventFormField, normalizeEventFormContract } from "./event-form-configuration-normalizer";
 
 export type { EventOrder } from "./event-orders-parser";
 
@@ -888,6 +889,7 @@ export class EventsApiError extends Error {
 }
 
 const eventsBasePath = "/api/v1/events/";
+const eventsCollectionPath = eventsBasePath.slice(0, -1);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -899,81 +901,6 @@ function isStringArray(value: unknown): value is string[] {
 
 function isNullableString(value: unknown): value is string | null { return value === null || typeof value === "string"; }
 function isNullableFiniteNumber(value: unknown): value is number | null | undefined { return value === undefined || value === null || (typeof value === "number" && Number.isFinite(value)); }
-function normalizeEventRenderer(typeValue: unknown, rendererValue: unknown): string {
-  const raw = typeof rendererValue === "string" && rendererValue.trim() ? rendererValue : typeof typeValue === "string" ? typeValue : "text";
-  const normalized = raw.trim().toLowerCase().replace(/[\s-]+/g, "_");
-  const aliases: Record<string, string> = {
-    short_text: "text", text_input: "text", long_text: "textarea", rich_text_editor: "rich_text",
-    dropdown: "select", radio_group: "radio", checkbox_group: "multi_select", reference_url: "url",
-    url_input: "url", additional_images: "media_upload", image_uploader: "media_upload",
-    supporting_document: "file_upload", document_uploader: "file_upload", video_input: "video",
-  };
-  return aliases[normalized] ?? normalized;
-}
-
-function normalizeEventFormContract(value: unknown): unknown {
-  if (!isRecord(value) || !Array.isArray(value.sections)) return value;
-  return {
-    ...value,
-    configuration_id: typeof value.configuration_id === "string" ? value.configuration_id : typeof value.form_id === "string" ? value.form_id : typeof value.id === "string" ? value.id : "active-event-form",
-    version_id: typeof value.version_id === "string" ? value.version_id : typeof value.revision === "number" ? `revision-${value.revision}` : typeof value.version === "number" ? `version-${value.version}` : "active-event-form-version",
-    name: typeof value.name === "string" ? value.name : typeof value.title === "string" ? value.title : typeof value.form_name === "string" ? value.form_name : "Active Event Form",
-    scope: value.scope === "selective" ? "selective" : "global",
-    version: typeof value.version === "number" ? value.version : typeof value.revision === "number" ? value.revision : 1,
-    sections: value.sections.filter(isRecord).map((section, sectionIndex) => ({
-      ...section,
-      id: typeof section.id === "string" ? section.id : `section-${sectionIndex + 1}`,
-      stable_key: typeof section.stable_key === "string" ? section.stable_key : typeof section.key === "string" ? section.key : `section_${sectionIndex + 1}`,
-      label: typeof section.label === "string" ? section.label : typeof section.title === "string" ? section.title : `Section ${sectionIndex + 1}`,
-      description: typeof section.description === "string" ? section.description : null,
-      position: Number.isInteger(section.position) ? section.position : sectionIndex + 1,
-      is_enabled: section.is_enabled !== false && section.enabled !== false,
-      fields: Array.isArray(section.fields) ? section.fields.filter(isRecord).map((field, fieldIndex) => {
-        const typeValue = typeof field.type === "string" ? field.type : field.field_type;
-        const renderer = normalizeEventRenderer(typeValue, field.renderer);
-        const options = Array.isArray(field.options) ? field.options.flatMap((option, optionIndex) => {
-          if (typeof option === "string") return [{ value: option, label: option, position: optionIndex + 1 }];
-          return isRecord(option) && typeof (option.value ?? option.label) === "string"
-            ? [{ value: String(option.value ?? option.label), label: String(option.label ?? option.value), position: Number.isInteger(option.position) ? Number(option.position) : optionIndex + 1 }]
-            : [];
-        }) : [];
-        const rawValidation = isRecord(field.validation) ? field.validation : {};
-        const visibility = field.visibility === "enterprise_admin_only" || field.visibility === "internal" ? "admin_only" : "published";
-        return {
-          ...field,
-          id: typeof field.id === "string" ? field.id : `field-${sectionIndex + 1}-${fieldIndex + 1}`,
-          source: field.source === "core" || field.system === true ? "core" : "custom",
-          core_key: typeof field.core_key === "string" ? field.core_key : field.system === true && typeof field.key === "string" ? field.key : null,
-          stable_key: typeof field.stable_key === "string" ? field.stable_key : typeof field.key === "string" ? field.key : null,
-          label: typeof field.label === "string" ? field.label : `Field ${fieldIndex + 1}`,
-          renderer,
-          value_type: typeof field.value_type === "string" ? field.value_type : renderer === "number" ? "number" : renderer === "multi_select" ? "string[]" : "string",
-          required: field.required === true,
-          is_enabled: field.is_enabled !== false && field.enabled !== false,
-          position: Number.isInteger(field.position) ? field.position : Number.isInteger(field.order) ? Number(field.order) : fieldIndex + 1,
-          placeholder: typeof field.placeholder === "string" ? field.placeholder : null,
-          help_text: typeof field.help_text === "string" ? field.help_text : null,
-          options,
-          validation: rawValidation,
-          composite_config: {
-            ...(isRecord(field.composite_config) ? field.composite_config : {}),
-            frontend_settings: {
-              ...(isRecord(field.composite_config) && isRecord(field.composite_config.frontend_settings) ? field.composite_config.frontend_settings : {}),
-              content_visibility: visibility,
-            },
-          },
-        };
-      }) : [],
-    })),
-  };
-}
-
-function isActiveEventFormFieldOption(value: unknown): value is ActiveEventFormFieldOption { return isRecord(value) && typeof value.value === "string" && typeof value.label === "string" && Number.isInteger(value.position); }
-function isActiveEventFormFieldValidation(value: unknown): value is ActiveEventFormFieldValidation { return isRecord(value) && isNullableFiniteNumber(value.min_length) && isNullableFiniteNumber(value.max_length) && isNullableFiniteNumber(value.min) && isNullableFiniteNumber(value.max) && (value.pattern === undefined || isNullableString(value.pattern)); }
-function isActiveEventFormCompositeConfig(value: unknown): value is ActiveEventFormCompositeConfig | null { return value === null || (isRecord(value) && (value.enabled_fields === undefined || isStringArray(value.enabled_fields)) && (value.required_fields === undefined || isStringArray(value.required_fields)) && (value.frontend_settings === undefined || value.frontend_settings === null || isRecord(value.frontend_settings))); }
-function isActiveEventFormField(value: unknown): value is ActiveEventFormField { return isRecord(value) && typeof value.id === "string" && (value.source === "core" || value.source === "custom") && isNullableString(value.core_key) && isNullableString(value.stable_key) && typeof value.label === "string" && typeof value.renderer === "string" && typeof value.value_type === "string" && typeof value.required === "boolean" && Number.isInteger(value.position) && (value.is_enabled === undefined || typeof value.is_enabled === "boolean") && isNullableString(value.placeholder) && isNullableString(value.help_text) && Array.isArray(value.options) && value.options.every(isActiveEventFormFieldOption) && isActiveEventFormFieldValidation(value.validation) && isActiveEventFormCompositeConfig(value.composite_config ?? null); }
-function isActiveEventFormSection(value: unknown): value is ActiveEventFormSection { return isRecord(value) && typeof value.id === "string" && typeof value.stable_key === "string" && typeof value.label === "string" && isNullableString(value.description) && Number.isInteger(value.position) && typeof value.is_enabled === "boolean" && Array.isArray(value.fields) && value.fields.every(isActiveEventFormField); }
-function isActiveEventFormConfiguration(value: unknown): value is ActiveEventFormConfiguration { return isRecord(value) && typeof value.configuration_id === "string" && typeof value.version_id === "string" && typeof value.name === "string" && (value.scope === "global" || value.scope === "selective") && Number.isInteger(value.version) && Array.isArray(value.sections) && value.sections.every(isActiveEventFormSection); }
 function isEventCustomValue(value: unknown): value is EventCustomValue { return isRecord(value) && typeof value.field_id === "string" && (value.value === null || typeof value.value === "string" || typeof value.value === "number" || typeof value.value === "boolean" || isStringArray(value.value)); }
 function isEventCategory(value: unknown): value is EventCategory { return isRecord(value) && typeof value.id === "string" && typeof value.name === "string" && isNullableString(value.parent_id) && isNullableString(value.description) && typeof value.created_at === "string"; }
 
@@ -1419,7 +1346,7 @@ function toSearchParams(params: EventListParams): URLSearchParams {
 /** Lists Events scoped by the caller's authenticated enterprise context. */
 export async function listEvents(params: EventListParams): Promise<EventListResponse> {
   const searchParams = toSearchParams(params);
-  const response = await fetch(`${eventsBasePath}?${searchParams.toString()}`, {
+  const response = await fetch(`${eventsCollectionPath}?${searchParams.toString()}`, {
     credentials: "include",
   });
 
