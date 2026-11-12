@@ -52,6 +52,23 @@ export function buildEventGroupListParams(input: EventGroupListQueryInput): Even
   };
 }
 
+/** Formats Event status values for compact, human-readable picker rows. */
+export function formatEventStatusLabel(status: string | null): string {
+  const normalized = status?.trim();
+  if (!normalized) return "Status unavailable";
+  return normalized.replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+/** Maps known Event eligibility codes without exposing raw backend identifiers. */
+export function formatEventEligibilityReason(reason: string | null): string {
+  switch (reason?.trim().toLowerCase()) {
+    case "event_not_open":
+      return "This Event is not open for Group creation.";
+    default:
+      return "This Event is not currently eligible for Group creation.";
+  }
+}
+
 /** Builds the read-only, server-authorized attendee query used by the provisional Event Group picker. */
 export function buildEventGroupAttendeeFilters(input: EventGroupAttendeeQueryInput): EventGroupAttendeeListParams {
   return {

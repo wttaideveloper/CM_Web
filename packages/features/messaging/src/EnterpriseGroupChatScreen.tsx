@@ -214,8 +214,10 @@ function GroupList({ query, search, appliedSearch, page, selectedGroupId, onSear
   </>;
 }
 
+type EnterpriseGroupChatScreenProps = { initialGroupId?: string };
+
 /** Renders the authenticated Group Chat list, invitations, and admin registry controls. */
-export default function EnterpriseGroupChatScreen() {
+export default function EnterpriseGroupChatScreen({ initialGroupId = "" }: EnterpriseGroupChatScreenProps) {
   const { roles, user } = useAuth();
   const userScope = user?.userId ?? user?.id ?? "";
   const tenantScope = user?.membership?.tenantSlug ?? user?.membership?.tenantName ?? "";
@@ -233,6 +235,12 @@ export default function EnterpriseGroupChatScreen() {
   const [appliedSearch, setAppliedSearch] = useState("");
   const [page, setPage] = useState(1);
   useEffect(() => {
+    if (!initialGroupId) return;
+    setView("home");
+    setMode("groups");
+    setSelectedGroupId(initialGroupId);
+  }, [initialGroupId]);
+  useEffect(() => {
     return scheduleGroupChatSearch(search, setAppliedSearch);
   }, [search]);
   useEffect(() => {
@@ -245,8 +253,8 @@ export default function EnterpriseGroupChatScreen() {
   if (auditGroupId) return <EnterpriseGroupAuditTrailScreen initialGroupId={auditGroupId} initialAction={auditAction} onBack={() => { setAuditGroupId(null); setAuditAction(""); }} onOpenSecureReview={(groupId, messageId) => setSecureReview({ groupId, messageId })} />;
   if (view === "create-choice") return <CreateGroupChoice canCreateEventGroup={canCreateEventGroupForRole} onClose={() => setView("home")} onSelectTraining={() => setView("training-create")} onSelectEvent={() => setView("event-create")} />;
   if (view === "create") return <CreateGroupChoice canCreateEventGroup={canCreateEventGroupForRole} onClose={() => setView("home")} onSelectTraining={() => setView("training-create")} onSelectEvent={() => setView("event-create")} />;
-  if (view === "training-create") return <CreateTrainingGroupWizard onClose={() => setView("home")} onCreated={(groupId) => { setSelectedGroupId(groupId); setMode("groups"); setView("home"); }} />;
-  if (view === "event-create") return canCreateEventGroupForRole ? <EventGroupWizard onClose={() => setView("create-choice")} onCreated={(groupId) => { setSelectedGroupId(groupId); setMode("groups"); setView("home"); }} /> : <EventGroupCreationBlocked onClose={() => setView("create-choice")} />;
+  if (view === "training-create") return <CreateTrainingGroupWizard onClose={() => setView("home")} onBackToGroupTypes={() => setView("create-choice")} onCreated={(groupId) => { setSelectedGroupId(groupId); setMode("groups"); setView("home"); }} />;
+  if (view === "event-create") return canCreateEventGroupForRole ? <EventGroupWizard onClose={() => setView("home")} onBackToGroupTypes={() => setView("create-choice")} onCreated={(groupId) => { setSelectedGroupId(groupId); setMode("groups"); setView("home"); }} /> : <EventGroupCreationBlocked onClose={() => setView("create-choice")} />;
   if (selectedGroupId === CONSENTS_SELECTION) return <MyGroupConsents userScope={userScope} onBack={() => setSelectedGroupId("")} />;
   if (selectedGroupId === DATA_REQUESTS_SELECTION) return <MyGroupDataRequests key={userScope} userScope={userScope} groups={groupsQuery.data?.items ?? []} groupsLoading={groupsQuery.isPending} groupsError={groupsQuery.isError} onBack={() => setSelectedGroupId("")} />;
   if (selectedGroupId) return <div className={groupLayoutMode === "management" ? "flex flex-col gap-3" : "flex min-h-0 flex-col gap-1 overflow-hidden"}>

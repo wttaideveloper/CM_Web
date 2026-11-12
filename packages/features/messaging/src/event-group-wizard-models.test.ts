@@ -3,7 +3,7 @@ import test from "node:test";
 import type { EventGroupAttendee, EventGroupProvider } from "./group-chat/event-group.types.ts";
 import { buildEventGroupCreatePayload, buildInviteRegisteredPayload, validateEventGroupCreatePayload } from "./group-chat/event-group.models.ts";
 import { isSupportedEventGroupAvatarFile } from "./group-chat-models.ts";
-import { addEventAttendeeSelection, buildEventGroupAttendeeFilters, buildEventGroupListParams, canContinueEventGroupAttendeeStep, canManageEventGroupInvitations, canSelectEventGroupAttendee, eventGroupInvitationInvalidationQueryKeys, formatEventGroupAvatarFileSize, getEventAttendeeEligibilityReason, getEventAttendeeIdentityStatus, getGroupWorkspaceContextLabel, isEventGroupInvitationEnabled, isEventGroupWorkspaceContext, resolveEventGroupQueryState, summarizeEventGroupAttendeeEligibility, summarizeEventGroupCapacity, toggleEventAttendeeSelection, toggleEventGroupProviderSelection, validateEventGroupReview } from "./event-group-wizard-models.ts";
+import { addEventAttendeeSelection, buildEventGroupAttendeeFilters, buildEventGroupListParams, canContinueEventGroupAttendeeStep, canManageEventGroupInvitations, canSelectEventGroupAttendee, eventGroupInvitationInvalidationQueryKeys, formatEventEligibilityReason, formatEventGroupAvatarFileSize, formatEventStatusLabel, getEventAttendeeEligibilityReason, getEventAttendeeIdentityStatus, getGroupWorkspaceContextLabel, isEventGroupInvitationEnabled, isEventGroupWorkspaceContext, resolveEventGroupQueryState, summarizeEventGroupAttendeeEligibility, summarizeEventGroupCapacity, toggleEventAttendeeSelection, toggleEventGroupProviderSelection, validateEventGroupReview } from "./event-group-wizard-models.ts";
 import { normalizeGroupChatSocketEvent } from "./group-chat/group-chat-socket.ts";
 import { isGroupChatRealtimeActiveStatus } from "./group-chat/group-chat-socket-controller.ts";
 
@@ -28,6 +28,15 @@ test("Event queries retain enterprise scope and server-side filters", () => {
   assert.deepEqual(buildEventGroupAttendeeFilters({ page: 3, search: "  Ada ", status: "confirmed", paymentStatus: "paid" }), {
     page: 3, pageSize: 25, q: "Ada", eligibleOnly: false, registrationStatus: "confirmed", paymentStatus: "paid", notInGroup: false,
   });
+});
+
+test("Event picker labels statuses and hides raw eligibility codes", () => {
+  assert.equal(formatEventStatusLabel("published"), "Published");
+  assert.equal(formatEventStatusLabel("in_review"), "In Review");
+  assert.equal(formatEventStatusLabel(null), "Status unavailable");
+  assert.equal(formatEventEligibilityReason("event_not_open"), "This Event is not open for Group creation.");
+  assert.equal(formatEventEligibilityReason("unknown_backend_code"), "This Event is not currently eligible for Group creation.");
+  assert.equal(formatEventEligibilityReason(null), "This Event is not currently eligible for Group creation.");
 });
 
 test("attendee selection persists across pages and deduplicates by platform user ID", () => {

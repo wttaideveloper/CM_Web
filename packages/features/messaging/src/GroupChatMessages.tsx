@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type FormEvent, type RefObject } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent, type RefObject } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@ihp/auth";
 import { useTranslation } from "react-i18next";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -13,6 +14,8 @@ import { GroupChatAudioPlayer, GroupChatVoiceComposer } from "./GroupChatVoiceMe
 import { GroupChatAnchoredPopup } from "./GroupChatAnchoredPopup";
 import { dismissGroupChatPopup, toggleGroupChatPopup } from "./group-chat-popup-position";
 import { getGroupChatCenteredScrollTop, getGroupChatPinnedListMaxHeight, getGroupChatPinnedNavigationStage, GROUP_CHAT_PINNED_HIGHLIGHT_MS } from "./group-chat-pinned-navigation";
+import { canSubmitGroupChatText, handleGroupChatComposerKeyDown } from "./group-chat-composer";
+import { formatGroupChatMessageTimestamp, getGroupChatMessageDateSeparatorKeys } from "./group-chat-timestamps";
 import type { GroupChatAttachment, GroupChatAttachmentType, GroupChatMember, GroupChatMessage, GroupChatMessageReadStatus, GroupChatReadSummary, GroupChatReactionSettings } from "./group-chat/group-chat.types";
 
 type Props = {
@@ -50,16 +53,6 @@ type AttachmentUploadVariables = { groupId: string; file: File; attachmentType: 
 type AttachmentSendVariables = { groupId: string; attachment: GroupChatAttachment };
 type ReactionVariables = { groupId: string; messageId: string; emoji: string; remove: boolean };
 type PinVariables = { groupId: string; messageId: string; pinned: boolean };
-
-function formatMessageTime(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-}
-
-function formatMessageCompactTime(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-}
 
 function getGroupChatAttachmentType(file: File): GroupChatAttachmentType {
   if (file.type.startsWith("image/")) return "image";
@@ -231,6 +224,7 @@ function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen
   const isSystemMessage = message.message_type.trim().toLowerCase() === "system";
   const status = message.status.trim().toLowerCase();
   const unavailable = status === "retracted" || status === "removed_by_admin";
+  const timestamp = formatGroupChatMessageTimestamp(message.created_at);
   const readStatusTickState = readSummary ? getGroupChatReadSummaryTickState(readSummary) : getGroupChatReadStatusTickState(readStatus);
   const readStatusTick = readStatusTickState === "unknown" ? "·" : readStatusTickState === "single" ? "✓" : "✓✓";
   const readStatusTickClass = readStatusTickState === "double-blue" ? "text-[#7dd3fc]" : readStatusTickState === "double-neutral" ? "text-[#cbd5d1]" : readStatusTickState === "unknown" ? "text-[#9bb3aa]" : "text-[#d8f3e4]";
@@ -245,13 +239,14 @@ function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen
   }, [menuOpen, message.id, pendingAction]);
   return <div className="group">
     {isFirstUnread ? <div className="my-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-[#1f6a58]"><span className="h-px flex-1 bg-[#b7dfc7]" />Unread messages<span className="h-px flex-1 bg-[#b7dfc7]" /></div> : null}
-    {isSystemMessage ? <div className="flex justify-center py-0.5">
+    {isSystemMessage ? <div className="flex flex-col items-center justify-center py-0.5">
       <article className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-[#e8f6ee] px-3 py-1 text-center text-xs text-[#52736a] shadow-sm">
         <p className={unavailable ? "italic opacity-80" : "break-words"}>{getGroupChatMessageDisplayText(message)}</p>
-        <time className="shrink-0 text-[10px] text-[#7f9d94]" dateTime={message.created_at} title={formatMessageTime(message.created_at)} aria-label={`Sent ${formatMessageTime(message.created_at)}`}>{formatMessageCompactTime(message.created_at)}</time>
+        <time className="shrink-0 text-[10px] text-[#7f9d94]" dateTime={message.created_at} title={timestamp.fullTime} aria-label={`Sent ${timestamp.fullTime}`}>{timestamp.compactTime}</time>
       </article>
     </div> : null}
     {!isSystemMessage ? <div className={`flex ${isOwnMessage ? "justify-end" : "justify-start"}`}>
+      <div className="flex w-fit max-w-full flex-col">
       <article ref={messageRef} data-group-message-id={message.id} className={`relative ${messageClasses}`}>
         {actions.length > 0 ? <div className="absolute right-1 top-1 z-10">
           <button ref={menuTriggerRef} type="button" aria-label={`Message actions for ${message.sender_name}`} aria-haspopup="menu" aria-expanded={menuOpen} aria-controls={`group-message-menu-${message.id}`} title="Message actions" disabled={mutationPending} onClick={onToggleMenu} className="flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-[#52736a] opacity-75 shadow-sm transition-opacity hover:bg-white hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"><svg aria-hidden="true" viewBox="0 0 18 6" className="h-2.5 w-4" fill="currentColor"><circle cx="3" cy="3" r="1.5" /><circle cx="9" cy="3" r="1.5" /><circle cx="15" cy="3" r="1.5" /></svg></button>
@@ -261,8 +256,8 @@ function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen
           {message.is_edited ? <span className="shrink-0 italic">Edited</span> : null}
           {message.pinned && !unavailable ? <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${isOwnMessage ? "bg-[#d8f3e4] text-[#16332b]" : "bg-[#e8f6ee] text-[#1f6a58]"}`}>Pinned</span> : null}
           <span className="ml-auto flex shrink-0 items-center gap-1">
-            <time dateTime={message.created_at} title={formatMessageTime(message.created_at)} aria-label={`Sent ${formatMessageTime(message.created_at)}`}>{formatMessageCompactTime(message.created_at)}</time>
-            {readStatusEligible && (readStatus || readSummary) ? <button type="button" aria-label="View message info" title={`View message info. Sent ${formatMessageTime(message.created_at)}`} aria-expanded={readStatusOpen} onClick={onToggleReadStatus} className={`rounded px-0.5 text-[14px] font-bold leading-none transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d8f3e4] ${readStatusTickClass}`}>{readStatusTick}</button> : null}
+            <time dateTime={message.created_at} title={timestamp.fullTime} aria-label={`Sent ${timestamp.fullTime}`}>{timestamp.compactTime}</time>
+            {readStatusEligible && (readStatus || readSummary) ? <button type="button" aria-label="View message info" title={`View message info. Sent ${timestamp.fullTime}`} aria-expanded={readStatusOpen} onClick={onToggleReadStatus} className={`rounded px-0.5 text-[14px] font-bold leading-none transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d8f3e4] ${readStatusTickClass}`}>{readStatusTick}</button> : null}
           </span>
         </div>
         {!unavailable && message.reply_to ? <div className={`mb-1.5 border-l-2 pl-2 text-xs ${isOwnMessage ? "border-[#d8f3e4] text-[#e5f8eb]" : "border-[#8ccaa2] text-[#52736a]"}`}>
@@ -285,12 +280,14 @@ function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen
       {reactionPickerOpen && reactionSettings?.enabled ? <GroupChatAnchoredPopup anchorRef={reactionTriggerRef} boundaryRef={popupBoundaryRef} className="w-56 rounded-xl border border-[#d7e5df] bg-white p-2 shadow-xl" id={`group-reaction-picker-${message.id}`} role="menu" ariaLabel="Available reactions" onDismiss={onCloseReactionPicker}>
         <div className="flex flex-wrap gap-1">{reactionSettings.emojis.map((emoji) => { const isSelected = message.my_reactions.includes(emoji); return <button key={emoji} type="button" role="menuitemcheckbox" aria-label={isSelected ? `Remove ${emoji} reaction` : `React with ${emoji}`} aria-checked={isSelected} disabled={reactionMutationPending} onClick={() => onToggleReaction(emoji)} className={`rounded-lg px-2 py-1 text-base hover:bg-[#e8f6ee] ${isSelected ? "bg-[#d8f3e4]" : ""}`}>{emoji}</button>; })}</div>
       </GroupChatAnchoredPopup> : null}
+      </div>
     </div> : null}
   </div>;
 }
 
 /** Renders REST-only Group Chat history and text messaging without using Direct Chat or Socket.IO. */
 export default function GroupChatMessages({ groupId, userScope, tenantScope, groupStatus, groupKind, memberDirectory, canPost, postingMuted, canHideMessages, canPinMessages, canReport, currentMemberKind, currentMemberStatus, lifecycleRefreshPending = false, readStatusRefreshKey, reconnectRefreshKey, readThroughMessageId, conversationEntryKey = 0 }: Props) {
+  const searchParams = useSearchParams();
   const { userId } = useAuth();
   const { t } = useTranslation("groupChatSpeech");
   const queryClient = useQueryClient();
@@ -316,6 +313,7 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
   const wasNearBottom = useRef(true);
   const renderedNewestMessageId = useRef<string | null>(null);
   const handledConversationEntryKey = useRef(0);
+  const handledNotificationTargetRef = useRef<string | null>(null);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const replyHighlightTimer = useRef<number | null>(null);
   const [openPopup, setOpenPopup] = useState<{ kind: "menu" | "reaction"; messageId: string } | null>(null);
@@ -380,6 +378,27 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
   });
   const pages = historyQuery.data?.pages ?? [];
   const messages = mergeGroupChatMessagePages(pages);
+  const dateSeparatorKeys = getGroupChatMessageDateSeparatorKeys(messages.map((message) => message.created_at));
+  const notificationMessageId = searchParams.get("tab") === "groups" && searchParams.get("groupId") === groupId
+    ? searchParams.get("messageId")?.trim() ?? null
+    : null;
+  const notificationMessageLoaded = notificationMessageId ? messages.some((message) => message.id === notificationMessageId) : false;
+  useLayoutEffect(() => {
+    if (!notificationMessageId || historyQuery.isPending || !notificationMessageLoaded) return;
+    const targetKey = `${groupId}:${notificationMessageId}`;
+    if (handledNotificationTargetRef.current === targetKey) return;
+    const frameId = window.requestAnimationFrame(() => {
+      const target = Array.from(scrollRef.current?.querySelectorAll<HTMLElement>("[data-group-message-id]") ?? [])
+        .find((element) => element.dataset.groupMessageId === notificationMessageId);
+      if (!target) return;
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      handledNotificationTargetRef.current = targetKey;
+      setHighlightedMessageId(targetKey);
+      if (replyHighlightTimer.current !== null) window.clearTimeout(replyHighlightTimer.current);
+      replyHighlightTimer.current = window.setTimeout(() => setHighlightedMessageId(null), 1800);
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [groupId, historyQuery.isPending, notificationMessageId, notificationMessageLoaded, messages.length]);
   const firstUnreadMessageId = pages.map((page) => page.first_unread_message_id).find((value): value is string => Boolean(value)) ?? null;
   const readStatusMessageId = readStatusSelection?.groupId === groupId ? readStatusSelection.messageId : null;
   const selectedReadStatusMessage = readStatusMessageId ? messages.find((message) => message.id === readStatusMessageId) ?? null : null;
@@ -951,15 +970,21 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
     attachmentUploadMutation.mutate({ groupId, file: attachmentFile, attachmentType: getGroupChatAttachmentType(attachmentFile) });
   };
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const submitComposer = () => {
     if (sendMutation.isPending || attachmentUploadMutation.isPending || attachmentSendMutation.isPending || groupIsClosed || effectiveCanPost !== true || postingMuted === true) return;
     if (pendingAttachment) {
       attachmentSendMutation.mutate({ groupId, attachment: pendingAttachment });
       return;
     }
-    if (!draft.trim()) return;
+    if (!canSubmitGroupChatText(draft, effectiveCanPost === true, sendMutation.isPending)) return;
     sendMutation.mutate({ content: draft, replyToId: replyingTo?.id });
+  };
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    submitComposer();
+  };
+  const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    handleGroupChatComposerKeyDown(event.nativeEvent, submitComposer);
   };
   const postingDisabled = !canSendGroupChatMessage(groupStatus, effectiveCanPost, postingMuted === true);
   const speechScopeToken = JSON.stringify([groupId, userScope, tenantScope, userId]);
@@ -1027,6 +1052,7 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
     </div>
     {pinnedNavigation?.groupId === groupId && !messages.some((message) => message.id === pinnedNavigation.messageId) ? <p className="mt-1 shrink-0 text-xs text-[#52736a]" role="status" aria-live="polite">Finding pinned message in conversation history...</p> : null}
     {pinnedNavigationError?.groupId === groupId ? <p className="mt-1 shrink-0 rounded-lg border border-[#f3d5d1] bg-[#fff7f6] p-2 text-xs text-[#7a271a]" role="alert">{pinnedNavigationError.message}</p> : null}
+    {notificationMessageId && !notificationMessageLoaded && !historyQuery.isPending ? <p className="mt-1 shrink-0 rounded-lg border border-[#d7e5df] bg-[#f9fcfa] p-2 text-xs text-[#52736a]" role="status" aria-live="polite">Message not located in loaded history. Load older messages to search further.</p> : null}
     {restrictionMessage ? <p className={`mt-1 shrink-0 rounded-lg p-2 text-xs [@media(min-height:801px)]:mt-2 ${postingRestriction.reason === "muted" ? "border border-[#f3d5d1] bg-[#fff7f6] text-[#7a271a]" : groupIsClosed || postingRestriction.reason === "permission-refresh" ? "border border-[#f1d8ad] bg-[#fffaf0] text-[#8b5e00]" : "border border-[#d7e5df] bg-white text-[#52736a]"}`} role="status">{restrictionMessage}</p> : null}
     {readError ? <p className="mt-1 shrink-0 rounded-lg border border-[#f3d5d1] bg-[#fff7f6] p-2 text-xs [@media(min-height:801px)]:mt-2" role="alert">{readError}</p> : null}
     {actionError ? <p className="mt-1 shrink-0 rounded-lg border border-[#f3d5d1] bg-[#fff7f6] p-2 text-xs [@media(min-height:801px)]:mt-2" role="alert">{actionError}</p> : null}
@@ -1038,7 +1064,7 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
       <div ref={scrollRef} onScroll={handleScroll} className="h-full overflow-y-auto px-1 py-2" aria-live="polite">
       <div className="flex min-h-full flex-col justify-end gap-1">
       {historyQuery.hasNextPage ? <button type="button" disabled={historyQuery.isFetchingNextPage} onClick={loadOlder} className="mx-auto block rounded-full border border-[#d7e5df] px-3 py-1.5 text-xs font-semibold text-[#1f6a58] disabled:opacity-50">{historyQuery.isFetchingNextPage ? "Loading older messages..." : "Load older messages"}</button> : null}
-      {messages.length === 0 ? <p className="py-12 text-center text-sm text-[#52736a]">No messages yet.</p> : messages.map((message) => {
+      {messages.length === 0 ? <p className="py-12 text-center text-sm text-[#52736a]">No messages yet.</p> : messages.map((message, index) => {
         const actions = getMessageActions(message);
         const messagePendingAction = pendingAction?.messageId === message.id ? pendingAction.action : null;
         const messageIsEditing = editingMessageId === message.id;
@@ -1048,8 +1074,10 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
         const messageReadStatus = message.read_summary ? null : (readStatusOpen && readStatusQuery.data?.message_id === message.id ? readStatusQuery.data : null) ?? readStatusByMessage[readStatusKey(groupId, userScope, tenantScope, message.id)] ?? queryClient.getQueryData<GroupChatMessageReadStatus>(groupChatReadStatusQueryKey(groupId, userScope, tenantScope, message.id)) ?? null;
         const messageReadSummary = message.read_summary ?? null;
         const messageReadStatusNames = messageReadStatus ? getGroupChatReadStatusMemberNames(messageReadStatus, memberDirectory) : [];
-        return <MessageBubble
-          key={message.id}
+        const dateSeparatorKey = dateSeparatorKeys[index];
+        return <Fragment key={message.id}>
+          {dateSeparatorKey ? <div className="my-2 flex items-center justify-center" role="separator" aria-label={`Messages from ${formatGroupChatMessageTimestamp(message.created_at).date}`}><time dateTime={message.created_at} className="rounded-full bg-[#f4faf7] px-2.5 py-0.5 text-[10px] font-semibold text-[#7f9d94]">{formatGroupChatMessageTimestamp(message.created_at).date}</time></div> : null}
+          <MessageBubble
           message={message}
           messageRef={(node) => registerReadStatusElement(message.id, node)}
           popupBoundaryRef={scrollRef}
@@ -1157,7 +1185,8 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
           }}
           onRetryReadStatus={() => void readStatusQuery.refetch()}
           onCloseReadStatus={() => setReadStatusSelection(null)}
-        />;
+          />
+        </Fragment>;
       })}
       </div>
       </div>
@@ -1177,7 +1206,7 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
       <label className="sr-only" htmlFor={`group-message-${groupId}`}>Message</label>
       <button type="button" onClick={() => attachmentInputRef.current?.click()} disabled={postingDisabled || attachmentUploadMutation.isPending || attachmentSendMutation.isPending || Boolean(attachmentFile) || Boolean(replyingTo)} aria-label="Attach file" title={replyingTo ? "Cancel reply before attaching a file" : "Attach file"} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#d7e5df] bg-[#f8fbf9] text-[#52736a] transition hover:border-[#1f6a58] hover:text-[#1f6a58] disabled:cursor-not-allowed disabled:opacity-50">+</button>
       <input ref={attachmentInputRef} type="file" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,audio/*,video/*" className="hidden" onChange={handleAttachmentSelected} />
-      <textarea ref={composerRef} id={`group-message-${groupId}`} value={draft} onChange={(event) => setDraft(event.target.value)} disabled={postingDisabled || sendMutation.isPending || attachmentUploadMutation.isPending || attachmentSendMutation.isPending || Boolean(attachmentFile)} placeholder={postingDisabled ? "Messaging is unavailable" : attachmentFile ? "Remove attachment to write a message" : "Write a message..."} rows={1} className="min-h-11 max-h-32 min-w-0 flex-1 resize-none overflow-hidden rounded-xl border border-[#d7e5df] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f6a58] disabled:cursor-not-allowed disabled:bg-[#f4faf7]" />
+      <textarea ref={composerRef} id={`group-message-${groupId}`} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown} disabled={postingDisabled || sendMutation.isPending || attachmentUploadMutation.isPending || attachmentSendMutation.isPending || Boolean(attachmentFile)} placeholder={postingDisabled ? "Messaging is unavailable" : attachmentFile ? "Remove attachment to write a message" : "Write a message..."} rows={1} className="min-h-11 max-h-32 min-w-0 flex-1 resize-none overflow-hidden rounded-xl border border-[#d7e5df] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f6a58] disabled:cursor-not-allowed disabled:bg-[#f4faf7]" />
       <button type="button" onClick={toggleSpeechToText} disabled={!speechAllowed} aria-label={t(speechListening ? "stopVoiceToText" : "voiceToText")} aria-pressed={speechListening} title={t(speechListening ? "stopVoiceToText" : "voiceToText")} className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border text-[#1f6a58] transition disabled:cursor-not-allowed disabled:opacity-50 ${speechListening ? "border-[#1f6a58] bg-[#e8f6ee] ring-2 ring-[#b7dfc7]" : "border-[#d7e5df] bg-[#f8fbf9] hover:border-[#1f6a58]"}`}>
         <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="3" width="6" height="12" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3m-4 0h8" /></svg>
       </button>

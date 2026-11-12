@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {
   formatEventFeedbackNotificationDetails,
+  formatGroupChatNotificationDetails,
   formatNotificationTimestamp,
   formatReviewModerationNotificationDetails,
   formatReviewModerationNotificationTitle,
@@ -31,10 +32,12 @@ function PlatformNotificationsContent() {
       const title = formatReviewModerationNotificationTitle(input) ?? item.title;
       const reviewSubmission = formatReviewSubmissionNotification(input);
       const feedback = formatEventFeedbackNotificationDetails(input);
+      const groupMessage = formatGroupChatNotificationDetails(input);
       const reason = notificationReason({ data: item.metadata, body: item.message });
-      return <Link key={item.id} href={workflowNotificationTarget(item) ?? "/notifications"} onClick={() => void notifications.markRead(item.id)} className={`block p-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#1f6a58] ${item.is_read ? "" : "bg-[#f1f8f4]"}`}>
-        <p className="font-semibold">{feedback ? "New Event attendee feedback" : reviewSubmission?.title ?? title}</p>
-        <p className="text-sm">{reviewSubmission?.message ?? item.message}</p>
+      return <Link key={item.id} href={workflowNotificationTarget(item) ?? "/notifications"} onClick={() => void notifications.markRead(item.id)} className={`block p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#1f6a58] ${item.is_read ? "" : "bg-[#f1f8f4]"}`}>
+        <p className="font-semibold">{groupMessage?.title ?? (feedback ? "New Event attendee feedback" : reviewSubmission?.title ?? title)}</p>
+        <p className="text-sm">{groupMessage?.message ?? reviewSubmission?.message ?? item.message}</p>
+        {groupMessage ? <p className="mt-1 text-xs font-semibold text-[#1f6a58]">{groupMessage.contextLabel}{groupMessage.groupName ? ` \u00b7 ${groupMessage.groupName}` : ""}</p> : null}
         {feedback?.attendeeName ? <p className="mt-1 text-xs font-semibold text-[#52736a]">Attendee: {feedback.attendeeName}</p> : null}
         {feedback?.eventTitle ? <p className="mt-1 text-xs font-semibold text-[#1f6a58]">Event: {feedback.eventTitle}</p> : null}
         {feedback?.comment ? <p className="mt-2 whitespace-pre-wrap rounded-lg bg-[#f4faf7] p-3 text-sm text-[#31594d]">{feedback.comment}</p> : null}

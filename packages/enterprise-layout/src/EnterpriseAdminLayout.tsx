@@ -8,6 +8,8 @@ import {
   formatEventDiscussionNotificationDetails,
   formatEventFeedbackNotificationDetails,
   formatBlogWorkflowNotification,
+  formatGroupChatNotificationDetails,
+  getGroupChatNotificationTarget,
   formatNotificationTimestamp,
   formatRelativeBackendTimestamp,
   formatReviewModerationNotificationTitle,
@@ -204,7 +206,8 @@ export function EnterpriseAdminLayout({
 
   const handleNotificationClick = (item: (typeof displayNotifications)[number]) => {
     setNotificationActionFailed(false);
-    const target = resolveNotificationTarget(item, "enterprise");
+    const target = (messagesHref ? getGroupChatNotificationTarget(item, messagesHref) : null)
+      ?? resolveNotificationTarget(item, "enterprise");
     if (target) {
       closeMenu();
       if (onNotificationNavigate) onNotificationNavigate(target);
@@ -267,29 +270,32 @@ export function EnterpriseAdminLayout({
                   const reviewSubmission = formatReviewSubmissionNotification(item);
                   const blogWorkflow = formatBlogWorkflowNotification(item);
                   const feedbackDetails = formatEventFeedbackNotificationDetails(item);
-                  const notificationTitle = blogWorkflow?.title ?? reviewSubmission?.title ?? formatReviewModerationNotificationTitle(item) ?? item.title;
+                  const groupMessage = formatGroupChatNotificationDetails(item);
+                  const notificationTitle = groupMessage?.title ?? blogWorkflow?.title ?? reviewSubmission?.title ?? formatReviewModerationNotificationTitle(item) ?? item.title;
+                  const notificationBody = groupMessage?.message ?? blogWorkflow?.message ?? reviewSubmission?.message ?? item.body;
                   const { trainingTitle, senderName, learnerName, enrollmentStatus } = formatTrainingNotificationDetails(item);
                   const discussion = formatEventDiscussionNotificationDetails(item);
                   const review = formatReviewNotificationDetails(item);
                   const reason = notificationReason(item);
                   return (
-                    <button key={item.id} type="button" onClick={() => { void handleNotificationClick(item); }} className={`flex w-full gap-3 border-b border-[#edf3f0] px-4 py-3 text-left hover:bg-[#f4faf7] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#1f6a58] ${item.is_read ? "bg-[#fbfdfc]" : "bg-white"}`}>
+                    <button key={item.id} type="button" onClick={() => { void handleNotificationClick(item); }} className={`flex w-full gap-3 border-b border-[#edf3f0] px-3 py-2 text-left hover:bg-[#f4faf7] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#1f6a58] ${item.is_read ? "bg-[#fbfdfc]" : "bg-white"}`}>
                       <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${item.is_read ? "bg-[#d0dbd7]" : "bg-[#1f6a58]"}`} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-bold text-[#06201c]">{notificationTitle || "Notification"}</span>
-                        <span className="mt-1 block text-xs text-[#52736a]">{blogWorkflow?.message ?? reviewSubmission?.message ?? item.body}</span>
-                        {discussion.eventName ? <span className="mt-1 block truncate text-[11px] font-semibold text-[#1f6a58]">Event: {discussion.eventName}</span> : null}
+                        <span className="mt-1 block text-xs text-[#52736a]">{notificationBody}</span>
+                        {groupMessage ? <span className="mt-1 block truncate text-[11px] font-semibold text-[#1f6a58]">{groupMessage.contextLabel}{groupMessage.groupName ? ` \u00b7 ${groupMessage.groupName}` : ""}</span> : null}
+                        {!groupMessage && discussion.eventName ? <span className="mt-1 block truncate text-[11px] font-semibold text-[#1f6a58]">Event: {discussion.eventName}</span> : null}
                         {discussion.isAnnouncement ? <span className="mt-0.5 inline-block rounded bg-[#e8f6ee] px-1.5 py-0.5 text-[10px] font-bold text-[#1f6a58]">📢 Announcement</span> : null}
                         {discussion.isPendingReview ? <span className="mt-0.5 inline-block rounded bg-[#fef3f2] px-1.5 py-0.5 text-[10px] font-bold text-[#b42318]">⏳ Pending Review</span> : null}
                         {feedbackDetails?.attendeeName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">Attendee: {feedbackDetails.attendeeName}</span> : null}
                         {feedbackDetails?.eventTitle ? <span className="mt-1 block text-[11px] font-semibold text-[#1f6a58]">Event: {feedbackDetails.eventTitle}</span> : null}
                         {feedbackDetails?.comment ? <span className="mt-1 block whitespace-pre-wrap rounded-lg bg-[#f4faf7] p-2 text-xs text-[#31594d]">{feedbackDetails.comment}</span> : null}
-                        {discussion.senderName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">From: {discussion.senderName}</span> : senderName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">From: {senderName}</span> : null}
+                        {!groupMessage && (discussion.senderName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">From: {discussion.senderName}</span> : senderName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">From: {senderName}</span> : null)}
                         {learnerName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">Learner: {learnerName}</span> : null}
                         {enrollmentStatus ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">Enrollment status: {enrollmentStatus.replace(/[_-]+/g, " ")}</span> : null}
                         {review.learnerName ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">Learner: {review.learnerName}</span> : null}
                         {review.rating !== null ? <span className="mt-1 block text-[11px] font-semibold text-[#52736a]">Rating: {review.rating} ★</span> : null}
-                        {review.itemName ? <span className="mt-1 block truncate text-[11px] font-semibold text-[#1f6a58]">{review.itemType ?? "Item"}: {review.itemName}</span> : trainingTitle ? <span className="mt-1 block truncate text-[11px] font-semibold text-[#1f6a58]">Training: {trainingTitle}</span> : null}
+                        {review.itemName ? <span className="mt-1 block truncate text-[11px] font-semibold text-[#1f6a58]">{review.itemType ?? "Item"}: {review.itemName}</span> : !groupMessage && trainingTitle ? <span className="mt-1 block truncate text-[11px] font-semibold text-[#1f6a58]">Training: {trainingTitle}</span> : null}
                         {reason ? <span className="mt-0.5 block text-[11px] text-[#8a5a00]">Reason: {reason}</span> : null}
                         <span className="mt-1 block text-[11px] font-semibold text-[#7f9d94]">{item.created_at ? formatNotificationTimestamp(item.created_at) : ""}</span>
                       </span>
