@@ -1,4 +1,4 @@
-import type { CreateEventFormValues } from "./create-event-form";
+import type { CreateEventFormValues, EventTicketFormValue } from "./create-event-form";
 import type { ActiveEventFormConfiguration, ActiveEventFormField } from "./events.service";
 
 /** Identifies the editable currency control that established the Event currency. */
@@ -23,6 +23,22 @@ export interface EventCurrencyUiState {
 
 export const EVENT_CURRENCY_MISMATCH_ERROR = "All Event prices must use the selected Event currency.";
 export const EVENT_SERVICE_CURRENCY_MISMATCH_ERROR = "All Meal and Accommodation prices must use the same service currency.";
+export const DEFAULT_EVENT_CURRENCY = "USD";
+
+/** Serializes the pricing portion required by the Event create contract, including Free Events. */
+export function normalizeEventPricingPayload(values: Pick<CreateEventFormValues, "pricing_type" | "price" | "currency" | "ticket_types">): {
+  pricing_type: "free" | "paid";
+  price: string | null;
+  currency: string;
+  ticket_types: EventTicketFormValue[];
+} {
+  return {
+    pricing_type: values.pricing_type,
+    price: values.pricing_type === "free" ? null : values.price.trim(),
+    currency: values.currency.trim() || (values.pricing_type === "free" ? DEFAULT_EVENT_CURRENCY : ""),
+    ticket_types: values.pricing_type === "free" ? [] : values.ticket_types,
+  };
+}
 
 function fieldKey(field: ActiveEventFormField): string {
   return (field.core_key ?? field.stable_key ?? field.id).replace(/^(core_|custom_)/, "").trim().toLowerCase();
@@ -99,10 +115,8 @@ export function resolveNewEventCurrency(eventCurrency: string | null | undefined
   return currencyState?.value ?? eventCurrency?.trim() ?? "";
 }
 
-/** Keeps the backend's event-level fallback out of Free Event service currency state. */
-export function normalizeEventFormCurrency(pricingType: "free" | "paid", eventCurrency: string | null | undefined): string {
-  return pricingType === "free" ? "" : eventCurrency?.trim() ?? "";
-}
+/** Preserves the backend-required Event currency when hydrating an edit form. */
+export function normalizeEventFormCurrency(eventCurrency: string | null | undefined): string { return eventCurrency?.trim() ?? ""; }
 
 /** Makes service enablement agree with the authoritative Event module flags. */
 export function synchronizeEventServiceEnablement(values: CreateEventFormValues): CreateEventFormValues {

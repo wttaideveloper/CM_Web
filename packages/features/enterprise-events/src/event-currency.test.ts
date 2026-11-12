@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { CreateEventFormValues } from "./create-event-form.ts";
-import { assertEventCurrencyConsistency, EVENT_CURRENCY_MISMATCH_ERROR, EVENT_SERVICE_CURRENCY_MISMATCH_ERROR, eventCurrencyForSource, getEventCurrencyPolicy, hasEventMonetaryValues, normalizeEventFormCurrency, resetEventMonetaryValues, resolveEventCurrencySource, resolveEventOptionCurrency, resolveNewEventCurrency, synchronizeEventCurrencies, synchronizeEventServiceEnablement, validateEventCurrencies, type EventCurrencyPolicy } from "./event-currency.ts";
+import { assertEventCurrencyConsistency, DEFAULT_EVENT_CURRENCY, EVENT_CURRENCY_MISMATCH_ERROR, EVENT_SERVICE_CURRENCY_MISMATCH_ERROR, eventCurrencyForSource, getEventCurrencyPolicy, hasEventMonetaryValues, normalizeEventFormCurrency, normalizeEventPricingPayload, resetEventMonetaryValues, resolveEventCurrencySource, resolveEventOptionCurrency, resolveNewEventCurrency, synchronizeEventCurrencies, synchronizeEventServiceEnablement, validateEventCurrencies, type EventCurrencyPolicy } from "./event-currency.ts";
 import type { ActiveEventFormConfiguration } from "./events.service.ts";
 
 function form(overrides: Partial<CreateEventFormValues> = {}): CreateEventFormValues {
@@ -159,6 +159,11 @@ test("free Events do not require or synthesize a currency", () => {
   assert.deepEqual(validateEventCurrencies(values, fullPolicy), {});
 });
 
+test("paid Events without a currency remain invalid", () => {
+  const errors = validateEventCurrencies(form({ pricing_type: "paid", price: "100", currency: "" }), fullPolicy);
+  assert.equal(errors.currency?.[0], "Select a currency for this Event price.");
+});
+
 test("free service currency selection is shared by Meals and Accommodation", () => {
   const values = form({
     pricing_type: "free",
@@ -204,9 +209,19 @@ test("free Events with conflicting saved service currencies require resolution",
 });
 
 test("free Event edit hydration does not treat event-level fallback currency as selected", () => {
-  assert.equal(normalizeEventFormCurrency("free", "INR"), "");
-  assert.equal(normalizeEventFormCurrency("free", ""), "");
-  assert.equal(normalizeEventFormCurrency("paid", " INR "), "INR");
+  assert.equal(normalizeEventFormCurrency("INR"), "INR");
+  assert.equal(normalizeEventFormCurrency(""), "");
+  assert.equal(normalizeEventFormCurrency(" INR "), "INR");
+});
+
+test("Free Event creation preserves the historical backend-required currency", () => {
+  const values = form({ pricing_type: "free", price: "", currency: "", ticket_types: [] });
+  const payload = normalizeEventPricingPayload(values);
+  assert.equal(DEFAULT_EVENT_CURRENCY, "USD");
+  assert.equal(payload.pricing_type, "free");
+  assert.equal(payload.price, null);
+  assert.equal(payload.currency, "USD");
+  assert.deepEqual(payload.ticket_types, []);
 });
 
 test("service enabled flags follow modules without removing service options", () => {
