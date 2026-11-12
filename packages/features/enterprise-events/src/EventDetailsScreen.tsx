@@ -34,6 +34,7 @@ import {
   formatEventDurationType,
   formatEventScheduleDateTime,
   formatEventTime,
+  formatTimeZoneLabel,
 } from "./event-detail-formatters";
 import {
   canEditEvent,
@@ -444,7 +445,7 @@ function EventDetailsContent() {
                 label: "End Time",
                 value: formatEventTime(event.end_date, event.time_zone),
               },
-              { label: "Time Zone", value: event.time_zone },
+              { label: "Time Zone", value: formatTimeZoneLabel(event.time_zone) },
               { label: "Duration Type", value: formatEventDurationType(event.duration_type) },
               {
                 label: "Registration Cutoff",

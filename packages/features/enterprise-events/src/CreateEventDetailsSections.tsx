@@ -7,6 +7,7 @@ import { DateTimeLocalInput } from "@ihp/ui";
 import { EVENT_DESCRIPTION_MAX_LENGTH } from "./event-field-limits";
 import { isDeliveryFieldApplicable } from "./delivery-mode";
 import { isProtectedMeetingLink } from "./event-meeting-link";
+import { formatTimeZoneLabel } from "./event-detail-formatters";
 
 type UpdateForm = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => void;
 
@@ -42,7 +43,7 @@ export function BasicInformationSection({ values, update, errors, eventTypes = [
 export function ScheduleSection({ values, update, errors }: SectionProps) {
   return <section className="space-y-5"><SectionHeading title="Schedule" description="All times are interpreted in the selected time zone." />
     <div className="grid gap-4 md:grid-cols-2"><DateField label="Start date and time" field="start_date" values={values} update={update} errors={errors} /><DateField label="End date and time" field="end_date" values={values} update={update} errors={errors} /></div>
-    <label className={labelClass}>Time zone<select value={values.time_zone} onChange={(event) => update("time_zone", event.target.value)} className={inputClass}><option value={values.time_zone}>{values.time_zone}</option>{values.time_zone !== "America/New_York" ? <option value="America/New_York">America/New_York</option> : null}</select></label>
+    <label className={labelClass}>Time zone<select value={values.time_zone} onChange={(event) => update("time_zone", event.target.value)} className={inputClass}><option value={values.time_zone}>{formatTimeZoneLabel(values.time_zone)}</option>{values.time_zone !== "America/New_York" ? <option value="America/New_York">{formatTimeZoneLabel("America/New_York")}</option> : null}</select></label>
     <div className="grid gap-4 md:grid-cols-2"><DateField label="Registration opens" field="registration_open_at" values={values} update={update} errors={errors} /><DateField label="Registration closes" field="registration_close_at" values={values} update={update} errors={errors} /></div>
     <DateField label="Registration cutoff" field="registration_cutoff" values={values} update={update} errors={errors} max={[values.registration_close_at, values.start_date].filter(Boolean).sort()[0]} />
   </section>;

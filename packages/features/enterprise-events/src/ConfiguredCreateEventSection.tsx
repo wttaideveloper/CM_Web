@@ -16,6 +16,7 @@ import { resolveNewEventCurrency, type EventCurrencySource, type EventCurrencyUi
 import { isProtectedMeetingLink } from "./event-meeting-link";
 import { RepeatableEventMediaField } from "./EventMediaField";
 import { getEventFormFieldType, isEventMediaRenderer, getEventMediaKind, getEventMediaAccept } from "./event-form-field-type";
+import { formatTimeZoneLabel } from "./event-detail-formatters";
 
 type UpdateForm = <Key extends keyof CreateEventFormValues>(key: Key, value: CreateEventFormValues[Key]) => void;
 export type CustomMediaPreview = { name: string; url: string; kind: "image" | "video" | "document" };
@@ -216,8 +217,23 @@ function ConfiguredField(props: Omit<Props, "section"> & { field: ActiveEventFor
   };
   const configuredOptions = [...field.options];
   const isCoreCurrency = field.source === "core" && key === "currency";
-  if (["time_zone", "timezone"].includes(key) && !configuredOptions.some((option) => option.value === "America/New_York")) configuredOptions.unshift({ value: "America/New_York", label: "America/New_York", position: 0 });
-  const options = configuredOptions.sort((left, right) => left.position - right.position);
+  const isTimeZone = ["time_zone", "timezone"].includes(key);
+  if (isTimeZone) {
+    if (!configuredOptions.some((option) => option.value === "America/New_York")) {
+      configuredOptions.unshift({ value: "America/New_York", label: "America/New_York", position: 0 });
+    }
+    if (value && !configuredOptions.some((option) => option.value === value)) {
+      configuredOptions.unshift({ value, label: value, position: -1 });
+    }
+  }
+  const options = isTimeZone
+    ? configuredOptions
+        .map((option) => ({
+          ...option,
+          label: formatTimeZoneLabel(option.value || option.label),
+        }))
+        .sort((left, right) => left.label.localeCompare(right.label))
+    : configuredOptions.sort((left, right) => left.position - right.position);
   const effectiveType = getEventFormFieldType(field);
   if (effectiveType === "tags") return <label className="block text-sm font-semibold text-[#06201c] md:col-span-2">{field.label}{required}<input value={value} placeholder={field.placeholder ?? "Separate tags with commas"} onChange={(event) => setValue(event.target.value)} className={inputClass} />{field.help_text ? <span className="mt-1 block text-xs font-normal text-[#7f9d94]">{field.help_text}</span> : null}{error ? <p className="mt-1 text-xs text-[#b42318]">{error}</p> : null}</label>;
   if (["rich_text", "rich_text_editor"].includes(effectiveType)) return <UiOnlyEventRichTextField label={field.label} required={required} value={value} onChange={setValue} />;
@@ -312,10 +328,10 @@ function ConfiguredField(props: Omit<Props, "section"> & { field: ActiveEventFor
       <label htmlFor={id}>
         {field.label}{required}{field.help_text ? <span className="ml-1 font-normal text-[#52736a]">{field.help_text}</span> : null}
       </label>
-      {!isTemporal && (options.length || field.value_type === "enum" || isCoreCurrency) ? (
+      {!isTemporal && (options.length || field.value_type === "enum" || isCoreCurrency || isTimeZone) ? (
           <select id={id} disabled={moduleDisabled || currencyLocked} value={value} required={field.required} onChange={(event) => setValue(event.target.value)} className={inputClass}>
-            <option value="">Select an option</option>
-            {options.length ? options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>) : <option value={value}>{value}</option>}
+            <option value="">{isTimeZone ? "Select a time zone" : "Select an option"}</option>
+            {options.length ? options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>) : <option value={value}>{isTimeZone ? formatTimeZoneLabel(value) : value}</option>}
           </select>
       ) : type === "textarea" ? (
           <textarea id={id} disabled={moduleDisabled} value={value} required={field.required} placeholder={field.placeholder ?? undefined} minLength={constraints.min_length ?? undefined} maxLength={textLimit} onChange={(event) => setValue(event.target.value)} className={`${inputClass} h-24 resize-y py-2`} />

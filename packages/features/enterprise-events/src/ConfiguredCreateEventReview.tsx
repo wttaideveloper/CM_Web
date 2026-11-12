@@ -5,7 +5,7 @@ import type { ActiveEventFormConfiguration, ActiveEventFormField } from "./event
 import type { CustomMediaPreview } from "./ConfiguredCreateEventSection";
 import EventMediaPreview, { type EventMediaPreviewKind } from "./EventMediaPreview";
 import type { EventMediaItem } from "./event-media";
-import { formatEventDeliveryMode, formatEventDurationType } from "./event-detail-formatters";
+import { formatEventDeliveryMode, formatEventDurationType, formatTimeZoneLabel } from "./event-detail-formatters";
 import { isProtectedMeetingLink } from "./event-meeting-link";
 import { getEventFormFieldType, isEventMediaRenderer, getEventMediaKind } from "./event-form-field-type";
 
@@ -14,7 +14,7 @@ const coreValues: Record<string, keyof CreateEventFormValues> = { title: "title"
 function keyFor(field: ActiveEventFormField): string { return field.source === "core" ? field.core_key ?? field.stable_key ?? field.id : field.stable_key ?? field.id; }
 function enabled(field: ActiveEventFormField, key: string): boolean { const keys = field.composite_config?.enabled_fields ?? []; return keys.length === 0 || keys.includes(key); }
 function format(value: unknown, kind?: string): string { if (value === null || value === undefined || value === "" || Array.isArray(value) && value.length === 0) return "Not provided"; if (typeof value === "boolean") return value ? "Yes" : "No"; if (Array.isArray(value)) return value.join(", "); if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) { const date = new Date(value); if (!Number.isNaN(date.valueOf())) return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: kind === "datetime" ? "short" : undefined }).format(date); } return String(value); }
-function optionLabels(field: ActiveEventFormField, value: unknown): string { const values = Array.isArray(value) ? value : [value]; return values.map((item) => field.options.find((option) => option.value === item)?.label ?? String(item)).join(", ") || "Not provided"; }
+function optionLabels(field: ActiveEventFormField, value: unknown): string { const values = Array.isArray(value) ? value : [value]; const key = keyFor(field); return values.map((item) => { const trimmed = String(item).trim(); const match = field.options.find((option) => option.value === trimmed || option.label === trimmed || String(option.value).toLowerCase() === trimmed.toLowerCase()); if (match?.label) return match.label; if (["time_zone", "timezone"].includes(key)) return formatTimeZoneLabel(trimmed); if (/^[a-z0-9]+(_[a-z0-9]+)+$/i.test(trimmed)) return trimmed.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" "); return trimmed; }).join(", ") || "Not provided"; }
 const REVIEW_RICH_TEXT_TAGS = new Set(["BR", "EM", "I", "P", "STRONG", "U", "B"]);
 function sanitizeReviewRichText(html: string): string {
   if (typeof DOMParser === "undefined") return "";
@@ -66,11 +66,11 @@ function ReviewField({ field, values, customValues, customMediaPreviews = {}, lo
   const isRichText = ["rich_text", "rich_text_editor"].includes(renderer ?? "");
   if (isRichText) return <RichTextItem label={field.label} value={typeof raw === "string" ? raw : ""} />;
   const choiceRenderer = ["select", "dropdown", "radio", "radio_group", "multi_select", "multiselect", "checkbox_group"].includes(renderer);
-  const value = key === "meeting_link" && isProtectedMeetingLink(raw) ? "Protected meeting link" : key === "duration_type" ? formatEventDurationType(String(raw ?? "")) : key === "delivery_mode" ? formatEventDeliveryMode(String(raw ?? "")) : choiceRenderer ? optionLabels(field, raw) : format(raw, field.renderer === "datetime" || ["start_date", "end_date", "registration_cutoff", "registration_open_at", "registration_close_at"].includes(key) ? "datetime" : field.renderer === "date" ? "date" : undefined);
-  if (choiceRenderer) return <ChoiceItem label={field.label} value={value} options={field.options.map((option) => option.label)} />;
+  const value = key === "meeting_link" && isProtectedMeetingLink(raw) ? "Protected meeting link" : key === "duration_type" ? formatEventDurationType(String(raw ?? "")) : key === "delivery_mode" ? formatEventDeliveryMode(String(raw ?? "")) : ["time_zone", "timezone"].includes(key) ? formatTimeZoneLabel(String(raw ?? "")) : choiceRenderer ? optionLabels(field, raw) : format(raw, field.renderer === "datetime" || ["start_date", "end_date", "registration_cutoff", "registration_open_at", "registration_close_at"].includes(key) ? "datetime" : field.renderer === "date" ? "date" : undefined);
+  if (choiceRenderer) return <ChoiceItem label={field.label} value={value} />;
   return <Item label={field.label} value={value} />;
 }
-function ChoiceItem({ label, value, options }: { label: string; value: string; options: string[] }) { return <div className="min-w-0 max-w-full"><div className="text-xs font-bold uppercase tracking-wide text-[#7f9d94]">{label}</div><div className="mt-1 text-sm leading-6 text-[#06201c]">{value}</div>{options.length ? <div className="mt-1 text-xs text-[#52736a]">Options: {options.join(", ")}</div> : <div className="mt-1 text-xs text-[#b42318]">No options configured.</div>}</div>; }
+function ChoiceItem({ label, value }: { label: string; value: string }) { return <div className="min-w-0 max-w-full"><div className="text-xs font-bold uppercase tracking-wide text-[#7f9d94]">{label}</div><div className="mt-1 text-sm leading-6 text-[#06201c]">{value}</div></div>; }
 function customValueForField(field: ActiveEventFormField, values: Readonly<Record<string, string | string[] | boolean | number | null>>): string | string[] | boolean | number | null | undefined {
   const keys = [field.stable_key, field.id, field.core_key].filter((candidate): candidate is string => Boolean(candidate));
   for (const candidate of keys) if (Object.prototype.hasOwnProperty.call(values, candidate)) return values[candidate];

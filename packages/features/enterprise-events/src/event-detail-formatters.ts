@@ -23,6 +23,25 @@ export function formatEventDurationType(value: string | null | undefined): strin
   return value.trim().toLowerCase() === "custom" ? "Custom" : value.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+/** Formats an IANA timezone identifier into a clean, human-readable label with UTC offset. */
+export function formatTimeZoneLabel(timeZone: string | null | undefined): string {
+  if (!timeZone || !timeZone.trim()) return "Not provided";
+  const trimmed = timeZone.trim();
+  try {
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: trimmed,
+      timeZoneName: "shortOffset",
+    });
+    const parts = formatter.formatToParts(now);
+    const offsetPart = parts.find((p) => p.type === "timeZoneName")?.value || "";
+    const cleanName = trimmed.replace(/_/g, " ");
+    return offsetPart ? `${cleanName} (${offsetPart})` : cleanName;
+  } catch {
+    return trimmed.replace(/_/g, " ");
+  }
+}
+
 /** Formats confirmed UTC audit timestamps in the browser's local timezone. */
 export function formatAuditDateTime(value: string | null | undefined, timeZone?: string): string {
   const normalized = normalizeUtcDate(value);
