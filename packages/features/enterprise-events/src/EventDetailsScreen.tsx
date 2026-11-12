@@ -452,6 +452,7 @@ function EventDetailsContent() {
                 value: formatEventDateTime(
                   event.registration_cutoff,
                   event.time_zone,
+                  false,
                 ),
               },
               {
@@ -459,6 +460,7 @@ function EventDetailsContent() {
                 value: formatEventDateTime(
                   event.registration_open_at,
                   event.time_zone,
+                  false,
                 ),
               },
               {
@@ -466,6 +468,7 @@ function EventDetailsContent() {
                 value: formatEventDateTime(
                   event.registration_close_at,
                   event.time_zone,
+                  false,
                 ),
               },
             ]}
