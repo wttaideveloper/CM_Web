@@ -55,3 +55,10 @@ export function formatGroupChatMessageTimestamp(value: string | null | undefined
     valid: true,
   };
 }
+
+/** Formats an invitation's authoritative created_at value for the viewer's local timezone. */
+export function formatGroupChatInvitationReceivedAt(value: string | null | undefined, timeZone?: string): string | null {
+  const date = toDate(value);
+  if (!date) return null;
+  return new Intl.DateTimeFormat(undefined, { ...localDateTimeOptions(timeZone), dateStyle: "medium", timeStyle: "short" }).format(date);
+}

@@ -1,10 +1,13 @@
-import type { EventGroupAttendee, EventGroupAttendeeListParams, EventGroupAttendeeListResponse, EventGroupAttendeeReason, EventGroupEvent, EventGroupEventListParams, EventGroupProvider } from "./group-chat/event-group.types";
+import type { EventGroupAttendee, EventGroupAttendeeListParams, EventGroupAttendeeListResponse, EventGroupAttendeeReason, EventGroupEvent, EventGroupEventListParams, EventGroupProvider, EventGroupProviderListResponse } from "./group-chat/event-group.types";
 import { isValidEventGroupUserId } from "./group-chat/event-group.models.ts";
+import { validateGroupChatDetails } from "./group-chat-models.ts";
 
 export const EVENT_GROUP_PAGE_SIZE = 10;
 export const EVENT_GROUP_ATTENDEE_PAGE_SIZE = 25;
 
 export type EventGroupCreationStep = "event" | "attendees" | "details" | "review";
+
+export const EVENT_GROUP_CREATION_STEPS: readonly EventGroupCreationStep[] = ["event", "attendees", "details", "review"];
 
 export interface EventGroupListQueryInput {
   search: string;
@@ -91,8 +94,9 @@ export function canContinueEventGroupAttendeeStep(input: { hasResponse: boolean;
 export function validateEventGroupReview(input: EventGroupReviewValidationInput): EventGroupReviewValidationError | null {
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   if (!uuid.test(input.eventId)) return "invalid_event";
-  if (!input.groupName.trim() || input.groupName.trim().length > 120) return "invalid_name";
-  if (input.description.length > 500) return "description_too_long";
+  const detailsError = validateGroupChatDetails(input.groupName, input.description);
+  if (detailsError === "name_required" || detailsError === "name_too_long") return "invalid_name";
+  if (detailsError === "description_too_long") return "description_too_long";
   const allUserIds = [...input.attendeeUserIds, ...input.providerUserIds];
   if (new Set(allUserIds).size !== allUserIds.length) return "duplicate_invitee";
   if (!input.inviteAllRegistered && allUserIds.length === 0) return "invitee_required";
@@ -107,6 +111,16 @@ export function summarizeEventGroupAttendeeEligibility(response: Pick<EventGroup
     eligibleRegistrationTotal: response.eligible_total,
     inviteableOnPage: response.items.filter((attendee) => Boolean(attendee.user_id) && attendee.can_invite).length,
   };
+}
+
+/** Counts verified Provider candidates in the currently loaded, optionally filtered response. */
+export function getEventGroupAvailableProviderCount(response: Pick<EventGroupProviderListResponse, "items"> | null | undefined): number | null {
+  return response ? response.items.filter((provider) => !provider.is_me).length : null;
+}
+
+/** Allows only the current or a completed Event wizard step to be selected from the progress indicator. */
+export function canNavigateEventGroupStep(current: EventGroupCreationStep, target: EventGroupCreationStep): boolean {
+  return EVENT_GROUP_CREATION_STEPS.indexOf(target) <= EVENT_GROUP_CREATION_STEPS.indexOf(current);
 }
 
 /** Adds one registration to a cross-page selection without creating duplicate entries. */

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useEventGroupProviders } from "./group-chat/event-group.queries";
 import type { EventGroupProvider } from "./group-chat/event-group.types";
-import { resolveEventGroupQueryState } from "./event-group-wizard-models";
+import { getEventGroupAvailableProviderCount, resolveEventGroupQueryState } from "./event-group-wizard-models";
 
 interface EventGroupProviderPickerProps {
   eventId: string;
@@ -23,8 +23,11 @@ export default function EventGroupProviderPicker({ eventId, selectedProviders, o
   }, [search]);
   const providersQuery = useEventGroupProviders(eventId, { q: debouncedSearch || undefined });
   const state = resolveEventGroupQueryState({ isPending: providersQuery.isPending, isError: providersQuery.isError, itemCount: providersQuery.data?.items.length ?? 0 });
+  const availableProviderCount = getEventGroupAvailableProviderCount(providersQuery.data);
+  const selectedProviderCount = Object.keys(selectedProviders).length;
+  const providerCountLabel = availableProviderCount === null ? "Providers (— available)" : t(debouncedSearch ? "eventGroup.providersAvailableInResults" : "eventGroup.providersAvailable", { count: availableProviderCount });
   return <section className="space-y-3 rounded-2xl border border-[#d7e5df] bg-white p-4" aria-labelledby="event-group-providers-title">
-    <div><h2 id="event-group-providers-title" className="font-bold text-[#16332b]">{t("eventGroup.providersTitle")}</h2><p className="mt-1 text-xs text-[#52736a]">{t("eventGroup.providersDescription")}</p><p className="mt-2 text-xs text-[#52736a]">{t("eventGroup.speakerProviderDescription")}</p></div>
+    <div><h2 id="event-group-providers-title" className="font-bold text-[#16332b]">{providerCountLabel}</h2><p className="mt-1 text-xs font-semibold text-[#52736a]">{t("eventGroup.providersSelected", { count: selectedProviderCount })}</p><p className="mt-1 text-xs text-[#52736a]">{t("eventGroup.providersDescription")}</p><p className="mt-2 text-xs text-[#52736a]">{t("eventGroup.speakerProviderDescription")}</p></div>
     <label className="block text-sm font-semibold text-[#16332b]"><span className="sr-only">{t("eventGroup.searchProviders")}</span><input value={search} onChange={(change) => setSearch(change.target.value)} placeholder={t("eventGroup.searchProviders")} className="h-10 w-full rounded-xl border border-[#d7e5df] px-3 font-normal outline-none focus:border-[#1f6a58]" /></label>
     {state === "loading" ? <p className="text-sm text-[#52736a]" aria-live="polite">{t("eventGroup.providersLoading")}</p> : null}
     {state === "error" ? <div className="rounded-xl border border-[#f3d5d1] bg-[#fff7f6] p-3 text-sm text-[#7a271a]" role="alert"><p>{providersQuery.error?.message ?? t("eventGroup.providersError")}</p><button type="button" onClick={() => void providersQuery.refetch()} className="mt-2 font-semibold underline">{t("eventGroup.tryAgain")}</button></div> : null}

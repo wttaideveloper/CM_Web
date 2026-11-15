@@ -6,21 +6,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { acceptGroupChatInvitation, declineGroupChatInvitation, getGroupChatInvitation, listGroupChatInvitations } from "./group-chat/group-chat.service";
 import type { AcceptGroupInvitationPayload, GroupChatInvitation, GroupChatInvitationDetails } from "./group-chat/group-chat.types";
 import { groupChatInvitationQueryKey } from "./GroupChatNotificationSync";
+import { formatGroupChatInvitationReceivedAt } from "./group-chat-timestamps";
 
 type Props = { onAccepted: (groupId: string) => void; userScope?: string; tenantScope?: string };
-
-function formatInvitationDate(value: string | null): string {
-  if (!value) return "Date unavailable";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "Date unavailable" : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
-}
 
 function Retry({ message, onRetry }: { message: string; onRetry: () => void }) {
   return <div className="rounded-xl border border-[#f3d5d1] bg-[#fff7f6] p-4 text-sm text-[#7a271a]" role="alert"><p>{message}</p><button type="button" onClick={onRetry} className="mt-2 font-semibold underline">Try again</button></div>;
 }
 
 function InvitationListItem({ invitation, selected, onSelect }: { invitation: GroupChatInvitation; selected: boolean; onSelect: () => void }) {
-  return <button type="button" aria-pressed={selected} onClick={onSelect} className={`w-full rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2 ${selected ? "border-[#1f6a58] bg-[#e8f6ee]" : "border-[#e1ebe6] hover:bg-[#f4faf7]"}`}><span className="flex items-start justify-between gap-3"><span className="min-w-0"><span className="block truncate text-sm font-bold text-[#16332b]">{invitation.group_name}</span><span className="mt-1 block text-xs text-[#52736a]">{invitation.invited_by_name ? `Invited by ${invitation.invited_by_name}` : "Group invitation"}</span></span><span className="shrink-0 rounded-full bg-[#fff5d6] px-2 py-1 text-[11px] font-semibold capitalize text-[#8b5e00]">{invitation.status || "Pending"}</span></span><span className="mt-2 block text-[11px] text-[#7f9d94]">{formatInvitationDate(invitation.created_at)}</span></button>;
+  return <button type="button" aria-pressed={selected} onClick={onSelect} className={`w-full rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6a58] focus-visible:ring-offset-2 ${selected ? "border-[#1f6a58] bg-[#e8f6ee]" : "border-[#e1ebe6] hover:bg-[#f4faf7]"}`}><span className="flex items-start justify-between gap-3"><span className="min-w-0"><span className="block truncate text-sm font-bold text-[#16332b]">{invitation.group_name}</span><span className="mt-1 block text-xs text-[#52736a]">{invitation.invited_by_name ? `Invited by ${invitation.invited_by_name}` : "Group invitation"}</span></span><span className="shrink-0 rounded-full bg-[#fff5d6] px-2 py-1 text-[11px] font-semibold capitalize text-[#8b5e00]">{invitation.status || "Pending"}</span></span>{formatGroupChatInvitationReceivedAt(invitation.created_at) ? <span className="mt-2 block text-[11px] text-[#7f9d94]">Received {formatGroupChatInvitationReceivedAt(invitation.created_at)}</span> : null}</button>;
 }
 
 function InvitationDetails({ detail, onAccepted, onDeclined, userScope, tenantScope }: { detail: GroupChatInvitationDetails; onAccepted: (groupId: string) => void; onDeclined: () => void; userScope: string; tenantScope: string }) {
@@ -33,6 +28,8 @@ function InvitationDetails({ detail, onAccepted, onDeclined, userScope, tenantSc
   const [guardianRelationship, setGuardianRelationship] = useState("");
   const [declineConfirmation, setDeclineConfirmation] = useState(false);
   const guardianRequired = detail.guardian_consent_required;
+  const invitedByKey = detail.invited_by_name?.trim().toLocaleLowerCase() ?? null;
+  const providerNames = [...new Set(detail.provider_names.map((name) => name.trim()).filter(Boolean))].filter((name) => name.toLocaleLowerCase() !== invitedByKey);
   const acceptReady = consent && (!guardianRequired || Boolean(guardianName.trim() && guardianRelationship.trim()));
   const refresh = async () => {
     await Promise.all([
@@ -68,16 +65,16 @@ function InvitationDetails({ detail, onAccepted, onDeclined, userScope, tenantSc
   };
 
   return <div className="space-y-4">
-    <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-[#7f9d94]">Invitation details</p><h2 className="mt-1 text-xl font-bold text-[#06201c]">{detail.group_name}</h2><p className="mt-1 text-sm text-[#52736a]">Received {formatInvitationDate(detail.created_at)}</p></div>
+    <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-[#7f9d94]">Invitation details</p><h2 className="mt-1 text-xl font-bold text-[#06201c]">{detail.group_name}</h2>{formatGroupChatInvitationReceivedAt(detail.created_at) ? <p className="mt-1 text-sm text-[#52736a]">Received {formatGroupChatInvitationReceivedAt(detail.created_at)}</p> : null}</div>
     {detail.description ? <section className="rounded-xl bg-[#f9fcfa] p-4"><h3 className="text-sm font-bold text-[#16332b]">Description</h3><p className="mt-1 text-sm text-[#52736a]">{detail.description}</p></section> : null}
     {detail.purpose ? <section className="rounded-xl bg-[#f9fcfa] p-4"><h3 className="text-sm font-bold text-[#16332b]">Purpose</h3><p className="mt-1 text-sm text-[#52736a]">{detail.purpose}</p></section> : null}
     <dl className="grid gap-3 rounded-xl border border-[#e1ebe6] p-4 text-sm sm:grid-cols-2">
       <div><dt className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">Invited by</dt><dd className="mt-1 text-[#16332b]">{detail.invited_by_name || "Name unavailable"}</dd></div>
       <div><dt className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">Status</dt><dd className="mt-1 capitalize text-[#16332b]">{detail.status || "Pending"}</dd></div>
-      {detail.provider_names.length > 0 ? <div className="sm:col-span-2"><dt className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">Providers</dt><dd className="mt-1 text-[#16332b]">{detail.provider_names.join(", ")}</dd></div> : null}
+      {detail.visibility_notice ? <div className="sm:col-span-2"><dt className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">Visibility</dt><dd className="mt-1 text-[#16332b]">{detail.visibility_notice}</dd></div> : null}
+      {providerNames.length > 0 ? <div className="sm:col-span-2"><dt className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">Providers</dt><dd className="mt-1 text-[#16332b]">{providerNames.join(", ")}</dd></div> : null}
       {detail.member_names.length > 0 ? <div className="sm:col-span-2"><dt className="text-xs font-semibold uppercase tracking-wide text-[#7f9d94]">Current members</dt><dd className="mt-1 text-[#16332b]">{detail.member_names.join(", ")}</dd></div> : null}
     </dl>
-    {detail.visibility_notice ? <p className="rounded-xl border border-[#d7e5df] bg-[#f9fcfa] p-3 text-sm text-[#52736a]">{detail.visibility_notice}</p> : null}
     {detail.emergency_notice ? <p className="rounded-xl border border-[#f1d8ad] bg-[#fffaf0] p-3 text-sm text-[#8b5e00]">{detail.emergency_notice}</p> : null}
     {detail.what_members_can_see ? <section className="rounded-xl border border-[#d7e5df] p-4"><h3 className="text-sm font-bold text-[#16332b]">What members can see</h3><p className="mt-1 text-sm text-[#52736a]">{detail.what_members_can_see}</p></section> : null}
     {detail.guardian_consent_text ? <p className="rounded-xl border border-[#f1d8ad] bg-[#fffaf0] p-3 text-sm text-[#8b5e00]">{detail.guardian_consent_text}</p> : null}

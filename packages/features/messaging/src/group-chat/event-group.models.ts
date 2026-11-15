@@ -17,6 +17,7 @@ import type {
   InviteRegisteredPayload,
   InviteRegisteredResponse,
 } from "./event-group.types";
+import { countGroupChatCharacters, GROUP_CHAT_DESCRIPTION_MAX_LENGTH, GROUP_CHAT_NAME_MAX_LENGTH, validateGroupChatDetails } from "../group-chat-models.ts";
 
 const ATTENDEE_REASONS: readonly EventGroupAttendeeReason[] = [
   "registration_cancelled", "registration_no_show", "registration_not_active", "payment_unpaid", "payment_pending",
@@ -292,8 +293,9 @@ export function buildInviteRegisteredPayload(input: InviteRegisteredPayload): In
 /** Validates the documented Event Group create constraints before any gated upload or create request. */
 export function validateEventGroupCreatePayload(payload: EventGroupCreatePayload): string | null {
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  if (!payload.name.trim() || payload.name.trim().length > 120) return "The Event Group name must be between 1 and 120 characters.";
-  if (payload.description !== undefined && payload.description !== null && payload.description.length > 500) return "The Event Group description must be 500 characters or fewer.";
+  const detailsError = validateGroupChatDetails(payload.name, payload.description ?? "");
+  if (detailsError === "name_required" || detailsError === "name_too_long") return `The Event Group name must be between 1 and ${GROUP_CHAT_NAME_MAX_LENGTH} characters.`;
+  if (detailsError === "description_too_long") return `The Event Group description must be ${GROUP_CHAT_DESCRIPTION_MAX_LENGTH} characters or fewer.`;
   if (!uuid.test(payload.context_id)) return "The selected Event identifier is invalid.";
   if (payload.avatar_url !== undefined && payload.avatar_url !== null && payload.avatar_url.length > 500) return "The Event Group avatar URL must be 500 characters or fewer.";
   if (payload.invitees?.some((invitee) => !uuid.test(invitee.user_id))) return "One or more selected invitee identities are invalid.";

@@ -1,6 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatGroupChatMessageTimestamp, getGroupChatMessageDateSeparatorKeys, getGroupChatMessageLocalDateKey } from "./group-chat-timestamps.ts";
+import { formatGroupChatInvitationReceivedAt, formatGroupChatMessageTimestamp, getGroupChatMessageDateSeparatorKeys, getGroupChatMessageLocalDateKey } from "./group-chat-timestamps.ts";
+
+test("formats invitation received timestamps in the viewer timezone", () => {
+  const expected = new Intl.DateTimeFormat(undefined, { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }).format(new Date("2026-11-12T13:35:00Z"));
+  assert.equal(formatGroupChatInvitationReceivedAt("2026-11-12T13:35:00Z", "Asia/Kolkata"), expected);
+  assert.equal(formatGroupChatInvitationReceivedAt("2026-11-12T13:35:00+00:00", "Asia/Kolkata"), expected);
+});
+
+test("omits invitation received time when the backend timestamp is missing or malformed", () => {
+  assert.equal(formatGroupChatInvitationReceivedAt(null, "UTC"), null);
+  assert.equal(formatGroupChatInvitationReceivedAt("not-a-date", "UTC"), null);
+});
 
 test("formats message timestamps for the viewer's local date and time", () => {
   const display = formatGroupChatMessageTimestamp("2026-11-12T09:30:00Z", "Asia/Kolkata");

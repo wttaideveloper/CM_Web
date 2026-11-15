@@ -4,9 +4,32 @@ import type { AuthRoles } from "@ihp/auth";
 import type { GroupChatDataRequest, GroupChatDataRequestStatus } from "./group-chat/group-chat.types";
 import type { CreateGroupChatDataRequestPayload } from "./group-chat/group-chat.types";
 import type { CreateGroupChatReportPayload, GroupChatAuditDetailsValue, GroupChatAuditEntry, GroupChatAuditListParams, GroupChatAuditListResponse, GroupChatComplianceReport, GroupChatComplianceReportListParams, GroupChatComplianceReportListResponse, GroupChatComplianceReportStatus, GroupChatComplianceReportUpdateStatus, GroupChatGrievanceOfficer, GroupChatOriginalMessage, GroupChatReport, GroupChatReportReason, UpdateGroupChatComplianceReportPayload } from "./group-chat/group-chat.types";
-import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatConsentListResponse, GroupChatConsentNotice, GroupChatConsentRecord, GroupChatConsentWithdrawalResponse, GroupChatLeaveResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatMessageReadStatus, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReadSummary, GroupChatReplyReference, GroupChatSharedFile, GroupChatSharedFilesResponse, GroupChatSummary, GroupChatVerifiedProvider, GroupChatLegalHoldPayload, GroupChatLegalHoldRequest, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReassignGroupOwnerPayload, ReassignGroupOwnerResponse, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupPreferencesPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
+import type { ChangeGroupMemberRolePayload, CreateGroupPayload, EditGroupChatMessagePayload, GroupAvatarUploadResponse, GroupChatAttachment, GroupChatAttachmentDisplayMetadata, GroupChatAttachmentType, GroupChatConsentListResponse, GroupChatConsentNotice, GroupChatConsentRecord, GroupChatConsentWithdrawalResponse, GroupChatLeaveResponse, GroupChatInvitation, GroupChatInvitationDetails, GroupChatInvitationResult, GroupChatInvitee, GroupChatLearner as ApiGroupChatLearner, GroupChatLearnerListResponse, GroupChatMember, GroupChatMemberPostingMutePayload, GroupChatMemberRole, GroupChatMessage, GroupChatMessageAttachment, GroupChatMessageHistoryResponse, GroupChatMessageReadStatus, GroupChatPermissions, GroupChatProvider as ApiGroupChatProvider, GroupChatProviderListResponse, GroupChatProviderVerificationCandidate, GroupChatReactionPayload, GroupChatReactionSettings, GroupChatReadSummary, GroupChatReplyReference, GroupChatSharedFile, GroupChatSharedFilesResponse, GroupChatSummary, GroupChatVerifiedProvider, GroupChatLegalHoldPayload, GroupChatLegalHoldRequest, HideGroupChatMessagePayload, InviteMembersPayload, RegisterGroupChatVerifiedProviderPayload, ReassignGroupOwnerPayload, ReassignGroupOwnerResponse, ReopenGroupPayload, SendGroupChatAttachmentMessagePayload, SendGroupChatMessagePayload, TransferGroupOwnershipPayload, UpdateGroupDetailsPayload, UpdateGroupPreferencesPayload, UpdateGroupSettingsPayload } from "./group-chat/group-chat.types";
 
 export type GroupChatView = "conversation" | "members" | "settings";
+
+/** Maximum Group name length documented by the shared POST /groups contract. */
+export const GROUP_CHAT_NAME_MAX_LENGTH = 120;
+
+/** Maximum Group description length documented by the shared POST /groups contract. */
+export const GROUP_CHAT_DESCRIPTION_MAX_LENGTH = 500;
+
+export type GroupChatDetailsValidationError = "name_required" | "name_too_long" | "description_too_long";
+
+/** Counts Unicode code points so astral characters are not counted as two characters in the client. */
+export function countGroupChatCharacters(value: string): number {
+  return Array.from(value).length;
+}
+
+/** Validates the name and description values after applying the same trimming as the create payload builders. */
+export function validateGroupChatDetails(name: string, description: string): GroupChatDetailsValidationError | null {
+  const normalizedName = name.trim();
+  const normalizedDescription = description.trim();
+  if (!normalizedName) return "name_required";
+  if (countGroupChatCharacters(normalizedName) > GROUP_CHAT_NAME_MAX_LENGTH) return "name_too_long";
+  if (countGroupChatCharacters(normalizedDescription) > GROUP_CHAT_DESCRIPTION_MAX_LENGTH) return "description_too_long";
+  return null;
+}
 
 export const GROUP_CHAT_REPORT_REASONS: readonly { value: GroupChatReportReason; label: string }[] = [
   { value: "harassment", label: "Harassment" },
@@ -109,6 +132,29 @@ export function isGroupChatProviderSelectable(provider: ApiGroupChatProvider): b
 /** Calculates additional member capacity after reserving the group owner slot. */
 export function remainingGroupChatMemberSlots(maxMembers: number, selectedCount: number): number {
   return Math.max(0, Math.max(1, maxMembers) - 1 - Math.max(0, selectedCount));
+}
+
+/** Summarizes the existing owner-reserved capacity model without changing enforcement. */
+export function summarizeGroupChatCapacity(maxMembers: number, selectedCount: number): { maxMembers: number; selectedCount: number; invitationSlotsAvailable: number; ownerReserved: number } {
+  const normalizedMaxMembers = Math.max(1, maxMembers);
+  const normalizedSelectedCount = Math.max(0, selectedCount);
+  return {
+    maxMembers: normalizedMaxMembers,
+    selectedCount: normalizedSelectedCount,
+    invitationSlotsAvailable: remainingGroupChatMemberSlots(normalizedMaxMembers, normalizedSelectedCount),
+    ownerReserved: 1,
+  };
+}
+
+/** Uses the backend total for the current learner query rather than the loaded page length. */
+export function getGroupChatAvailableLearnerCount(response: Pick<GroupChatLearnerListResponse, "pagination" | "eligible_total"> | null | undefined): number | null {
+  if (!response) return null;
+  return response.eligible_total ?? response.pagination.total;
+}
+
+/** Uses the backend total for the current Provider query rather than the loaded page length. */
+export function getGroupChatAvailableProviderCount(response: Pick<GroupChatProviderListResponse, "pagination"> | null | undefined): number | null {
+  return response?.pagination.total ?? null;
 }
 
 /** Prevents a previous Training result set from being selected for a newer search. */
@@ -383,7 +429,7 @@ export function normalizeGroupChatInvitation(value: unknown): GroupChatInvitatio
     description: readString(value, "description") || null,
     invited_by_name: readString(value, "invited_by_name", "inviter_name") || null,
     status: readString(value, "status") || "pending",
-    created_at: readString(value, "created_at") || null,
+    created_at: readString(value, "created_at", "invited_at") || null,
     member_names: memberNames,
     visibility_notice: readString(value, "visibility_notice") || null,
     emergency_notice: readString(value, "emergency_notice") || null,
@@ -402,6 +448,7 @@ export function normalizeGroupChatInvitationDetails(value: unknown): GroupChatIn
         ...nestedInvitation,
         group_id: nestedInvitation.group_id ?? source.group_id ?? outerGroup?.id ?? outerGroup?.group_id,
         conversation_id: nestedInvitation.conversation_id ?? source.conversation_id,
+        created_at: nestedInvitation.created_at ?? source.created_at ?? source.invited_at,
       }
     : source;
   const invitation = normalizeGroupChatInvitation(invitationSource);
