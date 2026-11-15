@@ -5,6 +5,8 @@ export { formatNotificationDateTime, formatNotificationTimestamp, formatRelative
 export { formatBlogWorkflowNotification, formatEventDiscussionNotificationDetails, formatEventFeedbackNotificationDetails, formatReviewModerationNotificationDetails, formatReviewModerationNotificationTitle, formatReviewNotificationDetails, formatReviewSubmissionNotification, formatTrainingNotificationDetails, handleNotificationClick, notificationReason, resolveEventNotificationTarget, resolveNotificationTarget } from "./event-notification-routing";
 export { browserWorkflowRequest, createWorkflowNotificationClient } from "./workflow-notifications";
 export type { WorkflowNotification, WorkflowNotificationClient, WorkflowNotificationHistoryResponse, WorkflowRequest } from "./workflow-notifications";
+export { formatGroupChatNotificationDetails, getGroupChatNotificationTarget } from "./group-chat-notification-formatting";
+export type { GroupChatNotificationDetails, GroupChatNotificationInput } from "./group-chat-notification-formatting";
 export { RealtimeContext, useRealtime } from "./useRealtime";
 export type {
   NotificationClient,

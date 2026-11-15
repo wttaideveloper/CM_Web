@@ -115,6 +115,12 @@ test("invitation parsing keeps explicit invitation and group identifiers separat
   assert.equal(normalizeGroupChatInvitation({ group_id: "group-without-invitation" }), null);
 });
 
+test("preserves the invitation created_at timestamp for received-date display", () => {
+  const result = normalizeGroupChatInvitation({ invitation_id: "invitation-with-date", group_id: "group-with-date", group_name: "Wellness cohort", invited_at: "2026-11-12T13:35:00Z" });
+  assert.equal(result?.created_at, "2026-11-12T13:35:00Z");
+  assert.equal(normalizeGroupChatInvitation({ invitation_id: "invitation-created-at", group_id: "group-created-at", created_at: "2026-11-12T13:36:00Z", invited_at: "2026-11-12T13:35:00Z" })?.created_at, "2026-11-12T13:36:00Z");
+});
+
 test("nested invitation details can use the top-level group identifier", () => {
   assert.deepEqual(normalizeGroupChatInvitationDetails({
     group_id: "group-2",
@@ -138,6 +144,15 @@ test("nested invitation details can use the top-level group identifier", () => {
     what_members_can_see: null,
     guardian_consent_text: null,
   });
+});
+
+test("nested invitation details preserve an outer invited_at timestamp", () => {
+  const result = normalizeGroupChatInvitationDetails({
+    invited_at: "2026-11-12T13:35:00Z",
+    group_id: "group-with-date",
+    invitation: { invitation_id: "invitation-with-date", group_name: "Wellness cohort" },
+  });
+  assert.equal(result?.created_at, "2026-11-12T13:35:00Z");
 });
 
 test("nested conversation_id remains the detail and group-action identifier when explicit IDs are absent", () => {

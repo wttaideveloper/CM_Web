@@ -3,7 +3,7 @@ import test from "node:test";
 import type { EventGroupAttendee, EventGroupProvider } from "./group-chat/event-group.types.ts";
 import { buildEventGroupCreatePayload, buildInviteRegisteredPayload, validateEventGroupCreatePayload } from "./group-chat/event-group.models.ts";
 import { isSupportedEventGroupAvatarFile } from "./group-chat-models.ts";
-import { addEventAttendeeSelection, buildEventGroupAttendeeFilters, buildEventGroupListParams, canContinueEventGroupAttendeeStep, canManageEventGroupInvitations, canSelectEventGroupAttendee, eventGroupInvitationInvalidationQueryKeys, formatEventGroupAvatarFileSize, getEventAttendeeEligibilityReason, getEventAttendeeIdentityStatus, getGroupWorkspaceContextLabel, isEventGroupInvitationEnabled, isEventGroupWorkspaceContext, resolveEventGroupQueryState, summarizeEventGroupAttendeeEligibility, summarizeEventGroupCapacity, toggleEventAttendeeSelection, toggleEventGroupProviderSelection, validateEventGroupReview } from "./event-group-wizard-models.ts";
+import { addEventAttendeeSelection, buildEventGroupAttendeeFilters, buildEventGroupListParams, canContinueEventGroupAttendeeStep, canManageEventGroupInvitations, canNavigateEventGroupStep, canSelectEventGroupAttendee, eventGroupInvitationInvalidationQueryKeys, formatEventEligibilityReason, formatEventGroupAvatarFileSize, formatEventStatusLabel, getEventAttendeeEligibilityReason, getEventAttendeeIdentityStatus, getEventGroupAvailableProviderCount, getGroupWorkspaceContextLabel, isEventGroupInvitationEnabled, isEventGroupWorkspaceContext, resolveEventGroupQueryState, summarizeEventGroupAttendeeEligibility, summarizeEventGroupCapacity, toggleEventAttendeeSelection, toggleEventGroupProviderSelection, validateEventGroupReview } from "./event-group-wizard-models.ts";
 import { normalizeGroupChatSocketEvent } from "./group-chat/group-chat-socket.ts";
 import { isGroupChatRealtimeActiveStatus } from "./group-chat/group-chat-socket-controller.ts";
 
@@ -28,6 +28,15 @@ test("Event queries retain enterprise scope and server-side filters", () => {
   assert.deepEqual(buildEventGroupAttendeeFilters({ page: 3, search: "  Ada ", status: "confirmed", paymentStatus: "paid" }), {
     page: 3, pageSize: 25, q: "Ada", eligibleOnly: false, registrationStatus: "confirmed", paymentStatus: "paid", notInGroup: false,
   });
+});
+
+test("Event picker labels statuses and hides raw eligibility codes", () => {
+  assert.equal(formatEventStatusLabel("published"), "Published");
+  assert.equal(formatEventStatusLabel("in_review"), "In Review");
+  assert.equal(formatEventStatusLabel(null), "Status unavailable");
+  assert.equal(formatEventEligibilityReason("event_not_open"), "This Event is not open for Group creation.");
+  assert.equal(formatEventEligibilityReason("unknown_backend_code"), "This Event is not currently eligible for Group creation.");
+  assert.equal(formatEventEligibilityReason(null), "This Event is not currently eligible for Group creation.");
 });
 
 test("attendee selection persists across pages and deduplicates by platform user ID", () => {
@@ -67,6 +76,22 @@ test("zero-attendee Event responses can continue to Provider selection", () => {
   assert.equal(canContinueEventGroupAttendeeStep({ hasResponse: true, isError: false }), true);
   assert.equal(canContinueEventGroupAttendeeStep({ hasResponse: false, isError: false }), false);
   assert.equal(canContinueEventGroupAttendeeStep({ hasResponse: true, isError: true }), false);
+});
+
+test("Event progress allows completed steps but never future-step bypass", () => {
+  assert.equal(canNavigateEventGroupStep("attendees", "event"), true);
+  assert.equal(canNavigateEventGroupStep("attendees", "attendees"), true);
+  assert.equal(canNavigateEventGroupStep("attendees", "details"), false);
+  assert.equal(canNavigateEventGroupStep("review", "details"), true);
+});
+
+test("Provider counts exclude the disabled current account and preserve search-result scope", () => {
+  assert.equal(getEventGroupAvailableProviderCount({ items: [
+    { user_id: "550e8400-e29b-41d4-a716-446655440014", name: "Provider", registration_number: null, is_me: false },
+    { user_id: "550e8400-e29b-41d4-a716-446655440015", name: "Owner", registration_number: null, is_me: true },
+  ] }), 1);
+  assert.equal(getEventGroupAvailableProviderCount({ items: [] }), 0);
+  assert.equal(getEventGroupAvailableProviderCount(null), null);
 });
 
 test("confirmed free registrations remain selectable only with a platform identity", () => {

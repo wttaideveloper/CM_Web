@@ -11,6 +11,8 @@ import {
   formatRelativeBackendTimestamp,
   formatEventDiscussionNotificationDetails,
   formatEventFeedbackNotificationDetails,
+  formatGroupChatNotificationDetails,
+  getGroupChatNotificationTarget,
   formatReviewModerationNotificationTitle,
   formatReviewNotificationDetails,
   formatReviewSubmissionNotification,
@@ -103,6 +105,21 @@ export default function EnterpriseNotificationHistoryScreen({ audience, messages
   const notificationError = history.error ?? unreadCount.error;
 
   const handleNotificationClick = (notification: WorkflowNotification) => {
+    const input = {
+      notification_type: notification.notification_type,
+      category: notification.category,
+      metadata: notification.metadata,
+      data: notification.metadata,
+      title: notification.title,
+      body: notification.message,
+    };
+    const groupTarget = messagesRoute ? getGroupChatNotificationTarget(input, messagesRoute) : null;
+    if (groupTarget) {
+      const navigate = () => router.push(groupTarget);
+      if (notification.is_read) navigate();
+      else markRead.mutate(notification.id, { onSuccess: navigate });
+      return;
+    }
     const conversationId = getNotificationConversationId(notification);
     if (conversationId && messagesRoute) {
       if (notification.is_read) {
@@ -115,14 +132,7 @@ export default function EnterpriseNotificationHistoryScreen({ audience, messages
       return;
     }
 
-    const target = resolveNotificationTarget({
-      notification_type: notification.notification_type,
-      category: notification.category,
-      metadata: notification.metadata,
-      data: notification.metadata,
-      title: notification.title,
-      body: notification.message,
-    }, audience);
+    const target = resolveNotificationTarget(input, audience);
     const navigate = () => { if (target) router.push(target); };
     if (notification.is_read) navigate();
     else markRead.mutate(notification.id, { onSuccess: navigate });
@@ -179,6 +189,7 @@ export default function EnterpriseNotificationHistoryScreen({ audience, messages
               const review = formatReviewNotificationDetails({ notification_type: notification.notification_type, category: notification.category, metadata: notification.metadata, data: notification.metadata });
               const reviewSubmission = formatReviewSubmissionNotification({ notification_type: notification.notification_type, category: notification.category, metadata: notification.metadata, data: notification.metadata, title: notification.title, body: notification.message });
               const feedbackDetails = formatEventFeedbackNotificationDetails({ notification_type: notification.notification_type, category: notification.category, metadata: notification.metadata, data: notification.metadata, title: notification.title, body: notification.message });
+              const groupMessage = formatGroupChatNotificationDetails({ notification_type: notification.notification_type, category: notification.category, metadata: notification.metadata, data: notification.metadata, title: notification.title, body: notification.message });
               const reason = notificationReason({ data: notification.metadata, metadata: notification.metadata, body: notification.message });
               const training = formatTrainingNotificationDetails({
                 notification_type: notification.notification_type,
@@ -198,14 +209,14 @@ export default function EnterpriseNotificationHistoryScreen({ audience, messages
                 key={notification.id}
                 type="button"
                 onClick={() => handleNotificationClick(notification)}
-                className={`flex w-full gap-4 px-5 py-4 text-left transition-colors duration-150 hover:bg-[#f4faf7] ${notificationCardClass(notification)}`}
+                className={`flex w-full gap-3 px-4 py-3 text-left transition-colors duration-150 hover:bg-[#f4faf7] ${notificationCardClass(notification)}`}
               >
                 <span className={`mt-2 h-2.5 w-2.5 shrink-0 rounded-full ${notification.is_read ? "bg-[#d0dbd7]" : "bg-[#1f6a58]"}`} />
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-start justify-between gap-3">
                     <span className="min-w-0">
-                      <span className="block text-sm font-bold text-[#06201c]">{reviewSubmission?.title ?? notificationTitle}</span>
-                      <span className="mt-1 block text-sm leading-6 text-[#52736a]">{reviewSubmission?.message ?? notification.message}</span>
+                      <span className="block text-sm font-bold text-[#06201c]">{groupMessage?.title ?? reviewSubmission?.title ?? notificationTitle}</span>
+                      <span className="mt-1 block text-sm leading-6 text-[#52736a]">{groupMessage?.message ?? reviewSubmission?.message ?? notification.message}</span>
                     </span>
                     <span className="shrink-0 text-right text-xs font-semibold text-[#7f9d94]">
                       <span>{formatRelativeBackendTimestamp(notification.created_at)}</span>
@@ -213,7 +224,7 @@ export default function EnterpriseNotificationHistoryScreen({ audience, messages
                     </span>
                   </span>
                   <span className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#7f9d94]">
-                    <span>{notification.category || notification.notification_type}</span>
+                    <span>{groupMessage ? `${groupMessage.contextLabel}${groupMessage.groupName ? ` \u00b7 ${groupMessage.groupName}` : ""}` : notification.category || notification.notification_type}</span>
                     {discussion.isAnnouncement ? (
                       <span className="rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[10px] font-bold text-[#1f6a58]">📢 Announcement</span>
                     ) : null}
@@ -221,8 +232,8 @@ export default function EnterpriseNotificationHistoryScreen({ audience, messages
                       <span className="rounded-full bg-[#fff4d6] px-2 py-0.5 text-[10px] font-bold text-[#805900]">⏳ Pending Review</span>
                     ) : null}
                   </span>
-                  {discussion.eventName ? <span className="mt-1 block text-xs font-semibold text-[#1f6a58]">Event: {discussion.eventName}</span> : null}
-                  {discussion.senderName ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">From: {discussion.senderName}</span> : null}
+                  {!groupMessage && discussion.eventName ? <span className="mt-1 block text-xs font-semibold text-[#1f6a58]">Event: {discussion.eventName}</span> : null}
+                  {!groupMessage && discussion.senderName ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">From: {discussion.senderName}</span> : null}
                   {audience === "enterprise" && feedbackDetails?.attendeeName ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">Attendee: {feedbackDetails.attendeeName}</span> : null}
                   {audience === "enterprise" && feedbackDetails?.eventTitle ? <span className="mt-1 block text-xs font-semibold text-[#1f6a58]">Event: {feedbackDetails.eventTitle}</span> : null}
                   {audience === "enterprise" && feedbackDetails?.comment ? <span className="mt-2 block whitespace-pre-wrap rounded-lg bg-[#f4faf7] p-3 text-sm text-[#31594d]">{feedbackDetails.comment}</span> : null}
@@ -230,9 +241,9 @@ export default function EnterpriseNotificationHistoryScreen({ audience, messages
                   {review.rating !== null ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">Rating: {review.rating} ★</span> : null}
                   {review.itemName ? <span className="mt-1 block text-xs font-semibold text-[#1f6a58]">{review.itemType ?? "Item"}: {review.itemName}</span> : null}
                   {reason ? <span className="mt-1 block text-xs text-[#8a5a00]">Reason: {reason}</span> : null}
-                  {audience === "enterprise" && training.learnerName ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">Learner: {training.learnerName}</span> : null}
-                  {audience === "enterprise" && !review.itemName && training.trainingTitle ? <span className="mt-1 block text-xs font-semibold text-[#1f6a58]">Training: {training.trainingTitle}</span> : null}
-                  {audience === "enterprise" && training.enrollmentStatus ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">Enrollment status: {training.enrollmentStatus.replace(/[_-]+/g, " ")}</span> : null}
+                  {audience === "enterprise" && !groupMessage && training.learnerName ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">Learner: {training.learnerName}</span> : null}
+                  {audience === "enterprise" && !groupMessage && !review.itemName && training.trainingTitle ? <span className="mt-1 block text-xs font-semibold text-[#1f6a58]">Training: {training.trainingTitle}</span> : null}
+                  {audience === "enterprise" && !groupMessage && training.enrollmentStatus ? <span className="mt-1 block text-xs font-semibold text-[#52736a]">Enrollment status: {training.enrollmentStatus.replace(/[_-]+/g, " ")}</span> : null}
                 </span>
               </button>
             })}

@@ -7,6 +7,8 @@ import { HeaderFrame } from "@ihp/ui";
 import { getEnterpriseHeaderRoleLabel, resolveEnterprisePortalRole } from "@ihp/auth";
 import {
   formatEventDiscussionNotificationDetails,
+  formatGroupChatNotificationDetails,
+  getGroupChatNotificationTarget,
   formatReviewNotificationDetails,
   formatTrainingNotificationDetails,
   resolveNotificationTarget,
@@ -24,6 +26,7 @@ type OpenMenu = "notifications" | "settings" | "profile" | null;
 type NotificationLike = {
   id: string;
   notification_type: string;
+  category?: string;
   title: string;
   body: string;
   data: Record<string, unknown>;
@@ -117,8 +120,10 @@ function clampBadge(value: number) {
 
 function TrainingNotificationDetails({ notification }: { notification: NotificationLike }) {
   const { trainingTitle, senderName, learnerName, enrollmentStatus } = formatTrainingNotificationDetails(notification);
+  const groupMessage = formatGroupChatNotificationDetails(notification);
   const discussion = formatEventDiscussionNotificationDetails(notification);
   const review = formatReviewNotificationDetails(notification);
+  if (groupMessage) return null;
   if (
     !trainingTitle &&
     !senderName &&
@@ -290,7 +295,8 @@ function AppHeaderContent({
     closeMenu();
     void markNotificationAsRead(notification.id).catch(() => undefined);
 
-    const target = resolveNotificationTarget(notification, "enterprise");
+    const target = (messagesRoute ? getGroupChatNotificationTarget(notification, messagesRoute) : null)
+      ?? resolveNotificationTarget(notification, "enterprise");
     if (target) {
       router.push(target);
       return;
@@ -407,7 +413,9 @@ function AppHeaderContent({
                   {notificationError}
                 </div>
               ) : visibleNotifications.length > 0 ? (
-                visibleNotifications.map((item) => (
+                visibleNotifications.map((item) => {
+                  const groupMessage = formatGroupChatNotificationDetails(item);
+                  return (
                   <button
                     key={item.id}
                     type="button"
@@ -424,10 +432,11 @@ function AppHeaderContent({
                     <span className="min-w-0 flex-1">
                       <span className="flex items-start justify-between gap-2">
                         <span className="min-w-0">
-                          <span className="block text-sm font-bold text-[#06201c]">{item.title}</span>
+                          <span className="block text-sm font-bold text-[#06201c]">{groupMessage?.title ?? item.title}</span>
                           <span className="mt-0.5 block text-xs leading-5 text-[#52736a]">
-                            {item.body}
+                            {groupMessage?.message ?? item.body}
                           </span>
+                          {groupMessage ? <span className="mt-1 block truncate text-[11px] font-semibold text-[#1f6a58]">{groupMessage.contextLabel}{groupMessage.groupName ? ` \u00b7 ${groupMessage.groupName}` : ""}</span> : null}
                         </span>
                         <span className="shrink-0 text-[11px] font-semibold text-[#7f9d94]">
                           {formatNotificationTime(item.created_at)}
@@ -436,7 +445,8 @@ function AppHeaderContent({
                       <TrainingNotificationDetails notification={item} />
                     </span>
                   </button>
-                ))
+                  );
+                })
               ) : (
                 <div className="rounded-xl px-3 py-4 text-sm text-[#52736a]">No notifications yet.</div>
               )}

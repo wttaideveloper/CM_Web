@@ -526,13 +526,14 @@ export function handleNotificationClick(
   scope: "enterprise" | "platform",
   markRead: (id: string) => Promise<void> | void,
   navigate: (target: string) => void,
+  targetOverride?: string | null,
 ): string | null {
   try {
     void Promise.resolve(markRead(notification.id)).catch(() => undefined);
   } catch {
     // Navigation remains available when a synchronous read adapter fails.
   }
-  const target = resolveNotificationTarget(notification, scope);
+  const target = targetOverride ?? resolveNotificationTarget(notification, scope);
   if (target) navigate(target);
   return target;
 }

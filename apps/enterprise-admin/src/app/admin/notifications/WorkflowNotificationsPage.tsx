@@ -6,6 +6,8 @@ import {
   formatNotificationTimestamp,
   formatBlogWorkflowNotification,
   formatEventFeedbackNotificationDetails,
+  formatGroupChatNotificationDetails,
+  getGroupChatNotificationTarget,
   formatReviewModerationNotificationTitle,
   formatReviewSubmissionNotification,
   formatTrainingNotificationDetails,
@@ -65,6 +67,7 @@ export default function WorkflowNotificationsPage() {
             const reviewSubmission = formatReviewSubmissionNotification({ notification_type: item.notification_type, category: item.category, metadata: item.metadata, data: item.metadata, title: item.title, body: item.message });
             const blogWorkflow = formatBlogWorkflowNotification({ notification_type: item.notification_type, category: item.category, metadata: item.metadata, data: item.metadata, title: item.title, body: item.message });
             const feedbackDetails = formatEventFeedbackNotificationDetails({ notification_type: item.notification_type, category: item.category, metadata: item.metadata, data: item.metadata, title: item.title, body: item.message });
+            const groupMessage = formatGroupChatNotificationDetails({ notification_type: item.notification_type, category: item.category, metadata: item.metadata, data: item.metadata, title: item.title, body: item.message });
             const reason = notificationReason({ data: item.metadata, body: item.message });
             const { trainingTitle, senderName, learnerName, enrollmentStatus } = formatTrainingNotificationDetails({
               notification_type: item.notification_type,
@@ -77,8 +80,7 @@ export default function WorkflowNotificationsPage() {
                 key={item.id}
                 type="button"
                 onClick={() => {
-                  handleNotificationClick(
-                    {
+                  const input = {
                       id: item.id,
                       notification_type: item.notification_type,
                       category: item.category,
@@ -86,34 +88,38 @@ export default function WorkflowNotificationsPage() {
                       data: item.metadata,
                       title: item.title,
                       body: item.message,
-                    },
+                    };
+                  handleNotificationClick(
+                    input,
                     "enterprise",
                     (id) => Promise.resolve(state.markRead(id)).then(() => undefined),
                     (target) => router.push(target),
+                    getGroupChatNotificationTarget(input, "/admin/messages"),
                   );
                 }}
-                className={`block w-full p-4 text-left transition hover:bg-[#f4faf7] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#1f6a58] ${
+                className={`block w-full p-3 text-left transition hover:bg-[#f4faf7] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#1f6a58] ${
                   item.is_read ? "bg-white" : "bg-[#f1f8f4]"
                 }`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <p className="font-semibold text-[#06201c]">{feedbackDetails ? "New Event attendee feedback" : blogWorkflow?.title ?? reviewSubmission?.title ?? notificationTitle}</p>
+                  <p className="font-semibold text-[#06201c]">{groupMessage?.title ?? (feedbackDetails ? "New Event attendee feedback" : blogWorkflow?.title ?? reviewSubmission?.title ?? notificationTitle)}</p>
                   {item.created_at ? (
                     <span className="text-xs font-semibold text-[#7f9d94]">
                       {formatNotificationTimestamp(item.created_at)}
                     </span>
                   ) : null}
                 </div>
-                <p className="mt-1 text-sm text-[#52736a]">{blogWorkflow?.message ?? reviewSubmission?.message ?? item.message}</p>
+                <p className="mt-1 text-sm text-[#52736a]">{groupMessage?.message ?? blogWorkflow?.message ?? reviewSubmission?.message ?? item.message}</p>
+                {groupMessage ? <p className="mt-1 text-xs font-semibold text-[#1f6a58]">{groupMessage.contextLabel}{groupMessage.groupName ? ` \u00b7 ${groupMessage.groupName}` : ""}</p> : null}
                 {feedbackDetails?.attendeeName ? <p className="mt-1 text-xs font-semibold text-[#52736a]">Attendee: {feedbackDetails.attendeeName}</p> : null}
                 {feedbackDetails?.eventTitle ? <p className="mt-1 text-xs font-semibold text-[#1f6a58]">Event: {feedbackDetails.eventTitle}</p> : null}
                 {feedbackDetails?.comment ? <p className="mt-2 whitespace-pre-wrap rounded-lg bg-[#f4faf7] p-3 text-sm text-[#31594d]">{feedbackDetails.comment}</p> : null}
-                {senderName ? <p className="mt-1 text-xs font-semibold text-[#52736a]">From: {senderName}</p> : null}
-                {learnerName ? <p className="mt-1 text-xs font-semibold text-[#52736a]">Learner: {learnerName}</p> : null}
-                {trainingTitle ? (
+                {!groupMessage && senderName ? <p className="mt-1 text-xs font-semibold text-[#52736a]">From: {senderName}</p> : null}
+                {!groupMessage && learnerName ? <p className="mt-1 text-xs font-semibold text-[#52736a]">Learner: {learnerName}</p> : null}
+                {!groupMessage && trainingTitle ? (
                   <p className="mt-1 text-xs font-semibold text-[#1f6a58]">Training: {trainingTitle}</p>
                 ) : null}
-                {enrollmentStatus ? <p className="mt-1 text-xs font-semibold text-[#52736a]">Enrollment status: {enrollmentStatus.replace(/[_-]+/g, " ")}</p> : null}
+                {!groupMessage && enrollmentStatus ? <p className="mt-1 text-xs font-semibold text-[#52736a]">Enrollment status: {enrollmentStatus.replace(/[_-]+/g, " ")}</p> : null}
                 {reason ? <p className="mt-1 text-xs text-[#8a5a00]">Reason: {reason}</p> : null}
               </button>
             );

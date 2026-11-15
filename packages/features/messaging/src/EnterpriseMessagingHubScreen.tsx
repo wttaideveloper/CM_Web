@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@ihp/auth";
 import EnterpriseGroupChatScreen from "./EnterpriseGroupChatScreen";
 import EnterpriseGroupComplianceReportsScreen from "./EnterpriseGroupComplianceReportsScreen";
@@ -15,13 +16,18 @@ type MessagingView = "direct" | "groups" | "compliance-reports" | "owner-reassig
 
 /** Adds isolated Group Chat navigation while leaving the existing direct-chat screen intact. */
 export default function EnterpriseMessagingHubScreen() {
+  const searchParams = useSearchParams();
   const { roles } = useAuth();
   const canAccessComplianceReports = canAccessGroupChatComplianceReports(roles);
   const [view, setView] = useState<MessagingView>("direct");
   const [auditContext, setAuditContext] = useState<{ groupId?: string; action?: string }>({});
   const [reviewContext, setReviewContext] = useState<{ groupId?: string; messageId?: string }>({});
+  const requestedGroupId = searchParams.get("tab") === "groups" ? searchParams.get("groupId")?.trim() ?? "" : "";
   const openAudit = (groupId?: string, action?: string) => { setAuditContext({ groupId, action }); setView("group-audit"); };
   const openReview = (groupId: string, messageId: string) => { setReviewContext({ groupId, messageId }); setView("secure-message-review"); };
+  useEffect(() => {
+    if (requestedGroupId) setView("groups");
+  }, [requestedGroupId]);
   return <div className="group-chat-messaging-surface space-y-2">
     <nav aria-label="Messages views" className="flex flex-wrap gap-1.5 border-b border-[#e1ebe6] pb-2">
       <button type="button" role="tab" aria-selected={view === "direct"} onClick={() => setView("direct")} className={`rounded-full px-3 py-1.5 text-sm font-semibold ${view === "direct" ? "bg-[#1f6a58] text-white" : "bg-[#f4faf7] text-[#52736a]"}`}>Direct Messages</button>
@@ -34,6 +40,6 @@ export default function EnterpriseMessagingHubScreen() {
         <button type="button" role="tab" aria-selected={view === "secure-message-review"} onClick={() => { setReviewContext({}); setView("secure-message-review"); }} className={`rounded-full px-3 py-1.5 text-sm font-semibold ${view === "secure-message-review" ? "bg-[#1f6a58] text-white" : "bg-[#f4faf7] text-[#52736a]"}`}>Secure Message Review</button>
       </> : null}
     </nav>
-    {view === "direct" ? <EnterpriseMessagesScreen /> : view === "groups" ? <EnterpriseGroupChatScreen /> : view === "compliance-reports" ? <EnterpriseGroupComplianceReportsScreen /> : view === "owner-reassignment" ? <EnterpriseGroupOwnerReassignmentScreen /> : view === "group-audit" ? <EnterpriseGroupAuditTrailScreen initialGroupId={auditContext.groupId} initialAction={auditContext.action} ownerEntry={false} onOpenSecureReview={openReview} /> : view === "legal-hold" ? <EnterpriseGroupLegalHoldScreen /> : <EnterpriseGroupOriginalMessageReviewScreen initialGroupId={reviewContext.groupId} initialMessageId={reviewContext.messageId} onOpenAudit={openAudit} />}
+    {view === "direct" ? <EnterpriseMessagesScreen /> : view === "groups" ? <EnterpriseGroupChatScreen initialGroupId={requestedGroupId} /> : view === "compliance-reports" ? <EnterpriseGroupComplianceReportsScreen /> : view === "owner-reassignment" ? <EnterpriseGroupOwnerReassignmentScreen /> : view === "group-audit" ? <EnterpriseGroupAuditTrailScreen initialGroupId={auditContext.groupId} initialAction={auditContext.action} ownerEntry={false} onOpenSecureReview={openReview} /> : view === "legal-hold" ? <EnterpriseGroupLegalHoldScreen /> : <EnterpriseGroupOriginalMessageReviewScreen initialGroupId={reviewContext.groupId} initialMessageId={reviewContext.messageId} onOpenAudit={openAudit} />}
   </div>;
 }
