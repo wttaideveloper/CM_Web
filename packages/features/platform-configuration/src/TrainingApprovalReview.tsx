@@ -85,11 +85,70 @@ type NormalizedCustomField = {
   type?: string;
 };
 
+function resolveOptionDisplayValue(
+  value: unknown,
+  configuredOptions?: unknown[],
+  fallbackOptions?: unknown[],
+): unknown {
+  if (value === null || value === undefined || value === "") return value;
+
+  const optionsList: Array<{ value: string; label: string }> = [];
+  const addOption = (item: unknown) => {
+    if (!item) return;
+    if (typeof item === "string") {
+      optionsList.push({ value: item, label: item });
+    } else if (typeof item === "object") {
+      const rec = item as Record<string, unknown>;
+      const val = typeof rec.value === "string" ? rec.value : typeof rec.label === "string" ? rec.label : "";
+      const lbl = typeof rec.label === "string" && rec.label ? rec.label : val;
+      if (val) optionsList.push({ value: val, label: lbl });
+    }
+  };
+
+  if (Array.isArray(configuredOptions)) {
+    for (const opt of configuredOptions) addOption(opt);
+  }
+  if (Array.isArray(fallbackOptions)) {
+    for (const opt of fallbackOptions) addOption(opt);
+  }
+
+  if (optionsList.length === 0) return value;
+
+  const mapSingle = (v: unknown): unknown => {
+    if (typeof v !== "string" && typeof v !== "number") return v;
+    const strV = String(v).trim();
+    const match = optionsList.find(
+      (opt) => opt.value === strV || opt.value.toLowerCase() === strV.toLowerCase(),
+    );
+    return match ? match.label : v;
+  };
+
+  if (Array.isArray(value)) {
+    return value.map(mapSingle);
+  }
+
+  if (typeof value === "string") {
+    if (value.includes(",")) {
+      const parts = value.split(",").map((p) => p.trim());
+      const mapped = parts.map((part) => {
+        const match = optionsList.find(
+          (opt) => opt.value === part || opt.value.toLowerCase() === part.toLowerCase(),
+        );
+        return match ? match.label : part;
+      });
+      return mapped.join(", ");
+    }
+    return mapSingle(value);
+  }
+
+  return value;
+}
+
 function normalizeCustomValues(
   rawCustomValues: unknown,
   formMetadata?: Record<string, unknown> | null,
 ): NormalizedCustomField[] {
-  const metaFields: Array<{ id?: string; key?: string; stable_key?: string; apiKey?: string; label?: string; type?: string; value_type?: string }> = [];
+  const metaFields: Array<{ id?: string; key?: string; stable_key?: string; apiKey?: string; label?: string; type?: string; value_type?: string; options?: unknown[]; configuredOptions?: unknown[] }> = [];
   if (formMetadata && typeof formMetadata === "object") {
     const rawSections = (formMetadata as { sections?: unknown[] }).sections
       ?? (formMetadata as { draft_version?: { sections?: unknown[] } }).draft_version?.sections
@@ -130,16 +189,19 @@ function normalizeCustomValues(
           const meta = findMeta(id) ?? findMeta(key);
           const label = String(rec.label ?? meta?.label ?? humanizeKey(key));
           const type = String(meta?.type ?? meta?.value_type ?? inferType(key, rec.value));
-          results.push({ id, key, label, value: rec.value, type });
+          const rawVal = rec.display_value ?? rec.option_label ?? rec.value;
+          const val = resolveOptionDisplayValue(rawVal, meta?.configuredOptions, meta?.options);
+          results.push({ id, key, label, value: val, type });
         } else {
           for (const [k, v] of Object.entries(rec)) {
             if (v === undefined || v === null || v === "") continue;
             const meta = findMeta(k);
+            const val = resolveOptionDisplayValue(v, meta?.configuredOptions, meta?.options);
             results.push({
               id: k,
               key: k,
               label: meta?.label ? String(meta.label) : humanizeKey(k),
-              value: v,
+              value: val,
               type: meta?.type ? String(meta.type) : inferType(k, v),
             });
           }
@@ -150,11 +212,12 @@ function normalizeCustomValues(
     for (const [k, v] of Object.entries(rawCustomValues as Record<string, unknown>)) {
       if (v === undefined || v === null || v === "") continue;
       const meta = findMeta(k);
+      const val = resolveOptionDisplayValue(v, meta?.configuredOptions, meta?.options);
       results.push({
         id: k,
         key: k,
         label: meta?.label ? String(meta.label) : humanizeKey(k),
-        value: v,
+        value: val,
         type: meta?.type ? String(meta.type) : inferType(k, v),
       });
     }

@@ -23,6 +23,12 @@ export function formatEventDurationType(value: string | null | undefined): strin
   return value.trim().toLowerCase() === "custom" ? "Custom" : value.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+/** Formats an IANA timezone identifier into a clean, human-readable label without raw underscores. */
+export function formatTimeZoneLabel(timeZone: string | null | undefined): string {
+  if (!timeZone || !timeZone.trim()) return "Not provided";
+  return timeZone.trim().replace(/_/g, " ");
+}
+
 /** Formats confirmed UTC audit timestamps in the browser's local timezone. */
 export function formatAuditDateTime(value: string | null | undefined, timeZone?: string): string {
   const normalized = normalizeUtcDate(value);
@@ -39,15 +45,17 @@ export function formatAuditDateTime(value: string | null | undefined, timeZone?:
 }
 
 /** Formats an Event datetime while preserving a backend-provided local wall-clock time. */
-export function formatEventDateTime(value: string | null | undefined, timeZone: string): string {
+export function formatEventDateTime(value: string | null | undefined, timeZone: string, includeTimeZone = true): string {
   if (!value) {
     return "Not provided";
   }
 
+  const tzSuffix = includeTimeZone ? ` (${timeZone})` : "";
+
   const localMatch = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?$/.exec(value);
   if (localMatch) {
     const [, year, month, day, time] = localMatch;
-    return `${day}/${month}/${year}, ${time} (${timeZone})`;
+    return `${day}/${month}/${year}, ${time}${tzSuffix}`;
   }
 
   const parsed = new Date(value);
@@ -55,7 +63,7 @@ export function formatEventDateTime(value: string | null | undefined, timeZone: 
     return value;
   }
 
-  return `${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short", timeZone }).format(parsed)} (${timeZone})`;
+  return `${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short", timeZone }).format(parsed)}${tzSuffix}`;
 }
 
 function parseEventScheduleDate(value: string, timeZone: string): { date: Date; displayTimeZone: string } | null {
@@ -123,17 +131,18 @@ export function formatAttendanceAuditDateTime(value: string | null | undefined, 
 
 /** Returns the date-only portion of an Event datetime for the schedule detail grid. */
 export function formatEventDate(value: string | null | undefined, timeZone: string): string {
-  const formatted = formatEventDateTime(value, timeZone);
+  const formatted = formatEventDateTime(value, timeZone, false);
   return formatted === "Not provided" ? formatted : formatted.split(", ")[0] ?? formatted;
 }
 
 /** Returns the time-only portion of an Event datetime for the schedule detail grid. */
 export function formatEventTime(value: string | null | undefined, timeZone: string): string {
-  const formatted = formatEventDateTime(value, timeZone);
+  const formatted = formatEventDateTime(value, timeZone, false);
   if (formatted === "Not provided") {
     return formatted;
   }
 
   const parts = formatted.split(", ");
-  return parts.slice(1).join(", ") || formatted;
+  const timeOnly = parts.slice(1).join(", ") || formatted;
+  return timeOnly.replace(/\s*\([^)]*\)$/, "").trim();
 }

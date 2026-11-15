@@ -178,4 +178,39 @@ describe("Blog Form Field Configuration Validator (DEFECT-MEDIUM-008)", () => {
     };
     expect(validateFieldConfiguration(field)).toBeNull();
   });
+
+  it("exempts system-managed Category and Tags fields from manual option validation", () => {
+    const categoryField: SchemaFieldItem = {
+      id: "f-category-03",
+      key: "category_id",
+      label: "Category",
+      type: "select",
+      isRequired: true,
+      isActive: true,
+      validation: {},
+    };
+    expect(validateFieldConfiguration(categoryField)).toBeNull();
+
+    const categoryDropdown: SchemaFieldItem = {
+      id: "f-category-canonical",
+      key: "category",
+      label: "Category",
+      type: "dropdown",
+      isRequired: true,
+      isActive: true,
+      validation: null,
+    };
+    expect(validateFieldConfiguration(categoryDropdown)).toBeNull();
+
+    const tagsField: SchemaFieldItem = {
+      id: "f-tags-06",
+      key: "article_tags",
+      label: "Tags",
+      type: "multi_select",
+      isRequired: false,
+      isActive: true,
+      validation: {},
+    };
+    expect(validateFieldConfiguration(tagsField)).toBeNull();
+  });
 });

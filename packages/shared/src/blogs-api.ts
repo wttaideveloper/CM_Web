@@ -10,6 +10,7 @@ import {
   DEFAULT_BLOG_GOVERNANCE,
 } from "./blogs-governance";
 import { authenticatedFetch } from "@ihp/auth";
+import { deepNormalizeMediaUrls, normalizeMediaOrigin } from "./protected-media";
 import {
   buildBlogsApiQuery,
   buildBlogsApiUrl,
@@ -285,8 +286,18 @@ export class BlogsApiError extends Error {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const method = (init?.method ?? "GET").toUpperCase();
+  let body = init?.body;
+  if (typeof body === "string") {
+    try {
+      const parsed: unknown = JSON.parse(body);
+      body = JSON.stringify(deepNormalizeMediaUrls(parsed));
+    } catch {
+      // not JSON string, leave as is
+    }
+  }
   const response = await authenticatedFetch(requestUrl(path), {
     ...init,
+    body,
     credentials: "include",
     headers: {
       Accept: "application/json",
@@ -347,7 +358,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new BlogsApiError(message, response.status, detail);
   }
   if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
+  const json: unknown = await response.json();
+  return deepNormalizeMediaUrls(json) as T;
 }
 
 function query(params: Record<string, string | number | undefined>): string {
@@ -407,10 +419,10 @@ function normalizeCustomFields(value: unknown): Record<string, BlogCustomFieldVa
 }
 
 function normalizeBlogPostFields<T extends { custom_fields?: Record<string, BlogCustomFieldValue> }>(post: T): T {
-  return {
+  return deepNormalizeMediaUrls({
     ...post,
     custom_fields: normalizeCustomFields(post.custom_fields),
-  };
+  });
 }
 
 function stringValue(value: unknown, fallback = ""): string {
@@ -640,16 +652,16 @@ function serializeFormDefinition(sections: BlogFormSection[] | undefined) {
       key: section.id,
       title: section.title,
       description: section.description ?? undefined,
-      visibility: section.visibility_scope === "admin_only" ? "internal" : "public",
+      visibility: section.visibility_scope === "admin_only" || section.type === "admin_notes" ? "enterprise_admin_only" : "published",
       fields: section.fields.map((field) => {
         // The API does not support custom file_upload fields. Treat every
         // document upload control as the built-in supporting_documents field
         // when persisting a form version.
         const canonicalKey = canonicalBlogFormFieldKey(field.key);
         const backendType = canonicalKey === "supporting_documents"
-          ? "documents"
+          ? "supporting_document"
           : canonicalBlogFormFieldType(field.type);
-        const options = ["select", "radio_group", "multi_select", "multiselect", "checkbox"].includes(backendType) && typeof field.validation?.options === "string"
+        const options = ["dropdown", "radio", "checkbox"].includes(backendType) && typeof field.validation?.options === "string"
           ? field.validation.options.split(",").map((option) => option.trim()).filter(Boolean).map((option) => ({ value: option, label: option }))
           : undefined;
         const validation = field.validation && typeof field.validation === "object"
@@ -663,16 +675,16 @@ function serializeFormDefinition(sections: BlogFormSection[] | undefined) {
           required: field.required,
           help_text: field.help_text ?? undefined,
           placeholder: field.placeholder ?? undefined,
-          visibility: field.visibility_scope === "admin_only" ? "internal" : "public",
+          visibility: field.visibility_scope === "admin_only" ? "enterprise_admin_only" : "published",
           enterprise_only: field.visibility_scope === "admin_only",
           validation,
         };
         if (options) serializedField.options = options;
         // System article fields have fixed backend types. Do not send a type
         // override for them; the API applies the canonical schema. Post Type
-        // remains a select because its allowed values are form-configurable.
+        // remains a dropdown because its allowed values are form-configurable.
         if (canonicalKey === "post_type") {
-          serializedField.type = "select";
+          serializedField.type = "dropdown";
           serializedField.options = [
             { value: "blog", label: "Blog" },
             { value: "news", label: "News" },
@@ -702,16 +714,23 @@ function canonicalBlogFormFieldKey(key: string): string {
 /** Maps builder presentation types to the field types accepted by the CMS API. */
 function canonicalBlogFormFieldType(type: string): string {
   const aliases: Record<string, string> = {
-    rich_text: "rich_text_editor",
-    radio: "radio_group",
-    multi_select: "multi_select",
-    checkbox: "multi_select",
-    time: "time_picker",
-    media_upload: "image_uploader",
-    file_upload: "document_uploader",
-    // Blog intentionally excludes the Video renderer; legacy video values are treated as text.
-    video: "text",
-    tags: "tag_input",
+    text: "short_text",
+    rich_text: "rich_text",
+    textarea: "long_text",
+    select: "dropdown",
+    media_upload: "additional_images",
+    file_upload: "supporting_document",
+    tags: "tags",
+    time: "time",
+    radio: "radio",
+    multi_select: "checkbox",
+    checkbox: "checkbox",
+    video: "video",
+    reference_url: "reference_url",
+    number: "number",
+    date: "date",
+    datetime: "datetime",
+    toggle: "toggle",
   };
   return aliases[type] ?? type;
 }
@@ -1410,85 +1429,19 @@ const SEED_POSTS: BlogManageDetail[] = [
 ];
 
 function getStoredForms(): BlogForm[] {
-  if (typeof window === "undefined") return SEED_FORMS;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_FORMS_KEY);
-    if (!raw) {
-      window.localStorage.setItem(STORAGE_FORMS_KEY, JSON.stringify(SEED_FORMS));
-      return SEED_FORMS;
-    }
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      window.localStorage.setItem(STORAGE_FORMS_KEY, JSON.stringify(SEED_FORMS));
-      return SEED_FORMS;
-    }
-    // Merge any missing seed forms so newly introduced forms are available immediately
-    const existingIds = new Set(parsed.map((f: BlogForm) => f.id));
-    const missingSeeds = SEED_FORMS.filter((sf) => !existingIds.has(sf.id));
-    const combinedForms = missingSeeds.length > 0 ? [...parsed, ...missingSeeds] : parsed;
-    if (missingSeeds.length > 0) {
-      window.localStorage.setItem(STORAGE_FORMS_KEY, JSON.stringify(combinedForms));
-    }
-    // Defensive check: ensure all loaded forms have proper core fields in Section 1
-    return combinedForms.map((form: BlogForm) => {
-      if (!form.sections || form.sections.length === 0) {
-        return {
-          ...form,
-          sections: [
-            {
-              id: `sec-${form.id}-core`,
-              title: "1. Main Article Details",
-              description: "Essential article fields.",
-              order: 1,
-              fields: STANDARD_CORE_FIELDS,
-            },
-          ],
-        };
-      }
-      const sections = form.sections.map((sec, idx) => {
-        if (idx === 0 && (!sec.fields || sec.fields.length === 0)) {
-          return { ...sec, fields: STANDARD_CORE_FIELDS };
-        }
-        return sec;
-      });
-      return { ...form, sections };
-    });
-  } catch {
-    return SEED_FORMS;
-  }
+  return SEED_FORMS;
 }
 
-function saveStoredForms(forms: BlogForm[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(STORAGE_FORMS_KEY, JSON.stringify(forms));
-  } catch {
-    /* ignore quota */
-  }
+function saveStoredForms(_forms: BlogForm[]): void {
+  // No-op: client-side form shadow storage removed.
 }
 
 function getStoredFormVersions(): BlogForm[] {
-  if (typeof window === "undefined") return SEED_FORMS;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_FORM_VERSIONS_KEY);
-    if (!raw) {
-      window.localStorage.setItem(STORAGE_FORM_VERSIONS_KEY, JSON.stringify(SEED_FORMS));
-      return SEED_FORMS;
-    }
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : SEED_FORMS;
-  } catch {
-    return SEED_FORMS;
-  }
+  return SEED_FORMS;
 }
 
-function saveStoredFormVersions(versions: BlogForm[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(STORAGE_FORM_VERSIONS_KEY, JSON.stringify(versions));
-  } catch {
-    /* ignore quota */
-  }
+function saveStoredFormVersions(_versions: BlogForm[]): void {
+  // No-op: client-side form shadow storage removed.
 }
 
 export const ESSENTIAL_FORM_FIELD_GROUPS: ReadonlyArray<{ name: string; keys: string[] }> = [
@@ -1516,49 +1469,18 @@ export function validateFormEssentialFields(form: BlogForm): string | null {
 let memoryPosts: BlogManageDetail[] = JSON.parse(JSON.stringify(SEED_POSTS));
 
 export function getStoredPosts(): BlogManageDetail[] {
-  if (typeof window === "undefined") {
-    return memoryPosts;
-  }
-  try {
-    const raw = window.localStorage.getItem(STORAGE_POSTS_KEY);
-    if (!raw) {
-      window.localStorage.setItem(STORAGE_POSTS_KEY, JSON.stringify(SEED_POSTS));
-      return SEED_POSTS;
-    }
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      window.localStorage.setItem(STORAGE_POSTS_KEY, JSON.stringify(SEED_POSTS));
-      return SEED_POSTS;
-    }
-    return parsed as BlogManageDetail[];
-  } catch {
-    return SEED_POSTS;
-  }
+  return memoryPosts;
 }
 
 export function saveStoredPosts(posts: BlogManageDetail[]): void {
-  if (typeof window === "undefined") {
-    memoryPosts = posts;
-    return;
-  }
-  try {
-    window.localStorage.setItem(STORAGE_POSTS_KEY, JSON.stringify(posts));
-  } catch {
-    /* ignore quota */
-  }
+  memoryPosts = posts;
 }
 
 export function resetStoredBlogs(): void {
   memoryPosts = JSON.parse(JSON.stringify(SEED_POSTS));
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(STORAGE_POSTS_KEY, JSON.stringify(SEED_POSTS));
-  } catch {
-    /* ignore quota */
-  }
 }
 
-function recordStoredBlogAudit(input: {
+function recordStoredBlogAudit(_input: {
   post: BlogManageDetail;
   action: string;
   fromStatus: BlogStatus | null;
@@ -1568,75 +1490,15 @@ function recordStoredBlogAudit(input: {
   actorName?: string;
   actorRole?: string;
 }): void {
-  if (typeof window === "undefined") return;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_BLOG_AUDIT_KEY);
-    const existing = raw ? JSON.parse(raw) : [];
-    const items: BlogHistoryItem[] = Array.isArray(existing) ? existing : [];
-    const isPlatform = input.actorRole === "platform_super_admin";
-    items.unshift({
-      id: `blog-audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      post_id: input.post.id,
-      action: input.action,
-      from_status: input.fromStatus,
-      to_status: input.toStatus,
-      reason: input.reason ?? null,
-      actor_id: input.actorId ?? (isPlatform ? "sa-admin" : "ea-current"),
-      actor_name: input.actorName ?? (isPlatform ? "Super Admin" : "Enterprise Admin"),
-      actor_role: input.actorRole ?? (isPlatform ? "platform_super_admin" : "enterprise_admin"),
-      created_at: new Date().toISOString(),
-    });
-    window.localStorage.setItem(STORAGE_BLOG_AUDIT_KEY, JSON.stringify(items.slice(0, 500)));
-  } catch {
-    /* Audit persistence must not block the content action. */
-  }
+  // No-op: client-side audit shadow storage removed.
 }
 
-function getStoredBlogAudit(postId: string): BlogHistoryResponse {
-  if (typeof window === "undefined") return { items: [], total: 0 };
-  try {
-    const raw = window.localStorage.getItem(STORAGE_BLOG_AUDIT_KEY);
-    const items = raw ? JSON.parse(raw) : [];
-    const filtered = Array.isArray(items) ? items.filter((item) => item.post_id === postId) : [];
-    if (filtered.length === 0) {
-      const post = getStoredPosts().find((p) => p.id === postId);
-      if (post) {
-        return {
-          items: [
-            {
-              id: `blog-audit-init-${post.id}`,
-              post_id: post.id,
-              action: "create",
-              from_status: null,
-              to_status: post.status,
-              reason: "Initial article creation",
-              actor_id: post.author_type === "platform" ? "sa-admin" : "ea-current",
-              actor_name: post.author_name || (post.author_type === "platform" ? "Super Admin" : "Enterprise Admin"),
-              actor_role: post.author_type === "platform" ? "platform_super_admin" : "enterprise_admin",
-              created_at: post.created_at,
-            },
-          ],
-          total: 1,
-        };
-      }
-    }
-    return { items: filtered, total: filtered.length };
-  } catch {
-    return { items: [], total: 0 };
-  }
+function getStoredBlogAudit(_postId: string): BlogHistoryResponse {
+  return { items: [], total: 0 };
 }
 
-function recordBlogAudit(id: string, action: string, actorRole: string, details: string): void {
-  if (typeof window === "undefined") return;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_BLOG_CONFIGURATION_AUDIT_KEY);
-    const entries = raw ? JSON.parse(raw) : [];
-    const current = Array.isArray(entries) ? entries : [];
-    current.unshift({ id: `blog-config-audit-${Date.now()}`, resource_id: id, action, actor_role: actorRole, details, created_at: new Date().toISOString() });
-    window.localStorage.setItem(STORAGE_BLOG_CONFIGURATION_AUDIT_KEY, JSON.stringify(current.slice(0, 500)));
-  } catch {
-    /* Audit persistence must not block configuration publishing. */
-  }
+function recordBlogAudit(_id: string, _action: string, _actorRole: string, _details: string): void {
+  // No-op: client-side configuration audit shadow storage removed.
 }
 
 /** Returns the staged revision to management screens without changing the public live record. */
@@ -1673,63 +1535,31 @@ function liveVersionFor(post: BlogManageDetail): BlogLiveVersion {
 }
 
 function getStoredCategories(): BlogCategory[] {
-  if (typeof window === "undefined") return SEED_CATEGORIES;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_CATEGORIES_KEY);
-    if (!raw) {
-      window.localStorage.setItem(STORAGE_CATEGORIES_KEY, JSON.stringify(SEED_CATEGORIES));
-      return SEED_CATEGORIES;
-    }
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      window.localStorage.setItem(STORAGE_CATEGORIES_KEY, JSON.stringify(SEED_CATEGORIES));
-      return SEED_CATEGORIES;
-    }
-    return parsed as BlogCategory[];
-  } catch {
-    return SEED_CATEGORIES;
-  }
+  return SEED_CATEGORIES;
 }
 
-function saveStoredCategories(categories: BlogCategory[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(
-      STORAGE_CATEGORIES_KEY,
-      JSON.stringify(categories),
-    );
-  } catch {
-    /* ignore quota */
-  }
+function saveStoredCategories(_categories: BlogCategory[]): void {
+  // No-op: client-side category shadow storage removed.
 }
 
 async function safeRequest<T>(
   apiFn: () => Promise<T>,
-  fallbackFn: () => T | Promise<T>,
+  _fallbackFn?: () => T | Promise<T>,
 ): Promise<T> {
-  // Never mask an unavailable or misconfigured backend with seeded Blog data
-  // in the admin website. Local fallback is opt-in for tests/local development.
-  const allowLocalFallback =
-    typeof process !== "undefined" &&
-    (process.env.NODE_ENV === "test" ||
-      process.env.NEXT_PUBLIC_ENABLE_BLOGS_LOCAL_FALLBACK === "true");
+  // Insecure client-side shadow database / local fallback is removed. Backend
+  // failures (network or HTTP) now propagate as thrown errors so callers can
+  // render real error states instead of silently showing seeded data.
   try {
     return await apiFn();
   } catch (err: unknown) {
-    if (!allowLocalFallback) {
+    if (err instanceof BlogsApiError) {
       throw err;
     }
-    if (err instanceof BlogsApiError) {
-      // Preserve client-visible validation and state conflicts. Falling back after
-      // a conflict would make a failed activation look successful in local dev.
-      if (err.status === 409 || err.status === 422) {
-        throw err;
-      }
-      // For unauthenticated sessions (401/403 in local dev), missing endpoints (404),
-      // or server errors (5xx), gracefully fall back to local store
-      return await fallbackFn();
-    }
-    return await fallbackFn();
+    const message =
+      err instanceof Error && err.message
+        ? err.message
+        : "Blogs API request failed.";
+    throw new BlogsApiError(message, 0);
   }
 }
 
@@ -1957,11 +1787,24 @@ export function generateUniqueSlug(
 export function createMyBlogPost(
   payload: BlogPostPayload,
 ): Promise<BlogManageDetail> {
+  const normalizedPayload = {
+    ...payload,
+    // Backend (MerchantPostCreate) generates slugs; never send slug.
+    slug: undefined,
+    title: (payload.title ?? "").slice(0, 150),
+    excerpt: payload.excerpt == null ? payload.excerpt : String(payload.excerpt).slice(0, 300),
+    tags: Array.isArray(payload.tags)
+      ? payload.tags.map((tag) => String(tag).trim()).filter(Boolean).slice(0, 10).map((tag) => tag.slice(0, 30))
+      : payload.tags,
+    category_id: payload.category_id ? String(payload.category_id).trim() : payload.category_id,
+  };
+  // Remove slug entirely from the serialized body.
+  delete (normalizedPayload as Record<string, unknown>).slug;
   return safeRequest(
     () =>
       request("/cms/blogs/my/posts", {
         method: "POST",
-        body: JSON.stringify(payload),
+        body: JSON.stringify(normalizedPayload),
       }),
     () => {
       const posts = getStoredPosts();
@@ -2037,11 +1880,27 @@ export function updateMyBlogPost(
   id: string,
   payload: Partial<BlogPostPayload>,
 ): Promise<BlogManageDetail> {
+  const normalizedEntries = Object.entries(payload).filter(([key]) => key !== "revision" && key !== "change_notes" && key !== "slug");
+  const normalizedPayload: Record<string, unknown> = Object.fromEntries(normalizedEntries);
+  if (typeof normalizedPayload.title === "string") normalizedPayload.title = normalizedPayload.title.slice(0, 150);
+  if (typeof normalizedPayload.excerpt === "string") normalizedPayload.excerpt = normalizedPayload.excerpt.slice(0, 300);
+  if (Array.isArray(normalizedPayload.tags)) {
+    normalizedPayload.tags = (normalizedPayload.tags as unknown[])
+      .map((tag) => String(tag).trim())
+      .filter(Boolean)
+      .slice(0, 10)
+      .map((tag) => tag.slice(0, 30));
+  }
+  const headers: Record<string, string> = {};
+  if (typeof normalizedPayload.base_version === "number") {
+    headers["If-Match"] = `"${normalizedPayload.base_version}"`;
+  }
   return safeRequest(
     () =>
       request(`/cms/blogs/my/posts/${encodeURIComponent(id)}`, {
         method: "PATCH",
-        body: JSON.stringify(Object.fromEntries(Object.entries(payload).filter(([key]) => key !== "revision" && key !== "change_notes"))),
+        headers,
+        body: JSON.stringify(normalizedPayload),
       }),
     () => {
       const posts = getStoredPosts();
@@ -3514,13 +3373,21 @@ export function getMyBlogForm(kind: BlogKind, enterpriseId?: string): Promise<Bl
 
   return safeRequest(
     async () => {
-      const queryKind = kind;
+      const queryKind = kind === "both" ? "blog" : kind;
       try {
         const remoteForm = normalizeForm(
           await request(`/cms/blogs/my/form${query({ kind: queryKind, enterprise_id: enterpriseId })}`),
         );
-        if (remoteForm && remoteForm.type === kind && remoteForm.status === "active") {
-          return remoteForm;
+        const typeMatches =
+          String(remoteForm.type) === String(kind) ||
+          remoteForm.type === "both" ||
+          (kind === "both" && remoteForm.type === "blog");
+        if (
+          remoteForm &&
+          typeMatches &&
+          (remoteForm.status === "active" || (remoteForm.sections?.length ?? 0) > 0)
+        ) {
+          return { ...remoteForm, status: "active" };
         }
         return resolveLocalActiveForm();
       } catch {
@@ -3797,7 +3664,7 @@ export function uploadBlogAsset(
           : typeof response.location === "string" ? response.location
           : "";
         return {
-          url,
+          url: normalizeMediaOrigin(url),
           name: typeof response.name === "string" ? response.name : typeof response.filename === "string" ? response.filename : file.name,
           size: typeof response.size === "number" ? response.size : typeof response.file_size === "number" ? response.file_size : file.size,
           type: typeof response.type === "string" ? response.type : typeof response.content_type === "string" ? response.content_type : typeof response.mime_type === "string" ? response.mime_type : file.type,

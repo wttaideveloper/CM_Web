@@ -55,6 +55,8 @@ interface Post {
   createdAt: string;
   updatedAt: string;
   pinned: boolean;
+  authorType?: string;
+  enterpriseId?: string | null;
 }
 
 interface CreatePostFormState {
@@ -107,7 +109,12 @@ const toDisplayPost = (post: BlogManageItem | BlogManageDetail): Post => ({
   createdAt: "created_at" in post && typeof post.created_at === "string" ? post.created_at : post.updated_at,
   updatedAt: post.updated_at,
   pinned: post.is_pinned,
+  authorType: "author_type" in post && post.author_type ? post.author_type : ("enterprise_id" in post && post.enterprise_id ? "merchant" : "platform"),
+  enterpriseId: "enterprise_id" in post ? post.enterprise_id : null,
 });
+
+const isPlatformPost = (post: Post): boolean =>
+  post.authorType === "platform" || (!post.enterpriseId && post.enterprise === "Platform Super Admin");
 
 const formatDate = (isoString: string): string => {
   const normalized = /^\d{4}-\d{2}-\d{2}T/.test(isoString) && !/(?:Z|[+-]\d{2}:?\d{2})$/i.test(isoString) ? `${isoString}Z` : isoString;
@@ -284,6 +291,7 @@ export default function PlatformAllPostsScreen() {
 
   // Modals & Active Selections
   const [viewingPost, setViewingPost] = useState<Post | null>(null);
+  const [inPageMediaPreview, setInPageMediaPreview] = useState<{ url: string; title: string; isPdf: boolean } | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
   // SECTION 14: CREATE PLATFORM BLOG OR NEWS STATE
@@ -1546,22 +1554,24 @@ export default function PlatformAllPostsScreen() {
                                 <span>View</span>
                               </button>
 
-                              {/* 2. Edit */}
-                              <button
-                                type="button"
-                                role="menuitem"
-                                onClick={() => {
-                                  setOpenActionMenuId(null);
-                                  setActionMenuPosition(null);
-                                  void handleOpenEdit(post);
-                                }}
-                                className="w-full text-left px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-[#f4faf7] hover:text-[#175245] flex items-center gap-2.5 transition-colors"
-                              >
-                                <svg className="h-4 w-4 text-[#52736a]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                </svg>
-                                <span>Edit</span>
-                              </button>
+                              {/* 2. Edit - Only for Platform Super Admin's own posts */}
+                              {isPlatformPost(post) && (
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    setActionMenuPosition(null);
+                                    void handleOpenEdit(post);
+                                  }}
+                                  className="w-full text-left px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-[#f4faf7] hover:text-[#175245] flex items-center gap-2.5 transition-colors"
+                                >
+                                  <svg className="h-4 w-4 text-[#52736a]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                  </svg>
+                                  <span>Edit</span>
+                                </button>
+                              )}
 
                               {/* 3. Unpublish / Publish */}
                               {post.status === "Published" ? (
@@ -2910,7 +2920,12 @@ export default function PlatformAllPostsScreen() {
                                   <dd className="mt-2 flex flex-wrap gap-2">
                                     {imageValues.map((item) => {
                                       const imageUrl = resolveImagePreviewUrl(String(item));
-                                      return <a key={imageUrl} href={imageUrl} target="_blank" rel="noopener noreferrer"><img src={imageUrl} alt={label} className="h-20 w-20 rounded-lg border border-[#d7e5df] object-cover" /></a>;
+                                      return (
+                                         <button key={imageUrl} type="button" onClick={() => setInPageMediaPreview({ url: imageUrl, title: label, isPdf: false })} className="group relative overflow-hidden rounded-lg border border-[#d7e5df] transition-all hover:border-[#1f6a58] focus:outline-none">
+                                           <img src={imageUrl} alt={label} className="h-20 w-20 object-cover transition-transform group-hover:scale-105" />
+                                           <span className="absolute inset-0 flex items-center justify-center bg-[#06201c]/30 opacity-0 group-hover:opacity-100 transition-opacity text-white text-[10px] font-semibold">View</span>
+                                         </button>
+                                       );
                                     })}
                                   </dd>
                                 </div>
@@ -2978,17 +2993,19 @@ export default function PlatformAllPostsScreen() {
 
             <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[#edf3f0] p-4">
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const post = viewingPost;
-                    setViewingPost(null);
-                    void handleOpenEdit(post);
-                  }}
-                  className="rounded-xl border border-[#1f6a58] px-3.5 py-2 text-xs font-semibold text-[#175245] hover:bg-[#f4faf7] transition-colors"
-                >
-                  Edit Post
-                </button>
+                {isPlatformPost(viewingPost) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const post = viewingPost;
+                      setViewingPost(null);
+                      void handleOpenEdit(post);
+                    }}
+                    className="rounded-xl border border-[#1f6a58] px-3.5 py-2 text-xs font-semibold text-[#175245] hover:bg-[#f4faf7] transition-colors"
+                  >
+                    Edit Post
+                  </button>
+                )}
                 {viewingPost.status === "Published" ? (
                   <button
                     type="button"
@@ -4180,6 +4197,47 @@ export default function PlatformAllPostsScreen() {
               </button>
             </div>
           </section>
+        </div>
+      )}
+      {inPageMediaPreview && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#06201c]/60 p-4 backdrop-blur-xs"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setInPageMediaPreview(null)}
+        >
+          <div
+            className="relative flex max-h-[90vh] max-w-4xl w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="flex items-center justify-between border-b border-[#edf3f0] px-5 py-3.5 bg-[#f8fafc]">
+              <h3 className="text-sm font-bold text-[#06201c] truncate">{inPageMediaPreview.title}</h3>
+              <button
+                type="button"
+                onClick={() => setInPageMediaPreview(null)}
+                className="rounded-lg p-1.5 text-[#52736a] hover:bg-[#edf3f0] hover:text-[#06201c] transition-colors"
+              >
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </header>
+            <div className="flex-1 overflow-auto p-4 flex items-center justify-center bg-[#f4faf7]">
+              {inPageMediaPreview.isPdf ? (
+                <iframe
+                  src={inPageMediaPreview.url}
+                  title={inPageMediaPreview.title}
+                  className="h-[70vh] w-full rounded-xl border border-[#d7e5df]"
+                />
+              ) : (
+                <img
+                  src={inPageMediaPreview.url}
+                  alt={inPageMediaPreview.title}
+                  className="max-h-[75vh] w-auto max-w-full rounded-xl object-contain shadow-xs"
+                />
+              )}
+            </div>
+          </div>
         </div>
       )}
     </main>

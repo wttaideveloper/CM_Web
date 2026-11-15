@@ -533,6 +533,8 @@ export default function PlatformBlogFormBuilderScreen() {
   const [showAddSectionModal, setShowAddSectionModal] = useState(false);
   const [showAddFieldModal, setShowAddFieldModal] = useState(false);
   const [newFieldDraft, setNewFieldDraft] = useState<NewFieldDraft | null>(null);
+  const [selectedSectionPlaceholder, setSelectedSectionPlaceholder] = useState<string>("");
+  const [selectedFieldLabelPlaceholder, setSelectedFieldLabelPlaceholder] = useState<string>("");
   const [newSectionName, setNewSectionName] = useState("");
   const [newSectionDesc, setNewSectionDesc] = useState("");
   const [newSectionVisibility, setNewSectionVisibility] = useState<SectionVisibilityScope>("customer_visible");
@@ -699,6 +701,19 @@ export default function PlatformBlogFormBuilderScreen() {
     },
     [displayedSections, sectionDrafts, selectedSectionId]
   );
+
+  useEffect(() => {
+    if (selectedSection) {
+      const clean = selectedSection.name.replace(/^\d+\.\s*/, "");
+      if (clean) setSelectedSectionPlaceholder(clean);
+    }
+  }, [selectedSectionId]);
+
+  useEffect(() => {
+    if (selectedField?.label) {
+      setSelectedFieldLabelPlaceholder(selectedField.label);
+    }
+  }, [selectedFieldId]);
 
   const builderSections = useMemo<readonly FormSection[]>(
     () => displayedSections.map((section, index) => ({
@@ -905,11 +920,6 @@ export default function PlatformBlogFormBuilderScreen() {
       return;
     }
 
-    const nextLabel = typeof patch.label === "string" ? patch.label.trim().toLowerCase() : "";
-    if (nextLabel && fields.some((field) => field.id !== selectedField.id && field.sectionId === selectedField.sectionId && field.label.trim().toLowerCase() === nextLabel)) {
-      showToast("Field labels must be unique within the selected section.");
-      return;
-    }
     setFieldDrafts((prev) => ({
       ...prev,
       [selectedField.id]: { ...selectedField, ...patch },
@@ -1343,13 +1353,68 @@ export default function PlatformBlogFormBuilderScreen() {
       const workingFormId = formStatus === "draft"
         ? formId
         : (await createAdminBlogFormDraft(formId)).id;
-      const updated = await updateAdminBlogForm(workingFormId, { name: formTitle.trim(), type: formType, mode: formMode, sections: buildSections(), ...(formRevision !== null ? { base_revision: formRevision } : {}) });
-      setSchemaVersion(`v${updated.version}`);
-      setFormRevision(typeof updated.revision === "number" ? updated.revision : formRevision);
+
+      // Always resolve latest server revision to avoid optimistic concurrency conflicts
+      let targetRevision = formRevision;
+      try {
+        const latestForm = await getAdminBlogForm(workingFormId);
+        if (typeof latestForm.revision === "number") {
+          targetRevision = latestForm.revision;
+          setFormRevision(latestForm.revision);
+        }
+      } catch {
+        // fallback to targetRevision
+      }
+
+      let updated: BlogForm;
+      try {
+        updated = await updateAdminBlogForm(workingFormId, {
+          name: formTitle.trim(),
+          type: formType,
+          mode: formMode,
+          sections: buildSections(),
+          ...(targetRevision !== null && targetRevision !== undefined ? { base_revision: targetRevision } : {}),
+        });
+      } catch (updateErr) {
+        const updateMsg = updateErr instanceof Error ? updateErr.message : "";
+        if (updateMsg.includes("Someone saved") || updateMsg.includes("revision") || updateMsg.includes("409")) {
+          // Re-fetch latest server revision and retry update once
+          const latestForm = await getAdminBlogForm(workingFormId);
+          const freshRevision = typeof latestForm.revision === "number" ? latestForm.revision : undefined;
+          updated = await updateAdminBlogForm(workingFormId, {
+            name: formTitle.trim(),
+            type: formType,
+            mode: formMode,
+            sections: buildSections(),
+            ...(freshRevision !== undefined ? { base_revision: freshRevision } : {}),
+          });
+        } else {
+          throw updateErr;
+        }
+      }
+
+      const nextVersion = Math.max(1, updated.version);
+      setSchemaVersion(`v${nextVersion}`);
+      const nextRevision = typeof updated.revision === "number" ? updated.revision : (targetRevision ?? undefined);
+      setFormRevision(typeof updated.revision === "number" ? updated.revision : (targetRevision ?? null));
       setFormStatus(updated.status);
+
       if (publish) {
-        const published = await publishAdminBlogForm(workingFormId, formRevision ?? undefined);
-        setSchemaVersion(`v${published.version}`);
+        let published: BlogForm;
+        try {
+          published = await publishAdminBlogForm(workingFormId, nextRevision);
+        } catch (publishErr) {
+          const pubMsg = publishErr instanceof Error ? publishErr.message : "";
+          if (pubMsg.includes("Someone saved") || pubMsg.includes("revision") || pubMsg.includes("409")) {
+            const latestForm = await getAdminBlogForm(workingFormId);
+            const freshRevision = typeof latestForm.revision === "number" ? latestForm.revision : undefined;
+            published = await publishAdminBlogForm(workingFormId, freshRevision);
+          } else {
+            throw publishErr;
+          }
+        }
+        setSchemaVersion(`v${Math.max(1, published.version)}`);
+        setFormRevision(typeof published.revision === "number" ? published.revision : (nextRevision ?? null));
         setFormStatus(published.status);
         showToast("Configuration published successfully.");
       } else {
@@ -1370,6 +1435,14 @@ export default function PlatformBlogFormBuilderScreen() {
       const message = error instanceof Error ? error.message : "Unable to save this form.";
       if (publish) setPublicationError(message);
       showToast(message);
+      try {
+        const refreshed = await getAdminBlogForm(formId);
+        if (typeof refreshed.revision === "number") {
+          setFormRevision(refreshed.revision);
+        }
+      } catch {
+        // ignore background refresh error
+      }
       return false;
     } finally {
       setIsSaving(false);
@@ -2410,6 +2483,16 @@ export default function PlatformBlogFormBuilderScreen() {
                       id={labelId}
                       type="text"
                       value={selectedField.label}
+                      placeholder={selectedFieldLabelPlaceholder || selectedField.label || "Enter field label"}
+                      onFocus={() => {
+                        if (selectedField.label) setSelectedFieldLabelPlaceholder(selectedField.label);
+                        handleUpdateSelectedField({ label: "" });
+                      }}
+                      onBlur={() => {
+                        if (!selectedField.label.trim() && selectedFieldLabelPlaceholder) {
+                          handleUpdateSelectedField({ label: selectedFieldLabelPlaceholder });
+                        }
+                      }}
                       onChange={(e) => handleUpdateSelectedField({ label: e.target.value })}
                       className={`w-full px-2.5 py-1.5 rounded-lg bg-slate-50 border text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-teal-600 ${
                         !selectedField.label.trim() || isSelectedFieldLabelDuplicate
@@ -2919,6 +3002,18 @@ export default function PlatformBlogFormBuilderScreen() {
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Section Name</span>
                   <input
                     value={selectedSection.name.replace(/^\d+\.\s*/, "")}
+                    placeholder={selectedSectionPlaceholder || selectedSection.name.replace(/^\d+\.\s*/, "") || "Enter section name"}
+                    onFocus={() => {
+                      const clean = selectedSection.name.replace(/^\d+\.\s*/, "");
+                      if (clean) setSelectedSectionPlaceholder(clean);
+                      handleUpdateSelectedSection({ name: "" });
+                    }}
+                    onBlur={() => {
+                      const clean = selectedSection.name.replace(/^\d+\.\s*/, "");
+                      if (!clean.trim() && selectedSectionPlaceholder) {
+                        handleUpdateSelectedSection({ name: selectedSectionPlaceholder });
+                      }
+                    }}
                     onChange={(event) => handleUpdateSelectedSection({ name: event.target.value })}
                     className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 disabled:opacity-60"
                   />

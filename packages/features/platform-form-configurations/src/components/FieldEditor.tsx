@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { formConfigurationCopy as copy } from "../constants/form-configuration-copy";
 import { getEventCompositeFieldDefinition } from "../model/event-composite-field-definitions";
 import { getTrainingCompositeFieldDefinition } from "../model/training-composite-field-definitions";
@@ -167,9 +168,9 @@ export function FieldEditor({ field, registry, trainingFields, isTrainingConfigu
     ) : (
       <>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          {!core || core.configurable.label ? <TextControl label={copy.label} value={field.label} hint={copy.fieldLabelTip} clearOnFocus onChange={(label) => onChange({ label })} /> : null}
+          {!core || core.configurable.label ? <TextControl label={copy.label} value={field.label} placeholder={field.label || "Enter field label"} clearOnFocus hint={copy.fieldLabelTip} onChange={(label) => onChange({ label })} /> : null}
           {showRendererControl ? <SelectControl label={copy.renderer} value={displayedRenderer} hint={copy.fieldTypeTip} onChange={changeRenderer} disabled={!rendererCanChange} options={fieldRenderers.map((renderer) => [renderer, rendererLabels[renderer] ?? (renderer === "tags" ? copy.tagsInput : renderer)])} /> : null}
-          {!core || core.configurable.placeholder ? <TextControl label={copy.placeholder} value={field.placeholder} hint={copy.fieldPlaceholderTip} onChange={(placeholder) => onChange({ placeholder })} /> : null}
+          {!core || core.configurable.placeholder ? <TextControl label={copy.placeholder} value={field.placeholder} placeholder={field.label || "Enter placeholder"} hint={copy.fieldPlaceholderTip} onChange={(placeholder) => onChange({ placeholder })} /> : null}
           {!core || core.configurable.helpText ? <TextAreaControl label={copy.helpText} value={field.helpText} hint={copy.fieldHelpTextTip(formLabel)} onChange={(helpText) => onChange({ helpText })} /> : null}
           <label className="flex items-start gap-2 pt-6 text-sm text-[#355a51]">
             <input className="mt-1" type="checkbox" checked={field.required} disabled={Boolean(core && (!(core.configurable.required || eventTaxonomyRequiredConfigurable) || (core.requiredByDomain && field.required)))} onChange={(event) => onChange({ required: core?.requiredByDomain ? true : event.target.checked })} />
@@ -224,6 +225,18 @@ export function FieldEditor({ field, registry, trainingFields, isTrainingConfigu
         </a>
       </fieldset>
     ) : null}
+    {field.coreKey === "time_zone" ? (
+      <fieldset className="mt-4 rounded-xl border border-[#edf3f0] bg-[#f7fbf8] p-3">
+        <legend className="px-1 text-sm font-semibold text-[#355a51]">System-provided choices</legend>
+        <p className="text-sm text-[#52736a]">Time zones are loaded from the standard IANA time zone list. Choices are managed by the system.</p>
+      </fieldset>
+    ) : null}
+    {field.coreKey === "currency" ? (
+      <fieldset className="mt-4 rounded-xl border border-[#edf3f0] bg-[#f7fbf8] p-3">
+        <legend className="px-1 text-sm font-semibold text-[#355a51]">System-provided choices</legend>
+        <p className="text-sm text-[#52736a]">Currencies are loaded from the standard currency list. Choices are managed by the system.</p>
+      </fieldset>
+    ) : null}
     {trainingInstructorField ? (
       <fieldset className="mt-4 rounded-xl border border-[#edf3f0] bg-[#f7fbf8] p-3">
         <legend className="px-1 text-sm font-semibold text-[#355a51]">System-provided choices</legend>
@@ -246,7 +259,45 @@ function ValidationEditor({ validation, onChange, text = false }: { validation: 
 function makeOptionValue(label: string, options: readonly FormFieldOption[], currentIndex: number): string { const base = label.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "option"; let value = base; let suffix = 2; while (options.some((option, index) => index !== currentIndex && option.value === value)) value = `${base}_${suffix++}`; return value; }
 function ReadOnlyOptionEditor({ options, domainName }: { options: readonly FormFieldOption[]; domainName: string }) { return <fieldset className="mt-4 min-w-0 rounded-xl border border-[#edf3f0] bg-[#fbfdfc] p-3"><legend className="px-1 text-sm font-semibold text-[#355a51]">{copy.options}</legend><p className="mb-3 text-xs text-[#52736a]">Options are managed by the {domainName} domain.</p><ul className="space-y-2">{options.map((option) => <li key={option.value} className="rounded-lg border border-[#dfe9e4] bg-white px-3 py-2 text-sm text-[#284940]">{option.label}</li>)}</ul></fieldset>; }
 function OptionEditor({ options, onChange, onUpdate, onMove }: { options: FormFieldOption[]; onChange: (options: FormFieldOption[]) => void; onUpdate: (index: number, patch: Partial<FormFieldOption>) => void; onMove: (index: number, amount: number) => void }) { return <fieldset className="mt-4 min-w-0 rounded-xl border border-[#edf3f0] p-3"><legend className="px-1 text-sm font-semibold text-[#355a51]">{copy.options}</legend><div className="min-w-0 space-y-2">{options.map((option, index) => <div key={`option-${index}`} className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]"><input aria-label={copy.optionLabel} value={option.label} onChange={(event) => onUpdate(index, { label: event.target.value, ...(option.value ? {} : { value: makeOptionValue(event.target.value, options, index) }) })} className="min-w-0 w-full rounded-lg border border-[#cfe0d8] px-2 py-1.5 text-sm" /><button type="button" aria-label={copy.delete} title={copy.delete} onClick={() => onChange(options.filter((_, itemIndex) => itemIndex !== index))} className="text-sm font-semibold text-[#b42318]">Remove</button></div>)}</div><button type="button" onClick={() => { const label = copy.newOption; onChange([...options, { label, value: makeOptionValue(label, options, -1), position: options.length + 1 }]); }} className="mt-3 text-sm font-bold text-[#1f6a58]">{copy.addOption}</button></fieldset>; }
-function TextControl({ label, value, placeholder, hint, clearOnFocus = false, onChange }: { label: string; value: string; placeholder?: string; hint?: string; clearOnFocus?: boolean; onChange: (value: string) => void }) { return <label className="text-sm font-semibold text-[#355a51]"><span>{label}</span><input value={value} placeholder={placeholder} onFocus={clearOnFocus ? () => onChange("") : undefined} onChange={(event) => onChange(event.target.value)} className="mt-1.5 w-full rounded-lg border border-[#cfe0d8] px-3 py-2 font-normal" />{hint ? <span className="mt-1 block text-xs font-normal leading-5 text-[#7f9d94]">{hint}</span> : null}</label>; }
+function TextControl({ label, value, placeholder, hint, clearOnFocus = false, onChange }: { label: string; value: string; placeholder?: string; hint?: string; clearOnFocus?: boolean; onChange: (value: string) => void }) {
+  const [persistedPlaceholder, setPersistedPlaceholder] = useState(placeholder || value);
+
+  useEffect(() => {
+    if (placeholder) {
+      setPersistedPlaceholder(placeholder);
+    } else if (value) {
+      setPersistedPlaceholder(value);
+    }
+  }, [placeholder, value]);
+
+  const handleFocus = () => {
+    if (clearOnFocus) {
+      if (value) setPersistedPlaceholder(value);
+      onChange("");
+    }
+  };
+
+  const handleBlur = () => {
+    if (clearOnFocus && !value.trim() && persistedPlaceholder) {
+      onChange(persistedPlaceholder);
+    }
+  };
+
+  return (
+    <label className="text-sm font-semibold text-[#355a51]">
+      <span>{label}</span>
+      <input
+        value={value}
+        placeholder={persistedPlaceholder || placeholder}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1.5 w-full rounded-lg border border-[#cfe0d8] px-3 py-2 font-normal"
+      />
+      {hint ? <span className="mt-1 block text-xs font-normal leading-5 text-[#7f9d94]">{hint}</span> : null}
+    </label>
+  );
+}
 function TextAreaControl({ label, value, hint, onChange }: { label: string; value: string; hint?: string; onChange: (value: string) => void }) { return <label className="text-sm font-semibold text-[#355a51]"><span>{label}</span><textarea value={value} onChange={(event) => onChange(event.target.value)} className="mt-1.5 min-h-24 w-full rounded-lg border border-[#cfe0d8] px-3 py-2 font-normal" />{hint ? <span className="mt-1 block text-xs font-normal leading-5 text-[#7f9d94]">{hint}</span> : null}</label>; }
 function NumberControl({ label, value, placeholder, onChange }: { label: string; value: number | null | undefined; placeholder?: string; onChange: (value: number | null) => void }) { return <label className="text-sm font-semibold text-[#355a51]"><span>{label}</span><input type="number" placeholder={placeholder} value={value ?? ""} onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))} className="mt-1.5 w-full rounded-lg border border-[#cfe0d8] px-3 py-2 font-normal" /></label>; }
 function SelectControl({ label, value, hint, disabled = false, onChange, options }: { label: string; value: string; hint?: string; disabled?: boolean; onChange: (value: string) => void; options: readonly (readonly [string, string])[] }) { return <label className="text-sm font-semibold text-[#355a51]"><span>{label}</span><select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} className="mt-1.5 w-full rounded-lg border border-[#cfe0d8] bg-white px-3 py-2 font-normal disabled:cursor-not-allowed disabled:bg-[#f4faf7] disabled:text-[#7f9d94]">{options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}</select>{hint ? <span className="mt-1 block text-xs font-normal leading-5 text-[#7f9d94]">{hint}</span> : null}</label>; }

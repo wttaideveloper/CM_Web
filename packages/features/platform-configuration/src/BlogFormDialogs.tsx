@@ -1,7 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { activateAdminBlogForm, createAdminBlogFormDraft, deactivateAdminBlogForm, deleteAdminBlogForm, listAdminBlogForms, type BlogForm } from "@ihp/shared";
+import {
+  activateAdminBlogForm,
+  createAdminBlogFormDraft,
+  deactivateAdminBlogForm,
+  deleteAdminBlogForm,
+  getAdminBlogForm,
+  listAdminBlogForms,
+  type BlogForm,
+  type BlogFormField,
+} from "@ihp/shared";
 import { useEffect, useState, type ReactNode } from "react";
 import { getPlatformEnterprises } from "@ihp/platform-enterprises";
 
@@ -48,7 +57,33 @@ const DialogFrame = ({
 );
 
 /** Displays the configuration metadata and field inventory without exposing edit controls. */
-export function BlogFormDetailsDialog({ form, onClose, onEditConfiguration, onDeactivate, onDelete }: BlogFormDialogProps) {
+export function BlogFormDetailsDialog({ form: initialForm, onClose, onEditConfiguration, onDeactivate, onDelete }: BlogFormDialogProps) {
+  const [form, setForm] = useState<BlogForm>(initialForm);
+  const [loading, setLoading] = useState(!initialForm.sections || initialForm.sections.length === 0);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!initialForm.sections || initialForm.sections.length === 0) {
+      setLoading(true);
+      void getAdminBlogForm(initialForm.id)
+        .then((full) => {
+          if (!cancelled) {
+            setForm(full);
+            setLoading(false);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setLoading(false);
+        });
+    } else {
+      setForm(initialForm);
+      setLoading(false);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [initialForm]);
+
   const isDraft = form.status === "draft";
   const assignedCount = form.assigned_count ?? form.tenant_ids?.length ?? 0;
   const isAssigned = form.scope === "global" || (form.scope === "selected" && assignedCount > 0);
@@ -121,11 +156,21 @@ export function BlogFormDetailsDialog({ form, onClose, onEditConfiguration, onDe
         <div className="flex items-center justify-between pb-2 border-b border-[#edf3f0]">
           <h3 className="text-sm font-bold text-[#06201c]">Configured Sections &amp; Fields</h3>
           <span className="text-xs font-semibold text-[#52736a]">
-            {form.sections.length} sections · {form.sections.flatMap((s) => s.fields).length} fields
+            {loading ? "Loading..." : `${form.sections.length} sections · ${form.sections.flatMap((s) => s.fields).length} fields`}
           </span>
         </div>
-        <div className="mt-4 space-y-4">
-          {form.sections.map((section, sectionIndex) => (
+        {loading ? (
+          <div className="mt-6 flex flex-col items-center justify-center py-8 text-[#52736a]">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#1f6a58] border-t-transparent mb-2" />
+            <span className="text-xs">Loading sections &amp; fields...</span>
+          </div>
+        ) : form.sections.length === 0 ? (
+          <div className="mt-4 rounded-xl border border-dashed border-[#d7e5df] p-6 text-center text-xs text-[#52736a]">
+            No sections or fields configured in this form yet.
+          </div>
+        ) : (
+          <div className="mt-4 space-y-4">
+            {form.sections.map((section, sectionIndex) => (
             <div key={section.id} className="rounded-xl border border-[#edf3f0] p-3.5 bg-[#fbfdfc]">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-[#175245]">
@@ -182,7 +227,8 @@ export function BlogFormDetailsDialog({ form, onClose, onEditConfiguration, onDe
             </div>
           ))}
         </div>
-      </div>
+      )}
+    </div>
 
       <div className="mt-6 pt-4 border-t border-[#edf3f0] flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
@@ -239,11 +285,190 @@ export function BlogFormDetailsDialog({ form, onClose, onEditConfiguration, onDe
   );
 }
 
+function getDialogFieldOptions(field: BlogFormField): string[] {
+  const optionsVal = field.validation?.options;
+  if (typeof optionsVal === "string") {
+    return optionsVal.split(",").map((opt) => opt.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function renderDialogFieldPreview(field: BlogFormField) {
+  const options = getDialogFieldOptions(field);
+  switch (field.type) {
+    case "text":
+    case "email":
+      return (
+        <div className="mt-1.5 rounded-lg border border-[#d7e5df] bg-[#fbfdfc] px-3 py-2 text-xs text-slate-500">
+          {field.placeholder || (field.type === "email" ? "name@example.com" : `Enter ${field.label.toLowerCase()}...`)}
+        </div>
+      );
+    case "textarea":
+    case "long_text":
+      return (
+        <div className="mt-1.5 min-h-[64px] rounded-lg border border-[#d7e5df] bg-[#fbfdfc] p-2.5 text-xs text-slate-500 whitespace-pre-wrap">
+          {field.placeholder || `Enter ${field.label.toLowerCase()}...`}
+        </div>
+      );
+    case "rich_text":
+      return (
+        <div className="mt-1.5 rounded-lg border border-[#d7e5df] bg-white overflow-hidden shadow-2xs">
+          <div className="flex items-center gap-1.5 border-b border-[#dfe9e4] bg-[#f4faf7] px-2.5 py-1.5 text-[10px] font-semibold text-slate-600">
+            <span className="rounded border border-[#dfe9e4] bg-white px-1.5 py-0.5 font-bold">B</span>
+            <span className="rounded border border-[#dfe9e4] bg-white px-1.5 py-0.5 font-serif italic">I</span>
+            <span className="rounded border border-[#dfe9e4] bg-white px-1.5 py-0.5 underline">U</span>
+            <span className="h-3 w-px bg-slate-300 mx-0.5" />
+            <span className="rounded border border-[#dfe9e4] bg-white px-1.5 py-0.5">Link</span>
+            <span className="rounded border border-[#dfe9e4] bg-white px-1.5 py-0.5">List</span>
+          </div>
+          <div className="min-h-[72px] p-3 text-xs text-slate-400 bg-[#fbfdfc]">
+            {field.placeholder || "Enter formatted article content (Markdown / Rich Text)..."}
+          </div>
+        </div>
+      );
+    case "select":
+    case "dropdown":
+      return (
+        <div className="mt-1.5 space-y-1.5">
+          <div className="flex items-center justify-between rounded-lg border border-[#d7e5df] bg-[#fbfdfc] px-3 py-2 text-xs text-slate-500">
+            <span>{field.placeholder || `Select ${field.label.toLowerCase()}...`}</span>
+            <span className="text-slate-400 text-[10px]">&#9662;</span>
+          </div>
+          {options.length > 0 ? (
+            <p className="text-[10px] text-slate-500">
+              {options.length} option{options.length === 1 ? "" : "s"}: {options.join(" · ")}
+            </p>
+          ) : null}
+        </div>
+      );
+    case "radio":
+      return (
+        <div className="mt-1.5 flex flex-col gap-1.5 rounded-lg border border-[#d7e5df] bg-[#fbfdfc] p-2.5">
+          {(options.length > 0 ? options : ["Option 1", "Option 2"]).map((opt, i) => (
+            <div key={i} className="flex items-center gap-2 text-xs text-slate-600">
+              <span className="h-3.5 w-3.5 rounded-full border border-slate-300 bg-white" />
+              <span>{opt}</span>
+            </div>
+          ))}
+        </div>
+      );
+    case "multi_select":
+    case "multiselect":
+      return (
+        <div className="mt-1.5 space-y-1.5 rounded-lg border border-[#d7e5df] bg-[#fbfdfc] p-2 text-xs">
+          {(options.length > 0 ? options : [field.placeholder || "Select multiple options..."]).map((option) => (
+            <div key={option} className="flex items-center gap-2 text-slate-600">
+              <span className="h-3.5 w-3.5 rounded border border-slate-300 bg-white" />
+              <span>{option}</span>
+            </div>
+          ))}
+        </div>
+      );
+    case "checkbox":
+      return (
+        <div className="mt-1.5 flex items-center gap-2 rounded-lg border border-[#d7e5df] bg-[#fbfdfc] p-2.5 text-xs text-slate-600">
+          <span className="h-3.5 w-3.5 rounded border border-slate-300 bg-white" />
+          <span>{field.placeholder || `Enable ${field.label.toLowerCase()}`}</span>
+        </div>
+      );
+    case "file_upload":
+    case "supporting_document":
+    case "media_upload":
+    case "additional_images":
+      return (
+        <div className="mt-1.5 flex items-center justify-between rounded-lg border-2 border-dashed border-[#dfe9e4] bg-[#fbfdfc] p-3 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="rounded bg-teal-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-teal-800">
+              {field.type.includes("media") || field.type.includes("image") ? "MEDIA" : "DOC"}
+            </span>
+            <span className="font-medium text-slate-600">
+              {field.placeholder || (field.type.includes("media") || field.type.includes("image") ? "Click to upload images (PNG, JPG)" : "Attach supporting document (PDF, DOCX)")}
+            </span>
+          </div>
+          <span className="rounded-md border border-[#cfe0d8] bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-2xs">
+            Browse
+          </span>
+        </div>
+      );
+    case "date":
+      return (
+        <div className="mt-1.5 flex items-center justify-between rounded-lg border border-[#d7e5df] bg-[#fbfdfc] px-3 py-2 text-xs text-slate-500">
+          <span>{field.placeholder || "YYYY-MM-DD"}</span>
+          <span className="font-mono text-[10px] text-slate-400 font-semibold uppercase">Calendar</span>
+        </div>
+      );
+    case "time":
+      return (
+        <div className="mt-1.5 flex items-center justify-between rounded-lg border border-[#d7e5df] bg-[#fbfdfc] px-3 py-2 text-xs text-slate-500">
+          <span>{field.placeholder || "HH:MM (e.g. 09:30 AM)"}</span>
+          <span className="font-mono text-[10px] text-slate-400 font-semibold uppercase">Time</span>
+        </div>
+      );
+    case "number":
+      return (
+        <div className="mt-1.5 space-y-1.5">
+          <div className="rounded-lg border border-[#d7e5df] bg-[#fbfdfc] px-3 py-2 font-mono text-xs text-slate-500">
+            {field.placeholder || "0"}
+          </div>
+          {(field.validation?.min !== undefined || field.validation?.max !== undefined) && (
+            <p className="text-[10px] text-slate-400">Range: {String(field.validation?.min ?? "any")} to {String(field.validation?.max ?? "any")}</p>
+          )}
+        </div>
+      );
+    case "url":
+    case "reference_url":
+      return (
+        <div className="mt-1.5 flex items-center overflow-hidden rounded-lg border border-[#d7e5df] bg-[#fbfdfc] text-xs text-slate-500">
+          <span className="border-r border-[#d7e5df] bg-[#f4faf7] px-2.5 py-2 font-mono text-[11px] text-slate-500">https://</span>
+          <span className="px-2.5 py-2 text-slate-400">{field.placeholder?.replace(/^https?:\/\//, "") || "example.com"}</span>
+        </div>
+      );
+    case "tags":
+      return (
+        <div className="mt-1.5 flex items-center gap-1.5 rounded-lg border border-[#d7e5df] bg-[#fbfdfc] px-3 py-2 text-xs text-slate-500">
+          <span className="rounded bg-[#eef6f2] px-2 py-0.5 text-[11px] font-semibold text-[#175245]">#tag</span>
+          <span className="text-slate-400">{field.placeholder || "Add tags separated by commas..."}</span>
+        </div>
+      );
+    default:
+      return (
+        <div className="mt-1.5 rounded-lg border border-[#d7e5df] bg-[#fbfdfc] px-3 py-2 text-xs text-slate-500">
+          {field.placeholder || `Enter ${field.label.toLowerCase()}...`}
+        </div>
+      );
+  }
+}
+
 /** Renders the Enterprise Admin form layout preview. */
-export function BlogFormPreviewDialog({ form, onClose }: BlogFormDialogProps) {
+export function BlogFormPreviewDialog({ form: initialForm, onClose }: BlogFormDialogProps) {
+  const [form, setForm] = useState<BlogForm>(initialForm);
+  const [loading, setLoading] = useState(!initialForm.sections || initialForm.sections.length === 0);
   const [previewTab, setPreviewTab] = useState<"enterprise" | "customer">("enterprise");
 
-  const customerSections = form.sections
+  useEffect(() => {
+    let cancelled = false;
+    if (!initialForm.sections || initialForm.sections.length === 0) {
+      setLoading(true);
+      void getAdminBlogForm(initialForm.id)
+        .then((full) => {
+          if (!cancelled) {
+            setForm(full);
+            setLoading(false);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setLoading(false);
+        });
+    } else {
+      setForm(initialForm);
+      setLoading(false);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [initialForm]);
+
+  const customerSections = (form.sections || [])
     .filter(
       (section) =>
         section.visible !== false &&
@@ -252,7 +477,7 @@ export function BlogFormPreviewDialog({ form, onClose }: BlogFormDialogProps) {
     )
     .map((section) => ({
       ...section,
-      fields: section.fields.filter(
+      fields: (section.fields || []).filter(
         (field) =>
           field.visible &&
           field.visibility_scope !== "admin_only" &&
@@ -282,90 +507,115 @@ export function BlogFormPreviewDialog({ form, onClose }: BlogFormDialogProps) {
         >
           Enterprise Admin Preview
         </button>
+        <button
+          type="button"
+          onClick={() => setPreviewTab("customer")}
+          className={`flex-1 py-2 px-3 rounded-lg font-semibold transition-colors text-center ${
+            previewTab === "customer"
+              ? "bg-white text-slate-900 shadow-sm"
+              : "text-slate-500 hover:text-slate-900"
+          }`}
+        >
+          Published Article Preview
+        </button>
       </div>
 
-      {previewTab === "enterprise" ? (
+      {loading ? (
+        <div className="mt-6 flex flex-col items-center justify-center py-12 text-[#52736a]">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#1f6a58] border-t-transparent mb-3" />
+          <span className="text-xs font-medium">Loading form configuration preview...</span>
+        </div>
+      ) : previewTab === "enterprise" ? (
         <div className="mt-4 space-y-4">
           <div className="rounded-xl bg-teal-50 border border-teal-200 p-3 text-xs text-teal-900">
             <span className="font-bold">Enterprise Admin Preview: </span>
             Shows all enabled fields, mandatory indicators (*), Enterprise Admin-only sections, section order, and field layout.
           </div>
           <div className="space-y-4">
-            {form.sections
-              .filter((section) => section.visible !== false)
-              .map((section, sIndex) => {
-                const isAdminOnly = section.visibility_scope === "admin_only" || section.type === "admin_notes";
-                return (
-                  <section
-                    key={section.id}
-                    className={`rounded-xl border p-4 ${
-                      isAdminOnly
-                        ? "border-purple-200 bg-purple-50/40"
-                        : "border-[#dfe9e4] bg-[#fbfdfc]"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-[#06201c]">
-                        {section.title.match(/^\d+\./) ? section.title : `${sIndex + 1}. ${section.title}`}
-                      </h3>
-                      {isAdminOnly ? (
-                        <span className="rounded bg-purple-100 px-2 py-0.5 text-[10px] font-bold text-purple-900 border border-purple-200">
-                          Enterprise Admin Only Section
-                        </span>
-                      ) : (
-                        <span className="rounded bg-teal-50 px-2 py-0.5 text-[10px] font-bold text-teal-800 border border-teal-200">
-                          Published Section
-                        </span>
-                      )}
-                    </div>
-                    {section.description ? (
-                      <p className="mt-1 text-xs text-[#52736a]">{section.description}</p>
-                    ) : null}
-                    <div className="mt-3 space-y-3">
-                      {section.fields
-                        .filter((field) => field.visible)
-                        .map((field) => (
-                          <div key={field.id} className="rounded-lg border border-[#e8f0ec] bg-white p-3 shadow-2xs">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-1.5">
-                                <label className="text-xs font-bold text-[#175245]">
-                                  {field.label}
-                                </label>
-                                {field.required ? (
-                                  <span className="inline-flex items-center gap-0.5">
-                                    <span className="text-rose-600 font-bold" title="Mandatory field">*</span>
-                                    <span className="rounded bg-rose-50 border border-rose-200 px-1.5 py-0.2 text-[9px] font-bold text-rose-700 uppercase tracking-wider">
-                                      Required
-                                    </span>
-                                  </span>
-                                ) : (
-                                  <span className="text-[10px] text-slate-400 font-normal">
-                                    (Optional)
-                                  </span>
-                                )}
-                              </div>
-                              <span
-                                className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
-                                  field.visibility_scope === "admin_only"
-                                    ? "bg-purple-50 text-purple-700"
-                                    : "bg-teal-50 text-teal-700"
-                                }`}
-                              >
-                                {field.visibility_scope === "admin_only" ? "Admin Only" : "Published"}
-                              </span>
-                            </div>
-                            <div className="mt-1.5 rounded-lg border border-[#d7e5df] bg-[#fbfdfc] px-3 py-2 text-xs text-slate-500">
-                              {field.placeholder || `Enter ${field.label.toLowerCase()}...`}
-                            </div>
-                            {field.help_text ? (
-                              <p className="mt-1 text-[10px] text-[#7f9d94]">{field.help_text}</p>
-                            ) : null}
+            {form.sections.filter((s) => s.visible !== false).length === 0 ? (
+              <div className="rounded-xl border border-dashed border-[#d7e5df] p-8 text-center text-xs text-[#52736a]">
+                No sections or fields have been configured in this form yet.
+              </div>
+            ) : (
+              form.sections
+                .filter((section) => section.visible !== false)
+                .map((section, sIndex) => {
+                  const isAdminOnly = section.visibility_scope === "admin_only" || section.type === "admin_notes";
+                  const visibleFields = section.fields.filter((field) => field.visible);
+                  return (
+                    <section
+                      key={section.id}
+                      className={`rounded-xl border p-4 ${
+                        isAdminOnly
+                          ? "border-purple-200 bg-purple-50/40"
+                          : "border-[#dfe9e4] bg-[#fbfdfc]"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-[#06201c]">
+                          {section.title.match(/^\d+\./) ? section.title : `${sIndex + 1}. ${section.title}`}
+                        </h3>
+                        {isAdminOnly ? (
+                          <span className="rounded bg-purple-100 px-2 py-0.5 text-[10px] font-bold text-purple-900 border border-purple-200">
+                            Enterprise Admin Only Section
+                          </span>
+                        ) : (
+                          <span className="rounded bg-teal-50 px-2 py-0.5 text-[10px] font-bold text-teal-800 border border-teal-200">
+                            Published Section
+                          </span>
+                        )}
+                      </div>
+                      {section.description ? (
+                        <p className="mt-1 text-xs text-[#52736a]">{section.description}</p>
+                      ) : null}
+                      <div className="mt-3 space-y-3">
+                        {visibleFields.length === 0 ? (
+                          <div className="rounded-lg border border-dashed border-[#e8f0ec] p-3 text-center text-xs text-slate-400">
+                            No visible fields in this section.
                           </div>
-                        ))}
-                    </div>
-                  </section>
-                );
-              })}
+                        ) : (
+                          visibleFields.map((field) => (
+                            <div key={field.id} className="rounded-lg border border-[#e8f0ec] bg-white p-3 shadow-2xs">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5">
+                                  <label className="text-xs font-bold text-[#175245]">
+                                    {field.label}
+                                  </label>
+                                  {field.required ? (
+                                    <span className="inline-flex items-center gap-0.5">
+                                      <span className="text-rose-600 font-bold" title="Mandatory field">*</span>
+                                      <span className="rounded bg-rose-50 border border-rose-200 px-1.5 py-0.2 text-[9px] font-bold text-rose-700 uppercase tracking-wider">
+                                        Required
+                                      </span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-400 font-normal">
+                                      (Optional)
+                                    </span>
+                                  )}
+                                </div>
+                                <span
+                                  className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                                    field.visibility_scope === "admin_only"
+                                      ? "bg-purple-50 text-purple-700"
+                                      : "bg-teal-50 text-teal-700"
+                                  }`}
+                                >
+                                  {field.visibility_scope === "admin_only" ? "Admin Only" : "Published"}
+                                </span>
+                              </div>
+                              {renderDialogFieldPreview(field)}
+                              {field.help_text ? (
+                                <p className="mt-1 text-[10px] text-[#7f9d94]">{field.help_text}</p>
+                              ) : null}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </section>
+                  );
+                })
+            )}
           </div>
         </div>
       ) : (
@@ -512,9 +762,42 @@ export function BlogFormActivationDialog({ form, onClose, onActivated }: BlogFor
     setError("");
   };
 
-  const existingActiveForm = activeForms.find(
-    (f) => f.id !== form.id && f.type === form.type,
-  );
+  // A global form conflicts only if another active form is also global with an
+  // overlapping type. A selected form conflicts only if another active form of
+  // the same/overlapping type already targets one of the selected tenants.
+  // A global form conflicts only if another active form is also global with the
+  // exact same type. A selected form conflicts only if another active form of
+  // the exact same type already targets one of the selected tenants. Each of the
+  // three form types (blog, news, both) keeps its own active configuration.
+  const globalConflict = scope === "global"
+    ? activeForms.find(
+        (f) =>
+          f.id !== form.id &&
+          f.scope === "global" &&
+          f.type === form.type,
+      )
+    : undefined;
+  const selectedConflictTenantId = scope === "selected"
+    ? selectedTenantIds.find((tId) =>
+        activeForms.some(
+          (f) =>
+            f.id !== form.id &&
+            f.scope === "selected" &&
+            f.type === form.type &&
+            f.tenant_ids?.includes(tId),
+        ),
+      )
+    : undefined;
+  const selectedConflictForm = selectedConflictTenantId
+    ? activeForms.find(
+        (f) =>
+          f.id !== form.id &&
+          f.scope === "selected" &&
+          f.type === form.type &&
+          f.tenant_ids?.includes(selectedConflictTenantId),
+      )
+    : undefined;
+  const existingActiveForm = globalConflict ?? selectedConflictForm;
   const tenantsWithSpecificOverrides = activeForms
     .filter((f) => f.id !== form.id && f.scope === "selected")
     .flatMap((f) => f.tenant_ids ?? []);

@@ -139,6 +139,7 @@ export default function EnterpriseBlogPostDetailsScreen() {
   const router = useRouter();
   const { enterpriseId, isLoadingEnterprise, enterpriseError } = useCurrentEnterprise();
   const [post, setPost] = useState<BlogManageDetail | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [postForm, setPostForm] = useState<BlogForm | null>(null);
   const [error, setError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
@@ -159,7 +160,15 @@ export default function EnterpriseBlogPostDetailsScreen() {
     if (!params.id) return;
     if (!enterpriseId) return;
     void getMyBlogPost(params.id, enterpriseId)
-      .then(setPost)
+      .then((loaded) => {
+        if (enterpriseId && loaded.enterprise_id && loaded.enterprise_id !== enterpriseId) {
+          setAccessDenied(true);
+          setPost(null);
+          return;
+        }
+        setAccessDenied(false);
+        setPost(loaded);
+      })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Unable to load this post."));
   }, [params.id, enterpriseId]);
 
@@ -173,6 +182,7 @@ export default function EnterpriseBlogPostDetailsScreen() {
       .catch(() => getMyBlogForm(post.kind, enterpriseId ?? undefined).then(setPostForm).catch(() => setPostForm(null)));
   }, [enterpriseId, post?.form_id, post?.form_version, post?.kind]);
 
+  if (accessDenied) return <main className="min-h-screen bg-[#f8fafc] p-6"><div role="alert" className="mx-auto max-w-3xl rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">Access Denied: This blog post belongs to another enterprise.</div></main>;
   if (error || (!isLoadingEnterprise && enterpriseError)) return <main className="min-h-screen bg-[#f8fafc] p-6"><div role="alert" className="mx-auto max-w-3xl rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">{error || enterpriseError}</div></main>;
   if (!post) return <main className="min-h-screen bg-[#f8fafc] p-6"><div role="status" className="mx-auto max-w-3xl animate-pulse space-y-4"><div className="h-8 w-64 rounded bg-[#e5eee9]" /><div className="h-64 rounded-2xl bg-white" /></div></main>;
 
@@ -228,6 +238,16 @@ export default function EnterpriseBlogPostDetailsScreen() {
               className="mt-5 rounded-xl border border-amber-300 px-4 py-2.5 text-sm font-semibold text-amber-800 hover:bg-amber-50 disabled:opacity-50"
             >
               Unpublish
+            </button>
+          )}
+          {post.status === "published" && post.is_live && (
+            <button
+              type="button"
+              disabled={actionBusy}
+              onClick={() => router.push(`${basePath}/edit-revision?id=${encodeURIComponent(post.id)}`)}
+              className="mt-5 ml-3 rounded-xl bg-[#1f6a58] px-4 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-[#175245] transition-colors disabled:opacity-50"
+            >
+              Edit &amp; submit changes
             </button>
           )}
           {(post.status === "draft" || post.status === "rejected") && (

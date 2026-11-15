@@ -87,7 +87,11 @@ export function validateFieldConfiguration(field: SchemaFieldItem): string | nul
     }
   }
 
-  if (["select", "radio", "multi_select", "multiselect", "checkbox"].includes(field.type)) {
+  if (["select", "dropdown", "radio", "multi_select", "multiselect", "checkbox"].includes(field.type)) {
+    const isCategoryField = field.key === "category" || field.key === "category_id" || field.label?.trim().toLowerCase() === "category";
+    const isTagsField = field.key === "tags" || field.key === "article_tags" || field.label?.trim().toLowerCase() === "tags";
+    if (isCategoryField || isTagsField) return null;
+
     const configuredOptions = field.key === "post_type" ? "Blog, News" : validation.options;
     const options = typeof configuredOptions === "string"
       ? configuredOptions.split(",").map((option) => option.trim()).filter(Boolean)
