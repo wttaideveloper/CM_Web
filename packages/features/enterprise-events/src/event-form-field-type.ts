@@ -16,6 +16,7 @@ export function getEventFormFieldType(field: ActiveEventFormField): string {
   if (/rich(_text)?/i.test(rawKey) || /rich(_text)?/i.test(rawLabel)) return "rich_text";
   if (/radio/i.test(rawKey) || /radio/i.test(rawLabel)) return "radio";
   if (/(^|_)date(_|$)/i.test(rawKey) || /(^|_)date(_|$)/i.test(rawLabel)) return "date";
+  if (["time_zone", "timezone"].includes(rawKey) || rawLabel === "time zone" || rawLabel === "timezone") return rawRenderer || "select";
   if (/(^|_)time(_|$)/i.test(rawKey) || /(^|_)time(_|$)/i.test(rawLabel)) return "time";
   if (/tags?/i.test(rawKey) || /tags?/i.test(rawLabel)) return "tags";
   if (/ima(ge|he)s?|photos?/i.test(rawKey) || /ima(ge|he)s?|photos?/i.test(rawLabel)) return "media_upload";

@@ -64,6 +64,8 @@ describe("getEventFormFieldType", () => {
     expect(getEventFormFieldType(createField({ label: "radio", renderer: "text" }))).toBe("radio");
     expect(getEventFormFieldType(createField({ label: "date", renderer: "text" }))).toBe("date");
     expect(getEventFormFieldType(createField({ label: "time", renderer: "text" }))).toBe("time");
+    expect(getEventFormFieldType(createField({ label: "Time Zone", core_key: "time_zone", renderer: "select" }))).toBe("select");
+    expect(getEventFormFieldType(createField({ label: "Time Zone", core_key: "time_zone", renderer: "text" }))).toBe("text");
   });
 });
 

@@ -66,6 +66,7 @@ export default function EnterpriseBlogRevisionScreen() {
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState("");
+  const [accessDenied, setAccessDenied] = useState(false);
   const [notice, setNotice] = useState("");
 
   const isBlogsPath = typeof window !== "undefined" && window.location.pathname.startsWith("/admin/blogs");
@@ -80,6 +81,13 @@ export default function EnterpriseBlogRevisionScreen() {
     }
     void Promise.all([getMyBlogPost(postId, enterpriseId), listBlogCategories()])
       .then(async ([postData, catData]) => {
+        if (enterpriseId && postData.enterprise_id && postData.enterprise_id !== enterpriseId) {
+          if (!cancelled) {
+            setAccessDenied(true);
+            setLoading(false);
+          }
+          return;
+        }
         const source = postData.pending_revision ?? postData;
         const sourceFormId = source.form_id ?? postData.form_id;
         const sourceFormVersion = source.form_version ?? postData.form_version;
@@ -204,6 +212,7 @@ export default function EnterpriseBlogRevisionScreen() {
     return <label key={field.key} className="block text-sm font-medium">{field.label}{field.required ? " *" : ""}{isLong ? <textarea rows={type === "rich_text" ? 5 : 3} value={value == null ? "" : String(value)} onChange={(event) => setFieldValue(field.key, event.target.value)} className={inputClass} placeholder={field.placeholder ?? undefined} /> : <input type={type === "number" ? "number" : type === "date" || type === "time" || type === "url" ? type : "text"} value={value == null ? "" : String(value)} onChange={(event) => setFieldValue(field.key, type === "number" ? Number(event.target.value) : event.target.value)} className={inputClass} placeholder={field.placeholder ?? undefined} />}{field.help_text && <span className="mt-1 block text-xs text-[#7f9d94]">{field.help_text}</span>}</label>;
   };
 
+  if (accessDenied) return <main className="min-h-screen bg-[#f8fafc] p-6 text-[#06201c]"><div role="alert" className="mx-auto max-w-3xl rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">Access Denied: This blog post belongs to another enterprise.</div></main>;
   if (loading) return <main className="min-h-screen bg-[#f8fafc] p-6 text-[#06201c]"><div className="mx-auto max-w-7xl animate-pulse space-y-4"><div className="h-8 w-48 rounded bg-[#edf3f0]" /><div className="h-4 w-72 rounded bg-[#edf3f0]" /><div className="h-64 rounded-xl bg-white p-6 shadow-sm" /></div></main>;
   const live = post?.live_version;
   const liveTitle = live?.title || post?.title || "Live Article";

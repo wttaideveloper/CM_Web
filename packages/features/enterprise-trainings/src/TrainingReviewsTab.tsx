@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { getTrainingReviewsAudit, listEnterpriseReviewsManage, listTrainingReviews } from "./trainings.service";
@@ -119,17 +119,17 @@ export function TrainingReviewsTab({ trainingId, reviewId, openAuditOnLoad = fal
   const counts = reviewsQuery.data?.counts ?? { pending: 0, approved: 0, rejected: 0, all: 0 };
   useEffect(() => {
     if (initialStatus === "deleted") {
-      setStatusFilter("deleted");
+      setStatusFilter((curr) => curr === "deleted" ? curr : "deleted");
     }
     if (!reviewId || reviewsQuery.isLoading) return;
     const notifiedReview = reviews.find((review) => review.id === reviewId);
     if (notifiedReview) {
-      setStatusFilter(notifiedReview.moderation_status);
+      setStatusFilter((curr) => curr === notifiedReview.moderation_status ? curr : notifiedReview.moderation_status);
     } else if (deletedReviews.some((entry) => entry.review_id === reviewId || entry.id === reviewId) || initialStatus === "deleted") {
-      setStatusFilter("deleted");
+      setStatusFilter((curr) => curr === "deleted" ? curr : "deleted");
     }
     if (typeof document !== "undefined") document.getElementById(`training-review-${reviewId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [reviewId, reviewsQuery.isLoading, reviewsQuery.data, reviews, deletedReviews, initialStatus]);
+  }, [reviewId, reviewsQuery.isLoading, reviews, deletedReviews, initialStatus]);
   const summaryReviews = approvedReviewsQuery.data ?? reviews;
   const filteredReviews = useMemo(() => reviews
     .filter((review) => statusFilter !== "deleted" && (statusFilter === "all" || review.moderation_status === statusFilter))
@@ -142,15 +142,31 @@ export function TrainingReviewsTab({ trainingId, reviewId, openAuditOnLoad = fal
     : reviewId
       ? Math.max(1, Math.ceil(filteredReviews.length / REVIEW_PAGE_SIZE))
       : Math.max(1, Math.ceil((reviewsQuery.data?.total ?? filteredReviews.length) / (reviewsQuery.data?.page_size ?? REVIEW_PAGE_SIZE)));
-  useEffect(() => { if (page > reviewPages) setPage(reviewPages); }, [page, reviewPages]);
+  useEffect(() => {
+    if (page > reviewPages) setPage((curr) => curr === reviewPages ? curr : reviewPages);
+  }, [page, reviewPages]);
 
-  useEffect(() => { setPage(1); }, [statusFilter, ratingFilter, sortOrder]);
+  const isInitialFilterMount = useRef(true);
+  useEffect(() => {
+    if (isInitialFilterMount.current) {
+      isInitialFilterMount.current = false;
+      return;
+    }
+    setPage((curr) => curr === 1 ? curr : 1);
+  }, [statusFilter, ratingFilter, sortOrder]);
+
   useEffect(() => {
     if (!reviewId || reviewsQuery.isLoading) return;
     const reviewIndex = filteredReviews.findIndex((review) => review.id === reviewId);
-    if (reviewIndex >= 0) setPage(Math.floor(reviewIndex / REVIEW_PAGE_SIZE) + 1);
+    if (reviewIndex >= 0) {
+      const targetPage = Math.floor(reviewIndex / REVIEW_PAGE_SIZE) + 1;
+      setPage((curr) => curr === targetPage ? curr : targetPage);
+    }
     const deletedIndex = deletedReviews.findIndex((entry) => entry.review_id === reviewId || entry.id === reviewId);
-    if (statusFilter === "deleted" && deletedIndex >= 0) setPage(Math.floor(deletedIndex / REVIEW_PAGE_SIZE) + 1);
+    if (statusFilter === "deleted" && deletedIndex >= 0) {
+      const targetPage = Math.floor(deletedIndex / REVIEW_PAGE_SIZE) + 1;
+      setPage((curr) => curr === targetPage ? curr : targetPage);
+    }
   }, [reviewId, reviewsQuery.isLoading, filteredReviews, deletedReviews, statusFilter]);
   useEffect(() => {
     if (reviewId) document.getElementById(`training-review-${reviewId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });

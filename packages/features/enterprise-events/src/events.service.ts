@@ -1,4 +1,5 @@
 import { authenticatedFetch } from "@ihp/auth";
+import { deepNormalizeMediaUrls } from "@ihp/shared";
 import { mediaItemUrl, mediaUrlsFromUnknown, normalizeDocumentEntries, type EventDocumentEntry } from "./event-media";
 import { parseEventOrdersResponse, type EventOrder } from "./event-orders-parser";
 import { parseEventReview, parseManagedEventReviews, normalizeUtcDate } from "./event-reviews.service";
@@ -1061,7 +1062,7 @@ function isEvent(value: unknown): value is Event {
 }
 
 function normalizeNullableEventFields(event: Event): Event {
-  return {
+  return deepNormalizeMediaUrls({
     ...event,
     price: event.price ?? "",
     pricing_type: event.pricing_type ?? (event.price !== null && event.price !== undefined && String(event.price).trim() !== "" && Number(event.price) !== 0 ? "paid" : "free"),
@@ -1074,7 +1075,7 @@ function normalizeNullableEventFields(event: Event): Event {
     max_participants: event.max_participants ?? "",
     registration_open_at: event.registration_open_at ?? "",
     registration_close_at: event.registration_close_at ?? "",
-  };
+  });
 }
 
 function isPagination(value: unknown): value is EventListPagination {
@@ -1628,7 +1629,7 @@ export async function createEvent(payload: CreateEventPayload): Promise<Event> {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(deepNormalizeMediaUrls(payload)),
   });
 
   if (!response.ok) {
@@ -2181,7 +2182,7 @@ export async function updateEvent(eventId: string, payload: UpdateEventPayload):
     method: "PUT",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(deepNormalizeMediaUrls(payload)),
   });
 
   if (!response.ok) {

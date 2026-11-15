@@ -18,9 +18,13 @@
     "start": "npm run start --workspace=@ihp/shell",
     "lint": "npm run lint --workspace=@ihp/shell",
     "lint:enterprise": "npm run lint --workspace=@ihp/enterprise-admin",
-    "lint:platform": "npm run lint --workspace=@ihp/platform-admin"
+    "lint:platform": "npm run lint --workspace=@ihp/platform-admin",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
-    "concurrently": "^10.0.4"
+    "concurrently": "^10.0.4",
+    "vitest": "^3.0.0",
+    "@vitest/coverage-v8": "^3.0.0"
   }
 }

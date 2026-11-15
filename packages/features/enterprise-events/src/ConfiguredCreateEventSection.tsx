@@ -82,10 +82,21 @@ function fieldType(field: ActiveEventFormField, key: string): string {
   const normKey = key.trim().toLowerCase().replace(/[\s-]+/g, "_");
   const normLabel = (field.label ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
   const renderer = field.renderer?.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (["time_zone", "timezone"].includes(key) || ["time_zone", "timezone"].includes(normKey) || normLabel === "time_zone" || normLabel === "timezone") return "select";
   if (["start_date", "start_datetime", "end_date", "end_datetime", "registration_cutoff", "registration_open_at", "registration_close_at"].includes(key)) return "datetime-local";
   if (isDateTimeType(field.renderer) || isDateTimeType(field.value_type)) return "datetime-local";
   if (["date", "date_input", "date_picker"].includes(renderer) || field.value_type?.trim().toLowerCase() === "date" || ["date", "session_date"].includes(key) || /(^|_)date(_|$)/i.test(normKey) || /(^|_)date(_|$)/i.test(normLabel)) return "date";
-  if (["start_time", "end_time"].includes(key) || ["time", "time_picker", "time_input"].includes(renderer) || field.value_type?.trim().toLowerCase() === "time" || /(^|_)time(_|$)/i.test(normKey) || /(^|_)time(_|$)/i.test(normLabel)) return "time";
+  if (
+    !["time_zone", "timezone"].includes(normKey) &&
+    normLabel !== "time_zone" &&
+    normLabel !== "timezone" &&
+    (["start_time", "end_time"].includes(key) ||
+      ["time", "time_picker", "time_input"].includes(renderer) ||
+      field.value_type?.trim().toLowerCase() === "time" ||
+      /(^|_)time(_|$)/i.test(normKey) ||
+      /(^|_)time(_|$)/i.test(normLabel))
+  )
+    return "time";
   if (["textarea", "long_text"].includes(renderer)) return "textarea";
   if (isNumericField(field) || ["price", "capacity", "min_participants", "max_participants"].includes(key)) return "number";
   if (["url", "reference_url"].includes(renderer) || field.value_type?.trim().toLowerCase() === "url" || ["primary_image", "gallery_images", "videos", "documents", "meeting_link"].includes(key)) return "url";
@@ -217,8 +228,18 @@ function ConfiguredField(props: Omit<Props, "section"> & { field: ActiveEventFor
   };
   const configuredOptions = [...field.options];
   const isCoreCurrency = field.source === "core" && key === "currency";
-  const isTimeZone = ["time_zone", "timezone"].includes(key);
+  const isTimeZone = ["time_zone", "timezone"].includes(key) || ["time_zone", "timezone"].includes((field.core_key ?? field.stable_key ?? "").toLowerCase());
   if (isTimeZone) {
+    if (configuredOptions.length <= 1) {
+      const standardZones = typeof Intl.supportedValuesOf === "function"
+        ? Intl.supportedValuesOf("timeZone")
+        : ["America/New_York", "UTC", "Europe/London", "Asia/Kolkata", "Asia/Dubai", "Asia/Singapore", "Asia/Tokyo", "Australia/Sydney"];
+      for (const zone of standardZones) {
+        if (!configuredOptions.some((option) => option.value === zone)) {
+          configuredOptions.push({ value: zone, label: zone, position: configuredOptions.length });
+        }
+      }
+    }
     if (!configuredOptions.some((option) => option.value === "America/New_York")) {
       configuredOptions.unshift({ value: "America/New_York", label: "America/New_York", position: 0 });
     }

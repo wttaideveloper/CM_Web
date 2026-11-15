@@ -35,7 +35,24 @@ function PreviewField({ field, registry, isTraining }: { field: ConfiguredField;
     const labels = compositeDefinition.subfields.filter((subfield) => enabledFields.includes(subfield.key)).map((subfield) => subfield.label);
     return <span className="mt-1.5 block rounded-lg border border-[#cfe0d8] bg-[#f7fbf8] p-3 font-normal"><span className="block font-semibold text-[#06201c]">{compositeDefinition.title}</span><span className="mt-1 block text-xs text-[#52736a]">{labels.length ? `${compositeDefinition.fieldNoun[0]?.toUpperCase()}${compositeDefinition.fieldNoun.slice(1)} fields: ${labels.join(", ")}` : compositeDefinition.description}</span></span>;
   }
-  if (taxonomySemantic && isEventCoreFieldRuntimeSourced(field.coreKey)) return <div><select aria-label={field.label} disabled className={base}><option>{taxonomySemantic.optionsSource === "event_categories" ? "Event Categories (loaded at runtime)" : "Enterprise locations (loaded at runtime)"}</option></select><span className="mt-1 block text-xs font-normal text-[#52736a]">{taxonomySemantic.description}</span></div>;
+  if (isTraining && (field.coreKey === "time_zone" || field.coreKey === "currency")) {
+    const label = field.coreKey === "time_zone" ? "Time Zones (loaded at runtime)" : "Currencies (loaded at runtime)";
+    return <div><select aria-label={field.label} disabled className={base}><option>{label}</option></select><span className="mt-1 block text-xs font-normal text-[#52736a]">Choices come from standard system reference values.</span></div>;
+  }
+  if (taxonomySemantic && (isEventCoreFieldRuntimeSourced(field.coreKey) || taxonomySemantic.optionsSource === "standard_reference" || taxonomySemantic.optionsSource === "domain_owned")) {
+    const label = taxonomySemantic.optionsSource === "event_categories"
+      ? "Event Categories (loaded at runtime)"
+      : taxonomySemantic.optionsSource === "enterprise_locations"
+      ? "Enterprise locations (loaded at runtime)"
+      : field.coreKey === "time_zone"
+      ? "Time Zones (loaded at runtime)"
+      : field.coreKey === "currency"
+      ? "Currencies (loaded at runtime)"
+      : field.coreKey === "event_type"
+      ? "Event Types (loaded at runtime)"
+      : `${field.label} (system choices)`;
+    return <div><select aria-label={field.label} disabled className={base}><option>{label}</option></select><span className="mt-1 block text-xs font-normal text-[#52736a]">{taxonomySemantic.description}</span></div>;
+  }
   if (registryRuntimeSourced && !trainingDeliveryMode) return <div><select aria-label={field.label} disabled className={base}><option>Training values (loaded at runtime)</option></select><span className="mt-1 block text-xs font-normal text-[#52736a]">Values are supplied by the Training runtime source.</span></div>;
   if (["rich_text", "rich_text_editor"].includes(renderer)) return <div className="mt-1.5 overflow-hidden rounded-lg border border-[#cfe0d8] bg-white"><div className="flex flex-wrap gap-1 border-b border-[#dfe9e4] bg-[#f7fbf8] p-2 text-xs font-bold text-[#1f6a58]"><span className="rounded bg-white px-2 py-1">B</span><span className="rounded bg-white px-2 py-1 italic">I</span><span className="rounded bg-white px-2 py-1 underline">U</span><span className="rounded bg-white px-2 py-1">H2</span><span className="rounded bg-white px-2 py-1">Link</span></div><textarea aria-label={field.label} placeholder={field.placeholder || "Write formatted content..."} className="min-h-24 w-full resize-y border-0 px-3 py-2 text-sm outline-none" /></div>;
   if (["textarea", "long_text"].includes(renderer)) return <textarea aria-label={field.label} placeholder={field.placeholder} className={`${base} min-h-20`} />;

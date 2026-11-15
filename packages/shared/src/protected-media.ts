@@ -6,6 +6,62 @@ export const LEGACY_PROTECTED_MEDIA_ORIGIN = "https://chat.wisdomtooth.tech";
 /** Exact Hostinger staging API origin used by the approved legacy-media resolver. */
 export const STAGING_PROTECTED_MEDIA_ORIGIN = "https://marketplace-api.wisdomtoothstage.tech";
 
+/**
+ * Rewrites legacy media URLs (e.g. from chat.wisdomtooth.tech) to the active staging/production
+ * marketplace media origin (e.g. marketplace-api.wisdomtoothstage.tech).
+ */
+export function normalizeMediaOrigin(value: string | null | undefined): string {
+  if (!value || typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const targetOrigin = originOf(process.env.NEXT_PUBLIC_PROTECTED_MEDIA_ORIGIN?.trim()) ?? STAGING_PROTECTED_MEDIA_ORIGIN;
+  const legacyOrigins = [
+    LEGACY_PROTECTED_MEDIA_ORIGIN,
+    "http://chat.wisdomtooth.tech",
+  ];
+  for (const legacy of legacyOrigins) {
+    if (trimmed.startsWith(legacy)) {
+      return `${targetOrigin}${trimmed.slice(legacy.length)}`;
+    }
+  }
+  try {
+    const url = new URL(trimmed);
+    if (url.hostname === "chat.wisdomtooth.tech") {
+      const target = new URL(targetOrigin);
+      url.protocol = target.protocol;
+      url.host = target.host;
+      return url.toString();
+    }
+  } catch {
+    // not a valid URL
+  }
+  return trimmed;
+}
+
+/** Recursively normalizes legacy media URLs in strings, arrays, and plain objects. */
+export function deepNormalizeMediaUrls<T>(obj: T): T {
+  if (typeof obj === "string") {
+    return normalizeMediaOrigin(obj) as unknown as T;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map((item) => deepNormalizeMediaUrls(item)) as unknown as T;
+  }
+  if (
+    obj &&
+    typeof obj === "object" &&
+    !(obj instanceof Blob) &&
+    !(obj instanceof Date) &&
+    !(obj instanceof RegExp)
+  ) {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      result[key] = deepNormalizeMediaUrls(value);
+    }
+    return result as unknown as T;
+  }
+  return obj;
+}
+
 const REQUEST_HEADERS_TO_FORWARD = ["accept", "if-range", "range"] as const;
 const RESPONSE_HEADERS_TO_COPY = [
   "accept-ranges",

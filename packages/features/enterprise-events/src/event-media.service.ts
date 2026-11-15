@@ -1,4 +1,5 @@
 import { authenticatedFetch, refreshAuthSessionSingleFlight } from "@ihp/auth";
+import { normalizeMediaOrigin } from "@ihp/shared";
 
 import { isEventMediaField, parseEventMediaPolicy, type EventMediaAsset, type EventMediaField, type EventMediaPolicy } from "./event-media";
 
@@ -95,7 +96,7 @@ export function uploadEventMedia(
           reject(new EventMediaApiError(request.status, "The Event media service returned an invalid upload asset."));
           return;
         }
-        resolve({ id: body.id, field: body.field as EventMediaField, url: body.url, name: body.name, size: body.size, type: body.type, attached: body.attached, expires_at: typeof body.expires_at === "string" ? body.expires_at : null });
+        resolve({ id: body.id, field: body.field as EventMediaField, url: normalizeMediaOrigin(body.url), name: body.name, size: body.size, type: body.type, attached: body.attached, expires_at: typeof body.expires_at === "string" ? body.expires_at : null });
       };
       const data = new FormData();
       data.append("file", file);

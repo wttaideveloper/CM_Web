@@ -8,6 +8,7 @@
  */
 
 import { authenticatedFetch } from "@ihp/auth";
+import { deepNormalizeMediaUrls, normalizeMediaOrigin } from "@ihp/shared";
 import type { TrainingStatus, TrainingStatusUpdatePayload } from "./training-status";
 import {
   parseManagedTrainingReviews,
@@ -383,13 +384,13 @@ export async function getTrainingEbook(trainingId: string, sectionId: string, le
   const query = includeDrafts ? "?include_drafts=true" : "";
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/ebook${query}`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "load the eBook");
-  return unwrapApiData((await res.json()) as unknown);
+  return deepNormalizeMediaUrls(unwrapApiData((await res.json()) as unknown));
 }
 
 export async function saveTrainingEbook(trainingId: string, sectionId: string, lessonId: string, payload: EbookDocumentPayload): Promise<unknown> {
-  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/ebook`, { method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}/ebook`, { method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(deepNormalizeMediaUrls(payload)) });
   if (!res.ok) throw await createTrainingsApiError(res, "save the eBook");
-  return unwrapApiData((await res.json()) as unknown);
+  return deepNormalizeMediaUrls(unwrapApiData((await res.json()) as unknown));
 }
 
 export async function validateTrainingEbook(trainingId: string, sectionId: string, lessonId: string): Promise<unknown> {
@@ -872,7 +873,7 @@ function normaliseTrainingRecord(value: TrainingListItem | TrainingDetail): Trai
   }
   if (!Array.isArray(normalised.sections) && Array.isArray(normalised.sections_typed)) normalised.sections = normalised.sections_typed;
   if (!Array.isArray(normalised.instructor_notes) && Array.isArray(normalised.instructor_notes_typed)) normalised.instructor_notes = normalised.instructor_notes_typed;
-  return normalised;
+  return deepNormalizeMediaUrls(normalised);
 }
 
 function parsePaginatedResponse(value: unknown): TrainingPaginatedResponse {
@@ -1066,7 +1067,7 @@ export async function uploadTrainingMedia(
             : "";
   if (!url) throw new Error("Trainings API returned an upload response without a media URL.");
   return {
-    url,
+    url: normalizeMediaOrigin(url),
     name: typeof value.name === "string" && value.name.trim() ? value.name : uploadFile.name,
     size: typeof value.size === "number" && Number.isFinite(value.size) ? value.size : uploadFile.size,
     ...(assetId ? { asset_id: assetId } : {}),
@@ -1095,12 +1096,12 @@ export async function createTraining(payload: CreateTrainingPayload): Promise<Tr
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(deepNormalizeMediaUrls(payload)),
   });
   if (!res.ok) throw await createTrainingsApiError(res, "create this training");
   const value = (await res.json()) as unknown;
   if (!isTrainingDetail(value) && !isTrainingListItem(value)) throw new Error("Trainings API returned an invalid created training response.");
-  return value as TrainingDetail;
+  return normaliseTrainingRecord(value as TrainingDetail) as TrainingDetail;
 }
 
 /** Retrieves one Training by id, optionally through a caller-owned authenticated proxy path. */
@@ -1118,12 +1119,12 @@ export async function updateTraining(trainingId: string, payload: UpdateTraining
     method: "PUT",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(deepNormalizeMediaUrls(payload)),
   });
   if (!res.ok) throw await createTrainingsApiError(res, "update this training");
   const value = (await res.json()) as unknown;
   if (!isTrainingDetail(value) && !isTrainingListItem(value)) throw new Error("Trainings API returned an invalid updated training response.");
-  return value as TrainingDetail;
+  return normaliseTrainingRecord(value as TrainingDetail) as TrainingDetail;
 }
 
 /** Deletes a Training. */
@@ -1198,7 +1199,7 @@ export async function restoreTraining(trainingId: string): Promise<TrainingDetai
 export async function getTrainingSections(trainingId: string): Promise<unknown[]> {
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/sections`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "load training sections");
-  return readArrayResponse(await res.json(), "sections");
+  return deepNormalizeMediaUrls(readArrayResponse(await res.json(), "sections"));
 }
 
 /** Creates a section. */
@@ -1263,10 +1264,10 @@ export async function createTrainingLesson(
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(deepNormalizeMediaUrls(payload)),
   });
   if (!res.ok) throw await createTrainingsApiError(res, "create this lesson");
-  return (await res.json()) as unknown;
+  return deepNormalizeMediaUrls((await res.json()) as unknown);
 }
 
 /** Updates a lesson. */
@@ -1278,10 +1279,10 @@ export async function updateTrainingLesson(
 ): Promise<unknown> {
   const res = await fetch(
     `${trainingsBasePath}${encodeURIComponent(trainingId)}/sections/${encodeURIComponent(sectionId)}/lessons/${encodeURIComponent(lessonId)}`,
-    { method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
+    { method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(deepNormalizeMediaUrls(payload)) },
   );
   if (!res.ok) throw await createTrainingsApiError(res, "update this lesson");
-  return (await res.json()) as unknown;
+  return deepNormalizeMediaUrls((await res.json()) as unknown);
 }
 
 /** Deletes a lesson. */
@@ -1806,7 +1807,7 @@ export async function getTrainingContent(trainingId: string, isPreview = false):
   const qs = isPreview ? "?is_preview=true" : "";
   const res = await fetch(`${trainingsBasePath}${encodeURIComponent(trainingId)}/content${qs}`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw await createTrainingsApiError(res, "load training content");
-  return unwrapApiData((await res.json()) as unknown);
+  return deepNormalizeMediaUrls(unwrapApiData((await res.json()) as unknown));
 }
 
 /** Gets a single lesson — `GET /sections/{sid}/lessons/{lid}` with optional `?is_preview`. */
@@ -1817,7 +1818,7 @@ export async function getTrainingLesson(trainingId: string, sectionId: string, l
     { credentials: "include", cache: "no-store" },
   );
   if (!res.ok) throw await createTrainingsApiError(res, "load this lesson");
-  return unwrapApiData((await res.json()) as unknown);
+  return deepNormalizeMediaUrls(unwrapApiData((await res.json()) as unknown));
 }
 
 /** Downloads one lesson's protected media/content. */

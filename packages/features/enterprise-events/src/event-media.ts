@@ -1,5 +1,5 @@
 export const EVENT_MEDIA_FIELDS = ["primary_image", "gallery_images", "videos", "documents"] as const;
-import { LEGACY_PROTECTED_MEDIA_ORIGIN, STAGING_PROTECTED_MEDIA_ORIGIN } from "@ihp/shared/protected-media";
+import { LEGACY_PROTECTED_MEDIA_ORIGIN, STAGING_PROTECTED_MEDIA_ORIGIN, normalizeMediaOrigin } from "@ihp/shared/protected-media";
 
 function originOrNull(value: string | undefined): string | null {
   try {
@@ -32,7 +32,11 @@ export function protectedMediaPreviewUrl(
       || url.hash
       || url.port
       || !configuredOrigin
-      || (url.origin !== configuredOrigin && !(configuredOrigin === STAGING_PROTECTED_MEDIA_ORIGIN && url.origin === LEGACY_PROTECTED_MEDIA_ORIGIN))
+      || (
+        url.origin !== configuredOrigin
+        && !(configuredOrigin === STAGING_PROTECTED_MEDIA_ORIGIN && url.origin === LEGACY_PROTECTED_MEDIA_ORIGIN)
+        && !(configuredOrigin === LEGACY_PROTECTED_MEDIA_ORIGIN && url.origin === STAGING_PROTECTED_MEDIA_ORIGIN)
+      )
     ) return value;
     return `${proxyPath}?url=${encodeURIComponent(url.toString())}`;
   } catch {
@@ -178,7 +182,7 @@ export function normalizeDocumentEntry(value: unknown): EventDocumentEntry | nul
   if (typeof value === "string" && value.trim()) return { url: value.trim() };
   if (!isRecord(value) || typeof value.url !== "string" || !value.url.trim()) return null;
   return {
-    url: value.url.trim(),
+    url: normalizeMediaOrigin(value.url),
     ...(typeof value.name === "string" ? { name: value.name } : {}),
     ...(typeof value.id === "string" ? { id: value.id } : {}),
     ...(numberValue(value.size) !== null ? { size: value.size as number } : {}),
@@ -193,7 +197,8 @@ export function normalizeDocumentEntries(value: unknown): EventDocumentEntry[] {
 }
 
 export function mediaItemUrl(value: unknown): string {
-  return typeof value === "string" ? value.trim() : isRecord(value) && typeof value.url === "string" ? value.url.trim() : "";
+  const raw = typeof value === "string" ? value.trim() : isRecord(value) && typeof value.url === "string" ? value.url.trim() : "";
+  return normalizeMediaOrigin(raw);
 }
 
 /** Extracts authoritative backend URLs while preserving their path and extension exactly. */
@@ -210,12 +215,12 @@ export function mediaDocuments(values: readonly EventMediaItem[]): EventDocument
 }
 
 export function buildEventMediaPayload(values: { primary_image: string; gallery_images: readonly EventMediaItem[]; videos: readonly EventMediaItem[]; documents: readonly EventMediaItem[] }): EventMediaPayload {
-  return { primary_image: values.primary_image.trim(), gallery_images: mediaUrls(values.gallery_images), videos: mediaUrls(values.videos), documents: mediaDocuments(values.documents) };
+  return { primary_image: normalizeMediaOrigin(values.primary_image.trim()), gallery_images: mediaUrls(values.gallery_images), videos: mediaUrls(values.videos), documents: mediaDocuments(values.documents) };
 }
 
 export function buildEventMediaUpdatePayload(values: { primary_image: string; gallery_images: readonly EventMediaItem[]; videos: readonly EventMediaItem[]; documents: readonly EventMediaItem[] }, initial: { primary_image: string; gallery_images: readonly EventMediaItem[]; videos: readonly EventMediaItem[]; documents: readonly EventMediaItem[] }): EventMediaUpdatePayload {
   const payload: EventMediaUpdatePayload = {};
-  if (values.primary_image !== initial.primary_image) payload.primary_image = values.primary_image.trim() || null;
+  if (values.primary_image !== initial.primary_image) payload.primary_image = normalizeMediaOrigin(values.primary_image.trim()) || null;
   if (JSON.stringify(values.gallery_images) !== JSON.stringify(initial.gallery_images)) payload.gallery_images = mediaUrls(values.gallery_images);
   if (JSON.stringify(values.videos) !== JSON.stringify(initial.videos)) payload.videos = mediaUrls(values.videos);
   if (JSON.stringify(values.documents) !== JSON.stringify(initial.documents)) payload.documents = mediaDocuments(values.documents);

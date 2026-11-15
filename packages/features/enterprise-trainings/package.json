@@ -9,6 +9,7 @@
     "@ihp/auth": "0.1.0",
     "@ihp/enterprise-dashboard": "0.1.0",
     "@ihp/enterprise-runtime": "0.1.0",
+    "@ihp/shared": "0.1.0",
     "@ihp/ui": "0.1.0",
     "@tanstack/react-query": "^5.90.0",
     "@types/qrcode": "^1.5.6",

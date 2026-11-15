@@ -85,11 +85,12 @@ test("does not route any media through the proxy when no public media origin is 
   assert.equal(protectedMediaPreviewUrl(url), url);
 });
 
-test("preserves complete backend media URLs and never invents an extension", () => {
-  const completeUrl = "https://chat.wisdomtooth.tech/api/v1/events/media/asset-1.pdf";
-  const incompleteUrl = "https://chat.wisdomtooth.tech/api/v1/events/media/asset-1";
-  assert.equal(mediaItemUrl({ id: "asset-1", url: completeUrl, name: "guide.pdf" }), completeUrl);
-  assert.deepEqual(mediaUrlsFromUnknown([{ id: "asset-1", url: completeUrl }, incompleteUrl]), [completeUrl, incompleteUrl]);
+test("preserves complete backend media URLs and normalizes legacy origin", () => {
+  const completeUrl = "https://marketplace-api.wisdomtoothstage.tech/api/v1/events/media/asset-1.pdf";
+  const legacyUrl = "https://chat.wisdomtooth.tech/api/v1/events/media/asset-1.pdf";
+  const incompleteUrl = "https://marketplace-api.wisdomtoothstage.tech/api/v1/events/media/asset-1";
+  assert.equal(mediaItemUrl({ id: "asset-1", url: legacyUrl, name: "guide.pdf" }), completeUrl);
+  assert.deepEqual(mediaUrlsFromUnknown([{ id: "asset-1", url: legacyUrl }, incompleteUrl]), [completeUrl, incompleteUrl]);
   assert.equal(protectedMediaPreviewUrl(completeUrl, "/api/event-media", MEDIA_ORIGIN), `/api/event-media?url=${encodeURIComponent(completeUrl)}`);
   assert.equal(protectedMediaPreviewUrl(incompleteUrl, "/api/event-media", MEDIA_ORIGIN), `/api/event-media?url=${encodeURIComponent(incompleteUrl)}`);
 });
