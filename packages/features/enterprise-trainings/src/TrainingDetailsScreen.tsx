@@ -560,6 +560,31 @@ function TrainingDetailsContent({
   const activeFormQuery = useActiveTrainingFormConfiguration(!historicalFormQuery.data);
   const formConfig = historicalFormQuery.data ?? activeFormQuery.data;
 
+  const trainingData = trainingQuery.data;
+  const trainingDataRecord = (trainingData as unknown as Record<string, unknown>) ?? {};
+
+  const trainingLessonDefaults = useMemo(() => ({
+    meetingProvider: trainingData?.meeting_provider ?? "",
+    meetingLink: trainingData?.meeting_link ?? "",
+    deliveryInstructions: trainingData?.delivery_instructions ?? "",
+    venue: trainingData?.venue ?? "",
+    address: trainingData?.address ?? "",
+    startDate: trainingData?.start_date ?? "",
+    startTime: typeof trainingDataRecord.start_time === "string" ? trainingDataRecord.start_time : "",
+    endDate: trainingData?.end_date ?? "",
+    endTime: typeof trainingDataRecord.end_time === "string" ? trainingDataRecord.end_time : "",
+  }), [
+    trainingData?.meeting_provider,
+    trainingData?.meeting_link,
+    trainingData?.delivery_instructions,
+    trainingData?.venue,
+    trainingData?.address,
+    trainingData?.start_date,
+    trainingDataRecord.start_time,
+    trainingData?.end_date,
+    trainingDataRecord.end_time,
+  ]);
+
   if (trainingQuery.isLoading) {
     return (
       <div className="rounded-2xl border border-[#e1ebe6] bg-white p-6 shadow-sm" aria-live="polite" aria-busy="true">
@@ -747,27 +772,6 @@ function TrainingDetailsContent({
   const pricingType = [trainingRecord.pricing_type, trainingRecord.pricingType]
     .find((value): value is string => typeof value === "string" && value.trim().length > 0)?.trim().toLowerCase();
   const isFreeTraining = pricingType === "free" || (!pricingType && (training.price === null || training.price === undefined || training.price.trim() === ""));
-  const trainingLessonDefaults = useMemo(() => ({
-    meetingProvider: training.meeting_provider ?? "",
-    meetingLink: training.meeting_link ?? "",
-    deliveryInstructions: training.delivery_instructions ?? "",
-    venue: training.venue ?? "",
-    address: training.address ?? "",
-    startDate: training.start_date ?? "",
-    startTime: typeof trainingRecord.start_time === "string" ? trainingRecord.start_time : "",
-    endDate: training.end_date ?? "",
-    endTime: typeof trainingRecord.end_time === "string" ? trainingRecord.end_time : "",
-  }), [
-    training.meeting_provider,
-    training.meeting_link,
-    training.delivery_instructions,
-    training.venue,
-    training.address,
-    training.start_date,
-    trainingRecord.start_time,
-    training.end_date,
-    trainingRecord.end_time,
-  ]);
   const legacySessions = Array.isArray(trainingRecord.sessions) ? trainingRecord.sessions as Array<Record<string, unknown>> : [];
   const primaryImageUrl = getTrainingMediaPreviewUrl(training.primary_image);
 
