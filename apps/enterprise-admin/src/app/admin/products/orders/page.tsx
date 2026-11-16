@@ -6,7 +6,7 @@ import CurrentEnterpriseGuard from "@/components/CurrentEnterpriseGuard";
 export default function EnterpriseProductOrdersPage() {
   return (
     <CurrentEnterpriseGuard>
-      {() => <ProductOrdersScreen />}
+      {({ enterpriseId }) => <ProductOrdersScreen enterpriseId={enterpriseId} />}
     </CurrentEnterpriseGuard>
   );
 }

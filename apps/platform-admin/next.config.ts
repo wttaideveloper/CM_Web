@@ -224,6 +224,21 @@ const nextConfig: NextConfig = {
 
     fallback.push(...buildCommerceProxyRoutes(platformApiBaseUrl));
 
+    fallback.push(
+      {
+        source: "/api/v1/enterprises/:path*/orders",
+        destination: `${platformApiBaseUrl}/enterprises/:path*/orders`,
+      },
+      {
+        source: "/api/v1/admin/orders/:path*",
+        destination: `${platformApiBaseUrl}/admin/orders/:path*`,
+      },
+      {
+        source: "/api/v1/cart/orders/:path*",
+        destination: `${platformApiBaseUrl}/cart/orders/:path*`,
+      },
+    );
+
     return { fallback };
   },
 };
