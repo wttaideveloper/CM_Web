@@ -6,8 +6,16 @@ export type AvailabilityScheduleItem = {
   slot_length?: string;
 };
 
+/** Backend-generated availability for one calendar day. */
+export type ServiceGeneratedAvailabilityDay = {
+  day: string;
+  date: string;
+  slots: string[];
+};
+
 export type ServiceDto = {
   id: string;
+  tenant_id?: string | null;
   enterprise_id: string;
   location_id?: string | null;
   service_name: string;
@@ -26,9 +34,41 @@ export type ServiceDto = {
   currency?: string;
   cancellation_policy?: string;
   availability_schedule?: AvailabilityScheduleItem[];
+  availability?: ServiceGeneratedAvailabilityDay[];
+  /** Backend list aliases retained for compatibility with the OpenAPI list response. */
+  description?: string | null;
+  category?: string;
+  duration_minutes?: number;
+  price?: number;
+  status?: ServiceStatus;
   rating?: number | null;
   reviews_count?: number;
   reviews?: ServiceReviewPreview[];
+};
+
+export type ServiceStatus = "draft" | "active" | "inactive";
+
+export type ServiceListQuery = {
+  search?: string;
+  tenant_id?: string;
+  enterprise_id?: string;
+  category?: string;
+  location_id?: string;
+  status?: ServiceStatus;
+  page?: number;
+  page_size?: number;
+};
+
+export type ServicePaginationMeta = {
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+};
+
+export type PaginatedServiceList = {
+  items: ServiceDto[];
+  pagination: ServicePaginationMeta;
 };
 
 /** Approved review preview included with Service detail responses. */
@@ -92,7 +132,7 @@ export type ServiceListItem = {
   price: string;
   duration: string;
   availability: "Available" | "Unavailable";
-  status: "Active" | "Inactive";
+  status: "Active" | "Inactive" | "Draft";
   enterprise: string;
   bookings: string;
   rating?: number | null;

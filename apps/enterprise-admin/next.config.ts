@@ -168,6 +168,14 @@ const nextConfig: NextConfig = {
         destination: `${chatApiV1Base}/services/:path*`,
       },
       {
+        source: "/api/v1/service-bookings",
+        destination: `${chatApiV1Base}/service-bookings`,
+      },
+      {
+        source: "/api/v1/service-bookings/:path*",
+        destination: `${chatApiV1Base}/service-bookings/:path*`,
+      },
+      {
         source: "/api/v1/attributes",
         destination: `${chatApiV1Base}/attributes`,
       },

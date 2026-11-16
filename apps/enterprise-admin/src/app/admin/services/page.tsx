@@ -17,6 +17,7 @@ export default function EnterpriseServicesPage() {
           createHref="/admin/services/create"
           detailHrefBase="/admin/services"
           editHrefBase="/admin/services"
+          bookingManagementHref="/admin/services/bookings"
           readOnly={readOnly}
         /></EnterpriseCatalogManagement>
       )}

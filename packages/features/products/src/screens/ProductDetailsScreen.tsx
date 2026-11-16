@@ -469,7 +469,7 @@ export default function ProductDetailsScreen({
           </div>
         )}
       </section>
-      {blogsTab ? blogsTab(product) : null}
+      {blogsTab ? <div className="mt-5">{blogsTab(product)}</div> : null}
     </>
   );
 }

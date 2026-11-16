@@ -11,6 +11,7 @@ import { formatCurrency } from "@ihp/shared";
 import { activateService, deactivateService, getServiceById } from "../services/service.service";
 import type { ServiceDto } from "../types/service.types";
 import type { ServiceDetailsScreenProps } from "../types/service-screen-config.types";
+import { ServiceAvailabilitySchedule } from "./ServiceAvailabilitySchedule";
 import { ServiceReviewsSummary } from "./ServiceReviewsSummary";
 
 function resolveEnterpriseName(enterprise: EnterpriseDto) {
@@ -383,6 +384,11 @@ export default function ServiceDetailsScreen({
         <ServiceReviewsSummary service={service} />
       </section>
 
+      <ServiceAvailabilitySchedule
+        configuredSchedule={service.availability_schedule}
+        generatedAvailability={service.availability}
+      />
+
       <section className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
         <div>
           <h3 className="text-lg font-bold text-[#06201c]">Additional Attributes</h3>
@@ -420,7 +426,7 @@ export default function ServiceDetailsScreen({
           </div>
         )}
       </section>
-      {blogsTab ? blogsTab(service) : null}
+      {blogsTab ? <div className="mt-5">{blogsTab(service)}</div> : null}
     </>
   );
 }

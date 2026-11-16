@@ -19,6 +19,7 @@ export type ServicesListScreenProps = {
   createHref?: string;
   detailHrefBase?: string;
   editHrefBase?: string;
+  bookingManagementHref?: string;
   enterpriseName?: string;
   enterprisesLoader?: EnterpriseOptionsLoader;
   enterpriseLocationsLoader?: EnterpriseLocationsLoader;

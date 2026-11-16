@@ -9,7 +9,14 @@ import { formatCurrency } from "@ihp/shared";
 
 import { createService } from "../services/service.service";
 import { SERVICE_CATEGORY_OPTIONS } from "../constants/service-category-options";
-import type { AvailabilityScheduleItem } from "../types/service.types";
+import {
+  buildServiceAvailabilitySchedule,
+  buildServiceScheduleReviewRows,
+  parseOptionalMaxParticipants,
+  validateMaxParticipants,
+  validateServiceSchedule,
+  type ServiceScheduleDraft,
+} from "../service-validation";
 import type {
   ServiceCreateScreenProps,
   ServiceProviderOption,
@@ -17,13 +24,7 @@ import type {
 
 const tabs = ["Service Info", "Pricing", "Availability", "Review"];
 
-type WeekdaySchedule = {
-  day: string;
-  enabled: boolean;
-  startTime: string;
-  endTime: string;
-  slotLength: string;
-};
+type WeekdaySchedule = ServiceScheduleDraft;
 
 const initialWeekdays: WeekdaySchedule[] = [
   { day: "Monday", enabled: true, startTime: "09:00", endTime: "18:00", slotLength: "60" },
@@ -86,20 +87,17 @@ function resolveOptionLabel(value: string, options: { value: string; label: stri
   return options.find((option) => option.value === value)?.label || value || "Not provided";
 }
 
-function buildAvailabilitySchedule(days: WeekdaySchedule[]): AvailabilityScheduleItem[] {
-  return days
-    .filter((day) => day.enabled)
-    .map((day) => ({
-      day: day.day.toLowerCase(),
-      is_available: true,
-      start_time: day.startTime,
-      end_time: day.endTime,
-      slot_length: day.slotLength,
-    }));
-}
-
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return <span className="text-sm font-bold text-[#06201c]">{children}</span>;
+}
+
+function ScheduleReviewValue({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#7f9d94]">{label}</p>
+      <p className="mt-1 font-semibold text-[#06201c]">{value || "Not provided"}</p>
+    </div>
+  );
 }
 
 function controlClass() {
@@ -238,7 +236,10 @@ export default function ServiceCreateScreen({
   const reviewDeliveryFormat = resolveOptionLabel(deliveryFormat, deliveryFormatOptions);
   const reviewCurrency = resolveOptionLabel(currency, currencyOptions);
   const reviewCancellationPolicy = resolveOptionLabel(cancellationPolicy, cancellationPolicyOptions);
-  const availabilitySchedule = buildAvailabilitySchedule(weekdays);
+  const availabilitySchedule = buildServiceAvailabilitySchedule(weekdays);
+  const reviewScheduleRows = buildServiceScheduleReviewRows(weekdays);
+  const scheduleValidation = validateServiceSchedule(availabilitySchedule);
+  const maxParticipantsError = validateMaxParticipants(maxParticipants);
   const reviewLocationName = selectedLocation
     ? [
         selectedLocation.location_name?.trim(),
@@ -250,6 +251,7 @@ export default function ServiceCreateScreen({
   const reviewCustomAttributes = customAttributes.filter(
     (attribute) => attribute.attribute_name.trim() && attribute.attribute_value.trim(),
   );
+  const reviewMaxParticipants = maxParticipants.trim() || "Not provided";
 
   async function fetchEnterprises() {
     if (isEnterpriseAdmin) {
@@ -374,7 +376,7 @@ export default function ServiceCreateScreen({
     const trimmedServiceCategory = serviceCategory.trim();
     const parsedPrice = Number(servicePrice.trim());
     const parsedMinutes = Number(duration.trim());
-    const parsedMaxParticipants = optionalNumber(maxParticipants);
+    const parsedMaxParticipants = parseOptionalMaxParticipants(maxParticipants);
     const trimmedProviderName = optionalText(providerName);
     const trimmedProviderUserId = optionalText(providerUserId);
     const trimmedDeliveryFormat = optionalText(deliveryFormat);
@@ -389,9 +391,15 @@ export default function ServiceCreateScreen({
       !trimmedServiceCategory ||
       !isValidServicePrice(servicePrice) ||
       !isValidServiceDuration(duration) ||
+      !scheduleValidation.isValid ||
+      maxParticipantsError ||
       (isEnterpriseAdmin && !trimmedTenantId)
     ) {
-      setError("Please complete all required service fields before creating.");
+      setError(
+        maxParticipantsError ||
+          Object.values(scheduleValidation.fieldErrors)[0] ||
+          "Please complete all required service fields before creating.",
+      );
       return;
     }
 
@@ -623,6 +631,11 @@ export default function ServiceCreateScreen({
                   onChange={(event) => setMaxParticipants(event.target.value)}
                   className={inputClass()}
                 />
+                {maxParticipantsError ? (
+                  <p className="mt-1.5 text-xs font-semibold text-[#b42318]" role="alert">
+                    {maxParticipantsError}
+                  </p>
+                ) : null}
               </label>
               <label className="block">
                 <FieldLabel>Provider/Instructor</FieldLabel>
@@ -855,6 +868,11 @@ export default function ServiceCreateScreen({
                       Not available
                     </div>
                   )}
+                  {scheduleValidation.fieldErrors[day.day.toLowerCase()] ? (
+                    <p className="text-xs font-semibold text-[#b42318] md:col-span-4" role="alert">
+                      {scheduleValidation.fieldErrors[day.day.toLowerCase()]}
+                    </p>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -1017,6 +1035,10 @@ export default function ServiceCreateScreen({
                   </p>
                 </div>
                 <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">Maximum participants</p>
+                  <p className="mt-1 text-sm font-semibold text-[#06201c]">{reviewMaxParticipants}</p>
+                </div>
+                <div>
                   <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
                     Delivery Format
                   </p>
@@ -1043,6 +1065,31 @@ export default function ServiceCreateScreen({
                   <p className="mt-1 text-sm font-semibold text-[#06201c]">
                     {reviewComplete ? "Ready to publish" : "Incomplete"}
                   </p>
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#7f9d94]">
+                  Weekly availability schedule
+                </p>
+                <div className="mt-3 space-y-2">
+                  {reviewScheduleRows.map((row) => (
+                    <div
+                      key={row.day}
+                      className="grid gap-2 rounded-xl bg-[#f9fcfa] p-3 text-sm sm:grid-cols-[1.1fr_1fr_1fr_1fr_1fr] sm:items-center"
+                    >
+                      <div>
+                        <p className="font-bold text-[#06201c]">{row.day}</p>
+                        <p className="text-xs text-[#52736a]">
+                          {row.enabled ? "Available" : "Not available"}
+                        </p>
+                      </div>
+                      <ScheduleReviewValue label="Start" value={row.enabled ? row.startTime : "Not available"} />
+                      <ScheduleReviewValue label="End" value={row.enabled ? row.endTime : "Not available"} />
+                      <ScheduleReviewValue label="Slot length" value={row.enabled ? (row.slotLength ? `${row.slotLength} min` : "Not provided") : "Not available"} />
+                      <span className="text-xs text-[#7f9d94]">{row.enabled ? "Bookable day" : "Closed day"}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
 

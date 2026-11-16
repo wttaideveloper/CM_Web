@@ -8,7 +8,8 @@
   "dependencies": {
     "@ihp/attributes": "0.1.0",
     "@ihp/enterprises": "0.1.0",
-    "@ihp/shared": "0.1.0"
+    "@ihp/shared": "0.1.0",
+    "@tanstack/react-query": "^5.90.21"
   },
   "peerDependencies": {
     "next": "^16.2.9",

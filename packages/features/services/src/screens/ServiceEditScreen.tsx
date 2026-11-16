@@ -15,6 +15,13 @@ import { getEnterpriseLocations, type EnterpriseLocationDto } from "@ihp/enterpr
 
 import { getServiceById, updateService } from "../services/service.service";
 import { SERVICE_CATEGORY_OPTIONS } from "../constants/service-category-options";
+import {
+  buildServiceAvailabilitySchedule,
+  parseOptionalMaxParticipants,
+  validateMaxParticipants,
+  validateServiceSchedule,
+  type ServiceScheduleDraft,
+} from "../service-validation";
 import type { AvailabilityScheduleItem, ServiceDto } from "../types/service.types";
 import type {
   ServiceEditScreenProps,
@@ -29,13 +36,7 @@ type ServiceAttributeRow = {
   isDeleted?: boolean;
 };
 
-type WeekdaySchedule = {
-  day: string;
-  enabled: boolean;
-  startTime: string;
-  endTime: string;
-  slotLength: string;
-};
+type WeekdaySchedule = ServiceScheduleDraft;
 
 const categoryOptions = SERVICE_CATEGORY_OPTIONS;
 
@@ -103,6 +104,15 @@ const cancellationPolicyOptions = [
 ];
 
 const timeOptions = generateHourlyTimeOptions();
+const slotLengthOptions = ["30", "45", "60", "90"];
+
+function timeOptionsWithCurrentValue(value: string) {
+  if (!value || timeOptions.some((option) => option.value === value)) {
+    return timeOptions;
+  }
+
+  return [...timeOptions, { value, label: value }];
+}
 
 function resolveOptionValue(value: string | undefined, options: { value: string; label: string }[]) {
   if (!value) {
@@ -172,18 +182,6 @@ function buildWeekdayState(schedule?: AvailabilityScheduleItem[]) {
   });
 }
 
-function buildAvailabilitySchedule(days: WeekdaySchedule[]): AvailabilityScheduleItem[] {
-  return days
-    .filter((day) => day.enabled)
-    .map((day) => ({
-      day: day.day.toLowerCase(),
-      is_available: true,
-      start_time: day.startTime,
-      end_time: day.endTime,
-      slot_length: day.slotLength,
-    }));
-}
-
 function createAttributeRow(attribute?: DynamicAttributeDto): ServiceAttributeRow {
   return {
     id: attribute?.id,
@@ -229,6 +227,10 @@ export default function ServiceEditScreen({
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const availabilitySchedule = buildServiceAvailabilitySchedule(weekdays);
+  const scheduleValidation = validateServiceSchedule(availabilitySchedule);
+  const maxParticipantsError = validateMaxParticipants(maxParticipants);
 
   async function fetchLocations(enterpriseId: string, nextLocationId?: string | null) {
     if (!enterpriseId) {
@@ -353,7 +355,7 @@ export default function ServiceEditScreen({
     const trimmedCategory = serviceCategory.trim();
     const parsedPrice = Number(servicePrice);
     const parsedDuration = Number(duration);
-    const parsedMaxParticipants = optionalNumber(maxParticipants);
+    const parsedMaxParticipants = parseOptionalMaxParticipants(maxParticipants);
     const trimmedProviderName = optionalText(providerName);
     const trimmedProviderUserId = optionalText(providerUserId);
     const trimmedDeliveryFormat = optionalText(deliveryFormat);
@@ -361,11 +363,6 @@ export default function ServiceEditScreen({
     const trimmedCurrency = optionalText(currency);
     const trimmedCancellationPolicy = optionalText(cancellationPolicy);
     const availabilityStatus = weekdays.some((day) => day.enabled);
-    const hasIncompleteSchedule = weekdays.some(
-      (day) =>
-        day.enabled &&
-        (!day.startTime.trim() || !day.endTime.trim() || !day.slotLength.trim()),
-    );
 
     if (
       !trimmedName ||
@@ -378,8 +375,12 @@ export default function ServiceEditScreen({
       return;
     }
 
-    if (hasIncompleteSchedule) {
-      setError("Please complete start time, end time, and slot length for each available day.");
+    if (!scheduleValidation.isValid || maxParticipantsError) {
+      setError(
+        maxParticipantsError ||
+          Object.values(scheduleValidation.fieldErrors)[0] ||
+          "Please complete the availability schedule.",
+      );
       return;
     }
 
@@ -412,7 +413,7 @@ export default function ServiceEditScreen({
         ...(parsedPackagePrice !== undefined ? { package_price: parsedPackagePrice } : {}),
         ...(trimmedCurrency ? { currency: trimmedCurrency } : {}),
         ...(trimmedCancellationPolicy ? { cancellation_policy: trimmedCancellationPolicy } : {}),
-        availability_schedule: buildAvailabilitySchedule(weekdays),
+        availability_schedule: availabilitySchedule,
       });
 
       const attributeOperations: Promise<unknown>[] = [];
@@ -668,6 +669,11 @@ export default function ServiceEditScreen({
               onChange={(event) => setMaxParticipants(event.target.value)}
               className={inputClass()}
             />
+            {maxParticipantsError ? (
+              <p className="mt-1.5 text-xs font-semibold text-[#b42318]" role="alert">
+                {maxParticipantsError}
+              </p>
+            ) : null}
           </label>
           <label className="block">
             <FieldLabel>Provider/Instructor</FieldLabel>
@@ -808,7 +814,7 @@ export default function ServiceEditScreen({
                         )
                       }
                     >
-                      {timeOptions.map((time) => (
+                      {timeOptionsWithCurrentValue(day.startTime).map((time) => (
                         <option key={time.value} value={time.value}>
                           {time.label}
                         </option>
@@ -827,7 +833,7 @@ export default function ServiceEditScreen({
                         )
                       }
                     >
-                      {timeOptions.map((time) => (
+                      {timeOptionsWithCurrentValue(day.endTime).map((time) => (
                         <option key={time.value} value={time.value}>
                           {time.label}
                         </option>
@@ -846,7 +852,7 @@ export default function ServiceEditScreen({
                         )
                       }
                     >
-                      {["30", "45", "60", "90"].map((option) => (
+                      {[...new Set([...slotLengthOptions, day.slotLength])].map((option) => (
                         <option key={option} value={option}>
                           {option} min
                         </option>
@@ -858,6 +864,11 @@ export default function ServiceEditScreen({
                     Not available
                   </div>
                 )}
+                {scheduleValidation.fieldErrors[day.day.toLowerCase()] ? (
+                  <p className="text-xs font-semibold text-[#b42318] md:col-span-4" role="alert">
+                    {scheduleValidation.fieldErrors[day.day.toLowerCase()]}
+                  </p>
+                ) : null}
               </div>
             ))}
           </div>
