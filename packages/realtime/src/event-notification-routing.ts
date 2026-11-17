@@ -154,6 +154,16 @@ const trainingEnrollmentTypes = new Set([
   "enrollment_created",
 ]);
 
+const orderNotificationTypes = new Set([
+  "order_placed",
+  "order_created",
+  "product_order_created",
+  "order_cancellation_requested",
+  "product_order_cancellation_requested",
+  "order_refund_requested",
+  "product_order_refund_requested",
+]);
+
 function readNonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
@@ -300,7 +310,8 @@ function resolveNotificationEventName(notification: NotificationRouteInput): str
       || eventDiscussionTypes.has(normalizedCandidate)
       || trainingDiscussionTypes.has(normalizedCandidate)
       || reviewSubmissionTypes.has(normalizedCandidate)
-      || reviewModerationTypes.has(normalizedCandidate);
+      || reviewModerationTypes.has(normalizedCandidate)
+      || orderNotificationTypes.has(normalizedCandidate);
   });
   if (knownType) return knownType.toLocaleLowerCase();
 
@@ -378,6 +389,12 @@ export function resolveNotificationTarget(
   scope: "enterprise" | "platform",
 ): string | null {
   const eventName = resolveNotificationEventName(notification);
+  if (orderNotificationTypes.has(eventName)) {
+    const data = notificationData(notification);
+    const orderId = data.order_id || data.orderId || data.item_id;
+    const prefix = scope === "platform" ? "/products/orders" : "/admin/products/orders";
+    return `${prefix}${orderId ? `?order_id=${encodeURIComponent(String(orderId))}` : ""}`;
+  }
   if (scope === "platform") {
     if (eventName.toLocaleLowerCase() === "event_submitted") return "/approval-queue?type=events";
     if (eventFeedbackTypes.has(eventName)) {

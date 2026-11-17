@@ -24,7 +24,7 @@ type ReviewStatus = "pending_review" | "changes_requested" | "approved" | "rejec
 interface ReviewItem {
   id: string;
   title: string;
-  type: "Blog" | "News";
+  type: "Blog" | "News" | "Blog & News";
   category: string;
   categoryId?: string | null;
   enterprise: string;
@@ -57,7 +57,13 @@ const STATUS_LABEL: Record<ReviewStatus, string> = {
 const toReviewItem = (post: BlogManageItem | BlogManageDetail): ReviewItem => ({
   id: post.id,
   title: post.title,
-  type: post.kind === "news" ? "News" : "Blog",
+  type:
+    post.kind === "both" ||
+    ("custom_fields" in post && (post.custom_fields as Record<string, unknown>)?.post_type === "both")
+      ? "Blog & News"
+      : post.kind === "news"
+      ? "News"
+      : "Blog",
   category: post.category ?? "Uncategorized",
   categoryId: "category_id" in post ? post.category_id ?? null : null,
   enterprise: post.business_name ?? "Platform Partner",
@@ -225,7 +231,7 @@ export default function PlatformBlogApprovalQueueScreen() {
   const [categories, setCategories] = useState<BlogCategory[]>([]);
   const [allItems, setAllItems] = useState<ReviewItem[]>([]);
   const [statusFilter, setStatusFilter] = useState<"all" | ReviewStatus>("pending_review");
-  const [typeFilter, setTypeFilter] = useState<"all" | "Blog" | "News">("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | "Blog" | "News" | "Blog & News">("all");
   const [search, setSearch] = useState("");
 
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -545,9 +551,10 @@ export default function PlatformBlogApprovalQueueScreen() {
                   aria-label="Filter by content type"
                   className="h-10 rounded-xl border border-[#d7e5df] bg-white px-3 py-2 text-xs font-semibold text-[#175245] outline-none transition-colors focus:border-[#1f6a58] focus:ring-2 focus:ring-[#1f6a58]/20 cursor-pointer"
                 >
-                  <option value="all">Blog and News</option>
+                  <option value="all">All Content</option>
                   <option value="Blog">Blog Articles</option>
                   <option value="News">News Bulletins</option>
+                  <option value="Blog & News">Blog &amp; News</option>
                 </select>
               </div>
 
@@ -693,13 +700,23 @@ export default function PlatformBlogApprovalQueueScreen() {
                         <div className="flex flex-wrap items-center gap-2">
                           <span
                             className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${
-                              item.type === "News"
-                                ? "bg-sky-50 text-sky-800 border-sky-200"
-                                : "bg-teal-50 text-teal-800 border-teal-200"
+                              item.type === "Blog & News"
+                                ? "bg-[#e8f6ee] text-[#1f6a58] border-[#a3d7c3]"
+                                : item.type === "News"
+                                ? "bg-[#eff8f3] text-[#175245] border-[#b6dfce]"
+                                : "bg-[#f4faf7] text-[#2c4e44] border-[#d7e5df]"
                             }`}
                           >
-                            <span className={`h-1.5 w-1.5 rounded-full ${item.type === "News" ? "bg-sky-600" : "bg-teal-600"}`} />
-                            {item.type === "News" ? "News Bulletin" : "Blog Article"}
+                            <span
+                              className={`h-1.5 w-1.5 rounded-full ${
+                                item.type === "Blog & News"
+                                  ? "bg-[#1f6a58]"
+                                  : item.type === "News"
+                                  ? "bg-[#175245]"
+                                  : "bg-[#2c4e44]"
+                              }`}
+                            />
+                            {item.type === "Blog & News" ? "Blog & News" : item.type === "News" ? "News Bulletin" : "Blog Article"}
                           </span>
 
                           <span className="inline-flex items-center rounded-full bg-[#f4faf7] px-2.5 py-0.5 text-xs font-semibold text-[#175245] border border-[#dceee5]">

@@ -296,6 +296,21 @@ const nextConfig: NextConfig = {
       },
     );
 
+    fallback.push(
+      {
+        source: "/api/v1/enterprises/:path*/orders",
+        destination: `${chatApiV1Base}/enterprises/:path*/orders`,
+      },
+      {
+        source: "/api/v1/admin/orders/:path*",
+        destination: `${chatApiV1Base}/admin/orders/:path*`,
+      },
+      {
+        source: "/api/v1/cart/orders/:path*",
+        destination: `${chatApiV1Base}/cart/orders/:path*`,
+      },
+    );
+
     return { fallback };
   },
 };

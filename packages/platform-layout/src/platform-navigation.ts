@@ -56,6 +56,7 @@ export const platformNavigationGroups: readonly PlatformNavigationGroup[] = [
       { label: "Users", href: "/users", icon: "settings" },
       { label: "Super Admins", href: "/super-admins", icon: "settings" },
       { label: "Products", href: "/products", icon: "package" },
+      { label: "Product Orders", href: "/products/orders", icon: "package" },
       { label: "Services", href: "/services", icon: "service" },
       { label: "Events", href: "/events", icon: "calendar" },
       { label: "Trainings", href: "/trainings", icon: "training" },

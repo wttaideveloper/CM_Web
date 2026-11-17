@@ -105,18 +105,19 @@ export default function PlatformBlogFormsListScreen() {
     setPage(1);
   }, [search, type, status]);
   useEffect(() => {
-    if (!createOpen && !activationForm && !detailsForm && !previewForm) return;
+    if (!createOpen && !activationForm && !detailsForm && !previewForm && !confirmation) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setCreateOpen(false);
         setActivationForm(null);
         setDetailsForm(null);
         setPreviewForm(null);
+        setConfirmation(null);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [createOpen, activationForm, detailsForm, previewForm]);
+  }, [createOpen, activationForm, detailsForm, previewForm, confirmation]);
   useEffect(() => {
     if (!openActionsId) return;
     const handlePointerDown = (event: PointerEvent) => {
@@ -204,6 +205,27 @@ export default function PlatformBlogFormsListScreen() {
     }
   };
 
+  const openDetails = (targetForm: BlogForm) => {
+    setDetailsForm(targetForm);
+    void getAdminBlogForm(targetForm.id)
+      .then((full) => setDetailsForm(full))
+      .catch(() => {});
+  };
+
+  const openPreview = (targetForm: BlogForm) => {
+    setPreviewForm(targetForm);
+    void getAdminBlogForm(targetForm.id)
+      .then((full) => setPreviewForm(full))
+      .catch(() => {});
+  };
+
+  const openActivation = (targetForm: BlogForm) => {
+    setActivationForm(targetForm);
+    void getAdminBlogForm(targetForm.id)
+      .then((full) => setActivationForm(full))
+      .catch(() => {});
+  };
+
   const renderFormActions = (form: BlogForm, isLastRow = false) => (
     <div className="relative" data-form-actions={form.id}>
       <button type="button" aria-label={`Actions for ${form.name}`} title="More actions" aria-haspopup="menu" aria-expanded={openActionsId === form.id} onClick={(event) => {
@@ -222,14 +244,54 @@ export default function PlatformBlogFormsListScreen() {
       </button>
       {openActionsId === form.id && (
       <div role="menu" style={actionMenuPosition ?? undefined} className="fixed z-[60] min-w-[190px] rounded-xl border border-[#edf3f0] bg-white py-1.5 shadow-xl ring-1 ring-black/5">
-        <button type="button" role="menuitem" onClick={() => { setOpenActionsId(null); setDetailsForm(form); }} className="flex w-full items-center gap-2.5 rounded-lg px-3.5 py-2 text-left text-xs font-semibold text-slate-700 transition-colors hover:bg-[#f4faf7] hover:text-[#175245]"><span aria-hidden="true" className="text-sm text-[#52736a]">◉</span>View</button>
-        <button type="button" role="menuitem" onClick={() => { setOpenActionsId(null); setPreviewForm(form); }} className="flex w-full items-center gap-2.5 rounded-lg px-3.5 py-2 text-left text-xs font-semibold text-slate-700 transition-colors hover:bg-[#f4faf7] hover:text-[#175245]"><span aria-hidden="true" className="text-sm text-[#52736a]">▣</span>Preview</button>
+        <button type="button" role="menuitem" onClick={() => { setOpenActionsId(null); openDetails(form); }} className="flex w-full items-center gap-2.5 rounded-lg px-3.5 py-2 text-left text-xs font-semibold text-slate-700 transition-colors hover:bg-[#f4faf7] hover:text-[#175245]"><span aria-hidden="true" className="text-sm text-[#52736a]">◉</span>View</button>
+        <button type="button" role="menuitem" onClick={() => { setOpenActionsId(null); openPreview(form); }} className="flex w-full items-center gap-2.5 rounded-lg px-3.5 py-2 text-left text-xs font-semibold text-slate-700 transition-colors hover:bg-[#f4faf7] hover:text-[#175245]"><span aria-hidden="true" className="text-sm text-[#52736a]">▣</span>Preview</button>
         <button type="button" role="menuitem" disabled={busy} onClick={() => { setOpenActionsId(null); handleEditConfiguration(form); }} className="flex w-full items-center gap-2.5 rounded-lg px-3.5 py-2 text-left text-xs font-semibold text-slate-700 transition-colors hover:bg-[#f4faf7] hover:text-[#175245] disabled:opacity-50"><span aria-hidden="true" className="text-sm text-[#52736a]">✎</span>{form.status === "draft" ? "Edit" : "Edit configuration"}</button>
         {form.status === "draft" && (
-          <button type="button" role="menuitem" disabled={busy} onClick={() => { setOpenActionsId(null); setConfirmation({ title: "Publish this form?", message: "Publishing this form will make it available for enterprise assignment and publication.", confirmLabel: "Publish Form", destructive: false, action: () => run(() => publishAdminBlogForm(form.id), "Form published.") }); }} className="flex w-full items-center gap-2.5 rounded-lg px-3.5 py-2 text-left text-xs font-semibold text-[#175245] transition-colors hover:bg-[#f4faf7] disabled:opacity-50"><span aria-hidden="true" className="text-sm text-[#1f6a58]">✓</span>Publish</button>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={busy}
+            onClick={() => {
+              setOpenActionsId(null);
+              setConfirmation({
+                title: "Publish this form?",
+                message: "Publishing this form will make it available for enterprise assignment and publication.",
+                confirmLabel: "Publish Form",
+                destructive: false,
+                action: () =>
+                  run(async () => {
+                    let rev: number | undefined;
+                    try {
+                      const latest = await getAdminBlogForm(form.id);
+                      rev = latest.revision;
+                    } catch {
+                      rev = form.revision;
+                    }
+                    try {
+                      return await publishAdminBlogForm(form.id, rev);
+                    } catch (err: unknown) {
+                      if (
+                        err instanceof Error &&
+                        (err.message.includes("Someone saved") ||
+                          err.message.includes("409") ||
+                          (err as { status?: number }).status === 409)
+                      ) {
+                        const fresh = await getAdminBlogForm(form.id);
+                        return await publishAdminBlogForm(form.id, fresh.revision);
+                      }
+                      throw err;
+                    }
+                  }, "Form published."),
+              });
+            }}
+            className="flex w-full items-center gap-2.5 rounded-lg px-3.5 py-2 text-left text-xs font-semibold text-[#175245] transition-colors hover:bg-[#f4faf7] disabled:opacity-50"
+          >
+            <span aria-hidden="true" className="text-sm text-[#1f6a58]">✓</span>Publish
+          </button>
         )}
         {form.status === "published" && (
-          <button type="button" role="menuitem" disabled={busy} onClick={() => { setOpenActionsId(null); setActivationForm(form); }} className="flex w-full items-center gap-2.5 rounded-lg px-3.5 py-2 text-left text-xs font-semibold text-[#175245] transition-colors hover:bg-[#f4faf7] disabled:opacity-50"><span aria-hidden="true" className="text-sm text-[#1f6a58]">●</span>Activate</button>
+          <button type="button" role="menuitem" disabled={busy} onClick={() => { setOpenActionsId(null); openActivation(form); }} className="flex w-full items-center gap-2.5 rounded-lg px-3.5 py-2 text-left text-xs font-semibold text-[#175245] transition-colors hover:bg-[#f4faf7] disabled:opacity-50"><span aria-hidden="true" className="text-sm text-[#1f6a58]">●</span>Activate</button>
         )}
         {form.status === "active" && (
           <button type="button" role="menuitem" disabled={busy} onClick={() => { setOpenActionsId(null); setConfirmation({ title: "Deactivate this form?", message: "Enterprises will no longer be able to create new posts with this form configuration.", confirmLabel: "Deactivate Form", destructive: true, action: () => run(() => deactivateAdminBlogForm(form.id), "Form deactivated.") }); }} className="flex w-full items-center gap-2.5 rounded-lg px-3.5 py-2 text-left text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-50 disabled:opacity-50"><span aria-hidden="true" className="text-sm text-amber-600">⊘</span>Deactivate</button>
@@ -334,7 +396,7 @@ export default function PlatformBlogFormsListScreen() {
                 {forms.map((form) => (
                   <tr key={form.id} className="text-[#355a51] transition-colors hover:bg-[#fbfdfc]">
                     <td className="px-4 py-4 font-semibold text-[#06201c]">{typeLabel(form.type)}</td>
-                    <td className="px-4 py-4"><button type="button" onClick={() => setDetailsForm(form)} className="font-bold text-[#06201c] hover:text-[#1f6a58] hover:underline">{form.name}</button><p className="mt-1 text-xs text-[#52736a]">{form.status === "active" ? "Live configuration" : "Configuration"}</p></td>
+                    <td className="px-4 py-4"><button type="button" onClick={() => openDetails(form)} className="font-bold text-[#06201c] hover:text-[#1f6a58] hover:underline">{form.name}</button><p className="mt-1 text-xs text-[#52736a]">{form.status === "active" ? "Live configuration" : "Configuration"}</p></td>
                     <td className="px-4 py-4">{form.status === "draft" ? "Not assigned" : form.scope === "global" ? "Global" : form.scope === "selected" ? `${form.assigned_count ?? form.tenant_ids?.length ?? 0} tenants` : "Not assigned"}</td>
                     <td className="px-4 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${form.status === "draft" ? "border border-amber-200 bg-amber-50 text-amber-800" : form.status === "published" ? "border border-purple-200 bg-purple-50 text-purple-800" : form.status === "active" ? "bg-[#e8f6ee] text-[#175245]" : "bg-slate-100 text-slate-700"}`}>{statusLabel(form.status)}</span></td>
                     <td className="px-4 py-4">v{form.version}</td>
@@ -360,6 +422,26 @@ export default function PlatformBlogFormsListScreen() {
           form={detailsForm}
           onClose={() => setDetailsForm(null)}
           onEditConfiguration={handleEditConfiguration}
+          onDeactivate={(target) => {
+            setDetailsForm(null);
+            setConfirmation({
+              title: "Deactivate this form?",
+              message: "Enterprises will no longer be able to create new posts with this form configuration.",
+              confirmLabel: "Deactivate Form",
+              destructive: true,
+              action: () => run(() => deactivateAdminBlogForm(target.id), "Form deactivated."),
+            });
+          }}
+          onDelete={(target) => {
+            setDetailsForm(null);
+            setConfirmation({
+              title: "Delete unused draft form?",
+              message: "This draft configuration will be permanently deleted.",
+              confirmLabel: "Delete Draft",
+              destructive: true,
+              action: () => run(() => deleteAdminBlogForm(target.id), "Draft form deleted."),
+            });
+          }}
         />
       ) : null}
       {previewForm ? <BlogFormPreviewDialog form={previewForm} onClose={() => setPreviewForm(null)} /> : null}
@@ -445,6 +527,22 @@ export default function PlatformBlogFormsListScreen() {
             void load();
             router.push(`/blog-forms?details=${encodeURIComponent(updated.id)}`);
           }}
+        />
+      )}
+      {confirmation && (
+        <BlogConfirmationModal
+          isOpen={true}
+          title={confirmation.title}
+          message={confirmation.message}
+          confirmLabel={confirmation.confirmLabel}
+          destructive={confirmation.destructive}
+          isPending={busy}
+          onConfirm={async () => {
+            const act = confirmation.action;
+            await act();
+            setConfirmation(null);
+          }}
+          onCancel={() => setConfirmation(null)}
         />
       )}
     </main>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -13,7 +13,7 @@ import { getTrainingStatusBadgeClass, getTrainingStatusLabel } from "./training-
 import { getTrainingAdminNotes, getTrainingById, downloadTrainingNotesPdf, getTrainingMeetingLink, getTrainingModerationHistory, publishTrainingEnterprise, getTrainingParticipantDashboard, getTrainingProviderDashboard, TrainingsApiError } from "./trainings.service";
 import TrainingCalendarAction from "./TrainingCalendarAction";
 import { getTrainingMediaPreviewUrl } from "./training-media-url";
-import { useTrainingHistoricalFormConfiguration } from "./training-form-configuration.queries";
+import { useActiveTrainingFormConfiguration, useTrainingHistoricalFormConfiguration } from "./training-form-configuration.queries";
 import { sanitizeEbookHtml } from "./ebook-html-sanitizer";
 import { ContextualModuleBlogsTab } from "@ihp/enterprise-dashboard";
 import { syncBlogGovernanceFromServer } from "@ihp/shared";
@@ -413,6 +413,65 @@ function TrainingConfiguredFieldItem({
   );
 }
 
+function resolveConfiguredOptionLabel(
+  value: unknown,
+  configuredOptions?: Array<{ value?: unknown; label?: unknown }> | unknown[],
+  fallbackOptions?: unknown[],
+): unknown {
+  if (value === null || value === undefined || value === "") return value;
+
+  const optionsList: Array<{ value: string; label: string }> = [];
+  const addOption = (item: unknown) => {
+    if (!item) return;
+    if (typeof item === "string") {
+      optionsList.push({ value: item, label: item });
+    } else if (typeof item === "object") {
+      const rec = item as Record<string, unknown>;
+      const val = typeof rec.value === "string" ? rec.value : typeof rec.label === "string" ? rec.label : "";
+      const lbl = typeof rec.label === "string" && rec.label ? rec.label : val;
+      if (val) optionsList.push({ value: val, label: lbl });
+    }
+  };
+
+  if (Array.isArray(configuredOptions)) {
+    for (const opt of configuredOptions) addOption(opt);
+  }
+  if (Array.isArray(fallbackOptions)) {
+    for (const opt of fallbackOptions) addOption(opt);
+  }
+
+  if (optionsList.length === 0) return value;
+
+  const mapSingle = (v: unknown): unknown => {
+    if (typeof v !== "string" && typeof v !== "number") return v;
+    const strV = String(v).trim();
+    const match = optionsList.find(
+      (opt) => opt.value === strV || opt.value.toLowerCase() === strV.toLowerCase(),
+    );
+    return match ? match.label : v;
+  };
+
+  if (Array.isArray(value)) {
+    return value.map(mapSingle);
+  }
+
+  if (typeof value === "string") {
+    if (value.includes(",")) {
+      const parts = value.split(",").map((p) => p.trim());
+      const mapped = parts.map((part) => {
+        const match = optionsList.find(
+          (opt) => opt.value === part || opt.value.toLowerCase() === part.toLowerCase(),
+        );
+        return match ? match.label : part;
+      });
+      return mapped.join(", ");
+    }
+    return mapSingle(value);
+  }
+
+  return value;
+}
+
 function formatConfiguredTrainingValue(value: unknown): string {
   if (Array.isArray(value)) return value.map((item) => typeof item === "string" || typeof item === "number" ? String(item) : "").filter(Boolean).join(", ");
   if (typeof value === "boolean") return value ? "Yes" : "No";
@@ -460,10 +519,13 @@ function TrainingDetailsContent({
   const [openReviewAudit, setOpenReviewAudit] = useState(() => searchParams.get("show_audit") === "true");
   const [trainingBlogsActive, setTrainingBlogsActive] = useState(isTrainingBlogsEnabled);
   useEffect(() => {
-    const handleUpdate = () => setTrainingBlogsActive(isTrainingBlogsEnabled());
+    const handleUpdate = () => {
+      const next = isTrainingBlogsEnabled();
+      setTrainingBlogsActive((prev) => (prev === next ? prev : next));
+    };
     window.addEventListener("ihp:blogs-governance-updated", handleUpdate);
     window.addEventListener("storage", handleUpdate);
-    void syncBlogGovernanceFromServer().then(() => setTrainingBlogsActive(isTrainingBlogsEnabled())).catch(() => {});
+    void syncBlogGovernanceFromServer().then(() => handleUpdate()).catch(() => {});
     return () => {
       window.removeEventListener("ihp:blogs-governance-updated", handleUpdate);
       window.removeEventListener("storage", handleUpdate);
@@ -471,13 +533,22 @@ function TrainingDetailsContent({
   }, []);
   const [discussionId, setDiscussionId] = useState<string | undefined>(() => searchParams.get("discussion_id") ?? undefined);
 
+  const tabParam = searchParams.get("tab");
+  const reviewIdParam = searchParams.get("review_id");
+  const showAuditParam = searchParams.get("show_audit");
+  const discussionIdParam = searchParams.get("discussion_id");
+
   useEffect(() => {
-    const requestedTab = searchParams.get("tab");
-    if (trainingDetailsTabs.some((tab) => tab.id === requestedTab)) setActiveTab(requestedTab as TrainingDetailsTab);
-    setNotificationReviewId(searchParams.get("review_id") ?? undefined);
-    setOpenReviewAudit(searchParams.get("show_audit") === "true");
-    setDiscussionId(searchParams.get("discussion_id") ?? undefined);
-  }, [searchParams]);
+    if (tabParam && trainingDetailsTabs.some((tab) => tab.id === tabParam)) {
+      setActiveTab((prev) => (prev === tabParam ? prev : (tabParam as TrainingDetailsTab)));
+    }
+    const nextReviewId = reviewIdParam ?? undefined;
+    setNotificationReviewId((prev) => (prev === nextReviewId ? prev : nextReviewId));
+    const nextShowAudit = showAuditParam === "true";
+    setOpenReviewAudit((prev) => (prev === nextShowAudit ? prev : nextShowAudit));
+    const nextDiscussionId = discussionIdParam ?? undefined;
+    setDiscussionId((prev) => (prev === nextDiscussionId ? prev : nextDiscussionId));
+  }, [tabParam, reviewIdParam, showAuditParam, discussionIdParam]);
   const trainingQuery = useQuery({
     queryKey: ["trainings", "detail", trainingId],
     queryFn: () => getTrainingById(trainingId),
@@ -486,6 +557,33 @@ function TrainingDetailsContent({
     retry: 1,
   });
   const historicalFormQuery = useTrainingHistoricalFormConfiguration(trainingId, Boolean(trainingId));
+  const activeFormQuery = useActiveTrainingFormConfiguration(!historicalFormQuery.data);
+  const formConfig = historicalFormQuery.data ?? activeFormQuery.data;
+
+  const trainingData = trainingQuery.data;
+  const trainingDataRecord = (trainingData as unknown as Record<string, unknown>) ?? {};
+
+  const trainingLessonDefaults = useMemo(() => ({
+    meetingProvider: trainingData?.meeting_provider ?? "",
+    meetingLink: trainingData?.meeting_link ?? "",
+    deliveryInstructions: trainingData?.delivery_instructions ?? "",
+    venue: trainingData?.venue ?? "",
+    address: trainingData?.address ?? "",
+    startDate: trainingData?.start_date ?? "",
+    startTime: typeof trainingDataRecord.start_time === "string" ? trainingDataRecord.start_time : "",
+    endDate: trainingData?.end_date ?? "",
+    endTime: typeof trainingDataRecord.end_time === "string" ? trainingDataRecord.end_time : "",
+  }), [
+    trainingData?.meeting_provider,
+    trainingData?.meeting_link,
+    trainingData?.delivery_instructions,
+    trainingData?.venue,
+    trainingData?.address,
+    trainingData?.start_date,
+    trainingDataRecord.start_time,
+    trainingData?.end_date,
+    trainingDataRecord.end_time,
+  ]);
 
   if (trainingQuery.isLoading) {
     return (
@@ -525,7 +623,7 @@ function TrainingDetailsContent({
     ? trainingRecord.custom_values as Record<string, unknown>
     : {};
   const rawTrainingCustomValues = trainingRecord.custom_values ?? trainingRecord.customValues;
-  const configuredFields = (Array.isArray(historicalFormQuery.data?.sections) ? historicalFormQuery.data.sections : []).flatMap((section) => (Array.isArray(section.fields) ? section.fields : []));
+  const configuredFields = (Array.isArray(formConfig?.sections) ? formConfig.sections : []).flatMap((section) => (Array.isArray(section.fields) ? section.fields : []));
   const getScheduleValue = (key: "start_date" | "end_date" | "start_time" | "end_time"): string | null => {
     const camelKey = key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
     const scheduleRecord = trainingRecord.schedule && typeof trainingRecord.schedule === "object" && !Array.isArray(trainingRecord.schedule)
@@ -549,7 +647,7 @@ function TrainingDetailsContent({
       .find((candidate): candidate is string => typeof candidate === "string" && candidate.trim().length > 0);
     return customValue ?? null;
   };
-  const formSections = Array.isArray(historicalFormQuery.data?.sections) ? historicalFormQuery.data.sections : [];
+  const formSections = Array.isArray(formConfig?.sections) ? formConfig.sections : [];
   const formFields = formSections.flatMap((s) => Array.isArray(s.fields) ? s.fields.map((f) => ({ ...f, sectionTitle: s.title, sectionId: s.id })) : []);
 
   const displayedCoreKeys = new Set([
@@ -570,7 +668,7 @@ function TrainingDetailsContent({
           const key = String(rec.key ?? rec.field_key ?? rec.stable_key ?? rec.field_id ?? `field_${i}`);
           customEntriesMap.set(key, {
             label: typeof rec.label === "string" ? rec.label : undefined,
-            value: rec.value,
+            value: rec.display_value ?? rec.option_label ?? rec.value,
             type: typeof rec.type === "string" ? rec.type : undefined,
             fieldId: typeof rec.field_id === "string" ? rec.field_id : undefined,
           });
@@ -621,10 +719,11 @@ function TrainingDetailsContent({
       if (matchedKeyName) matchedKeys.add(matchedKeyName);
       const sectionName = f.sectionTitle || "Additional Configuration";
       if (!customSectionsMap.has(sectionName)) customSectionsMap.set(sectionName, []);
+      const resolvedValue = resolveConfiguredOptionLabel(foundEntry.value, f.configuredOptions, f.options);
       customSectionsMap.get(sectionName)!.push({
         id: f.id || matchedKeyName || f.key,
         label: f.label || foundEntry.label || humanizeLabel(f.key),
-        value: foundEntry.value,
+        value: resolvedValue,
         type: f.type || foundEntry.type,
       });
     }
@@ -637,11 +736,17 @@ function TrainingDetailsContent({
     const normK = k.toLowerCase();
     const inferredType = entry.type
       || (normK.includes("rich") ? "rich_text" : normK.includes("image") || normK.includes("imah") ? "image" : normK.includes("video") ? "video" : normK.includes("doc") ? "document" : normK.includes("url") ? "url" : normK.includes("tag") ? "tags" : undefined);
+    const matchingFld = formFields.find((f) =>
+      [f.id, f.key, f.apiKey, f.stable_key].some((cand) => cand && cand.toLowerCase().replace(/[^a-z0-9]/g, "") === normK.replace(/[^a-z0-9]/g, ""))
+    );
+    const resolvedValue = matchingFld
+      ? resolveConfiguredOptionLabel(entry.value, matchingFld.configuredOptions, matchingFld.options)
+      : entry.value;
     customSectionsMap.get(sectionName)!.push({
       id: entry.fieldId || k,
-      label: entry.label || humanizeLabel(k),
-      value: entry.value,
-      type: inferredType,
+      label: entry.label || matchingFld?.label || humanizeLabel(k),
+      value: resolvedValue,
+      type: inferredType ?? matchingFld?.type,
     });
   }
 
@@ -667,17 +772,6 @@ function TrainingDetailsContent({
   const pricingType = [trainingRecord.pricing_type, trainingRecord.pricingType]
     .find((value): value is string => typeof value === "string" && value.trim().length > 0)?.trim().toLowerCase();
   const isFreeTraining = pricingType === "free" || (!pricingType && (training.price === null || training.price === undefined || training.price.trim() === ""));
-  const trainingLessonDefaults = {
-    meetingProvider: training.meeting_provider ?? "",
-    meetingLink: training.meeting_link ?? "",
-    deliveryInstructions: training.delivery_instructions ?? "",
-    venue: training.venue ?? "",
-    address: training.address ?? "",
-    startDate: training.start_date ?? "",
-    startTime: typeof trainingRecord.start_time === "string" ? trainingRecord.start_time : "",
-    endDate: training.end_date ?? "",
-    endTime: typeof trainingRecord.end_time === "string" ? trainingRecord.end_time : "",
-  };
   const legacySessions = Array.isArray(trainingRecord.sessions) ? trainingRecord.sessions as Array<Record<string, unknown>> : [];
   const primaryImageUrl = getTrainingMediaPreviewUrl(training.primary_image);
 

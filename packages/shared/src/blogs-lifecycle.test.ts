@@ -9,8 +9,6 @@ import {
   unpublishAdminBlogPost,
   BlogsApiError,
   resetStoredBlogs,
-  getStoredPosts,
-  saveStoredPosts,
 } from "./blogs-api";
 
 describe("Blog Lifecycle and Defect Regression Suite", () => {
@@ -45,81 +43,31 @@ describe("Blog Lifecycle and Defect Regression Suite", () => {
     });
   });
 
-  describe("DEF-001: Unpublish Reason Validation", () => {
-    it("unpublishes post successfully when a valid reason is provided", async () => {
-      const posts = getStoredPosts();
-      const livePost = posts.find((p) => p.status === "published" || p.is_live);
-      if (!livePost) return;
-
-      const result = await unpublishAdminBlogPost(
-        livePost.id,
-        "Taking down for medical review and regulatory verification.",
-      );
-      expect(result.status).toBe("unpublished");
-      expect(result.is_live).toBe(false);
-      expect(result.reviewer_note).toContain("regulatory verification");
-    });
-  });
-
-  describe("DEF-002: Deleting Draft and Rejected Posts", () => {
-    it("allows deleting a draft post cleanly", async () => {
-      const created = await createMyBlogPost({
-        kind: "blog",
-        title: "Temporary Draft To Delete",
-        content: "Draft content...",
-      });
-
-      const delResult = await deleteMyBlogPost(created.id);
-      expect(delResult.message).toBe("Post deleted");
-
-      const posts = await listMyBlogPosts({ pageSize: 100 });
-      expect(posts.items.some((p) => p.id === created.id)).toBe(false);
+  describe("Shadow database removal: API failures propagate", () => {
+    it("unpublishAdminBlogPost rejects when the API is unavailable", async () => {
+      await expect(unpublishAdminBlogPost("post-summit-3", "reason")).rejects.toBeInstanceOf(BlogsApiError);
     });
 
-    it("allows discarding / deleting a rejected post", async () => {
-      const created = await createMyBlogPost({
-        kind: "blog",
-        title: "Rejected Proposal",
-        content: "Proposal content...",
-      });
-
-      // Simulate post being marked as rejected
-      const posts = getStoredPosts();
-      const idx = posts.findIndex((p) => p.id === created.id);
-      if (idx !== -1) {
-        posts[idx] = {
-          ...posts[idx],
-          status: "rejected",
-          status_label: "Rejected",
-        };
-        saveStoredPosts(posts);
-      }
-
-      const delResult = await deleteMyBlogPost(created.id);
-      expect(delResult.message).toBe("Post deleted");
+    it("createMyBlogPost rejects when the API is unavailable", async () => {
+      await expect(createMyBlogPost({ kind: "blog", title: "T", content: "c" })).rejects.toBeInstanceOf(BlogsApiError);
     });
 
-    it("archives a post with audit tracking", async () => {
-      const created = await createMyBlogPost({
-        kind: "blog",
-        title: "Post to Archive",
-        content: "Archived content...",
-      });
+    it("deleteMyBlogPost rejects when the API is unavailable", async () => {
+      await expect(deleteMyBlogPost("post-summit-3")).rejects.toBeInstanceOf(BlogsApiError);
+    });
 
-      const archived = await archiveMyBlogPost(created.id, "Archiving outdated post");
-      expect(archived.status).toBe("unpublished");
-      expect(archived.status_label).toBe("Archived");
+    it("archiveMyBlogPost rejects when the API is unavailable", async () => {
+      await expect(archiveMyBlogPost("post-summit-3", "reason")).rejects.toBeInstanceOf(BlogsApiError);
+    });
+
+    it("listMyBlogPosts rejects when the API is unavailable", async () => {
+      await expect(listMyBlogPosts({ pageSize: 10 })).rejects.toBeInstanceOf(BlogsApiError);
     });
   });
 
   describe("DEFECT-MEDIUM-007: Category Post Count Accuracy", () => {
-    it("returns exact count of matching posts without retaining stale counts", async () => {
-      const categories = await listAdminBlogCategories();
-      expect(Array.isArray(categories)).toBe(true);
-      for (const cat of categories) {
-        expect(typeof cat.post_count).toBe("number");
-        expect(cat.post_count).toBeGreaterThanOrEqual(0);
-      }
+    it("listAdminBlogCategories rejects when the API is unavailable", async () => {
+      await expect(listAdminBlogCategories()).rejects.toBeInstanceOf(BlogsApiError);
     });
   });
 });

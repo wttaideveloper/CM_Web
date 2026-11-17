@@ -831,47 +831,36 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
 
   useEffect(() => {
     if (!lessonQuery.data || editMode) return;
-    {
-      setTitle(lessonTitle);
-      setContent(lessonContent);
-      setVideoUrl(lessonVideoUrl);
-      setLessonTypeValue(toUiLessonType(lessonType));
-      setScheduledAt(toDateTimeLocalValue(lessonScheduledAt));
-      setMeetingType(lessonMeetingType);
-      setMeetingLink(lessonMeetingLink);
-      setJoinUrl(lessonJoinUrl);
-      setVenueName(lessonVenueName);
-      setVenueAddress(lessonVenueAddress);
-      const lessonMatchesExistingDefaults = lessonType === "live"
-        ? Boolean((!trainingLessonDefaults.meetingLink || lessonMeetingLink === trainingLessonDefaults.meetingLink)
-          && (!trainingLessonDefaults.meetingProvider || lessonMeetingType === getMeetingTypeFromProvider(trainingLessonDefaults.meetingProvider)))
-        : lessonType === "venue"
-          ? Boolean((!trainingLessonDefaults.venue || lessonVenueName === trainingLessonDefaults.venue)
-            && (!trainingLessonDefaults.address || lessonVenueAddress === trainingLessonDefaults.address))
-          : false;
-      setDetailsSource(lessonMatchesExistingDefaults && hasExistingLessonDetails(lessonType as "live" | "venue", trainingLessonDefaults) ? "existing" : "new");
-      setIsDownloadable(lessonIsDownloadable);
-      setFileSize(lessonFileSize);
-      setDurationSeconds(lessonVideoDurationCache.get(durationCacheKey) ?? (lessonDuration ? String(Number(lessonDuration) * 60) : ""));
-      setIsPreview(lessonIsPreview);
-      if (lessonVideosInit.length) setLessonVideos(lessonVideosInit);
-      if (lessonDocsInit.length) setLessonDocs(lessonDocsInit);
-      if (lessonNotesInit.length) setLessonNotes(lessonNotesInit);
-    }
+    setTitle(lessonTitle);
+    setContent(lessonContent);
+    setVideoUrl(lessonVideoUrl);
+    setLessonTypeValue(toUiLessonType(lessonType));
+    setScheduledAt(toDateTimeLocalValue(lessonScheduledAt));
+    setMeetingType(lessonMeetingType);
+    setMeetingLink(lessonMeetingLink);
+    setJoinUrl(lessonJoinUrl);
+    setVenueName(lessonVenueName);
+    setVenueAddress(lessonVenueAddress);
+    const lessonMatchesExistingDefaults = lessonType === "live"
+      ? Boolean((!trainingLessonDefaults.meetingLink || lessonMeetingLink === trainingLessonDefaults.meetingLink)
+        && (!trainingLessonDefaults.meetingProvider || lessonMeetingType === getMeetingTypeFromProvider(trainingLessonDefaults.meetingProvider)))
+      : lessonType === "venue"
+        ? Boolean((!trainingLessonDefaults.venue || lessonVenueName === trainingLessonDefaults.venue)
+          && (!trainingLessonDefaults.address || lessonVenueAddress === trainingLessonDefaults.address))
+        : false;
+    setDetailsSource(lessonMatchesExistingDefaults && hasExistingLessonDetails(lessonType as "live" | "venue", trainingLessonDefaults) ? "existing" : "new");
+    setIsDownloadable(lessonIsDownloadable);
+    setFileSize(lessonFileSize);
+    setDurationSeconds(lessonVideoDurationCache.get(durationCacheKey) ?? (lessonDuration ? String(Number(lessonDuration) * 60) : ""));
+    setIsPreview(lessonIsPreview);
+    setLessonVideos(lessonVideosInit);
+    setLessonDocs(lessonDocsInit);
+    setLessonNotes(lessonNotesInit);
   }, [
     lessonQuery.data,
     editMode,
-    title,
-    content,
-    videoUrl,
-    lessonTypeValue,
-    meetingLink,
-    joinUrl,
-    fileSize,
-    durationSeconds,
-    lessonVideos.length,
-    lessonDocs.length,
-    lessonNotes.length,
+    durationCacheKey,
+    trainingLessonDefaults,
     lessonTitle,
     lessonContent,
     lessonVideoUrl,
@@ -882,15 +871,10 @@ function LessonDetail({ trainingId, sectionId, lessonId, trainingDeliveryMode, t
     lessonJoinUrl,
     lessonVenueName,
     lessonVenueAddress,
-    trainingLessonDefaults,
     lessonIsDownloadable,
     lessonFileSize,
-    durationCacheKey,
     lessonDuration,
     lessonIsPreview,
-    lessonVideosInit,
-    lessonDocsInit,
-    lessonNotesInit,
   ]);
 
   if (lessonQuery.isLoading) return <p className="text-xs text-[#52736a]">Loading lesson...</p>;
