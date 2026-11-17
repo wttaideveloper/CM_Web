@@ -203,5 +203,5 @@ export function GroupChatAudioPlayer({ attachmentId, label }: GroupChatAudioPlay
 
   if (error) return <div className="mt-2 text-xs text-[#8f3b2f]" role="alert"><p>{t("voice.playbackFailed")}</p><button type="button" onClick={() => { setAudioUrl(null); setError(false); setAttempt((value) => value + 1); }} className="mt-1 font-semibold underline">{t("voice.retryPlayback")}</button></div>;
   if (!audioUrl) return <p className="mt-2 text-xs text-[#52736a]" role="status">{t("voice.loadingAudio")}</p>;
-  return <audio ref={audioRef} controls preload="none" src={audioUrl} className="mt-2 w-full max-w-[280px]" aria-label={label} onError={() => setError(true)}>{t("voice.audioUnsupported")}</audio>;
+  return <audio ref={audioRef} controls preload="none" src={audioUrl} className="mt-2 block w-full min-w-0 max-w-full" aria-label={label} onError={() => setError(true)}>{t("voice.audioUnsupported")}</audio>;
 }

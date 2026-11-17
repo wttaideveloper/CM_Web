@@ -75,10 +75,21 @@ test("menu and reaction picker state switches across messages and between popup 
   let open = toggleGroupChatPopup(null, { kind: "menu", messageId: "first" });
   open = toggleGroupChatPopup(open, { kind: "menu", messageId: "middle" });
   assert.deepEqual(open, { kind: "menu", messageId: "middle" });
+  open = toggleGroupChatPopup(open, { kind: "read-status", messageId: "middle" });
+  assert.deepEqual(open, { kind: "read-status", messageId: "middle" });
   open = toggleGroupChatPopup(open, { kind: "reaction", messageId: "middle" });
   assert.deepEqual(open, { kind: "reaction", messageId: "middle" });
   open = toggleGroupChatPopup(open, { kind: "reaction", messageId: "middle" });
   assert.equal(open, null);
+});
+
+test("read status and message menus are mutually exclusive across messages", () => {
+  let open = toggleGroupChatPopup(null, { kind: "read-status", messageId: "first" });
+  open = toggleGroupChatPopup(open, { kind: "menu", messageId: "second" });
+  assert.deepEqual(open, { kind: "menu", messageId: "second" });
+  open = toggleGroupChatPopup(open, { kind: "read-status", messageId: "second" });
+  assert.deepEqual(open, { kind: "read-status", messageId: "second" });
+  assert.equal(toggleGroupChatPopup(open, { kind: "read-status", messageId: "second" }), null);
 });
 
 test("outside-pointer and Escape dismissal use the same closed state", () => {

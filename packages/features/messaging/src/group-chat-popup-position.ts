@@ -16,6 +16,8 @@ export type GroupChatPopupPlacement = {
 };
 
 export type GroupChatPopupAlignment = "start" | "end";
+/** Identifies the single contextual overlay allowed within one Group Chat message list. */
+export type GroupChatPopup = { kind: "menu" | "reaction" | "read-status"; messageId: string };
 
 /** Calculates a collision-aware fixed popup position inside the chat history viewport. */
 export function calculateGroupChatPopupPlacement({
@@ -59,11 +61,11 @@ export function calculateGroupChatPopupPlacement({
   return { top, left, maxHeight, maxWidth, side };
 }
 
-/** Toggles one Group message popup while ensuring only one menu or picker is open. */
+/** Toggles one Group message overlay while ensuring only one contextual overlay is open. */
 export function toggleGroupChatPopup(
-  current: { kind: "menu" | "reaction"; messageId: string } | null,
-  requested: { kind: "menu" | "reaction"; messageId: string },
-): { kind: "menu" | "reaction"; messageId: string } | null {
+  current: GroupChatPopup | null,
+  requested: GroupChatPopup,
+): GroupChatPopup | null {
   return current?.kind === requested.kind && current.messageId === requested.messageId
     ? null
     : requested;

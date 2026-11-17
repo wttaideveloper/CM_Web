@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { addGroupChatMessageReaction, createGroupChatReport, downloadGroupChatAttachment, editGroupChatMessage, getGroupChatMessageReadStatus, getGroupChatReactions, hideGroupChatMessage, listGroupChatMessages, listGroupChatPinnedMessages, markGroupChatRead, pinGroupChatMessage, removeGroupChatMessageReaction, retractGroupChatMessage, sendGroupChatAttachmentMessage, sendGroupChatTextMessage, unpinGroupChatMessage, uploadGroupChatAttachment } from "./group-chat/group-chat.service";
 import { groupChatReadStatusQueryKey, mergeGroupChatReadStatusCache, reconcileGroupChatReadState, resolveGroupChatReadThroughBoundary, shouldForceGroupChatReadStatusRefresh, shouldQueueGroupChatReadStatuses, shouldReconcileGroupChatReadAfterReconnect, type GroupChatReadReconciliationState } from "./group-chat/group-chat-read-state";
-import { buildEditGroupChatMessagePayload, buildGroupChatReportPayload, canEditGroupChatMessage, canHideGroupChatMessage, canPinGroupChatMessage, canReactToGroupChatMessage, canReplyToGroupChatMessage, canReportGroupChatMessage, canRetractGroupChatMessage, canSendGroupChatMessage, canShowGroupChatReadStatusIndicator, canViewGroupChatReadStatus, formatGroupChatAttachmentSummary, getGroupChatMessageDisplayText, getGroupChatPostingRestrictionState, getGroupChatReadStatusMemberNames, getGroupChatReadStatusTickState, getGroupChatReadSummaryTickState, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, GROUP_CHAT_REPORT_REASONS, isGroupChatReactionSelected, mergeGroupChatMessagePages, normalizeGroupChatReactionCounts, resolveGroupChatAttachmentMetadata, shouldFetchGroupChatMessageReadStatus } from "./group-chat-models";
+import { buildEditGroupChatMessagePayload, buildGroupChatReportPayload, canEditGroupChatMessage, canHideGroupChatMessage, canPinGroupChatMessage, canReactToGroupChatMessage, canReplyToGroupChatMessage, canReportGroupChatMessage, canRetractGroupChatMessage, canSendGroupChatMessage, canShowGroupChatReadStatusIndicator, formatGroupChatAttachmentSummary, getGroupChatMessageDisplayText, getGroupChatPostingRestrictionState, getGroupChatReadStatusMemberNames, getGroupChatReadStatusTickState, getGroupChatReadSummaryTickState, getGroupChatReplyPreview, getGroupChatReplyReferencePreview, GROUP_CHAT_REPORT_REASONS, isGroupChatReactionSelected, mergeGroupChatMessagePages, normalizeGroupChatReactionCounts, resolveGroupChatAttachmentMetadata, shouldFetchGroupChatMessageReadStatus } from "./group-chat-models";
 import { getGroupChatScrollTopAfterPrepend, isGroupChatNearBottom, shouldFollowGroupChatLatest, shouldScrollGroupChatToLatestOnEntry, GROUP_CHAT_SCROLL_TOP_THRESHOLD, type GroupChatScrollMetrics } from "./group-chat-scroll";
 import { createBrowserGroupChatSpeechRecognition, createGroupChatSpeechController, toggleGroupChatSpeech, type GroupChatSpeechController, type GroupChatSpeechError } from "./group-chat-speech";
 import { GroupChatAudioPlayer, GroupChatVoiceComposer } from "./GroupChatVoiceMessage";
@@ -38,6 +38,8 @@ type Props = {
   readThroughMessageId: string | null;
   conversationEntryKey?: number;
 };
+
+type GroupChatContextualOverlay = { kind: "menu" | "reaction" | "read-status"; messageId: string };
 
 const messageKey = (groupId: string) => ["group-chat", "messages", groupId];
 const pinnedKey = (groupId: string) => ["group-chat", "pinned", groupId];
@@ -70,6 +72,7 @@ function getMessageAttachmentType(message: GroupChatMessage): string {
 }
 
 function GroupChatAttachmentMessage({ message }: { message: GroupChatMessage }) {
+  const { t } = useTranslation("groupChatSpeech");
   const attachmentId = message.attachment_id;
   const attachmentType = getMessageAttachmentType(message);
   const isImage = attachmentType === "image" || message.mime_type?.toLowerCase().startsWith("image/") || message.attachment?.mime_type?.toLowerCase().startsWith("image/");
@@ -123,15 +126,26 @@ function GroupChatAttachmentMessage({ message }: { message: GroupChatMessage }) 
     }
   };
 
-  return <div className="mt-1 max-w-[320px] rounded-xl border border-[#d7e5df] bg-[#f8fbf9] p-2 text-[#16332b]">
+  const hasFileName = metadata.file_name !== "Attachment";
+  const voiceLabel = t("voice.previewTitle");
+  const audioAriaLabel = hasFileName ? `${voiceLabel}: ${metadata.file_name}` : voiceLabel;
+
+  return <div className={isAudio ? "mt-1 w-full max-w-[360px] min-w-0 overflow-hidden rounded-xl border border-[#d7e5df] bg-[#f8fbf9] p-2.5 text-[#16332b]" : "mt-1 max-w-[320px] rounded-xl border border-[#d7e5df] bg-[#f8fbf9] p-2 text-[#16332b]"}>
     {isImage && previewUrl ? <img src={previewUrl} alt={getMessageAttachmentFileName(message)} className="max-h-56 w-full rounded-lg object-contain" onError={() => { setPreviewUrl(null); setPreviewError("Image preview unavailable"); }} /> : null}
-    {isAudio && attachmentId ? <GroupChatAudioPlayer key={attachmentId} attachmentId={attachmentId} label={getMessageAttachmentFileName(message)} /> : null}
+    {isAudio ? <div className="min-w-0">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="shrink-0 rounded-full bg-[#e8f6ee] px-2 py-1 text-[10px] font-semibold text-[#1f6a58]">{voiceLabel}</span>
+        <span className="min-w-0 truncate text-xs font-semibold" title={hasFileName ? metadata.file_name : undefined} aria-label={hasFileName ? metadata.file_name : undefined}>{metadata.file_name}</span>
+      </div>
+      <p className="mt-1 truncate text-[11px] text-[#52736a]">{attachmentId ? formatGroupChatAttachmentSummary(metadata) : "File unavailable"}</p>
+      {attachmentId ? <GroupChatAudioPlayer key={attachmentId} attachmentId={attachmentId} label={audioAriaLabel} /> : null}
+    </div> : null}
     {isImage && !previewUrl && !previewError ? <p className="px-1 py-3 text-xs text-[#52736a]">Loading image preview...</p> : null}
     {previewError ? <p className="px-1 py-1 text-xs text-[#8f3b2f]">{previewError}</p> : null}
-    <div className="mt-1 flex items-center justify-between gap-2">
+    {isAudio ? <div className="mt-2 flex min-w-0 flex-wrap items-center justify-end gap-1.5 border-t border-[#d7e5df] pt-2"><button type="button" disabled={!attachmentId} onClick={() => void openAttachment(false)} className="whitespace-nowrap rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-[#1f6a58] shadow-sm disabled:opacity-50">Open</button><button type="button" disabled={!attachmentId} onClick={() => void openAttachment(true)} className="whitespace-nowrap rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-[#1f6a58] shadow-sm disabled:opacity-50">Download</button></div> : <div className="mt-1 flex items-center justify-between gap-2">
       <div className="min-w-0"><p className="truncate text-xs font-semibold">{metadata.file_name}</p><p className="text-[11px] text-[#52736a]">{attachmentId ? formatGroupChatAttachmentSummary(metadata) : "File unavailable"}</p></div>
       <div className="flex shrink-0 gap-1.5"><button type="button" disabled={!attachmentId} onClick={() => void openAttachment(false)} className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-[#1f6a58] shadow-sm disabled:opacity-50">Open</button><button type="button" disabled={!attachmentId} onClick={() => void openAttachment(true)} className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-[#1f6a58] shadow-sm disabled:opacity-50">Download</button></div>
-    </div>
+    </div>}
     {message.content?.trim() ? <p className="mt-2 whitespace-pre-wrap break-words text-[13px]">{message.content}</p> : null}
   </div>;
 }
@@ -221,6 +235,7 @@ type MessageBubbleProps = {
 function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen, pendingAction, editMode, editDraft, editError, hideReason, mutationPending, replyTarget, highlighted, onToggleMenu, onCloseMenu, onCloseReactionPicker, onSelectAction, onReplyReference, onEditDraftChange, onSaveEdit, onCancelEdit, onHideReasonChange, onConfirmAction, onCancelAction, reactionSettings, reactionPickerOpen, reactionMutationPending, onToggleReactionPicker, onToggleReaction, readStatusEligible, readStatusOpen, readStatus, readSummary, readStatusLoading, readStatusError, readStatusNames, onToggleReadStatus, onRetryReadStatus, onCloseReadStatus, messageRef, popupBoundaryRef }: MessageBubbleProps) {
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const reactionTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const readStatusTriggerRef = useRef<HTMLButtonElement | null>(null);
   const isSystemMessage = message.message_type.trim().toLowerCase() === "system";
   const status = message.status.trim().toLowerCase();
   const unavailable = status === "retracted" || status === "removed_by_admin";
@@ -257,7 +272,7 @@ function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen
           {message.pinned && !unavailable ? <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${isOwnMessage ? "bg-[#d8f3e4] text-[#16332b]" : "bg-[#e8f6ee] text-[#1f6a58]"}`}>Pinned</span> : null}
           <span className="ml-auto flex shrink-0 items-center gap-1">
             <time dateTime={message.created_at} title={timestamp.fullTime} aria-label={`Sent ${timestamp.fullTime}`}>{timestamp.compactTime}</time>
-            {readStatusEligible && (readStatus || readSummary) ? <button type="button" aria-label="View message info" title={`View message info. Sent ${timestamp.fullTime}`} aria-expanded={readStatusOpen} onClick={onToggleReadStatus} className={`rounded px-0.5 text-[14px] font-bold leading-none transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d8f3e4] ${readStatusTickClass}`}>{readStatusTick}</button> : null}
+            {readStatusEligible && (readStatus || readSummary) ? <button ref={readStatusTriggerRef} type="button" aria-label="View message info" title={`View message info. Sent ${timestamp.fullTime}`} aria-expanded={readStatusOpen} onClick={onToggleReadStatus} className={`rounded px-0.5 text-[14px] font-bold leading-none transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d8f3e4] ${readStatusTickClass}`}>{readStatusTick}</button> : null}
           </span>
         </div>
         {!unavailable && message.reply_to ? <div className={`mb-1.5 border-l-2 pl-2 text-xs ${isOwnMessage ? "border-[#d8f3e4] text-[#e5f8eb]" : "border-[#8ccaa2] text-[#52736a]"}`}>
@@ -265,10 +280,10 @@ function MessageBubble({ message, isOwnMessage, isFirstUnread, actions, menuOpen
         </div> : null}
         {editMode ? <div><label className="sr-only" htmlFor={`edit-group-message-${message.id}`}>Edit message</label><textarea id={`edit-group-message-${message.id}`} value={editDraft} onChange={(event) => onEditDraftChange(event.target.value)} disabled={mutationPending} className="min-h-20 w-full resize-y rounded-lg border border-[#b7dfc7] bg-white p-2 text-sm text-[#16332b] outline-none focus:border-[#1f6a58]" />{editError ? <p className="mt-1 text-xs text-[#b42318]" role="alert">{editError}</p> : null}<div className="mt-2 flex gap-2"><button type="button" disabled={mutationPending || !editDraft.trim()} onClick={onSaveEdit} className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#1f6a58] disabled:opacity-50">{mutationPending ? "Saving..." : "Save"}</button><button type="button" disabled={mutationPending} onClick={onCancelEdit} className="rounded-full border border-white/70 px-3 py-1.5 text-xs font-semibold text-current">Cancel</button></div></div> : unavailable ? <p className="italic opacity-80">{getGroupChatMessageDisplayText(message)}</p> : message.attachment_id ? <GroupChatAttachmentMessage message={message} /> : <div className="flex flex-wrap items-end gap-x-1.5 gap-y-1"><p className="min-w-0 flex-[1_1_auto] whitespace-pre-wrap break-words">{getGroupChatMessageDisplayText(message)}</p><GroupChatReactionControls message={message} settings={reactionSettings} pickerOpen={reactionPickerOpen} mutationPending={reactionMutationPending} onTogglePicker={onToggleReactionPicker} onToggleReaction={onToggleReaction} triggerRef={reactionTriggerRef} /></div>}
         {editMode || unavailable || message.attachment_id ? <GroupChatReactionControls message={message} settings={reactionSettings} pickerOpen={reactionPickerOpen} mutationPending={reactionMutationPending} onTogglePicker={onToggleReactionPicker} onToggleReaction={onToggleReaction} triggerRef={reactionTriggerRef} /> : null}
-        {readStatusOpen ? <div className="absolute right-2 top-full z-20 mt-1 w-64 rounded-xl border border-[#d7e5df] bg-white p-3 text-left text-[#16332b] shadow-lg" aria-label="Read status">
+        {readStatusOpen ? <GroupChatAnchoredPopup anchorRef={readStatusTriggerRef} boundaryRef={popupBoundaryRef} alignment="end" className="w-64 rounded-xl border border-[#d7e5df] bg-white p-3 text-left text-[#16332b] shadow-lg" id={`group-read-status-${message.id}`} role="dialog" ariaLabel="Read status" onDismiss={onCloseReadStatus}>
           <div className="flex items-start justify-between gap-3"><p className="text-xs font-bold uppercase tracking-wide text-[#52736a]">Read status</p><button type="button" aria-label="Close read status" onClick={onCloseReadStatus} className="rounded-full px-1 text-sm text-[#52736a] hover:bg-[#e8f6ee]">×</button></div>
           {readSummary ? <div className="mt-2 text-sm"><p className="font-semibold">{readSummary.all_read ? "Read by all recipients" : "Not read by all recipients"}</p><p className="text-xs text-[#52736a]">{readSummary.read_count} of {readSummary.recipient_count} recipients seen</p></div> : readStatusLoading && !readStatus ? <p className="mt-2 text-sm text-[#52736a]">Loading read status...</p> : readStatus ? <div className="mt-2 text-sm">{readStatusError ? <p className="mb-1 text-xs text-[#7a271a]" role="alert">Unable to refresh read status. Showing the last confirmed status.</p> : null}<p className="font-semibold">{readStatus.label}</p><p className="text-xs text-[#52736a]">{readStatus.seen_by_count} of {readStatus.recipient_count} recipients seen</p>{readStatusNames.length > 0 ? <p className="mt-1 text-xs text-[#52736a]">Seen by: {readStatusNames.join(", ")}</p> : readStatus.seen_by_count === 0 ? <p className="mt-1 text-xs text-[#52736a]">No members have seen this message yet.</p> : <p className="mt-1 text-xs text-[#52736a]">Seen-by member names unavailable.</p>}</div> : readStatusError ? <div className="mt-2 text-sm text-[#7a271a]" role="alert"><p>Read status is unavailable for this message.</p><button type="button" onClick={onRetryReadStatus} className="mt-1 font-semibold underline">Try again</button></div> : null}
-        </div> : null}
+        </GroupChatAnchoredPopup> : null}
       </article>
       {menuOpen ? <GroupChatAnchoredPopup anchorRef={menuTriggerRef} boundaryRef={popupBoundaryRef} alignment={isOwnMessage ? "end" : "start"} className="w-56 rounded-xl border border-[#d7e5df] bg-white p-2 text-sm text-[#16332b] shadow-xl" id={`group-message-menu-${message.id}`} role="menu" ariaLabel="Message actions" onDismiss={onCloseMenu}>
         {pendingAction === null ? actions.map((action) => <button key={action} type="button" role="menuitem" onClick={() => onSelectAction(action)} className="block w-full rounded-lg px-3 py-2 text-left font-semibold hover:bg-[#e8f6ee] focus-visible:bg-[#e8f6ee] focus-visible:outline-none">{action === "reply" ? "Reply to message" : action === "edit" ? "Edit message" : action === "retract" ? "Retract message" : action === "hide" ? "Hide message" : action === "report" ? "Report message" : action === "pin" ? "Pin message" : action === "unpin" ? "Unpin message" : "Read status"}</button>) : <div>
@@ -316,7 +331,7 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
   const handledNotificationTargetRef = useRef<string | null>(null);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const replyHighlightTimer = useRef<number | null>(null);
-  const [openPopup, setOpenPopup] = useState<{ kind: "menu" | "reaction"; messageId: string } | null>(null);
+  const [openPopup, setOpenPopup] = useState<GroupChatContextualOverlay | null>(null);
   const [pendingAction, setPendingAction] = useState<{ messageId: string; action: "retract" | "hide" | "report" } | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
@@ -334,7 +349,6 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
   const [pinnedNavigationError, setPinnedNavigationError] = useState<{ groupId: string; message: string } | null>(null);
   const pinnedNavigationRequestRef = useRef(0);
   const pinnedNavigationPageRequestRef = useRef<number | null>(null);
-  const [readStatusSelection, setReadStatusSelection] = useState<{ groupId: string; messageId: string } | null>(null);
   const [readStatusByMessage, setReadStatusByMessage] = useState<Record<string, GroupChatMessageReadStatus>>({});
   const readStatusQueueRef = useRef<string[]>([]);
   const readStatusInFlightRef = useRef(new Set<string>());
@@ -400,9 +414,9 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
     return () => window.cancelAnimationFrame(frameId);
   }, [groupId, historyQuery.isPending, notificationMessageId, notificationMessageLoaded, messages.length]);
   const firstUnreadMessageId = pages.map((page) => page.first_unread_message_id).find((value): value is string => Boolean(value)) ?? null;
-  const readStatusMessageId = readStatusSelection?.groupId === groupId ? readStatusSelection.messageId : null;
+  const readStatusMessageId = openPopup?.kind === "read-status" ? openPopup.messageId : null;
   const selectedReadStatusMessage = readStatusMessageId ? messages.find((message) => message.id === readStatusMessageId) ?? null : null;
-  const readStatusAllowed = selectedReadStatusMessage ? canViewGroupChatReadStatus(selectedReadStatusMessage, groupKind, currentMemberKind, currentMemberStatus) : false;
+  const readStatusAllowed = selectedReadStatusMessage ? canShowGroupChatReadStatusIndicator(selectedReadStatusMessage, userId, groupKind, currentMemberKind, currentMemberStatus) : false;
   const readStatusQuery = useQuery({
     queryKey: groupChatReadStatusQueryKey(groupId, userScope, tenantScope, readStatusMessageId ?? ""),
     queryFn: ({ signal }) => getGroupChatMessageReadStatus(groupId, readStatusMessageId!, signal),
@@ -444,7 +458,7 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
     const message = messages.find((candidate) => candidate.id === messageId);
     if (!message || !canShowGroupChatReadStatusIndicator(message, userId, groupKind, currentMemberKind, currentMemberStatus)) return false;
     if (!shouldFetchGroupChatMessageReadStatus(message.read_summary)) return false;
-    if (readStatusSelection?.groupId === groupId && readStatusSelection.messageId === messageId) return false;
+    if (openPopup?.kind === "read-status" && openPopup.messageId === messageId) return false;
     const cacheKey = readStatusKey(groupId, userScope, tenantScope, messageId);
     const statusQueryKey = groupChatReadStatusQueryKey(groupId, userScope, tenantScope, messageId);
     const cachedStatus = readStatusByMessageRef.current[cacheKey] ?? queryClient.getQueryData<GroupChatMessageReadStatus>(statusQueryKey);
@@ -453,7 +467,7 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
     readStatusQueueRef.current.push(messageId);
     processReadStatusQueueRef.current();
     return true;
-  }, [currentMemberKind, currentMemberStatus, groupId, groupKind, messages, queryClient, readStatusSelection, tenantScope, userId, userScope]);
+  }, [currentMemberKind, currentMemberStatus, groupId, groupKind, messages, openPopup, queryClient, tenantScope, userId, userScope]);
   queueReadStatusRef.current = queueReadStatus;
   const sendMutation = useMutation({
     mutationFn: ({ content, replyToId }: SendVariables) => sendGroupChatTextMessage(groupId, content, replyToId),
@@ -638,7 +652,6 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
     setPinnedNavigation(null);
     setPinnedNavigationError(null);
     setPinnedPanelOpenConversation(null);
-    setReadStatusSelection(null);
     setReadStatusByMessage({});
     attachmentUploadMutation.reset();
     attachmentSendMutation.reset();
@@ -708,8 +721,8 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
   }, [effectiveCanPost, groupStatus, postingMuted]);
 
   useEffect(() => {
-    if (readStatusSelection?.groupId === groupId && (!selectedReadStatusMessage || !readStatusAllowed)) setReadStatusSelection(null);
-  }, [groupId, readStatusAllowed, readStatusSelection, selectedReadStatusMessage]);
+    if (openPopup?.kind === "read-status" && (!selectedReadStatusMessage || !readStatusAllowed)) setOpenPopup(null);
+  }, [groupId, openPopup, readStatusAllowed, selectedReadStatusMessage]);
 
   useEffect(() => {
     if (readStatusRefreshKey <= 0) return undefined;
@@ -727,10 +740,10 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
   }, [groupId, messages, queryClient, queueVisibleReadStatuses, readStatusAllowed, readStatusMessageId, readStatusRefreshKey, readThroughMessageId, tenantScope, userScope]);
 
   useEffect(() => {
-    if (!readStatusSelection || readStatusSelection.groupId !== groupId || !readStatusQuery.data || readStatusQuery.data.message_id !== readStatusSelection.messageId) return;
-    const cacheKey = readStatusKey(groupId, userScope, tenantScope, readStatusSelection.messageId);
+    if (openPopup?.kind !== "read-status" || !readStatusQuery.data || readStatusQuery.data.message_id !== openPopup.messageId) return;
+    const cacheKey = readStatusKey(groupId, userScope, tenantScope, openPopup.messageId);
     setReadStatusByMessage((current) => current[cacheKey] === readStatusQuery.data ? current : mergeGroupChatReadStatusCache(current, cacheKey, readStatusQuery.data));
-  }, [groupId, readStatusQuery.data, readStatusSelection, tenantScope, userScope]);
+  }, [groupId, openPopup, readStatusQuery.data, tenantScope, userScope]);
 
   useEffect(() => () => {
     pinnedNavigationRequestRef.current += 1;
@@ -1038,7 +1051,7 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
     if (canHideGroupChatMessage(message, canHideMessages, currentMemberStatus)) actions.push("hide");
     if (canReportGroupChatMessage(message, canReport, currentMemberStatus)) actions.push("report");
     if (canPinGroupChatMessage(message, canPinMessages, currentMemberKind)) actions.push(message.pinned ? "unpin" : "pin");
-    if (canViewGroupChatReadStatus(message, groupKind, currentMemberKind, currentMemberStatus)) actions.push("read-status");
+    if (canShowGroupChatReadStatusIndicator(message, userId, groupKind, currentMemberKind, currentMemberStatus)) actions.push("read-status");
     return actions;
   };
 
@@ -1143,8 +1156,7 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
               return;
             }
             if (action === "read-status") {
-              setReadStatusSelection({ groupId, messageId: message.id });
-              setOpenPopup(dismissGroupChatPopup());
+              setOpenPopup({ kind: "read-status", messageId: message.id });
               setPendingAction(null);
               return;
             }
@@ -1179,12 +1191,11 @@ export default function GroupChatMessages({ groupId, userScope, tenantScope, gro
           readStatusError={readStatusOpen && readStatusQuery.isError}
           readStatusNames={messageReadStatusNames}
           onToggleReadStatus={() => {
-            setReadStatusSelection((current) => current?.groupId === groupId && current.messageId === message.id ? null : { groupId, messageId: message.id });
-            setOpenPopup(dismissGroupChatPopup());
+            setOpenPopup(toggleGroupChatPopup(openPopup, { kind: "read-status", messageId: message.id }));
             setPendingAction(null);
           }}
           onRetryReadStatus={() => void readStatusQuery.refetch()}
-          onCloseReadStatus={() => setReadStatusSelection(null)}
+          onCloseReadStatus={() => setOpenPopup(dismissGroupChatPopup())}
           />
         </Fragment>;
       })}

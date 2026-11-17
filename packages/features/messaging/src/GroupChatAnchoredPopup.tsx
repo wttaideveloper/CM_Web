@@ -10,13 +10,13 @@ type Props = {
   alignment?: GroupChatPopupAlignment;
   className: string;
   id: string;
-  role: "menu";
+  role: "menu" | "dialog";
   ariaLabel: string;
   onDismiss: () => void;
   children: ReactNode;
 };
 
-/** Renders a Group Chat menu outside the clipped history tree and keeps it inside that viewport. */
+/** Renders one Group Chat contextual overlay outside the clipped history tree and keeps it inside that viewport. */
 export function GroupChatAnchoredPopup({ anchorRef, boundaryRef, alignment = "start", className, id, role, ariaLabel, onDismiss, children }: Props) {
   const popupRef = useRef<HTMLDivElement | null>(null);
   const frameRef = useRef<number | null>(null);

@@ -525,6 +525,41 @@ test("resolves authorized attachment metadata and keeps a safe fallback", () => 
   assert.deepEqual(resolveGroupChatAttachmentMetadata(message), { file_name: "Attachment", mime_type: null, file_size: null });
 });
 
+test("keeps audio attachment filenames available for compact voice layouts", () => {
+  const longFileName = "provider-voice-message-with-a-descriptive-session-name-2026-10-19.webm";
+  const message = normalizeGroupChatMessage({
+    id: "voice-attachment",
+    conversation_id: "group-1",
+    sender_id: "user-1",
+    sender_name: "Provider One",
+    sender_kind: "provider",
+    message_type: "audio",
+    content: null,
+    attachment_id: "attachment-audio",
+    file_name: longFileName,
+    mime_type: "audio/webm",
+    file_size: 16_384,
+    attachment: { attachment_id: "attachment-audio", file_name: longFileName, attachment_type: "audio", mime_type: "audio/webm", file_size: 16_384 },
+    status: "visible",
+    placeholder: null,
+    reply_to: null,
+    mentions: [],
+    mentions_all: false,
+    mentions_me: false,
+    is_edited: false,
+    edited_at: null,
+    pinned: false,
+    reactions: {},
+    my_reactions: [],
+    read_by: [],
+    created_at: "2026-10-19T09:00:00Z",
+  })!;
+
+  assert.equal(message.message_type, "audio");
+  assert.equal(resolveGroupChatAttachmentMetadata(message).file_name, longFileName);
+  assert.equal(resolveGroupChatAttachmentMetadata({ ...message, file_name: null, filename: null, attachment: null }).file_name, "Attachment");
+});
+
 test("normalizes safe reply references and hides backend content when marked hidden", () => {
   assert.deepEqual(normalizeGroupChatReplyReference({ id: "message-1", sender_name: "Provider One", preview: "See you then", is_hidden: false }), { id: "message-1", sender_name: "Provider One", preview: "See you then", is_hidden: false });
   assert.deepEqual(normalizeGroupChatReplyReference({ id: "message-2", sender_name: "Provider Two", preview: "Private content", is_hidden: true }), { id: "message-2", sender_name: "Provider Two", preview: "Original message unavailable.", is_hidden: true });
@@ -760,6 +795,16 @@ test("pins only visible non-system messages for authorized Provider members", ()
   assert.equal(canPinGroupChatMessage(message, false, "provider"), false);
   assert.equal(canPinGroupChatMessage({ ...message, status: "retracted" }, true, "provider"), false);
   assert.equal(canPinGroupChatMessage({ ...message, message_type: "system" }, true, "provider"), false);
+});
+
+test("exposes read status only for visible outgoing messages with a stable current-user match", () => {
+  const outgoing = normalizeGroupChatMessage({ id: "outgoing", conversation_id: "group-1", sender_id: "user-1", sender_name: "Current user", sender_kind: "provider", message_type: "text", content: "Sent", attachment_id: null, status: "visible", placeholder: null, reply_to: null, mentions: [], mentions_all: false, mentions_me: false, is_edited: false, edited_at: null, pinned: false, reactions: {}, my_reactions: [], read_by: null, created_at: "2026-10-21T09:00:00Z" })!;
+  const incoming = { ...outgoing, id: "incoming", sender_id: "user-2" };
+  const eligibility = ["program", "provider", "active"] as const;
+  assert.equal(canShowGroupChatReadStatusIndicator(outgoing, "user-1", ...eligibility), true);
+  assert.equal(canShowGroupChatReadStatusIndicator(incoming, "user-1", ...eligibility), false);
+  assert.equal(canShowGroupChatReadStatusIndicator(outgoing, null, ...eligibility), false);
+  assert.equal(canShowGroupChatReadStatusIndicator(outgoing, "user-1", "program", "patient", "active"), false);
 });
 
 test("normalizes the pinned-message list with existing privacy-safe message fields", () => {
