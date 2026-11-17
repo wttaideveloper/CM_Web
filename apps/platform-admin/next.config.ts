@@ -54,7 +54,7 @@ const nextConfig: NextConfig = {
     // Super-Admin and Workflow upstreams are read at request time by the BFF routes and
     // are validated separately; they are intentionally not part of this table.
     const upstreams = resolveUpstreamUrls(process.env, {
-      AUTH_API_BASE_URL: { required: true, purpose: "Identity API serving /api/v1/auth and /api/v1/tenant" },
+      AUTH_API_BASE_URL: { required: false, purpose: "Optional legacy identity API serving /api/v1/auth and /api/v1/tenant" },
       CHAT_API_BASE_URL: { required: true, purpose: "Marketplace API serving reviews, enterprises, products, services, events and trainings" },
     });
 
@@ -212,15 +212,20 @@ const nextConfig: NextConfig = {
         source: "/api/v1/admin/courses/:path*",
         destination: `${platformApiBaseUrl}/admin/courses/:path*`,
       },
-      {
-        source: "/api/v1/auth/:path*",
-        destination: `${authApiBaseUrl}/api/v1/auth/:path*`,
-      },
-      {
-        source: "/api/v1/tenant/:path*",
-        destination: `${authApiBaseUrl}/api/v1/tenant/:path*`,
-      },
     ];
+
+    if (authApiBaseUrl) {
+      fallback.push(
+        {
+          source: "/api/v1/auth/:path*",
+          destination: `${authApiBaseUrl}/api/v1/auth/:path*`,
+        },
+        {
+          source: "/api/v1/tenant/:path*",
+          destination: `${authApiBaseUrl}/api/v1/tenant/:path*`,
+        },
+      );
+    }
 
     fallback.push(...buildCommerceProxyRoutes(platformApiBaseUrl));
 
