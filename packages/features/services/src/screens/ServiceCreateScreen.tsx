@@ -217,13 +217,18 @@ export default function ServiceCreateScreen({
   const parsedDuration = Number(trimmedDuration);
   const isServicePriceValid = isValidServicePrice(servicePrice);
   const isServiceDurationValid = isValidServiceDuration(duration);
+  const availabilitySchedule = buildServiceAvailabilitySchedule(weekdays);
+  const scheduleValidation = validateServiceSchedule(availabilitySchedule);
+  const maxParticipantsError = validateMaxParticipants(maxParticipants);
   const reviewComplete =
     Boolean(enterpriseId.trim()) &&
     Boolean(serviceName.trim()) &&
     Boolean(serviceDescription.trim()) &&
     Boolean(serviceCategory.trim()) &&
     isServicePriceValid &&
-    isServiceDurationValid;
+    isServiceDurationValid &&
+    scheduleValidation.isValid &&
+    !maxParticipantsError;
 
   const reviewEnterpriseName =
     (isEnterpriseAdmin
@@ -236,10 +241,7 @@ export default function ServiceCreateScreen({
   const reviewDeliveryFormat = resolveOptionLabel(deliveryFormat, deliveryFormatOptions);
   const reviewCurrency = resolveOptionLabel(currency, currencyOptions);
   const reviewCancellationPolicy = resolveOptionLabel(cancellationPolicy, cancellationPolicyOptions);
-  const availabilitySchedule = buildServiceAvailabilitySchedule(weekdays);
   const reviewScheduleRows = buildServiceScheduleReviewRows(weekdays);
-  const scheduleValidation = validateServiceSchedule(availabilitySchedule);
-  const maxParticipantsError = validateMaxParticipants(maxParticipants);
   const reviewLocationName = selectedLocation
     ? [
         selectedLocation.location_name?.trim(),
@@ -496,6 +498,8 @@ export default function ServiceCreateScreen({
         {tabs.map((tab) => (
           <button
             key={tab}
+            type="button"
+            aria-pressed={activeTab === tab}
             onClick={() => setActiveTab(tab)}
             className={`h-10 whitespace-nowrap rounded-xl px-4 text-sm font-bold ${
               activeTab === tab
@@ -806,6 +810,7 @@ export default function ServiceCreateScreen({
                   {day.enabled ? (
                     <>
                       <select
+                        aria-label={`${day.day} start time`}
                         className={scheduleSelectClass()}
                         value={day.startTime}
                         onChange={(event) =>
@@ -825,6 +830,7 @@ export default function ServiceCreateScreen({
                         ))}
                       </select>
                       <select
+                        aria-label={`${day.day} end time`}
                         className={scheduleSelectClass()}
                         value={day.endTime}
                         onChange={(event) =>
@@ -844,6 +850,7 @@ export default function ServiceCreateScreen({
                         ))}
                       </select>
                       <select
+                        aria-label={`${day.day} slot length`}
                         className={scheduleSelectClass()}
                         value={day.slotLength}
                         onChange={(event) =>
@@ -1130,7 +1137,12 @@ export default function ServiceCreateScreen({
         ) : null}
 
         <div className="mt-5 flex flex-col gap-3 border-t border-[#edf3f0] pt-4 sm:flex-row sm:justify-end">
-          <button className="h-[46px] rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a]">
+          <button
+            type="button"
+            disabled
+            title="Draft saving is not available"
+            className="h-[46px] rounded-full border border-[#d7e5df] px-5 text-sm font-semibold text-[#52736a] opacity-50"
+          >
             Save Draft
           </button>
           <button

@@ -57,6 +57,47 @@ export type ServiceBookingListResponse = {
   page_size: number;
 };
 
+export type ServiceBookingCancellationRequestStatus = "pending" | "approved" | "rejected";
+
+export type ServiceBookingCancellationRequest = {
+  id: string;
+  booking_id: string;
+  customer: ServiceBookingCustomer;
+  service_id: string;
+  service_name: string;
+  provider_id: string | null;
+  provider_name: string | null;
+  starts_at: string;
+  ends_at: string;
+  timezone: string;
+  reason: string | null;
+  requested_at: string;
+  request_status: ServiceBookingCancellationRequestStatus;
+  booking_status: ServiceBookingStatus;
+  payment_status: ServiceBookingPaymentStatus;
+  refund_status: string | null;
+};
+
+export type ServiceBookingCancellationRequestListResponse = {
+  items: ServiceBookingCancellationRequest[];
+  total: number;
+  page: number;
+  page_size: number;
+};
+
+export type UpdateServiceBookingStatusPayload = {
+  status: string;
+  reason?: string;
+};
+
+export type ServiceBookingCancellationDecisionPayload = {
+  reason?: string;
+};
+
+export type ServiceBookingCancellationRejectionPayload = {
+  reason: string;
+};
+
 export type ServiceBookingHistoryItem = {
   action: string;
   from_status: string | null;
@@ -130,6 +171,10 @@ function isPaymentStatus(value: unknown): value is ServiceBookingPaymentStatus {
 
 function isDeliveryMode(value: unknown): value is ServiceBookingDeliveryMode {
   return ["in_person", "virtual", "hybrid"].includes(value as ServiceBookingDeliveryMode);
+}
+
+function isCancellationRequestStatus(value: unknown): value is ServiceBookingCancellationRequestStatus {
+  return ["pending", "approved", "rejected"].includes(value as ServiceBookingCancellationRequestStatus);
 }
 
 function readNullableString(record: Record<string, unknown>, key: string): string | null {
@@ -248,6 +293,72 @@ export function normalizeServiceBookingListResponse(value: unknown): ServiceBook
 
   return {
     items: value.items.map(normalizeServiceBookingListItem),
+    total: value.total,
+    page: value.page,
+    page_size: value.page_size,
+  };
+}
+
+/** Normalizes the documented Enterprise cancellation-request page without fabricating booking data. */
+export function normalizeServiceBookingCancellationRequestListResponse(
+  value: unknown,
+): ServiceBookingCancellationRequestListResponse {
+  if (!isRecord(value) || !Array.isArray(value.items)) {
+    throw new Error("The Service Booking cancellation-request response is malformed.");
+  }
+
+  if (
+    !isInteger(value.total) ||
+    value.total < 0 ||
+    !isInteger(value.page) ||
+    value.page < 1 ||
+    !isInteger(value.page_size) ||
+    value.page_size < 1
+  ) {
+    throw new Error("The Service Booking cancellation-request pagination metadata is malformed.");
+  }
+
+  return {
+    items: value.items.map((item) => {
+      if (!isRecord(item)) {
+        throw new Error("The Service Booking cancellation-request response contains a malformed item.");
+      }
+
+      if (
+        !isString(item.id) ||
+        !isString(item.booking_id) ||
+        !isString(item.service_id) ||
+        !isString(item.service_name) ||
+        !isString(item.starts_at) ||
+        !isString(item.ends_at) ||
+        !isString(item.timezone) ||
+        !isString(item.requested_at) ||
+        !isCancellationRequestStatus(item.request_status) ||
+        !isServiceBookingStatus(item.booking_status) ||
+        !isPaymentStatus(item.payment_status)
+      ) {
+        throw new Error("The Service Booking cancellation-request response contains a malformed item.");
+      }
+
+      return {
+        id: item.id,
+        booking_id: item.booking_id,
+        customer: normalizeCustomer(item.customer),
+        service_id: item.service_id,
+        service_name: item.service_name,
+        provider_id: readNullableString(item, "provider_id"),
+        provider_name: readNullableString(item, "provider_name"),
+        starts_at: item.starts_at,
+        ends_at: item.ends_at,
+        timezone: item.timezone,
+        reason: readNullableString(item, "reason"),
+        requested_at: item.requested_at,
+        request_status: item.request_status,
+        booking_status: item.booking_status,
+        payment_status: item.payment_status,
+        refund_status: readNullableString(item, "refund_status"),
+      };
+    }),
     total: value.total,
     page: value.page,
     page_size: value.page_size,

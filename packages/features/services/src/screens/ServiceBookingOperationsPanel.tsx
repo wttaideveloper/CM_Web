@@ -17,7 +17,13 @@ import type {
   ServiceBookingSettings,
   ServiceBookingSlot,
 } from "../service-booking-operations.models";
-import { validateServiceBookingParticipants } from "../service-booking-operations.models";
+import {
+  formatServiceBookingDateHeading,
+  formatServiceBookingSlotReason,
+  formatServiceBookingSlotTime,
+  formatServiceBookingTimezoneLabel,
+  validateServiceBookingParticipants,
+} from "../service-booking-operations.models";
 import { serviceBookingCopy } from "../service-booking-copy.en";
 
 type Props = {
@@ -34,7 +40,8 @@ function today(): string {
 }
 
 function formatSlotTime(slot: ServiceBookingSlot, timezone: string): string {
-  if (slot.starts_at_display) return slot.starts_at_display;
+  const formatted = formatServiceBookingSlotTime(slot.starts_at, slot.ends_at, timezone);
+  if (formatted !== "Time unavailable") return formatted;
   const start = new Date(slot.starts_at);
   const end = new Date(slot.ends_at);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return `${slot.starts_at} – ${slot.ends_at}`;
@@ -94,7 +101,10 @@ export default function ServiceBookingOperationsPanel({ enterpriseId, onBookingC
     retry: false,
   });
   const settings = settingsQuery.data;
-  const effectiveDeliveryMode = settings?.delivery_modes.includes(deliveryMode as ServiceBookingDeliveryMode) ? deliveryMode : "";
+  const configuredSingleDeliveryMode = settings?.delivery_modes.length === 1 ? settings.delivery_modes[0] : "";
+  const effectiveDeliveryMode = settings?.delivery_modes.includes(deliveryMode as ServiceBookingDeliveryMode)
+    ? deliveryMode
+    : configuredSingleDeliveryMode;
 
   const slotsQuery = useQuery({
     queryKey: ["service-booking-slots", serviceId, date, effectiveDeliveryMode, settings?.time_zone, settings?.provider_user_id],
@@ -107,9 +117,10 @@ export default function ServiceBookingOperationsPanel({ enterpriseId, onBookingC
     enabled: Boolean(serviceId && date && !settingsQuery.isPending && !settingsQuery.isError),
     retry: false,
   });
+  const slotDay = slotsQuery.data?.days.find((day) => day.date === date);
   const slots = useMemo(
-    () => slotsQuery.data?.days.find((day) => day.date === date)?.slots ?? slotsQuery.data?.days.flatMap((day) => day.slots) ?? [],
-    [date, slotsQuery.data?.days],
+    () => slotDay?.slots ?? [],
+    [slotDay],
   );
   const selectedSlot = slots.find((slot) => `${date}:${slot.starts_at}` === selectedSlotKey);
   const serviceCapacity = settings?.max_participants ?? selectedService?.max_participants ?? slotsQuery.data?.capacity ?? null;
@@ -130,6 +141,8 @@ export default function ServiceBookingOperationsPanel({ enterpriseId, onBookingC
   const isFreeService = price === 0;
 
   useEffect(() => {
+    // Participants are form state tied to backend availability; reset them whenever the authoritative slot context changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setParticipants("1");
   }, [date, selectedService?.id, selectedSlotKey, slotsQuery.data, settings?.max_participants]);
 
@@ -189,7 +202,7 @@ export default function ServiceBookingOperationsPanel({ enterpriseId, onBookingC
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <label className="block">
           <span className="text-sm font-bold text-[#06201c]">{serviceBookingCopy.chooseService}</span>
-          <input value={serviceSearch} onChange={(event) => setServiceSearch(event.target.value)} placeholder={serviceBookingCopy.serviceSearchPlaceholder} className="mt-1.5 h-10 w-full rounded-xl border border-[#d7e5df] px-3 text-sm" />
+          <input aria-label={serviceBookingCopy.serviceSearchPlaceholder} value={serviceSearch} onChange={(event) => setServiceSearch(event.target.value)} placeholder={serviceBookingCopy.serviceSearchPlaceholder} className="mt-1.5 h-10 w-full rounded-xl border border-[#d7e5df] px-3 text-sm" />
           <select value={serviceId} onChange={(event) => { setServiceId(event.target.value); setDeliveryMode(""); setSelectedSlotKey(""); setParticipants("1"); setSuccessMessage(""); }} className="mt-2 h-10 w-full rounded-xl border border-[#d7e5df] px-3 text-sm">
             <option value="">{servicesQuery.isPending ? serviceBookingCopy.loadingServices : serviceBookingCopy.chooseService}</option>
             {services.map((service) => <option key={service.id} value={service.id}>{service.service_name}</option>)}
@@ -222,14 +235,15 @@ export default function ServiceBookingOperationsPanel({ enterpriseId, onBookingC
         {!serviceId ? <p className="mt-2 text-sm text-[#52736a]">{serviceBookingCopy.selectServiceAndDate}</p> : null}
         {slotsQuery.isPending ? <p role="status" className="mt-2 text-sm text-[#52736a]">{serviceBookingCopy.loadingSlots}</p> : null}
         {slotsQuery.isError ? <InlineError onRetry={() => void slotsQuery.refetch()} /> : null}
-        {slotsQuery.data && !slotsQuery.data.bookable ? <p className="mt-2 text-sm text-[#8f3b2f]">{slotsQuery.data.reason ?? serviceBookingCopy.bookingDisabled}</p> : null}
+        {slotsQuery.data ? <div className="mt-3 rounded-xl bg-[#f8fbf9] p-3 text-sm text-[#52736a]"><p className="font-semibold text-[#06201c]">{formatServiceBookingDateHeading(slotDay?.date ?? date, slotsQuery.data.time_zone)}</p><p className="mt-1">All times in {formatServiceBookingTimezoneLabel(slotsQuery.data.time_zone)}</p></div> : null}
+        {slotsQuery.data && !slotsQuery.data.bookable ? <p className="mt-2 text-sm text-[#8f3b2f]">{formatServiceBookingSlotReason(slotsQuery.data.reason)}</p> : null}
         {slotsQuery.data && slots.length === 0 ? <p className="mt-2 text-sm text-[#52736a]">{serviceBookingCopy.noSlots}</p> : null}
         <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {slots.map((slot) => {
             const key = `${date}:${slot.starts_at}`;
-            return <button key={key} type="button" disabled={!slot.available || !slotsQuery.data?.bookable} onClick={() => { setSelectedSlotKey(key); setParticipants("1"); }} className={`rounded-xl border p-3 text-left text-sm ${selectedSlotKey === key ? "border-[#1f6a58] bg-[#f1faf5]" : "border-[#d7e5df]"} disabled:cursor-not-allowed disabled:opacity-50`}>
+            return <button key={key} type="button" aria-pressed={selectedSlotKey === key} aria-label={`${formatSlotTime(slot, slotsQuery.data?.time_zone ?? settings?.time_zone ?? "UTC")}, ${slot.available ? `${slot.available_seats} of ${slot.capacity} seats available` : formatServiceBookingSlotReason(slot.reason)}`} disabled={!slot.available || !slotsQuery.data?.bookable} onClick={() => { setSelectedSlotKey(key); setParticipants("1"); }} className={`rounded-xl border p-3 text-left text-sm ${selectedSlotKey === key ? "border-[#1f6a58] bg-[#f1faf5]" : "border-[#d7e5df]"} disabled:cursor-not-allowed disabled:opacity-50`}>
               <span className="block font-semibold text-[#06201c]">{formatSlotTime(slot, slotsQuery.data?.time_zone ?? settings?.time_zone ?? "UTC")}</span>
-              <span className="mt-1 block text-xs text-[#52736a]">{slot.available ? serviceBookingCopy.availableSeats.replace("{{available}}", String(slot.available_seats)).replace("{{capacity}}", String(slot.capacity)) : slot.reason ?? serviceBookingCopy.unavailableSlot}</span>
+              <span className="mt-1 block text-xs text-[#52736a]">{slot.available ? serviceBookingCopy.availableSeats.replace("{{available}}", String(slot.available_seats)).replace("{{capacity}}", String(slot.capacity)) : formatServiceBookingSlotReason(slot.reason)}</span>
             </button>;
           })}
         </div>

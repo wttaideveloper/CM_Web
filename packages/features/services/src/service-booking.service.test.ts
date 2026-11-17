@@ -3,14 +3,25 @@ import { afterEach, test } from "node:test";
 
 import {
   buildServiceBookingDetailUrl,
+  buildServiceBookingCancellationApprovalUrl,
+  buildServiceBookingCancellationRejectionUrl,
   buildServiceBookingHistoryUrl,
+  buildServiceBookingStatusUrl,
+  buildEnterpriseServiceBookingCancellationRequestsUrl,
   buildEnterpriseServiceBookingsUrl,
+  getEnterpriseServiceBookingCancellationRequests,
   getEnterpriseServiceBookings,
   getServiceBookingDetail,
   getServiceBookingHistory,
+  approveServiceBookingCancellation,
+  normalizeServiceBookingCancellationRequestListResponse,
   normalizeServiceBookingDetailResponse,
   normalizeServiceBookingHistoryResponse,
   normalizeServiceBookingListResponse,
+  ServiceBookingApiError,
+  serviceBookingStatusErrorMessage,
+  updateServiceBookingStatus,
+  rejectServiceBookingCancellation,
 } from "./service-booking.service.ts";
 
 const originalFetch = globalThis.fetch;
@@ -94,6 +105,27 @@ function bookingDetail(id = "booking-1") {
     ],
     allowed_statuses: ["in_progress", "completed", "cancelled"],
     created_by_role: "customer",
+  };
+}
+
+function cancellationRequest(id = "request-1") {
+  return {
+    id,
+    booking_id: "booking-1",
+    customer: { user_id: "customer-1", name: "Customer One", email: "customer@example.test", phone: null },
+    service_id: "service-1",
+    service_name: "Wellness consultation",
+    provider_id: "provider-1",
+    provider_name: "Assigned Provider",
+    starts_at: "2026-11-18T10:00:00+05:30",
+    ends_at: "2026-11-18T10:30:00+05:30",
+    timezone: "Asia/Kolkata",
+    reason: "Schedule conflict",
+    requested_at: "2026-11-16T08:00:00Z",
+    request_status: "pending",
+    booking_status: "cancellation_requested",
+    payment_status: "paid",
+    refund_status: "pending",
   };
 }
 
@@ -232,6 +264,133 @@ test("keeps out-of-order page responses independent", async () => {
 test("builds encoded detail and history paths", () => {
   assert.equal(buildServiceBookingDetailUrl("booking/1"), "/api/v1/service-bookings/booking%2F1");
   assert.equal(buildServiceBookingHistoryUrl("booking/1"), "/api/v1/service-bookings/booking%2F1/history");
+  assert.equal(buildServiceBookingStatusUrl("booking/1"), "/api/v1/service-bookings/booking%2F1/status");
+});
+
+test("serializes only the documented enterprise cancellation request pagination", () => {
+  const url = new URL(`http://localhost${buildEnterpriseServiceBookingCancellationRequestsUrl({
+    enterpriseId: "enterprise/1",
+    page: 3,
+    pageSize: 25,
+  })}`);
+
+  assert.equal(url.pathname, "/api/v1/enterprises/enterprise%2F1/service-bookings/cancellation-requests");
+  assert.deepEqual(Object.fromEntries(url.searchParams), {
+    page: "3",
+    page_size: "25",
+  });
+  assert.equal(url.searchParams.has("q"), false);
+  assert.equal(url.searchParams.has("status"), false);
+});
+
+test("normalizes cancellation request pagination and rejects malformed data", () => {
+  assert.deepEqual(
+    normalizeServiceBookingCancellationRequestListResponse({ items: [cancellationRequest()], total: 1, page: 1, page_size: 10 }),
+    { items: [cancellationRequest()], total: 1, page: 1, page_size: 10 },
+  );
+  assert.deepEqual(
+    normalizeServiceBookingCancellationRequestListResponse({ items: [], total: 0, page: 1, page_size: 10 }),
+    { items: [], total: 0, page: 1, page_size: 10 },
+  );
+  assert.throws(
+    () => normalizeServiceBookingCancellationRequestListResponse({ items: [cancellationRequest()], total: 0, page: 0, page_size: 10 }),
+    /pagination metadata is malformed/,
+  );
+  assert.throws(
+    () => normalizeServiceBookingCancellationRequestListResponse({ items: [{ id: "request-1" }], total: 1, page: 1, page_size: 10 }),
+    /malformed item/,
+  );
+});
+
+test("loads cancellation requests with authenticated enterprise-scoped GET", async () => {
+  let requestedUrl = "";
+  let requestedSignal: AbortSignal | null | undefined;
+  globalThis.fetch = (async (input, init) => {
+    requestedUrl = String(input);
+    requestedSignal = init?.signal;
+    return jsonResponse({ items: [cancellationRequest()], total: 1, page: 1, page_size: 10 });
+  }) as typeof fetch;
+  const controller = new AbortController();
+
+  const result = await getEnterpriseServiceBookingCancellationRequests({ enterpriseId: "enterprise-1", page: 1 }, controller.signal);
+
+  assert.equal(result.items[0]?.booking_id, "booking-1");
+  assert.match(requestedUrl, /\/api\/v1\/enterprises\/enterprise-1\/service-bookings\/cancellation-requests\?/);
+  assert.equal(requestedSignal, controller.signal);
+});
+
+test("serializes one status update without retry and preserves the backend response", async () => {
+  let requestedUrl = "";
+  let requestedInit: RequestInit | undefined;
+  globalThis.fetch = (async (input, init) => {
+    requestedUrl = String(input);
+    requestedInit = init;
+    return jsonResponse(bookingDetail());
+  }) as typeof fetch;
+
+  const result = await updateServiceBookingStatus("booking-1", { status: "completed", reason: "Finished" });
+
+  assert.equal(result.id, "booking-1");
+  assert.equal(requestedUrl, "/api/v1/service-bookings/booking-1/status");
+  assert.equal(requestedInit?.method, "PATCH");
+  assert.deepEqual(JSON.parse(String(requestedInit?.body)), { status: "completed", reason: "Finished" });
+  assert.equal(requestedInit?.credentials, "include");
+});
+
+test("surfaces status mutation conflicts and does not retry them", async () => {
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return jsonResponse({ detail: { code: "INVALID_TRANSITION", message: "Transition is no longer allowed." } }, 409);
+  }) as typeof fetch;
+
+  await assert.rejects(
+    () => updateServiceBookingStatus("booking-1", { status: "completed" }),
+    (error: unknown) => error instanceof Error && /Transition is no longer allowed/.test(error.message),
+  );
+  assert.equal(calls, 1);
+});
+
+test("serializes approval and rejection bodies without refund overrides", async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  globalThis.fetch = (async (input, init) => {
+    requests.push({ url: String(input), init });
+    return jsonResponse(bookingDetail());
+  }) as typeof fetch;
+
+  await approveServiceBookingCancellation("booking-1");
+  await approveServiceBookingCancellation("booking-1", { reason: "Customer request" });
+  await rejectServiceBookingCancellation("booking-1", { reason: "Not eligible" });
+
+  assert.equal(requests[0]?.url, "/api/v1/service-bookings/booking-1/cancellation/approve");
+  assert.equal(requests[1]?.url, "/api/v1/service-bookings/booking-1/cancellation/approve");
+  assert.equal(requests[2]?.url, "/api/v1/service-bookings/booking-1/cancellation/reject");
+  assert.deepEqual(JSON.parse(String(requests[0]?.init?.body)), {});
+  assert.deepEqual(JSON.parse(String(requests[1]?.init?.body)), { reason: "Customer request" });
+  assert.deepEqual(JSON.parse(String(requests[2]?.init?.body)), { reason: "Not eligible" });
+  assert.doesNotMatch(JSON.stringify(requests), /refund_percent/);
+});
+
+test("requires three non-whitespace characters for rejection", async () => {
+  let called = false;
+  globalThis.fetch = (async () => { called = true; return jsonResponse(bookingDetail()); }) as typeof fetch;
+
+  await assert.rejects(() => rejectServiceBookingCancellation("booking-1", { reason: " a " }), /at least 3/);
+  assert.equal(called, false);
+});
+
+test("builds encoded cancellation decision paths", () => {
+  assert.equal(buildServiceBookingCancellationApprovalUrl("booking/1"), "/api/v1/service-bookings/booking%2F1/cancellation/approve");
+  assert.equal(buildServiceBookingCancellationRejectionUrl("booking/1"), "/api/v1/service-bookings/booking%2F1/cancellation/reject");
+});
+
+test("keeps status error messaging distinct for auth, validation, missing and conflict responses", () => {
+  assert.match(serviceBookingStatusErrorMessage(new (class extends Error {})()), /could not be updated/);
+  for (const [status, expected] of [[401, "session"], [403, "authorized"], [404, "no longer available"]] as const) {
+    assert.match(serviceBookingStatusErrorMessage(new ServiceBookingApiError("Backend error", status)), new RegExp(expected, "i"));
+  }
+  assert.match(serviceBookingStatusErrorMessage(new ServiceBookingApiError("Invalid reason", 422)), /Invalid reason/);
+  assert.match(serviceBookingStatusErrorMessage(new ServiceBookingApiError("Conflict", 409)), /Conflict/);
 });
 
 test("normalizes detail fields, optional delivery information and embedded history", () => {
@@ -240,6 +399,31 @@ test("normalizes detail fields, optional delivery information and embedded histo
     normalizeServiceBookingDetailResponse({ ...bookingDetail(), meeting: { provider: "Zoom", url: "https://meeting.test" }, venue: null }).meeting,
     { provider: "Zoom", url: "https://meeting.test" },
   );
+});
+
+test("preserves the confirmed backend history entry for Enterprise booking details", () => {
+  const response = normalizeServiceBookingDetailResponse({
+    ...bookingDetail("booking-confirmed"),
+    history: [{
+      action: "created",
+      from_status: null,
+      to_status: "confirmed",
+      actor_role: "admin",
+      actor_name: "enterprise admin acc",
+      reason: null,
+      at: "2026-11-16T17:39:14.933076+05:30",
+    }],
+  });
+
+  assert.deepEqual(response.history, [{
+    action: "created",
+    from_status: null,
+    to_status: "confirmed",
+    actor_role: "admin",
+    actor_name: "enterprise admin acc",
+    reason: null,
+    at: "2026-11-16T17:39:14.933076+05:30",
+  }]);
 });
 
 test("normalizes empty and malformed history responses", () => {

@@ -6,6 +6,9 @@ import {
   getServiceBookingPageLabel,
   getServiceBookingPageSummary,
   getServiceBookingStatusLabel,
+  getServiceBookingAllowedNextStatuses,
+  isServiceBookingCancellationApprovalAllowed,
+  isServiceBookingCancellationEligible,
   formatServiceBookingEnum,
   formatServiceBookingAppointment,
   serviceBookingColumnKeys,
@@ -26,6 +29,21 @@ test("exposes the supported booking filters and table columns without data", () 
     "details",
   ]);
   assert.equal(getServiceBookingStatusLabel("upcoming"), "Upcoming");
+});
+
+test("uses only backend-provided allowed statuses and removes the current status", () => {
+  assert.deepEqual(getServiceBookingAllowedNextStatuses("confirmed", ["confirmed", "completed", "completed", "cancelled"]), ["completed", "cancelled"]);
+  assert.deepEqual(getServiceBookingAllowedNextStatuses("confirmed", null), []);
+});
+
+test("allows decisions only for pending cancellation requests and blocks paid approval", () => {
+  assert.equal(isServiceBookingCancellationEligible("pending", "cancellation_requested"), true);
+  assert.equal(isServiceBookingCancellationEligible("approved", "cancellation_requested"), false);
+  assert.equal(isServiceBookingCancellationEligible("pending", "confirmed"), false);
+  assert.equal(isServiceBookingCancellationApprovalAllowed("not_required"), true);
+  assert.equal(isServiceBookingCancellationApprovalAllowed("unpaid"), true);
+  assert.equal(isServiceBookingCancellationApprovalAllowed("paid"), false);
+  assert.equal(isServiceBookingCancellationApprovalAllowed("partially_refunded"), false);
 });
 
 test("returns a backend-blocked empty state without inventing records", () => {

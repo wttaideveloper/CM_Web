@@ -22,9 +22,9 @@ const SERVICE_STATUS_OPTIONS: Array<{ value: ServiceStatus; label: string }> = [
 ];
 
 function statusClass(status: string) {
-  return status === "Active"
-    ? "bg-[#e8f6ee] text-[#16825b]"
-    : "bg-[#fff7e5] text-[#b7791f]";
+  if (status === "Active") return "bg-[#e8f6ee] text-[#16825b]";
+  if (status === "Draft") return "bg-[#eef4ff] text-[#315ea8]";
+  return "bg-[#fff7e5] text-[#b7791f]";
 }
 
 function EyeIcon() {
@@ -235,7 +235,9 @@ export default function ServicesListScreen({
 
       <div className="mt-5 rounded-2xl border border-[#e1ebe6] bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <label className="sr-only" htmlFor="service-search">Search services</label>
           <input
+            id="service-search"
             type="search"
             placeholder="Search services..."
             value={search}
@@ -320,35 +322,35 @@ export default function ServicesListScreen({
             <table className="w-full min-w-[900px] table-fixed text-left">
               <thead className="bg-[#f8fbf9] text-[11px] uppercase tracking-[0.1em] text-[#7f9d94]">
                 <tr>
-                  <th className="w-[22%] px-3 py-3 font-bold">Service</th>
-                  <th className="w-[19%] px-3 py-3 font-bold">Enterprise</th>
-                  <th className="w-[12%] px-3 py-3 font-bold">Category</th>
-                  <th className="w-[9%] px-3 py-3 font-bold">Price</th>
-                  <th className="w-[10%] px-3 py-3 font-bold">Duration</th>
-                  <th className="w-[10%] px-3 py-3 font-bold">Bookings</th>
-                  <th className="w-[10%] px-3 py-3 font-bold">Status</th>
-                  <th className="w-[8%] px-3 py-3 font-bold">Actions</th>
+                  <th scope="col" className="w-[22%] px-3 py-3 font-bold">Service</th>
+                  <th scope="col" className="w-[19%] px-3 py-3 font-bold">Enterprise</th>
+                  <th scope="col" className="w-[12%] px-3 py-3 font-bold">Category</th>
+                  <th scope="col" className="w-[9%] px-3 py-3 font-bold">Price</th>
+                  <th scope="col" className="w-[10%] px-3 py-3 font-bold">Duration</th>
+                  <th scope="col" className="w-[10%] px-3 py-3 font-bold">Bookings</th>
+                  <th scope="col" className="w-[10%] px-3 py-3 font-bold">Status</th>
+                  <th scope="col" className="w-[8%] px-3 py-3 font-bold">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#edf3f0]">
                 {services.map((service, index) => (
                   <tr
                     key={service.id}
-                    className="h-16 cursor-pointer text-xs transition-colors duration-150 hover:bg-emerald-50/60"
+                    className="h-16 text-xs transition-colors duration-150 hover:bg-emerald-50/60"
                   >
                     <td className="px-3">
                       <div className="flex min-w-0 items-center gap-2.5">
                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e8f6ee] text-xs font-bold text-[#1f6a58]">
                           S{index + 1}
                         </span>
-                        <span className="truncate font-semibold text-[#06201c]">
+                        <span className="truncate font-semibold text-[#06201c]" title={service.name}>
                           {service.name}
                         </span>
                       </div>
                       {service.reviewsCount !== undefined ? <p className="ml-[46px] text-[11px] font-semibold text-[#805900]">{service.reviewsCount > 0 ? `${service.rating?.toFixed(1) ?? "No rating"} ★ (${service.reviewsCount})` : "No ratings yet"}</p> : null}
                     </td>
-                    <td className="truncate px-3 text-[#52736a]">{service.enterprise}</td>
-                    <td className="truncate px-3 text-[#52736a]">{service.category}</td>
+                    <td className="truncate px-3 text-[#52736a]" title={service.enterprise}>{service.enterprise}</td>
+                    <td className="truncate px-3 text-[#52736a]" title={service.category}>{service.category}</td>
                     <td className="px-3 font-semibold text-[#06201c]">{service.price}</td>
                     <td className="px-3 text-[#52736a]">{service.duration}</td>
                     <td className="px-3 text-[#52736a]">{service.bookings}</td>

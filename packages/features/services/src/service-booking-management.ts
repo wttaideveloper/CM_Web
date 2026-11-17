@@ -28,6 +28,22 @@ export function getServiceBookingStatusLabel(filter: ServiceBookingStatusFilter)
   return serviceBookingCopy.statusFilters[filter];
 }
 
+/** Keeps status actions backend-authoritative; the frontend only removes the current status. */
+export function getServiceBookingAllowedNextStatuses(currentStatus: string, allowedStatuses: readonly string[] | null | undefined): string[] {
+  if (!allowedStatuses) return [];
+  return [...new Set(allowedStatuses)].filter((status) => status !== currentStatus);
+}
+
+/** Returns true only while the backend still describes a cancellable pending request. */
+export function isServiceBookingCancellationEligible(requestStatus: string, bookingStatus: string): boolean {
+  return requestStatus === "pending" && bookingStatus === "cancellation_requested";
+}
+
+/** Paid or partially refunded bookings stay approval-blocked until refund integration is verified. */
+export function isServiceBookingCancellationApprovalAllowed(paymentStatus: string): boolean {
+  return paymentStatus !== "paid" && paymentStatus !== "partially_refunded";
+}
+
 /** Returns a safe empty-state message without implying that records were queried. */
 export function getServiceBookingEmptyState(): { title: string; description: string } {
   return {

@@ -9,7 +9,7 @@ export type ServiceBookingSlot = {
   available: boolean;
   available_seats: number;
   capacity: number;
-  reason: "full" | "provider_busy" | "too_soon" | "too_far" | null;
+  reason: string | null;
 };
 
 export type ServiceBookingSlotDay = {
@@ -123,6 +123,62 @@ function isDeliveryMode(value: unknown): value is ServiceBookingDeliveryMode {
   return value === "in_person" || value === "virtual" || value === "hybrid";
 }
 
+/** Formats backend slot timestamps without changing the values used for booking submission. */
+export function formatServiceBookingSlotTime(startsAt: string, endsAt: string, timezone: string): string {
+  const start = new Date(startsAt);
+  const end = new Date(endsAt);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "Time unavailable";
+
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", { timeStyle: "short", timeZone: timezone });
+    return `${formatter.format(start)} \u2013 ${formatter.format(end)}`;
+  } catch {
+    return "Time unavailable";
+  }
+}
+
+/** Formats the backend calendar date in the Service timezone. */
+export function formatServiceBookingDateHeading(date: string, timezone: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!match) return date;
+  const calendarDate = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12));
+  try {
+    return new Intl.DateTimeFormat("en-GB", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      timeZone: timezone,
+    }).format(calendarDate);
+  } catch {
+    return date;
+  }
+}
+
+/** Formats the actual backend IANA timezone into a readable label. */
+export function formatServiceBookingTimezoneLabel(timezone: string): string {
+  try {
+    const sample = new Intl.DateTimeFormat("en-IN", { timeZone: timezone, timeZoneName: "long" }).formatToParts(new Date());
+    const longName = sample.find((part) => part.type === "timeZoneName")?.value;
+    const short = new Intl.DateTimeFormat("en-IN", { timeZone: timezone, timeZoneName: "short" }).formatToParts(new Date()).find((part) => part.type === "timeZoneName")?.value;
+    return longName ? `${longName}${short && short !== longName ? ` (${short})` : ""}` : timezone;
+  } catch {
+    return timezone;
+  }
+}
+
+/** Maps confirmed backend availability codes and gives unknown codes a safe generic message. */
+export function formatServiceBookingSlotReason(reason: string | null): string {
+  switch (reason) {
+    case "too_soon": return "Booking cutoff passed";
+    case "full": return "Fully booked";
+    case "provider_unavailable":
+    case "provider_busy": return "Provider unavailable";
+    case "too_far": return "Booking date is too far in advance";
+    default: return reason ? "This slot is currently unavailable" : "Unavailable";
+  }
+}
+
 function readNullableString(record: Record<string, unknown>, key: string): string | null {
   const value = record[key];
   if (!isNullableString(value)) throw new Error(`The Service Booking response field ${key} is malformed.`);
@@ -141,9 +197,7 @@ function normalizeSlot(value: unknown): ServiceBookingSlot {
   }
 
   const reason = value.reason;
-  if (reason !== undefined && reason !== null && reason !== "full" && reason !== "provider_busy" && reason !== "too_soon" && reason !== "too_far") {
-    throw new Error("The Service Booking slot reason is malformed.");
-  }
+  if (!isNullableString(reason)) throw new Error("The Service Booking slot reason is malformed.");
 
   return {
     starts_at: value.starts_at,

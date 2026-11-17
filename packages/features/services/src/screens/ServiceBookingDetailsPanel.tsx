@@ -100,6 +100,13 @@ function BookingDetailsContent({
 }) {
   return (
     <div className="mt-4 space-y-5">
+      <DetailSection title={serviceBookingCopy.section.activity}>
+        {historyLoading ? <p role="status" className="text-sm text-[#52736a]">{serviceBookingCopy.historyLoading}</p> : null}
+        {historyError ? <ReadError error={historyError} fallback={serviceBookingCopy.historyError} onRetry={onRetryHistory} /> : null}
+        {!historyLoading && !historyError && history.length === 0 ? <p className="text-sm text-[#52736a]">{serviceBookingCopy.noHistory}</p> : null}
+        {!historyLoading && !historyError && history.length > 0 ? <HistoryList history={history} timeZone={booking.timezone} /> : null}
+      </DetailSection>
+
       <DetailSection title={serviceBookingCopy.section.appointment}>
         <DetailGrid fields={[
           ["Status", formatServiceBookingEnum(booking.status)],
@@ -166,12 +173,6 @@ function BookingDetailsContent({
         ]} />
       </DetailSection>
 
-      <DetailSection title={serviceBookingCopy.section.activity}>
-        {historyLoading ? <p role="status" className="text-sm text-[#52736a]">{serviceBookingCopy.historyLoading}</p> : null}
-        {historyError ? <ReadError error={historyError} fallback={serviceBookingCopy.historyError} onRetry={onRetryHistory} /> : null}
-        {!historyLoading && !historyError && history.length === 0 ? <p className="text-sm text-[#52736a]">{serviceBookingCopy.noHistory}</p> : null}
-        {!historyLoading && !historyError && history.length > 0 ? <HistoryList history={history} /> : null}
-      </DetailSection>
     </div>
   );
 }
@@ -197,8 +198,8 @@ function RecordFields({ value, fields, emptyLabel, className = "" }: { value: Re
   return displayFields.length > 0 ? <DetailGrid fields={displayFields} className={className} /> : <p className={`text-sm text-[#52736a] ${className}`}>{emptyLabel}</p>;
 }
 
-function HistoryList({ history }: { history: ServiceBookingHistoryItem[] }) {
-  return <ol className="space-y-3">{history.map((entry, index) => <li key={`${entry.at ?? "entry"}-${index}`} className="rounded-xl border border-[#e1ebe6] bg-white p-3"><p className="text-sm font-semibold text-[#06201c]">{formatServiceBookingEnum(entry.action)}</p><DetailGrid fields={[["From", entry.from_status ? formatServiceBookingEnum(entry.from_status) : null], ["To", entry.to_status ? formatServiceBookingEnum(entry.to_status) : null], ["Actor", entry.actor_name || entry.actor_role], ["When", formatDateTime(entry.at)], ["Reason", entry.reason]]} className="mt-2" /></li>)}</ol>;
+function HistoryList({ history, timeZone }: { history: ServiceBookingHistoryItem[]; timeZone: string }) {
+  return <ol className="space-y-3">{history.map((entry, index) => <li key={`${entry.at ?? "entry"}-${index}`} className="rounded-xl border border-[#e1ebe6] bg-white p-3"><p className="text-sm font-semibold text-[#06201c]">{formatServiceBookingEnum(entry.action)}</p><DetailGrid fields={[["From", entry.from_status ? formatServiceBookingEnum(entry.from_status) : null], ["To", entry.to_status ? formatServiceBookingEnum(entry.to_status) : null], ["Actor", entry.actor_name || entry.actor_role], ["When", formatDateTime(entry.at, timeZone)], ["Reason", entry.reason]]} className="mt-2" /></li>)}</ol>;
 }
 
 function formatDateTime(value: string | null | undefined, timeZone?: string): string | null {

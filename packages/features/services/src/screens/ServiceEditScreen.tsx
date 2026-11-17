@@ -802,6 +802,7 @@ export default function ServiceEditScreen({
                 {day.enabled ? (
                   <>
                     <select
+                      aria-label={`${day.day} start time`}
                       className={controlClass()}
                       value={day.startTime}
                       onChange={(event) =>
@@ -821,6 +822,7 @@ export default function ServiceEditScreen({
                       ))}
                     </select>
                     <select
+                      aria-label={`${day.day} end time`}
                       className={controlClass()}
                       value={day.endTime}
                       onChange={(event) =>
@@ -840,6 +842,7 @@ export default function ServiceEditScreen({
                       ))}
                     </select>
                     <select
+                      aria-label={`${day.day} slot length`}
                       className={controlClass()}
                       value={day.slotLength}
                       onChange={(event) =>

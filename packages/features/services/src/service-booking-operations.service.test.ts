@@ -7,11 +7,14 @@ import {
   createEnterpriseServiceBooking,
   serviceBookingCreationErrorMessage,
   validateServiceBookingParticipants,
-  getServiceBookingSettings,
   getServiceBookingSlots,
 } from "./service-booking-operations.service.ts";
 import { ServiceBookingApiError } from "./service-booking.service.ts";
 import {
+  formatServiceBookingDateHeading,
+  formatServiceBookingSlotReason,
+  formatServiceBookingSlotTime,
+  formatServiceBookingTimezoneLabel,
   normalizeServiceBookingSettingsResponse,
   normalizeServiceBookingSlotsResponse,
 } from "./service-booking-operations.models.ts";
@@ -91,6 +94,23 @@ test("serializes the exact available-slots parameters", () => {
   assert.equal(buildServiceBookingSettingsUrl("service-1"), "/api/v1/services/service-1/booking-settings");
 });
 
+test("formats slot times and dates in the backend IANA timezone", () => {
+  assert.equal(formatServiceBookingSlotTime("2026-11-17T14:00:00+05:30", "2026-11-17T15:00:00+05:30", "Asia/Kolkata"), "2:00 PM – 3:00 PM");
+  assert.equal(formatServiceBookingSlotTime("2026-11-17T23:30:00Z", "2026-11-18T00:30:00Z", "America/New_York"), "6:30 PM – 7:30 PM");
+  assert.equal(formatServiceBookingDateHeading("2026-11-17", "Asia/Kolkata"), "Tuesday, 17 November 2026");
+  assert.equal(formatServiceBookingDateHeading("2026-11-18", "America/Los_Angeles"), "Wednesday, 18 November 2026");
+  assert.match(formatServiceBookingTimezoneLabel("Asia/Kolkata"), /India Standard Time/);
+  assert.match(formatServiceBookingTimezoneLabel("Asia/Kolkata"), /IST/);
+});
+
+test("maps confirmed slot reasons and keeps unknown codes safe", () => {
+  assert.equal(formatServiceBookingSlotReason("too_soon"), "Booking cutoff passed");
+  assert.equal(formatServiceBookingSlotReason("full"), "Fully booked");
+  assert.equal(formatServiceBookingSlotReason("provider_unavailable"), "Provider unavailable");
+  assert.equal(formatServiceBookingSlotReason("unknown_backend_code"), "This slot is currently unavailable");
+  assert.equal(formatServiceBookingSlotReason(null), "Unavailable");
+});
+
 test("validates single-seat, group, full and reduced-capacity slots", () => {
   assert.deepEqual(validateServiceBookingParticipants("1", 1), { isValid: true, value: 1, error: null });
   assert.deepEqual(validateServiceBookingParticipants("3", 5), { isValid: true, value: 3, error: null });
@@ -140,6 +160,16 @@ test("normalizes empty slots and settings without generating defaults", () => {
     provider_user_id: null,
     provider_name: null,
   }).duration_minutes, 30);
+});
+
+test("preserves unknown backend slot reason codes without inventing availability", () => {
+  const normalized = normalizeServiceBookingSlotsResponse({
+    service_id: "service-1", service_name: "Consultation", time_zone: "UTC", duration_minutes: 30, capacity: 1,
+    delivery_modes: ["in_person"], provider_id: null, provider_name: null, bookable: true, reason: null, hold_minutes: 15,
+    days: [{ date: "2026-11-18", slots: [{ starts_at: "2026-11-18T10:00:00Z", ends_at: "2026-11-18T10:30:00Z", starts_at_display: null, available: false, available_seats: 0, capacity: 1, reason: "new_backend_reason" }] }],
+  });
+  assert.equal(normalized.days[0]?.slots[0]?.reason, "new_backend_reason");
+  assert.equal(normalized.days[0]?.slots[0]?.available, false);
 });
 
 test("rejects malformed slot and settings envelopes", () => {

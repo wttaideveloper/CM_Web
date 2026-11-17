@@ -21,6 +21,7 @@ import {
 } from "../service-booking.service";
 import { serviceBookingCopy } from "../service-booking-copy.en";
 import { ServiceBookingActionControls } from "./ServiceBookingActionControls";
+import { ServiceBookingCancellationRequestsPanel } from "./ServiceBookingCancellationRequestsPanel";
 import { ServiceBookingDetailsPanel } from "./ServiceBookingDetailsPanel";
 import ServiceBookingOperationsPanel from "./ServiceBookingOperationsPanel";
 
@@ -225,8 +226,9 @@ export default function ServiceBookingManagementScreen({
           bookingId={selectedBookingId}
           onClearSelection={() => setSelectedBookingId(null)}
         />
-        <ServiceBookingActionControls />
+        <ServiceBookingActionControls key={selectedBookingId ?? "no-booking"} bookingId={selectedBookingId} />
       </div>
+      <ServiceBookingCancellationRequestsPanel enterpriseId={enterpriseId} onOpenBooking={setSelectedBookingId} />
     </div>
   );
 }
